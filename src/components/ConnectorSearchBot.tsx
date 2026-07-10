@@ -78,6 +78,7 @@ export default function ConnectorSearchBot() {
     return (
       <button
         onClick={() => setIsOpen(true)}
+        aria-label="Open legal connector chat"
         className="fixed bottom-6 left-6 z-[99] p-4 bg-brand-600 text-white rounded-full shadow-2xl hover:scale-105 transition-transform"
       >
         <Bot className="w-6 h-6" />
