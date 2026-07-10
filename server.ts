@@ -1506,14 +1506,7 @@ THINGS TO NEVER DO
     } catch (error: any) {
       console.warn("[Voice Transcription] Fallback active due to error:", error.message || error);
       
-      const fallbacks = [
-        "Spoken thought: I need to document that the Children's Aid Society caseworker visited my residence today. I confirmed that my child has perfect attendance at school and our home is fully stocked with groceries. I will request a written summary of today's review in accordance with Ontario CYFSA standards.",
-        "Dictated memo: Spoke with legal aid about my upcoming family division conference. I am preparing the chronologies of support and the certificates of completion for my parenting classes to show full commitment.",
-        "Voice diary: The CAS worker requested to inspect my child's room. I permitted the look and ensured my child felt supported and safe throughout. I need my lawyer to double check the 5 court-day limit on active files.",
-        "Voice note: Reviewing my custody plan for the children. I've prepared all dental and health records to submit before the statutory case management deadline."
-      ];
-      
-      const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+      const randomFallback = "[Transcription unavailable: Could not connect to transcription service]";
       res.json({
         success: true,
         text: randomFallback,
