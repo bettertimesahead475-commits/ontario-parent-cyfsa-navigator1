@@ -145,6 +145,19 @@ const isLastModel = modelNames.indexOf(modelName) === modelNames.length - 1;
   throw lastError;
 }
 
+async function extractPdfTextLocally(base64Data: string): Promise<string> {
+  const cleanedBase64 = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+  const { PDFParse } = await import("pdf-parse");
+  const parser = new PDFParse({ data: Buffer.from(cleanedBase64, "base64") });
+
+  try {
+    const result = await parser.getText();
+    return result.text || "";
+  } finally {
+    await parser.destroy();
+  }
+}
+
 async function extractTextWithGeminiBase64(base64Data: string, mimeType: string): Promise<string> {
   // Simple validation to ensure base64Data is likely valid base64
   const cleanedBase64 = base64Data.trim();
@@ -367,6 +380,49 @@ function extractJson(text: string): any {
   }
 }
 
+const ANALYZER_DEBUG_LOGS = process.env.ANALYZER_DEBUG_LOGS === "true";
+
+function logAnalyzerTextSample(label: string, text: string) {
+  if (!ANALYZER_DEBUG_LOGS) return;
+  console.log(`[Analyzer Debug] ${label} length=${text.length}`);
+  console.log(`[Analyzer Debug] ${label} first500=${JSON.stringify(text.slice(0, 500))}`);
+  console.log(`[Analyzer Debug] ${label} last500=${JSON.stringify(text.slice(-500))}`);
+}
+
+function normalizeForQuoteMatch(value: string): string {
+  return value.toLowerCase().replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim();
+}
+
+function isPlaceholderQuote(value: string): boolean {
+  const normalized = normalizeForQuoteMatch(value);
+  return (
+    normalized.length < 12 ||
+    normalized.includes("not found in this document") ||
+    normalized.includes("checked & compliant") ||
+    normalized.includes("not applicable") ||
+    normalized.includes("page x") ||
+    normalized.startsWith("e.g.")
+  );
+}
+
+function collectUnverifiedAnalyzerQuotes(report: any, sourceText: string): string[] {
+  const normalizedSource = normalizeForQuoteMatch(sourceText);
+  const failures: string[] = [];
+
+  const checkValue = (path: string, value: unknown) => {
+    if (typeof value !== "string" || isPlaceholderQuote(value)) return;
+    if (!normalizedSource.includes(normalizeForQuoteMatch(value))) {
+      failures.push(`${path}: ${value.slice(0, 160)}`);
+    }
+  };
+
+  for (const [index, flag] of (Array.isArray(report?.redFlags) ? report.redFlags : []).entries()) {
+    checkValue(`redFlags[${index}].phraseDetected`, flag?.phraseDetected);
+  }
+
+  return failures;
+}
+
 // Unified Claude error handling and user-friendly formatting with HTTP status codes
 function handleClaudeError(error: any, contextDescription: string, res: Response) {
   console.error(`Claude Error during ${contextDescription}:`, error);
@@ -414,7 +470,7 @@ function generateLocalSimulationReport(textContent: string, requestedTitle?: str
 
   const childRegex = /(?:child|children|son|daughter|kid|kids|boy|girl)\s*(?:is|called|named|named\s+as)?\s*([A-Z][a-z]+)/i;
   const matchChild = text.match(childRegex);
-  const childName = matchChild ? matchChild[1] : "Marcus";
+  const childName = matchChild ? matchChild[1] : "the child";
 
   const dateRegex = /(\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s+\d{4})?\b|\b\d{4}-\d{2}-\d{2}\b)/gi;
   const matchesDate = text.match(dateRegex);
@@ -615,7 +671,7 @@ function generateLocalSimulationReport(textContent: string, requestedTitle?: str
     documentTitle: title,
     documentType: docType,
     disclaimer: "LOCAL SIMULATION ACTIVE (Gemini API Quota Exceeded): To ensure uninterrupted access, this report has been compiled using our high-fidelity, Ontario CYFSA rules-based local analyzer. It is for educational purposes only and does not constitute legal advice.",
-    completenessScore: 78,
+    completenessScore: Math.min(85, Math.max(25, Math.round(text.length / 50))),
     fileSummary: analysisSummary,
     redFlags: redFlags,
     thresholdAnalysis: [
@@ -694,14 +750,14 @@ function generateLocalSimulationReport(textContent: string, requestedTitle?: str
       `How can we leverage the CLRA Section 8 parentage presumption to involve supportive relatives as temporary safety options?`
     ],
     whatIsMissing: [
-      `The direct, unedited statements or wishes of the child Marcus.`,
+      `The direct, unedited statements or wishes of the child.`,
       `Objective school report cards or pediatrician records backing up the worker's claims.`,
       `Details of kinship searches or efforts made to explore less intrusive support options prior to escalating the case.`
     ],
     lawyerCaseBrief: [
       `**Evidentiary Deficiency (Hearsay)**: The worker's notes rely heavily on uncorroborated third-party reports. Counsel should move to strike any hearsay from the record under Ontario Evidence rules, as it does not meet the necessary threshold to prove protection needs.`,
       `**Procedural Review (s. 94 Adjournment Rule)**: Review all court records to ensure CAS has not breached the 30-day adjournment cap. If violated, move for immediate dismissal or scheduled trials.`,
-      `**Onus of Proof s. 94(2)**: Reiterate that the burden is strictly on CAS to prove that Marcus cannot be protected in the home. Prepare parent-held photos and daily journals to demonstrate a safe, pristine environment.`,
+      `**Onus of Proof s. 94(2)**: Reiterate that the burden is strictly on CAS to prove that the child cannot be protected in the home. Prepare parent-held photos and daily journals to demonstrate a safe, pristine environment.`,
       `**Warrantless Entry Boundary**: The worker's demands for home access without a warrant or immediate emergency grounds represent an overreach of authority. Advise parent to route all communications through counsel.`,
       `**Action Plan**: Draft a comprehensive family safety plan incorporating relatives (kinship options under s.70) to present to the court as a preemptive, less intrusive alternative to any CAS intervention.`
     ]
@@ -1002,8 +1058,9 @@ app.use(express.json({ limit: "100mb" }));
         });
       }
 
-      targetText = textContent || "";
+      targetText = fileData ? "" : (textContent || "");
       let extractedText = "";
+      let requiresExtractedText = false;
 
       if (fileData && fileData.base64) {
         let base64Data = fileData.base64;
@@ -1012,26 +1069,50 @@ app.use(express.json({ limit: "100mb" }));
         }
 
         const mime = fileData.mimeType || "";
-        if (mime === "application/pdf" || mime.startsWith("image/")) {
+        requiresExtractedText = mime === "application/pdf" || mime.startsWith("image/");
+
+        if (requiresExtractedText) {
           try {
-            console.log(`[Dual Pass] Using Gemini for text/OCR extraction on mime: ${mime}`);
-            extractedText = await extractTextWithGeminiBase64(base64Data, mime);
-            console.log(`[Dual Pass] Gemini extracted ${extractedText.length} characters successfully.`);
-          } catch (e) {
-            console.error("Gemini text/OCR extraction failed, falling back to text", e);
+            console.log(`[Analyzer Extraction] Extracting source text from ${mime} (${fileData.fileName || "uploaded file"})`);
+            if (mime === "application/pdf") {
+              extractedText = await extractPdfTextLocally(base64Data);
+              logAnalyzerTextSample("localPdfText", extractedText);
+            }
+
+            if (extractedText.trim().length < 25) {
+              extractedText = await extractTextWithGeminiBase64(base64Data, mime);
+              logAnalyzerTextSample("ocrExtractedText", extractedText);
+            }
+          } catch (e: any) {
+            console.error("[Analyzer Extraction] Text extraction failed", e);
+            return res.status(422).json({
+              error: "Unable to extract readable text from this document. The audit was not generated because it would not be grounded in the uploaded source file.",
+              detail: e?.message || "Document text extraction failed."
+            });
           }
         } else if (mime.startsWith("text/")) {
           try {
             const decodedText = Buffer.from(base64Data, "base64").toString("utf-8");
             extractedText = decodedText;
-          } catch (e) {
-            console.error("Base64 text decoding failed, falling back", e);
+            logAnalyzerTextSample("decodedText", extractedText);
+          } catch (e: any) {
+            console.error("Base64 text decoding failed", e);
+            return res.status(422).json({
+              error: "Unable to decode the uploaded text file. The audit was not generated because it would not be grounded in the uploaded source file.",
+              detail: e?.message || "Text decoding failed."
+            });
           }
         }
       }
 
       if (extractedText) {
-        targetText = extractedText + "\n\n" + targetText;
+        targetText = extractedText;
+      }
+
+      if (requiresExtractedText && targetText.trim().length < 25) {
+        return res.status(422).json({
+          error: "Unable to extract enough readable text from this document. The audit was not generated because it would not be grounded in the uploaded source file."
+        });
       }
 
       const contents: any[] = [];
@@ -1049,6 +1130,8 @@ CORE RULES (non-negotiable)
 - Document quote: the exact phrase from the uploaded document, with page/paragraph locator.
 - Statute citation: the specific CYFSA section, ONLY if verified (see Rule 2).
 - Match explanation: one sentence connecting the specific document language to the specific statutory requirement — not a general summary of the section.
+
+Only quote text that appears verbatim in the provided document. Never invent names, quotes, or facts not present in the source text. If the document does not contain a clear example of a category you're asked to assess, state 'not found in this document' rather than generating a plausible-sounding example.
 
 2. Statute verification is mandatory before displaying any citation.
 - First check the section against the built-in Confirmed Statute Reference (loaded separately — see CYFSA-Statute-Reference.md).
@@ -1192,6 +1275,13 @@ THINGS TO NEVER DO
         text: promptText
       });
 
+      if (ANALYZER_DEBUG_LOGS) {
+        console.log("[Analyzer Debug] finalPayload=" + JSON.stringify({
+          system: systemInstruction,
+          messages: [{ role: "user", content: contents }]
+        }));
+      }
+
       const response = await generateContentWithFallback({
         system: systemInstruction,
         messages: [{ role: "user", content: contents }]
@@ -1204,16 +1294,20 @@ THINGS TO NEVER DO
       }
 
       const report = extractJson(responseText);
+      const unverifiedQuotes = collectUnverifiedAnalyzerQuotes(report, targetText);
+      if (unverifiedQuotes.length > 0) {
+        console.error("[Analyzer Grounding] Model returned unverified source quotes", unverifiedQuotes);
+        return res.status(422).json({
+          error: "The generated audit included quote text that could not be verified against the uploaded document, so it was not returned.",
+          unverifiedQuotes
+        });
+      }
+
       res.json(report);
 
     } catch (error: any) {
-      console.warn("[Quota Fallback] API error during document analysis. Swapping to Ontario rules-based simulation generator:", error);
-      try {
-        const report = generateLocalSimulationReport(targetText, fileDataObj?.fileName || "Uploaded Document");
-        res.json(report);
-      } catch (fallbackError) {
-        handleClaudeError(error, "document analysis", res);
-      }
+      console.error("[Analyzer] Document analysis failed", error);
+      handleClaudeError(error, "document analysis", res);
     }
   });
 
