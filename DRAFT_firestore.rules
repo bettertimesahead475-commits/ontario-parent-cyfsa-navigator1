@@ -1,0 +1,57 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Definition
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Validation Blueprint for UserProfile
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'createdAt']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if false; // Users shouldn't be listed publicly
+      
+      allow create: if isSignedIn() &&
+                    isOwner(userId) &&
+                    isValidId(userId) &&
+                    isValidUserProfile(incoming()) &&
+                    incoming().uid == request.auth.uid &&
+                    incoming().createdAt == request.time;
+                    
+      allow update: if isSignedIn() &&
+                    isOwner(userId) &&
+                    isValidId(userId) &&
+                    isValidUserProfile(incoming()) &&
+                    incoming().uid == existing().uid &&
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().updatedAt == request.time &&
+                    incoming().diff(existing()).affectedKeys().hasAny(['email', 'name', 'tier', 'updatedAt']);
+                    
+      allow delete: if false;
+    }
+  }
+}

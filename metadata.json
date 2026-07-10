@@ -1,0 +1,10 @@
+{
+  "name": "Remix: Ontario Parent CYFSA Navigator",
+  "description": "Educational platform for Ontario parents navigating CYFSA and family court, featuring document analysis, procedural walkthroughs, and verified primary sources.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

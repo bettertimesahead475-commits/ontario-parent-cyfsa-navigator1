@@ -1,0 +1,9 @@
+name = "cyfsa-ontario-platform"
+compatibility_date = "2024-04-01"
+compatibility_flags = [ "nodejs_compat" ]
+pages_build_output_dir = "dist"
+
+# Environment Variables
+[vars]
+# GEMINI_API_KEY should be added as an encrypted secret in the Cloudflare Pages settings under Environment Variables.
+# Node compatibility is enabled by default in modern Workers & Pages.

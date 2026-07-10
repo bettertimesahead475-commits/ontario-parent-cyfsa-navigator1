@@ -1,0 +1,87 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Definition
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Validation Blueprint for UserProfile
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'createdAt']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.createdAt is timestamp;
+    }
+
+    // Validation Blueprint for SavedDocument
+    function isValidSavedDocument(data) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'type', 'content', 'createdAt', 'updatedAt']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() <= 256 &&
+             data.type in ['template', 'analysis'] &&
+             data.content is string &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isOwner(userId);
+      allow list: if false; // Users shouldn't be listed publicly
+      
+      allow create: if isSignedIn() &&
+                    isOwner(userId) &&
+                    isValidId(userId) &&
+                    isValidUserProfile(incoming()) &&
+                    incoming().uid == request.auth.uid &&
+                    incoming().createdAt == request.time;
+                    
+      allow update: if isSignedIn() &&
+                    isOwner(userId) &&
+                    isValidId(userId) &&
+                    isValidUserProfile(incoming()) &&
+                    incoming().uid == existing().uid &&
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().updatedAt == request.time &&
+                    incoming().diff(existing()).affectedKeys().hasAny(['email', 'name', 'tier', 'updatedAt']);
+                    
+      allow delete: if false;
+
+      match /saved_documents/{documentId} {
+        allow read: if isSignedIn() && isOwner(userId);
+        allow create: if isSignedIn() && 
+                      isOwner(userId) && 
+                      isValidId(documentId) &&
+                      isValidSavedDocument(incoming()) &&
+                      incoming().userId == userId &&
+                      incoming().id == documentId;
+        allow update: if isSignedIn() &&
+                      isOwner(userId) &&
+                      isValidId(documentId) &&
+                      isValidSavedDocument(incoming()) &&
+                      incoming().userId == userId &&
+                      incoming().id == documentId &&
+                      incoming().createdAt == existing().createdAt;
+        allow delete: if isSignedIn() && isOwner(userId);
+      }
+    }
+  }
+}
