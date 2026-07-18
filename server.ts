@@ -12,6 +12,7 @@ import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
 import compression from "compression";
+import { createHash } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
@@ -166,9 +167,21 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
     throw new Error("Invalid base64 data format");
   }
 
+  const extractionCacheKey = hashAnalyzerInput(JSON.stringify({
+    version: ANALYZER_CACHE_VERSION,
+    type: "ocr",
+    mimeType,
+    sourceHash: hashAnalyzerInput(cleanedBase64)
+  }));
+  const cachedExtraction = getCachedValue(analyzerExtractionCache, extractionCacheKey);
+  if (cachedExtraction !== null) {
+    console.log("[Analyzer Cost Control] Reusing cached OCR extraction.");
+    return cachedExtraction;
+  }
+
   try {
     const ai = getGeminiClient();
-    const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-pro"];
+    const modelsToTry = [ANALYZER_FAST_MODEL];
     const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
       contents: [
         {
@@ -185,7 +198,9 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
         }
       ]
     });
-    return response.text || "";
+    const extractedText = response.text || "";
+    setCachedValue(analyzerExtractionCache, extractionCacheKey, extractedText);
+    return extractedText;
   } catch (error) {
     console.error("extractTextWithGeminiBase64 error:", error);
     throw error;
@@ -381,6 +396,78 @@ function extractJson(text: string): any {
 }
 
 const ANALYZER_DEBUG_LOGS = process.env.ANALYZER_DEBUG_LOGS === "true";
+
+const ANALYZER_CACHE_VERSION = "analyzer-cost-v1";
+const ANALYZER_FAST_MODEL = process.env.ANALYZER_FAST_MODEL || "gemini-2.5-flash";
+const ANALYZER_DEEP_MODEL = process.env.ANALYZER_DEEP_MODEL || "gemini-2.5-pro";
+const ANALYZER_CACHE_TTL_MS = Number(process.env.ANALYZER_CACHE_TTL_MS || 6 * 60 * 60 * 1000);
+const ANALYZER_CACHE_MAX_ENTRIES = Number(process.env.ANALYZER_CACHE_MAX_ENTRIES || 200);
+const COST_CONTROLLED_MODELS = new Set([
+  "gemini-2.5-flash",
+  "gemini-1.5-flash",
+  "claude-3-5-haiku-20241022",
+  "claude-3-5-haiku-latest"
+]);
+
+type AnalyzerMode = "fast" | "deep";
+type CacheEntry<T> = { value: T; expiresAt: number };
+
+const analyzerResponseCache = new Map<string, CacheEntry<any>>();
+const analyzerExtractionCache = new Map<string, CacheEntry<string>>();
+
+function hashAnalyzerInput(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function getCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+  const cached = cache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+  return cached.value;
+}
+
+function setCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T) {
+  cache.set(key, { value, expiresAt: Date.now() + ANALYZER_CACHE_TTL_MS });
+  while (cache.size > ANALYZER_CACHE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) break;
+    cache.delete(oldestKey);
+  }
+}
+
+function normalizeAnalyzerMode(value: unknown): AnalyzerMode {
+  return value === "deep" ? "deep" : "fast";
+}
+
+function selectAnalyzerModel(requestedModel: unknown, mode: AnalyzerMode): string {
+  const requested = typeof requestedModel === "string" ? requestedModel.trim() : "";
+
+  if (mode === "deep") {
+    return requested || ANALYZER_DEEP_MODEL;
+  }
+
+  if (requested && COST_CONTROLLED_MODELS.has(requested)) {
+    return requested;
+  }
+
+  return ANALYZER_FAST_MODEL;
+}
+
+function createAnalyzerCacheKey(args: {
+  sourceHash: string;
+  model: string;
+  mode: AnalyzerMode;
+}) {
+  return hashAnalyzerInput(JSON.stringify({
+    version: ANALYZER_CACHE_VERSION,
+    sourceHash: args.sourceHash,
+    model: args.model,
+    mode: args.mode
+  }));
+}
 
 function logAnalyzerTextSample(label: string, text: string) {
   if (!ANALYZER_DEBUG_LOGS) return;
@@ -1049,8 +1136,10 @@ app.use(express.json({ limit: "100mb" }));
     let targetText = "";
     let fileDataObj: any = null;
     try {
-      const { textContent, fileData, model } = req.body;
+      const { textContent, fileData, model, analysisMode } = req.body;
       fileDataObj = fileData;
+      const analyzerMode = normalizeAnalyzerMode(analysisMode);
+      const selectedAnalyzerModel = selectAnalyzerModel(model, analyzerMode);
 
       if (!textContent && !fileData) {
         return res.status(400).json({
@@ -1112,6 +1201,26 @@ app.use(express.json({ limit: "100mb" }));
       if (requiresExtractedText && targetText.trim().length < 25) {
         return res.status(422).json({
           error: "Unable to extract enough readable text from this document. The audit was not generated because it would not be grounded in the uploaded source file."
+        });
+      }
+
+      const sourceHash = hashAnalyzerInput(targetText.trim());
+      const analyzerCacheKey = createAnalyzerCacheKey({
+        sourceHash,
+        model: selectedAnalyzerModel,
+        mode: analyzerMode
+      });
+      const cachedReport = getCachedValue(analyzerResponseCache, analyzerCacheKey);
+      if (cachedReport) {
+        return res.json({
+          ...cachedReport,
+          analyzerMeta: {
+            ...(cachedReport.analyzerMeta || {}),
+            cacheHit: true,
+            mode: analyzerMode,
+            model: selectedAnalyzerModel,
+            sourceHash
+          }
         });
       }
 
@@ -1284,8 +1393,9 @@ THINGS TO NEVER DO
 
       const response = await generateContentWithFallback({
         system: systemInstruction,
-        messages: [{ role: "user", content: contents }]
-      }, model || "gemini-2.5-flash");
+        messages: [{ role: "user", content: contents }],
+        temperature: analyzerMode === "deep" ? 0.15 : 0.05
+      }, selectedAnalyzerModel);
 
       const responseText = response.text;
 
@@ -1303,7 +1413,18 @@ THINGS TO NEVER DO
         });
       }
 
-      res.json(report);
+      const reportWithMeta = {
+        ...report,
+        analyzerMeta: {
+          ...(report.analyzerMeta || {}),
+          cacheHit: false,
+          mode: analyzerMode,
+          model: selectedAnalyzerModel,
+          sourceHash
+        }
+      };
+      setCachedValue(analyzerResponseCache, analyzerCacheKey, reportWithMeta);
+      res.json(reportWithMeta);
 
     } catch (error: any) {
       console.error("[Analyzer] Document analysis failed", error);

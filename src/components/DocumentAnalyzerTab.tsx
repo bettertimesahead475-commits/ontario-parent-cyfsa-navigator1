@@ -1525,7 +1525,7 @@ export default function DocumentAnalyzerTab() {
     const totalFiles = filesToAnalyzeList.length;
     let completedCount = 0;
     try {
-      const concurrencyLimit = 5;
+      const concurrencyLimit = 2;
       const queue = [...filesToAnalyzeList];
       let activeCount = 0;
 
@@ -1563,7 +1563,7 @@ export default function DocumentAnalyzerTab() {
                   const response = await apiFetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ...payload, model: claudeModel })
+                    body: JSON.stringify({ ...payload, model: claudeModel, analysisMode: "fast" })
                   });
 
                   const dataResult = await safeReadJson(response);
@@ -1653,7 +1653,7 @@ export default function DocumentAnalyzerTab() {
       const response = await apiFetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, model: claudeModel })
+        body: JSON.stringify({ ...payload, model: claudeModel, analysisMode: "fast" })
       });
 
       const report = await safeReadJson(response);
