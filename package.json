@@ -14,7 +14,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
     "@babel/parser": "^8.0.0",
-    "@google/genai": "^2.4.0",
     "@supabase/supabase-js": "^2.110.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/compression": "^1.8.1",

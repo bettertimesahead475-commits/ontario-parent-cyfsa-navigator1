@@ -322,7 +322,7 @@ export default function DocumentAnalyzerTab() {
   });
   const [chatInput, setChatInput] = useState<string>("");
   const [isRAGQuerying, setIsRAGQuerying] = useState<boolean>(false);
-  const [claudeModel, setClaudeModel] = useState<string>("gemini-2.5-flash");
+  const [claudeModel, setClaudeModel] = useState<string>("claude-3-5-haiku-20241022");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Active Audit Visual State
@@ -2728,7 +2728,7 @@ export default function DocumentAnalyzerTab() {
                   </button>
                 </div>
 
-                {/* Waveform simulator */}
+                {/* Animated waveform */}
                 <div className="flex items-end justify-center gap-1 h-6 px-4 py-1 bg-black/50 rounded-lg">
                   <span className="w-1 bg-red-500 rounded-full animate-bounce h-4" style={{ animationDelay: '0.1s', animationDuration: '0.5s' }}></span>
                   <span className="w-1 bg-red-500 rounded-full animate-bounce h-2" style={{ animationDelay: '0.3s', animationDuration: '0.7s' }}></span>
