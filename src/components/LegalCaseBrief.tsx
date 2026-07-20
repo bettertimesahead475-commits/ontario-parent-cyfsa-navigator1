@@ -8,10 +8,10 @@ interface LegalCaseBriefProps {
 
 export const LegalCaseBrief: React.FC<LegalCaseBriefProps> = ({ report }) => {
   return (
-    <div className="bg-black p-8 rounded-lg shadow-sm border border-gray-200 text-gray-900 font-sans space-y-6">
+    <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200 text-gray-900 font-sans space-y-6">
       <div className="border-b border-gray-300 pb-4">
         <h2 className="text-2xl font-bold tracking-tight">Legal Case Brief: {report.documentTitle}</h2>
-        <p className="text-sm text-gray-500 mt-1">Analysis Date: {report.analysisDate}</p>
+        <p className="text-sm text-slate-600 mt-1">Analysis Date: {report.analysisDate}</p>
       </div>
 
       {report.lawyerCaseBrief && report.lawyerCaseBrief.length > 0 && (
@@ -62,7 +62,7 @@ export const LegalCaseBrief: React.FC<LegalCaseBriefProps> = ({ report }) => {
         </section>
       )}
       
-      <div className="text-xs text-gray-400 pt-4 border-t border-gray-100">
+      <div className="text-xs text-slate-500 pt-4 border-t border-gray-100">
         * This document is a structured educational analysis and does not constitute formal legal advice.
       </div>
     </div>

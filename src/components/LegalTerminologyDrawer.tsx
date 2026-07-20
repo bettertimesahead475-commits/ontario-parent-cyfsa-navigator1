@@ -247,7 +247,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
         <div className="absolute inset-y-0 right-0 max-w-full flex">
           <div 
             ref={drawerRef}
-            className={`w-screen max-w-lg bg-black shadow-2xl flex flex-col border-l border-slate-150 transform transition-transform duration-300 ease-in-out ${
+            className={`w-screen max-w-lg bg-white shadow-2xl flex flex-col border-l border-slate-150 transform transition-transform duration-300 ease-in-out ${
               isOpen ? "translate-x-0" : "translate-x-full"
             }`}
             id="terminology-drawer-panel"
@@ -265,7 +265,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
               </div>
               <button 
                 onClick={onClose}
-                className="w-8 h-8 rounded-full hover:bg-black/10 flex items-center justify-center text-white/80 hover:text-white transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80 hover:text-white transition-colors cursor-pointer"
                 title="Collapse Glossary Desk"
               >
                 <X className="w-4 h-4" />
@@ -374,7 +374,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search legal terms (e.g., Plan of Care, TCA)..."
-                      className="w-full pl-9 pr-8 py-2 text-xs bg-black border border-slate-250 rounded-xl outline-none focus:ring-1 focus:ring-brand-500 text-slate-800 font-medium"
+                      className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-slate-250 rounded-xl outline-none focus:ring-1 focus:ring-brand-500 text-slate-800 font-medium"
                     />
                     {searchQuery && (
                       <button 
@@ -396,7 +396,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                         className={`px-2.5 py-1 text-[9px] font-mono font-bold uppercase rounded-md tracking-wider border shrink-0 cursor-pointer transition-all ${
                           activeCategory === cat 
                             ? "bg-brand-900 text-white border-brand-900 shadow-2xs" 
-                            : "bg-black text-slate-500 hover:bg-slate-100 border-slate-200"
+                            : "bg-white text-slate-500 hover:bg-slate-100 border-slate-200"
                         }`}
                       >
                         {cat === "Agreements & Plans" ? "Agreements" : cat === "Rights & Standards" ? "Rights" : cat}
@@ -420,7 +420,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                       <div
                         key={item.id}
                         onClick={() => setSelectedItem(item)}
-                        className="bg-black border border-slate-200 hover:border-brand-250 hover:bg-brand-50/10 p-3.5 rounded-xl text-left cursor-pointer transition-all group relative flex flex-col justify-between shadow-2xs hover:shadow-xs"
+                        className="bg-white border border-slate-200 hover:border-brand-250 hover:bg-brand-50/10 p-3.5 rounded-xl text-left cursor-pointer transition-all group relative flex flex-col justify-between shadow-2xs hover:shadow-xs"
                       >
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-2 border-b border-slate-50 pb-1">

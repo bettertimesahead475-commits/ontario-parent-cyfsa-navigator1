@@ -86,7 +86,7 @@ export default function ConnectorSearchBot() {
   }
 
   return (
-    <div className="fixed bottom-6 left-6 z-[99] w-96 bg-black rounded-2xl shadow-2xl border border-gray-200 flex flex-col h-[550px]">
+    <div className="fixed bottom-6 left-6 z-[99] w-96 bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col h-[550px]">
       <div className="p-4 bg-brand-600 text-white rounded-t-2xl flex justify-between items-center">
         <div className="flex items-center gap-2 font-bold">
           <Bot className="w-5 h-5" /> Legal Connector Chat
@@ -96,20 +96,20 @@ export default function ConnectorSearchBot() {
       
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
-          <div className="text-sm text-gray-500 text-center py-4 space-y-2">
+          <div className="text-sm text-slate-600 text-center py-4 space-y-2">
             <p>I can search your connected Google Drive and Gmail for evidence files.</p>
             <p className="font-semibold">Try asking: "Search my emails for school report"</p>
           </div>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={`p-3 rounded-lg text-sm ${m.role === 'user' ? 'bg-brand-100 ml-auto max-w-[85%]' : 'bg-gray-100 max-w-[95%]'}`}>
+          <div key={i} className={`p-3 rounded-lg text-sm ${m.role === 'user' ? 'bg-brand-100 ml-auto max-w-[85%]' : 'bg-slate-100 max-w-[95%]'}`}>
             <div>{m.text}</div>
             
             {m.files && m.files.length > 0 && (
               <div className="mt-3 space-y-2">
                 <div className="font-semibold text-xs text-slate-500 uppercase">Drive Files</div>
                 {m.files.map((f: any) => (
-                  <div key={f.id} className="flex items-center justify-between bg-black p-2 rounded border border-gray-200">
+                  <div key={f.id} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200">
                     <div className="flex items-center gap-2 overflow-hidden">
                       <FileText className="w-4 h-4 text-brand-500 shrink-0" />
                       <span className="truncate text-xs">{f.name}</span>
@@ -126,12 +126,12 @@ export default function ConnectorSearchBot() {
               <div className="mt-3 space-y-2">
                 <div className="font-semibold text-xs text-slate-500 uppercase">Emails</div>
                 {m.emails.map((email: any) => (
-                  <div key={email.id} className="flex items-center justify-between bg-black p-2 rounded border border-gray-200">
+                  <div key={email.id} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200">
                     <div className="flex items-center gap-2 overflow-hidden">
                       <Mail className="w-4 h-4 text-amber-500 shrink-0" />
                       <div className="flex flex-col min-w-0">
                         <span className="truncate text-xs font-medium">{email.subject}</span>
-                        <span className="truncate text-[10px] text-gray-500">{email.snippet.substring(0, 40)}...</span>
+                        <span className="truncate text-[10px] text-slate-600">{email.snippet.substring(0, 40)}...</span>
                       </div>
                     </div>
                     <button onClick={() => handleImportEmail(email)} className="ml-2 shrink-0 bg-amber-50 text-amber-700 p-1.5 rounded hover:bg-amber-100">

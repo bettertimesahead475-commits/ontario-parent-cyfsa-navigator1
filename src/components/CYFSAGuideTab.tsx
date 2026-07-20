@@ -355,11 +355,18 @@ export default function CYFSAGuideTab() {
 
   const categories = ["All", "Removal", "Protection Grounds", "Worker Authority", "Rights", "Evidence Rules", "Timelines"];
 
-  const filteredTopics = CYFSA_TOPICS.filter(t => {
+      const filteredTopics = CYFSA_TOPICS.filter(t => {
     const matchesCategory = categoryFilter === "All" || t.category === categoryFilter;
-    const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          t.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          t.fullBody.toLowerCase().includes(searchQuery.toLowerCase());
+    const normalizedSearch = searchQuery.toLowerCase().replace(/s\.\s*(\d+)/g, 'section $1');
+    const searchTerms = [
+      t.title.toLowerCase(),
+      t.summary.toLowerCase(),
+      t.fullBody.toLowerCase(),
+      ...t.primarySources.map(ps => ps.label.toLowerCase()),
+      ...t.primarySources.map(ps => ps.url.toLowerCase()),
+    ].join(' ');
+    
+    const matchesSearch = searchTerms.includes(normalizedSearch) || searchTerms.includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
 
@@ -414,7 +421,7 @@ export default function CYFSAGuideTab() {
             </span>
           </div>
         </div>
-        <div className="md:col-span-4 bg-black border border-slate-150 p-4 rounded-lg flex flex-col justify-center items-center text-center space-y-1.5 shadow-2xs">
+        <div className="md:col-span-4 bg-white border border-slate-150 p-4 rounded-lg flex flex-col justify-center items-center text-center space-y-1.5 shadow-2xs">
           <Lock className="w-5 h-5 text-brand-950" />
           <span className="font-display font-extrabold text-xs text-brand-950 uppercase tracking-wider">Zero Storage Active</span>
           <p className="text-[10px] text-slate-500 font-medium leading-normal max-w-xs">
@@ -428,18 +435,18 @@ export default function CYFSAGuideTab() {
         <div className="lg:col-span-5 space-y-4" id="sidebar-topics">
           <div>
             <h3 className="font-display text-lg font-semibold text-gray-900">Ontario CYFSA Registry</h3>
-            <p className="text-xs text-gray-500 mt-1">Select topics below to access primary citations, limits, and checks.</p>
+            <p className="text-xs text-slate-600 mt-1">Select topics below to access primary citations, limits, and checks.</p>
           </div>
 
           {/* Search Box */}
           <div className="relative" id="topic-search">
-            <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
             <input
               type="text"
               placeholder="Search CYFSA statutes & topics..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-black border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 transition-all"
+              className="w-full bg-white border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 transition-all"
             />
           </div>
 
@@ -452,7 +459,7 @@ export default function CYFSAGuideTab() {
                 className={`px-3 py-1 text-xs font-medium rounded-full transition-all ${
                   categoryFilter === cat
                     ? "bg-brand-600 text-white shadow-xs"
-                    : "bg-black hover:bg-gray-100 text-gray-600 border border-gray-200"
+                    : "bg-white hover:bg-slate-100 text-slate-700 border border-gray-200"
                 }`}
               >
                 {cat}
@@ -464,8 +471,8 @@ export default function CYFSAGuideTab() {
           <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2" id="topic-cards-list">
             {filteredTopics.length === 0 ? (
               <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                <Search className="mx-auto text-gray-300 w-8 h-8 mb-2" />
-                <p className="text-xs text-gray-500">No matching educational statutes found.</p>
+                <Search className="mx-auto text-slate-400 w-8 h-8 mb-2" />
+                <p className="text-xs text-slate-600">No matching educational statutes found.</p>
               </div>
             ) : (
               filteredTopics.map((topic) => (
@@ -476,7 +483,7 @@ export default function CYFSAGuideTab() {
                   className={`p-4 rounded-xl border cursor-pointer transition-all ${
                     selectedTopicId === topic.id
                       ? "bg-brand-50/70 border-brand-300 ring-1 ring-brand-300 shadow-xs"
-                      : "bg-black hover:bg-gray-50 border-gray-200"
+                      : "bg-white hover:bg-gray-50 border-gray-200"
                   }`}
                 >
                   <div className="flex justify-between items-start gap-2">
@@ -491,9 +498,9 @@ export default function CYFSAGuideTab() {
                   </div>
                   <h4 className="font-display font-medium text-gray-900 text-sm mt-2 flex items-center justify-between">
                     <span>{topic.title}</span>
-                    <ChevronRight className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${selectedTopicId === topic.id ? "translate-x-1 text-brand-600" : ""}`} />
+                    <ChevronRight className={`w-4 h-4 text-slate-500 shrink-0 transition-transform ${selectedTopicId === topic.id ? "translate-x-1 text-brand-600" : ""}`} />
                   </h4>
-                  <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">
+                  <p className="text-xs text-slate-600 mt-1 line-clamp-2 leading-relaxed">
                     {topic.summary}
                   </p>
                 </div>
@@ -513,35 +520,35 @@ export default function CYFSAGuideTab() {
             <div className="grid grid-cols-2 gap-2 text-[10px] font-mono font-bold">
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Plan of Care" } }))}
-                className="p-2.5 bg-black/10 hover:bg-black/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
                 title="Explain Plan of Care"
               >
                 Plan of Care
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Temporary Care Agreement" } }))}
-                className="p-2.5 bg-black/10 hover:bg-black/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
                 title="Explain Temporary Care Agreement"
               >
                 TCA Agreement
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Supervision Order" } }))}
-                className="p-2.5 bg-black/10 hover:bg-black/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
                 title="Explain Supervision Order"
               >
                 Supervision Order
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Extended Society Care" } }))}
-                className="p-2.5 bg-black/10 hover:bg-black/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
                 title="Explain Extended Society Care"
               >
                 Extended Care
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Least Intrusive Intervention" } }))}
-                className="p-2.5 bg-black/10 hover:bg-black/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate col-span-2"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate col-span-2"
                 title="Explain Least Intrusive principle"
               >
                 Least Intrusive Principle
@@ -553,7 +560,7 @@ export default function CYFSAGuideTab() {
         {/* Right Content View: Live Topic Explainer */}
         <div className="lg:col-span-7" id="explainer-viewer">
           {selectedTopic ? (
-            <div className="bg-black rounded-2xl border border-gray-100 shadow-xs overflow-hidden" id="topic-detail-card">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden" id="topic-detail-card">
               {/* Header */}
               <div className="bg-brand-900 p-6 text-white text-left">
                 <span className="text-[10px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-md bg-brand-700/60 font-semibold border border-brand-500/30">
@@ -572,14 +579,14 @@ export default function CYFSAGuideTab() {
                   <h3 className="font-display font-semibold text-gray-900 text-base border-b border-gray-100 pb-2">
                     Legislative Background & Limits
                   </h3>
-                  <p className="whitespace-pre-line leading-relaxed text-gray-600">
+                  <p className="whitespace-pre-line leading-relaxed text-slate-700">
                     {selectedTopic.fullBody}
                   </p>
                 </div>
 
                 {/* Primary Source Verification Links */}
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-150 space-y-3" id="primary-sources">
-                  <span className="text-xs font-mono font-medium text-gray-500 uppercase flex items-center gap-1.5">
+                  <span className="text-xs font-mono font-medium text-slate-600 uppercase flex items-center gap-1.5">
                     <Scale className="w-3.5 h-3.5 text-brand-600" /> Primary Statutory References
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -589,7 +596,7 @@ export default function CYFSAGuideTab() {
                         href={source.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-2 p-2 bg-black rounded-lg border border-gray-200 hover:border-brand-400 hover:text-brand-700 transition-all text-xs text-gray-600"
+                        className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200 hover:border-brand-400 hover:text-brand-700 transition-all text-xs text-slate-700"
                       >
                         <FileText className="w-4 h-4 text-brand-500 shrink-0" />
                         <span className="font-medium truncate">{source.label}</span>
@@ -610,7 +617,7 @@ export default function CYFSAGuideTab() {
                   </h4>
                   <ul className="grid grid-cols-1 gap-2.5">
                     {selectedTopic.guidelines.map((guide, idx) => (
-                      <li key={idx} className="flex gap-2.5 text-xs text-gray-600 leading-relaxed bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100/50">
+                      <li key={idx} className="flex gap-2.5 text-xs text-slate-700 leading-relaxed bg-emerald-50/40 p-2.5 rounded-lg border border-emerald-100/50">
                         <span className="w-5 h-5 flex items-center justify-center bg-emerald-100 text-emerald-800 font-mono text-[10px] rounded-full shrink-0 font-bold">
                           {idx + 1}
                         </span>
@@ -642,7 +649,7 @@ export default function CYFSAGuideTab() {
                         <CheckSquare className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
                         <div>
                           <span className="font-medium text-gray-800 text-xs block">{item.label}</span>
-                          <span className="text-gray-600 text-xs leading-relaxed mt-0.5 block">{item.description}</span>
+                          <span className="text-slate-700 text-xs leading-relaxed mt-0.5 block">{item.description}</span>
                         </div>
                       </div>
                     ))}
@@ -671,8 +678,8 @@ export default function CYFSAGuideTab() {
                           </div>
 
                           {/* Action Button to Reveal Fact */}
-                          <div className="bg-black p-3 flex justify-between items-center px-4">
-                            <span className="text-xs text-gray-500 font-medium">Verified by Ontario S.O. statutory precedent</span>
+                          <div className="bg-white p-3 flex justify-between items-center px-4">
+                            <span className="text-xs text-slate-600 font-medium">Verified by Ontario S.O. statutory precedent</span>
                             <button
                               onClick={() => toggleRevealFiction(revealKey)}
                               className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
@@ -690,7 +697,7 @@ export default function CYFSAGuideTab() {
                               <p className="text-emerald-900 font-medium text-xs md:text-sm mt-2 leading-relaxed">
                                 {fvf.fact}
                               </p>
-                              <div className="mt-3 flex items-center gap-1.5 bg-black/70 border border-emerald-100 p-2 rounded-lg text-[11px] text-emerald-800 leading-normal">
+                              <div className="mt-3 flex items-center gap-1.5 bg-white/70 border border-emerald-100 p-2 rounded-lg text-[11px] text-emerald-800 leading-normal">
                                 <Scale className="w-3.5 h-3.5 shrink-0" />
                                 <span><strong>Authority Explanation:</strong> {fvf.sourceExplanation}</span>
                               </div>
@@ -704,10 +711,10 @@ export default function CYFSAGuideTab() {
               </div>
             </div>
           ) : (
-            <div className="text-center py-20 bg-black rounded-2xl border border-gray-100 shadow-2xs">
-              <BookOpen className="w-12 h-12 text-gray-300 mx-auto" />
+            <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 shadow-2xs">
+              <BookOpen className="w-12 h-12 text-slate-400 mx-auto" />
               <h3 className="font-display text-gray-700 text-lg font-semibold mt-4">Select a Statute Topic</h3>
-              <p className="text-gray-500 text-sm mt-1">Pick an item from the registry list to start analyzing rights and procedures.</p>
+              <p className="text-slate-600 text-sm mt-1">Pick an item from the registry list to start analyzing rights and procedures.</p>
             </div>
           )}
         </div>

@@ -7,7 +7,7 @@ export const LegislativePortalModal = ({ citation, details, fileUrl, onClose, se
 
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn" id="verified-source-reference-modal">
-      <div className="bg-black rounded-3xl shadow-2xl border border-brand-150 w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden max-h-[800px]">
+      <div className="bg-white rounded-3xl shadow-2xl border border-brand-150 w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden max-h-[800px]">
         <div className="bg-slate-900 text-white p-5 flex justify-between items-center shrink-0 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="p-2.5 bg-brand-950 rounded-xl border border-brand-800 shrink-0">

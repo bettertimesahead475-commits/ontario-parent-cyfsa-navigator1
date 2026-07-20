@@ -27,13 +27,13 @@ export default function FamilyCourtTab() {
       {/* Intro section */}
       <div className="text-left max-w-3xl">
         <h2 className="font-display text-2xl font-bold text-gray-900">Ontario Child Protection Court Lifecycle</h2>
-        <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+        <p className="text-sm text-slate-700 mt-2 leading-relaxed">
           Child protection applications are ruled under the **Ontario Family Law Rules (O. Reg. 114/99)**. Below is an educational timeline charting the chronological order of a standard protection case. Click on any court milestone to investigate statutory purposes, filing forms, and strategic defense guidelines.
         </p>
       </div>
 
       {/* Interactive Lifecycle Timeline */}
-      <div className="bg-black rounded-2xl border border-gray-100 p-6 shadow-sm relative overflow-hidden" id="timeline-navigation">
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm relative overflow-hidden" id="timeline-navigation">
         <div className="absolute inset-0 bg-linear-to-b from-brand-50/10 to-transparent pointer-events-none" />
         
         {/* Horizontal scroll timeline on desktop / stack on mobile */}
@@ -57,7 +57,7 @@ export default function FamilyCourtTab() {
                       ? "bg-brand-600 border-brand-700 text-white shadow-md scale-110 ring-4 ring-brand-100"
                       : isCompletedOrActive
                       ? "bg-brand-50 border-brand-500 text-brand-700"
-                      : "bg-black border-gray-300 text-gray-400 group-hover:border-gray-400"
+                      : "bg-white border-gray-300 text-slate-500 group-hover:border-gray-400"
                   }`}
                 >
                   <span className="font-mono text-xs font-bold">{idx + 1}</span>
@@ -67,7 +67,7 @@ export default function FamilyCourtTab() {
                 <div className="md:max-w-[120px]">
                   <span
                     className={`block text-[11px] font-semibold tracking-tight transition-colors ${
-                      isActive ? "text-brand-900 font-bold" : "text-gray-500 group-hover:text-gray-700"
+                      isActive ? "text-brand-900 font-bold" : "text-slate-600 group-hover:text-gray-700"
                     }`}
                   >
                     {step.title.split("/")[0].split("(")[0]}
@@ -92,7 +92,7 @@ export default function FamilyCourtTab() {
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStageBadgeColor(activeStep.stage)}`}>
                   {activeStep.stage} Stage
                 </span>
-                <span className="text-xs font-mono font-medium text-gray-500 flex items-center gap-1">
+                <span className="text-xs font-mono font-medium text-slate-600 flex items-center gap-1">
                   <Scale className="w-3.5 h-3.5 text-brand-600" /> {activeStep.ruleReference}
                 </span>
                 {activeStep.timelineLimit && (
@@ -106,7 +106,7 @@ export default function FamilyCourtTab() {
                 <h3 className="font-display text-xl font-bold text-gray-900 flex items-center gap-2">
                   <span>{activeStep.title}</span>
                 </h3>
-                <p className="text-gray-600 text-sm leading-relaxed mt-3">
+                <p className="text-slate-700 text-sm leading-relaxed mt-3">
                   {activeStep.description}
                 </p>
               </div>
@@ -141,14 +141,14 @@ export default function FamilyCourtTab() {
             <div className="lg:col-span-5 space-y-6 lg:border-l lg:border-gray-150 lg:pl-8">
               <div>
                 <h4 className="font-display font-semibold text-gray-900 text-sm">Official Court Forms Required</h4>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-slate-600 mt-1">
                   Download legal templates published by the Ontario Family Court services. Use only the exact form indicated.
                 </p>
               </div>
 
               <div className="space-y-3">
                 {activeStep.officialForms.map((form, key) => (
-                  <div key={key} className="p-4 bg-black hover:bg-brand-50/30 rounded-xl border border-gray-200 hover:border-brand-300 transition-all flex flex-col justify-between gap-3 shadow-2xs">
+                  <div key={key} className="p-4 bg-white hover:bg-brand-50/30 rounded-xl border border-gray-200 hover:border-brand-300 transition-all flex flex-col justify-between gap-3 shadow-2xs">
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="inline-block text-[10px] font-mono font-bold text-brand-700 bg-brand-55 hover:bg-brand-100 px-2 py-0.5 rounded">
@@ -173,7 +173,7 @@ export default function FamilyCourtTab() {
                   </div>
                 ))}
                 {activeStep.officialForms.length === 0 && (
-                  <div className="text-center py-6 bg-gray-50 rounded-lg text-xs text-gray-500 border border-dashed border-gray-200">
+                  <div className="text-center py-6 bg-gray-50 rounded-lg text-xs text-slate-600 border border-dashed border-gray-200">
                     No specific statutory forms required for this sequence.
                   </div>
                 )}

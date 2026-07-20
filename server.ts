@@ -878,6 +878,9 @@ Transcribed by: Certified Court Reporter (Offline Sandbox Simulator)
 
 const app = express();
 
+// Trust reverse proxy (needed for Cloud Run containers and rate limiting headers)
+app.set("trust proxy", 1);
+
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Security features
@@ -898,6 +901,7 @@ const apiLimiter = rateLimit({
   message: { error: "Too many requests from this IP, please try again after 15 minutes" },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false, // Disable built-in validation checks to prevent proxy header warnings
 });
 app.use('/api', apiLimiter);
 

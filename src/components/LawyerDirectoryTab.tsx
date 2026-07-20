@@ -85,7 +85,7 @@ export default function LawyerDirectoryTab() {
     switch(slot) {
       case "Exclusive": return "bg-purple-100 text-purple-800 border-purple-200";
       case "Priority": return "bg-brand-100 text-brand-800 border-brand-200";
-      default: return "bg-gray-100 text-gray-700 border-gray-200";
+      default: return "bg-slate-100 text-gray-700 border-gray-200";
     }
   };
 
@@ -151,7 +151,7 @@ export default function LawyerDirectoryTab() {
         {/* Left Side: Directory search list */}
         <div className="lg:col-span-7 space-y-4" id="directory-browser">
           {/* Filters Bar */}
-          <div className="bg-black p-4 rounded-xl border border-gray-150 space-y-3 shadow-2xs" id="directory-filters">
+          <div className="bg-white p-4 rounded-xl border border-gray-150 space-y-3 shadow-2xs" id="directory-filters">
             <div className="flex flex-wrap gap-1.5" id="lawyer-cities">
               {cities.map((city) => (
                 <button
@@ -169,13 +169,13 @@ export default function LawyerDirectoryTab() {
             </div>
 
             <div className="relative" id="lawyer-search">
-              <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
               <input
                 type="text"
                 placeholder="Search by advocate name, firm, languages, or specialized court experience..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-50 border border-gray-200 focus:bg-black focus:ring-1 focus:ring-brand-500 rounded-lg pl-9 pr-4 py-2 text-xs focus:outline-none transition-all font-sans"
+                className="w-full bg-slate-50 border border-gray-200 focus:bg-white focus:ring-1 focus:ring-brand-500 rounded-lg pl-9 pr-4 py-2 text-xs focus:outline-none transition-all font-sans"
               />
             </div>
           </div>
@@ -186,7 +186,7 @@ export default function LawyerDirectoryTab() {
               <div
                 key={lawyer.id}
                 id={`lawyer-card-${lawyer.id}`}
-                className={`p-5 rounded-2xl border transition-all text-left relative overflow-hidden flex flex-col justify-between gap-4 bg-black hover:shadow-xs cursor-pointer ${
+                className={`p-5 rounded-2xl border transition-all text-left relative overflow-hidden flex flex-col justify-between gap-4 bg-white hover:shadow-xs cursor-pointer ${
                   selectedLawyer?.id === lawyer.id 
                     ? "ring-2 ring-brand-500 border-brand-500 bg-brand-50/15" 
                     : "border-gray-200"
@@ -201,7 +201,7 @@ export default function LawyerDirectoryTab() {
                   <div className="flex justify-between items-start gap-2">
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-brand-600" />
-                      <span className="text-xs font-semibold text-gray-400 font-mono uppercase">{lawyer.city}, Ontario</span>
+                      <span className="text-xs font-semibold text-slate-500 font-mono uppercase">{lawyer.city}, Ontario</span>
                     </div>
 
                       <div className="flex items-center gap-1.5"><span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold border uppercase ${getSlotPillClass(lawyer.subscriptionSlot)}`}>
@@ -214,7 +214,7 @@ export default function LawyerDirectoryTab() {
                     <span>{lawyer.name}</span>
                     <ChevronRight className="w-5 h-5 text-brand-500 shrink-0" />
                   </h3>
-                  <p className="text-xs text-gray-500 font-semibold mt-0.5">{lawyer.firm}</p>
+                  <p className="text-xs text-slate-600 font-semibold mt-0.5">{lawyer.firm}</p>
                   
                   <p className="text-xs text-slate-600 mt-2.5 leading-relaxed bg-slate-50/40 p-3 rounded-xl border border-gray-150">
                     {lawyer.educationNotes}
@@ -222,7 +222,7 @@ export default function LawyerDirectoryTab() {
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 border-gray-100 text-xs">
-                  <div className="flex gap-1.5 text-gray-500">
+                  <div className="flex gap-1.5 text-slate-600">
                     <span className="font-semibold text-gray-700">Languages:</span>
                     <span>{lawyer.languages.join(", ")}</span>
                   </div>
@@ -236,9 +236,9 @@ export default function LawyerDirectoryTab() {
 
             {filteredLawyers.length === 0 && (
               <div className="text-center py-16 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                <Search className="mx-auto text-gray-300 w-12 h-12 mb-3" />
+                <Search className="mx-auto text-slate-400 w-12 h-12 mb-3" />
                 <h4 className="font-display font-semibold text-gray-700">No Attorneys Found</h4>
-                <p className="text-xs text-gray-500 mt-1">Try broadening your city selection filters.</p>
+                <p className="text-xs text-slate-600 mt-1">Try broadening your city selection filters.</p>
               </div>
             )}
           </div>
@@ -247,7 +247,7 @@ export default function LawyerDirectoryTab() {
         {/* Right Side: Secure Intake Form Tunnel */}
         <div className="lg:col-span-12 xl:col-span-5" id="secure-funnel-intake">
           {selectedLawyer ? (
-            <div className="bg-black rounded-2xl border border-gray-150 p-6 space-y-6 text-left" id="lawyer-form-wrapper">
+            <div className="bg-white rounded-2xl border border-gray-150 p-6 space-y-6 text-left" id="lawyer-form-wrapper">
               <div className="border-b pb-4">
                 <span className="text-[10px] font-mono tracking-widest text-brand-600 font-bold uppercase block">
                   Secure Family Intake Portal
@@ -265,7 +265,7 @@ export default function LawyerDirectoryTab() {
                   <p className="text-xs leading-relaxed text-emerald-900">
                     {intakeSuccessMessage}
                   </p>
-                  <div className="p-2.5 bg-black border border-emerald-100 rounded-lg text-xs font-mono font-bold block select-all">
+                  <div className="p-2.5 bg-white border border-emerald-100 rounded-lg text-xs font-mono font-bold block select-all">
                     Reference Code: {intakeSuccessRef}
                   </div>
                   <button
@@ -282,7 +282,7 @@ export default function LawyerDirectoryTab() {
                 <form onSubmit={handleIntakeSubmit} className="space-y-4" id="intake-submission-form">
                   {/* Parent name */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-400 block">Parent Full Name *</label>
+                    <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 block">Parent Full Name *</label>
                     <input
                       type="text"
                       required
@@ -295,7 +295,7 @@ export default function LawyerDirectoryTab() {
 
                   {/* Parent Email */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-400 block">Contact Email Address *</label>
+                    <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 block">Contact Email Address *</label>
                     <input
                       type="email"
                       required
@@ -309,7 +309,7 @@ export default function LawyerDirectoryTab() {
                   {/* Incident Brief details */}
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-400 block">Factual Case Summary & Target Hearing Dates</label>
+                      <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 block">Factual Case Summary & Target Hearing Dates</label>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -385,11 +385,11 @@ export default function LawyerDirectoryTab() {
 
               {/* Informational icons */}
               <div className="pt-2 flex flex-col gap-2">
-                <div className="flex gap-2 text-[11px] text-gray-500">
+                <div className="flex gap-2 text-[11px] text-slate-600">
                   <Mail className="w-4 h-4 text-brand-400 shrink-0" />
                   <span>Direct Intake: {selectedLawyer.email}</span>
                 </div>
-                <div className="flex gap-2 text-[11px] text-gray-500">
+                <div className="flex gap-2 text-[11px] text-slate-600">
                   <Phone className="w-4 h-4 text-brand-400 shrink-0" />
                   <span>Defense Hotline: {selectedLawyer.phone}</span>
                 </div>
@@ -397,10 +397,10 @@ export default function LawyerDirectoryTab() {
             </div>
           ) : (
             <div className="bg-slate-50 border border-dashed border-gray-200 rounded-2xl p-10 text-center h-full flex flex-col items-center justify-center space-y-4" id="select-lawyer-prompt">
-              <Scale className="w-12 h-12 text-gray-300 mx-auto" />
+              <Scale className="w-12 h-12 text-slate-400 mx-auto" />
               <div>
                 <h4 className="font-display font-semibold text-gray-700 text-sm">Select an Ontario Lawyer</h4>
-                <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
+                <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
                   Choose a counsel profile from the list to populate the secure educational intake routing system.
                 </p>
               </div>

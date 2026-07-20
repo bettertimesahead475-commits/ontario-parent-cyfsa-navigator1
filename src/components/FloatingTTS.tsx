@@ -446,7 +446,7 @@ export default function FloatingTTS() {
         {isPlaying ? (
           <div className="relative">
             <Volume2 className="w-6 h-6 animate-pulse" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-black rounded-full animate-ping"></span>
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full animate-ping"></span>
           </div>
         ) : (
           <Volume2 className="w-6 h-6" />

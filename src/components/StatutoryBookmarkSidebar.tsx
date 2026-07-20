@@ -363,7 +363,7 @@ export default function StatutoryBookmarkSidebar() {
 
         <div className="absolute inset-y-0 right-0 max-w-full flex">
           <div 
-            className={`w-screen max-w-md bg-black shadow-2xl flex flex-col border-l border-slate-150 transform transition-transform duration-300 ease-in-out ${
+            className={`w-screen max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-150 transform transition-transform duration-300 ease-in-out ${
               isOpen ? "translate-x-0" : "translate-x-full"
             }`}
           >
@@ -380,7 +380,7 @@ export default function StatutoryBookmarkSidebar() {
               </div>
               <button 
                 onClick={() => setIsOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-black/10 flex items-center justify-center text-white/80 hover:text-white transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80 hover:text-white transition-colors cursor-pointer"
                 title="Collapse sidebar desk"
               >
                 <X className="w-4 h-4" />
@@ -405,7 +405,7 @@ export default function StatutoryBookmarkSidebar() {
                   }}
                   className={`flex-1 py-1.5 text-[10.5px] font-bold tracking-wide uppercase rounded-md transition-all cursor-pointer ${
                     activeTab === "bookmarks" && !showCustomCreator
-                      ? "bg-black text-brand-950 shadow-xs" 
+                      ? "bg-white text-brand-950 shadow-xs" 
                       : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
@@ -418,7 +418,7 @@ export default function StatutoryBookmarkSidebar() {
                   }}
                   className={`flex-1 py-1.5 text-[10.5px] font-bold tracking-wide uppercase rounded-md transition-all cursor-pointer ${
                     activeTab === "browse" && !showCustomCreator
-                      ? "bg-black text-brand-950 shadow-xs" 
+                      ? "bg-white text-brand-950 shadow-xs" 
                       : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
@@ -431,7 +431,7 @@ export default function StatutoryBookmarkSidebar() {
                 className={`p-2 rounded-lg border transition-all cursor-pointer shrink-0 ${
                   showCustomCreator 
                     ? "bg-amber-500 text-brand-950 border-amber-400" 
-                    : "bg-black text-slate-700 hover:bg-slate-100 border-slate-200"
+                    : "bg-white text-slate-700 hover:bg-slate-100 border-slate-200"
                 }`}
                 title="Add Custom Statute or Case Citation"
               >
@@ -444,7 +444,7 @@ export default function StatutoryBookmarkSidebar() {
               
               {showCustomCreator ? (
                 /* CUSTOM REFERENCE FORM CREATOR */
-                <form onSubmit={handleAddCustomReference} className="p-4 space-y-4 bg-black m-3 rounded-xl border border-slate-150 shadow-xs">
+                <form onSubmit={handleAddCustomReference} className="p-4 space-y-4 bg-white m-3 rounded-xl border border-slate-150 shadow-xs">
                   <div className="flex items-center justify-between border-b pb-2">
                     <span className="text-[11px] font-mono font-bold text-brand-950 uppercase tracking-wide flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-brand-600 animate-pulse" />
@@ -460,11 +460,11 @@ export default function StatutoryBookmarkSidebar() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wide">Category</label>
+                    <label className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-wide">Category</label>
                     <select
                       value={customCategory}
                       onChange={(e) => setCustomCategory(e.target.value as any)}
-                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-black text-slate-850"
+                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-white text-slate-850"
                     >
                       <option value="Statutory Section">Statutory Section (e.g. CYFSA, CLRA)</option>
                       <option value="Legal Definition">Legal Glossary Definition</option>
@@ -473,37 +473,37 @@ export default function StatutoryBookmarkSidebar() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wide">Title / Name *</label>
+                    <label className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-wide">Title / Name *</label>
                     <input
                       type="text"
                       required
                       value={customTitle}
                       onChange={(e) => setCustomTitle(e.target.value)}
                       placeholder="e.g. Mandatory Access Order Review"
-                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-black text-slate-850 outline-none focus:ring-1 focus:ring-brand-500"
+                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-white text-slate-850 outline-none focus:ring-1 focus:ring-brand-500"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wide">Official Citation / Section</label>
+                    <label className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-wide">Official Citation / Section</label>
                     <input
                       type="text"
                       value={customCitation}
                       onChange={(e) => setCustomCitation(e.target.value)}
                       placeholder="e.g. CYFSA s. 102(3) or [2012] ONCA 12"
-                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-black text-slate-850 outline-none focus:ring-1 focus:ring-brand-500"
+                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-white text-slate-850 outline-none focus:ring-1 focus:ring-brand-500"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wide">Legal Text / Factual Summary *</label>
+                    <label className="text-[10px] font-mono font-bold text-slate-600 uppercase tracking-wide">Legal Text / Factual Summary *</label>
                     <textarea
                       required
                       rows={4}
                       value={customContent}
                       onChange={(e) => setCustomContent(e.target.value)}
                       placeholder="Enter the statutory clause, definition text, or key ratio of the CanLII judgment..."
-                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-black text-slate-850 outline-none focus:ring-1 focus:ring-brand-500 font-sans"
+                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-white text-slate-850 outline-none focus:ring-1 focus:ring-brand-500 font-sans"
                     />
                   </div>
 
@@ -519,7 +519,7 @@ export default function StatutoryBookmarkSidebar() {
                 <div className="p-3 space-y-3">
                   
                   {/* Search and Filters */}
-                  <div className="bg-black p-2.5 rounded-xl border border-slate-150 space-y-2">
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-150 space-y-2">
                     <div className="relative">
                       <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 transform -translate-y-1/2" />
                       <input
@@ -527,7 +527,7 @@ export default function StatutoryBookmarkSidebar() {
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder={`Search ${activeTab === "bookmarks" ? "bookmarks" : "statutes"}...`}
-                        className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:bg-black focus:ring-1 focus:ring-brand-500"
+                        className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:bg-white focus:ring-1 focus:ring-brand-500"
                       />
                       {searchQuery && (
                         <button 
@@ -560,7 +560,7 @@ export default function StatutoryBookmarkSidebar() {
 
                   {/* Empty States */}
                   {activeTab === "bookmarks" && filteredBookmarks.length === 0 && (
-                    <div className="bg-black p-8 rounded-xl border border-dashed border-slate-300 text-center space-y-3">
+                    <div className="bg-white p-8 rounded-xl border border-dashed border-slate-300 text-center space-y-3">
                       <Bookmark className="w-8 h-8 text-slate-300 mx-auto" />
                       <div>
                         <h4 className="font-display font-bold text-xs text-slate-700">No Bookmarks Found</h4>
@@ -582,7 +582,7 @@ export default function StatutoryBookmarkSidebar() {
                   )}
 
                   {activeTab === "browse" && filteredBrowse.length === 0 && (
-                    <div className="bg-black p-8 rounded-xl border border-dashed border-slate-300 text-center space-y-3">
+                    <div className="bg-white p-8 rounded-xl border border-dashed border-slate-300 text-center space-y-3">
                       <Search className="w-8 h-8 text-slate-300 mx-auto" />
                       <div>
                         <h4 className="font-display font-bold text-xs text-slate-700">No Matches</h4>
@@ -604,7 +604,7 @@ export default function StatutoryBookmarkSidebar() {
                         return (
                           <div 
                             key={bookmark.id}
-                            className="bg-black rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all text-left"
+                            className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all text-left"
                           >
                             <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2">
                               <div className="space-y-0.5">
@@ -662,7 +662,7 @@ export default function StatutoryBookmarkSidebar() {
                                         type="date"
                                         value={editingDateText}
                                         onChange={(e) => setEditingDateText(e.target.value)}
-                                        className="text-[9px] border border-amber-300 p-0.5 rounded bg-black text-slate-800"
+                                        className="text-[9px] border border-amber-300 p-0.5 rounded bg-white text-slate-800"
                                       />
                                       <button 
                                         type="button"
@@ -695,7 +695,7 @@ export default function StatutoryBookmarkSidebar() {
                                     onChange={(e) => setEditingNotesText(e.target.value)}
                                     rows={3}
                                     placeholder="Enter your case notes, e.g. 'Use this to contest the emergency removal on July 15'"
-                                    className="w-full text-xs p-2 bg-black border border-amber-250 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-850"
+                                    className="w-full text-xs p-2 bg-white border border-amber-250 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-850"
                                   />
                                   <div className="flex justify-end gap-1.5">
                                     <button
@@ -748,7 +748,7 @@ export default function StatutoryBookmarkSidebar() {
                         return (
                           <div 
                             key={item.id}
-                            className="bg-black rounded-xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs hover:shadow-xs transition-all text-left relative overflow-hidden group"
+                            className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs hover:shadow-xs transition-all text-left relative overflow-hidden group"
                           >
                             <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-1.5">
                               <div>

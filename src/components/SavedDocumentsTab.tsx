@@ -84,7 +84,7 @@ export default function SavedDocumentsTab() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-16">
-      <div className="bg-black rounded-xl p-6 md:p-8 shadow-sm border border-slate-200">
+      <div className="bg-white rounded-xl p-6 md:p-8 shadow-sm border border-slate-200">
         <div className="flex items-center gap-4 mb-6">
           <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600">
             <FolderHeart className="h-6 w-6" />
@@ -112,7 +112,7 @@ export default function SavedDocumentsTab() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {documents.map((doc) => (
-              <div key={doc.id} className="border border-slate-200 rounded-xl p-5 hover:border-purple-300 hover:shadow-md transition-all bg-black flex flex-col h-full">
+              <div key={doc.id} className="border border-slate-200 rounded-xl p-5 hover:border-purple-300 hover:shadow-md transition-all bg-white flex flex-col h-full">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${doc.type === 'template' ? 'bg-brand-100 text-brand-600' : 'bg-emerald-100 text-emerald-600'}`}>

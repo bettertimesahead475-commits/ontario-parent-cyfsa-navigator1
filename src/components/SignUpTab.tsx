@@ -437,7 +437,7 @@ export default function SignUpTab() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* Left Side: Form or Active Passport Status */}
-        <div className="lg:col-span-7 bg-black border border-gray-200 rounded-2xl shadow-xs p-6 md:p-8 space-y-6">
+        <div className="lg:col-span-7 bg-white border border-gray-200 rounded-2xl shadow-xs p-6 md:p-8 space-y-6">
           
           <AnimatePresence mode="wait">
             {!profile ? (
@@ -479,7 +479,7 @@ export default function SignUpTab() {
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         placeholder="e.g. Jane Doe"
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
                       />
                     </div>
 
@@ -494,7 +494,7 @@ export default function SignUpTab() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="jane.doe@example.com"
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
                       />
                     </div>
                   </div>
@@ -509,7 +509,7 @@ export default function SignUpTab() {
                       <select
                         value={role}
                         onChange={(e) => setRole(e.target.value)}
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
                       >
                         {caseRoles.map((r, idx) => (
                           <option key={idx} value={r}>{r}</option>
@@ -525,7 +525,7 @@ export default function SignUpTab() {
                       <select
                         value={region}
                         onChange={(e) => setRegion(e.target.value)}
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
                       >
                         <option value="Greater Toronto Area (GTA)">Greater Toronto Area (GTA)</option>
                         <option value="Western Ontario (London, Windsor, etc.)">Western Ontario</option>
@@ -543,7 +543,7 @@ export default function SignUpTab() {
                     <select
                       value={involvedAgency}
                       onChange={(e) => setInvolvedAgency(e.target.value)}
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
+                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
                     >
                       {ontarioAgencies.map((agency, idx) => (
                         <option key={idx} value={agency}>{agency}</option>
@@ -566,7 +566,7 @@ export default function SignUpTab() {
                         value={passcode}
                         onChange={(e) => setPasscode(e.target.value.replace(/[^0-9]/g, ""))}
                         placeholder="XXXX"
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none font-mono tracking-widest transition"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none font-mono tracking-widest transition"
                       />
                       <button
                         type="button"
@@ -740,7 +740,7 @@ export default function SignUpTab() {
 
                             {/* Live Interim Speech Preview */}
                             {isRecording && liveTranscription && (
-                              <div className="w-full bg-black border border-slate-200/80 p-3 rounded-lg text-slate-700 text-xs italic leading-relaxed text-center max-w-md shadow-3xs" id="live-transcription-preview">
+                              <div className="w-full bg-white border border-slate-200/80 p-3 rounded-lg text-slate-700 text-xs italic leading-relaxed text-center max-w-md shadow-3xs" id="live-transcription-preview">
                                 <span className="font-bold text-[10px] text-brand-900 not-italic uppercase tracking-wide block mb-1">Live Dictation Transcript Preview:</span>
                                 "{liveTranscription}"
                               </div>
@@ -766,7 +766,7 @@ export default function SignUpTab() {
                                 placeholder="Search memo content..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:bg-black outline-none w-full sm:w-48 transition"
+                                className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:bg-white outline-none w-full sm:w-48 transition"
                               />
                             </div>
                           )}
@@ -796,7 +796,7 @@ export default function SignUpTab() {
                               }
 
                               return filtered.map((note) => (
-                                <div key={note.id} className="bg-black border border-slate-200 hover:border-slate-300 rounded-xl p-4 shadow-3xs hover:shadow-2xs transition-all space-y-3">
+                                <div key={note.id} className="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-4 shadow-3xs hover:shadow-2xs transition-all space-y-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="space-y-0.5">
                                       <div className="flex items-center gap-2">
@@ -858,7 +858,7 @@ export default function SignUpTab() {
                                       <textarea
                                         value={editingNoteText}
                                         onChange={(e) => setEditingNoteText(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:bg-black outline-none resize-none h-24"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:bg-white outline-none resize-none h-24"
                                       />
                                       <div className="flex justify-end gap-2">
                                         <button
@@ -927,7 +927,7 @@ export default function SignUpTab() {
                       <div className="flex gap-3 pt-4">
                         <button
                           onClick={handleLogout}
-                          className="flex-1 bg-black border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-display font-extrabold uppercase tracking-wider text-[10.5px] py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-display font-extrabold uppercase tracking-wider text-[10.5px] py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <LogOut className="w-3.5 h-3.5" />
                           <span>Lock & Log Out</span>
@@ -1017,7 +1017,7 @@ export default function SignUpTab() {
               </div>
               
               {/* Virtual clean aesthetic barcode bar */}
-              <div className="flex items-center gap-0.5 bg-black/10 p-1.5 rounded border border-white/5">
+              <div className="flex items-center gap-0.5 bg-white/10 p-1.5 rounded border border-white/5">
                 <div className="w-0.5 h-4 bg-slate-300"></div>
                 <div className="w-1 h-4 bg-slate-300"></div>
                 <div className="w-0.5 h-4 bg-slate-300"></div>

@@ -256,7 +256,7 @@ export default function ParentChatBot() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.95 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="fixed bottom-24 right-6 w-[360px] md:w-[410px] h-[580px] bg-black border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[98] no-print"
+            className="fixed bottom-24 right-6 w-[360px] md:w-[410px] h-[580px] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[98] no-print"
             id="parent-coaching-sidebar"
           >
             {/* Header section with brand and educational badges */}
@@ -350,7 +350,7 @@ export default function ParentChatBot() {
                   <div className={`max-w-[85%] rounded-2xl p-3 shadow-xs ${
                     msg.sender === "user" 
                       ? "bg-brand-900 text-white rounded-tr-none" 
-                      : "bg-black border border-slate-200 text-slate-800 rounded-tl-none"
+                      : "bg-white border border-slate-200 text-slate-800 rounded-tl-none"
                   }`}>
                     {msg.sender === "ai" ? (
                       <div className="space-y-1.5">
@@ -376,7 +376,7 @@ export default function ParentChatBot() {
 
               {isQuerying && (
                 <div className="flex flex-col items-start animate-pulse">
-                  <div className="bg-black border border-slate-200 rounded-2xl rounded-tl-none p-3.5 flex items-center gap-2 max-w-[85%] shadow-xs">
+                  <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-none p-3.5 flex items-center gap-2 max-w-[85%] shadow-xs">
                     <span className="w-2 h-2 bg-brand-600 rounded-full animate-bounce delay-100"></span>
                     <span className="w-2 h-2 bg-brand-600 rounded-full animate-bounce delay-200"></span>
                     <span className="w-2 h-2 bg-brand-600 rounded-full animate-bounce delay-300"></span>
@@ -388,7 +388,7 @@ export default function ParentChatBot() {
             </div>
 
             {/* Educational Prompt Chips & Helper Menu */}
-            <div className="px-3 py-2 bg-black border-t border-slate-150 shrink-0 space-y-1.5">
+            <div className="px-3 py-2 bg-white border-t border-slate-150 shrink-0 space-y-1.5">
               <div className="flex items-center gap-1 text-[9px] text-brand-950 font-bold tracking-wider uppercase font-sans">
                 <HelpCircle className="w-3.5 h-3.5 text-brand-700" />
                 <span>Parent Case-Prep Quick Guide:</span>
@@ -422,7 +422,7 @@ export default function ParentChatBot() {
                   onChange={(e) => setInput(e.target.value)}
                   disabled={isQuerying}
                   placeholder={files.length > 0 ? "Ask about your files..." : "Ask a CYFSA / rights question..."}
-                  className="flex-1 bg-black border border-slate-200/90 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-75"
+                  className="flex-1 bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-75"
                 />
                 <button
                   type="submit"

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Link, Route, Switch, useLocation } from "wouter";
+import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import { useGlobalResetListener, useAppReset } from "./hooks/useAppReset";
 
 // Import Modular Subcomponents direct statically for ultra-fast instantaneous view switching with no skeleton flickers
@@ -92,14 +92,14 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between font-sans selection:bg-brand-100 selection:text-brand-900" id="root-viewport">
       
       {/* Top Professional Header Bar */}
-      <header className="bg-black/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
+      <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             
             {/* Left Brand Area */}
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
-                <div className="w-full h-full rounded-[14px] bg-black flex items-center justify-center">
+                <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center">
                   <Shield className="w-5 h-5 text-brand-600 fill-brand-50" />
                 </div>
               </div>
@@ -170,7 +170,7 @@ export default function App() {
 
         {/* Mobile Navigation Drawer Dropdown */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-black border-t border-slate-200 py-3 px-4 space-y-1.5 shadow-md" id="mobile-nav-panel">
+          <div className="md:hidden bg-white border-t border-slate-200 py-3 px-4 space-y-1.5 shadow-md" id="mobile-nav-panel">
             {navItems.map((item) => {
               const isActive = location === item.path;
               return (
@@ -180,7 +180,7 @@ export default function App() {
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold ${
                       isActive 
                         ? "bg-brand-600 text-white" 
-                        : "text-slate-600 hover:bg-slate-50 bg-black border border-slate-100"
+                        : "text-slate-600 hover:bg-slate-50 bg-white border border-slate-100"
                     }`}
                   >
                     {item.icon}
@@ -207,7 +207,7 @@ export default function App() {
       </header>
 
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
-      <nav className="bg-black border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
+      <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex gap-2 overflow-x-auto py-1">
             {navItems.map((item) => {
@@ -271,25 +271,13 @@ export default function App() {
           </Route>
 
           {/* Fallback route */}
-          <Route>
-            <div className="text-center py-20">
-              <Scale className="w-16 h-16 text-gray-300 mx-auto animate-pulse" />
-              <h2 className="font-display font-bold text-gray-850 text-xl mt-4">Statutory Portal Synchronizing...</h2>
-              <p className="text-gray-500 text-xs mt-1">Please select the tabs above to explore child welfare laws.</p>
-              <button
-                onClick={() => setLocation("/cyfsa-guide")}
-                className="mt-4 px-4 py-2 bg-brand-900 font-bold text-xs text-white rounded-lg cursor-pointer"
-              >
-                Go to Statutory Guide
-              </button>
-            </div>
-          </Route>
+          <Route><Redirect to="/cyfsa-guide" /></Route>
 
         </Switch>
       </main>
 
       {/* Professional Legal Footnote footer */}
-      <footer className="bg-black border-t border-slate-200 py-6 md:py-8 mt-12 no-print" id="app-footer">
+      <footer className="bg-white border-t border-slate-200 py-6 md:py-8 mt-12 no-print" id="app-footer">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
           
           {/* Real-time PDF / Printexport contextual launcher block */}
@@ -340,7 +328,7 @@ export default function App() {
               ) : (
                 <button
                   onClick={() => window.print()}
-                  className="w-full sm:w-auto px-4 py-2 bg-black border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   id="footer-print-general-btn"
                 >
                   <Printer className="w-3.5 h-3.5 text-slate-500" />
@@ -384,7 +372,7 @@ export default function App() {
       <button
         onClick={() => setTerminologyOpen(true)}
         title="Open CYFSA Legal Terminology Glossary"
-        className="fixed bottom-6 left-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-black border-slate-200 text-brand-600 hover:bg-brand-50 hover:text-brand-700 z-[98] no-print group hover:scale-105"
+        className="fixed bottom-6 left-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-white border-slate-200 text-brand-600 hover:bg-brand-50 hover:text-brand-700 z-[98] no-print group hover:scale-105"
         id="legal-terminology-floating-btn"
       >
         <BookOpen className="w-5 h-5 group-hover:scale-110 transition-transform" />

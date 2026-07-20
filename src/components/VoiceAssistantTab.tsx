@@ -154,7 +154,7 @@ export default function VoiceAssistantTab() {
       {/* Intro Block */}
       <div className="text-left max-w-3xl">
         <h2 className="font-display text-2xl font-bold text-gray-900">Auditory Summaries & Voice Dictation Assistant</h2>
-        <p className="text-xs md:text-sm text-gray-600 mt-2 leading-relaxed">
+        <p className="text-xs md:text-sm text-slate-700 mt-2 leading-relaxed">
           This accessibility dashboard helps parents with reading deficits, anxiety, or writing constraints. Listen to human-sounding summaries of complex Ontario statutes or verbally dictate your child welfare logs to preserve fresh observations.
         </p>
       </div>
@@ -163,7 +163,7 @@ export default function VoiceAssistantTab() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="voice-grid">
         {/* Left Side: Speech Synthesizer Narrator */}
         <div className="lg:col-span-7 space-y-4" id="speech-synthesizer">
-          <div className="bg-black rounded-xl border border-gray-150 p-6 space-y-5 text-left shadow-2xs">
+          <div className="bg-white rounded-xl border border-gray-150 p-6 space-y-5 text-left shadow-2xs">
             <div className="flex justify-between items-center pb-2 border-b">
               <span className="text-[10px] font-mono tracking-widest text-brand-600 font-bold uppercase flex items-center gap-1">
                 <Headphones className="w-3.5 h-3.5" /> Interactive Text-to-Speech Narrator
@@ -175,14 +175,14 @@ export default function VoiceAssistantTab() {
 
             {/* Read Aloud Text Area */}
             <div className="space-y-2">
-              <label className="text-[11px] font-mono tracking-wider font-semibold text-gray-400 uppercase">
+              <label className="text-[11px] font-mono tracking-wider font-semibold text-slate-500 uppercase">
                 Active Speech Narrator Block
               </label>
               <textarea
                 value={selectedNarrativeText}
                 onChange={(e) => setSelectedNarrativeText(e.target.value)}
                 rows={6}
-                className="w-full bg-slate-50 border border-gray-200 focus:bg-black text-xs md:text-sm leading-relaxed p-4 rounded-xl focus:outline-none"
+                className="w-full bg-slate-50 border border-gray-200 focus:bg-white text-xs md:text-sm leading-relaxed p-4 rounded-xl focus:outline-none"
               />
             </div>
 
@@ -190,7 +190,7 @@ export default function VoiceAssistantTab() {
             <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border">
               {/* Speed Slider */}
               <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 font-semibold uppercase font-mono">Speed rate</span>
+                <span className="text-xs text-slate-500 font-semibold uppercase font-mono">Speed rate</span>
                 <input
                   type="range"
                   min="0.5"
@@ -200,7 +200,7 @@ export default function VoiceAssistantTab() {
                   onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
                   className="w-24 cursor-pointer"
                   />
-                <span className="text-xs font-semibold text-gray-600 font-mono">{speechRate}x</span>
+                <span className="text-xs font-semibold text-slate-700 font-mono">{speechRate}x</span>
               </div>
 
               {/* Action Buttons */}
@@ -235,7 +235,7 @@ export default function VoiceAssistantTab() {
 
             {/* Preloaded Statutory Narratives triggers */}
             <div className="space-y-2">
-              <label className="text-[11px] font-mono text-gray-400 uppercase tracking-wider font-semibold block">
+              <label className="text-[11px] font-mono text-slate-500 uppercase tracking-wider font-semibold block">
                 Select Preloaded Statutory Narratives
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -252,7 +252,7 @@ export default function VoiceAssistantTab() {
                     className={`p-3 border rounded-xl text-left text-xs transition-colors flex items-start gap-2 cursor-pointer ${
                       selectedNarrativeText === sum.text
                         ? "border-brand-500 bg-brand-50/50 text-brand-900"
-                        : "border-gray-200 hover:bg-slate-50 text-gray-700 bg-black"
+                        : "border-gray-200 hover:bg-slate-50 text-gray-700 bg-white"
                     }`}
                   >
                     <Volume2 className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
@@ -269,7 +269,7 @@ export default function VoiceAssistantTab() {
 
         {/* Right Side: Speech-to-Text Recorder dictation */}
         <div className="lg:col-span-5 space-y-4" id="speech-recognition-stt">
-          <div className="bg-black rounded-xl border border-gray-150 p-6 space-y-5 text-left shadow-2xs">
+          <div className="bg-white rounded-xl border border-gray-150 p-6 space-y-5 text-left shadow-2xs">
             <div className="flex justify-between items-center pb-2 border-b">
               <span className="text-[10px] font-mono tracking-widest text-[var(--color-brand-600)] font-bold uppercase flex items-center gap-1">
                 <Mic className="w-3.5 h-3.5" /> Voice Dictation Note-taker
@@ -281,7 +281,7 @@ export default function VoiceAssistantTab() {
               </span>
             </div>
 
-            <p className="text-xs text-gray-500 leading-normal">
+            <p className="text-xs text-slate-600 leading-normal">
               Dictate your notes hands-free. Speak into your microphone, and we will translate your spoken syllables into structured written paragraphs for your diary.
             </p>
 
@@ -306,7 +306,7 @@ export default function VoiceAssistantTab() {
                 {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 animate-bounce" />}
               </button>
 
-              <span className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mt-3 block font-semibold relative z-10">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 mt-3 block font-semibold relative z-10">
                 {isRecording ? "Recording vocal notes..." : "Click mic to start speaking"}
               </span>
             </div>
@@ -314,7 +314,7 @@ export default function VoiceAssistantTab() {
             {/* Spoken Text Result Box */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <label className="text-[10px] font-mono tracking-wider font-semibold text-gray-400 uppercase">
+                <label className="text-[10px] font-mono tracking-wider font-semibold text-slate-500 uppercase">
                   Spoken Written Output
                 </label>
                 {spokenTranscript && (
@@ -337,7 +337,7 @@ export default function VoiceAssistantTab() {
             <div className="flex justify-between">
               <button
                 onClick={() => setSpokenTranscript("")}
-                className="text-[11px] text-gray-500 font-semibold hover:underline cursor-pointer"
+                className="text-[11px] text-slate-600 font-semibold hover:underline cursor-pointer"
               >
                 Reset Dictation
               </button>
