@@ -5,5 +5,5 @@ pages_build_output_dir = "dist"
 
 # Environment Variables
 [vars]
-# GEMINI_API_KEY should be added as an encrypted secret in the Cloudflare Pages settings under Environment Variables.
+# ANTHROPIC_API_KEY should be added as an encrypted secret in the deployment environment variables.
 # Node compatibility is enabled by default in modern Workers & Pages.

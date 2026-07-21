@@ -148,7 +148,7 @@ export default function ParentChatBot() {
       const errMsg: ChatMessage = {
         id: "ai-err-" + Date.now(),
         sender: "ai",
-        text: `**RAG Connection Issue:** ${err.message || "Unable to retrieve advisor feedback from the server."} Let's double check if your \`ANTHROPIC_API_KEY\` or \`GEMINI_API_KEY\` is active inside the environment settings.`,
+        text: `**RAG Connection Issue:** ${err.message || "Unable to retrieve advisor feedback from the server."} Let's double check if your \`ANTHROPIC_API_KEY\` is active inside the environment settings.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errMsg]);
@@ -332,10 +332,8 @@ export default function ParentChatBot() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="bg-brand-900 border border-brand-850 text-[10px] font-semibold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-amber-300 transition-colors"
                 >
-                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (High Intelligence) 🧠</option>
-                  <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast reasoning) ⚡</option>
-                  <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Low Latency) ⚡</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash 🚀</option>
+                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (High Intelligence)</option>
+                  <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast reasoning)</option>
                 </select>
               </div>
             </div>
