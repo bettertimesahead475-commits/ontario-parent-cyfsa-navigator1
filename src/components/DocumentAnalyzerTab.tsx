@@ -1167,13 +1167,17 @@ export default function DocumentAnalyzerTab() {
   }, [ragChatMessages]);
 
     // Auto-Upload to Templates and Build Lawyers Draft Highlights
-  const autoUploadToTemplates = (report: AnalysisReport, documentName: string) => {
+  const autoUploadToTemplates = (report: AnalysisReport, documentName: string, sourceId: string) => {
     try {
       let currentTemplatesProgress: any = {};
       const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
       if (saved) {
         currentTemplatesProgress = JSON.parse(saved);
       }
+
+      const importedDocuments: string[] = currentTemplatesProgress.importedAnalysisDocuments || [];
+      // A retry for the same upload must not add duplicate facts to the templates.
+      if (importedDocuments.includes(sourceId)) return;
       
       const meta = report.metadata || {};
 
@@ -1239,7 +1243,8 @@ export default function DocumentAnalyzerTab() {
               ? existingPrepSheet.mainEducationalGoals + `\n\n[Auto-Highlight from ${documentName}]: ${report.fileSummary || 'Review document for statutory thresholds.'}` 
               : `[Auto-Highlight from ${documentName}]: ${report.fileSummary || 'Review document for statutory thresholds.'}`,
           topThreePriorities: priorities
-        }
+        },
+        importedAnalysisDocuments: [...importedDocuments, sourceId]
       };
 
       localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
@@ -1285,16 +1290,17 @@ export default function DocumentAnalyzerTab() {
       const hearingDate = meta.hearingDate || selectedReport.analysisDate || new Date().toISOString().slice(0, 10);
 
       const newForm33b = {
-        courtRegistryName: "Ontario Court of Justice",
+        ...currentTemplatesProgress.form33b,
+        courtRegistryName: currentTemplatesProgress?.form33b?.courtRegistryName || "Ontario Court of Justice",
         caseNumber: fileNumber,
         applicantName: applicantName,
         respondentName: respondentName,
         childNames: childNames,
         applicationDate: hearingDate,
-        claimDetails: `The respondent parent requests that the Society's application be dismissed, and that the child be returned immediately to the care and custody of the parent under Section 94 of the CYFSA. The Society has failed to satisfy the legal burden of proof under Section 94(2) of the CYFSA. The warrantless apprehension under Section 81 was executed without establishing any imminent risk of serious physical or medical harm, relying instead on subjective impressions of household clutter and unsworn neighborhood hearsay which holds low evidentiary weight under the Ontario Evidence Act.`,
-        agreedFacts: currentTemplatesProgress?.form33b?.agreedFacts || "The respondent parent agrees with the children's school enrollment and pediatric care records. The respondent parent has established a stable, drug-free home environment.",
-        disagreedFacts: mappedDisagreedFacts,
-        parentStatementOfFacts: `Statement of the Respondent: The Society's allegations are unsubstantiated and rely on anonymous neighbor alerts and hearsay. Under Section 94(2) of the CYFSA, the Society carries the heavy burden to prove that there is no less disruptive way to protect the child. As shown in the dental and physical logs, the child has received continuous, stellar parental hygiene and care.`
+        claimDetails: currentTemplatesProgress?.form33b?.claimDetails || "",
+        agreedFacts: currentTemplatesProgress?.form33b?.agreedFacts || "",
+        disagreedFacts: [...(currentTemplatesProgress?.form33b?.disagreedFacts || []), ...mappedDisagreedFacts],
+        parentStatementOfFacts: currentTemplatesProgress?.form33b?.parentStatementOfFacts || ""
       };
 
       // 2. Build Affidavit State
@@ -1307,31 +1313,33 @@ export default function DocumentAnalyzerTab() {
       }));
 
       const newAffidavit = {
-        courtRegistryName: "Family Court of Ontario",
+        ...currentTemplatesProgress.affidavit,
+        courtRegistryName: currentTemplatesProgress?.affidavit?.courtRegistryName || "Family Court of Ontario",
         applicantName: applicantName,
         respondentName: respondentName,
         childNames: childNames,
-        childBirthdates: currentTemplatesProgress?.affidavit?.childBirthdates || "2022-05-20",
-        authorName: respondentName,
+        childBirthdates: currentTemplatesProgress?.affidavit?.childBirthdates || "",
+        authorName: currentTemplatesProgress?.affidavit?.authorName || respondentName,
         isDraft: true,
-        backgroundStatement: `I, ${respondentName}, of the City of Toronto, in the Province of Ontario, make oath and say as follows:\n1. I am the respondent parent in this protection matter.\n2. The Children's Aid Society conducted an unannounced warrantless visit on our home.\n3. My child is a registered Métis citizen. The Society did not consult with the Métis Nation of Ontario or our indigenous family council, in active violation of Section 2 of the CYFSA.`,
-        factualEvents: mappedFactualEvents,
-        childsPerspectiveText: `The child ${childNames} has expressed a strong desire to remain in the care of his mother. The child was not informed of his right to raise concerns or contact the Ontario Ombudsman, representing a procedural statutory defect.`,
-        proposedCareArrangement: `I propose that my child reside with me full-time. I have established a stable, child-safe apartment. I am actively participating in Positive Parenting Programs (Triple P) and have registered my child with family pediatrician Dr. Evans.`,
-        exhibits: []
+        backgroundStatement: currentTemplatesProgress?.affidavit?.backgroundStatement || "",
+        factualEvents: [...(currentTemplatesProgress?.affidavit?.factualEvents || []), ...mappedFactualEvents],
+        childsPerspectiveText: currentTemplatesProgress?.affidavit?.childsPerspectiveText || "",
+        proposedCareArrangement: currentTemplatesProgress?.affidavit?.proposedCareArrangement || "",
+        exhibits: currentTemplatesProgress?.affidavit?.exhibits || []
       };
 
       // 3. Build Plan of Care
       const newPlanOfCare = {
-        childName: childNames,
-        birthdate: "2022-05-20",
-        livingArrangements: "The child will reside full-time with the respondent parent in a fully furnished, child-safe apartment. Parent has established a stable, drug-free home environment.",
-        safetySupervision: "Respondent parent will have primary supervision. Maternal grandmother (approved kinship contact) is available for secondary backup supervision.",
-        educationNeeds: "Child is enrolled in local public school and will continue attendance. Parent has registered the child for free after-school reading programs and tutoring if required.",
-        healthcareDevelopment: "Child is registered with a family pediatrician (Dr. Evans). Routine dental and wellness visits will occur. Mental health counseling or play-therapy will be scheduled if recommended.",
-        cultureReligion: "The family is committed to connecting the child to their cultural/heritage community by attending weekly cultural heritage center workshops, cultural celebrations, and community events. Registered Métis citizen under registry card MNO-XXXX.",
-        contactAccessArrangements: "Open contact with extended kinship relatives (maternal grandparents, aunts/uncles) to preserve healthy family bonds. CAS access visits as required.",
-        parentSupportServices: "Parent is actively participating in Positive Parenting Programs (Triple P), weekly family support group counseling, and home visit family support check-ins."
+        ...currentTemplatesProgress.planOfCare,
+        childName: childNames || currentTemplatesProgress?.planOfCare?.childName || "",
+        birthdate: currentTemplatesProgress?.planOfCare?.birthdate || "",
+        livingArrangements: currentTemplatesProgress?.planOfCare?.livingArrangements || "",
+        safetySupervision: currentTemplatesProgress?.planOfCare?.safetySupervision || "",
+        educationNeeds: currentTemplatesProgress?.planOfCare?.educationNeeds || "",
+        healthcareDevelopment: currentTemplatesProgress?.planOfCare?.healthcareDevelopment || "",
+        cultureReligion: currentTemplatesProgress?.planOfCare?.cultureReligion || "",
+        contactAccessArrangements: currentTemplatesProgress?.planOfCare?.contactAccessArrangements || "",
+        parentSupportServices: currentTemplatesProgress?.planOfCare?.parentSupportServices || ""
       };
 
       const updatedTemplatesState = {
@@ -1409,8 +1417,18 @@ export default function DocumentAnalyzerTab() {
     const loadedFiles: OrganizedFile[] = await Promise.all(filesArray.map(async (f) => {
       let parsedContent = "";
       let finalName = f.name;
-      let finalMimeType = f.type || "text/plain";
       const nameL = f.name.toLowerCase();
+      // Some browsers leave File.type empty for PDFs and common image formats.
+      const inferredMimeType = nameL.endsWith(".pdf") ? "application/pdf"
+        : nameL.endsWith(".png") ? "image/png"
+        : /\.(jpe?g)$/.test(nameL) ? "image/jpeg"
+        : nameL.endsWith(".webp") ? "image/webp"
+        : nameL.endsWith(".gif") ? "image/gif"
+        : nameL.endsWith(".heic") ? "image/heic"
+        : nameL.endsWith(".heif") ? "image/heif"
+        : nameL.endsWith(".txt") ? "text/plain"
+        : "";
+      let finalMimeType = f.type || inferredMimeType || "application/octet-stream";
 
       let processedFile: File | Blob = f;
       const isHEIC = nameL.endsWith(".heic") || nameL.endsWith(".heif") || f.type === "image/heic" || f.type === "image/heif";
@@ -1609,7 +1627,10 @@ export default function DocumentAnalyzerTab() {
                   setOrganizedFiles(prev => prev.map(f =>
                     f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: dataResult } : f
                   ));
-                  autoUploadToTemplates(dataResult, file.name);
+                  // Show the first completed report so its case brief and handover are usable,
+                  // including when an earlier file in the batch failed.
+                  setSelectedReport(current => current ?? dataResult);
+                  autoUploadToTemplates(dataResult, file.name, file.id);
 
                   completedCount++;
                   success = true;
@@ -1674,11 +1695,14 @@ export default function DocumentAnalyzerTab() {
       });
 
       const report = await safeReadJson(response);
+      if (!response.ok) {
+        throw new Error(report.error || `Server returned error ${response.status}`);
+      }
       setSelectedReport(report);
       setOrganizedFiles(prev => prev.map(f => 
         f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: report } : f
       ));
-      autoUploadToTemplates(report, file.name);
+      autoUploadToTemplates(report, file.name, file.id);
 
     } catch (err: any) {
       setSingleAnalysisError(err.message || "Failed single scan.");
