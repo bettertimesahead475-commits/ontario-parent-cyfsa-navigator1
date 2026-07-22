@@ -1514,9 +1514,17 @@ export default function DocumentAnalyzerTab() {
       };
     }));
 
-    setOrganizedFiles(prev => [...prev, ...loadedFiles]);
-    setBulkProgress(null);
+    const chunkedFiles = chunkFilesForAnalysis(loadedFiles);
+    setOrganizedFiles(prev => [...prev, ...chunkedFiles]);
+    setSelectedFileId(chunkedFiles[0]?.id || null);
+    setSelectedReport(null);
     e.target.value = "";
+    // Uploading should produce a result without making the parent find a second action.
+    if (chunkedFiles.length > 0) {
+      await runParallelBulkAnalysis(chunkedFiles);
+    } else {
+      setBulkProgress(null);
+    }
   };
 
   // Concurrency-Controlled Bulk Analysis Engine (< 2 Minutes Guarantee)

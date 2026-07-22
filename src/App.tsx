@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Link, Route, Switch, useLocation, Redirect } from "wouter";
+import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener, useAppReset } from "./hooks/useAppReset";
 
 // Import Modular Subcomponents direct statically for ultra-fast instantaneous view switching with no skeleton flickers
@@ -69,23 +70,15 @@ export default function App() {
     };
   }, []);
 
-  // Sync route on first load to make home clean
-  useEffect(() => {
-    if (location === "/" || location === "") {
-      setLocation("/cyfsa-guide");
-    }
-  }, [location, setLocation]);
-
   const navItems = [
-    { name: "CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Family Court Process", path: "/family-court", icon: <Clock className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Child Development Impact", path: "/child-development", icon: <Heart className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4 text-brand-500 shrink-0 animate-pulse" /> },
-    { name: "Draft Templates", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Saved Documents", path: "/saved-documents", icon: <FolderHeart className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Voice Assistant", path: "/voice-assistant", icon: <Headphones className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Lawyer Referrals", path: "/lawyers", icon: <Users className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Advocate Passport", path: "/signup", icon: <Shield className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
+    { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
+    { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
+    { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
+    { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
+    { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
+    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
+    { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
+    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
   ];
 
   return (
@@ -233,7 +226,11 @@ export default function App() {
       {/* Primary Main Content Area container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10" id="main-frame-area">
         <Switch>
-          
+          <Route path="/"><ParentJourney page="home" /></Route>
+          <Route path="/rights"><ParentJourney page="rights" /></Route>
+          <Route path="/cyfsa-procedure"><ParentJourney page="procedure" /></Route>
+          <Route path="/five-day-rule"><ParentJourney page="five-day" /></Route>
+          <Route path="/45-day-roadmap"><ParentJourney page="roadmap" /></Route>
           <Route path="/cyfsa-guide">
             <CYFSAGuideTab />
           </Route>
@@ -271,7 +268,7 @@ export default function App() {
           </Route>
 
           {/* Fallback route */}
-          <Route><Redirect to="/cyfsa-guide" /></Route>
+          <Route><Redirect to="/" /></Route>
 
         </Switch>
       </main>
