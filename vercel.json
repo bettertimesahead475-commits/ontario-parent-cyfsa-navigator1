@@ -1,17 +1,5 @@
-cd ~/ontario-parent-cyfsa-navigator1   # or wherever your clone lives
-git checkout main
-git pull
-
-rm "api/[...path].ts"
-
-cat > vercel.json << 'EOF'
 {
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
-EOF
-
-git add -A
-git commit -m "Fix ERR_MODULE_NOT_FOUND: remove legacy builds array and duplicate api router"
-git push origin main
