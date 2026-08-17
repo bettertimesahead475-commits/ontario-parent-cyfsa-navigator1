@@ -298,67 +298,101 @@ async function generateClaudeContentWithRetry(
   },
   primaryModel: string = "claude-3-5-sonnet-20241022"
 ): Promise<any> {
-  const modelsToTry = [primaryModel, "claude-3-5-sonnet-latest", "claude-3-5-haiku-20241022", "claude-3-5-haiku-latest"];
   let lastError: any = null;
 
-  for (const modelName of modelsToTry) {
-    let attempts = 0;
-    const maxAttempts = 3;
-    let delay = 1000; // start with 1 second delay
+  // Do not hammer Anthropic during rate limiting.
+  // One primary attempt + one controlled retry, then let
+  // generateContentWithFallback() route the request to Gemini.
+  const maxAttempts = 2;
 
-    while (attempts < maxAttempts) {
-      try {
-        console.log(`[Claude API] Calling messages.create with model ${modelName} (Attempt ${attempts + 1}/${maxAttempts})`);
-        const response = await ai.messages.create({
-          model: modelName,
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      console.log(
+        `[Claude API] Calling messages.create with model ${primaryModel} (Attempt ${attempt + 1}/${maxAttempts})`
+      );
+
+      const response = await ai.messages.create(
+        {
+          model: primaryModel,
           system: params.system,
           messages: params.messages,
           max_tokens: params.max_tokens || 4000,
           temperature: params.temperature ?? 0.1,
-        }, {
+        },
+        {
           headers: {
             "anthropic-beta": "pdfs-2024-09-25"
           }
-        });
-        return response;
-      } catch (error: any) {
-        lastError = error;
-        const errMsg = (error?.message || "").toLowerCase();
-        const status = (error as any)?.status;
-        
-        const isAuthError = status === 401 || errMsg.includes("authentication_error") || errMsg.includes("invalid x-api-key") || errMsg.includes("invalid api key");
-        
-        if (isAuthError) {
-          console.log(`[AI Engine] Claude API key is unauthorized or inactive (401). Proceeding to fallback.`);
-        } else {
-          console.log(`[AI Engine] Claude attempt with ${modelName} did not succeed:`, error?.message || error);
         }
+      );
 
-        const isTransient =
-          status === 429 ||
-          status === 503 ||
-          status === 500 ||
-          errMsg.includes("503") ||
-          errMsg.includes("429") ||
-          errMsg.includes("quota") ||
-          errMsg.includes("rate limit") ||
-          errMsg.includes("unavailable") ||
-          errMsg.includes("overloaded") ||
-          errMsg.includes("high demand") ||
-          errMsg.includes("temporary") || errMsg.includes("fetch failed") || errMsg.includes("timeout") || errMsg.includes("network");
+      return response;
+    } catch (error: any) {
+      lastError = error;
 
-        if (!isTransient) {
-          // Bad API key, invalid payload, etc. - throw immediately
-          throw error;
-        }
+      const errMsg = (error?.message || "").toLowerCase();
+      const status = error?.status;
 
-        attempts++;
-        if (attempts < maxAttempts) {
-          console.log(`[Claude API] Retrying in ${delay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          delay *= 2; // exponential backoff
-        }
+      const isAuthError =
+        status === 401 ||
+        errMsg.includes("authentication_error") ||
+        errMsg.includes("invalid x-api-key") ||
+        errMsg.includes("invalid api key");
+
+      if (isAuthError) {
+        console.log(
+          "[AI Engine] Claude API key is unauthorized or inactive (401). Proceeding to fallback."
+        );
+        throw error;
       }
+
+      const isRateLimited =
+        status === 429 ||
+        errMsg.includes("429") ||
+        errMsg.includes("rate limit") ||
+        errMsg.includes("quota");
+
+      const isTransient =
+        isRateLimited ||
+        status === 500 ||
+        status === 503 ||
+        errMsg.includes("503") ||
+        errMsg.includes("overloaded") ||
+        errMsg.includes("high demand") ||
+        errMsg.includes("temporary") ||
+        errMsg.includes("timeout") ||
+        errMsg.includes("network");
+
+      if (!isTransient) {
+        throw error;
+      }
+
+      if (attempt >= maxAttempts - 1) {
+        console.log(
+          `[Claude API] ${isRateLimited ? "Rate limit/quota persists" : "Transient error persists"} after ${maxAttempts} attempts. Falling back to Gemini.`
+        );
+        throw error;
+      }
+
+      // Respect Anthropic Retry-After when exposed by the SDK.
+      const retryAfterHeader =
+        error?.headers?.["retry-after"] ??
+        error?.headers?.get?.("retry-after");
+
+      let waitMs = Number(retryAfterHeader) * 1000;
+
+      if (!Number.isFinite(waitMs) || waitMs <= 0) {
+        waitMs = isRateLimited ? 15000 : 3000;
+      }
+
+      // Prevent an accidental enormous Retry-After from hanging the request.
+      waitMs = Math.min(Math.max(waitMs, 1000), 60000);
+
+      console.log(
+        `[Claude API] ${isRateLimited ? "Rate limited" : "Transient error"}. Retrying once in ${waitMs}ms...`
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
 
