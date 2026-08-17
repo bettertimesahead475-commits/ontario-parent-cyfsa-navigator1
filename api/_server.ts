@@ -539,6 +539,47 @@ app.use(express.json({ limit: "100mb" }));
   });
 
   // API 2: Analyze Document Endpoint (Educational advice based on CYFSA of Ontario)
+  // Step 1 of the two-pass pipeline: OCR/text extraction only.
+  //
+  // This used to be bundled into /api/analyze, which meant one request had to
+  // do Gemini OCR (up to 6 attempts across 2 models) AND a full Claude
+  // analysis before responding — reliably exceeding the function timeout on
+  // real documents and returning FUNCTION_INVOCATION_TIMEOUT. Splitting them
+  // means each request has the whole budget to itself, and the user gets
+  // feedback after extraction rather than waiting blind for both.
+  app.post("/api/extract-text", async (req: Request, res: Response) => {
+    try {
+      const { fileData } = req.body || {};
+      if (!fileData || !fileData.base64) {
+        return res.status(400).json({ error: "fileData.base64 is required." });
+      }
+
+      let base64Data = fileData.base64;
+      if (base64Data.includes(",")) base64Data = base64Data.split(",")[1];
+      const mime = fileData.mimeType || "";
+
+      let extractedText = "";
+      if (mime === "application/pdf" || mime.startsWith("image/")) {
+        extractedText = await extractTextWithGeminiBase64(base64Data, mime);
+      } else if (mime.startsWith("text/")) {
+        extractedText = Buffer.from(base64Data, "base64").toString("utf-8");
+      } else {
+        return res.status(400).json({ error: `Unsupported file type for extraction: ${mime}` });
+      }
+
+      if (!extractedText.trim()) {
+        return res.status(422).json({
+          error: "No readable text could be extracted from this file. If it's a scanned image, try a clearer copy.",
+        });
+      }
+
+      res.json({ extractedText, characters: extractedText.length });
+    } catch (err: any) {
+      console.error("[/api/extract-text]", err);
+      handleClaudeError(err, "text extraction", res);
+    }
+  });
+
   app.post("/api/analyze", async (req: Request, res: Response) => {
     let targetText = "";
     let fileDataObj: any = null;

@@ -1680,12 +1680,32 @@ export default function DocumentAnalyzerTab() {
       if (file.mimeType === "text/plain") {
         payload.textContent = file.content;
       } else {
-        payload.textContent = file.name;
-        payload.fileData = {
-          base64: file.content,
-          mimeType: file.mimeType,
-          fileName: file.name
-        };
+        // Two-pass pipeline: extract text in its own request first, then send
+        // the extracted TEXT for analysis. Doing both in one request reliably
+        // blew past the serverless function timeout on real documents
+        // (OCR retries + a full Claude analysis in a single invocation), which
+        // surfaced as FUNCTION_INVOCATION_TIMEOUT / 504.
+        setSingleAnalysisError("");
+        const extractResponse = await apiFetch("/api/extract-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileData: {
+              base64: file.content,
+              mimeType: file.mimeType,
+              fileName: file.name,
+            },
+          }),
+        });
+
+        const extractResult = await safeReadJson(extractResponse);
+        if (!extractResponse.ok) {
+          throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
+        }
+        if (!extractResult.extractedText) {
+          throw new Error("No readable text could be extracted from this document.");
+        }
+        payload.textContent = extractResult.extractedText;
       }
 
       const response = await apiFetch("/api/analyze", {
