@@ -684,7 +684,7 @@ THINGS TO NEVER DO
           },
           "disclaimer": "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report.",
           "completenessScore": 75, // integer 0-100 indicating evidentiary reliability or thoroughness
-          "fileSummary": "A concise, 2-3 sentence executive summary of the document, its core purpose, and the key protection issues or legal risks it raises. Must include: This is a heuristic estimate of how well-substantiated the document's factual claims are, not a legal admissibility ruling. A low score means many claims require external verification, not that the document is inadmissible.",
+          "fileSummary": "A concise, 2-3 sentence executive summary of the document, its core purpose, and the key evidentiary or procedural issues it raises. Must state that the Evidence Strength Index is a heuristic assessment of the evidence contained in the reviewed document, not a legal admissibility ruling. Missing information must reduce completeness only where appropriate and must never be treated as proof that an event, violation, or statutory failure occurred.",
           "redFlags": [
             {
                "id": "rf1",
@@ -848,6 +848,14 @@ THINGS TO NEVER DO
 
       const contextPayload = topMatches.map((tabFile: any) => 
         `--- START FILE CONTEXT: "${tabFile.name}" (Category: ${tabFile.category}) ---\
+- SCORE INTEGRITY: The Evidence Strength Index must be evidence-neutral. Never increase the score because a document supports the parent and never decrease it because a document supports the Society.
+- SCORE ONLY WHAT IS PRESENT: Evaluate the quality, corroboration, source reliability, consistency, legal verification, and completeness of the evidence actually contained in the reviewed document.
+- MISSING INFORMATION: Missing information may reduce Factual Completeness or Analytical Confidence, but it must not automatically create a finding of misconduct, procedural defect, statutory violation, unlawful conduct, or Charter infringement.
+- CONTRADICTIONS: A contradiction should be identified and scored based on the strength of the competing evidence. Do not decide which version is true unless the document itself establishes the answer.
+- HEARSAY: Do not treat hearsay as automatically inadmissible. Identify the source, whether the affiant has personal knowledge, whether the source is identified, whether the statement is corroborated, and explain that the principal issue may be evidentiary weight.
+- APPREHENSION VS ACCESS: Never infer that an access restriction, recommendation, warning, advice, safety-plan condition, or parent-to-parent arrangement automatically constitutes an apprehension. Analyze the factual circumstances separately and identify what evidence would establish an actual apprehension.
+- CHARTER: Describe Charter rights as potentially engaged only where supported by the facts. Do not state or imply that an infringement has been established unless the document contains sufficient facts and verified law to support that conclusion.
+- FIVE-DAY HEARING RULE: Apply the CYFSA s. 94(5) five-court-day analysis only when the evidence establishes or reasonably indicates an actual apprehension falling within the statutory provision. An informal access restriction alone is insufficient to conclude that s. 94(5) was triggered.
 - ABSENCE OF EVIDENCE IS NOT EVIDENCE OF ABSENCE. If a document does not mention an action, do not conclude that the action did not occur. Classify it as "Missing Evidence" or "Not Determinable From This Document" and identify what record would establish the fact.
 - Never convert an allegation, omission, inference, police notation, hearsay statement, or unverified legal proposition into an established fact.
 - For every material finding distinguish: DOCUMENTED FACT, REPORTED INFORMATION, INFERENCE, ALLEGATION, and LEGAL CONCLUSION. Never present reported information, inference, or allegation as an established fact.
