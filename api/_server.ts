@@ -146,7 +146,7 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
 
   try {
     const ai = getGeminiClient();
-    const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-pro"];
+    const modelsToTry = ["gemini-2.5-flash", "gemini-3.1-pro-preview"];
     const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
       contents: [
         {
@@ -178,7 +178,7 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
   if (!cleaned) throw new Error("No audio data was provided.");
 
   const ai = getGeminiClient();
-  const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-pro"];
+  const modelsToTry = ["gemini-2.5-flash", "gemini-3.1-pro-preview"];
   const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
     contents: [
       {
@@ -269,7 +269,7 @@ async function generateContentWithFallback(
 
     const modelsToTry = isGemini 
       ? [primaryClaudeModel, "gemini-2.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"] 
-      : ["gemini-2.5-flash", "gemini-2.5-pro"];
+      : ["gemini-2.5-flash", "gemini-3.1-pro-preview"];
     const uniqueModels = Array.from(new Set(modelsToTry));
     const response = await generateGeminiContentWithRetry(ai, uniqueModels, {
       contents: geminiContents,
