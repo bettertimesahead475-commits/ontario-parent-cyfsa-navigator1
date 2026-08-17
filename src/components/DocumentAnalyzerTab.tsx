@@ -2983,6 +2983,13 @@ export default function DocumentAnalyzerTab() {
                   </div>
                 </div>
 
+                  {singleAnalysisError && (
+                    <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2" id="single-analysis-error-banner">
+                      <span className="font-bold shrink-0">⚠️ Audit failed:</span>
+                      <span className="break-words">{singleAnalysisError}</span>
+                    </div>
+                  )}
+
                   {/* Document content viewer with custom Court Transcript Rendering & Density Limits Check */}
                   <div className="bg-white rounded-xl border border-gray-150 p-4 space-y-1.5 relative overflow-hidden" id="file-plain-viewer">
                     <div className="flex flex-wrap justify-between items-center pb-2 border-b border-gray-100 gap-2">
@@ -3098,6 +3105,21 @@ export default function DocumentAnalyzerTab() {
 
                     {/* Word and Character Density Quality indicator bar */}
                     {(() => {
+                      // For text/plain files, activeSelectedFile.content really is the
+                      // text, so a word count is meaningful. For PDFs/images, content
+                      // is the raw base64 file bytes — counting "words" in that (no
+                      // whitespace) always returns ~1, which made this badge show
+                      // "Low Context" for every single PDF regardless of how
+                      // substantial it actually was. Real text extraction for those
+                      // files happens server-side (Gemini OCR) during analysis, so we
+                      // can't judge word density client-side before that runs.
+                      if (activeSelectedFile.mimeType !== "text/plain") {
+                        return (
+                          <div className="p-2 border rounded-lg text-[10px] leading-relaxed flex items-center gap-1 px-3 bg-slate-50 text-slate-600 border-slate-200 select-none text-left">
+                            <span>📄 This document will be read via OCR text extraction when you run the audit — its content isn't previewable here beforehand.</span>
+                          </div>
+                        );
+                      }
                       const wordCount = activeSelectedFile.content ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length : 0;
                       let densityBadgeColor = "bg-rose-50 text-rose-700 border-rose-200";
                       let densityText = "⚠️ Low Context: Might result in generalized answers. Consider uploading or dictating additional details.";
@@ -3140,7 +3162,7 @@ export default function DocumentAnalyzerTab() {
                       <div className="max-h-56 overflow-y-auto p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs font-mono text-slate-700 whitespace-pre-wrap leading-relaxed text-left" id="file-plain-content-viewer">
                         {activeSelectedFile.mimeType === "text/plain" 
                           ? getHighlightedText(activeSelectedFile.content, searchQuery) 
-                          : `[Document Data Encoded Buffer File (${activeSelectedFile.name}). Metadata trace indices: "${activeSelectedFile.name.replace(/_/g, " ")}"]`}
+                          : `This is a ${activeSelectedFile.mimeType.startsWith("image/") ? "image" : "PDF"} file — its raw content isn't shown here as plain text. Run the audit above to have it read and analyzed.`}
                       </div>
                     )}
 
