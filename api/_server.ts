@@ -683,12 +683,31 @@ THINGS TO NEVER DO
             "hearingDate": "Extracted next hearing or application date or empty string"
           },
           "disclaimer": "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report.",
-          "completenessScore": 75, // integer 0-100 indicating evidentiary reliability or thoroughness
+          "completenessScore": 0, // integer 0-100 measuring how much relevant information is actually present; do not treat missing information as proof of misconduct or violation
+          "completenessScoreMethod": "Score only the completeness of the information contained in this document. This is separate from Evidence Strength Index and is not an admissibility or legal-merits score.",
+          "evidenceStrengthIndex": {
+            "score": 0,
+            "scale": "0-100",
+            "label": "Evidence Strength Index",
+            "method": "Calculate from the documented evidence in this file only. Do not score the legal merits of the case.",
+            "components": {
+              "firsthandKnowledge": {"score": 0, "max": 20, "explanation": ""},
+              "sourceReliability": {"score": 0, "max": 15, "explanation": ""},
+              "corroboration": {"score": 0, "max": 15, "explanation": ""},
+              "documentarySupport": {"score": 0, "max": 15, "explanation": ""},
+              "internalConsistency": {"score": 0, "max": 10, "explanation": ""},
+              "contradictoryEvidenceHandling": {"score": 0, "max": 10, "explanation": ""},
+              "legalAuthorityVerification": {"score": 0, "max": 10, "explanation": ""},
+              "proceduralDocumentation": {"score": 0, "max": 5, "explanation": ""}
+            },
+            "calculation": "The final score must equal the sum of the eight component scores and must never be invented independently.",
+            "limitations": "A low score means the document contains gaps, unsupported assertions, limited firsthand knowledge, contradictions, or insufficient documentation. It does not mean the document is false or inadmissible. A high score does not establish legal correctness or admissibility."
+          },
           "fileSummary": "A concise, 2-3 sentence executive summary of the document, its core purpose, and the key evidentiary or procedural issues it raises. Must state that the Evidence Strength Index is a heuristic assessment of the evidence contained in the reviewed document, not a legal admissibility ruling. Missing information must reduce completeness only where appropriate and must never be treated as proof that an event, violation, or statutory failure occurred.",
           "redFlags": [
             {
                "id": "rf1",
-               "severity": "CRITICAL", // "[CRITICAL]" (only if admitted), "[Worth Raising With Counsel]", or "[Affects Evidentiary Weight]"
+               "severity": "Affects Evidentiary Weight", // Allowed: "Affects Evidentiary Weight", "Worth Raising With Counsel", or "CRITICAL". CRITICAL requires an explicit documented admission of a material procedural failure AND verified statutory authority; otherwise do not use CRITICAL.
                "category": "Hearsay", // "Hearsay", "Unsupported Claim", "Procedural Defect", "Authority Overreach", "Rights Omission", etc.
                "phraseDetected": "The exact sentence in the text representing the red flag",
                "explanation": "One sentence connecting the specific document language to the specific statutory requirement — not a general summary of the section.",
