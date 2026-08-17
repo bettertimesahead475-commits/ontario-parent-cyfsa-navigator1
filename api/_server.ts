@@ -700,9 +700,9 @@ THINGS TO NEVER DO
           ],
           "thresholdAnalysis": [
             {
-              "thresholdChecked": "Immediate Danger & Imminent Harm (CYFSA s. 81)",
+              "thresholdChecked": "CYFSA s. 81 — Application / Child Protection Proceeding Authority",
               "isMet": "Yes / No / Inconclusive",
-              "reasoning": "Analyze if the document provides facts satisfying the standard of imminent risk of serious harm under CYFSA s. 81(1). If no apprehension is discussed, analyze how the home environment holds up against s. 81 risk standards.",
+              "reasoning": "Analyze the role of CYFSA s. 81 in the proceeding. Do not characterize s. 81 itself as an "imminent danger" threshold. Distinguish the statutory authority for commencing proceedings from the separate statutory grounds and tests applicable to whether a child is in need of protection or may be apprehended.",
               "primarySourceLaw": "CYFSA 2017, Section 81(1)"
             },
             {
@@ -718,9 +718,9 @@ THINGS TO NEVER DO
               "primarySourceLaw": "CYFSA 2017, Section 125"
             },
             {
-              "thresholdChecked": "Kinship-first consideration duty (CYFSA s. 70 & s. 2)",
+              "thresholdChecked": "Kinship / Family-Based Alternatives — Documentation Check",
               "isMet": "Yes / No / Inconclusive",
-              "reasoning": "Analyze whether the document documents active exploration of indigenous or non-indigenous family kinship alternatives rather than foster interventions. Note if this crucial statutory consideration has been forgotten.",
+              "reasoning": "Determine whether the reviewed document documents consideration of kinship, extended-family, customary-care, Indigenous, or other family-based alternatives where legally relevant. Do NOT infer that the Society failed to consider such alternatives merely because the affidavit does not mention them. Classify an absence of documentation as "Missing Evidence" or "Not Determinable From This Document" and identify the records required to verify what was actually considered.",
               "primarySourceLaw": "CYFSA 2017, Section 70"
             }
           ],
@@ -728,7 +728,7 @@ THINGS TO NEVER DO
             {
               "timelineRule": "30-Day Adjournment Limit (CYFSA s. 94(1))",
               "documentAssertion": "E.g. calendar gaps, schedule arrangements or dates mentioned.",
-              "evaluation": "Analyze if the document indicates court processes are adjourned for more than 30 days without universal consent under Section 94(1). If none is mentioned, mark as 'Checked & Compliant'.",
+              "evaluation": "Analyze if the document indicates court processes are adjourned for more than 30 days without universal consent under Section 94(1). If the document does not contain enough information to determine compliance, mark the result "Not Determinable From This Document". Never infer compliance merely because a violation or event is not mentioned.",
               "citation": "CYFSA, S.O. 2017, c. 14, s. 94(1)",
               "locationInDocument": "Page X, Paragraph Y, or state 'Checked & Compliant'",
               "parentActionStep": "Parent action steps to track scheduled court dates and ensure their lawyer asserts s. 94(1) rights."
@@ -847,7 +847,12 @@ THINGS TO NEVER DO
         .slice(0, 6);
 
       const contextPayload = topMatches.map((tabFile: any) => 
-        `--- START FILE CONTEXT: "${tabFile.name}" (Category: ${tabFile.category}) ---\n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" ---`
+        `--- START FILE CONTEXT: "${tabFile.name}" (Category: ${tabFile.category}) ---\
+- ABSENCE OF EVIDENCE IS NOT EVIDENCE OF ABSENCE. If a document does not mention an action, do not conclude that the action did not occur. Classify it as "Missing Evidence" or "Not Determinable From This Document" and identify what record would establish the fact.
+- Never convert an allegation, omission, inference, police notation, hearsay statement, or unverified legal proposition into an established fact.
+- For every material finding distinguish: DOCUMENTED FACT, REPORTED INFORMATION, INFERENCE, ALLEGATION, and LEGAL CONCLUSION. Never present reported information, inference, or allegation as an established fact.
+- For every material finding identify the source document, paragraph/page/exhibit when available, source type, whether the affiant has firsthand knowledge, corroborating or contradictory evidence, missing evidence, applicable verified law, and confidence level (High, Moderate, Low, or Not Determinable).
+n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" ---`
       ).join("\n\n");
 
       let focusGuideline = "";
@@ -864,7 +869,7 @@ THINGS TO NEVER DO
       } else {
         focusGuideline = `
         FOCUS: COMPREHENSIVE CYFSA STATUTORY COMPLIANCE & LEGAL AUDIT
-        Your response should look for strict procedural timelines, statutory thresholds (e.g., s.81 apprehension standard, s.94 burden of proof, s.74 protection needs), Charter of Rights compliance, and other legislative checklists to ensure parent rights are fully verified.`;
+        Your response should look for strict procedural timelines, statutory requirements and procedural timelines, including s. 74 protection grounds and s. 94 hearing/adjournment requirements, while avoiding unsupported characterization of s. 81 as an imminent-danger threshold, Charter of Rights compliance, and other legislative checklists to ensure parent rights are fully verified.`;
       }
 
       const systemInstruction = 
@@ -873,7 +878,7 @@ THINGS TO NEVER DO
          You must strictly ground your feedback based on the documents. Always cite your source files explicitly in your paragraphs using bold bracket indicators, e.g., **[Source: CAS_Worker_Report_Sample.txt]**.
          If the files do not offer an answer, state that "The uploaded case files do not contain information regarding this request," and offer specific categories of documents (such as intake records or hospital dentist files) that would help verify it.
          
-         You MUST cite specific legal standards of the CYFSA (s.74 protection grounds, s.94 burden of proof, s.81(1) imminent danger thresholds, and Children's Law Reform Act s.8 parentage presumptions) when applicable to ground your assessment conceptually.
+         You MUST cite specific legal standards of the CYFSA (s.74 protection grounds, s.94 hearing and adjournment requirements, and the proper statutory role of s.81, and Children's Law Reform Act s.8 parentage presumptions) when applicable to ground your assessment conceptually.
          
          CRITICAL ACCESSIBLE LINK REQUIREMENT:
          Whenever you refer to or cite standard legal rules, section numbers, or laws, you MUST use the exact keyword forms (such as 's. 74', 's. 94', 's. 81', 's. 125', 's. 3', 's. 101', 's. 87', 'CLRA', 'Evidence Act', or 'Charter of Rights') so that our database matches them instantly to fully accessible, real live government e-Laws URL links! Ensure you write them exactly so families can click on them (e.g., 'This invokes s. 81 of the CYFSA' or 'as defined under CLRA').
