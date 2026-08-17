@@ -22,6 +22,7 @@ import StatutoryBookmarkSidebar from "./components/StatutoryBookmarkSidebar";
 import FloatingTTS from "./components/FloatingTTS";
 import LegalTerminologyDrawer from "./components/LegalTerminologyDrawer";
 import ConnectorSearchBot from "./components/ConnectorSearchBot";
+import PricingTab from "./components/PricingTab";
 
 // Core icons represent core section identity
 import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
@@ -59,6 +60,16 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [terminologyOpen, setTerminologyOpen] = useState<boolean>(false);
 
+  const [currentTier, setCurrentTier] = useState<"Basic" | "Pro" | "Premium">(() => {
+    try {
+      const stored = localStorage.getItem("ps_session_tier");
+      if (stored === "Pro" || stored === "Premium") return stored;
+    } catch (e) {
+      console.warn("Failed to read stored tier:", e);
+    }
+    return "Basic";
+  });
+
   // Global listener to easily toggle Glossary from any custom event
   useEffect(() => {
     const handleOpenGlossary = () => {
@@ -79,6 +90,7 @@ export default function App() {
     { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
     { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
     { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
+    { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
   ];
 
   return (
@@ -233,6 +245,10 @@ export default function App() {
           <Route path="/45-day-roadmap"><ParentJourney page="roadmap" /></Route>
           <Route path="/cyfsa-guide">
             <CYFSAGuideTab />
+          </Route>
+
+          <Route path="/pricing">
+            <PricingTab currentTier={currentTier} onChangeTier={setCurrentTier} />
           </Route>
 
           <Route path="/family-court">

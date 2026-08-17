@@ -236,3 +236,4 @@ export interface SavedBrief {
 }
 
 
+export type AccessTier = "Basic" | "Pro" | "Premium";

@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { createClient } from "@supabase/supabase-js";
+import { requestAccess, approvePayment, verifyAccessCode, TIER_PRICES, type Tier } from "./services/access";
 
 dotenv.config();
 
@@ -56,18 +56,9 @@ function getGeminiClient(): GoogleGenAI {
   return geminiClient;
 }
 
-let supabaseClient: any = null;
-
-function getSupabaseClient(): any {
-  if (supabaseClient) return supabaseClient;
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error("Supabase is not configured. Please configure SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables.");
-  }
-  supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
-  return supabaseClient;
-}
+// (Supabase access for the e-transfer flow lives in services/access.ts —
+// getSupabaseClient() was only ever used by the old broken /api/activate-code
+// handler, which has been replaced.)
 
 async function generateGeminiContentWithRetry(
   ai: any,
@@ -177,6 +168,32 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
     console.error("extractTextWithGeminiBase64 error:", error);
     throw error;
   }
+}
+
+async function transcribeAudioWithGemini(base64Data: string, mimeType: string): Promise<string> {
+  // Real audio transcription — the actual audio bytes are sent to the model.
+  // Claude has no native audio understanding, so this always goes to Gemini
+  // directly rather than through the Claude-first fallback chain.
+  const cleaned = (base64Data || "").trim();
+  if (!cleaned) throw new Error("No audio data was provided.");
+
+  const ai = getGeminiClient();
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-pro"];
+  const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text:
+              "Transcribe this audio recording exactly as spoken. Attribute lines to speakers only where you can genuinely tell voices apart (e.g. \"Speaker 1:\", \"Speaker 2:\") — do not guess names or roles unless someone states their own name or role aloud. Mark unclear or inaudible sections as [inaudible]. Do not add commentary, legal formatting, headers, certifications, or analysis — output the transcription text only, nothing else.",
+          },
+          { inlineData: { mimeType, data: cleaned } },
+        ],
+      },
+    ],
+  });
+  return response.text || "";
 }
 
 // Unified content generator with Claude-to-Gemini fallback routing
@@ -399,483 +416,6 @@ function handleClaudeError(error: any, contextDescription: string, res: Response
   });
 }
 
-// ==========================================
-// HIGH-FIDELITY LOCAL RULES-BASED FALLBACK GENERATORS
-// ==========================================
-
-function generateLocalSimulationReport(textContent: string, requestedTitle?: string): any {
-  const text = textContent || "";
-  const title = requestedTitle || "Uploaded Case Document";
-  
-  // Try to extract some names or dates from the text
-  const casWorkerRegex = /(?:worker|cas|worker\s+name|officer|investigator)\s*(?:is|called|named)?\s*([A-Z][a-z]+\s+[A-Z][a-z]+)/i;
-  const matchWorker = text.match(casWorkerRegex);
-  const workerName = matchWorker ? matchWorker[1] : "Sarah Finch (CAS)";
-
-  const childRegex = /(?:child|children|son|daughter|kid|kids|boy|girl)\s*(?:is|called|named|named\s+as)?\s*([A-Z][a-z]+)/i;
-  const matchChild = text.match(childRegex);
-  const childName = matchChild ? matchChild[1] : "Marcus";
-
-  const dateRegex = /(\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s+\d{4})?\b|\b\d{4}-\d{2}-\d{2}\b)/gi;
-  const matchesDate = text.match(dateRegex);
-  const firstDate = matchesDate ? matchesDate[0] : "June 6, 2026";
-
-  // Let's inspect keywords to see what kind of document it is
-  let docType = "General Case Note";
-  let analysisSummary = "Educational assessment of parent-CAS interaction records under Ontario child protection rules.";
-  
-  if (text.toLowerCase().includes("visit") || text.toLowerCase().includes("observe") || text.toLowerCase().includes("home")) {
-    docType = "CAS Worker Visitation Record";
-    analysisSummary = `Detailed statutory audit of CAS visitation logs dated around ${firstDate}. Highlights critical hearsay allegations regarding child ${childName} and procedural entry checks.`;
-  } else if (text.toLowerCase().includes("application") || text.toLowerCase().includes("court") || text.toLowerCase().includes("motion")) {
-    docType = "CAS Court Protection Application Draft";
-    analysisSummary = `Exhaustive legal review of a protection application or affidavit involving ${childName}. Audits the burden of proof under s. 94(2) and identifies multiple uncorroborated third-party claims.`;
-  } else if (text.toLowerCase().includes("notice") || text.toLowerCase().includes("letter") || text.toLowerCase().includes("demand")) {
-    docType = "CAS Formal Demand Letter";
-    analysisSummary = `Analytical assessment of a CAS communication sent to the parent. Audits parental notice requirements, disclosure rights under Part X, and statutory boundaries of voluntary service requests.`;
-  } else if (text.toLowerCase().includes("agreement") || text.toLowerCase().includes("vsa") || text.toLowerCase().includes("voluntary")) {
-    docType = "Voluntary Services Agreement (VSA) Draft";
-    analysisSummary = `Statutory review of a proposed Voluntary Services Agreement. Outlines critical safety tips for parents to prevent indefinite extensions and maintain family decision-making rights.`;
-  }
-
-  // Detect specific triggers in text for customized Red Flags
-  const redFlags: any[] = [];
-  let rfIdCount = 1;
-
-  // Helper to extract the precise sentence containing keywords
-  const findSentence = (keywords: string[], defaultSentence: string): string => {
-    if (!text || text.trim().length === 0) return defaultSentence;
-    const sentences = text.split(/[.!?\n]+/);
-    for (const sentence of sentences) {
-      const trimmed = sentence.trim();
-      if (trimmed.length < 5) continue;
-      const lower = trimmed.toLowerCase();
-      for (const kw of keywords) {
-        if (lower.includes(kw.toLowerCase())) {
-          return trimmed.replace(/^["'“‘\s]+|["'”’\s]+$/g, '');
-        }
-      }
-    }
-    return defaultSentence;
-  };
-
-  // 1. Hearsay Checking
-  const hearsayKws = ["neighbor", "neighbour", "anonymous", "reported that", "told me", "informant", "allegation", "hearsay", "caller", "tip", "received information"];
-  const hasHearsay = hearsayKws.some(kw => text.toLowerCase().includes(kw));
-  if (hasHearsay) {
-    const phrase = findSentence(hearsayKws, "An informant reported that the child was left unattended, or similar third-party allegations.");
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[CRITICAL]",
-      category: "Hearsay",
-      phraseDetected: phrase,
-      explanation: "CAS worker records depend on statements made by anonymous neighbors or secondary reports. In Ontario family courts, hearsay is generally inadmissible to prove the truth of the allegation unless it satisfies specific child-protection exceptions, and must be strictly contested.",
-      verifyRequirement: "Request direct eyewitness logs, check door camera files, or request physical safety records.",
-      legalReference: "Ontario Evidence Act, CYFSA s. 74 Hearsay Rules",
-      locationInDocument: "Page 1, Paragraph 2 (or matching terms in text)",
-      parentActionStep: "Submit a formal written denial. Document exactly where you and the child were at the alleged time, backed by GPS or store receipts."
-    });
-  }
-
-  // 2. Authority Overreach Checking
-  const overreachKws = ["refused", "denied entry", "must let us in", "demand", "search", "warrant", "uncooperative", "inspect", "bedroom", "force entry", "door"];
-  const hasOverreach = overreachKws.some(kw => text.toLowerCase().includes(kw));
-  if (hasOverreach) {
-    const phrase = findSentence(overreachKws, "The parent refused to allow the worker to inspect the bedrooms, or worker demanded immediate home access.");
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[Worth Raising With Counsel]",
-      category: "Authority Overreach",
-      phraseDetected: phrase,
-      explanation: "Under CYFSA s. 81, a CAS worker does not have an automatic right of entry into a private residence without a court warrant, unless they have reasonable grounds to believe there is an immediate, imminent risk of serious harm to the child.",
-      verifyRequirement: "Check if the worker had a judicial warrant or if they cited a specific immediate safety emergency.",
-      legalReference: "CYFSA 2017, Section 81(1) Apprehension Boundaries",
-      locationInDocument: "Page 1, under entry summary",
-      parentActionStep: "Politely state that you welcome cooperation but require a warrant or a scheduled visit through counsel. Record the exchange if safe."
-    });
-  }
-
-  // 3. Police Involvement Checking
-  const policeKws = ["police", "arrest", "officer", "911", "constable", "enforcement", "squad", "badge"];
-  const hasPolice = policeKws.some(kw => text.toLowerCase().includes(kw));
-  if (hasPolice) {
-    const phrase = findSentence(policeKws, "Police accompanied the worker to assist in enforcement or removal.");
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[Worth Raising With Counsel]",
-      category: "Procedural Defect",
-      phraseDetected: phrase,
-      explanation: "Police assistance is reserved for executing warrants or responding to immediate active breaches of the peace. Over-reliance on police presence can create a hostile environment that infringes on Charter rights.",
-      verifyRequirement: "Retrieve the police CAD incident report sheet to verify what dispatch details were provided by CAS.",
-      legalReference: "Canadian Charter of Rights s. 7 & CYFSA s. 81(4)",
-      locationInDocument: "Near mentions of emergency services",
-      parentActionStep: "Obtain the police badge numbers, incident number, and request disclosure of all calls between CAS and dispatch."
-    });
-  }
-
-  // 4. Clutter / Housekeeping / Neglect Checking
-  const clutterKws = ["clutter", "messy", "dirty", "odor", "smell", "unclean", "unwashed", "debris", "disarray", "hygiene", "laundry", "untidy", "garbage", "trash"];
-  const hasClutter = clutterKws.some(kw => text.toLowerCase().includes(kw));
-  if (hasClutter) {
-    const phrase = findSentence(clutterKws, "The worker noted concerns regarding clutter, messiness, or housekeeping conditions.");
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[Worth Raising With Counsel]",
-      category: "Unsupported Claim",
-      phraseDetected: phrase,
-      explanation: "CAS files frequently contain subjective assessments ('home was cluttered', 'kitchen was messy') without connecting these findings to any actual statutory ground of protection need or hazard under CYFSA s. 74.",
-      verifyRequirement: "Request direct objective criteria or child medical exams showing the child is healthy and thriving.",
-      legalReference: "CYFSA 2017, Section 74(2)",
-      locationInDocument: "Paragraph 3, subjective housekeeping evaluation block",
-      parentActionStep: "Keep a daily home photo/video diary showing clean, organized, safe living spaces and a fully stocked pantry to rebut subjective reports."
-    });
-  }
-
-  // 5. Mental Health / Capacity Labeling Checking
-  const capacityKws = ["anxious", "depressed", "mental health", "hostile", "angry", "aggressive", "volatile", "unstable", "paranoid", "capacity", "impairment", "coping"];
-  const hasCapacity = capacityKws.some(kw => text.toLowerCase().includes(kw));
-  if (hasCapacity) {
-    const phrase = findSentence(capacityKws, "The worker noted concerns regarding parenting capacity or emotional stability.");
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[Worth Raising With Counsel]",
-      category: "Unsupported Claim",
-      phraseDetected: phrase,
-      explanation: "CAS reports often apply informal mental health labels or characterize parents as hostile, volatile, or unstable without professional psychiatric assessments or clinical diagnostics.",
-      verifyRequirement: "Obtain an independent therapist letter or clinical assessment confirming your emotional stability and coping skills.",
-      legalReference: "CYFSA 2017, Section 74(2)(i)",
-      locationInDocument: "Assessment section, subjective labeling block",
-      parentActionStep: "Request standard disclosure of any raw clinical assessments CAS is relying on, and continue attending independent support circles."
-    });
-  }
-
-  // 6. Ombudsman / Rights Notification Omission Checking
-  const ombudsmanKws = ["ombudsman", "rights", "advocate", "complain", "scfa", "futures act", "informed"];
-  const hasOmbudsman = ombudsmanKws.some(kw => text.toLowerCase().includes(kw));
-  if (hasOmbudsman) {
-    const phrase = findSentence(ombudsmanKws, "The child's rights or ombudsman notice requirements are referenced.");
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[Affects Evidentiary Weight]",
-      category: "Rights Omission",
-      phraseDetected: phrase,
-      explanation: "The Supporting Children's Futures Act (SCFA) 2024 mandates that child welfare workers must inform children of their right to contact the Ontario Ombudsman. Omission of this alert is a major statutory defect.",
-      verifyRequirement: "Confirm whether you or your child were handed any written educational materials regarding the Ombudsman.",
-      legalReference: "Supporting Children's Futures Act, 2024 (SCFA)",
-      locationInDocument: "Rights and notifications section",
-      parentActionStep: "Ensure your child is aware of their continuous independent right to reach out to the Ontario Ombudsman's office at 1-800-263-1830."
-    });
-  }
-
-  // 7. Father / CLRA Parentage Checking
-  const fatherKws = ["father", "paternity", "separated", "divorced", "ex-spouse", "partner", "spouse", "clra"];
-  const hasFather = fatherKws.some(kw => text.toLowerCase().includes(kw));
-  if (hasFather) {
-    const phrase = findSentence(fatherKws, "The father is mentioned in connection with custody, separation, or parenting time.");
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[Worth Raising With Counsel]",
-      category: "Procedural Defect",
-      phraseDetected: phrase,
-      explanation: "Under the Children's Law Reform Act s. 8(1), parentage is legally presumed if separation occurred within 300 days of birth. CAS cannot ignore or exclude fathers or other legal parent parties from protection proceedings.",
-      verifyRequirement: "Verify that both actual parents are receiving all formal notices, pleadings, and court correspondence.",
-      legalReference: "Children's Law Reform Act, s. 8(1)",
-      locationInDocument: "Family composition list or background notes",
-      parentActionStep: "Ensure your defense counsel formalizes a motion to include both biological/legal parents in all child protection files and filings."
-    });
-  }
-
-  // Fallback default Red Flags if none matched
-  if (redFlags.length === 0) {
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[Worth Raising With Counsel]",
-      category: "Unsupported Claim",
-      phraseDetected: "The worker noted concerns regarding parenting capacity or general home conditions.",
-      explanation: "CAS files frequently contain subjective assessments ('home was cluttered', 'parent seemed anxious') without connecting these findings to any statutory ground of protection need under CYFSA s. 74.",
-      verifyRequirement: "Request direct objective criteria or child medical exams showing child is thriving.",
-      legalReference: "CYFSA 2017, Section 74(2)",
-      locationInDocument: "Paragraph 3, subjective evaluation block",
-      parentActionStep: "Keep a daily home photo diary showing neat, clean living spaces and fully stocked pantries to rebut subjective reports."
-    });
-    redFlags.push({
-      id: `rf-${rfIdCount++}`,
-      severity: "[Affects Evidentiary Weight]",
-      category: "Rights Omission",
-      phraseDetected: "Worker proceeded with interview without informing the parent of counsel access.",
-      explanation: "Parents have a right to be accompanied by counsel or an advocate during CAS investigations. Omission of this notice constitutes a significant procedural defect under Ontario family standards.",
-      verifyRequirement: "Confirm whether you signed a consent form or were verbally advised of your rights prior to the interview.",
-      legalReference: "CYFSA 2017, s. 2 (Declaration of Principles)",
-      locationInDocument: "Opening intake paragraphs",
-      parentActionStep: "Send a written request stating that all future communications, meetings, or interviews must be scheduled through your lawyer."
-    });
-  }
-
-  return {
-    documentTitle: title,
-    documentType: docType,
-    disclaimer: "LOCAL SIMULATION ACTIVE (Gemini API Quota Exceeded): To ensure uninterrupted access, this report has been compiled using our high-fidelity, Ontario CYFSA rules-based local analyzer. It is for educational purposes only and does not constitute legal advice.",
-    completenessScore: 78,
-    fileSummary: analysisSummary,
-    redFlags: redFlags,
-    thresholdAnalysis: [
-      {
-        thresholdChecked: "Immediate Danger & Imminent Harm (CYFSA s. 81)",
-        isMet: text.toLowerCase().includes("imminent") || text.toLowerCase().includes("danger") ? "Yes" : "No",
-        reasoning: `No immediate active risk of serious harm or physical danger is demonstrated in this document. CAS has not established the strict 'imminent risk' required under s. 81(1) to justify emergency intervention without a warrant.`,
-        primarySourceLaw: "CYFSA 2017, Section 81(1)"
-      },
-      {
-        thresholdChecked: "Child in Need of Protection grounds (CYFSA s. 74)",
-        isMet: "No",
-        reasoning: `The allegations regarding child ${childName} rely primarily on hearsay or subjective concerns. They do not meet the objective thresholds of any of the 16 protection grounds enumerated under s. 74.`,
-        primarySourceLaw: "CYFSA 2017, Section 74"
-      },
-      {
-        thresholdChecked: "Duty to Report standard vs Direct evidence (CYFSA s. 125)",
-        isMet: "Inconclusive",
-        reasoning: `The intake was triggered by the s. 125 duty to report standard. However, the subsequent investigation must depend on direct, verified evidence of protection needs, not just repeated claims of the initial report.`,
-        primarySourceLaw: "CYFSA 2017, Section 125"
-      },
-      {
-        thresholdChecked: "Kinship-first consideration duty (CYFSA s. 70 & s. 2)",
-        isMet: "No Active Risk Marked",
-        reasoning: `There is no indication in the file that CAS has actively explored kinship placement alternatives (with relatives or community members) as mandated under s. 70. Kinship search must be prioritized.`,
-        primarySourceLaw: "CYFSA 2017, Section 70"
-      }
-    ],
-    proceduralTimelineViolations: [
-      {
-        timelineRule: "30-Day Adjournment Limit (CYFSA s. 94(1))",
-        documentAssertion: "Court timelines and future dates.",
-        evaluation: "The document does not explicitly note a scheduled adjournment exceeding 30 days. However, the parent must be vigilant that any future child protection hearings do not exceed the 30-day statutory cap without express written consent from all family parties.",
-        citation: "CYFSA, S.O. 2017, c. 14, s. 94(1)",
-        locationInDocument: "Checked & Compliant",
-        parentActionStep: "Keep an active calendar log of all child welfare court dates and instruct your counsel to object if an adjournment exceeds 30 days."
-      },
-      {
-        timelineRule: "5-Day Post-Apprehension Court Hearing Rule (CYFSA s. 94(5))",
-        documentAssertion: "Checked against current child status.",
-        evaluation: "If any emergency apprehension or removal has occurred, a court hearing MUST be convened within 5 court days. The documents do not show active compliance logs.",
-        citation: "CYFSA, S.O. 2017, c. 14, s. 94(5)",
-        locationInDocument: "Not applicable - child safe in home care",
-        parentActionStep: "Confirm that the child is safely in your care. If any removal is ever threatened, demand immediate emergency court notification."
-      },
-      {
-        timelineRule: "Child Ombudsman Access & Continuous Care Rights (SCFA 2024 / Bill 33 2025)",
-        documentAssertion: "In-care rights and ombudsman access.",
-        evaluation: `The files lack active notifications showing that children were informed of their statutory right to contact the Ontario Ombudsman regarding CAS oversight. Under SCFA 2024, children in care have expanded rights to contact the Ombudsman directly.`,
-        citation: "Supporting Children's Futures Act, 2024",
-        locationInDocument: "Checked & Advised",
-        parentActionStep: "Verify that children are educated about their continuous right to reach out to the Ontario Ombudsman for independent assistance."
-      },
-      {
-        timelineRule: "300-Day Presumption of Parentage (CLRA s. 8(1))",
-        documentAssertion: "Parent representation logs.",
-        evaluation: "The Children's Law Reform Act s. 8(1) legal presumption of parentage mandates that both parents must be integrated into all child protection processes. CAS cannot exclude a father if separation occurred within 300 days of birth.",
-        citation: "Children's Law Reform Act, s. 8(1)",
-        locationInDocument: "Checked & Compliant",
-        parentActionStep: "Ensure your defense counsel formalizes a motion to include both biological/legal parents in all child protection correspondence."
-      }
-    ],
-    charterAndHumanRightsIssues: [
-      `Section 7 (Canadian Charter): The state's unilateral intervention in family integrity directly engages the parent's right to liberty and security of the person. Any arbitrary action or denial of a fair hearing constitutes a s.7 violation.`,
-      `Section 15 (Canadian Charter): CAS investigations must be conducted without bias, discrimination, or unequal stereotyping. Any disproportionate scrutiny of lower-income families engages Section 15 protections.`,
-      `Mandatory Consideration of Indigenous, First Nations, Inuit, or Métis Heritage (CYFSA Section 2): If the child has Indigenous heritage, CAS holds a strict statutory duty to respect cultural heritage and exhaust all band-supported custom care agreements before pursuing foster placements.`
-    ],
-    whatToVerify: [
-      `Double-check any specific dates and timestamps mentioned in the CAS logs against your own phone GPS, text logs, or grocery receipts.`,
-      `Request copy of the child's school attendance records and pediatrician reports to verify they are thriving.`,
-      `Check if there are security cameras, ring doorbells, or witness statements that can prove you were home or debunk worker claims.`
-    ],
-    whatToAskALawyer: [
-      `Should we submit a formal records correction request under Part X of the CYFSA to fix inaccurate worker notes?`,
-      `Can we request a temporary court order under s. 94(2) to compel CAS to disclose all supervisor intake notes and emails?`,
-      `How can we leverage the CLRA Section 8 parentage presumption to involve supportive relatives as temporary safety options?`
-    ],
-    whatIsMissing: [
-      `The direct, unedited statements or wishes of the child Marcus.`,
-      `Objective school report cards or pediatrician records backing up the worker's claims.`,
-      `Details of kinship searches or efforts made to explore less intrusive support options prior to escalating the case.`
-    ],
-    lawyerCaseBrief: [
-      `**Evidentiary Deficiency (Hearsay)**: The worker's notes rely heavily on uncorroborated third-party reports. Counsel should move to strike any hearsay from the record under Ontario Evidence rules, as it does not meet the necessary threshold to prove protection needs.`,
-      `**Procedural Review (s. 94 Adjournment Rule)**: Review all court records to ensure CAS has not breached the 30-day adjournment cap. If violated, move for immediate dismissal or scheduled trials.`,
-      `**Onus of Proof s. 94(2)**: Reiterate that the burden is strictly on CAS to prove that Marcus cannot be protected in the home. Prepare parent-held photos and daily journals to demonstrate a safe, pristine environment.`,
-      `**Warrantless Entry Boundary**: The worker's demands for home access without a warrant or immediate emergency grounds represent an overreach of authority. Advise parent to route all communications through counsel.`,
-      `**Action Plan**: Draft a comprehensive family safety plan incorporating relatives (kinship options under s.70) to present to the court as a preemptive, less intrusive alternative to any CAS intervention.`
-    ]
-  };
-}
-
-function generateLocalRagAnswer(query: string, files: any[], focus?: string): { answer: string; citations: any[] } {
-  const lowercaseQuery = query.toLowerCase();
-  
-  // Let's find files that match keywords
-  const matchedFiles = files.filter(f => {
-    const fileContent = (f.content || "").toLowerCase();
-    const fileName = (f.name || "").toLowerCase();
-    return lowercaseQuery.split(/\s+/).some(word => word.length > 3 && (fileContent.includes(word) || fileName.includes(word)));
-  }).slice(0, 3);
-
-  let docContextText = "";
-  if (matchedFiles.length > 0) {
-    docContextText = matchedFiles.map(f => {
-      const sentences = f.content.split(/[.!?]+/);
-      const matchingSentences = sentences.filter((s: string) => 
-        lowercaseQuery.split(/\s+/).some(word => word.length > 3 && s.toLowerCase().includes(word))
-      ).slice(0, 3).map((s: string) => s.trim() + ".");
-      
-      return `**[Source: ${f.name}]** notes: "${matchingSentences.join(" ")}"`;
-    }).join("\n\n");
-  }
-
-  let responseText = "";
-  
-  if (lowercaseQuery.includes("hearsay") || lowercaseQuery.includes("objection") || lowercaseQuery.includes("evidence")) {
-    responseText = `### ⚖️ Evidentiary Scrutiny: Hearsay and Evidence Audit
-Based on an audit of the files, we have compiled an educational response matching Ontario standards:
-
-1. **Hearsay Thresholds**: Hearsay allegations are widely present in caseworker documents. Under Ontario's Family Court rules and the Evidence Act, third-party reports (e.g., neighbor tips, school alerts) constitute hearsay. While admissible for the initial duty to report under **s. 125**, they are inadmissible to prove the actual allegations at a protection trial unless backed by direct eyewitness testimony or satisfying strict exceptions.
-2. **Actionable Steps for Parents**:
-   - Request detailed records of who made the statements and verify dates.
-   - Cross-examine allegations by keeping a meticulous daily diary or calendar of activities.
-   - If the caseworker documents a third-party claim, counsel should draft a formal objection.
-
-${docContextText || "No matching direct hearsay statements were retrieved from your uploaded files, but parents should always audit worker notes for speculative phrases like 'it was reported' or 'concerns were raised' and request direct proof."}`;
-
-  } else if (lowercaseQuery.includes("warrant") || lowercaseQuery.includes("entry") || lowercaseQuery.includes("house") || lowercaseQuery.includes("home") || lowercaseQuery.includes("refuse")) {
-    responseText = `### 🚪 Home Entry and Caseworker Authority boundaries
-Regarding a caseworker's right of entry under Ontario CYFSA standards:
-
-1. **Constitutional Rights (s. 7 of the Charter)**: Your home is protected from unreasonable search and entry. A CAS worker holds NO automatic power to enter your private home or search bedrooms unless:
-   - They present a valid court warrant signed by a judge.
-   - They possess reasonable grounds to suspect an immediate, imminent risk of serious bodily harm to a child inside (**s. 81(1)**).
-2. **Strategic Co-Parenting & Communication boundaries**:
-   - Politely but firmly request that all scheduled visits be arranged through your legal counsel.
-   - If a worker arrives unexpectedly, you have the right to request a warrant. State: *"I am cooperative and happy to schedule a visit, but I require a warrant or scheduled appointment through my lawyer."*
-   - Keep your door closed during the conversation. Recording the exchange on your phone is highly recommended to protect against fabricated worker claims.
-
-${docContextText || "Your active case files do not document a forced home entry, but if unexpected visits are noted, ensure you log timestamps and names of all present parties."}`;
-
-  } else if (lowercaseQuery.includes("visitation") || lowercaseQuery.includes("visit") || lowercaseQuery.includes("access") || lowercaseQuery.includes("contact")) {
-    responseText = `### 🤝 CAS Supervised Visitation and Access Guidelines
-Supervised access and visitation are critical areas in child protection files:
-
-1. **Parental Access Rights**: Under the CYFSA, CAS must facilitate safe, regular contact between parents and children. If a child is in care, the **Supporting Children's Futures Act, 2024** mandates frequent, safe visitation schedules and grants children the absolute right to contact the Ontario Ombudsman to report placement issues or contact constraints.
-2. **Proactive Visitation Prep**:
-   - Keep access visits positive, focusing entirely on the child's emotional well-being.
-   - Bring healthy snacks, games, and homework.
-   - Document the visit details immediately after completion: note what the child said, their general health, and any worker comments.
-   
-${docContextText || "The uploaded documents do not outline a formal supervised access order, but any visitation gaps should be documented and raised immediately with family defense counsel."}`;
-
-  } else {
-    responseText = `### 🔍 Ontario CYFSA Case File Review & Strategic Guidance
-Regarding your inquiry:
-
-1. **Statutory Standards & Protections**:
-   - **s. 74 Child in Need of Protection**: CAS must prove that the child is at active, objective risk of harm under one of the 16 grounds. Subjective theories or standard parenting differences do not suffice.
-   - **s. 94(2) Onus of Proof**: The onus remains on the state (CAS) to prove the child is in need of protection, not on the parents to prove their innocence.
-   - **s. 94(1) 30-Day Cap**: Family courts cannot adjourn child protection matters for more than 30 days without universal party consent. Timelines must be strictly policed.
-2. **Action Plan**:
-   - Organize all case files into folders (e.g. CAS Records, Personal Diaries, Kid Health Reports).
-   - Flag and draft written refutations for any worker claims that contain errors or exaggerations.
-   - Schedule a strategic preparation session with a local family defense lawyer.
-
-${docContextText || "The retrieved case file context contains general details, but we advise verifying all worker claims against your direct logs, calendar schedules, and text records."}
-
-*Note: This answer is provided via our high-fidelity Ontario rules-based local engine to bypass active API rate limits. It is for educational reference only.*`;
-  }
-
-  return {
-    answer: responseText,
-    citations: matchedFiles.map(f => ({ name: f.name, category: f.category, score: 10 }))
-  };
-}
-
-function generateLocalEvidenceExtraction(narrativeText: string): any {
-  const text = narrativeText || "";
-  
-  const dateRegex = /(\b\d{4}-\d{2}-\d{2}\b|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s+\d{4})?\b)/i;
-  const matchDate = text.match(dateRegex);
-  const extDate = matchDate ? matchDate[0] : "2026-06-06";
-
-  const workerRegex = /(?:worker|cas|sarah|finch|investigator|officer)\s+([A-Z][a-z]+)/i;
-  const matchWorker = text.match(workerRegex);
-  const workerName = matchWorker ? matchWorker[0] : "Sarah Finch (CAS)";
-
-  let hearsay = "Direct Evidence";
-  if (text.toLowerCase().includes("neighbour") || text.toLowerCase().includes("someone told") || text.toLowerCase().includes("anonymous")) {
-    hearsay = "Double Hearsay (Worker said another said)";
-  } else if (text.toLowerCase().includes("said") || text.toLowerCase().includes("claimed")) {
-    hearsay = "Hearsay (Worker told me)";
-  }
-
-  return {
-    date: extDate,
-    involvedWorkers: workerName,
-    whatHappened: `Parent logged a case interaction. Narrative: "${text.substring(0, 150)}..."`,
-    statementsMade: text.includes("\"") ? text.match(/"([^"]+)"/)?.[0] || "Worker claimed the home was cluttered or family relations are strained." : "The worker stated that they had to make a safety check and verify the fridge contents.",
-    hearsayFlag: hearsay,
-    audioPhotoLog: "Parent diary memo, scheduled calendar timestamp, or phone call recording logs.",
-    questionsForCounsel: "Did the CAS worker obtain verbal consent for this specific line of questioning, and can we request their formal intake records under CYFSA Part X?"
-  };
-}
-
-function generateLocalTranscription(narrativeText: string, fileName?: string): any {
-  const text = narrativeText || "No narrative text was provided.";
-  const name = fileName || "Audio_Recording.mp3";
-  
-  const formattedText = `
-=============================================================================
-IN THE FAMILY DIVISION OF THE ONTARIO COURT OF JUSTICE
-TRANSCRIPT OF RECORDED DIARY PROCEEDINGS
-=============================================================================
-
-CASE FILE REF: CAS-SIM-2026
-DATE OF RECORDING: June 6, 2026
-TRANSCRIBED ON: June 6, 2026
-RECORDING FILENAME: ${name}
-
-[00:00:05] THE PARENT:
-This is a voice log documenting the child protection worker interaction.
-The narrative recounts: "${text}"
-
-[00:01:10] THE WORKER:
-I am here to conduct a safety inspection. We received an intake report
-under the s. 125 duty to report standard. We must inspect the home
-conditions and verify the child's well-being.
-
-[00:02:15] THE PARENT:
-I understand my rights and I wish to consult with my defense counsel
-prior to signing any service agreements.
-
-[00:03:00] THE WORKER:
-We will note that you are cooperating but requesting counsel, and we
-will schedule a follow-up visit.
-
------------------------------------------------------------------------------
-CERTIFICATE OF AUTONOMOUS TRANSCRIPTION
------------------------------------------------------------------------------
-I hereby certify that the foregoing is a true and accurate verbatim
-simulation of the recorded narrative statements, formatted specifically
-to preserve family evidence and timelines under s. 94(2) onus rules.
-
-Dated: June 6, 2026
-Transcribed by: Certified Court Reporter (Offline Sandbox Simulator)
-=============================================================================
-`;
-
-  return {
-    success: true,
-    fileName: `Transcript - ${name.replace(/\.[^/.]+$/, "")}.pdf`,
-    mimeType: "application/pdf",
-    transcribedText: formattedText
-  };
-}
-
-
 const app = express();
 
 // Trust reverse proxy (needed for Cloud Run containers and rate limiting headers)
@@ -934,61 +474,67 @@ app.use(express.json({ limit: "100mb" }));
     }
   });
 
-  // API 1b: Activate Access Code via Supabase
+  // API 1b: Request access before paying — creates a pending payment record
+  // and a reference number the parent puts in their Interac e-transfer memo.
+  // Body: { email: string, tier: "Pro" | "Premium" }
+  app.post("/api/request-access", async (req: Request, res: Response) => {
+    try {
+      const { email, tier } = req.body || {};
+      if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+        return res.status(400).json({ error: "A valid email is required." });
+      }
+      if (tier !== "Pro" && tier !== "Premium") {
+        return res.status(400).json({ error: 'tier must be "Pro" or "Premium".' });
+      }
+      const result = await requestAccess(email, tier as Tier);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[/api/request-access]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to create access request." });
+    }
+  });
+
+  // API 1c: Admin-only — approve a payment after confirming the e-transfer
+  // landed, and generate the one-time access code to send to the parent.
+  // Header: x-admin-secret: <ADMIN_SECRET>
+  // Body: { referenceNumber: string, amountReceived: number }
+  app.post("/api/admin/approve-payment", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const { referenceNumber, amountReceived } = req.body || {};
+      if (!referenceNumber || typeof amountReceived !== "number") {
+        return res.status(400).json({ error: "referenceNumber (string) and amountReceived (number) are required." });
+      }
+      const result = await approvePayment(referenceNumber, amountReceived);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[/api/admin/approve-payment]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to approve payment." });
+    }
+  });
+
+  app.get("/api/access-pricing", (_req: Request, res: Response) => {
+    res.json({ prices: TIER_PRICES });
+  });
+
+  // API 1d: Activate Access Code — parent redeems email + code.
+  // Rewritten to use the real table schema (access_codes.code_hash,
+  // SHA-256 + timing-safe compare) via services/access.ts. The previous
+  // version here queried a plaintext `code` column that doesn't exist in
+  // the actual table, so it could never have worked even when configured.
   app.post("/api/activate-code", async (req: Request, res: Response) => {
     try {
-      const { code, email } = req.body;
+      const { code, email } = req.body || {};
       if (!code || !email) {
         return res.status(400).json({ error: "Code and email are required." });
       }
-
-      const supabase = getSupabaseClient();
-      const cleanCode = code.trim().toUpperCase();
-      const cleanEmail = email.trim().toLowerCase();
-
-      // Query the code row matching both code and email (or handle email validation)
-      const { data: codeRow, error } = await supabase
-        .from("access_codes")
-        .select("*")
-        .eq("code", cleanCode)
-        .eq("email", cleanEmail)
-        .single();
-
-      if (error || !codeRow) {
-        return res.status(404).json({ error: "Invalid code or email. Please confirm they match your Interac e-Transfer memo." });
-      }
-
-      if (codeRow.used_at) {
-        return res.status(410).json({ error: "This access code has already been activated and cannot be reused." });
-      }
-
-      if (codeRow.expires_at && new Date(codeRow.expires_at) < new Date()) {
-        return res.status(410).json({ error: "This access code has expired." });
-      }
-
-      // Single-use enforcement: update used_at to prevent future reuse
-      const { error: updateError } = await supabase
-        .from("access_codes")
-        .update({ used_at: new Date().toISOString() })
-        .eq("id", codeRow.id);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      // Map DB tier back to frontend tiers ("Pro" or "Premium")
-      // tier in DB could be 'pro_advocate' or 'premium_attorney'
-      let tier = "Basic";
-      if (codeRow.tier === "pro_advocate" || codeRow.tier === "Pro") {
-        tier = "Pro";
-      } else if (codeRow.tier === "premium_attorney" || codeRow.tier === "Premium") {
-        tier = "Premium";
-      }
-
-      res.json({ success: true, tier });
+      const result = await verifyAccessCode(email, code);
+      res.json({ success: true, tier: result.tier, token: result.token, email: result.email });
     } catch (err: any) {
-      console.error("Activation error:", err);
-      res.status(500).json({ error: err.message || "Activation failed. Please check if Supabase is properly configured." });
+      console.error("[/api/activate-code]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Activation failed." });
     }
   });
 
@@ -1211,13 +757,10 @@ THINGS TO NEVER DO
       res.json(report);
 
     } catch (error: any) {
-      console.warn("[Quota Fallback] API error during document analysis. Swapping to Ontario rules-based simulation generator:", error);
-      try {
-        const report = generateLocalSimulationReport(targetText, fileDataObj?.fileName || "Uploaded Document");
-        res.json(report);
-      } catch (fallbackError) {
-        handleClaudeError(error, "document analysis", res);
-      }
+      // Do NOT fabricate a fake analysis on failure — a parent could mistake
+      // invented names/dates for a real reading of their own document.
+      console.error("[document analysis] API error, returning honest failure (no fabricated fallback):", error);
+      handleClaudeError(error, "document analysis", res);
     }
   });
 
@@ -1318,13 +861,8 @@ THINGS TO NEVER DO
       });
 
     } catch (err: any) {
-      console.warn("[Quota Fallback] API error during RAG Synthesis. Swapping to local rules-based Q&A assistant:", err);
-      try {
-        const fallbackResult = generateLocalRagAnswer(queryVal, filesVal, focusVal);
-        res.json(fallbackResult);
-      } catch (fallbackError) {
-        handleClaudeError(err, "RAG Synthesis", res);
-      }
+      console.error("[RAG synthesis] API error, returning honest failure (no fabricated fallback):", err);
+      handleClaudeError(err, "RAG Synthesis", res);
     }
   });
 
@@ -1338,12 +876,13 @@ THINGS TO NEVER DO
         return res.status(400).json({ error: "Narrative text is required for AI information extraction." });
       }
 
+      const todayIso = new Date().toISOString().slice(0, 10);
       const systemInstruction = 
         `You are an expert CYFSA Ontario case analyst assistant powered by Claude specializing in extracting structured evidence audit records from a parent's voice recording or text dictation narrative.
          Your goal is to parse the raw spoken or written narrative into a structured evidentiary journal log entry aligned with Ontario's Child, Youth and Family Services Act (CYFSA) standards.
          
          Be precise. Distinguish direct first-hand facts from hearsay.
-         The current date is June 6, 2026. Use YYYY-MM-DD format for dates. If the user mentions "yesterday", "today", "Friday", etc., calculate relative to June 6, 2026. If no date is mentioned or inferable, default to "2026-06-06".
+         The current date is ${todayIso}. Use YYYY-MM-DD format for dates. If the user mentions "yesterday", "today", "Friday", etc., calculate relative to ${todayIso}. If no date is mentioned or inferable, default to "${todayIso}".
          IMPORTANT: Output ONLY the correct JSON structure. Do not output markdown block wrappers unless it is robustly formatted in \`\`\`json ... \`\`\` code blocks. Do not include introductory or concluding conversational prose.`;
 
       const promptText = `
@@ -1379,94 +918,81 @@ THINGS TO NEVER DO
       res.json(extractedData);
 
     } catch (error: any) {
-      console.warn("[Quota Fallback] API error during evidence extraction. Swapping to local parser:", error);
-      try {
-        const extractedData = generateLocalEvidenceExtraction(narrativeTextVal);
-        res.json(extractedData);
-      } catch (fallbackError) {
-        handleClaudeError(error, "evidence extraction", res);
-      }
+      console.error("[evidence extraction] API error, returning honest failure (no fabricated fallback):", error);
+      handleClaudeError(error, "evidence extraction", res);
     }
   });
 
-  // API: Automated Transcription for Audio Recordings stored in PDF format
+  // API: Audio transcription (real, when audio is provided) and narrative
+  // journal formatting (when it's the parent's own typed/dictated account).
+  //
+  // IMPORTANT: this used to instruct the model to fabricate a fake "verbatim
+  // certified" court transcript — with invented dialogue and a false
+  // "CERTIFICATE OF TRANSCRIBER" — even for real recordings of real CAS
+  // interactions, without ever sending the actual audio to the model. That
+  // has been replaced: real audio is now actually transcribed by Gemini
+  // (see transcribeAudioWithGemini), and typed narratives are reformatted
+  // as the parent's own account, not dressed up as court dialogue.
   app.post("/api/transcribe", async (req: Request, res: Response) => {
-    let narrativeTextVal = "";
-    let fileNameVal = "";
     try {
-      const { narrativeText, audioData, mimeType, fileName } = req.body;
-      narrativeTextVal = narrativeText || "";
-      fileNameVal = fileName || "";
-      
-      let promptText = "";
+      const { narrativeText, audioData, mimeType, fileName } = req.body || {};
 
       if (audioData && mimeType) {
-        promptText = `
-          You are a certified court reporter for Ontario Family Court proceedings simulating a transcript matching the parent's audio file named "${fileName || 'Audio_Recording.mp3'}".
-          Since this is powered by Claude's text intelligence, please draft a comprehensive, professionally formatted simulated Ontario family court verbatim audio transcript based on the context of child welfare (CAS) inspections, home visits, or phone logs.
-          
-          Include:
-          1. A formal header: "IN THE FAMILY COURT OF ONTARIO - VERBATIM CERTIFIED RECORD"
-          2. Details about dates, speakers, and timing based on child protection casework themes.
-          3. Explicit dialogue labels (e.g., "SPEAKER A (CAS Caseworker)", "Speaker B (Parent)").
-          4. Highlight any instances of hearsay or CYFSA Section 74 / Section 81 references in footnotes or block brackets.
-          5. A notice at the top or bottom of the transcript stating: "Note: Verbatim audio tape simulated by Claude offline-ready court intelligence. For custom speech-to-text dictation, please use the Voice Record dictation button or paste narrative text directly."
-          6. A formal "CERTIFICATE OF TRANSCRIBER" at the bottom.
-          
-          Produce the transcript with a Courier/Monospace visual rhythm, utilizing line numbers 1 to 28 for each section.
-        `;
-      } else {
-        const textToFormat = narrativeText || "No voice narrative or audio data was provided.";
-        promptText = `
-          You are a certified court reporter for Ontario Family Court proceedings.
-          A parent has provided the following narrative account of a CAS visitation/interaction:
-          "${textToFormat}"
-
-          Please translate this narrative statement into an official certified court-reporter-style VERBATIM transcript.
-          Generate simulated exact dialogue matching this narrative account, making it look like a real audio transcription tape in Ontario.
-          
-          Style guidelines:
-          1. Professional legal headers:
-             "IN THE ONTARIO COURT OF JUSTICE (FAMILY DIVISION)"
-             "TRANSCRIPT OF PROCEEDINGS - AUDIO RECORDING DIARY"
-          2. Transcribed on June 6, 2026.
-          3. Speakers clearly separated (e.g., "THE WORKER:", "THE PARENT:").
-          4. Insert timestamps (e.g. "[00:01:22]") to simulate transcription pacing.
-          5. For every important legal action or allegation, add a bracketed analysis note under the CYFSA s.74 or s.94.
-          6. Add a formal "CERTIFICATE OF AUTONOMOUS TRANSCRIPTION" certifying that this transcript was generated verbatim from recorded statements to preserve evidence under s.94(2) onus rules.
-          7. Add a notice highlighting that this is optimized for poor court room reception using the courtroom caching service worker.
-          
-          Output the full transcript with line numbers (1 to 28 per division) down the side in courier/monospace structure.
-        `;
+        // Real audio — actually transcribe it.
+        const transcribedText = await transcribeAudioWithGemini(audioData, mimeType);
+        if (!transcribedText.trim()) {
+          throw new Error("The transcription came back empty — the recording may be silent, too short, or in an unsupported format.");
+        }
+        return res.json({
+          success: true,
+          fileName: fileName ? `Transcript - ${String(fileName).replace(/\.[^/.]+$/, "")}.pdf` : `Transcript_Audio_${Date.now()}.pdf`,
+          mimeType: "application/pdf",
+          transcribedText: `AI-GENERATED TRANSCRIPTION AID — review carefully against the original recording before relying on this for anything official; it is not a certified court transcript.\n\n${transcribedText}`,
+        });
       }
 
+      // No audio — this is the parent's own typed/dictated account. Clean it
+      // up into a dated personal journal entry, in their own words, without
+      // inventing dialogue for other people or dressing it up as a court
+      // document.
+      const textToFormat = (narrativeText || "").trim();
+      if (!textToFormat) {
+        return res.status(400).json({ error: "No narrative text or audio was provided." });
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      const promptText = `
+        A parent is keeping a personal journal of their interactions with Ontario's Children's Aid Society (CAS) for their own records. Below is their own account, typed or dictated by them, of something that happened.
+
+        Their account:
+        "${textToFormat}"
+
+        Clean this up into a clearly dated, well-organized personal journal entry in the parent's own voice — fix grammar/punctuation and organize it chronologically, but do not invent any dialogue, names, dates, or details that are not in the text above. If the parent mentions something someone else said, present it as "the parent recalls [person] saying..." — never as verbatim quoted dialogue, since this is the parent's memory, not a recording. Do not add legal headers, certifications, "verbatim" or "certified" language, or claim this is a transcript of anything — it is a personal journal entry only. Today's date is ${today}; use it only if the parent didn't specify when this happened.
+
+        Output the journal entry as plain text.
+      `;
+
       const response = await generateContentWithFallback({
-        system: "You are a court reporter.",
+        system: "You help a self-represented parent organize their own personal case journal. You never invent facts, dialogue, or details the parent did not provide, and you never claim their notes are an official or certified record.",
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
-        temperature: 0.3
+        temperature: 0.2,
       }, "claude-3-5-sonnet-20241022");
 
       const responseText = response.text;
-
       if (!responseText) {
-        throw new Error("Failure processing audio transcription.");
+        throw new Error("Failed to format the journal entry.");
       }
 
       res.json({
         success: true,
-        fileName: fileName ? `Transcript - ${fileName.replace(/\.[^/.]+$/, "")}.pdf` : `Transcript_Audio_${Date.now()}.pdf`,
+        fileName: `Journal_Entry_${Date.now()}.pdf`,
         mimeType: "application/pdf",
-        transcribedText: responseText
+        transcribedText: responseText,
       });
 
     } catch (error: any) {
-      console.warn("[Quota Fallback] API error during audio transcription. Swapping to local court-reporter simulation:", error);
-      try {
-        const fallbackResult = generateLocalTranscription(narrativeTextVal, fileNameVal);
-        res.json(fallbackResult);
-      } catch (fallbackError) {
-        handleClaudeError(error, "audio transcription", res);
-      }
+      console.error("[transcribe] API error, returning honest failure (no fabricated fallback):", error);
+      handleClaudeError(error, "transcription/journal formatting", res);
     }
   });
 
@@ -1519,27 +1045,77 @@ THINGS TO NEVER DO
     }
   });
 
-  // API 3: Lawyer lead intake simulation
-  app.post("/api/lawyer-intake", (req: Request, res: Response) => {
+  // API 3: Lawyer lead intake — emails the request if SMTP is configured,
+  // otherwise logs it server-side. Never claims a lawyer was notified
+  // unless the email actually sent (or at minimum was recorded).
+  app.post("/api/lawyer-intake", async (req: Request, res: Response) => {
     try {
-      const { parentName, lawyerId, email, city, details, consentGiven } = req.body;
-      
-      if (!parentName || !lawyerId || !consentGiven) {
-        return res.status(400).json({ error: "Required fields missing or consent not verified." });
+      const { parentName, lawyerId, email, city, details, consentGiven } = req.body || {};
+
+      if (!parentName || typeof parentName !== "string") {
+        return res.status(400).json({ error: "`parentName` is required." });
+      }
+      if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: "A valid `email` is required." });
+      }
+      if (!lawyerId) {
+        return res.status(400).json({ error: "`lawyerId` is required." });
+      }
+      if (consentGiven !== true) {
+        return res.status(400).json({ error: "Consent to share your details with the selected lawyer is required." });
       }
 
-      // Generate a simulated reference number
-      const referNum = "REF-" + Math.floor(100000 + Math.random() * 900000);
+      const referenceNum = "LI-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+
+      const intakeRecord = {
+        referenceNum,
+        parentName: String(parentName).slice(0, 200),
+        lawyerId: String(lawyerId).slice(0, 100),
+        email,
+        city: city ? String(city).slice(0, 100) : "",
+        details: details ? String(details).slice(0, 5000) : "",
+        receivedAt: new Date().toISOString(),
+      };
+
+      // Always log server-side so nothing is lost even if email sending
+      // fails or isn't configured. (Vercel function logs are viewable
+      // per-deployment.)
+      console.log("[lawyer-intake]", JSON.stringify({ ...intakeRecord, details: `${intakeRecord.details.length} chars` }));
+
+      const hasSmtpConfig = Boolean(
+        process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.LAWYER_INTAKE_TO
+      );
+      let emailSent = false;
+
+      if (hasSmtpConfig) {
+        try {
+          const nodemailer = await import("nodemailer");
+          const transporter = nodemailer.default.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT) || 587,
+            secure: process.env.SMTP_SECURE === "true",
+            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          });
+          await transporter.sendMail({
+            from: process.env.SMTP_FROM || process.env.SMTP_USER,
+            to: process.env.LAWYER_INTAKE_TO,
+            replyTo: email,
+            subject: `New lawyer intake [${referenceNum}] — ${intakeRecord.city || "Ontario"}`,
+            text: `Reference: ${referenceNum}\nParent: ${intakeRecord.parentName}\nEmail: ${email}\nLawyer requested: ${lawyerId}\nCity: ${intakeRecord.city}\n\nDetails:\n${intakeRecord.details}`,
+          });
+          emailSent = true;
+        } catch (mailErr) {
+          console.error("[lawyer-intake] email send failed", mailErr);
+        }
+      }
 
       res.json({
         success: true,
-        referenceNum: referNum,
-        message: "Your educational brief and secure contact request was successfully routed. A designated local family defense counsel has been notified. They will contact you shortly if they have availability under Rule 14/CYFSA timelines.",
-        routedDetails: {
-          city,
-          lawyerId,
-          timestamp: new Date().toISOString()
-        }
+        referenceNum,
+        message: emailSent
+          ? "Your inquiry has been emailed to the directory team. This is not a retainer and does not create a lawyer-client relationship until confirmed directly with the lawyer."
+          : "Your inquiry has been recorded. Automatic email delivery isn't configured on this server yet, so please also reach out to the lawyer directly if this is urgent. This is not a retainer.",
+        emailSent,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
