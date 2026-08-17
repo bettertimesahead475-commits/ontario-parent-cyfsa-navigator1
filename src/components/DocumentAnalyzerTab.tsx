@@ -2199,37 +2199,127 @@ export default function DocumentAnalyzerTab() {
       `;
     } else if (activeTab === "organizer" && selectedReport) {
       title = `Admissibility Audit - ${selectedReport.documentTitle || activeSelectedFile?.name || "Report"}`;
-      const scoreColor = selectedReport.completenessScore >= 80 ? "#16a34a" : selectedReport.completenessScore >= 50 ? "#d97706" : "#dc2626";
-      
+      const evidenceIndex = selectedReport.evidenceStrengthIndex || {
+        score: 0,
+        components: {},
+        limitations: "Evidence Strength Index data was not present in this report. Re-run the analysis with the current analyzer."
+      };
+
+      const evidenceScore = Number(evidenceIndex.score) || 0;
+      const evidenceScoreColor =
+        evidenceScore >= 80 ? "#16a34a" :
+        evidenceScore >= 50 ? "#d97706" :
+        "#dc2626";
+
+      const completenessScore = Number(selectedReport.completenessScore) || 0;
+      const components = evidenceIndex.components || {};
+
+      const evidenceComponents = [
+        ["firsthandKnowledge", "Firsthand Knowledge", 20],
+        ["sourceReliability", "Source Reliability", 15],
+        ["corroboration", "Corroboration", 15],
+        ["documentarySupport", "Documentary Support", 15],
+        ["internalConsistency", "Internal Consistency", 10],
+        ["contradictoryEvidenceHandling", "Contradictory Evidence Handling", 10],
+        ["legalAuthorityVerification", "Legal Authority Verification", 10],
+        ["proceduralDocumentation", "Procedural Documentation", 5]
+      ];
+
       bodyContent = `
         <div class="header-container">
           <span class="platform-label">ParentShield • Evidence strength audit</span>
-          <h1 class="title-main">File Analysis & Admissibility Strength Report</h1>
+          <h1 class="title-main">File Analysis & Evidence Strength Report</h1>
+
           <div class="meta-bar">
-            Document Checked: <strong>${selectedReport.documentTitle || activeSelectedFile?.name || "N/A"}</strong>
-            • Type: <strong>${selectedReport.documentType || "Casework Correspondence"}</strong>
-            • Date of Audit: <strong>${selectedReport.analysisDate || "Current"}</strong>
+            Document Checked:
+            <strong>${selectedReport.documentTitle || activeSelectedFile?.name || "N/A"}</strong>
+            • Type:
+            <strong>${selectedReport.documentType || "Casework Correspondence"}</strong>
+            • Date of Audit:
+            <strong>${selectedReport.analysisDate || "Current"}</strong>
           </div>
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">📊 Educational Admissibility Summary</h3>
-          <div style="display: flex; gap: 40px; align-items: center; margin-top: 10px;">
+          <h3 class="section-title">📊 Educational Evidence Strength Summary</h3>
+
+          <div style="display:flex; gap:40px; align-items:center; margin-top:10px; flex-wrap:wrap;">
             <div>
-              <span style="font-size: 13px; color: #475569; font-weight: bold; text-transform: uppercase;">Completeness & Veracity Score</span>
-              <div style="font-size: 32px; font-weight: 800; color: ${scoreColor}; margin-top: 5px;">
-                ${selectedReport.completenessScore} <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
+              <span style="font-size:13px; color:#475569; font-weight:bold; text-transform:uppercase;">
+                Evidence Strength Index
+              </span>
+
+              <div style="font-size:32px; font-weight:800; color:${evidenceScoreColor}; margin-top:5px;">
+                ${evidenceScore}
+                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
               </div>
             </div>
-            <div>
+
+            <div style="flex:1; min-width:260px;">
               <div class="score-bar-bg">
-                <div class="score-bar-fill" style="width: ${selectedReport.completenessScore}%; background-color: ${scoreColor};"></div>
+                <div
+                  class="score-bar-fill"
+                  style="width:${Math.max(0, Math.min(100, evidenceScore))}%; background-color:${evidenceScoreColor};"
+                ></div>
               </div>
-              <p style="font-size: 11px; color: #64748b; margin-top: 8px; max-w: 400px;">
-                An educational metric grading the document against standard evidentiary requirements. High scores indicate factual substantiation, while low scores highlight hearsay risk.
+
+              <p style="font-size:11px; color:#64748b; margin-top:8px; max-width:500px;">
+                Educational heuristic assessing the strength of evidence documented in this file.
+                It is not a legal admissibility ruling, does not determine the truth of allegations,
+                and does not determine the legal merits of the case.
               </p>
             </div>
           </div>
+
+          <div style="margin-top:24px;">
+            <h4 style="font-size:14px; font-weight:800; color:#334155; margin-bottom:12px;">
+              Evidence Strength Components
+            </h4>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px;">
+              ${evidenceComponents.map(([key, label, max]) => {
+                const component = components[key] || {};
+                const value = Number(component.score) || 0;
+
+                return `
+                  <div style="border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc;">
+                    <div style="display:flex; justify-content:space-between; gap:10px;">
+                      <strong style="font-size:12px; color:#334155;">${label}</strong>
+                      <span style="font-size:12px; font-weight:800; color:#475569;">
+                        ${value}/${max}
+                      </span>
+                    </div>
+
+                    <div style="font-size:11px; color:#64748b; margin-top:5px;">
+                      ${component.explanation || "No component explanation was returned."}
+                    </div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+
+          <div style="margin-top:20px; padding:12px; background:#f8fafc; border-radius:8px;">
+            <strong style="font-size:12px; color:#334155;">
+              Information Completeness:
+            </strong>
+
+            <span style="font-size:12px; color:#475569;">
+              ${completenessScore}/100
+            </span>
+
+            <div style="font-size:11px; color:#64748b; margin-top:4px;">
+              Measures how much relevant information is contained in the reviewed document.
+              It is separate from the Evidence Strength Index and is not an admissibility
+              or legal-merits score.
+            </div>
+          </div>
+
+          ${evidenceIndex.limitations ? `
+            <div style="margin-top:12px; font-size:11px; color:#64748b;">
+              <strong>Limitation:</strong> ${evidenceIndex.limitations}
+            </div>
+          ` : ""}
         </div>
 
         ${selectedReport.redFlags && selectedReport.redFlags.length > 0 ? `
