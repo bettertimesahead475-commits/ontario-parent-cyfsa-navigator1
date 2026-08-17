@@ -2594,8 +2594,6 @@ export default function DocumentAnalyzerTab() {
             >
               <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
               <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-              <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
             </select>
           </div>
           

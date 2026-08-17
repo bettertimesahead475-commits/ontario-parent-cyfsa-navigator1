@@ -60,7 +60,7 @@ export default function ParentChatBot() {
   
   const [input, setInput] = useState<string>("");
   const [isQuerying, setIsQuerying] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<string>("claude-3-5-sonnet-20241022");
+  const [selectedModel, setSelectedModel] = useState<string>("gemini-2.5-flash");
   const [showFilesList, setShowFilesList] = useState<boolean>(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -344,8 +344,8 @@ export default function ParentChatBot() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="bg-brand-900 border border-brand-850 text-[10px] font-semibold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-amber-300 transition-colors"
                 >
-                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (High Intelligence) 🧠</option>
-                  <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast reasoning) ⚡</option>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                   <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Low Latency) ⚡</option>
                   <option value="gemini-2.5-flash">Gemini 2.5 Flash 🚀</option>
                 </select>

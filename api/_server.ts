@@ -12,31 +12,12 @@ import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
 import compression from "compression";
-import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { requestAccess, approvePayment, verifyAccessCode, TIER_PRICES, type Tier } from "./services/access.js";
 
 dotenv.config();
 
-let anthropicClient: Anthropic | null = null;
 let geminiClient: GoogleGenAI | null = null;
-let isAnthropicKeyVerifiedInvalid = false;
-
-// Helper to get Anthropic Claude client
-function getAnthropicClient(): Anthropic {
-  if (anthropicClient) return anthropicClient;
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error("ANTHROPIC_API_KEY environment variable is not configured.");
-  }
-
-  anthropicClient = new Anthropic({
-    apiKey: apiKey,
-  });
-
-  return anthropicClient;
-}
 
 // Helper to get Gemini client
 function getGeminiClient(): GoogleGenAI {
@@ -204,201 +185,98 @@ async function generateContentWithFallback(
     max_tokens?: number;
     temperature?: number;
   },
-  primaryClaudeModel: string = "claude-3-5-sonnet-20241022"
+  primaryModel: string = "gemini-2.5-flash"
 ): Promise<{ text: string }> {
-  const isGemini = primaryClaudeModel.startsWith("gemini-");
-  const hasAnthropicKey = !isGemini && !!(
-    !isAnthropicKeyVerifiedInvalid &&
-    process.env.ANTHROPIC_API_KEY && 
-    process.env.ANTHROPIC_API_KEY.trim() && 
-    process.env.ANTHROPIC_API_KEY.startsWith("sk-ant-")
+  // Gemini-only routing.
+  // Claude is intentionally disabled here to prevent Anthropic
+  // 429 quota/rate-limit errors from affecting document analysis.
+  const ai = getGeminiClient();
+
+  const modelsToTry = Array.from(
+    new Set([
+      primaryModel.startsWith("gemini-") ? primaryModel : "gemini-2.5-flash",
+      "gemini-2.5-flash",
+      "gemini-1.5-pro",
+      "gemini-1.5-flash",
+    ])
   );
 
-  if (hasAnthropicKey) {
-    try {
-      const ai = getAnthropicClient();
-      const response = await generateClaudeContentWithRetry(ai, params, primaryClaudeModel);
-      const text = response.content?.[0]?.text;
-      if (text) {
-        return { text };
-      }
-    } catch (error: any) {
-      const status = error?.status;
-      const errMsg = (error?.message || "").toLowerCase();
-      if (status === 401 || errMsg.includes("authentication_error") || errMsg.includes("invalid x-api-key") || errMsg.includes("invalid api key")) {
-        isAnthropicKeyVerifiedInvalid = true;
-        console.log("[AI Engine] Anthropic key verified invalid (401). Routing future requests directly to Gemini.");
-      } else {
-        console.log("[AI Engine] Claude fallback to Gemini due to error: " + (error?.message || error));
-      }
+  const geminiContents = params.messages.map((msg: any) => {
+    const role = msg.role === "assistant" ? "model" : "user";
+    let parts: any[] = [];
+
+    if (typeof msg.content === "string") {
+      parts = [{ text: msg.content }];
+    } else if (Array.isArray(msg.content)) {
+      parts = msg.content.map((part: any) => {
+        if (part.type === "text") {
+          return { text: part.text };
+        }
+
+        if (
+          part.type === "document" ||
+          part.type === "image" ||
+          part.type === "audio"
+        ) {
+          return {
+            inlineData: {
+              mimeType:
+                part.source?.media_type ||
+                part.media_type ||
+                "application/octet-stream",
+              data: part.source?.data || part.data || "",
+            },
+          };
+        }
+
+        return {
+          text:
+            typeof part === "string"
+              ? part
+              : JSON.stringify(part),
+        };
+      });
+    } else {
+      parts = [
+        {
+          text:
+            typeof msg.content === "string"
+              ? msg.content
+              : JSON.stringify(msg.content),
+        },
+      ];
     }
-  }
 
-  // Fallback to Gemini
-  console.log("[AI Engine] Generating content using Gemini (gemini-3.5-flash) fallback");
+    return { role, parts };
+  });
+
+  console.log(
+    `[AI Engine] Gemini-only routing. Models: ${modelsToTry.join(", ")}`
+  );
+
   try {
-    const ai = getGeminiClient();
-
-    // Map messages content format
-    const geminiContents = params.messages.map((msg: any) => {
-      const role = msg.role === "assistant" ? "model" : "user";
-      let parts: any[] = [];
-
-      if (typeof msg.content === "string") {
-        parts = [{ text: msg.content }];
-      } else if (Array.isArray(msg.content)) {
-        parts = msg.content.map((part: any) => {
-          if (part.type === "text") {
-            return { text: part.text };
-          } else if (part.type === "document" || part.type === "image") {
-            return {
-              inlineData: {
-                mimeType: part.source?.media_type || "application/pdf",
-                data: part.source?.data || ""
-              }
-            };
-          }
-          return { text: typeof part === "string" ? part : JSON.stringify(part) };
-        });
-      } else {
-        parts = [{ text: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) }];
-      }
-
-      return { role, parts };
-    });
-
-    const modelsToTry = isGemini 
-      ? [primaryClaudeModel, "gemini-2.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"] 
-      : ["gemini-2.5-flash", "gemini-3.1-pro-preview"];
-    const uniqueModels = Array.from(new Set(modelsToTry));
-    const response = await generateGeminiContentWithRetry(ai, uniqueModels, {
+    const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
       contents: geminiContents,
       config: {
         systemInstruction: params.system,
         temperature: params.temperature ?? 0.2,
-      }
+        maxOutputTokens: params.max_tokens || 4000,
+      },
     });
 
-    const text = response.text || "";
-    return { text };
-  } catch (geminiError: any) {
-    console.error("[Gemini API Error] Failed to generate content:", geminiError);
-    throw geminiError;
+    return {
+      text: response.text || "",
+    };
+  } catch (error: any) {
+    console.error(
+      "[Gemini API Error] All Gemini models failed:",
+      error
+    );
+    throw error;
   }
 }
 
 // Robust wrapper with transient error retry (exponential backoff) and model fallback for Claude
-async function generateClaudeContentWithRetry(
-  ai: Anthropic,
-  params: {
-    system?: string;
-    messages: any[];
-    max_tokens?: number;
-    temperature?: number;
-  },
-  primaryModel: string = "claude-3-5-sonnet-20241022"
-): Promise<any> {
-  let lastError: any = null;
-
-  // Do not hammer Anthropic during rate limiting.
-  // One primary attempt + one controlled retry, then let
-  // generateContentWithFallback() route the request to Gemini.
-  const maxAttempts = 2;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      console.log(
-        `[Claude API] Calling messages.create with model ${primaryModel} (Attempt ${attempt + 1}/${maxAttempts})`
-      );
-
-      const response = await ai.messages.create(
-        {
-          model: primaryModel,
-          system: params.system,
-          messages: params.messages,
-          max_tokens: params.max_tokens || 4000,
-          temperature: params.temperature ?? 0.1,
-        },
-        {
-          headers: {
-            "anthropic-beta": "pdfs-2024-09-25"
-          }
-        }
-      );
-
-      return response;
-    } catch (error: any) {
-      lastError = error;
-
-      const errMsg = (error?.message || "").toLowerCase();
-      const status = error?.status;
-
-      const isAuthError =
-        status === 401 ||
-        errMsg.includes("authentication_error") ||
-        errMsg.includes("invalid x-api-key") ||
-        errMsg.includes("invalid api key");
-
-      if (isAuthError) {
-        console.log(
-          "[AI Engine] Claude API key is unauthorized or inactive (401). Proceeding to fallback."
-        );
-        throw error;
-      }
-
-      const isRateLimited =
-        status === 429 ||
-        errMsg.includes("429") ||
-        errMsg.includes("rate limit") ||
-        errMsg.includes("quota");
-
-      const isTransient =
-        isRateLimited ||
-        status === 500 ||
-        status === 503 ||
-        errMsg.includes("503") ||
-        errMsg.includes("overloaded") ||
-        errMsg.includes("high demand") ||
-        errMsg.includes("temporary") ||
-        errMsg.includes("timeout") ||
-        errMsg.includes("network");
-
-      if (!isTransient) {
-        throw error;
-      }
-
-      if (attempt >= maxAttempts - 1) {
-        console.log(
-          `[Claude API] ${isRateLimited ? "Rate limit/quota persists" : "Transient error persists"} after ${maxAttempts} attempts. Falling back to Gemini.`
-        );
-        throw error;
-      }
-
-      // Respect Anthropic Retry-After when exposed by the SDK.
-      const retryAfterHeader =
-        error?.headers?.["retry-after"] ??
-        error?.headers?.get?.("retry-after");
-
-      let waitMs = Number(retryAfterHeader) * 1000;
-
-      if (!Number.isFinite(waitMs) || waitMs <= 0) {
-        waitMs = isRateLimited ? 15000 : 3000;
-      }
-
-      // Prevent an accidental enormous Retry-After from hanging the request.
-      waitMs = Math.min(Math.max(waitMs, 1000), 60000);
-
-      console.log(
-        `[Claude API] ${isRateLimited ? "Rate limited" : "Transient error"}. Retrying once in ${waitMs}ms...`
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-    }
-  }
-
-  throw lastError;
-}
-
 // Helper to extract JSON from any block resiliently
 function extractJson(text: string): any {
   try {
@@ -418,9 +296,9 @@ function extractJson(text: string): any {
   }
 }
 
-// Unified Claude error handling and user-friendly formatting with HTTP status codes
-function handleClaudeError(error: any, contextDescription: string, res: Response) {
-  console.error(`Claude Error during ${contextDescription}:`, error);
+// Unified AI error handling and user-friendly formatting with HTTP status codes
+function handleAIError(error: any, contextDescription: string, res: Response) {
+  console.error(`[AI Error] during ${contextDescription}:`, error);
   const errMsg = (error?.message || "").toLowerCase();
   const status = (error as any)?.status;
   
@@ -434,14 +312,14 @@ function handleClaudeError(error: any, contextDescription: string, res: Response
 
   if (isRateLimit) {
     return res.status(429).json({
-      error: `Claude API Quota/Rate Limit Exceeded (429): You have exceeded your active API rate limit or token quota. Please wait about 60 seconds before retrying.`,
+      error: `Gemini API Quota/Rate Limit Exceeded (429): The Gemini API rate limit or token quota has been exceeded. Please wait and try again.`,
       isRateLimit: true
     });
   }
 
   if (errMsg.includes("api key") || errMsg.includes("invalid key") || status === 403 || status === 401) {
     return res.status(status || 400).json({
-      error: `Claude API Authentication Error: Your ANTHROPIC_API_KEY appears to be invalid or deactivated. Please check your credentials in the settings panel.`
+      error: `Gemini API Authentication Error: Your GEMINI_API_KEY appears to be invalid or deactivated. Please check your credentials in the settings panel.`
     });
   }
 
@@ -610,7 +488,7 @@ app.use(express.json({ limit: "100mb" }));
       res.json({ extractedText, characters: extractedText.length });
     } catch (err: any) {
       console.error("[/api/extract-text]", err);
-      handleClaudeError(err, "text extraction", res);
+      handleAIError(err, "text extraction", res);
     }
   });
 
@@ -854,7 +732,7 @@ THINGS TO NEVER DO
       // Do NOT fabricate a fake analysis on failure — a parent could mistake
       // invented names/dates for a real reading of their own document.
       console.error("[document analysis] API error, returning honest failure (no fabricated fallback):", error);
-      handleClaudeError(error, "document analysis", res);
+      handleAIError(error, "document analysis", res);
     }
   });
 
@@ -958,7 +836,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptBody }] }],
         temperature: 0.2
-      }, model || "claude-3-5-sonnet-20241022");
+      }, model || "gemini-2.5-flash");
 
       const responseText = response.text || "No response text received from the model.";
 
@@ -969,7 +847,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
     } catch (err: any) {
       console.error("[RAG synthesis] API error, returning honest failure (no fabricated fallback):", err);
-      handleClaudeError(err, "RAG Synthesis", res);
+      handleAIError(err, "RAG Synthesis", res);
     }
   });
 
@@ -1013,7 +891,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         temperature: 0.1
-      }, "claude-3-5-sonnet-20241022");
+      }, "gemini-2.5-flash");
 
       const responseText = response.text;
 
@@ -1026,7 +904,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
     } catch (error: any) {
       console.error("[evidence extraction] API error, returning honest failure (no fabricated fallback):", error);
-      handleClaudeError(error, "evidence extraction", res);
+      handleAIError(error, "evidence extraction", res);
     }
   });
 
@@ -1083,7 +961,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: "You help a self-represented parent organize their own personal case journal. You never invent facts, dialogue, or details the parent did not provide, and you never claim their notes are an official or certified record.",
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         temperature: 0.2,
-      }, "claude-3-5-sonnet-20241022");
+      }, "gemini-2.5-flash");
 
       const responseText = response.text;
       if (!responseText) {
@@ -1099,7 +977,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
     } catch (error: any) {
       console.error("[transcribe] API error, returning honest failure (no fabricated fallback):", error);
-      handleClaudeError(error, "transcription/journal formatting", res);
+      handleAIError(error, "transcription/journal formatting", res);
     }
   });
 
