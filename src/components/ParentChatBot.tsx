@@ -26,6 +26,18 @@ export default function ParentChatBot() {
   const { resetAll } = useAppReset();
   const [resetConfirm, setResetConfirm] = useState(false);
   const [isOpen, setIsOpen] = useState<boolean>(false);
+
+  // Always give the user a way out: Escape closes the panel even if the
+  // floating close button is somehow obscured on a small screen.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -214,7 +226,7 @@ export default function ParentChatBot() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         title="Open Educational Case Advisor Chat"
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-brand-950 border-brand-900 text-white hover:bg-slate-900 z-[98] no-print group hover:scale-105"
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-brand-950 border-brand-900 text-white hover:bg-slate-900 z-[100] no-print group hover:scale-105"
         id="parent-coaching-floating-btn"
       >
         <AnimatePresence mode="wait">
@@ -256,7 +268,7 @@ export default function ParentChatBot() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.95 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="fixed bottom-24 right-6 w-[360px] md:w-[410px] h-[580px] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[98] no-print"
+            className="fixed bottom-24 right-4 left-4 sm:left-auto sm:right-6 sm:w-[360px] md:w-[410px] h-[70vh] max-h-[580px] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[99] no-print"
             id="parent-coaching-sidebar"
           >
             {/* Header section with brand and educational badges */}
