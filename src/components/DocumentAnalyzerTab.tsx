@@ -352,7 +352,7 @@ export default function DocumentAnalyzerTab() {
   });
   const [chatInput, setChatInput] = useState<string>("");
   const [isRAGQuerying, setIsRAGQuerying] = useState<boolean>(false);
-  const [claudeModel, setClaudeModel] = useState<string>("gemini-2.5-flash");
+  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-4-20250514");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Active Audit Visual State
@@ -2592,8 +2592,8 @@ export default function DocumentAnalyzerTab() {
               onChange={(e) => setClaudeModel(e.target.value)}
               className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors"
             >
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
             </select>
           </div>
           

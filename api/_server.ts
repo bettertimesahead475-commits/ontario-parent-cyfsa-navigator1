@@ -12,12 +12,24 @@ import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
 import compression from "compression";
+import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { requestAccess, approvePayment, verifyAccessCode, TIER_PRICES, type Tier } from "./services/access.js";
 
 dotenv.config();
 
 let geminiClient: GoogleGenAI | null = null;
+let anthropicClient: Anthropic | null = null;
+
+function getAnthropicClient(): Anthropic {
+  if (anthropicClient) return anthropicClient;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error("ANTHROPIC_API_KEY environment variable is not configured. Add the Claude API key in Vercel project environment variables and redeploy.");
+  }
+  anthropicClient = new Anthropic({ apiKey });
+  return anthropicClient;
+}
 
 // Helper to get Gemini client
 function getGeminiClient(): GoogleGenAI {
@@ -154,7 +166,7 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
 async function transcribeAudioWithGemini(base64Data: string, mimeType: string): Promise<string> {
   // Real audio transcription — the actual audio bytes are sent to the model.
   // Claude has no native audio understanding, so this always goes to Gemini
-  // directly rather than through the Claude-first fallback chain.
+  // directly because Claude does not process audio input.
   const cleaned = (base64Data || "").trim();
   if (!cleaned) throw new Error("No audio data was provided.");
 
@@ -177,7 +189,9 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
   return response.text || "";
 }
 
-// Unified content generator with Claude-to-Gemini fallback routing
+// Text analysis uses Claude. Gemini remains dedicated to OCR and audio transcription.
+const CLAUDE_MODELS = new Set(["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022"]);
+
 async function generateContentWithFallback(
   params: {
     system?: string;
@@ -185,98 +199,36 @@ async function generateContentWithFallback(
     max_tokens?: number;
     temperature?: number;
   },
-  primaryModel: string = "gemini-2.5-flash"
+  primaryModel: string = "claude-sonnet-4-20250514"
 ): Promise<{ text: string }> {
-  // Gemini-only routing.
-  // Claude is intentionally disabled here to prevent Anthropic
-  // 429 quota/rate-limit errors from affecting document analysis.
-  const ai = getGeminiClient();
+  const client = getAnthropicClient();
+  const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : "claude-sonnet-4-20250514";
+  const messages = params.messages.map((message: any) => ({
+    role: message.role === "assistant" ? "assistant" : "user",
+    content: Array.isArray(message.content)
+      ? message.content.map((part: any) => ({
+          type: "text" as const,
+          text: part.type === "text" ? part.text : JSON.stringify(part),
+        }))
+      : String(message.content),
+  }));
 
-  const modelsToTry = Array.from(
-    new Set([
-      primaryModel.startsWith("gemini-") ? primaryModel : "gemini-2.5-flash",
-      "gemini-2.5-flash",
-      "gemini-1.5-pro",
-      "gemini-1.5-flash",
-    ])
-  );
-
-  const geminiContents = params.messages.map((msg: any) => {
-    const role = msg.role === "assistant" ? "model" : "user";
-    let parts: any[] = [];
-
-    if (typeof msg.content === "string") {
-      parts = [{ text: msg.content }];
-    } else if (Array.isArray(msg.content)) {
-      parts = msg.content.map((part: any) => {
-        if (part.type === "text") {
-          return { text: part.text };
-        }
-
-        if (
-          part.type === "document" ||
-          part.type === "image" ||
-          part.type === "audio"
-        ) {
-          return {
-            inlineData: {
-              mimeType:
-                part.source?.media_type ||
-                part.media_type ||
-                "application/octet-stream",
-              data: part.source?.data || part.data || "",
-            },
-          };
-        }
-
-        return {
-          text:
-            typeof part === "string"
-              ? part
-              : JSON.stringify(part),
-        };
-      });
-    } else {
-      parts = [
-        {
-          text:
-            typeof msg.content === "string"
-              ? msg.content
-              : JSON.stringify(msg.content),
-        },
-      ];
-    }
-
-    return { role, parts };
+  console.log(`[AI Engine] Claude routing. Model: ${model}`);
+  const response = await client.messages.create({
+    model,
+    max_tokens: params.max_tokens || 4000,
+    system: params.system,
+    temperature: params.temperature ?? 0.2,
+    messages,
   });
-
-  console.log(
-    `[AI Engine] Gemini-only routing. Models: ${modelsToTry.join(", ")}`
-  );
-
-  try {
-    const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
-      contents: geminiContents,
-      config: {
-        systemInstruction: params.system,
-        temperature: params.temperature ?? 0.2,
-        maxOutputTokens: params.max_tokens || 4000,
-      },
-    });
-
-    return {
-      text: response.text || "",
-    };
-  } catch (error: any) {
-    console.error(
-      "[Gemini API Error] All Gemini models failed:",
-      error
-    );
-    throw error;
-  }
+  return {
+    text: response.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join(""),
+  };
 }
 
-// Robust wrapper with transient error retry (exponential backoff) and model fallback for Claude
 // Helper to extract JSON from any block resiliently
 function extractJson(text: string): any {
   try {
@@ -312,14 +264,14 @@ function handleAIError(error: any, contextDescription: string, res: Response) {
 
   if (isRateLimit) {
     return res.status(429).json({
-      error: `Gemini API Quota/Rate Limit Exceeded (429): The Gemini API rate limit or token quota has been exceeded. Please wait and try again.`,
+      error: "AI provider quota or rate limit exceeded (429). Please wait and try again.",
       isRateLimit: true
     });
   }
 
   if (errMsg.includes("api key") || errMsg.includes("invalid key") || status === 403 || status === 401) {
     return res.status(status || 400).json({
-      error: `Gemini API Authentication Error: Your GEMINI_API_KEY appears to be invalid or deactivated. Please check your credentials in the settings panel.`
+      error: "AI provider authentication failed. Check the configured API key in Vercel project environment variables."
     });
   }
 
@@ -717,7 +669,7 @@ THINGS TO NEVER DO
       const response = await generateContentWithFallback({
         system: systemInstruction,
         messages: [{ role: "user", content: contents }]
-      }, model || "gemini-2.5-flash");
+      }, model || "claude-sonnet-4-20250514");
 
       const responseText = response.text;
 
@@ -836,7 +788,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptBody }] }],
         temperature: 0.2
-      }, model || "gemini-2.5-flash");
+      }, model || "claude-sonnet-4-20250514");
 
       const responseText = response.text || "No response text received from the model.";
 
@@ -891,7 +843,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         temperature: 0.1
-      }, "gemini-2.5-flash");
+      }, "claude-sonnet-4-20250514");
 
       const responseText = response.text;
 
@@ -961,7 +913,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: "You help a self-represented parent organize their own personal case journal. You never invent facts, dialogue, or details the parent did not provide, and you never claim their notes are an official or certified record.",
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         temperature: 0.2,
-      }, "gemini-2.5-flash");
+      }, "claude-sonnet-4-20250514");
 
       const responseText = response.text;
       if (!responseText) {
@@ -991,29 +943,8 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
       console.log("[Voice Transcription] Transcribing audio with mimeType:", mimeType);
 
-      // Send the audio data directly to Gemini/Claude
-      const response = await generateContentWithFallback({
-        system: "You are an expert verbatim voice transcriptionist. Your job is to convert spoken thoughts, dictations, or voice memos from parents into clear, readable text. Do not summarize, add annotations, or output any extra commentary. Output ONLY the transcribed words. If there is no audible speech, respond with '[No speech detected]'.",
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "document",
-              source: {
-                media_type: mimeType || "audio/webm",
-                data: audioData
-              }
-            },
-            {
-              type: "text",
-              text: "Please transcribe this audio recording verbatim. Output ONLY the text of what was spoken, with standard capitalization and punctuation."
-            }
-          ]
-        }],
-        temperature: 0.1
-      });
-
-      const transcribedText = (response.text || "").trim();
+      // Gemini handles audio transcription; Claude handles text analysis.
+      const transcribedText = (await transcribeAudioWithGemini(audioData, mimeType || "audio/webm")).trim();
       res.json({
         success: true,
         text: transcribedText || "[Inaudible speech transcription]"
