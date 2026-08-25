@@ -139,7 +139,7 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
 
   try {
     const ai = getGeminiClient();
-    const modelsToTry = ["gemini-2.5-flash", "gemini-3.1-pro-preview"];
+    const modelsToTry = ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
     const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
       contents: [
         {
@@ -171,7 +171,7 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
   if (!cleaned) throw new Error("No audio data was provided.");
 
   const ai = getGeminiClient();
-  const modelsToTry = ["gemini-2.5-flash", "gemini-3.1-pro-preview"];
+  const modelsToTry = ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
   const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
     contents: [
       {
@@ -325,7 +325,7 @@ app.use(express.json({ limit: "100mb" }));
     try {
       const { query } = req.body;
       const ai = getGeminiClient();
-      const response = await generateGeminiContentWithRetry(ai, ["gemini-2.5-flash"], {
+      const response = await generateGeminiContentWithRetry(ai, ["gemini-3.1-pro-preview"], {
         contents: [{ role: "user", parts: [{ text: `Search and explain the following legal concept for a family law context (CYFSA): ${query}` }] }],
         config: {
           systemInstruction: "You are a helpful legal assistant for the Ontario Children's Aid Society related matters (CYFSA/CLRA). Your goal is to explain concepts clearly, citing relevant statutes where appropriate, and offering actionable advice.",
