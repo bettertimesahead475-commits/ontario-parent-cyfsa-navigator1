@@ -4314,4 +4314,4 @@ export default function DocumentAnalyzerTab() {
     </div>
   );
 }
-}
+
