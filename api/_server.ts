@@ -190,7 +190,7 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
 }
 
 // Text analysis uses Claude. Gemini remains dedicated to OCR and audio transcription.
-const CLAUDE_MODELS = new Set(["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022"]);
+const CLAUDE_MODELS = new Set(["claude-sonnet-5", "claude-haiku-4-5-20251001"]);
 
 async function generateContentWithFallback(
   params: {
@@ -199,10 +199,10 @@ async function generateContentWithFallback(
     max_tokens?: number;
     temperature?: number;
   },
-  primaryModel: string = "claude-sonnet-4-20250514"
+  primaryModel: string = "claude-sonnet-5"
 ): Promise<{ text: string }> {
   const client = getAnthropicClient();
-  const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : "claude-sonnet-4-20250514";
+  const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : "claude-sonnet-5";
   const messages = params.messages.map((message: any) => ({
     role: message.role === "assistant" ? "assistant" : "user",
     content: Array.isArray(message.content)
@@ -669,7 +669,7 @@ THINGS TO NEVER DO
       const response = await generateContentWithFallback({
         system: systemInstruction,
         messages: [{ role: "user", content: contents }]
-      }, model || "claude-sonnet-4-20250514");
+      }, model || "claude-sonnet-5");
 
       const responseText = response.text;
 
@@ -788,7 +788,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptBody }] }],
         temperature: 0.2
-      }, model || "claude-sonnet-4-20250514");
+      }, model || "claude-sonnet-5");
 
       const responseText = response.text || "No response text received from the model.";
 
@@ -843,7 +843,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         temperature: 0.1
-      }, "claude-sonnet-4-20250514");
+      }, "claude-sonnet-5");
 
       const responseText = response.text;
 
@@ -913,7 +913,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         system: "You help a self-represented parent organize their own personal case journal. You never invent facts, dialogue, or details the parent did not provide, and you never claim their notes are an official or certified record.",
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         temperature: 0.2,
-      }, "claude-sonnet-4-20250514");
+      }, "claude-sonnet-5");
 
       const responseText = response.text;
       if (!responseText) {
