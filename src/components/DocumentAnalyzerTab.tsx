@@ -1,39 +1,127 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+  // State-managed form handover to auto-populate template form fields directly from selected document analysis results
+  const handleFormHandover = () => {
+    if (!selectedReport) {
+      alert("No active audit report is selected. Please select or analyze a document first.");
+      return;
+    }
 
-import { useAppReset } from "../hooks/useAppReset";
-import { motion, AnimatePresence } from "motion/react";
-import React, { useState, useRef, useEffect } from "react";
-import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson } from "../utils/api";
-import { initAuth, googleSignIn, logout } from "../utils/firebase";
-import { fetchDriveFiles, fetchDriveFileContent, fetchRecentEmails } from "../utils/workspace";
-import { useLocation } from "wouter";
-import { 
-  Upload, 
-  FileText, 
-  AlertTriangle, 
-  CheckCircle, 
-  ShieldAlert, 
-  Sparkles, 
-  Scale, 
-  Info, 
-  RefreshCw, 
-  Eye, 
-  Download, 
-  BookOpen, 
-  Clock,
-  Folder,
-  FolderOpen,
-  Send,
-  Loader2,
-  Trash2,
-  Library,
-  Check,
-  Plus,
-  MessageSquare,
+    try {
+      const activeSelectedFile = organizedFiles.find(f => f.id === selectedFileId);
+      const documentName = activeSelectedFile ? activeSelectedFile.name : (selectedReport.documentTitle || "casework document");
+      
+      let currentTemplatesProgress: any = {};
+      try {
+        const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+        if (saved) {
+          currentTemplatesProgress = JSON.parse(saved);
+        }
+      } catch (e) {
+        console.error("Failed to parse existing template progress:", e);
+      }
+
+      // 1. Build Form 33B Answer/Reply State
+      const mappedDisagreedFacts = (selectedReport.redFlags || []).map((flag: any, idx: number) => ({
+        id: "df-handover-" + Date.now() + "-" + idx,
+        societyStatement: `[From Audited Document] "${flag.phraseDetected}"`,
+        parentResponse: `This allegation is completely disputed. It represents an unverified subjective opinion or hearsay. Correct context: ${flag.explanation}`,
+        supportingEvidence: flag.verifyRequirement || flag.legalReference || "Witnesses and school/medical logs."
+      }));
+
+      // FIX: dedupe against facts already in the template — prevents duplicate rows
+      // if this document was handed over more than once.
+      const existingDisagreedFacts = currentTemplatesProgress?.form33b?.disagreedFacts || [];
+      const seenStatements = new Set(existingDisagreedFacts.map((f: any) => f.societyStatement));
+      const newDisagreedFacts = mappedDisagreedFacts.filter((f: any) => !seenStatements.has(f.societyStatement));
+      const dedupedDisagreedFacts = [...existingDisagreedFacts, ...newDisagreedFacts];
+
+      const meta = selectedReport.metadata || {};
+      const fileNumber = meta.fileNumber || currentTemplatesProgress?.form33b?.caseNumber || "";
+      const applicantName = meta.applicantName || currentTemplatesProgress?.form33b?.applicantName || "";
+      // FIX: respondentName no longer trusts AI-extracted metadata blindly. This app currently
+      // has one user (you), so it's hardcoded to your name to prevent the wrong party (e.g. the
+      // other parent named in a source document) from ending up on your legal documents.
+      // TODO before selling this to other parents: replace with a confirmed "your name" field
+      // the user sets once, instead of a hardcoded value.
+      const respondentName = "Christopher Pelkie";
+      const childNames = meta.childNames || currentTemplatesProgress?.form33b?.childNames || "";
+      const hearingDate = meta.hearingDate || selectedReport.analysisDate || new Date().toISOString().slice(0, 10);
+
+      const newForm33b = {
+        ...currentTemplatesProgress.form33b,
+        courtRegistryName: currentTemplatesProgress?.form33b?.courtRegistryName || "Ontario Court of Justice",
+        caseNumber: fileNumber,
+        applicantName: applicantName,
+        respondentName: respondentName,
+        childNames: childNames,
+        applicationDate: hearingDate,
+        claimDetails: currentTemplatesProgress?.form33b?.claimDetails || "",
+        agreedFacts: currentTemplatesProgress?.form33b?.agreedFacts || "",
+        disagreedFacts: dedupedDisagreedFacts,
+        parentStatementOfFacts: currentTemplatesProgress?.form33b?.parentStatementOfFacts || ""
+      };
+
+      // 2. Build Affidavit State
+      const mappedFactualEvents = (selectedReport.proceduralTimelineViolations || []).map((violation: any, idx: number) => ({
+        id: "fe-handover-" + Date.now() + "-" + idx,
+        date: new Date().toISOString().slice(0, 10),
+        description: `${violation.timelineRule}: The document asserts "${violation.documentAssertion}". Evaluation: ${violation.evaluation}`,
+        category: "Court Filings",
+        supportingExhibits: violation.citation || "Official Audit Logs"
+      }));
+
+      // FIX: same dedupe pattern applied to affidavit factual events.
+      const existingFactualEvents = currentTemplatesProgress?.affidavit?.factualEvents || [];
+      const seenDescriptions = new Set(existingFactualEvents.map((f: any) => f.description));
+      const newFactualEvents = mappedFactualEvents.filter((f: any) => !seenDescriptions.has(f.description));
+      const dedupedFactualEvents = [...existingFactualEvents, ...newFactualEvents];
+
+      const newAffidavit = {
+        ...currentTemplatesProgress.affidavit,
+        courtRegistryName: currentTemplatesProgress?.affidavit?.courtRegistryName || "Family Court of Ontario",
+        applicantName: applicantName,
+        respondentName: respondentName,
+        childNames: childNames,
+        childBirthdates: currentTemplatesProgress?.affidavit?.childBirthdates || "",
+        authorName: currentTemplatesProgress?.affidavit?.authorName || respondentName,
+        isDraft: true,
+        backgroundStatement: currentTemplatesProgress?.affidavit?.backgroundStatement || "",
+        factualEvents: dedupedFactualEvents,
+        childsPerspectiveText: currentTemplatesProgress?.affidavit?.childsPerspectiveText || "",
+        proposedCareArrangement: currentTemplatesProgress?.affidavit?.proposedCareArrangement || "",
+        exhibits: currentTemplatesProgress?.affidavit?.exhibits || []
+      };
+
+      // 3. Build Plan of Care
+      const newPlanOfCare = {
+        ...currentTemplatesProgress.planOfCare,
+        childName: childNames || currentTemplatesProgress?.planOfCare?.childName || "",
+        birthdate: currentTemplatesProgress?.planOfCare?.birthdate || "",
+        livingArrangements: currentTemplatesProgress?.planOfCare?.livingArrangements || "",
+        safetySupervision: currentTemplatesProgress?.planOfCare?.safetySupervision || "",
+        educationNeeds: currentTemplatesProgress?.planOfCare?.educationNeeds || "",
+        healthcareDevelopment: currentTemplatesProgress?.planOfCare?.healthcareDevelopment || "",
+        cultureReligion: currentTemplatesProgress?.planOfCare?.cultureReligion || "",
+        contactAccessArrangements: currentTemplatesProgress?.planOfCare?.contactAccessArrangements || "",
+        parentSupportServices: currentTemplatesProgress?.planOfCare?.parentSupportServices || ""
+      };
+
+      const updatedTemplatesState = {
+        ...currentTemplatesProgress,
+        form33b: newForm33b,
+        affidavit: newAffidavit,
+        planOfCare: newPlanOfCare,
+        activeBuilderTab: "answer-33b"
+      };
+
+      localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
+      localStorage.setItem("OPA_HANDOVER_ALERT", documentName);
+
+      setLocation("/templates");
+    } catch (error) {
+      console.error("Handover failed:", error);
+      alert("Handover failed. Please check the logs and ensure localStorage is available.");
+    }
+  };
   ChevronDown,
   ChevronRight,
   HelpCircle,
