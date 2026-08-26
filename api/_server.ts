@@ -197,7 +197,6 @@ async function generateContentWithFallback(
     system?: string;
     messages: any[];
     max_tokens?: number;
-    temperature?: number;
   },
   primaryModel: string = "claude-sonnet-5"
 ): Promise<{ text: string }> {
@@ -218,7 +217,6 @@ async function generateContentWithFallback(
     model,
     max_tokens: params.max_tokens || 4000,
     system: params.system,
-    temperature: params.temperature ?? 0.2,
     messages,
   });
   return {
@@ -786,8 +784,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
       const response = await generateContentWithFallback({
         system: systemInstruction,
-        messages: [{ role: "user", content: [{ type: "text", text: promptBody }] }],
-        temperature: 0.2
+        messages: [{ role: "user", content: [{ type: "text", text: promptBody }] }]
       }, model || "claude-sonnet-5");
 
       const responseText = response.text || "No response text received from the model.";
@@ -841,8 +838,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
       const response = await generateContentWithFallback({
         system: systemInstruction,
-        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
-        temperature: 0.1
+        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }]
       }, "claude-sonnet-5");
 
       const responseText = response.text;
@@ -911,8 +907,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
       const response = await generateContentWithFallback({
         system: "You help a self-represented parent organize their own personal case journal. You never invent facts, dialogue, or details the parent did not provide, and you never claim their notes are an official or certified record.",
-        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
-        temperature: 0.2,
+        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }]
       }, "claude-sonnet-5");
 
       const responseText = response.text;
