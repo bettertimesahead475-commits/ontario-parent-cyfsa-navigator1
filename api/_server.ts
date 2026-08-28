@@ -686,16 +686,132 @@ THINGS TO NEVER DO
     }
   });
 
+  // API: Cross-Document Case Timeline
+  // Takes every document already stored in the parent's case vault (organizedFiles) and
+  // builds ONE sourced, dated timeline across all of them — the same task a human has to do
+  // by hand today: cross-reference affidavits against emails/recordings/prior case files,
+  // flag where two documents conflict, and flag where something one document promises
+  // (e.g. "I'll get a second worker to review this") never shows up anywhere else.
+  //
+  // This never invents a date, quote, or event. Every row must be traceable to one of the
+  // documents actually passed in. Anything the parent asserts happened but which isn't in
+  // any of the supplied documents is listed as an OPEN ITEM, not as a timeline fact — this
+  // mirrors exactly how the manual cross-referencing distinguished "confirmed in writing"
+  // from "described by the parent, not yet located in any document."
+  app.post("/api/case-timeline", async (req: Request, res: Response) => {
+    try {
+      const { documents, model, parentClaims } = req.body as {
+        documents?: { name: string; text: string; sourceDate?: string }[];
+        model?: string;
+        parentClaims?: string;
+      };
+
+      if (!documents || !Array.isArray(documents) || documents.length === 0) {
+        return res.status(400).json({
+          error: "No documents provided. Add at least two documents to the case vault before building a cross-document timeline."
+        });
+      }
+      if (documents.length < 2) {
+        return res.status(400).json({
+          error: "A cross-document timeline needs at least two documents to cross-reference. Add more documents to the case vault first."
+        });
+      }
+
+      const MAX_DOCS = 40;
+      const trimmedDocs = documents.slice(0, MAX_DOCS);
+
+      const documentBlock = trimmedDocs
+        .map((d, i) => `--- DOCUMENT ${i + 1}: "${d.name}" ${d.sourceDate ? `(dated/received: ${d.sourceDate})` : ""} ---\n${d.text}`)
+        .join("\n\n");
+
+      const systemInstruction = `You are ParentShield's Cross-Document Timeline tool. You are given multiple documents from a single CYFSA case — affidavits, emails, call/meeting transcripts, prior court orders. Your only job is to merge them into one chronological, sourced timeline and flag where they conflict or where something is missing.
+
+NON-NEGOTIABLE RULES
+1. Every timeline row must cite which supplied document(s) it came from, by the exact document name/number given. Never invent a citation.
+2. Never invent a date, quote, or event. If a document is undated or a date is unclear, say so in the row rather than guessing a date.
+3. Quotes must be copied verbatim from the supplied text, in quotation marks, with the source document named. Never paraphrase something into a quote.
+4. A "conflict" entry requires two specific documents that actually say different things about the same event — cite both. Never flag a conflict on a hunch.
+5. An "open item" is something referenced as a promise, plan, or claim in one document (e.g. "I will get a second worker to review this and report back") that does NOT appear, resolved or otherwise, in any other supplied document. Do not classify something as an open item if it is simply not mentioned anywhere — only flag it when one document creates an expectation that a later document then silently drops.
+6. Never assert what a person's motive, mental state, or credibility is. State only what a document says and who said it.
+7. If the parent's own framing of an event goes further than what the documents actually show, do not adopt that framing — describe only what the documents support, and note the gap explicitly in a "requiresConfirmation" field rather than silently inflating or silently ignoring it.
+8. This tool never produces a legal conclusion (e.g. "this proves negligence," "this is grounds for a lawsuit"). It produces a sourced timeline only. Frame open items as questions for counsel, never as findings.
+9. End every report with the same disclaimer, unmodified: "This is a sourced cross-reference of the documents provided. It is not legal advice and does not establish any fact not stated in those documents. Review with a lawyer licensed by the Law Society of Ontario before relying on it."
+10. If the parent has supplied their own account of events (see "PARENT'S OWN ACCOUNT" below), check each specific factual claim in it against the supplied documents the same way you'd check one document against another — this is the most important part of the whole task, not an afterthought. For each claim: if a document confirms it, cite the confirmation; if a document contradicts it, cite the contradiction directly and do not soften it; if no document addresses it either way, say so plainly as neither confirmed nor contradicted, not as false. Never let a claim get more confident restated than the documents actually support, and never let it get missed just because it wasn't phrased as a question.
+
+OUTPUT — return strictly this JSON schema, nothing else:
+{
+  "timeline": [
+    {
+      "date": "As stated in the source document, or 'undated' if not given",
+      "event": "One factual sentence, in your own words unless quoting",
+      "quote": "A verbatim quote if one materially matters, else empty string",
+      "sources": ["Document N: \\"name\\"", "..."]
+    }
+  ],
+  "conflicts": [
+    {
+      "topic": "What the two documents disagree about",
+      "documentA": { "source": "Document N: \\"name\\"", "saysWhat": "..." },
+      "documentB": { "source": "Document M: \\"name\\"", "saysWhat": "..." }
+    }
+  ],
+  "openItems": [
+    {
+      "promisedIn": "Document N: \\"name\\"",
+      "whatWasPromised": "...",
+      "neverAddressedIn": "the rest of the supplied set"
+    }
+  ],
+  "claimChecks": [
+    {
+      "claim": "The specific claim from the parent's own account, quoted or closely paraphrased",
+      "verdict": "CONFIRMED | CONTRADICTED | NOT ADDRESSED",
+      "explanation": "What the documents actually show, with citation(s)"
+    }
+  ],
+  "requiresConfirmation": [
+    "A specific claim the parent may believe is true but which the supplied documents do not themselves establish — phrased as a question for counsel, not a finding."
+  ],
+  "disclaimer": "This is a sourced cross-reference of the documents provided. It is not legal advice and does not establish any fact not stated in those documents. Review with a lawyer licensed by the Law Society of Ontario before relying on it."
+}`;
+
+      const claimsBlock = parentClaims && parentClaims.trim()
+        ? `\n\nPARENT'S OWN ACCOUNT (check every specific factual claim in this against the documents above, and populate "claimChecks" accordingly — do not skip this):\n${parentClaims.trim()}\n`
+        : "";
+
+      const promptText = `Build the cross-document timeline from the following documents. Merge overlapping events, order everything chronologically where dates are known (undated items go in an "undated" group at the end), and apply every rule above.\n\n${documentBlock}${claimsBlock}`;
+
+
+      const response = await generateContentWithFallback({
+        system: systemInstruction,
+        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }]
+      }, model || "claude-sonnet-5");
+
+      const responseText = response.text;
+      if (!responseText) {
+        throw new Error("Empty response received from the timeline service.");
+      }
+
+      const report = extractJson(responseText);
+      res.json(report);
+
+    } catch (error: any) {
+      console.error("[case timeline] API error, returning honest failure (no fabricated fallback):", error);
+      handleAIError(error, "case timeline", res);
+    }
+  });
+
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
     let queryVal = "";
     let filesVal: any[] = [];
     let focusVal = "";
     try {
-      const { query, files, model, focus } = req.body;
+      const { query, files, model, focus, history } = req.body;
       queryVal = query || "";
       filesVal = files || [];
       focusVal = focus || "";
+      const conversationHistory: { role: string; content: string }[] = Array.isArray(history) ? history : [];
       if (!query) {
         return res.status(400).json({ error: "Missing query parameter." });
       }
@@ -762,25 +878,53 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       }
 
       const systemInstruction = 
-        `You are the expert CYFSA Ontario RAG Document Assistant powered by Claude.
-         Your job is to answer the parent's query regarding their child welfare case by utilizing solely the provided documents context.
-         You must strictly ground your feedback based on the documents. Always cite your source files explicitly in your paragraphs using bold bracket indicators, e.g., **[Source: CAS_Worker_Report_Sample.txt]**.
-         If the files do not offer an answer, state that "The uploaded case files do not contain information regarding this request," and offer specific categories of documents (such as intake records or hospital dentist files) that would help verify it.
-         
-         You MUST cite specific legal standards of the CYFSA (s.74 protection grounds, s.94 hearing and adjournment requirements, and the proper statutory role of s.81, and Children's Law Reform Act s.8 parentage presumptions) when applicable to ground your assessment conceptually.
-         
-         CRITICAL ACCESSIBLE LINK REQUIREMENT:
-         Whenever you refer to or cite standard legal rules, section numbers, or laws, you MUST use the exact keyword forms (such as 's. 74', 's. 94', 's. 81', 's. 125', 's. 3', 's. 101', 's. 87', 'CLRA', 'Evidence Act', or 'Charter of Rights') so that our database matches them instantly to fully accessible, real live government e-Laws URL links! Ensure you write them exactly so families can click on them (e.g., 'This invokes s. 81 of the CYFSA' or 'as defined under CLRA').
-         
+        `You are the CYFSA Ontario Case Assistant, powered by Claude. You are having an ongoing, multi-turn conversation with a self-represented parent about their real child protection case. You are not a one-shot report generator — you are expected to remember what the parent already told you earlier in this conversation and reference it, the same way a person would.
+
+         GROUND EVERYTHING IN THE ACTUAL DOCUMENTS
+         Answer only from the provided case file context below. Cite the specific source file explicitly, e.g., **[Source: CAS_Worker_Report_Sample.txt]**. If the files do not answer the question, say so plainly — "The uploaded case files do not contain information regarding this" — and name what kind of document would (an intake record, a specific worker's affidavit, a dated email). Never fill a gap with a plausible-sounding guess.
+
+         DO NOT JUST AGREE WITH THE PARENT — CHECK THEIR CLAIM FIRST
+         When the parent states something as fact ("they said X," "this proves Y," "I already confirmed Z"), do not simply accept it and build on it. Check it against the actual file context provided:
+         - If the documents support it, say so and cite exactly where.
+         - If the documents contradict it, say so directly and cite the contradicting document — do not soften a real contradiction into vague language.
+         - If the documents are simply silent on it, say that plainly: this is not yet confirmed in anything uploaded, distinct from being contradicted.
+         - If the parent's own conclusion goes further than what the source document actually supports (e.g. they call something "proof" when the document shows something more limited or ambiguous), name that gap directly and explain what the document actually shows instead. Do this the same way a careful colleague would — not to be difficult, but because a claim that outruns its evidence is the exact thing that damages credibility in front of a judge.
+
+         USE THE CONVERSATION, NOT JUST THE LATEST MESSAGE
+         You have the full conversation history below. Use it. If the parent contradicts something they told you two messages ago, point that out. If they already gave you a date, name, or document reference earlier, don't ask for it again — use it. If a new document they just added conflicts with something discussed earlier in this conversation, say so unprompted, the way a person actually cross-referencing the file would, not just when directly asked to compare.
+
+         ASK BEFORE ASSUMING
+         If the parent references a meeting, email, or document you don't have in the case file context, don't guess at its contents or assume it says what they imply. Ask them to upload it, or ask a clarifying question about exactly what it said — a specific, narrow question, not a vague "can you clarify."
+
+         DISTINGUISH FACT FROM CHARACTERIZATION AT ALL TIMES
+         For every material point, be clear whether it is: a DOCUMENTED FACT (stated directly in an uploaded document), REPORTED INFORMATION (one person's account of what another person said), an INFERENCE (a reasonable but unproven conclusion), an ALLEGATION (an unproven claim by a party), or a LEGAL CONCLUSION (a determination only a court or lawyer can actually make). Never present the second, third, or fourth as if it were the first.
+         - SCORE INTEGRITY: never adjust an evidentiary assessment because a document happens to favour the parent or the Society — evaluate quality, corroboration, and reliability only.
+         - HEARSAY: do not treat hearsay as automatically inadmissible; identify the source and whether it's corroborated, and note that the real question is usually weight, not admissibility.
+         - APPREHENSION VS ACCESS: do not treat an access restriction, safety-plan condition, or informal arrangement as an apprehension unless the facts actually establish one.
+         - ABSENCE OF EVIDENCE IS NOT EVIDENCE OF ABSENCE: if a document doesn't mention something, that does not mean it didn't happen — say "not addressed in the documents provided," not "did not occur."
+         - Never state that a legal violation, Charter breach, or finding of misconduct has been established unless a document itself establishes it. Frame these as questions for the parent's lawyer, not as your own conclusions.
+
+         CITE REAL LAW ONLY WHEN IT'S ACTUALLY RELEVANT
+         Reference specific CYFSA sections (s. 74 protection grounds, s. 94 hearing/adjournment timelines, s. 81's actual statutory role, s. 125 duty to report, CLRA s. 8 parentage presumptions) using the exact keyword forms ('s. 74', 's. 94', 's. 81', 's. 125', 's. 3', 's. 101', 's. 87', 'CLRA', 'Evidence Act', 'Charter of Rights') so they link correctly — but only when the section is actually relevant to what's being discussed, never as decoration.
+
+         TONE
+         Direct, plain-language, and warm — this is a person managing one of the hardest things in their life. Correcting an overstated claim and being supportive of the parent are not in tension; the most useful thing you can do for them is make sure nothing they rely on falls apart under real scrutiny later.
+
          ${focusGuideline}`;
 
+      const historyBlock = conversationHistory.length > 0
+        ? `CONVERSATION SO FAR (most recent last — use this; do not treat this message as the first thing the parent has said):\n` +
+          conversationHistory.map(h => `${h.role === "user" ? "PARENT" : "ASSISTANT"}: ${h.content}`).join("\n\n") +
+          `\n\n---\n\n`
+        : "";
+
       const promptBody = `
-        PARENT CAS DATA ENQUIRY: "${query}"
+        ${historyBlock}PARENT'S CURRENT MESSAGE: "${query}"
         
         RETRIEVED CASEWORK CONTEXT FROM UPLOADED REPOSITORY (MOST RELEVANT FILES):
         ${contextPayload || "No files have been retrieved or match your keyword terms. Please ask the parent to upload documents first."}
         
-        Please synthesize a detailed educational response summarizing findings, explaining violations or safety notes, citing specific source files, and outlining next steps.`;
+        Respond as the next turn in this ongoing conversation. Check any factual claim in the parent's current message against the retrieved context before agreeing with it. Reference earlier turns where relevant. Cite specific source files. If something the parent describes isn't in any retrieved document, say so and ask for it rather than assuming.`;
 
       const response = await generateContentWithFallback({
         system: systemInstruction,
