@@ -1662,12 +1662,30 @@ export default function DocumentAnalyzerTab() {
                   if (file.mimeType === "text/plain") {
                     payload.textContent = file.content;
                   } else {
-                    payload.textContent = file.name; // metadata
-                    payload.fileData = {
-                      base64: file.content,
-                      mimeType: file.mimeType,
-                      fileName: file.name
-                    };
+                    // BUG FIX: this used to send fileData straight to /api/analyze, which made
+                    // that endpoint do its own OCR (up to 6 Gemini attempts across 2 models)
+                    // AND the full Claude analysis in one request — the exact combined-request
+                    // pattern that the single-file re-analyze path (triggerSingleAnalysis,
+                    // below) was already split apart to avoid, because it reliably approached
+                    // or exceeded the serverless timeout on real documents. Bulk/auto-upload
+                    // never got that same fix, so every upload was going through the slow path.
+                    // Splitting it here too: extract text first (its own fast request), then
+                    // analyze just the text.
+                    const extractResponse = await apiFetch("/api/extract-text", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        fileData: { base64: file.content, mimeType: file.mimeType, fileName: file.name },
+                      }),
+                    });
+                    const extractResult = await safeReadJson(extractResponse);
+                    if (!extractResponse.ok) {
+                      throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
+                    }
+                    if (!extractResult.extractedText) {
+                      throw new Error("No readable text could be extracted from this document.");
+                    }
+                    payload.textContent = extractResult.extractedText;
                   }
 
                   const response = await apiFetch("/api/analyze", {
