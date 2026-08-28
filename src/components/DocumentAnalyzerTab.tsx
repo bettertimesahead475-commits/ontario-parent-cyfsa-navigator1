@@ -352,6 +352,53 @@ export default function DocumentAnalyzerTab() {
   });
   const [chatInput, setChatInput] = useState<string>("");
   const [isRAGQuerying, setIsRAGQuerying] = useState<boolean>(false);
+  // Cross-Document Case Timeline: merges every document in the case vault into one
+  // sourced, dated timeline and flags conflicts/open items between them. See
+  // /api/case-timeline in api/_server.ts for the rules this must follow (never invent a
+  // date/quote/citation; open items only when one document promises something a later
+  // document silently drops; the parent's own framing is never adopted beyond what the
+  // documents themselves show).
+  const [caseTimeline, setCaseTimeline] = useState<any | null>(null);
+  const [isBuildingTimeline, setIsBuildingTimeline] = useState<boolean>(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  // Free-text box for the parent's own account of events — this is what lets the timeline
+  // check a specific claim ("they paid me $2,000 for the recording") against the documents,
+  // the same way a real conversation catches an overstated or unconfirmed claim. Without
+  // this, the tool can only compare documents against each other, not against what the
+  // parent actually believes happened.
+  const [parentClaimsInput, setParentClaimsInput] = useState<string>("");
+
+  const handleBuildCaseTimeline = async () => {
+    const docsForTimeline = organizedFiles
+      .filter(f => f.content && f.content.trim().length > 0)
+      .map(f => ({ name: f.name, text: f.content }));
+
+    if (docsForTimeline.length < 2) {
+      setTimelineError("Add at least two documents with readable text to the case vault before building a cross-document timeline.");
+      return;
+    }
+
+    setIsBuildingTimeline(true);
+    setTimelineError(null);
+    try {
+      const res = await apiFetch("/api/case-timeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documents: docsForTimeline, model: claudeModel, parentClaims: parentClaimsInput }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `Request failed (${res.status})`);
+      }
+      const data = await res.json();
+      setCaseTimeline(data);
+    } catch (e: any) {
+      console.error("[case timeline] build failed:", e);
+      setTimelineError(e?.message || "Failed to build the case timeline. Please try again.");
+    } finally {
+      setIsBuildingTimeline(false);
+    }
+  };
   const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-4-20250514");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
@@ -1316,10 +1363,20 @@ export default function DocumentAnalyzerTab() {
       };
 
       // 2. Build Affidavit State
-      const mappedFactualEvents = (selectedReport.proceduralTimelineViolations || []).map((violation: any, idx: number) => ({
-        id: "fe-handover-" + Date.now() + "-" + idx,
-        date: new Date().toISOString().slice(0, 10),
-        description: `${violation.timelineRule}: The document asserts "${violation.documentAssertion}". Evaluation: ${violation.evaluation}`,
+      // BUG FIXED: this previously stamped every row with new Date() (today), regardless of
+      // when the underlying event actually happened, and created a row even when the AI audit
+      // found nothing determinable — producing exactly the padded, blank, today-dated rows seen
+      // in exported affidavits. Now: skip rows with no real substance, and leave the date blank
+      // (never fabricate one) so the parent is forced to enter the true date before export.
+      const isSubstantive = (text: string) =>
+        !!text && !/not determinable from this document|checked & compliant|^n\/?a$/i.test(text.trim());
+
+      const mappedFactualEvents = (selectedReport.proceduralTimelineViolations || [])
+        .filter((violation: any) => isSubstantive(violation.documentAssertion) || isSubstantive(violation.evaluation))
+        .map((violation: any, idx: number) => ({
+          id: "fe-handover-" + Date.now() + "-" + idx,
+          date: "", // intentionally blank — real date must be confirmed and entered by the parent
+          description: `[VERIFY DATE BEFORE SWEARING] ${violation.timelineRule}: The document asserts "${violation.documentAssertion}". Evaluation: ${violation.evaluation}`,
         category: "Court Filings",
         supportingExhibits: violation.citation || "Official Audit Logs"
       }));
@@ -1801,11 +1858,19 @@ export default function DocumentAnalyzerTab() {
         content: f.content
       }));
 
+      // Include the real conversation so far — this is what lets the assistant behave like an
+      // actual ongoing conversation (catching that "you told me X two messages ago, this new
+      // document says Y") instead of answering every message as if it's the first one asked.
+      const conversationHistory = ragChatMessages
+        .filter(m => m.text && m.text.trim())
+        .map(m => ({ role: m.sender === "user" ? "user" : "assistant", content: m.text }));
+
       const res = await apiFetch("/api/rag-query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: activeQuery,
+          history: conversationHistory,
           files: filesContextPayload,
           model: claudeModel,
           focus: claudeFocus
@@ -3956,6 +4021,140 @@ export default function DocumentAnalyzerTab() {
                       </div>
                     </div>
                   ) : (
+                    <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-3xs space-y-3" id="cross-document-timeline-card">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-display font-bold text-[#0f172a] text-sm">Cross-Document Case Timeline</h4>
+                          <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
+                            Merges every document below into one dated, sourced timeline — and flags where two documents
+                            disagree, or where one document promises something (like a second worker reviewing a
+                            recording) that never shows up again anywhere else. Every line is tied back to a specific
+                            document; nothing is invented.
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleBuildCaseTimeline}
+                          disabled={isBuildingTimeline || organizedFiles.filter(f => f.content?.trim()).length < 2}
+                          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all disabled:bg-slate-300 shrink-0"
+                          title={organizedFiles.filter(f => f.content?.trim()).length < 2 ? "Add at least two documents with text first" : ""}
+                        >
+                          {isBuildingTimeline ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
+                          <span>{isBuildingTimeline ? "Cross-referencing..." : "Build Case Timeline"}</span>
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-mono font-extrabold uppercase text-slate-500">
+                          Your Own Account (optional, but this is what makes the check real)
+                        </label>
+                        <textarea
+                          value={parentClaimsInput}
+                          onChange={(e) => setParentClaimsInput(e.target.value)}
+                          placeholder={`Type what you believe happened, in your own words — e.g. "Joseph told me he heard adult voices and would get a second worker to review it, but that never went anywhere." Each specific claim will be checked against the documents below and marked as confirmed, contradicted, or not addressed — the same way a lawyer or a careful colleague would check it before you rely on it.`}
+                          rows={3}
+                          className="mt-1 w-full text-xs border border-gray-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                        />
+                      </div>
+
+
+                      {timelineError && (
+                        <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2">
+                          <span className="font-bold shrink-0">⚠️</span>
+                          <span className="break-words">{timelineError}</span>
+                        </div>
+                      )}
+
+                      {caseTimeline && (
+                        <div className="space-y-5 pt-2">
+                          {Array.isArray(caseTimeline.timeline) && caseTimeline.timeline.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Timeline</h5>
+                              <div className="space-y-2">
+                                {caseTimeline.timeline.map((row: any, i: number) => (
+                                  <div key={i} className="border border-gray-150 rounded-lg p-3 text-xs">
+                                    <div className="flex justify-between gap-2 flex-wrap">
+                                      <span className="font-bold text-slate-800">{row.date || "undated"}</span>
+                                      <span className="text-[10px] font-mono text-slate-400">
+                                        {Array.isArray(row.sources) ? row.sources.join(" · ") : ""}
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-700 mt-1">{row.event}</p>
+                                    {row.quote && <p className="text-slate-500 italic mt-1">"{row.quote}"</p>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {Array.isArray(caseTimeline.conflicts) && caseTimeline.conflicts.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-amber-700 font-extrabold uppercase mb-2">Conflicts Between Documents</h5>
+                              <div className="space-y-2">
+                                {caseTimeline.conflicts.map((c: any, i: number) => (
+                                  <div key={i} className="border border-amber-200 bg-amber-50 rounded-lg p-3 text-xs space-y-1">
+                                    <p className="font-bold text-amber-900">{c.topic}</p>
+                                    <p><span className="font-mono text-[10px] text-slate-500">{c?.documentA?.source}:</span> {c?.documentA?.saysWhat}</p>
+                                    <p><span className="font-mono text-[10px] text-slate-500">{c?.documentB?.source}:</span> {c?.documentB?.saysWhat}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {Array.isArray(caseTimeline.openItems) && caseTimeline.openItems.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-brand-700 font-extrabold uppercase mb-2">Open Items (Promised, Never Followed Up)</h5>
+                              <div className="space-y-2">
+                                {caseTimeline.openItems.map((o: any, i: number) => (
+                                  <div key={i} className="border border-brand-200 bg-brand-50 rounded-lg p-3 text-xs space-y-1">
+                                    <p><span className="font-mono text-[10px] text-slate-500">Promised in {o.promisedIn}:</span> {o.whatWasPromised}</p>
+                                    <p className="text-slate-500">Never addressed in: {o.neverAddressedIn}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {Array.isArray(caseTimeline.claimChecks) && caseTimeline.claimChecks.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Your Claims, Checked Against the Documents</h5>
+                              <div className="space-y-2">
+                                {caseTimeline.claimChecks.map((c: any, i: number) => {
+                                  const verdictStyle = c.verdict === "CONFIRMED"
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                    : c.verdict === "CONTRADICTED"
+                                    ? "border-red-200 bg-red-50 text-red-800"
+                                    : "border-slate-200 bg-slate-50 text-slate-600";
+                                  return (
+                                    <div key={i} className={`border rounded-lg p-3 text-xs space-y-1 ${verdictStyle}`}>
+                                      <div className="flex justify-between gap-2 flex-wrap">
+                                        <p className="font-bold">{c.claim}</p>
+                                        <span className="text-[10px] font-mono uppercase font-extrabold shrink-0">{c.verdict}</span>
+                                      </div>
+                                      <p>{c.explanation}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {Array.isArray(caseTimeline.requiresConfirmation) && caseTimeline.requiresConfirmation.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Questions for Counsel</h5>
+                              <ul className="list-disc list-inside text-xs text-slate-700 space-y-1">
+                                {caseTimeline.requiresConfirmation.map((q: string, i: number) => <li key={i}>{q}</li>)}
+                              </ul>
+                            </div>
+                          )}
+
+                          <p className="text-[10px] text-slate-400 italic border-t border-gray-100 pt-2">{caseTimeline.disclaimer}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {organizedFiles.length > 0 && (
                     <div className="space-y-4">
                       {organizedFiles.map((file) => {
                         const hasReport = file.analysisStatus === "completed" && file.analysisReport;
@@ -4314,4 +4513,3 @@ export default function DocumentAnalyzerTab() {
     </div>
   );
 }
-
