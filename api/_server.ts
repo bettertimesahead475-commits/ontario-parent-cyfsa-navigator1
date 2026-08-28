@@ -203,7 +203,13 @@ async function generateContentWithFallback(
   const client = getAnthropicClient();
   const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : "claude-sonnet-5";
   const messages = params.messages.map((message: any) => ({
-    role: message.role === "assistant" ? "assistant" : "user",
+    // BUG FOUND IN AUDIT: this ternary always evaluates to "assistant" or "user" but TypeScript
+    // was widening the inferred type to plain `string`, which doesn't satisfy the Anthropic
+    // SDK's stricter `"user" | "assistant"` role type. This has been showing up as a build-time
+    // type error on every single deploy today (harmless in practice since esbuild doesn't
+    // type-check at build time, but worth actually fixing rather than leaving a permanent red
+    // herring in the build logs that could mask a real error next time).
+    role: (message.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
     content: Array.isArray(message.content)
       ? message.content.map((part: any) => ({
           type: "text" as const,
@@ -830,7 +836,13 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
       const response = await generateContentWithFallback({
         system: systemInstruction,
-        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }]
+        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
+        // BUG FOUND IN AUDIT: this had no explicit max_tokens, so it was falling back to the
+        // shared 8000 default — the exact same risk that just caused /api/analyze to truncate
+        // on real documents. This endpoint can process up to 40 documents at once and produce
+        // a timeline + conflicts + open items + claim checks across all of them, which can
+        // easily need more room than a single-document response.
+        max_tokens: 16000
       }, model || "claude-sonnet-5");
 
       const responseText = response.text;

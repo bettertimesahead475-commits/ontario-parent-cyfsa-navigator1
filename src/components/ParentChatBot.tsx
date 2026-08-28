@@ -131,12 +131,22 @@ export default function ParentChatBot() {
         content: f.content
       }));
 
+      // BUG FOUND IN AUDIT: this chat never sent its own conversation history to the backend,
+      // so /api/rag-query treated every message as the first thing the parent ever said — the
+      // exact same "no memory" bug already fixed in the Document Analyzer's case chat earlier
+      // today, just present here too in this separate chat interface. Fixed the same way: send
+      // the prior turns so the backend can actually reference them.
+      const conversationHistory = messages
+        .filter(m => m.text && m.text.trim())
+        .map(m => ({ role: m.sender === "user" ? "user" : "assistant", content: m.text }));
+
       // Call our robust backend RAG endpoint with "family-advocate" focus for educational guidance
       const res = await apiFetch("/api/rag-query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: queryText,
+          history: conversationHistory,
           files: filesContext,
           model: selectedModel,
           focus: "family-advocate" // Highly supportive, calm, educational parent-coaching focus

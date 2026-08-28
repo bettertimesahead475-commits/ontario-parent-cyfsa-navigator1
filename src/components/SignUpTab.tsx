@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { useLocation } from "wouter";
 import { jsPDF } from "jspdf";
+import { safeReadJson } from "../utils/api";
 
 interface UserProfile {
   fullName: string;
@@ -197,27 +198,42 @@ export default function SignUpTab() {
       const reader = new FileReader();
       reader.readAsDataURL(blob);
       reader.onloadend = async () => {
-        const base64data = reader.result as string;
-        const base64payload = base64data.split(",")[1];
+        // BUG FOUND IN AUDIT: everything inside this onloadend callback used to run with no
+        // try/catch of its own. The outer function's try/catch only wraps the synchronous setup
+        // (creating the reader, calling readAsDataURL) — onloadend fires later, asynchronously,
+        // by which point the outer try/catch has already finished and can no longer catch
+        // anything. If the fetch failed, or the response wasn't valid JSON (e.g. a 500 HTML
+        // error page), the resulting exception was unhandled and setIsTranscribing(false) never
+        // ran — leaving the UI stuck showing "transcribing" indefinitely after any network
+        // hiccup. Wrapped in its own try/catch/finally so a failure here is handled the same way
+        // failures in the outer try are, and the spinner always clears.
+        try {
+          const base64data = reader.result as string;
+          const base64payload = base64data.split(",")[1];
 
-        // Send to secure server transcription
-        const response = await fetch("/api/transcribe-audio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            audioData: base64payload,
-            mimeType: blob.type || "audio/webm"
-          })
-        });
+          // Send to secure server transcription
+          const response = await fetch("/api/transcribe-audio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audioData: base64payload,
+              mimeType: blob.type || "audio/webm"
+            })
+          });
 
-        const data = await response.json();
-        if (data.success) {
-          const textResult = data.text || liveTranscription || "Spoken memo recorded successfully.";
-          saveNewNote(textResult);
-        } else {
-          saveNewNote(liveTranscription || "Speech memo recorded but transcribing failed.");
+          const data = await safeReadJson(response);
+          if (data.success) {
+            const textResult = data.text || liveTranscription || "Spoken memo recorded successfully.";
+            saveNewNote(textResult);
+          } else {
+            saveNewNote(liveTranscription || "Speech memo recorded but transcribing failed.");
+          }
+        } catch (innerErr) {
+          console.error("Transcription error (inside onloadend):", innerErr);
+          saveNewNote(liveTranscription || "Spoken thought saved without online formatting.");
+        } finally {
+          setIsTranscribing(false);
         }
-        setIsTranscribing(false);
       };
     } catch (err) {
       console.error("Transcription error:", err);

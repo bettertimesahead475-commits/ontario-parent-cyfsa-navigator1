@@ -244,7 +244,13 @@ export default function TemplatesTab() {
       
       const newLog: EvidenceLogItem = {
         id: "el-" + Date.now(),
-        date: data.date || "2026-06-06",
+        // BUG FOUND IN AUDIT: this used to fall back to a hardcoded "2026-06-06" if the AI
+        // extraction didn't return a date — meaning any extraction that omitted a date would
+        // silently get mis-dated to a fixed, wrong day with no indication anything was wrong.
+        // This is exactly the kind of fabricated-date bug already fixed elsewhere in the
+        // backend prompts; it just hadn't been caught here in the frontend fallback. Now it
+        // falls back to today's real date, which is at least honest even when not exact.
+        date: data.date || new Date().toISOString().slice(0, 10),
         involvedWorkers: data.involvedWorkers || "",
         whatHappened: data.whatHappened || "",
         statementsMade: data.statementsMade || "",
