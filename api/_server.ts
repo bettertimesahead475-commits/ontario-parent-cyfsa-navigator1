@@ -215,16 +215,30 @@ async function generateContentWithFallback(
   console.log(`[AI Engine] Claude routing. Model: ${model}`);
   const response = await client.messages.create({
     model,
-    max_tokens: params.max_tokens || 4000,
+    max_tokens: params.max_tokens || 8000,
     system: params.system,
     messages,
   });
-  return {
-    text: response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join(""),
-  };
+  const textOut = response.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+
+  // BUG FIX: an empty result here was previously silent and unexplained — the caller just saw
+  // "Empty response received from the analysis service," with no way to tell why. The most
+  // common real cause is the response being cut off by max_tokens before any usable text block
+  // was completed (large analysis schemas, like /api/analyze's, need more headroom than the old
+  // 4000-token default gave them). Logging stop_reason here makes that diagnosable immediately
+  // instead of requiring a runtime-log archaeology session every time it happens.
+  if (!textOut) {
+    console.error(
+      `[AI Engine] Empty text output. stop_reason=${(response as any).stop_reason}, ` +
+      `usage=${JSON.stringify((response as any).usage)}. ` +
+      `If stop_reason is "max_tokens", raise the max_tokens parameter for this call.`
+    );
+  }
+
+  return { text: textOut };
 }
 
 // Helper to extract JSON from any block resiliently
@@ -666,7 +680,12 @@ THINGS TO NEVER DO
 
       const response = await generateContentWithFallback({
         system: systemInstruction,
-        messages: [{ role: "user", content: contents }]
+        messages: [{ role: "user", content: contents }],
+        // This schema is the largest in the app (redFlags, timeline violations, Charter
+        // analysis, verification lists, and a full lawyer case brief, all in one JSON
+        // response) — the old shared default of 4000 was cutting this off before any
+        // usable text completed, which is what produced the "empty response" failures.
+        max_tokens: 8000
       }, model || "claude-sonnet-5");
 
       const responseText = response.text;
