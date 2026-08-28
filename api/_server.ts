@@ -1244,3 +1244,4 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+// redeploy trigger: force a fresh build from current main after a stale manual redeploy overrode it
