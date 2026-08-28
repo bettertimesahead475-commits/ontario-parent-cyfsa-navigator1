@@ -399,7 +399,7 @@ export default function SignUpTab() {
         involvedAgency,
         passcode,
         memberSince: new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }),
-        advocateId: `PSA-2026-${randomSuffix}`
+        advocateId: `PSA-${new Date().getFullYear()}-${randomSuffix}`
       };
 
       try {

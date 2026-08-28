@@ -1,6 +1,6 @@
 /**
  * @license
- * SPDX-License-Identifier: Apache-2.5
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import React, { useState, useEffect } from "react";
@@ -124,7 +124,11 @@ export default function App() {
                 <Link href="/signup">
                   <div className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all">
                     <User className="w-3 h-3 text-slate-500" />
-                    <span>Passport: {userProfile.fullName.split(" ")[0]} 🛡️</span>
+                    {/* BUG FOUND IN AUDIT: this crashed the entire header (and therefore every
+                        page, since this is app-shell code) if a saved profile existed but was
+                        missing fullName for any reason - corrupted/partial localStorage data,
+                        manual tampering, etc. Added a safe fallback. */}
+                    <span>Passport: {(userProfile.fullName || "Parent").split(" ")[0]} 🛡️</span>
                   </div>
                 </Link>
               ) : (
