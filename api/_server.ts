@@ -241,23 +241,47 @@ async function generateContentWithFallback(
   return { text: textOut };
 }
 
-// Helper to extract JSON from any block resiliently
+// Helper to extract JSON from any block resiliently.
+// BUG FIX: each fallback strategy used to be untried if an earlier one threw partway through
+// (e.g. a fenced-code match was found but the JSON inside it was itself incomplete/truncated —
+// that inner throw used to propagate immediately instead of falling through to the bracket-scan
+// fallback). Each strategy is now isolated in its own try/catch so a failure in one doesn't
+// skip the rest. If every strategy still fails, the error message now says plainly that the
+// response looks truncated, instead of surfacing a raw, unhelpful "Unexpected token `" message.
 function extractJson(text: string): any {
+  const trimmed = text.trim();
+
   try {
-    return JSON.parse(text.trim());
-  } catch (e) {
-    const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (match) {
-      return JSON.parse(match[1].trim());
-    }
-    const startIndex = text.indexOf('{');
-    const endIndex = text.lastIndexOf('}');
-    if (startIndex !== -1 && endIndex !== -1) {
-      const putativeJson = text.substring(startIndex, endIndex + 1);
-      return JSON.parse(putativeJson.trim());
-    }
-    throw e;
+    return JSON.parse(trimmed);
+  } catch { /* fall through to next strategy */ }
+
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenceMatch) {
+    try {
+      return JSON.parse(fenceMatch[1].trim());
+    } catch { /* fenced block itself wasn't valid/complete JSON — keep trying */ }
   }
+
+  const startIndex = trimmed.indexOf('{');
+  const endIndex = trimmed.lastIndexOf('}');
+  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+    try {
+      return JSON.parse(trimmed.substring(startIndex, endIndex + 1));
+    } catch { /* still not parseable — keep trying */ }
+  }
+
+  // Nothing worked. A response that starts with an opening fence/brace but never reaches a
+  // valid, complete JSON structure is the classic signature of the model's output being cut
+  // off before it finished — most often because it needed more room than max_tokens allowed.
+  const looksTruncated = /```(?:json)?\s*\{/.test(trimmed) || (startIndex !== -1 && endIndex <= startIndex);
+  if (looksTruncated) {
+    throw new Error(
+      "The analysis response was incomplete — it looks like it was cut off before finishing, " +
+      "likely because the document was long or complex enough to need more output room than was " +
+      "allotted. Try again; if it keeps happening on this document, try a shorter excerpt."
+    );
+  }
+  throw new Error("The analysis response was not valid JSON and could not be parsed.");
 }
 
 // Unified AI error handling and user-friendly formatting with HTTP status codes
@@ -685,7 +709,10 @@ THINGS TO NEVER DO
         // analysis, verification lists, and a full lawyer case brief, all in one JSON
         // response) — the old shared default of 4000 was cutting this off before any
         // usable text completed, which is what produced the "empty response" failures.
-        max_tokens: 8000
+        // Raised again from 8000 — that was still truncating on longer/more complex real
+        // documents (confirmed via a truncated-JSON failure in production), leaving an
+        // incomplete response that no JSON-recovery strategy could parse.
+        max_tokens: 16000
       }, model || "claude-sonnet-5");
 
       const responseText = response.text;
