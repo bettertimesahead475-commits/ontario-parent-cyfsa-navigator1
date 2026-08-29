@@ -33,3 +33,41 @@ These were previously either wrong in the app or marked "unverified" pending sta
 
 Use this file directly for any future statute-accuracy work instead of re-fighting the
 e-Laws JavaScript gate or CanLII's robots.txt block.
+
+## Bill_C92_full_text.txt
+
+The federal Act respecting First Nations, Inuit and Métis children, youth and families
+(S.C. 2019, c. 24 — "Bill C-92"), full text provided directly by Chris and verified against
+Justice Laws Canada. In force January 1, 2020 (SI/2019-96).
+
+Key sections most relevant to parent-facing "know your rights" content — these are the ones
+that actually give a parent something actionable, not just background:
+
+- **s. 8** — purpose (affirms Indigenous self-government jurisdiction over child/family
+  services; sets national principles; implements UNDRIP)
+- **s. 9(1)** — the Act must be interpreted per the best interests of the child
+- **s. 10(1)** — best interests is a "primary consideration" generally, but the **paramount**
+  consideration specifically for apprehension decisions
+- **s. 14(1)** — preventive/family-support services must be prioritized over other services
+  where consistent with the child's best interests
+- **s. 15** — a child must NOT be apprehended solely for socio-economic reasons (poverty,
+  inadequate housing, a parent's health) — a real, citable protection
+- **s. 15.1** — before apprehending a child living with a parent or family member, the service
+  provider must show it made **reasonable efforts** to let the child keep living with that
+  person — a concrete, actionable right worth surfacing prominently
+- **s. 16(1)** — the mandatory placement priority order: (a) a parent, (b) another adult family
+  member, (c) an adult from the same Indigenous community, (d) an adult from a different
+  Indigenous community, (e) any other adult
+- **s. 12(1)** — before any "significant measure," the Indigenous governing body representing
+  the child's community must be notified
+- **s. 13** — in civil proceedings, the child's parent/care provider have a right to make
+  representations and party status; the Indigenous governing body has a right to make
+  representations
+- **s. 22(1) and (3)** — a conflict-of-laws rule: an Indigenous group's own child/family
+  services law prevails over a conflicting federal OR provincial law (with a carve-out —
+  ss. 10-15 of this Act and the Canadian Human Rights Act are never overridden)
+
+This is the strongest, most parent-relevant content for the Part IV/Indigenous-rights section
+of the app — s. 15 and s. 15.1 in particular are concrete, checkable protections a parent could
+actually raise in a real proceeding, not just background principle.
+
