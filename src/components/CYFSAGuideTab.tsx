@@ -353,7 +353,7 @@ export default function CYFSAGuideTab() {
     printWindow.document.close();
   };
 
-  const categories = ["All", "Removal", "Protection Grounds", "Worker Authority", "Rights", "Evidence Rules", "Timelines"];
+  const categories = ["All", "Removal", "Protection Grounds", "Worker Authority", "Rights", "Evidence Rules", "Timelines", "Indigenous Rights"];
 
       const filteredTopics = CYFSA_TOPICS.filter(t => {
     const matchesCategory = categoryFilter === "All" || t.category === categoryFilter;
