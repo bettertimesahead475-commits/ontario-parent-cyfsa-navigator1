@@ -211,9 +211,19 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
   }, []);
 
   const handleCopyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1500);
+    // BUG FOUND IN AUDIT: navigator.clipboard.writeText() returns a Promise that can reject
+    // (permission denied, non-secure/non-HTTPS context, etc.), but this call wasn't awaited or
+    // caught - the "copied ✓" indicator showed unconditionally, even on a silent failure,
+    // misleading the user into thinking something was on their clipboard when it wasn't.
+    navigator.clipboard.writeText(text).then(
+      () => {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 1500);
+      },
+      () => {
+        alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access on this page.");
+      }
+    );
   };
 
   const filteredItems = GLOSSARY_ITEMS.filter(item => {

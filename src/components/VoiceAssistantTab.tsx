@@ -86,14 +86,24 @@ export default function VoiceAssistantTab() {
 
   // Play narration (TTS)
   const handlePlayNarrator = () => {
-    window.speechSynthesis.cancel(); // cancel any active utterance
-
+    // BUG FOUND IN AUDIT: two compounding bugs here. First, window.speechSynthesis.cancel() used
+    // to run unconditionally at the very top of this function, before even checking whether we
+    // were resuming from a pause - so the "resume" branch below always cancelled the paused
+    // speech first, then tried to resume() an utterance queue that had just been wiped, which
+    // does nothing. Second, even if that were fixed, the resume branch set isPaused back to
+    // `true` instead of `false` - the opposite of what had just happened - which meant that
+    // after the very first pause, this component would try to "resume" forever afterward even
+    // when the user had selected a completely different narration to play, since isPaused never
+    // got reset. Fixed by only cancelling on a genuine fresh start, and setting isPaused
+    // correctly when resuming.
     if (isPaused) {
       window.speechSynthesis.resume();
-      setIsPaused(true);
+      setIsPaused(false);
       setIsPlaying(true);
       return;
     }
+
+    window.speechSynthesis.cancel(); // cancel any active utterance before starting a fresh one
 
     const utterance = new SpeechSynthesisUtterance(selectedNarrativeText);
     utterance.rate = speechRate;
@@ -180,7 +190,16 @@ export default function VoiceAssistantTab() {
               </label>
               <textarea
                 value={selectedNarrativeText}
-                onChange={(e) => setSelectedNarrativeText(e.target.value)}
+                onChange={(e) => {
+                  setSelectedNarrativeText(e.target.value);
+                  // Same fix as the preloaded-summary buttons above: editing the text while
+                  // paused must not leave isPaused pointing at now-stale speech.
+                  if (isPlaying || isPaused) {
+                    window.speechSynthesis.cancel();
+                    setIsPlaying(false);
+                    setIsPaused(false);
+                  }
+                }}
                 rows={6}
                 className="w-full bg-slate-50 border border-gray-200 focus:bg-white text-xs md:text-sm leading-relaxed p-4 rounded-xl focus:outline-none"
               />
@@ -244,9 +263,15 @@ export default function VoiceAssistantTab() {
                     key={index}
                     onClick={() => {
                       setSelectedNarrativeText(sum.text);
-                      if (isPlaying) {
+                      // BUG FOUND IN AUDIT: this reset isPlaying when switching to a different
+                      // summary, but never reset isPaused - so pausing, then picking a different
+                      // summary, then clicking Play would resume the OLD (stale) utterance
+                      // instead of reading the newly selected text, since handlePlayNarrator's
+                      // resume branch only checks isPaused.
+                      if (isPlaying || isPaused) {
                         window.speechSynthesis.cancel();
                         setIsPlaying(false);
+                        setIsPaused(false);
                       }
                     }}
                     className={`p-3 border rounded-xl text-left text-xs transition-colors flex items-start gap-2 cursor-pointer ${
@@ -320,8 +345,12 @@ export default function VoiceAssistantTab() {
                 {spokenTranscript && (
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(spokenTranscript);
-                      alert("Transcript copyable! Paste it straight into your evidentiary logs draft.");
+                      // BUG FOUND IN AUDIT: unguarded clipboard write - see LegalTerminologyDrawer
+                      // fix for the full explanation. Fixed the same way everywhere it appeared.
+                      navigator.clipboard.writeText(spokenTranscript).then(
+                        () => alert("Transcript copyable! Paste it straight into your evidentiary logs draft."),
+                        () => alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access.")
+                      );
                     }}
                     className="text-[10px] font-semibold text-brand-600 hover:underline"
                   >

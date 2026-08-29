@@ -50,7 +50,6 @@ import {
 } from "lucide-react";
 import { db, auth } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
-import { LegalCaseBrief } from "./LegalCaseBrief";
 
 interface OrganizedFile {
   id: string;
@@ -399,11 +398,31 @@ export default function DocumentAnalyzerTab() {
       setIsBuildingTimeline(false);
     }
   };
-  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-4-20250514");
+  // BUG FOUND IN AUDIT: this defaulted to "claude-sonnet-4-20250514", which isn't in the
+  // backend's actual valid model set (CLAUDE_MODELS = {"claude-sonnet-5", "claude-haiku-4-5-20251001"}
+  // in api/_server.ts). The backend silently substitutes "claude-sonnet-5" whenever an unknown
+  // model string comes in, so this default (and, worse, both options in the dropdown below) never
+  // actually did anything - the model selector was a non-functional illusion of choice.
+  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-5");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Active Audit Visual State
   const [selectedReport, setSelectedReport] = useState<AnalysisReport | null>(() => {
+    // BUG FOUND IN AUDIT: SavedDocumentsTab.tsx's "Open Document" button for a saved analysis
+    // writes the report to localStorage under "OPA_LOAD_ANALYSIS_REPORT" and navigates here,
+    // but nothing in this file ever read that key back - the report was silently dropped every
+    // time, and the user just landed on whatever the default/empty view was. Wired up here:
+    // if that handoff key is present, it takes priority over the regular saved-progress restore,
+    // and is cleared immediately after being consumed so it doesn't reload on every future visit.
+    try {
+      const handoff = localStorage.getItem("OPA_LOAD_ANALYSIS_REPORT");
+      if (handoff) {
+        localStorage.removeItem("OPA_LOAD_ANALYSIS_REPORT");
+        return JSON.parse(handoff);
+      }
+    } catch (e) {
+      console.error("Failed to load handed-off analysis report:", e);
+    }
     return parsedProg?.selectedReport || null;
   });
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState<boolean>(false);
@@ -2693,8 +2712,12 @@ export default function DocumentAnalyzerTab() {
               onChange={(e) => setClaudeModel(e.target.value)}
               className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors"
             >
-              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+              {/* BUG FOUND IN AUDIT: both previous options ("claude-sonnet-4-20250514" and
+                  "claude-3-5-sonnet-20241022") were invalid model strings the backend would
+                  silently reject and replace with claude-sonnet-5 regardless of selection - this
+                  dropdown did nothing. Now offers the two models the backend actually accepts. */}
+              <option value="claude-sonnet-5">Claude Sonnet 5</option>
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (faster)</option>
             </select>
           </div>
           
@@ -3613,8 +3636,10 @@ export default function DocumentAnalyzerTab() {
                               onClick={() => {
                                 const textToCopy = selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
                                 if (textToCopy) {
-                                  navigator.clipboard.writeText(textToCopy);
-                                  alert("Success: Lawyer Case Brief copied to clipboard!");
+                                  navigator.clipboard.writeText(textToCopy).then(
+                                    () => alert("Success: Lawyer Case Brief copied to clipboard!"),
+                                    () => alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access.")
+                                  );
                                 }
                               }}
                               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"

@@ -279,9 +279,15 @@ export default function StatutoryBookmarkSidebar() {
 
   // Copy citation details to clipboard
   const handleCopyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1500);
+    navigator.clipboard.writeText(text).then(
+      () => {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 1500);
+      },
+      () => {
+        alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access on this page.");
+      }
+    );
   };
 
   // Filter browse list

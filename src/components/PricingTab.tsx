@@ -13,7 +13,7 @@ interface PricingTabProps {
   userEmail?: string;
 }
 
-const TIER_PRICES: Record<"Pro" | "Premium", number> = { Pro: 19, Premium: 49 };
+const FALLBACK_TIER_PRICES: Record<"Pro" | "Premium", number> = { Pro: 19, Premium: 49 };
 const PAYMENT_EMAIL = "ontarioparentassist@gmail.com";
 
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
@@ -29,6 +29,27 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
   const [sidebarCode, setSidebarCode] = useState("");
   const [sidebarError, setSidebarError] = useState("");
   const [sidebarBusy, setSidebarBusy] = useState(false);
+
+  // BUG FOUND IN AUDIT: the real prices are enforced server-side in api/services/access.ts,
+  // but this component had its own hardcoded copy - two sources of truth that happened to
+  // match today but had nothing keeping them in sync. If the backend price ever changed,
+  // this page would keep quoting the old number with no warning. There's also an existing
+  // /api/access-pricing endpoint that returns the real values but nothing was calling it.
+  // Now this fetches the real prices on load, falling back to the hardcoded values only if
+  // that fetch fails, so the UI never breaks even when offline/erroring.
+  const [TIER_PRICES, setTierPrices] = useState<Record<"Pro" | "Premium", number>>(FALLBACK_TIER_PRICES);
+  React.useEffect(() => {
+    fetch("/api/access-pricing")
+      .then(res => (res.ok ? res.json() : Promise.reject()))
+      .then(data => {
+        if (data?.prices?.Pro && data?.prices?.Premium) {
+          setTierPrices(data.prices);
+        }
+      })
+      .catch(() => {
+        // Fetch failed - keep the hardcoded fallback values already in state, no user-facing error needed.
+      });
+  }, []);
 
   const triggerCheckout = (tier: "Pro" | "Premium") => {
     setSelectedTier(tier);

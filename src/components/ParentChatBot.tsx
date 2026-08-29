@@ -60,7 +60,9 @@ export default function ParentChatBot() {
   
   const [input, setInput] = useState<string>("");
   const [isQuerying, setIsQuerying] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-4-20250514");
+  // BUG FOUND IN AUDIT: same non-functional model selector bug fixed in DocumentAnalyzerTab.tsx -
+  // this defaulted to an invalid model string the backend silently rejects and replaces.
+  const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-5");
   const [showFilesList, setShowFilesList] = useState<boolean>(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -354,8 +356,9 @@ export default function ParentChatBot() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="bg-brand-900 border border-brand-850 text-[10px] font-semibold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-amber-300 transition-colors"
                 >
-                  <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                  {/* BUG FOUND IN AUDIT: same invalid-model-options bug as DocumentAnalyzerTab.tsx. */}
+                  <option value="claude-sonnet-5">Claude Sonnet 5</option>
+                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (faster)</option>
                 </select>
               </div>
             </div>

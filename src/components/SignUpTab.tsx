@@ -849,8 +849,10 @@ export default function SignUpTab() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          navigator.clipboard.writeText(note.text);
-                                          alert("Transcribed note content copied to clipboard!");
+                                          navigator.clipboard.writeText(note.text).then(
+                                            () => alert("Transcribed note content copied to clipboard!"),
+                                            () => alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access.")
+                                          );
                                         }}
                                         className="p-1 hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded transition cursor-pointer"
                                         title="Copy text content"

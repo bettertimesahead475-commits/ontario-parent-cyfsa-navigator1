@@ -47,6 +47,16 @@ self.addEventListener("fetch", (event) => {
 
   const requestUrl = new URL(event.request.url);
 
+  // BUG FOUND IN AUDIT (regression): this repo had already fixed a crash where
+  // cache.put() throws "Request scheme 'chrome-extension' is unsupported" when a browser
+  // extension's own resource requests get intercepted by this service worker — but that guard
+  // was missing from this file, the same way a previously-removed Netlify config file and a
+  // previously-removed broken deploy script both quietly reappeared elsewhere in this repo
+  // today. Restoring it: only http/https requests are eligible for any caching below.
+  if (requestUrl.protocol !== "http:" && requestUrl.protocol !== "https:") {
+    return;
+  }
+
   // Never intercept API endpoints to prevent blocking AI or transcribing backends
   if (requestUrl.pathname.startsWith("/api/")) {
     return;
