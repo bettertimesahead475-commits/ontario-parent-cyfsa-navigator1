@@ -553,10 +553,39 @@ app.use(express.json({ limit: "100mb" }));
 - Match explanation: one sentence connecting the specific document language to the specific statutory requirement — not a general summary of the section.
 
 2. Statute verification is mandatory before displaying any citation.
-- First check the section against the built-in Confirmed Statute Reference (loaded separately — see CYFSA-Statute-Reference.md).
-- If the section is in the Confirmed list, cite it and quote its actual text.
-- If the section is NOT in the Confirmed list, attempt a live web search against canlii.org or ontario.ca/laws for that section number before citing it.
-- If you cannot verify the section's actual text through either method, DO NOT display a section number. Instead show: "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this."
+- BUG FIX (flagged in audit, Aug 29 2026): this rule used to tell you to check citations against
+  "CYFSA-Statute-Reference.md" and, failing that, to run a live web search — but no such file
+  ever existed in this codebase and no web-search tool is wired into this endpoint. Both
+  verification paths this rule described were fictional, which is how a wrong citation
+  (s.94(5) mislabeled as a "5-day post-apprehension hearing" rule — it is actually the
+  placement-with-relative provision) made it into a real audit with full confidence and no
+  hedge. The CONFIRMED STATUTE REFERENCE below is real, verified section text — this is the
+  only list you may treat as confirmed.
+- CONFIRMED STATUTE REFERENCE (verified Aug 29 2026 — cite these freely, with this exact text):
+  * CYFSA s.74(2): defines "child in need of protection."
+  * CYFSA s.94(1): "The court shall not adjourn a hearing for more than 30 days, (a) unless all
+    the parties present and the person who will be caring for the child during the adjournment
+    consent; or (b) if the court is aware that a party who is not present at the hearing
+    objects to the longer adjournment."
+  * CYFSA s.94(5): "Before making a temporary order for care and custody under clause (2)(d),
+    the court shall consider whether it is in the child's best interests to make an order under
+    clause (2)(c) to place the child in the care and custody of a person who is a relative of
+    the child or a member of the child's extended [family/community]." This is a
+    placement-with-relative consideration clause tied to temporary care orders during an
+    adjournment — it is NOT a "5-day post-apprehension hearing" rule. Never cite s.94(5) for a
+    hearing-timeline argument.
+  * CYFSA s.125(1): the duty-to-report section — reasonable-grounds-to-suspect standard.
+  * Bill 188, Supporting Children's Futures Act, 2024 (S.O. 2024, c. 17): amended CYFSA Part II
+    with respect to children's rights to be informed about the Ombudsman, among other things.
+  * Bill 33, Supporting Children and Students Act, 2025 (S.O. 2025, c. 12), Schedule 4:
+    separately expands the Ombudsman's own mandate to investigate CAS/licensed-provider
+    services under CYFSA. These are two distinct acts passed a year apart — never cite them
+    together as one hyphenated "SCFA 2024 / Bill 33 2025" label; name whichever one actually
+    supports the specific point being made, or both by their separate full names if both apply.
+- Every other CYFSA/CLRA section (including s.70, s.81, and CLRA s.8(1)) is NOT in the confirmed
+  list above. For any of these, you MUST show: "⚠️ Statute citation unverified — confirm exact
+  section with counsel before relying on this." Do not state a specific subsection number for
+  them as if it were confirmed fact.
 - Never generate a plausible-sounding section number from pattern-matching. A wrong citation is worse than no citation — it undermines the parent's credibility if raised in court.
 
 3. Severity labels must be calibrated, not maximal.
@@ -654,7 +683,7 @@ ${analysisRules}`;
               "thresholdChecked": "CYFSA s. 81 — Application / Child Protection Proceeding Authority",
               "isMet": "Yes / No / Inconclusive",
               "reasoning": "Analyze the role of CYFSA s. 81 in the proceeding. Do not characterize s. 81 itself as an "imminent danger" threshold. Distinguish the statutory authority for commencing proceedings from the separate statutory grounds and tests applicable to whether a child is in need of protection or may be apprehended.",
-              "primarySourceLaw": "CYFSA 2017, Section 81(1)"
+              "primarySourceLaw": "⚠️ Statute citation unverified — confirm exact subsection with counsel before relying on this. (s.81 generally covers warrants/apprehension/hearing procedure, but the exact subsection for this point is not in the confirmed reference and must not be stated as fact.)"
             },
             {
               "thresholdChecked": "Child in Need of Protection grounds (CYFSA s. 74)",
@@ -672,7 +701,7 @@ ${analysisRules}`;
               "thresholdChecked": "Kinship / Family-Based Alternatives — Documentation Check",
               "isMet": "Yes / No / Inconclusive",
               "reasoning": "Determine whether the reviewed document documents consideration of kinship, extended-family, customary-care, Indigenous, or other family-based alternatives where legally relevant. Do NOT infer that the Society failed to consider such alternatives merely because the affidavit does not mention them. Classify an absence of documentation as "Missing Evidence" or "Not Determinable From This Document" and identify the records required to verify what was actually considered.",
-              "primarySourceLaw": "CYFSA 2017, Section 70"
+              "primarySourceLaw": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this."
             }
           ],
           "proceduralTimelineViolations": [
@@ -685,26 +714,26 @@ ${analysisRules}`;
               "parentActionStep": "Parent action steps to track scheduled court dates and ensure their lawyer asserts s. 94(1) rights."
             },
             {
-              "timelineRule": "5-Day Post-Apprehension Court Hearing Rule (CYFSA s. 94(5))",
+              "timelineRule": "Court hearing timeline following apprehension without warrant",
               "documentAssertion": "E.g. dates of removal or court schedules.",
-              "evaluation": "Evaluate if the child was taken without a warrant and scheduling is compliant with the 5-court-day rule of s. 94(5). If child is safe at home, note standard home care safety.",
-              "citation": "CYFSA, S.O. 2017, c. 14, s. 94",
+              "evaluation": "BUG FIX (flagged in audit): this checkpoint previously cited CYFSA s.94(5) for a '5-day post-apprehension hearing rule.' s.94(5) is confirmed to actually be a placement-with-relative consideration clause, not a hearing-timeline rule — that citation was wrong, not just unverified, and must never be used again. A statutory deadline for bringing an apprehended child before the court does exist under CYFSA, but its exact current section number is not in the confirmed reference and must be verified with counsel before being cited by number. Evaluate the document on its facts (was the child taken without a warrant, and how long before a court appearance) without asserting a specific section number.",
+              "citation": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.",
               "locationInDocument": "Page X, Paragraph Y, or state 'Not applicable - child in home care'",
-              "parentActionStep": "Verify immediate court scheduling if a sudden take occurs. Keep court liaison logs."
+              "parentActionStep": "Verify immediate court scheduling if a sudden take occurs. Ask your lawyer to confirm the exact CYFSA section governing the post-apprehension hearing deadline. Keep court liaison logs."
             },
             {
-              "timelineRule": "Child Ombudsman Access & Continuous Care Rights (SCFA 2024 / Bill 33 2025)",
+              "timelineRule": "Child Ombudsman Access & Continuous Care Rights",
               "documentAssertion": "E.g. references to child consultation, Ombudsman access, or CAS contact rules.",
-              "evaluation": "Evaluate if the child's rights under the Supporting Children's Futures Act, 2024, to reach the Ombudsman, or the duty for frequent in-care visitation are met. Focus on rights access.",
-              "citation": "Supporting Children's Futures Act, 2024",
+              "evaluation": "Evaluate if the child's rights to reach the Ombudsman, or the duty for frequent in-care visitation, are met. Focus on rights access. Two distinct acts are relevant here and must be named separately, never combined into one label: Bill 188, Supporting Children's Futures Act, 2024 (S.O. 2024, c. 17), which amended CYFSA Part II regarding children's rights to be informed about the Ombudsman; and Bill 33, Supporting Children and Students Act, 2025 (S.O. 2025, c. 12), Schedule 4, which separately expanded the Ombudsman's own mandate to investigate CAS and licensed-provider services. Cite whichever actually applies to the specific fact in this document, or both by their full separate names if both apply.",
+              "citation": "Bill 188, Supporting Children's Futures Act, 2024 (S.O. 2024, c. 17) and/or Bill 33, Supporting Children and Students Act, 2025 (S.O. 2025, c. 12) — cite by full name, never as a combined 'SCFA 2024 / Bill 33 2025' label.",
               "locationInDocument": "Page X, Paragraph Y, or 'Checked & Advised'",
               "parentActionStep": "Confirm child is aware they can contact the Ontario Ombudsman regarding CAS placements."
             },
             {
-              "timelineRule": "300-Day Presumption of Parentage (CLRA s. 8(1))",
+              "timelineRule": "300-Day Presumption of Parentage",
               "documentAssertion": "E.g. marriage status, cohabitant records, or parent naming details.",
-              "evaluation": "Check for adherence to CLRA s. 8(1) presumptions of parentage for separations within 300 days of birth. Flag if active spousal roles are omitted by CAS.",
-              "citation": "Children's Law Reform Act, s. 8(1)",
+              "evaluation": "Check for adherence to Children's Law Reform Act presumptions of parentage for separations within 300 days of birth, if relevant on the facts. The exact subsection is not in the confirmed reference and must not be stated as settled fact.",
+              "citation": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.",
               "locationInDocument": "Page X, Paragraph Y, or state 'Checked & Compliant'",
               "parentActionStep": "Action step for parent to confirm both actual parent parties are formally integrated in notices."
             }
@@ -936,7 +965,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
 - HEARSAY: Do not treat hearsay as automatically inadmissible. Identify the source, whether the affiant has personal knowledge, whether the source is identified, whether the statement is corroborated, and explain that the principal issue may be evidentiary weight.
 - APPREHENSION VS ACCESS: Never infer that an access restriction, recommendation, warning, advice, safety-plan condition, or parent-to-parent arrangement automatically constitutes an apprehension. Analyze the factual circumstances separately and identify what evidence would establish an actual apprehension.
 - CHARTER: Describe Charter rights as potentially engaged only where supported by the facts. Do not state or imply that an infringement has been established unless the document contains sufficient facts and verified law to support that conclusion.
-- FIVE-DAY HEARING RULE: Apply the CYFSA s. 94(5) five-court-day analysis only when the evidence establishes or reasonably indicates an actual apprehension falling within the statutory provision. An informal access restriction alone is insufficient to conclude that s. 94(5) was triggered.
+- POST-APPREHENSION HEARING TIMELINE: CYFSA s.94(5) is confirmed to be a placement-with-relative consideration clause tied to temporary care orders, NOT a post-apprehension hearing-deadline rule — never cite s.94(5) for this. A statutory deadline for bringing an apprehended child before the court does exist, but its exact current section number is unverified in this tool; when relevant, discuss the timeline on the facts (was there an apprehension without a warrant, how long before a court appearance) and flag the specific section number as "⚠️ unverified — confirm with counsel" rather than stating one. Never conclude that an informal access restriction alone amounts to an apprehension triggering any such deadline.
 - ABSENCE OF EVIDENCE IS NOT EVIDENCE OF ABSENCE. If a document does not mention an action, do not conclude that the action did not occur. Classify it as "Missing Evidence" or "Not Determinable From This Document" and identify what record would establish the fact.
 - Never convert an allegation, omission, inference, police notation, hearsay statement, or unverified legal proposition into an established fact.
 - For every material finding distinguish: DOCUMENTED FACT, REPORTED INFORMATION, INFERENCE, ALLEGATION, and LEGAL CONCLUSION. Never present reported information, inference, or allegation as an established fact.
