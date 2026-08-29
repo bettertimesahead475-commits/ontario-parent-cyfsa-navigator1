@@ -223,7 +223,7 @@ export default function FamilyCourtTab() {
             </span>
             <h4 className="font-display text-base font-bold mt-2">The Strict 5-Day Rule</h4>
             <p className="text-xs text-slate-400 mt-1 lines-clamp-3 leading-relaxed">
-              If CAS leaves your child with you but serves a protection brief, you are NOT removed. Only actual physical apprehension triggers Section 94's mandatory 5-day emergency courtroom appearance. Close tracking!
+              If CAS leaves your child with you but serves a protection brief, you are NOT removed. Only actual physical apprehension triggers CYFSA s. 88's mandatory five-day hearing requirement. Close tracking!
             </p>
           </div>
         </div>
