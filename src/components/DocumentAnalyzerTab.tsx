@@ -1772,6 +1772,13 @@ export default function DocumentAnalyzerTab() {
 
     const totalFiles = filesToAnalyzeList.length;
     let completedCount = 0;
+    // Collected here instead of firing the cross-document timeline pass per-file: that used to
+    // fire one full /api/case-timeline call (its own expensive LLM request) per file as each
+    // one finished, so a batch of N files fired N increasingly-redundant timeline calls that
+    // competed with the analyze/extract-text requests above for the same rate-limited API,
+    // making the whole batch slower the more files it had. One call after the batch settles
+    // gets the same up-to-date timeline for a fraction of the requests.
+    const extractedContentById: Record<string, string> = {};
     try {
       const concurrencyLimit = 5;
       const queue = [...filesToAnalyzeList];
@@ -1870,13 +1877,7 @@ export default function DocumentAnalyzerTab() {
                   // including when an earlier file in the batch failed.
                   setSelectedReport(current => current ?? dataResult);
                   autoUploadToTemplates(dataResult, file.name, file.id);
-                  // Fire the auto-timeline pass with the freshly updated file list built by hand
-                  // (not the organizedFiles closure, which won't reflect the setOrganizedFiles
-                  // call above until next render) so this file's real content is included now,
-                  // not one upload cycle late.
-                  autoBuildCaseTimeline(
-                    organizedFiles.map(f => f.id === file.id ? { ...f, content: payload.textContent || f.content } : f)
-                  );
+                  extractedContentById[file.id] = payload.textContent || file.content;
 
                   completedCount++;
                   success = true;
@@ -1902,6 +1903,13 @@ export default function DocumentAnalyzerTab() {
         };
         processNext();
       });
+
+      // Fire the cross-document timeline pass exactly once, after the whole batch has settled,
+      // using every file's freshly-extracted text (not the base64 the organizedFiles closure
+      // still holds for files this batch touched).
+      autoBuildCaseTimeline(
+        organizedFiles.map(f => (extractedContentById[f.id] ? { ...f, content: extractedContentById[f.id] } : f))
+      );
 
     } catch (error) {
       console.error("Bulk analysis failed:", error);
