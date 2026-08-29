@@ -9,6 +9,7 @@ import { EMPTY_AFFIDAVIT } from "../data";
 import { AffidavitDraft, CaseTimelineItem, EvidenceLogItem, IssueSummarySheet, ParentPrepWorksheet, Form33BAnswer, PlanOfCare } from "../types";
 import { Plus, Trash, Printer, ShieldAlert, CheckCircle, Scale, FileText, LayoutGrid, Calendar, BookOpen, Clock, Layers, Info, Mic, Square, Sparkles, Loader2, RefreshCw, AlertTriangle, Save, ArrowRight, Check, Lock, Heart, CloudUpload } from "lucide-react";
 import { apiFetch, safeReadJson } from "../utils/api";
+import DictateButton from "./DictateButton";
 import { db, auth } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
 
@@ -19,7 +20,7 @@ const EMPTY_FORM33B: Form33BAnswer = {
   respondentName: "",
   childNames: "",
   applicationDate: "",
-  claimDetails: "The respondent requests that the application be dismissed, and that the children be returned to the care and custody of the respondent parent with supportive community services under Section 94 of the CYFSA.",
+  claimDetails: "The respondent requests that the application be dismissed, and that the children be returned to the care and custody of the respondent parent with supportive community services. [Cite the specific CYFSA disposition-order section with your lawyer before filing — it has not been verified in this tool.]",
   agreedFacts: "",
   disagreedFacts: [],
   parentStatementOfFacts: ""
@@ -120,6 +121,13 @@ export default function TemplatesTab() {
     return parsedProg?.form33b || JSON.parse(JSON.stringify(EMPTY_FORM33B));
   });
 
+  // FIX (flagged in audit): case-number mismatches produced by the document handover were
+  // being recorded in localStorage but never shown anywhere — a silent flag nobody could act
+  // on. Surfacing it here so a mismatch is impossible to miss before this gets filed.
+  const [caseNumberWarnings, setCaseNumberWarnings] = useState<string[]>(() => {
+    return parsedProg?.caseNumberWarnings || [];
+  });
+
   const [planOfCare, setPlanOfCare] = useState<PlanOfCare>(() => {
     return parsedProg?.planOfCare || JSON.parse(JSON.stringify(EMPTY_PLANOFCARE));
   });
@@ -127,6 +135,17 @@ export default function TemplatesTab() {
   
   const [timelineItems, setTimelineItems] = useState<CaseTimelineItem[]>(() => {
     return parsedProg?.timelineItems || [];
+  });
+
+  // Read-only cross-document conflicts/open items computed by the auto-timeline pass — these
+  // are the "part of the timeline, not evidence you still have to compute" pieces: a
+  // contradiction between two documents, or a promise one document made that never got
+  // followed up anywhere else in the case file.
+  const [caseTimelineConflicts, setCaseTimelineConflicts] = useState<any[]>(() => {
+    return parsedProg?.caseTimelineConflicts || [];
+  });
+  const [caseTimelineOpenItems, setCaseTimelineOpenItems] = useState<any[]>(() => {
+    return parsedProg?.caseTimelineOpenItems || [];
   });
 
   const [evidenceLog, setEvidenceLog] = useState<EvidenceLogItem[]>(() => {
@@ -156,6 +175,9 @@ export default function TemplatesTab() {
           if (parsed.affidavit) setAffidavit(parsed.affidavit);
           if (parsed.planOfCare) setPlanOfCare(parsed.planOfCare);
           if (parsed.activeBuilderTab) setActiveBuilderTab(parsed.activeBuilderTab);
+          if (parsed.caseNumberWarnings) setCaseNumberWarnings(parsed.caseNumberWarnings);
+          if (parsed.caseTimelineConflicts) setCaseTimelineConflicts(parsed.caseTimelineConflicts);
+          if (parsed.caseTimelineOpenItems) setCaseTimelineOpenItems(parsed.caseTimelineOpenItems);
         }
       } catch (err) {
         console.error("Failed to load handover data:", err);
@@ -305,6 +327,9 @@ export default function TemplatesTab() {
         prepSheet,
         form33b,
         planOfCare,
+        caseNumberWarnings,
+        caseTimelineConflicts,
+        caseTimelineOpenItems,
         lastSaved: Date.now()
       };
       localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
@@ -335,9 +360,12 @@ export default function TemplatesTab() {
         prepSheet,
         form33b,
         planOfCare,
+        caseNumberWarnings,
+        caseTimelineConflicts,
+        caseTimelineOpenItems,
         lastSaved: Date.now()
       };
-      
+
       const docId = `template_${Date.now()}`;
       await setDoc(doc(db, "users", auth.currentUser.uid, "saved_documents", docId), {
         id: docId,
@@ -373,6 +401,9 @@ export default function TemplatesTab() {
           prepSheet,
           form33b,
           planOfCare,
+          caseNumberWarnings,
+          caseTimelineConflicts,
+          caseTimelineOpenItems,
           lastSaved: Date.now()
         };
         localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
@@ -384,7 +415,7 @@ export default function TemplatesTab() {
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [activeBuilderTab, affidavit, timelineItems, evidenceLog, issueSheets, prepSheet, form33b, planOfCare]);
+  }, [activeBuilderTab, affidavit, timelineItems, evidenceLog, issueSheets, prepSheet, form33b, planOfCare, caseNumberWarnings, caseTimelineConflicts, caseTimelineOpenItems]);
 
 
   const isPremium = true;
@@ -1349,7 +1380,10 @@ export default function TemplatesTab() {
 
             {/* Narrative Preamble */}
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold block">Background Statement (Solemn Oath)</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold block">Background Statement (Solemn Oath)</label>
+                <DictateButton onTranscript={(text) => setAffidavit({ ...affidavit, backgroundStatement: (affidavit.backgroundStatement ? affidavit.backgroundStatement + " " : "") + text })} />
+              </div>
               <textarea
                 value={affidavit.backgroundStatement}
                 onChange={(e) => setAffidavit({ ...affidavit, backgroundStatement: e.target.value })}
@@ -1435,7 +1469,20 @@ export default function TemplatesTab() {
                     </div>
                     
                     <div className="space-y-1">
-                      <span className="text-[10px] font-mono uppercase text-slate-500 font-bold block">Factual Narrative Statement (Omit opinions, state exact physical times and actions)</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono uppercase text-slate-500 font-bold block">Factual Narrative Statement (Omit opinions, state exact physical times and actions)</span>
+                        <DictateButton
+                          compact
+                          onTranscript={(text) => {
+                            const updated = [...affidavit.factualEvents];
+                            const existing = updated[idx].eventDescription || "";
+                            const merged = existing ? existing + " " + text : text;
+                            const hasHearsayKeywords = /\b(said that|told me|informed me|heard that|according to|stated that|worker said)\b/i.test(merged);
+                            updated[idx] = { ...updated[idx], eventDescription: merged, unsupportedOrHearsayWarn: hasHearsayKeywords ? true : updated[idx].unsupportedOrHearsayWarn };
+                            setAffidavit({ ...affidavit, factualEvents: updated });
+                          }}
+                        />
+                      </div>
                       <textarea
                         value={evt.eventDescription || ""}
                         placeholder="On 2026-06-15 at 14:00, worker Smith arrived in the home room..."
@@ -1491,7 +1538,10 @@ export default function TemplatesTab() {
             {/* Child perspective & Proposed arrangements */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold block">The Child's Perspective (Emotional attachment)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold block">The Child's Perspective (Emotional attachment)</label>
+                  <DictateButton onTranscript={(text) => setAffidavit({ ...affidavit, childsPerspectiveText: (affidavit.childsPerspectiveText ? affidavit.childsPerspectiveText + " " : "") + text })} />
+                </div>
                 <textarea
                   value={affidavit.childsPerspectiveText}
                   onChange={(e) => setAffidavit({ ...affidavit, childsPerspectiveText: e.target.value })}
@@ -1501,7 +1551,10 @@ export default function TemplatesTab() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold block">Proposed Parenting / Safekeeping Plan</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold block">Proposed Parenting / Safekeeping Plan</label>
+                  <DictateButton onTranscript={(text) => setAffidavit({ ...affidavit, proposedCareArrangement: (affidavit.proposedCareArrangement ? affidavit.proposedCareArrangement + " " : "") + text })} />
+                </div>
                 <textarea
                   value={affidavit.proposedCareArrangement}
                   onChange={(e) => setAffidavit({ ...affidavit, proposedCareArrangement: e.target.value })}
@@ -1518,13 +1571,52 @@ export default function TemplatesTab() {
           <div className="space-y-6" id="timeline-workspace">
             <div>
               <h3 className="font-display text-lg font-bold text-gray-900">Custom Case Timeline Tracker</h3>
-              <p className="text-xs text-slate-600 mt-1">Trace critical events Chronologically to cross-verify mandatory Statutory time ceilings.</p>
+              <p className="text-xs text-slate-600 mt-1">Auto-built from every document you've handed over, and cross-checked against each other — add or correct anything below. Rows marked "Auto" came from your documents; anything you type in yourself is never overwritten.</p>
             </div>
+
+            {(caseTimelineConflicts.length > 0 || caseTimelineOpenItems.length > 0) && (
+              <div className="space-y-3">
+                {caseTimelineConflicts.length > 0 && (
+                  <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 space-y-2">
+                    <p className="text-xs font-black uppercase tracking-wide text-amber-800">⚠ Conflicts between your documents</p>
+                    {caseTimelineConflicts.map((c: any, i: number) => (
+                      <div key={i} className="text-xs text-amber-900 leading-relaxed border-t border-amber-200 pt-2 first:border-t-0 first:pt-0">
+                        <p className="font-bold">{c.topic}</p>
+                        <p>{c.documentA?.source}: {c.documentA?.saysWhat}</p>
+                        <p>{c.documentB?.source}: {c.documentB?.saysWhat}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {caseTimelineOpenItems.length > 0 && (
+                  <div className="bg-sky-50 border-2 border-sky-300 rounded-xl p-4 space-y-2">
+                    <p className="text-xs font-black uppercase tracking-wide text-sky-800">Open items — promised in one document, never followed up in any other</p>
+                    {caseTimelineOpenItems.map((o: any, i: number) => (
+                      <p key={i} className="text-xs text-sky-900 leading-relaxed">
+                        <span className="font-bold">{o.promisedIn}:</span> "{o.whatWasPromised}" — not addressed in {o.neverAddressedIn}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="space-y-3">
               {timelineItems.map((item, index) => (
                 <div key={item.id} className="p-5 border border-gray-150 rounded-xl flex flex-col justify-between gap-4 bg-slate-50/40 relative">
-                  
+
+                  {item.autoGenerated && (
+                    <div className="flex items-center gap-2 text-[10px] font-mono">
+                      <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-full font-bold uppercase">Auto — from your documents</span>
+                      {item.sources && item.sources.length > 0 && (
+                        <span className="text-slate-500">Source: {item.sources.join("; ")}</span>
+                      )}
+                    </div>
+                  )}
+                  {item.quote && (
+                    <p className="text-[11px] italic text-slate-500 border-l-2 border-slate-200 pl-2">"{item.quote}"</p>
+                  )}
+
                   {/* Row 1: Date Input and Step Type Switcher */}
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-150 pb-3">
                     <div className="flex items-center gap-2">
@@ -2107,6 +2199,22 @@ export default function TemplatesTab() {
               </p>
             </div>
 
+            {caseNumberWarnings.length > 0 && (
+              <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 space-y-2">
+                <p className="text-xs font-black uppercase tracking-wide text-red-700">⚠ Case number mismatch detected — do not file until resolved</p>
+                {caseNumberWarnings.map((w, i) => (
+                  <p key={i} className="text-xs text-red-800 leading-relaxed">{w}</p>
+                ))}
+                <button
+                  type="button"
+                  className="text-[10px] font-mono uppercase text-red-500 underline"
+                  onClick={() => setCaseNumberWarnings([])}
+                >
+                  I've confirmed this with the court/my lawyer — dismiss
+                </button>
+              </div>
+            )}
+
             {/* Part 1: Parties and Metadata */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
               <div className="space-y-1.5">
@@ -2180,7 +2288,15 @@ export default function TemplatesTab() {
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">Respondent's Custody/Care Claim Details</label>
-                  <span className="text-[8px] bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded font-mono font-bold">Rule 17 / Section 94 CYFSA</span>
+                  <div className="flex items-center gap-2">
+                    {/* FIX (flagged in audit): this badge said "Section 94 CYFSA" — s.94 governs
+                        adjournments/temporary care during an adjournment, not the final
+                        disposition order (supervision/return/society care) a proposed order
+                        like this is actually asking for. Marked unverified rather than citing
+                        a wrong or unconfirmed section as if it were settled. */}
+                    <span className="text-[8px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-mono font-bold" title="The exact CYFSA disposition-order section has not been verified in this tool — confirm with counsel before citing a section number.">Rule 17 / CYFSA disposition order — section unverified</span>
+                    <DictateButton onTranscript={(text) => setForm33b({ ...form33b, claimDetails: (form33b.claimDetails ? form33b.claimDetails + " " : "") + text })} />
+                  </div>
                 </div>
                 <textarea
                   value={form33b.claimDetails}
@@ -2191,7 +2307,10 @@ export default function TemplatesTab() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">Agreed Statements of Fact (Paragraphs agreed with in CAS App)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">Agreed Statements of Fact (Paragraphs agreed with in CAS App)</label>
+                  <DictateButton onTranscript={(text) => setForm33b({ ...form33b, agreedFacts: (form33b.agreedFacts ? form33b.agreedFacts + " " : "") + text })} />
+                </div>
                 <textarea
                   value={form33b.agreedFacts}
                   onChange={(e) => setForm33b({ ...form33b, agreedFacts: e.target.value })}
@@ -2249,17 +2368,47 @@ export default function TemplatesTab() {
               <div className="space-y-3">
                 {form33b.disagreedFacts.map((item, idx) => (
                   <div key={item.id} className="p-4 border border-gray-200 bg-slate-50/20 rounded-xl space-y-3 relative">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-mono font-bold text-slate-500">Disagreement Item #{idx + 1}</span>
-                      <button
-                        onClick={() => {
-                          const filtered = form33b.disagreedFacts.filter(df => df.id !== item.id);
-                          setForm33b({ ...form33b, disagreedFacts: filtered });
-                        }}
-                        className="text-[10px] text-rose-600 font-bold hover:underline cursor-pointer"
-                      >
-                        Delete assertion reply
-                      </button>
+                    <div className="flex justify-between items-center flex-wrap gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-mono font-bold text-slate-500">Disagreement Item #{idx + 1}</span>
+                        {item.legalReference && (
+                          <span
+                            className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                              item.legalReference.startsWith("⚠️")
+                                ? "bg-amber-50 border-amber-200 text-amber-700"
+                                : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                            }`}
+                            title={item.legalReference}
+                          >
+                            {item.legalReference}
+                          </span>
+                        )}
+                        {item.sourceFileNumber && (
+                          <span className="text-[9px] font-mono text-slate-400">File: {item.sourceFileNumber}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => {
+                            const updated = [...form33b.disagreedFacts];
+                            updated[idx] = { ...updated[idx], parentResponse: "" };
+                            setForm33b({ ...form33b, disagreedFacts: updated });
+                          }}
+                          className="text-[10px] text-slate-500 font-bold hover:underline cursor-pointer"
+                          title="Clear your reply and start over — the CAS statement and citation above are kept"
+                        >
+                          Reset reply
+                        </button>
+                        <button
+                          onClick={() => {
+                            const filtered = form33b.disagreedFacts.filter(df => df.id !== item.id);
+                            setForm33b({ ...form33b, disagreedFacts: filtered });
+                          }}
+                          className="text-[10px] text-rose-600 font-bold hover:underline cursor-pointer"
+                        >
+                          Delete assertion reply
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2279,7 +2428,17 @@ export default function TemplatesTab() {
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold block">Parent Counter-Explanation (The Truth)</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold block">Parent Counter-Explanation (The Truth)</label>
+                          <DictateButton
+                            compact
+                            onTranscript={(text) => {
+                              const updated = [...form33b.disagreedFacts];
+                              updated[idx] = { ...updated[idx], parentResponse: (updated[idx].parentResponse ? updated[idx].parentResponse + " " : "") + text };
+                              setForm33b({ ...form33b, disagreedFacts: updated });
+                            }}
+                          />
+                        </div>
                         <textarea
                           value={item.parentResponse}
                           onChange={(e) => {
@@ -2294,7 +2453,17 @@ export default function TemplatesTab() {
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold block">Factual Direct Proof / Evidentiary Logs</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold block">Factual Direct Proof / Evidentiary Logs</label>
+                          <DictateButton
+                            compact
+                            onTranscript={(text) => {
+                              const updated = [...form33b.disagreedFacts];
+                              updated[idx] = { ...updated[idx], supportingEvidence: (updated[idx].supportingEvidence ? updated[idx].supportingEvidence + " " : "") + text };
+                              setForm33b({ ...form33b, disagreedFacts: updated });
+                            }}
+                          />
+                        </div>
                         <textarea
                           value={item.supportingEvidence}
                           onChange={(e) => {
@@ -2331,7 +2500,10 @@ export default function TemplatesTab() {
 
             {/* Part 4: Parent's Own Facts statement */}
             <div className="space-y-1.5 pt-2 border-t border-dashed">
-              <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">Respondent Parent's Statement of Factual Circumstances (Omitted by Society)</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">Respondent Parent's Statement of Factual Circumstances (Omitted by Society)</label>
+                <DictateButton onTranscript={(text) => setForm33b({ ...form33b, parentStatementOfFacts: (form33b.parentStatementOfFacts ? form33b.parentStatementOfFacts + " " : "") + text })} />
+              </div>
               <textarea
                 value={form33b.parentStatementOfFacts}
                 onChange={(e) => setForm33b({ ...form33b, parentStatementOfFacts: e.target.value })}
@@ -2386,6 +2558,7 @@ export default function TemplatesTab() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">1. Proposed Living Arrangements (Placement & Housing Security)</label>
                   <span className="text-[8px] bg-gray-150 text-gray-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Housing Plan</span>
+                                  <DictateButton onTranscript={(text) => setPlanOfCare({ ...planOfCare, livingArrangements: (planOfCare.livingArrangements ? planOfCare.livingArrangements + " " : "") + text })} />
                 </div>
                 <textarea
                   value={planOfCare.livingArrangements}
@@ -2400,6 +2573,7 @@ export default function TemplatesTab() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">2. Safety Protocols & Supervision Support (Approved Kinship Contacts)</label>
                   <span className="text-[8px] bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Safety & Supervision</span>
+                                  <DictateButton onTranscript={(text) => setPlanOfCare({ ...planOfCare, safetySupervision: (planOfCare.safetySupervision ? planOfCare.safetySupervision + " " : "") + text })} />
                 </div>
                 <textarea
                   value={planOfCare.safetySupervision}
@@ -2414,6 +2588,7 @@ export default function TemplatesTab() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">3. Educational Goals, School Stability & After-School Routines</label>
                   <span className="text-[8px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Education</span>
+                                  <DictateButton onTranscript={(text) => setPlanOfCare({ ...planOfCare, educationNeeds: (planOfCare.educationNeeds ? planOfCare.educationNeeds + " " : "") + text })} />
                 </div>
                 <textarea
                   value={planOfCare.educationNeeds}
@@ -2428,6 +2603,7 @@ export default function TemplatesTab() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">4. Medical, Dental, Pediatric & Developmental Counseling Schedules</label>
                   <span className="text-[8px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Medical & Therapy</span>
+                                  <DictateButton onTranscript={(text) => setPlanOfCare({ ...planOfCare, healthcareDevelopment: (planOfCare.healthcareDevelopment ? planOfCare.healthcareDevelopment + " " : "") + text })} />
                 </div>
                 <textarea
                   value={planOfCare.healthcareDevelopment}
@@ -2442,6 +2618,7 @@ export default function TemplatesTab() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">5. Cultural Preservation, Indigenous Identity, or Religious Heritage Connection</label>
                   <span className="text-[8px] bg-amber-100 text-amber-850 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Culture & Identity</span>
+                                  <DictateButton onTranscript={(text) => setPlanOfCare({ ...planOfCare, cultureReligion: (planOfCare.cultureReligion ? planOfCare.cultureReligion + " " : "") + text })} />
                 </div>
                 <textarea
                   value={planOfCare.cultureReligion}
@@ -2456,6 +2633,7 @@ export default function TemplatesTab() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">6. Parent-Child Bonding Access & Kinship Relative Contact Schedules</label>
                   <span className="text-[8px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Access visits</span>
+                                  <DictateButton onTranscript={(text) => setPlanOfCare({ ...planOfCare, contactAccessArrangements: (planOfCare.contactAccessArrangements ? planOfCare.contactAccessArrangements + " " : "") + text })} />
                 </div>
                 <textarea
                   value={planOfCare.contactAccessArrangements}
@@ -2470,6 +2648,7 @@ export default function TemplatesTab() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">7. Active Parent Rehabilitation, Parenting Programs (Triple P) & Support Services</label>
                   <span className="text-[8px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Programs Completed</span>
+                                  <DictateButton onTranscript={(text) => setPlanOfCare({ ...planOfCare, parentSupportServices: (planOfCare.parentSupportServices ? planOfCare.parentSupportServices + " " : "") + text })} />
                 </div>
                 <textarea
                   value={planOfCare.parentSupportServices}
