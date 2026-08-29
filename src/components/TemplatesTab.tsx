@@ -1219,7 +1219,7 @@ export default function TemplatesTab() {
                   resetAll();
                 }
               }}
-              className={`px-3 py-1.5 ${bannerResetConfirm ? "bg-red-600 text-white" : "bg-rose-50 hover:bg-rose-100 text-rose-700"} border border-rose-150 text-xs font-semibold rounded-lg cursor-pointer transition-all`}
+              className={`px-3 py-1.5 ${bannerResetConfirm ? "bg-red-600 text-white" : "bg-rose-50 hover:bg-rose-100 text-rose-700"} border border-rose-100 text-xs font-semibold rounded-lg cursor-pointer transition-all`}
             >
               {bannerResetConfirm ? "Click to Confirm Wipe" : "Start Fresh"}
             </button>
@@ -1228,12 +1228,12 @@ export default function TemplatesTab() {
       )}
 
       {/* Main Workspace Frame container */}
-      <div className="bg-white rounded-2xl border border-gray-150 p-6 md:p-8 text-left shadow-2xs relative print-card" id="builder-workspace">
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 md:p-8 text-left shadow-2xs relative print-card" id="builder-workspace">
         
         {/* Dynamic Tool Actions (eg Print/Download) */}
 
         {/* Auto-fill Legend */}
-        <div className="no-print mt-2 mb-6 flex flex-wrap items-center gap-3 text-[10px] font-mono border-b border-gray-150 pb-4">
+        <div className="no-print mt-2 mb-6 flex flex-wrap items-center gap-3 text-[10px] font-mono border-b border-gray-100 pb-4">
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse border border-emerald-600"></span>
             <span className="text-slate-500">Green = Successfully Auto-filled</span>
@@ -1407,7 +1407,7 @@ export default function TemplatesTab() {
                       <Trash className="w-3.5 h-3.5" />
                     </button>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-gray-150 pb-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-gray-100 pb-2">
                       <div className="text-xs font-semibold text-slate-600 flex items-center">Event Statement #{idx + 1}</div>
                       
                       <div className="flex items-center gap-2">
@@ -1534,10 +1534,10 @@ export default function TemplatesTab() {
 
             <div className="space-y-3">
               {timelineItems.map((item, index) => (
-                <div key={item.id} className="p-5 border border-gray-150 rounded-xl flex flex-col justify-between gap-4 bg-slate-50/40 relative">
+                <div key={item.id} className="p-5 border border-gray-100 rounded-xl flex flex-col justify-between gap-4 bg-slate-50/40 relative">
                   
                   {/* Row 1: Date Input and Step Type Switcher */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-150 pb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold font-mono text-slate-500">Date/Time</span>
                       <input
@@ -1598,7 +1598,7 @@ export default function TemplatesTab() {
                           updated[index] = { ...updated[index], description: e.target.value };
                           setTimelineItems(updated);
                         }}
-                        className={`border w-full   text-xs text-gray-650 p-3 rounded-lg focus:outline-none   leading-relaxed transition-colors ${getHighlightClass(item.description || "")}`}
+                        className={`border w-full   text-xs text-gray-600 p-3 rounded-lg focus:outline-none   leading-relaxed transition-colors ${getHighlightClass(item.description || "")}`}
                       />
                     </div>
                   </div>
@@ -1671,7 +1671,7 @@ export default function TemplatesTab() {
             </div>
 
             {/* AI-Powered Voice Dictation & Structuring Panel */}
-            <div className="no-print bg-gradient-to-br from-brand-50/70 via-white to-slate-50 border border-brand-150 rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
+            <div className="no-print bg-gradient-to-br from-brand-50/70 via-white to-slate-50 border border-brand-100 rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 bg-brand-600 text-white rounded-xl shadow-xs">
@@ -1683,14 +1683,14 @@ export default function TemplatesTab() {
                   </div>
                 </div>
                 
-                <span className="px-2 py-0.5 rounded-full border border-brand-200 bg-brand-50 text-brand-750 font-mono text-[9px] font-extrabold uppercase">
+                <span className="px-2 py-0.5 rounded-full border border-brand-200 bg-brand-50 text-brand-700 font-mono text-[9px] font-extrabold uppercase">
                   Premium Assist active
                 </span>
               </div>
 
               {/* Dictation Box Controls */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                <div className="lg:col-span-4 flex flex-col justify-between p-4 bg-white border border-gray-150 rounded-xl space-y-3">
+                <div className="lg:col-span-4 flex flex-col justify-between p-4 bg-white border border-gray-100 rounded-xl space-y-3">
                   <div className="space-y-1">
                     <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wide block">Recording Status</span>
                     <div className="flex items-center gap-2">
@@ -1770,14 +1770,14 @@ export default function TemplatesTab() {
 
               {/* Warnings and errors logs display inside visual container */}
               {voiceError && (
-                <div className="p-3 bg-red-55/70 border border-red-150 rounded-xl text-xs text-red-900 leading-normal flex items-start gap-2.5 animate-fadeIn">
+                <div className="p-3 bg-red-50/70 border border-red-100 rounded-xl text-xs text-red-900 leading-normal flex items-start gap-2.5 animate-fadeIn">
                   <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                   <span className="flex-1">{voiceError}</span>
                 </div>
               )}
 
               {extractionSuccess && (
-                <div className="p-3.5 bg-emerald-50 border border-emerald-150 rounded-xl text-xs text-emerald-950 leading-relaxed flex items-start gap-2.5 animate-fadeIn">
+                <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-950 leading-relaxed flex items-start gap-2.5 animate-fadeIn">
                   <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <span className="font-bold font-display block mb-0.5">Extraction Success</span>
@@ -1789,7 +1789,7 @@ export default function TemplatesTab() {
 
             <div className="space-y-4">
               {evidenceLog.map((log, idx) => (
-                <div key={log.id} className="p-5 border border-gray-150 rounded-2xl bg-white shadow-2xs space-y-4">
+                <div key={log.id} className="p-5 border border-gray-100 rounded-2xl bg-white shadow-2xs space-y-4">
                   <div className="flex flex-wrap justify-between items-center gap-2 border-b pb-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-slate-600 font-mono">Entry #{idx + 1}</span>
@@ -1932,7 +1932,7 @@ export default function TemplatesTab() {
               {issueSheets.map((item, index) => (
                 <div key={item.id} className="p-5 border rounded-2xl bg-slate-50/30 space-y-4">
                   <div className="flex justify-between items-center pb-2 border-b">
-                    <span className="text-xs font-bold text-slate-650 font-mono">Assertion Case #{index + 1}</span>
+                    <span className="text-xs font-bold text-slate-600 font-mono">Assertion Case #{index + 1}</span>
                     <button
                       onClick={() => removeIssueSheet(item.id)}
                       className="text-rose-600 text-xs font-bold hover:underline cursor-pointer"
@@ -2110,7 +2110,7 @@ export default function TemplatesTab() {
         {/* 6. FORM 33B ANSWER (CHILD PROTECTION) */}
         {activeBuilderTab === "answer-33b" && (
           <div className="space-y-6 animate-fade-in" id="answer-33b-workspace">
-            <div className="border-b border-gray-150 pb-4">
+            <div className="border-b border-gray-100 pb-4">
               <span className="text-[10px] font-mono font-black tracking-widest text-brand-600 block uppercase">FORM 33B • ONTARIO COURT RULES</span>
               <h3 className="font-display text-xl font-bold text-slate-950 mt-1">Answer (Child Protection)</h3>
               <p className="text-xs text-slate-600 mt-1 font-sans">
@@ -2332,7 +2332,7 @@ export default function TemplatesTab() {
                     };
                     setForm33b({ ...form33b, disagreedFacts: [...form33b.disagreedFacts, newItem] });
                   }}
-                  className="flex items-center gap-1 text-xs text-brand-650 hover:text-brand-850 font-bold pt-1 cursor-pointer"
+                  className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-800 font-bold pt-1 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add Custom Disagreement Reply Paragraph</span>
@@ -2357,7 +2357,7 @@ export default function TemplatesTab() {
         {/* 7. PERSONALIZED PLAN OF CARE */}
         {activeBuilderTab === "plan-of-care" && (
           <div className="space-y-6 animate-fade-in" id="plan-of-care-workspace">
-            <div className="border-b border-gray-150 pb-4">
+            <div className="border-b border-gray-100 pb-4">
               <span className="text-[10px] font-mono font-black tracking-widest text-rose-600 block uppercase">SEC. 94 COMPLIANCE • S.O. 2017, C. 14</span>
               <h3 className="font-display text-xl font-bold text-slate-950 mt-1">Personalized Parent Plan of Care</h3>
               <p className="text-xs text-slate-600 mt-1 font-sans">
@@ -2396,7 +2396,7 @@ export default function TemplatesTab() {
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">1. Proposed Living Arrangements (Placement & Housing Security)</label>
-                  <span className="text-[8px] bg-gray-150 text-gray-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Housing Plan</span>
+                  <span className="text-[8px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Housing Plan</span>
                 </div>
                 <textarea
                   value={planOfCare.livingArrangements}
@@ -2452,7 +2452,7 @@ export default function TemplatesTab() {
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold block">5. Cultural Preservation, Indigenous Identity, or Religious Heritage Connection</label>
-                  <span className="text-[8px] bg-amber-100 text-amber-850 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Culture & Identity</span>
+                  <span className="text-[8px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Culture & Identity</span>
                 </div>
                 <textarea
                   value={planOfCare.cultureReligion}

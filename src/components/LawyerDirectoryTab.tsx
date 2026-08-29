@@ -139,7 +139,7 @@ export default function LawyerDirectoryTab() {
       {/* Intro block */}
       <div className="text-left max-w-3xl">
         <h2 className="font-display text-2xl font-bold text-gray-900">Ontario Child Welfare Family Lawyer Lead Routing</h2>
-        <p className="text-sm text-gray-650 mt-2 leading-relaxed">
+        <p className="text-sm text-gray-600 mt-2 leading-relaxed">
           Struggling to secure representation? Locate active family defense practitioners specializing in protecting parents from CAS warrants and overreaches. Use our secure educational intake tunnel to deliver case timeline data directly into their schedules.
         </p>
       </div>
@@ -151,7 +151,7 @@ export default function LawyerDirectoryTab() {
         {/* Left Side: Directory search list */}
         <div className="lg:col-span-7 space-y-4" id="directory-browser">
           {/* Filters Bar */}
-          <div className="bg-white p-4 rounded-xl border border-gray-150 space-y-3 shadow-2xs" id="directory-filters">
+          <div className="bg-white p-4 rounded-xl border border-gray-100 space-y-3 shadow-2xs" id="directory-filters">
             <div className="flex flex-wrap gap-1.5" id="lawyer-cities">
               {cities.map((city) => (
                 <button
@@ -216,7 +216,7 @@ export default function LawyerDirectoryTab() {
                   </h3>
                   <p className="text-xs text-slate-600 font-semibold mt-0.5">{lawyer.firm}</p>
                   
-                  <p className="text-xs text-slate-600 mt-2.5 leading-relaxed bg-slate-50/40 p-3 rounded-xl border border-gray-150">
+                  <p className="text-xs text-slate-600 mt-2.5 leading-relaxed bg-slate-50/40 p-3 rounded-xl border border-gray-100">
                     {lawyer.educationNotes}
                   </p>
                 </div>
@@ -247,7 +247,7 @@ export default function LawyerDirectoryTab() {
         {/* Right Side: Secure Intake Form Tunnel */}
         <div className="lg:col-span-12 xl:col-span-5" id="secure-funnel-intake">
           {selectedLawyer ? (
-            <div className="bg-white rounded-2xl border border-gray-150 p-6 space-y-6 text-left" id="lawyer-form-wrapper">
+            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-6 text-left" id="lawyer-form-wrapper">
               <div className="border-b pb-4">
                 <span className="text-[10px] font-mono tracking-widest text-brand-600 font-bold uppercase block">
                   Secure Family Intake Portal
@@ -255,7 +255,7 @@ export default function LawyerDirectoryTab() {
                 <h3 className="font-display font-bold text-gray-900 text-base mt-1">
                   Intake for: {selectedLawyer.name}
                 </h3>
-                <span className="text-xs text-gray-550 block mt-0.5">{selectedLawyer.firm}</span>
+                <span className="text-xs text-gray-500 block mt-0.5">{selectedLawyer.firm}</span>
               </div>
 
               {intakeSuccessMessage ? (
@@ -325,7 +325,7 @@ export default function LawyerDirectoryTab() {
                               alert("No analyzed document reports with flagged issues were found in local storage. Run an audit in the Document Analyzer tab first.");
                             }
                           }}
-                          className="text-[9px] text-brand-650 hover:text-brand-800 font-bold flex items-center gap-1 cursor-pointer transition-all hover:underline"
+                          className="text-[9px] text-brand-600 hover:text-brand-800 font-bold flex items-center gap-1 cursor-pointer transition-all hover:underline"
                           title="Load flagged hearsay and procedural defects from your audited documents directly into the lawyer case brief summary"
                         >
                           <Sparkles className="w-3 h-3 text-brand-600 animate-pulse" />
@@ -366,7 +366,7 @@ export default function LawyerDirectoryTab() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full py-3 bg-brand-650 hover:bg-brand-700 font-bold text-white text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3 bg-brand-600 hover:bg-brand-700 font-bold text-white text-xs rounded-xl transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {isSubmitting ? (
                       <>

@@ -437,9 +437,9 @@ export default function SignUpTab() {
     <div className="space-y-8 animate-fadeIn" id="signup-tab-container">
       
       {/* Header Segment */}
-      <div className="text-left space-y-2 border-b border-gray-150 pb-5">
+      <div className="text-left space-y-2 border-b border-gray-100 pb-5">
         <div className="flex items-center gap-2 text-brand-900 font-bold tracking-wider uppercase text-[10px] md:text-xs">
-          <Shield className="w-4 h-4 text-brand-650" />
+          <Shield className="w-4 h-4 text-brand-600" />
           <span>ParentShield Security Portal</span>
         </div>
         <h2 className="font-display font-bold text-gray-900 text-2xl md:text-3xl tracking-tight">
@@ -624,7 +624,7 @@ export default function SignUpTab() {
                 transition={{ duration: 0.2 }}
                 className="space-y-6"
               >
-                <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-150 p-4 rounded-xl text-emerald-950">
+                <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 p-4 rounded-xl text-emerald-950">
                   <CheckCircle className="w-6 h-6 text-emerald-600 shrink-0" />
                   <div>
                     <h4 className="font-display font-extrabold text-sm uppercase tracking-wide text-emerald-900">
@@ -792,7 +792,7 @@ export default function SignUpTab() {
                         <div className="space-y-3.5">
                           {notes.length === 0 ? (
                             <div className="text-center py-8 px-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/30">
-                              <Mic className="w-8 h-8 text-slate-350 mx-auto mb-2" />
+                              <Mic className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                               <span className="font-display font-bold text-xs text-slate-700 uppercase tracking-wide block">No notes or memos recorded</span>
                               <p className="text-[11px] text-slate-400 max-w-xs mx-auto mt-1 leading-normal">
                                 Tap the record button above to capture statutory meeting thoughts, caseworker review memories, or home notes securely.
@@ -919,7 +919,7 @@ export default function SignUpTab() {
                     >
                       <h3 className="font-display font-bold text-slate-900 text-base">Your Profile Credentials:</h3>
                       
-                      <div className="grid grid-cols-2 gap-4 text-xs font-medium text-slate-700 bg-slate-50/50 p-4 rounded-xl border border-slate-150">
+                      <div className="grid grid-cols-2 gap-4 text-xs font-medium text-slate-700 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                         <div className="space-y-1">
                           <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Full Name:</span>
                           <span className="text-slate-900 font-semibold">{profile.fullName}</span>
@@ -936,7 +936,7 @@ export default function SignUpTab() {
                           <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Ontario Region:</span>
                           <span className="text-slate-900 font-semibold">{profile.region}</span>
                         </div>
-                        <div className="space-y-1 col-span-2 border-t border-slate-150 pt-2.5 mt-1.5">
+                        <div className="space-y-1 col-span-2 border-t border-slate-100 pt-2.5 mt-1.5">
                           <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Involved CAS Agency:</span>
                           <span className="text-slate-950 font-bold block">{profile.involvedAgency}</span>
                         </div>

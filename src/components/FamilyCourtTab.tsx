@@ -37,7 +37,7 @@ export default function FamilyCourtTab() {
         <div className="absolute inset-0 bg-linear-to-b from-brand-50/10 to-transparent pointer-events-none" />
         
         {/* Horizontal scroll timeline on desktop / stack on mobile */}
-        <div className="relative flex flex-col md:flex-row justify-between items-center gap-4 border-b border-gray-150 pb-6 overflow-x-auto" id="timeline-rail">
+        <div className="relative flex flex-col md:flex-row justify-between items-center gap-4 border-b border-gray-100 pb-6 overflow-x-auto" id="timeline-rail">
           {/* Connecting Line for design */}
           <div className="hidden md:block absolute top-[28px] left-[40px] right-[40px] h-0.5 bg-gray-200 -z-0" />
 
@@ -138,7 +138,7 @@ export default function FamilyCourtTab() {
             </div>
 
             {/* Right Forms & Download Checkboard Block */}
-            <div className="lg:col-span-5 space-y-6 lg:border-l lg:border-gray-150 lg:pl-8">
+            <div className="lg:col-span-5 space-y-6 lg:border-l lg:border-gray-100 lg:pl-8">
               <div>
                 <h4 className="font-display font-semibold text-gray-900 text-sm">Official Court Forms Required</h4>
                 <p className="text-xs text-slate-600 mt-1">
@@ -151,7 +151,7 @@ export default function FamilyCourtTab() {
                   <div key={key} className="p-4 bg-white hover:bg-brand-50/30 rounded-xl border border-gray-200 hover:border-brand-300 transition-all flex flex-col justify-between gap-3 shadow-2xs">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="inline-block text-[10px] font-mono font-bold text-brand-700 bg-brand-55 hover:bg-brand-100 px-2 py-0.5 rounded">
+                        <span className="inline-block text-[10px] font-mono font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 px-2 py-0.5 rounded">
                           {form.formNumber}
                         </span>
                         <h5 className="font-display font-semibold text-gray-800 text-xs md:text-sm mt-1">{form.name}</h5>

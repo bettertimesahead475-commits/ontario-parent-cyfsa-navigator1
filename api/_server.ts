@@ -531,17 +531,22 @@ app.use(express.json({ limit: "100mb" }));
         targetText = extractedText + "\n\n" + targetText;
       }
 
-      const contents: any[] = [];
-      if (targetText && targetText.trim()) {
-        contents.push({
-          type: "text",
-          text: `DOCUMENT TEXT CONTENT:\n${targetText}`
-        });
-      }
+      const documentContentBlock = targetText && targetText.trim()
+        ? `DOCUMENT TEXT CONTENT:\n${targetText}`
+        : "";
 
-      const systemInstruction = `You are ParentShield's Evidence Strength Audit tool. You analyze legal documents (affidavits, motion records, CAS correspondence) submitted by self-represented parents in Ontario child protection proceedings under the CYFSA. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
-
-CORE RULES (non-negotiable)
+      // SPEED FIX FOUND IN AUDIT: this endpoint used to make ONE Claude call asking for every
+      // field in AnalysisReport (red flags, threshold analysis, timeline violations, Charter
+      // issues, verify/ask-lawyer/missing lists, AND a full lawyer case brief) in a single
+      // response, capped at max_tokens: 16000. Token generation is serial, so a schema that big
+      // meant the parent watched one long, uninterruptible wait for the entire thing to finish —
+      // it was consistently the slowest single request in the app. The schema itself hasn't
+      // shrunk (nothing here got less thorough), it's just split into two independent halves —
+      // "core" (title/metadata/summary/evidence strength/red flags) and "deep-dive" (statutory
+      // thresholds/timeline/Charter/lawyer brief) — issued as concurrent requests below via
+      // Promise.all. Wall-clock time is now bounded by the SLOWER of the two, not the sum of
+      // both, which is close to a 2x real reduction for documents that exercise both halves.
+      const analysisRules = `CORE RULES (non-negotiable)
 1. Every flag requires three things, all present or the flag is not shown:
 - Document quote: the exact phrase from the uploaded document, with page/paragraph locator.
 - Statute citation: the specific CYFSA section, ONLY if verified (see Rule 2).
@@ -573,11 +578,21 @@ THINGS TO NEVER DO
 - Never generate content that could be read as legal advice ("you should file a motion to strike") — reframe as questions for counsel ("ask your lawyer whether a motion to strike is appropriate here").
 - Never fabricate a case name, citation, or quote. If asked to support a point with case law and you cannot verify one via search, say so directly.`;
 
-      const promptText = `
+      const coreSystemInstruction = `You are ParentShield's Evidence Strength Audit tool. You analyze legal documents (affidavits, motion records, CAS correspondence) submitted by self-represented parents in Ontario child protection proceedings under the CYFSA. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
+
+${analysisRules}`;
+
+      const deepDiveSystemInstruction = `You are ParentShield's Evidence Strength Audit tool, running the statutory-threshold and timeline half of a two-part review of one document already reviewed once by a parallel pass. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
+
+${analysisRules}`;
+
+      const corePromptText = `
+        ${documentContentBlock}
+
         DOCUMENT CONTENT TO ANALYZE:
-        Please perform a granular educational review, assessing CAS thresholds, evidentiary weights, and timelines.
+        Please perform a granular educational review, assessing the document's identity, evidentiary strength, and headline concerns.
         You MUST populate the response strictly matching this JSON schema and containing EVERY one of the checkpoints specified below:
-          
+
         {
           "documentTitle": "Identify title or default to 'Uploaded Document'",
           "documentType": "e.g., Worker Observation Letter, CAS Application, Unofficial Draft, etc.",
@@ -622,7 +637,18 @@ THINGS TO NEVER DO
                "locationInDocument": "Page X, Paragraph Y",
                "parentActionStep": "concrete next step — 'ask your lawyer about X' / 'request disclosure of Y' — not a legal conclusion"
             }
-          ],
+          ]
+        }
+      `;
+
+      const deepDivePromptText = `
+        ${documentContentBlock}
+
+        DOCUMENT CONTENT TO ANALYZE:
+        Please perform a granular educational review, assessing CAS statutory thresholds, procedural timelines, and Charter/rights issues.
+        You MUST populate the response strictly matching this JSON schema and containing EVERY one of the checkpoints specified below:
+
+        {
           "thresholdAnalysis": [
             {
               "thresholdChecked": "CYFSA s. 81 — Application / Child Protection Proceeding Authority",
@@ -703,31 +729,31 @@ THINGS TO NEVER DO
         }
       `;
 
-      contents.push({
-        type: "text",
-        text: promptText
-      });
+      // Both halves of the schema depend only on the same source document text, not on each
+      // other's output, so they're independent requests — issuing them concurrently is safe and
+      // is the actual speedup (see comment above documentContentBlock).
+      const [coreResponse, deepDiveResponse] = await Promise.all([
+        generateContentWithFallback({
+          system: coreSystemInstruction,
+          messages: [{ role: "user", content: [{ type: "text", text: corePromptText }] }],
+          max_tokens: 8000
+        }, model || "claude-sonnet-5"),
+        generateContentWithFallback({
+          system: deepDiveSystemInstruction,
+          messages: [{ role: "user", content: [{ type: "text", text: deepDivePromptText }] }],
+          max_tokens: 8000
+        }, model || "claude-sonnet-5")
+      ]);
 
-      const response = await generateContentWithFallback({
-        system: systemInstruction,
-        messages: [{ role: "user", content: contents }],
-        // This schema is the largest in the app (redFlags, timeline violations, Charter
-        // analysis, verification lists, and a full lawyer case brief, all in one JSON
-        // response) — the old shared default of 4000 was cutting this off before any
-        // usable text completed, which is what produced the "empty response" failures.
-        // Raised again from 8000 — that was still truncating on longer/more complex real
-        // documents (confirmed via a truncated-JSON failure in production), leaving an
-        // incomplete response that no JSON-recovery strategy could parse.
-        max_tokens: 16000
-      }, model || "claude-sonnet-5");
-
-      const responseText = response.text;
-
-      if (!responseText) {
+      if (!coreResponse.text || !deepDiveResponse.text) {
         throw new Error("Empty response received from the analysis service.");
       }
 
-      const report = extractJson(responseText);
+      const coreReport = extractJson(coreResponse.text);
+      const deepDiveReport = extractJson(deepDiveResponse.text);
+
+      // Field-disjoint by construction (see the two schemas above), so a plain merge is safe.
+      const report = { ...coreReport, ...deepDiveReport };
       res.json(report);
 
     } catch (error: any) {
@@ -1058,29 +1084,55 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
     }
   });
 
-  // API: Deep Scan — a focused second-pass audit of one specific document: what
-  // statutory omissions/gaps it has, what evidence the parent should go gather to
-  // address those gaps, and specific rebuttal scripts for claims the document
-  // actually makes.
+  // API: Deep Scan — a genuine SECOND pass over a document /api/analyze already
+  // scanned once, specifically hunting for what that first pass didn't catch:
+  // statutory omissions it left unflagged, "Inconclusive" threshold findings worth
+  // pressing further, and rebuttal scripts for claims the first pass didn't already
+  // raise as red flags.
   //
-  // BUG FOUND IN AUDIT: this endpoint didn't exist — the frontend's "Run Deep Scan"
-  // button instead ran a client-side setTimeout and returned entirely hardcoded,
-  // canned text selected only by filename/category heuristics (e.g. whether the
-  // filename contained "transcript"), never once looking at the actual uploaded
-  // document. It presented invented, specific claims ("Worker alleges parent
-  // repeatedly refused access for wellness checks") as if they were found in the
-  // parent's real file — the exact fabricated-content problem this app's other
-  // endpoints are explicitly built to avoid. Replaced with a real analysis grounded
-  // in the document text, following the same never-invent-a-quote rules as
-  // /api/analyze.
+  // BUG FOUND IN AUDIT (round 1 of this feature): this endpoint didn't exist at all —
+  // the frontend's "Run Deep Scan" button ran a client-side setTimeout and returned
+  // entirely hardcoded canned text selected only by filename/category heuristics,
+  // never once looking at the actual uploaded document.
+  //
+  // BUG FOUND IN AUDIT (round 2): the fix for that replaced it with a real backend
+  // call, but one that re-analyzed the raw document text from scratch with no
+  // knowledge of the /api/analyze report already sitting in front of the parent —
+  // making "Deep Scan" a near-duplicate of the first pass rather than an actual
+  // second, deeper look. It now receives that prior report and is explicitly told
+  // not to restate what it already found, but to dig into what it missed.
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
     try {
-      const { documentText, documentName, category, model } = req.body || {};
+      const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {
         return res.status(400).json({ error: "Document text is required for a deep scan." });
       }
 
-      const systemInstruction = `You are ParentShield's Deep Scan tool — a focused second-pass audit of ONE specific document already reviewed once, looking specifically for statutory omissions, missing corroborating evidence, and rebuttal material for claims the document itself makes.
+      let priorFindingsBlock = "No prior analysis is available for this document — treat this as a first full pass.";
+      if (priorAnalysis && typeof priorAnalysis === "object") {
+        const priorRedFlags = Array.isArray(priorAnalysis.redFlags)
+          ? priorAnalysis.redFlags.map((rf: any) => `- [${rf.severity || "?"}] ${rf.category || "?"}: "${rf.phraseDetected || ""}" — ${rf.explanation || ""}`).join("\n")
+          : "";
+        const inconclusiveThresholds = Array.isArray(priorAnalysis.thresholdAnalysis)
+          ? priorAnalysis.thresholdAnalysis
+              .filter((t: any) => t.isMet && String(t.isMet).toLowerCase() !== "yes" && String(t.isMet).toLowerCase() !== "no")
+              .map((t: any) => `- ${t.thresholdChecked} (${t.isMet}): ${t.reasoning || ""}`)
+              .join("\n")
+          : "";
+        const priorMissing = Array.isArray(priorAnalysis.whatIsMissing) ? priorAnalysis.whatIsMissing.join("\n- ") : "";
+        priorFindingsBlock = `The first-pass analysis of this document already found the following. Do NOT repeat any of these as a new "gap" or "retort" — your job is to find what this first pass did NOT catch:
+
+RED FLAGS ALREADY RAISED:
+${priorRedFlags || "(none raised)"}
+
+THRESHOLD FINDINGS MARKED INCONCLUSIVE/NOT DETERMINABLE (worth pressing further with a different angle, not just repeating):
+${inconclusiveThresholds || "(none marked inconclusive)"}
+
+ALREADY-NOTED MISSING ELEMENTS:
+${priorMissing ? "- " + priorMissing : "(none noted)"}`;
+      }
+
+      const systemInstruction = `You are ParentShield's Deep Scan tool — a genuine SECOND pass over ONE document already reviewed once by a parallel first-pass analysis, specifically hunting for statutory omissions, missing corroborating evidence, and rebuttal material that the first pass did not already surface.
 
 NON-NEGOTIABLE RULES
 1. Every "claim" in a retort must be a real assertion actually present in the supplied document text — quote or closely paraphrase it. Never invent a claim the document doesn't make.
@@ -1088,15 +1140,16 @@ NON-NEGOTIABLE RULES
 3. Never fabricate names, dates, or incidents not present in the document.
 4. Frame "action" steps as things to raise with a lawyer or gather as evidence, never as legal conclusions or instructions to file anything.
 5. If the document is too short or too generic to support a specific gap, evidence item, or retort, return fewer items rather than inventing filler — an empty array is honest; a fabricated one is not.
-6. End every report with the disclaimer field, unmodified.
+6. Do not restate anything already listed in the prior first-pass findings below as if it were a new finding — this pass only earns its name by surfacing what the first pass missed.
+7. End every report with the disclaimer field, unmodified.
 
 OUTPUT — return strictly this JSON schema, nothing else:
 {
-  "gaps": ["Specific statutory or procedural omission this document has, tied to what it actually says or fails to say."],
+  "gaps": ["Specific statutory or procedural omission this document has that the first pass did not already flag, tied to what it actually says or fails to say."],
   "missingEvidence": ["Specific evidence the parent should gather to address a gap above, given this document's actual content."],
   "retorts": [
     {
-      "claim": "A specific assertion actually made in this document — quote or closely paraphrase it.",
+      "claim": "A specific assertion actually made in this document, not already addressed by an existing red flag — quote or closely paraphrase it.",
       "objection": "Why this claim is weak, unsupported, or hearsay — grounded in the document, not a generic evidentiary rule.",
       "action": "A concrete next step to raise with counsel or evidence to gather in response."
     }
@@ -1108,10 +1161,12 @@ OUTPUT — return strictly this JSON schema, nothing else:
         DOCUMENT NAME: ${documentName || "Uploaded document"}
         DOCUMENT CATEGORY: ${category || "Unspecified"}
 
+        ${priorFindingsBlock}
+
         DOCUMENT TEXT:
         ${documentText}
 
-        Perform the deep scan described above, grounded strictly in the document text above.
+        Perform the deep scan described above, grounded strictly in the document text above, and building on — not repeating — the prior first-pass findings.
       `;
 
       const response = await generateContentWithFallback({

@@ -354,7 +354,7 @@ export default function ParentChatBot() {
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="bg-brand-900 border border-brand-850 text-[10px] font-semibold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-amber-300 transition-colors"
+                  className="bg-brand-900 border border-brand-800 text-[10px] font-semibold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-amber-300 transition-colors"
                 >
                   {/* BUG FOUND IN AUDIT: same invalid-model-options bug as DocumentAnalyzerTab.tsx. */}
                   <option value="claude-sonnet-5">Claude Sonnet 5</option>
@@ -411,7 +411,7 @@ export default function ParentChatBot() {
             </div>
 
             {/* Educational Prompt Chips & Helper Menu */}
-            <div className="px-3 py-2 bg-white border-t border-slate-150 shrink-0 space-y-1.5">
+            <div className="px-3 py-2 bg-white border-t border-slate-100 shrink-0 space-y-1.5">
               <div className="flex items-center gap-1 text-[9px] text-brand-950 font-bold tracking-wider uppercase font-sans">
                 <HelpCircle className="w-3.5 h-3.5 text-brand-700" />
                 <span>Parent Case-Prep Quick Guide:</span>
@@ -431,7 +431,7 @@ export default function ParentChatBot() {
             </div>
 
             {/* Input Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-150 shrink-0">
+            <div className="p-3 bg-slate-50 border-t border-slate-100 shrink-0">
               <form 
                 onSubmit={(e) => {
                   e.preventDefault();

@@ -484,11 +484,17 @@ export default function DocumentAnalyzerTab() {
           documentText: file.content,
           documentName: file.name,
           category: file.category,
-          model: claudeModel
+          model: claudeModel,
+          // Gives the deep scan the first-pass report already run for this file, so it can
+          // dig into what that pass missed instead of re-finding the same red flags.
+          priorAnalysis: file.analysisReport || null
         })
       });
 
       const data = await safeReadJson(response);
+      if (!response.ok) {
+        throw new Error(data.error || `Deep scan failed (${response.status})`);
+      }
       const report = { ...data, timestamp: new Date().toLocaleDateString() };
 
       const updated = { ...deepScanReports, [file.id]: report };
@@ -1928,10 +1934,10 @@ export default function DocumentAnalyzerTab() {
   const getCategoryColor = (cat: OrganizedFile["category"]) => {
     switch (cat) {
       case "CAS Correspondence": return "text-brand-600 bg-brand-50 border-brand-100";
-      case "Court Filings": return "text-amber-700 bg-amber-50 border-amber-150";
-      case "Evidence & Loggers": return "text-emerald-700 bg-emerald-50 border-emerald-150";
-      case "Children Services": return "text-sky-700 bg-sky-50 border-sky-150";
-      default: return "text-purple-700 bg-purple-50 border-purple-150";
+      case "Court Filings": return "text-amber-700 bg-amber-50 border-amber-100";
+      case "Evidence & Loggers": return "text-emerald-700 bg-emerald-50 border-emerald-100";
+      case "Children Services": return "text-sky-700 bg-sky-50 border-sky-100";
+      default: return "text-purple-700 bg-purple-50 border-purple-100";
     }
   };
 
@@ -2628,7 +2634,7 @@ export default function DocumentAnalyzerTab() {
     <div className="space-y-6" id="document-analyzer-tab">
       
       {/* Platform Sub-Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 border-b border-gray-150 pb-4">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 border-b border-gray-100 pb-4">
         <div className="text-left">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-1 bg-brand-900 text-white rounded-lg text-xs font-mono font-bold tracking-wider uppercase flex items-center gap-1 shadow-xs">
@@ -2762,7 +2768,7 @@ export default function DocumentAnalyzerTab() {
         {/* LEFT COLUMN: MULTIPLE FILES UPLOADER & ORGANIZE FOLDERS */}
         <div className="lg:col-span-5 space-y-4" id="organizer-sidebar">
           
-          <div className="bg-white rounded-xl border border-gray-150 p-4 space-y-4 text-left shadow-2xs">
+          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-4 text-left shadow-2xs">
             
             {/* Folder Header */}
             <div className="flex justify-between items-center pb-2.5 border-b border-gray-100">
@@ -2779,7 +2785,7 @@ export default function DocumentAnalyzerTab() {
             <div className="space-y-1.5">
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-150 hover:border-brand-500 rounded-xl p-5 text-center cursor-pointer bg-slate-50 hover:bg-white hover:shadow-xs transition-all relative group"
+                className="border-2 border-dashed border-gray-100 hover:border-brand-500 rounded-xl p-5 text-center cursor-pointer bg-slate-50 hover:bg-white hover:shadow-xs transition-all relative group"
               >
                 <input
                   type="file"
@@ -2921,13 +2927,13 @@ export default function DocumentAnalyzerTab() {
           </div>
 
           {/* Live Audio Transcription Panel */}
-          <div className="border border-brand-150 rounded-xl overflow-hidden bg-brand-50/40 p-3.5 space-y-3">
+          <div className="border border-brand-100 rounded-xl overflow-hidden bg-brand-50/40 p-3.5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-brand-950">
                 <Mic className="w-4 h-4 shrink-0 text-brand-600 animate-pulse" />
                 <span className="font-display font-bold text-xs">Record Live Meeting / Conversation</span>
               </div>
-              <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-850 font-mono text-[8px] font-bold uppercase shrink-0">
+              <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-800 font-mono text-[8px] font-bold uppercase shrink-0">
                 Auto-Analyze
               </span>
             </div>
@@ -2969,7 +2975,7 @@ export default function DocumentAnalyzerTab() {
                   <span className="w-1 bg-red-500 rounded-full animate-bounce h-4" style={{ animationDelay: '0.2s', animationDuration: '0.8s' }}></span>
                 </div>
 
-                <div className="bg-white/85 p-2.5 rounded-lg border border-red-150 text-[11px] leading-normal text-slate-800 max-h-24 overflow-y-auto italic text-left">
+                <div className="bg-white/85 p-2.5 rounded-lg border border-red-100 text-[11px] leading-normal text-slate-800 max-h-24 overflow-y-auto italic text-left">
                   {transcript || "Listening... Speak clearly into your microphone."}
                 </div>
               </div>
@@ -3005,7 +3011,7 @@ export default function DocumentAnalyzerTab() {
                 <textarea
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
-                  className="w-full text-xs bg-white border border-gray-150 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-brand-500 h-20 resize-none leading-relaxed text-slate-800"
+                  className="w-full text-xs bg-white border border-gray-100 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-brand-500 h-20 resize-none leading-relaxed text-slate-800"
                 />
                 <button
                   onClick={handleSaveSpeechTranscript}
@@ -3019,12 +3025,12 @@ export default function DocumentAnalyzerTab() {
             )}
 
             {voiceError && (
-              <p className="text-[10px] text-red-600 font-mono italic leading-normal bg-red-50 p-2 rounded-lg border border-red-150 text-left">{voiceError}</p>
+              <p className="text-[10px] text-red-600 font-mono italic leading-normal bg-red-50 p-2 rounded-lg border border-red-100 text-left">{voiceError}</p>
             )}
           </div>
 
           {/* Collapsible Glossary component of complex legal/CYFSA terminology */}
-          <div className={`border border-slate-150 rounded-xl overflow-hidden shadow-2xs transition-all ${isGlossaryOpen ? "bg-white" : "bg-slate-50"}`}>
+          <div className={`border border-slate-100 rounded-xl overflow-hidden shadow-2xs transition-all ${isGlossaryOpen ? "bg-white" : "bg-slate-50"}`}>
             <button
               type="button"
               onClick={() => setIsGlossaryOpen(!isGlossaryOpen)}
@@ -3033,7 +3039,7 @@ export default function DocumentAnalyzerTab() {
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-slate-700 shrink-0" />
                 <span className="font-display font-semibold text-xs text-slate-800">CYFSA & Family Law Glossary</span>
-                <span className="px-1.5 py-0.5 rounded-full bg-brand-50 border border-brand-100 text-brand-850 font-mono text-[9px] font-bold uppercase leading-none">
+                <span className="px-1.5 py-0.5 rounded-full bg-brand-50 border border-brand-100 text-brand-800 font-mono text-[9px] font-bold uppercase leading-none">
                   Auto-Check
                 </span>
               </div>
@@ -3051,7 +3057,7 @@ export default function DocumentAnalyzerTab() {
                   value={glossarySearch}
                   onChange={(e) => setGlossarySearch(e.target.value)}
                   placeholder="Search terminology, e.g. CYFSA, Hearsay..."
-                  className="w-full text-xs p-2 border border-slate-150 rounded-lg outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 bg-slate-50/50 text-slate-800"
+                  className="w-full text-xs p-2 border border-slate-100 rounded-lg outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 bg-slate-50/50 text-slate-800"
                 />
 
                 <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -3070,7 +3076,7 @@ export default function DocumentAnalyzerTab() {
                         className={`p-2.5 rounded-lg border transition-all ${
                           isMatched 
                             ? "bg-emerald-50/20 border-emerald-200 shadow-3xs" 
-                            : "bg-white border-slate-150"
+                            : "bg-white border-slate-100"
                         }`}
                       >
                         <div 
@@ -3124,7 +3130,7 @@ export default function DocumentAnalyzerTab() {
                 <div className="space-y-4 text-left">
                   
                   {/* File Metadata Header */}
-                  <div className="bg-white rounded-xl border border-gray-150 p-4 shadow-3xs flex flex-wrap justify-between items-center gap-3">
+                  <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-3xs flex flex-wrap justify-between items-center gap-3">
                     <div className="min-w-0">
                       <span className={`px-2.5 py-0.5 border text-[10px] font-semibold rounded-full font-mono uppercase inline-block ${getCategoryColor(activeSelectedFile.category)}`}>
                         {activeSelectedFile.category}
@@ -3166,7 +3172,7 @@ export default function DocumentAnalyzerTab() {
                   )}
 
                   {/* Document content viewer with custom Court Transcript Rendering & Density Limits Check */}
-                  <div className="bg-white rounded-xl border border-gray-150 p-4 space-y-1.5 relative overflow-hidden" id="file-plain-viewer">
+                  <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-1.5 relative overflow-hidden" id="file-plain-viewer">
                     <div className="flex flex-wrap justify-between items-center pb-2 border-b border-gray-100 gap-2">
                       <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase flex items-center gap-1">
                         <FileText className="w-3.5 h-3.5 shrink-0" />
@@ -3245,7 +3251,7 @@ export default function DocumentAnalyzerTab() {
                                 window.print();
                               }
                             }}
-                            className="text-[10px] font-mono bg-brand-50 hover:bg-brand-100 text-brand-700 hover:text-brand-850 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                            className="text-[10px] font-mono bg-brand-50 hover:bg-brand-100 text-brand-700 hover:text-brand-800 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
                           >
                             <Printer className="w-3 h-3 shrink-0" />
                             Print Transcript PDF
@@ -3426,8 +3432,8 @@ export default function DocumentAnalyzerTab() {
                               <span>Statutory Omissions Identified (What CAS Omitted)</span>
                             </h5>
                             <div className="grid grid-cols-1 gap-2">
-                              {deepScanReports[activeSelectedFile.id].gaps.map((gap: string, i: number) => (
-                                <div key={i} className="bg-rose-955/20 border border-rose-900/30 p-3 rounded-xl text-slate-200 text-xs font-sans leading-relaxed">
+                              {(deepScanReports[activeSelectedFile.id].gaps || []).map((gap: string, i: number) => (
+                                <div key={i} className="bg-rose-950/20 border border-rose-900/30 p-3 rounded-xl text-slate-200 text-xs font-sans leading-relaxed">
                                   <strong>Omits Details:</strong> {gap}
                                 </div>
                               ))}
@@ -3442,8 +3448,8 @@ export default function DocumentAnalyzerTab() {
                               <span>Parent's Evidence Response Checklist (To prove missing gaps)</span>
                             </h5>
                             <div className="grid grid-cols-1 gap-2">
-                              {deepScanReports[activeSelectedFile.id].missingEvidence.map((ev: string, i: number) => (
-                                <div key={i} className="bg-amber-955/20 border border-amber-900/30 p-3 rounded-xl text-slate-200 text-xs font-sans leading-relaxed flex items-start gap-2">
+                              {(deepScanReports[activeSelectedFile.id].missingEvidence || []).map((ev: string, i: number) => (
+                                <div key={i} className="bg-amber-950/20 border border-amber-900/30 p-3 rounded-xl text-slate-200 text-xs font-sans leading-relaxed flex items-start gap-2">
                                   <span className="text-amber-400 font-bold shrink-0">☑</span>
                                   <span>{ev}</span>
                                 </div>
@@ -3458,17 +3464,17 @@ export default function DocumentAnalyzerTab() {
                               <span>Avenue of Defense & Hearing Retorts</span>
                             </h5>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-1">
-                              {deepScanReports[activeSelectedFile.id].retorts.map((ret: any, i: number) => (
+                              {(deepScanReports[activeSelectedFile.id].retorts || []).map((ret: any, i: number) => (
                                 <div key={i} className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-2 text-xs">
                                   <div className="border-b border-slate-800 pb-1.5">
                                     <span className="text-[10px] font-mono text-rose-400 font-bold uppercase">Society Assert:</span>
-                                    <p className="text-slate-350 italic mt-0.5 font-medium">"{ret.claim}"</p>
+                                    <p className="text-slate-300 italic mt-0.5 font-medium">"{ret.claim}"</p>
                                   </div>
                                   <div className="space-y-1">
                                     <span className="text-[10px] font-mono text-brand-400 font-bold uppercase block">Legal Rebuttal Rule:</span>
                                     <p className="text-slate-200">{ret.objection}</p>
                                   </div>
-                                  <div className="bg-brand-950/40 border border-brand-900/30 p-2 rounded-lg text-brand-205 text-[11px] leading-relaxed">
+                                  <div className="bg-brand-950/40 border border-brand-900/30 p-2 rounded-lg text-brand-200 text-[11px] leading-relaxed">
                                     <strong>Step Action:</strong> {ret.action}
                                   </div>
                                 </div>
@@ -3489,14 +3495,14 @@ export default function DocumentAnalyzerTab() {
                       {/* Sub analysis title */}
                       <div className="flex justify-between items-center pb-4 border-b border-gray-100">
                         <div>
-                          <span className="text-[10px] font-mono font-bold uppercase text-brand-650 flex items-center gap-1 leading-none">
+                          <span className="text-[10px] font-mono font-bold uppercase text-brand-600 flex items-center gap-1 leading-none">
                             <FileCheck className="w-3.5 h-3.5 text-emerald-600" /> Audited Findings
                           </span>
                           <h4 className="font-display font-bold text-[#0f172a] text-base mt-1">
                             {selectedReport.documentTitle}
                           </h4>
                         </div>
-                        <div className="text-right flex items-center gap-2 p-2 bg-slate-50 border border-gray-150 rounded-xl shrink-0">
+                        <div className="text-right flex items-center gap-2 p-2 bg-slate-50 border border-gray-100 rounded-xl shrink-0">
                           <div>
                             <span className="text-[8px] font-mono tracking-wider block text-slate-500 font-bold">INTEGRITY WEIGHT</span>
                             <span className="text-xs text-slate-500">Credibility Index</span>
@@ -3527,7 +3533,7 @@ export default function DocumentAnalyzerTab() {
                       </div>
 
                       {/* State-Managed Handover Section */}
-                      <div className="bg-brand-50 border border-brand-150 rounded-2xl p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-3xs">
+                      <div className="bg-brand-50 border border-brand-100 rounded-2xl p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-3xs">
                         <div className="space-y-1 text-left">
                           <h5 className="font-bold text-brand-950 flex items-center gap-1.5 text-xs uppercase tracking-wide leading-tight">
                             <Sparkles className="w-4 h-4 text-brand-600 animate-pulse shrink-0" /> Auto-populate Legal Court Forms & Statements
@@ -3593,7 +3599,7 @@ export default function DocumentAnalyzerTab() {
                                   );
                                 }
                               }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
                               title="Copy brief text to clipboard"
                             >
                               <Copy className="w-3.5 h-3.5 text-brand-400" />
@@ -3615,7 +3621,7 @@ export default function DocumentAnalyzerTab() {
                                   URL.revokeObjectURL(url);
                                 }
                               }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
                               title="Download brief as .txt"
                             >
                               <Download className="w-3.5 h-3.5 text-brand-400" />
@@ -3652,7 +3658,7 @@ export default function DocumentAnalyzerTab() {
                                 setSavedBriefs(prev => [newBrief, ...prev]);
                                 alert("Success: This case brief has been archived in the Saved Briefs tab! You can add notes, delete, or switch between saved briefs there.");
                               }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-emerald-400 hover:text-emerald-300 rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
                               title="Archive this brief in the Saved Briefs tab"
                             >
                               <Save className="w-3.5 h-3.5 text-emerald-400" />
@@ -3724,7 +3730,7 @@ export default function DocumentAnalyzerTab() {
                                 </button>
                               </div>
                               {flag.phraseDetected && (
-                                <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-150 rounded-lg">
+                                <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
                                   <div className="flex justify-between items-center">
                                     <span className="text-[9px] font-mono font-extrabold text-slate-400 uppercase tracking-wider">Phrase in Document:</span>
                                     <button
@@ -3807,7 +3813,7 @@ export default function DocumentAnalyzerTab() {
                             { ground: "11. Criminal Conduct Context [s. 74(2)(k)]", desc: "Child is under 12, has caused serious bodily harm, and parent refuses treatment." },
                             { ground: "12. Inadequate Supervision [s. 74(2)(l)]", desc: "Child under 12 left unsupervised, or in circumstances showing systemic failure of care." }
                           ].map((item, i) => (
-                            <div key={i} className="bg-white border border-slate-150 p-3 rounded-xl space-y-1 shadow-2xs hover:border-brand-150 transition-all">
+                            <div key={i} className="bg-white border border-slate-100 p-3 rounded-xl space-y-1 shadow-2xs hover:border-brand-100 transition-all">
                               <span className="text-[11px] font-bold text-slate-900 block font-sans">{item.ground}</span>
                               <p className="text-[10.5px] text-slate-500 leading-normal">{item.desc}</p>
                             </div>
@@ -3836,7 +3842,7 @@ export default function DocumentAnalyzerTab() {
                           </h5>
                           <div className="space-y-3.5">
                             {selectedReport.proceduralTimelineViolations.map((violation, idx) => (
-                              <div key={idx} className="bg-white border border-amber-250/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-colors">
+                              <div key={idx} className="bg-white border border-amber-200/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-colors">
                                 <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-100">
                                   <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider bg-amber-100 text-amber-800 uppercase">
                                     TIMELINE RULE
@@ -3844,7 +3850,7 @@ export default function DocumentAnalyzerTab() {
                                   <span className="font-mono font-bold text-amber-900 text-[11px]">{violation.timelineRule}</span>
                                   <button
                                     onClick={() => openLegislativeReference(violation.citation)}
-                                    className="font-mono text-amber-900 hover:text-amber-950 font-bold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-250 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                    className="font-mono text-amber-900 hover:text-amber-950 font-bold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
                                     title="Click to open Verified Source reference modal"
                                   >
                                     <Scale className="w-3 h-3 text-amber-600" /> Verify: {violation.citation} ↗
@@ -3852,7 +3858,7 @@ export default function DocumentAnalyzerTab() {
                                 </div>
                                 
                                 {violation.documentAssertion && (
-                                  <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-150 rounded-lg">
+                                  <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
                                     <div className="flex justify-between items-center">
                                       <span className="text-[9px] font-mono font-extrabold text-slate-400 uppercase tracking-wider">Assertion in Document:</span>
                                       <button
@@ -3907,7 +3913,7 @@ export default function DocumentAnalyzerTab() {
                         </h5>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {selectedReport.thresholdAnalysis.map((thresh, idx) => (
-                            <div key={idx} className="p-3 bg-white border border-gray-150 rounded-lg space-y-1.5">
+                            <div key={idx} className="p-3 bg-white border border-gray-100 rounded-lg space-y-1.5">
                               <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 font-bold uppercase">
                                 <span>{thresh.thresholdChecked}</span>
                                 <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
@@ -3959,7 +3965,7 @@ export default function DocumentAnalyzerTab() {
 
                     </div>
                   ) : (
-                    <div className="bg-slate-50 border border-dashed border-gray-150 py-12 rounded-2xl text-center space-y-4">
+                    <div className="bg-slate-50 border border-dashed border-gray-100 py-12 rounded-2xl text-center space-y-4">
                       {isSingleAnalyzing ? (
                         <div className="space-y-4">
                           <div className="relative inline-block">
@@ -4015,7 +4021,7 @@ export default function DocumentAnalyzerTab() {
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-3xs space-y-3" id="cross-document-timeline-card">
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-3xs space-y-3" id="cross-document-timeline-card">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <h4 className="font-display font-bold text-[#0f172a] text-sm">Cross-Document Case Timeline</h4>
@@ -4065,7 +4071,7 @@ export default function DocumentAnalyzerTab() {
                               <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Timeline</h5>
                               <div className="space-y-2">
                                 {caseTimeline.timeline.map((row: any, i: number) => (
-                                  <div key={i} className="border border-gray-150 rounded-lg p-3 text-xs">
+                                  <div key={i} className="border border-gray-100 rounded-lg p-3 text-xs">
                                     <div className="flex justify-between gap-2 flex-wrap">
                                       <span className="font-bold text-slate-800">{row.date || "undated"}</span>
                                       <span className="text-[10px] font-mono text-slate-400">
@@ -4157,7 +4163,7 @@ export default function DocumentAnalyzerTab() {
                         return (
                           <div 
                             key={file.id} 
-                            className="bg-white rounded-xl border border-gray-150 p-5 text-left space-y-4 shadow-xs hover:shadow-md transition duration-200"
+                            className="bg-white rounded-xl border border-gray-100 p-5 text-left space-y-4 shadow-xs hover:shadow-md transition duration-200"
                           >
                             {/* File Card Top Row */}
                             <div className="flex flex-wrap justify-between items-start gap-3 border-b border-gray-100 pb-3">
@@ -4267,7 +4273,7 @@ export default function DocumentAnalyzerTab() {
 
                                 {/* Lawyer Case Brief Bullets */}
                                 {report.lawyerCaseBrief && report.lawyerCaseBrief.length > 0 && (
-                                  <div className="bg-slate-50 border border-slate-150 rounded-lg p-3.5 space-y-2">
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3.5 space-y-2">
                                     <div className="flex justify-between items-center border-b pb-1.5 border-slate-200">
                                       <span className="text-[10px] font-mono font-bold uppercase text-slate-700 tracking-wider flex items-center gap-1">
                                         <Briefcase className="w-3 h-3 text-slate-500" /> Lawyer Case Brief (Auto-Extracted):
@@ -4338,7 +4344,7 @@ export default function DocumentAnalyzerTab() {
                 the tab just showed a blank panel. Rebuilt the chat UI these were clearly built to
                 drive. */}
             {activeTab === "rag-chat" && (
-              <div className="h-full flex flex-col bg-white rounded-2xl border border-gray-150 shadow-xs overflow-hidden">
+              <div className="h-full flex flex-col bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
                 <div className="p-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50">
                   <div>
                     <h4 className="font-display font-bold text-gray-900 text-sm flex items-center gap-1.5">
@@ -4449,7 +4455,7 @@ export default function DocumentAnalyzerTab() {
                   </div>
                 ) : (
                   savedBriefs.map((brief) => (
-                    <div key={brief.id} className="bg-white rounded-2xl border border-gray-150 p-5 space-y-3 shadow-xs">
+                    <div key={brief.id} className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3 shadow-xs">
                       <div className="flex justify-between items-start gap-3 border-b border-gray-100 pb-3">
                         <div>
                           <span className="text-[9px] font-mono font-bold uppercase text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-100">
@@ -4686,7 +4692,7 @@ export default function DocumentAnalyzerTab() {
                       <X className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="bg-slate-50 border border-slate-150 rounded-xl p-3.5 text-xs text-slate-700 leading-relaxed font-mono">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-xs text-slate-700 leading-relaxed font-mono">
                     {details.exactText}
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">{details.explanation}</p>

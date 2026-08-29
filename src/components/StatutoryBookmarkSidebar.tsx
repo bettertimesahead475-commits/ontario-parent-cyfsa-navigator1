@@ -369,7 +369,7 @@ export default function StatutoryBookmarkSidebar() {
 
         <div className="absolute inset-y-0 right-0 max-w-full flex">
           <div 
-            className={`w-screen max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-150 transform transition-transform duration-300 ease-in-out ${
+            className={`w-screen max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-100 transform transition-transform duration-300 ease-in-out ${
               isOpen ? "translate-x-0" : "translate-x-full"
             }`}
           >
@@ -402,7 +402,7 @@ export default function StatutoryBookmarkSidebar() {
             </div>
 
             {/* Tab Swapping Header */}
-            <div className="border-b border-slate-150 p-3 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
+            <div className="border-b border-slate-100 p-3 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
               <div className="flex bg-slate-200 p-0.5 rounded-lg w-full">
                 <button
                   onClick={() => {
@@ -450,7 +450,7 @@ export default function StatutoryBookmarkSidebar() {
               
               {showCustomCreator ? (
                 /* CUSTOM REFERENCE FORM CREATOR */
-                <form onSubmit={handleAddCustomReference} className="p-4 space-y-4 bg-white m-3 rounded-xl border border-slate-150 shadow-xs">
+                <form onSubmit={handleAddCustomReference} className="p-4 space-y-4 bg-white m-3 rounded-xl border border-slate-100 shadow-xs">
                   <div className="flex items-center justify-between border-b pb-2">
                     <span className="text-[11px] font-mono font-bold text-brand-950 uppercase tracking-wide flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-brand-600 animate-pulse" />
@@ -470,7 +470,7 @@ export default function StatutoryBookmarkSidebar() {
                     <select
                       value={customCategory}
                       onChange={(e) => setCustomCategory(e.target.value as any)}
-                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-white text-slate-850"
+                      className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white text-slate-800"
                     >
                       <option value="Statutory Section">Statutory Section (e.g. CYFSA, CLRA)</option>
                       <option value="Legal Definition">Legal Glossary Definition</option>
@@ -486,7 +486,7 @@ export default function StatutoryBookmarkSidebar() {
                       value={customTitle}
                       onChange={(e) => setCustomTitle(e.target.value)}
                       placeholder="e.g. Mandatory Access Order Review"
-                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-white text-slate-850 outline-none focus:ring-1 focus:ring-brand-500"
+                      className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white text-slate-800 outline-none focus:ring-1 focus:ring-brand-500"
                     />
                   </div>
 
@@ -497,7 +497,7 @@ export default function StatutoryBookmarkSidebar() {
                       value={customCitation}
                       onChange={(e) => setCustomCitation(e.target.value)}
                       placeholder="e.g. CYFSA s. 102(3) or [2012] ONCA 12"
-                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-white text-slate-850 outline-none focus:ring-1 focus:ring-brand-500"
+                      className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white text-slate-800 outline-none focus:ring-1 focus:ring-brand-500"
                     />
                   </div>
 
@@ -509,7 +509,7 @@ export default function StatutoryBookmarkSidebar() {
                       value={customContent}
                       onChange={(e) => setCustomContent(e.target.value)}
                       placeholder="Enter the statutory clause, definition text, or key ratio of the CanLII judgment..."
-                      className="w-full text-xs border border-slate-250 rounded-lg p-2.5 bg-white text-slate-850 outline-none focus:ring-1 focus:ring-brand-500 font-sans"
+                      className="w-full text-xs border border-slate-200 rounded-lg p-2.5 bg-white text-slate-800 outline-none focus:ring-1 focus:ring-brand-500 font-sans"
                     />
                   </div>
 
@@ -525,7 +525,7 @@ export default function StatutoryBookmarkSidebar() {
                 <div className="p-3 space-y-3">
                   
                   {/* Search and Filters */}
-                  <div className="bg-white p-2.5 rounded-xl border border-slate-150 space-y-2">
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-100 space-y-2">
                     <div className="relative">
                       <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 transform -translate-y-1/2" />
                       <input
@@ -651,7 +651,7 @@ export default function StatutoryBookmarkSidebar() {
                             </div>
 
                             {/* Official clause text */}
-                            <p className="text-[10.5px] text-slate-600 leading-normal bg-slate-50 border border-slate-150 p-2.5 rounded-lg select-all">
+                            <p className="text-[10.5px] text-slate-600 leading-normal bg-slate-50 border border-slate-100 p-2.5 rounded-lg select-all">
                               {highlightText(bookmark.content, searchQuery)}
                             </p>
 
@@ -701,7 +701,7 @@ export default function StatutoryBookmarkSidebar() {
                                     onChange={(e) => setEditingNotesText(e.target.value)}
                                     rows={3}
                                     placeholder="Enter your case notes, e.g. 'Use this to contest the emergency removal on July 15'"
-                                    className="w-full text-xs p-2 bg-white border border-amber-250 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-850"
+                                    className="w-full text-xs p-2 bg-white border border-amber-200 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-slate-800"
                                   />
                                   <div className="flex justify-end gap-1.5">
                                     <button
@@ -791,7 +791,7 @@ export default function StatutoryBookmarkSidebar() {
                               <span>Ontario e-Laws Resource</span>
                               <button
                                 onClick={() => handleCopyToClipboard(`${item.title} (${item.citation}): "${item.content}"`, item.id)}
-                                className="text-brand-650 hover:text-brand-800 flex items-center gap-1 cursor-pointer"
+                                className="text-brand-600 hover:text-brand-800 flex items-center gap-1 cursor-pointer"
                               >
                                 {copiedId === item.id ? (
                                   <span className="text-emerald-600">Copied!</span>
@@ -814,7 +814,7 @@ export default function StatutoryBookmarkSidebar() {
             </div>
 
             {/* Sidebar Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-150 flex items-center justify-between shrink-0">
+            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
               <span className="text-[9px] text-slate-400 font-mono uppercase tracking-wider">
                 S.O. 2017 c. 14 / R.S.O. 1990 c. C.12
               </span>

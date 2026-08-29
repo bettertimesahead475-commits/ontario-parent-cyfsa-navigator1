@@ -248,7 +248,7 @@ export default function FloatingTTS() {
               </div>
               <div>
                 <h4 className="text-xs font-display font-extrabold uppercase tracking-wider text-slate-100">CYFSA Navigator Narrator</h4>
-                <p className="text-[9px] font-mono text-slate-450 uppercase">Ontario S.O. 2017 Ch. 14 Access</p>
+                <p className="text-[9px] font-mono text-slate-400 uppercase">Ontario S.O. 2017 Ch. 14 Access</p>
               </div>
             </div>
             <button 
@@ -346,7 +346,7 @@ export default function FloatingTTS() {
               disabled={!isPlaying && !isPaused}
               className={`py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-center gap-1.5 border select-none ${
                 isPlaying || isPaused
-                  ? "bg-slate-800 border-slate-750 text-slate-200 hover:bg-slate-750 cursor-pointer"
+                  ? "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 cursor-pointer"
                   : "bg-slate-950/20 border-slate-800 text-slate-600 cursor-not-allowed"
               }`}
             >
@@ -363,7 +363,7 @@ export default function FloatingTTS() {
               className={`w-full py-2 border rounded-xl text-[10.5px] font-bold uppercase tracking-wide transition flex items-center justify-center gap-1.5 ${
                 isPlaying 
                   ? "bg-slate-950/30 border-slate-800 text-slate-500 cursor-not-allowed" 
-                  : "bg-slate-900 hover:bg-slate-800 border-slate-750 text-slate-200 cursor-pointer"
+                  : "bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200 cursor-pointer"
               }`}
             >
               <FileText className="w-3.5 h-3.5 text-brand-400" />
@@ -441,8 +441,8 @@ export default function FloatingTTS() {
           isPlaying 
             ? "bg-emerald-600 border-emerald-500 text-white animate-pulse" 
             : isOpen 
-            ? "bg-slate-900 border-slate-850 text-brand-400 hover:bg-slate-800" 
-            : "bg-slate-900 border-slate-850 text-white hover:bg-slate-800"
+            ? "bg-slate-900 border-slate-800 text-brand-400 hover:bg-slate-800" 
+            : "bg-slate-900 border-slate-800 text-white hover:bg-slate-800"
         }`}
         id="tts-floating-trigger-btn"
       >

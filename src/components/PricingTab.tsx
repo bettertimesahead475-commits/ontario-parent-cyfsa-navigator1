@@ -163,7 +163,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/10">
               <span className="text-indigo-300 font-bold font-mono">My Active Tier:</span>
               <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] uppercase ${
-                currentTier === "Premium" ? "bg-emerald-500 text-white" : currentTier === "Pro" ? "bg-indigo-500 text-white" : "bg-slate-750 text-slate-300"
+                currentTier === "Premium" ? "bg-emerald-500 text-white" : currentTier === "Pro" ? "bg-indigo-500 text-white" : "bg-slate-700 text-slate-300"
               }`}>
                 {currentTier} Plan
               </span>
@@ -177,7 +177,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
 
         {/* Basic Plan */}
         <div className={`bg-white rounded-2xl border p-6 text-left flex flex-col justify-between transition-all relative ${
-          currentTier === "Basic" ? "border-slate-300 ring-2 ring-slate-100 shadow-sm" : "border-gray-150 hover:border-gray-200"
+          currentTier === "Basic" ? "border-slate-300 ring-2 ring-slate-100 shadow-sm" : "border-gray-100 hover:border-gray-200"
         }`} id="plan-basic-card">
           {currentTier === "Basic" && (
             <span className="absolute top-4 right-4 bg-slate-100 text-slate-800 font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Selected</span>
@@ -185,7 +185,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           <div className="space-y-4">
             <div>
               <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Basic Tier</span>
-              <h3 className="font-display font-extrabold text-xl text-slate-850 mt-1">Self-Represented</h3>
+              <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Self-Represented</h3>
               <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
                 Essential educational material for parents seeking immediate local statutory grounding in family crises.
               </p>
@@ -236,7 +236,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           <div className="space-y-4">
             <div>
               <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-600">Pro Advocate</span>
-              <h3 className="font-display font-extrabold text-xl text-slate-850 mt-1">Parent Defender</h3>
+              <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Parent Defender</h3>
               <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
                 Designed for litigation-ready parents requiring high-precision document analyzers and full draft packages.
               </p>
@@ -280,7 +280,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
 
         {/* Premium Plan */}
         <div className={`bg-gradient-to-b from-white to-emerald-50/20 rounded-2xl border p-6 text-left flex flex-col justify-between transition-all relative ${
-          currentTier === "Premium" ? "border-emerald-600 ring-4 ring-emerald-50 shadow-md" : "border-gray-150 hover:border-gray-200"
+          currentTier === "Premium" ? "border-emerald-600 ring-4 ring-emerald-50 shadow-md" : "border-gray-100 hover:border-gray-200"
         }`} id="plan-premium-card">
           {currentTier === "Premium" && (
             <span className="absolute top-4 right-4 bg-emerald-600 text-white font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Selected</span>
@@ -288,7 +288,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           <div className="space-y-4">
             <div>
               <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-600">Premium Attorney</span>
-              <h3 className="font-display font-extrabold text-xl text-slate-850 mt-1">Full Legal Defense</h3>
+              <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Full Legal Defense</h3>
               <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
                 Complete system listing, advanced audio roleplay preps, and priority compute processing.
               </p>
@@ -332,7 +332,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       </div>
 
       {/* Real e-transfer activation widget — server-verified, no demo codes */}
-      <div className="bg-linear-to-r from-[#eef2ff] to-[#f0fdf4] border border-indigo-150 rounded-2xl p-6 text-left shadow-2xs space-y-4" id="etransfer-activator">
+      <div className="bg-linear-to-r from-[#eef2ff] to-[#f0fdf4] border border-indigo-100 rounded-2xl p-6 text-left shadow-2xs space-y-4" id="etransfer-activator">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] uppercase font-mono font-bold px-2.5 py-0.5 rounded-full tracking-wider inline-block">
@@ -347,7 +347,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             </p>
           </div>
 
-          <div className="bg-white border text-left border-gray-150 p-5 rounded-2xl space-y-2.5 shrink-0 w-full md:w-80 shadow-3xs">
+          <div className="bg-white border text-left border-gray-100 p-5 rounded-2xl space-y-2.5 shrink-0 w-full md:w-80 shadow-3xs">
             <span className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-widest block">Activate</span>
             <input
               type="email"
@@ -466,7 +466,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                 <p className="text-[10.5px] text-gray-500 leading-relaxed italic">
                   Once your e-transfer is confirmed, you'll be sent an access code by email or text. Enter it below to unlock.
                 </p>
-                <div className="bg-white border border-indigo-150 p-4 rounded-xl space-y-3 shadow-3xs">
+                <div className="bg-white border border-indigo-100 p-4 rounded-xl space-y-3 shadow-3xs">
                   <label className="text-[10.5px] font-mono font-bold text-indigo-900 uppercase tracking-wider block">Enter Access Code</label>
                   <div className="flex gap-2">
                     <input
@@ -493,7 +493,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               <div className="p-12 text-center flex flex-col items-center justify-center space-y-6">
                 <Loader2 className="w-12 h-12 text-indigo-900 animate-spin" />
                 <div className="space-y-1">
-                  <h4 className="font-display font-extrabold text-slate-850 text-base">Working...</h4>
+                  <h4 className="font-display font-extrabold text-slate-800 text-base">Working...</h4>
                   <p className="text-xs text-gray-500">Talking to the server, one moment.</p>
                 </div>
               </div>
@@ -502,7 +502,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             {/* Stage: success */}
             {stage === "success" && (
               <div className="p-10 text-center flex flex-col items-center justify-center space-y-6 animate-fade-in" id="checkout-success-feedback">
-                <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-250 flex items-center justify-center text-emerald-600 shadow-xs shadow-emerald-200">
+                <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-xs shadow-emerald-200">
                   <Check className="w-8 h-8" />
                 </div>
                 <div className="space-y-2">
@@ -511,7 +511,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                     Your <strong>{selectedTier} Plan</strong> is now active for this device.
                   </p>
                 </div>
-                <div className="bg-emerald-50/50 border border-emerald-150 rounded-xl p-4 w-full text-left space-y-2">
+                <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 w-full text-left space-y-2">
                   <div className="flex items-center gap-2 text-xs text-emerald-800">
                     <CheckCircle className="w-4 h-4 text-emerald-600" />
                     <span>Free-tier limits disabled</span>

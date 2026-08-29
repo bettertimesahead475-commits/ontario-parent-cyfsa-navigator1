@@ -36,13 +36,13 @@ export default function ChildDevelopmentTab() {
       {/* Intro Scholarly Block */}
       <div className="text-left max-w-3xl">
         <h2 className="font-display text-2xl font-bold text-gray-900">Evidence-Based Child Welfare Development Science</h2>
-        <p className="text-sm text-gray-650 mt-2 leading-relaxed">
+        <p className="text-sm text-gray-600 mt-2 leading-relaxed">
           Ontario courts are statutorily required to base actions on the **'best interests of the child' (CYFSA Sec 74(3))**. This child-centric interest is highly correlated with the neuroscience of stable caregiver attachments. Avoid opinionated arguments; use peer-reviewed clinical research summaries of child trauma to protect familial attachment.
         </p>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-150 flex flex-col md:flex-row gap-4 items-center justify-between" id="research-toolbar">
+      <div className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col md:flex-row gap-4 items-center justify-between" id="research-toolbar">
         <div className="flex flex-wrap gap-1.5 w-full md:w-auto" id="research-categories">
           {categories.map((cat) => (
             <button
@@ -77,12 +77,12 @@ export default function ChildDevelopmentTab() {
           <div
             key={study.id}
             id={`study-card-${study.id}`}
-            className="bg-white rounded-2xl border border-gray-150 shadow-2xs hover:shadow-xs transition-shadow p-6 flex flex-col justify-between text-left"
+            className="bg-white rounded-2xl border border-gray-100 shadow-2xs hover:shadow-xs transition-shadow p-6 flex flex-col justify-between text-left"
           >
             <div className="space-y-4">
               {/* Category, Author, Title */}
-              <div className="flex justify-between items-center bg-gray-50 -mx-6 -mt-6 p-4 border-b border-gray-150 rounded-t-2xl">
-                <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-gray-550 flex items-center gap-1.5">
+              <div className="flex justify-between items-center bg-gray-50 -mx-6 -mt-6 p-4 border-b border-gray-100 rounded-t-2xl">
+                <span className="text-[10px] uppercase font-mono font-bold tracking-wider text-gray-500 flex items-center gap-1.5">
                   {getCategoryIcon(study.category)}
                   {study.category}
                 </span>
@@ -99,7 +99,7 @@ export default function ChildDevelopmentTab() {
 
               {/* Research Methodology and Core findings summary */}
               <div className="space-y-3">
-                <blockquote className="text-xs text-gray-650 italic leading-relaxed border-l-2 border-brand-350 pl-3">
+                <blockquote className="text-xs text-gray-600 italic leading-relaxed border-l-2 border-brand-300 pl-3">
                   "{study.evidenceSummary}"
                 </blockquote>
 
@@ -131,7 +131,7 @@ export default function ChildDevelopmentTab() {
                   href={study.pubMedOrCanLiiLink}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:text-brand-850 shrink-0"
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:text-brand-800 shrink-0"
                 >
                   <span>Verification Portal</span>
                   <ArrowUpRight className="w-3 h-3" />
@@ -161,7 +161,7 @@ export default function ChildDevelopmentTab() {
             </span>
           </div>
           <h3 className="font-display text-lg md:text-xl font-bold">How to Present This Evidence inside an Ontario Family Court</h3>
-          <p className="text-xs md:text-sm text-slate-350 leading-relaxed font-light">
+          <p className="text-xs md:text-sm text-slate-300 leading-relaxed font-light">
             When submitting responsive affidavits, avoid purely emotional attacks against child protective workers (e.g., 'the worker is malicious and hates our family'). Instead, present structured, positive parenting schedules backed by child attachment theories. Showcase that bringing your child home, or placing them immediately with kin relative to foster institutions, protects their neurological well-being and is highly compatible with peer-reviewed child science.
           </p>
           <div className="pt-2">
