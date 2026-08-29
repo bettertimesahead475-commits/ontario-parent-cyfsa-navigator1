@@ -1058,6 +1058,81 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
     }
   });
 
+  // API: Deep Scan — a focused second-pass audit of one specific document: what
+  // statutory omissions/gaps it has, what evidence the parent should go gather to
+  // address those gaps, and specific rebuttal scripts for claims the document
+  // actually makes.
+  //
+  // BUG FOUND IN AUDIT: this endpoint didn't exist — the frontend's "Run Deep Scan"
+  // button instead ran a client-side setTimeout and returned entirely hardcoded,
+  // canned text selected only by filename/category heuristics (e.g. whether the
+  // filename contained "transcript"), never once looking at the actual uploaded
+  // document. It presented invented, specific claims ("Worker alleges parent
+  // repeatedly refused access for wellness checks") as if they were found in the
+  // parent's real file — the exact fabricated-content problem this app's other
+  // endpoints are explicitly built to avoid. Replaced with a real analysis grounded
+  // in the document text, following the same never-invent-a-quote rules as
+  // /api/analyze.
+  app.post("/api/deep-scan", async (req: Request, res: Response) => {
+    try {
+      const { documentText, documentName, category, model } = req.body || {};
+      if (!documentText || !String(documentText).trim()) {
+        return res.status(400).json({ error: "Document text is required for a deep scan." });
+      }
+
+      const systemInstruction = `You are ParentShield's Deep Scan tool — a focused second-pass audit of ONE specific document already reviewed once, looking specifically for statutory omissions, missing corroborating evidence, and rebuttal material for claims the document itself makes.
+
+NON-NEGOTIABLE RULES
+1. Every "claim" in a retort must be a real assertion actually present in the supplied document text — quote or closely paraphrase it. Never invent a claim the document doesn't make.
+2. Every "gap" must point to something the document specifically fails to address, given what kind of document it is — not a generic boilerplate observation unconnected to this document's actual content.
+3. Never fabricate names, dates, or incidents not present in the document.
+4. Frame "action" steps as things to raise with a lawyer or gather as evidence, never as legal conclusions or instructions to file anything.
+5. If the document is too short or too generic to support a specific gap, evidence item, or retort, return fewer items rather than inventing filler — an empty array is honest; a fabricated one is not.
+6. End every report with the disclaimer field, unmodified.
+
+OUTPUT — return strictly this JSON schema, nothing else:
+{
+  "gaps": ["Specific statutory or procedural omission this document has, tied to what it actually says or fails to say."],
+  "missingEvidence": ["Specific evidence the parent should gather to address a gap above, given this document's actual content."],
+  "retorts": [
+    {
+      "claim": "A specific assertion actually made in this document — quote or closely paraphrase it.",
+      "objection": "Why this claim is weak, unsupported, or hearsay — grounded in the document, not a generic evidentiary rule.",
+      "action": "A concrete next step to raise with counsel or evidence to gather in response."
+    }
+  ],
+  "disclaimer": "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."
+}`;
+
+      const promptText = `
+        DOCUMENT NAME: ${documentName || "Uploaded document"}
+        DOCUMENT CATEGORY: ${category || "Unspecified"}
+
+        DOCUMENT TEXT:
+        ${documentText}
+
+        Perform the deep scan described above, grounded strictly in the document text above.
+      `;
+
+      const response = await generateContentWithFallback({
+        system: systemInstruction,
+        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
+        max_tokens: 16000
+      }, model || "claude-sonnet-5");
+
+      const responseText = response.text;
+      if (!responseText) {
+        throw new Error("Empty response received from the deep scan service.");
+      }
+
+      const report = extractJson(responseText);
+      res.json(report);
+    } catch (error: any) {
+      console.error("[deep scan] API error, returning honest failure (no fabricated fallback):", error);
+      handleAIError(error, "deep scan", res);
+    }
+  });
+
   // API: Audio transcription (real, when audio is provided) and narrative
   // journal formatting (when it's the parent's own typed/dictated account).
   //

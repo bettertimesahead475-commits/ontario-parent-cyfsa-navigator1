@@ -25,6 +25,17 @@ const EMPTY_FORM33B: Form33BAnswer = {
   parentStatementOfFacts: ""
 };
 
+// Escapes a value for safe interpolation into the raw HTML the print/export view
+// builds. Most fields here are the parent's own typed input, but some (e.g. Form
+// 33B's disagreedFacts) can be auto-imported from the Document Analyzer's
+// AI-generated report, which is itself influenced by the content of an uploaded,
+// potentially adversarial document — so none of this can be assumed to be safe HTML.
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string
+  ));
+}
+
 const EMPTY_PLANOFCARE: PlanOfCare = {
   childName: "",
   birthdate: "",
@@ -616,27 +627,27 @@ export default function TemplatesTab() {
           <tr>
             <td>
               <strong>Applicant (Parent/Party):</strong><br/>
-              ${affidavit.applicantName || "Not Specified"}<br/><br/>
+              ${escapeHtml(affidavit.applicantName || "Not Specified")}<br/><br/>
               <strong>Respondent(s):</strong><br/>
-              ${affidavit.respondentName || "Not Specified"}
+              ${escapeHtml(affidavit.respondentName || "Not Specified")}
             </td>
             <td>
               <strong>Court Registry Local Office:</strong><br/>
-              ${affidavit.courtRegistryName || "Not Specified"}<br/><br/>
+              ${escapeHtml(affidavit.courtRegistryName || "Not Specified")}<br/><br/>
               <strong>Subject Children names & Dates of Birth:</strong><br/>
-              ${affidavit.childNames || "Not Specified"} ${affidavit.childBirthdates ? `(Born: ${affidavit.childBirthdates})` : ""}
+              ${escapeHtml(affidavit.childNames || "Not Specified")} ${affidavit.childBirthdates ? `(Born: ${escapeHtml(affidavit.childBirthdates)})` : ""}
             </td>
           </tr>
         </table>
 
-        <div class="document-title">Affidavit of ${affidavit.authorName || "Drafting Parent"}</div>
+        <div class="document-title">Affidavit of ${escapeHtml(affidavit.authorName || "Drafting Parent")}</div>
 
         <div class="text-block">
-          I, <strong>${affidavit.authorName || "Drafting Parent"}</strong>, of the Province of Ontario, Canada, make oath and say (or solemnly affirm) as follows:
+          I, <strong>${escapeHtml(affidavit.authorName || "Drafting Parent")}</strong>, of the Province of Ontario, Canada, make oath and say (or solemnly affirm) as follows:
         </div>
 
         <div class="section-header">1. Background Statement</div>
-        <div class="text-block">${affidavit.backgroundStatement || "No background statement provided."}</div>
+        <div class="text-block">${escapeHtml(affidavit.backgroundStatement || "No background statement provided.")}</div>
 
         <div class="section-header">2. Chronological Record of Material Facts & Interactions</div>
         <div class="text-block" style="font-size:12px; font-style:italic;">
@@ -654,12 +665,12 @@ export default function TemplatesTab() {
           <tbody>
             ${affidavit.factualEvents.map((ev: any) => `
               <tr class="item-row">
-                <td><strong>${ev.date || "N/A"}</strong>${ev.time ? `<br/>${ev.time}` : ""}</td>
+                <td><strong>${escapeHtml(ev.date || "N/A")}</strong>${ev.time ? `<br/>${escapeHtml(ev.time)}` : ""}</td>
                 <td>
-                  ${ev.eventDescription || "No details entered."}
+                  ${escapeHtml(ev.eventDescription || "No details entered.")}
                   ${ev.unsupportedOrHearsayWarn ? `<br/><span style="color: #b45309; font-size: 10px; font-weight: bold;">⚠️ EDUCATIONAL ADVISORY: Contains possible hearsay statements or unverified claims. Consult lawyer to formulate.</span>` : ""}
                 </td>
-                <td>${ev.witnessesOrEvidence || "None itemized."}</td>
+                <td>${escapeHtml(ev.witnessesOrEvidence || "None itemized.")}</td>
               </tr>
             `).join("")}
             ${affidavit.factualEvents.length === 0 ? `<tr><td colspan="3" style="text-align: center; color: #64748b;">No chronological factual statements added yet.</td></tr>` : ""}
@@ -667,10 +678,10 @@ export default function TemplatesTab() {
         </table>
 
         <div class="section-header">3. Subject Children's Perspectives & Expressed Preferences</div>
-        <div class="text-block">${affidavit.childsPerspectiveText || "No statements recorded."}</div>
+        <div class="text-block">${escapeHtml(affidavit.childsPerspectiveText || "No statements recorded.")}</div>
 
         <div class="section-header">4. Proposed Educational & Support Care Arrangements</div>
-        <div class="text-block">${affidavit.proposedCareArrangement || "No proposed care plan drafted."}</div>
+        <div class="text-block">${escapeHtml(affidavit.proposedCareArrangement || "No proposed care plan drafted.")}</div>
 
         <div class="section-header">5. Exhibits Referenced and Attached Under Solemn Affirmation</div>
         <table class="data-table" style="width: 80%; margin: 10px 0 25px 0;">
@@ -683,9 +694,9 @@ export default function TemplatesTab() {
           <tbody>
             ${affidavit.exhibits.map((ex: any) => `
               <tr class="item-row">
-                <td><strong>Exhibit "${ex.letter || "A"}"</strong></td>
+                <td><strong>Exhibit "${escapeHtml(ex.letter || "A")}"</strong></td>
                 <td>
-                  ${ex.description || "N/A"}<br/>
+                  ${escapeHtml(ex.description || "N/A")}<br/>
                   <span style="font-size: 9.5px; color: ${ex.verifiedWithPrimary ? '#15803d' : '#475569'}; font-weight: 500;">
                     ${ex.verifiedWithPrimary ? '✓ Verified with primary audit material' : '• Raw reference'}
                   </span>
@@ -741,15 +752,15 @@ export default function TemplatesTab() {
             ${timelineItems.map((item: any) => `
               <tr class="item-row" style="${item.isCourtDate ? 'background-color: #fef2f2;' : ''}">
                 <td>
-                  <strong>${item.date || "N/A"}</strong>
+                  <strong>${escapeHtml(item.date || "N/A")}</strong>
                   ${item.isCourtDate ? '<br/><span style="color:#dc2626; font-size:9px; font-weight:bold; text-transform:uppercase;">⚖️ COURT DATE</span>' : ''}
                 </td>
                 <td>
-                  <strong>${item.title || "No Title"}</strong>
-                  ${item.statutoryDeadline ? `<br/><span style="color:#1e3a8a; font-size:9.5px; font-weight:550;">Deadline: ${item.statutoryDeadline}</span>` : ""}
+                  <strong>${escapeHtml(item.title || "No Title")}</strong>
+                  ${item.statutoryDeadline ? `<br/><span style="color:#1e3a8a; font-size:9.5px; font-weight:550;">Deadline: ${escapeHtml(item.statutoryDeadline)}</span>` : ""}
                 </td>
-                <td>${item.description || "N/A"}</td>
-                <td>${item.actionRequired || "None specified."}</td>
+                <td>${escapeHtml(item.description || "N/A")}</td>
+                <td>${escapeHtml(item.actionRequired || "None specified.")}</td>
               </tr>
             `).join("")}
             ${timelineItems.length === 0 ? `<tr><td colspan="4" style="text-align: center; color: #64748b;">No chronology timeline records entered.</td></tr>` : ""}
@@ -782,24 +793,24 @@ export default function TemplatesTab() {
           <tbody>
             ${evidenceLog.map((log: any) => `
               <tr class="item-row">
-                <td><strong>${log.date || "N/A"}</strong></td>
-                <td><strong>${log.involvedWorkers || "Not Specified"}</strong></td>
+                <td><strong>${escapeHtml(log.date || "N/A")}</strong></td>
+                <td><strong>${escapeHtml(log.involvedWorkers || "Not Specified")}</strong></td>
                 <td>
                   <strong>Incident/What Happened:</strong><br/>
-                  ${log.whatHappened || "N/A"}<br/><br/>
+                  ${escapeHtml(log.whatHappened || "N/A")}<br/><br/>
                   <strong>Specific Statements/Alleged Quotes Made:</strong><br/>
-                  <span style="font-family: inherit; font-style: italic; color: #0f172a;">"${log.statementsMade || "None recorded."}"</span><br/><br/>
+                  <span style="font-family: inherit; font-style: italic; color: #0f172a;">"${escapeHtml(log.statementsMade || "None recorded.")}"</span><br/><br/>
                   <strong>Questions for Retained Legal Counsel:</strong><br/>
-                  <span style="color:#4f46e5; font-size:10.5px;">${log.questionsForCounsel || "No specific questions added."}</span>
+                  <span style="color:#4f46e5; font-size:10.5px;">${escapeHtml(log.questionsForCounsel || "No specific questions added.")}</span>
                 </td>
                 <td>
                   <span style="display:inline-block; font-size:9.5px; font-weight:bold; padding:2px 6px; border-radius:4px;
                     ${log.hearsayFlag === 'Direct Evidence' ? 'background-color:#d1fae5; color:#065f46;' :
                       log.hearsayFlag === 'Hearsay (Worker told me)' ? 'background-color:#fee2e2; color:#991b1b;' :
                       'background-color:#fef3c7; color:#92400e;'}">
-                    ${log.hearsayFlag}
+                    ${escapeHtml(log.hearsayFlag)}
                   </span>
-                  ${log.audioPhotoLog ? `<br/><br/><strong style="font-size:9.5px;">Linked Proof:</strong><br/><span style="font-size:9.5px; color:#475569;">${log.audioPhotoLog}</span>` : ""}
+                  ${log.audioPhotoLog ? `<br/><br/><strong style="font-size:9.5px;">Linked Proof:</strong><br/><span style="font-size:9.5px; color:#475569;">${escapeHtml(log.audioPhotoLog)}</span>` : ""}
                 </td>
               </tr>
             `).join("")}
@@ -833,10 +844,10 @@ export default function TemplatesTab() {
           <tbody>
             ${issueSheets.map((sheet: any) => `
               <tr class="item-row">
-                <td style="color: #991b1b; font-weight: bold;">${sheet.agencyAssertion || "No claim listed."}</td>
-                <td style="color: #166534; font-weight: 500;">${sheet.ourParentResponse || "No rebuttal entered."}</td>
-                <td>${sheet.primaryEvidenceWeHave || "N/A"}</td>
-                <td style="color: #4f46e5;">${sheet.missingEvidenceNeeded || "None requested."}</td>
+                <td style="color: #991b1b; font-weight: bold;">${escapeHtml(sheet.agencyAssertion || "No claim listed.")}</td>
+                <td style="color: #166534; font-weight: 500;">${escapeHtml(sheet.ourParentResponse || "No rebuttal entered.")}</td>
+                <td>${escapeHtml(sheet.primaryEvidenceWeHave || "N/A")}</td>
+                <td style="color: #4f46e5;">${escapeHtml(sheet.missingEvidenceNeeded || "None requested.")}</td>
               </tr>
             `).join("")}
             ${issueSheets.length === 0 ? `<tr><td colspan="4" style="text-align: center; color: #64748b;">No assertion-rebuttal sheets defined yet.</td></tr>` : ""}
@@ -857,17 +868,17 @@ export default function TemplatesTab() {
           <tr>
             <td>
               <strong>Next Scheduled Hearing Date:</strong><br/>
-              <span style="font-size: 14px; font-weight: bold; color: #dc2626;">${prepSheet.nextHearingDate || "Not Set"}</span>
+              <span style="font-size: 14px; font-weight: bold; color: #dc2626;">${escapeHtml(prepSheet.nextHearingDate || "Not Set")}</span>
             </td>
             <td>
               <strong>Target Hearing Category:</strong><br/>
-              <span style="font-size: 14px; font-weight: bold; color: #1e3a8a;">${prepSheet.hearingType || "Not Specified"}</span>
+              <span style="font-size: 14px; font-weight: bold; color: #1e3a8a;">${escapeHtml(prepSheet.hearingType || "Not Specified")}</span>
             </td>
           </tr>
         </table>
 
         <div class="section-header">1. Main Case Educational Goals (What the Judge Must Understand)</div>
-        <div class="text-block">${prepSheet.mainEducationalGoals || "No goals drafted."}</div>
+        <div class="text-block">${escapeHtml(prepSheet.mainEducationalGoals || "No goals drafted.")}</div>
 
         <div class="section-header">2. Top Case Priorities for the Parent</div>
         <table class="data-table" style="width: 70%; margin: 10px 0 25px 0;">
@@ -881,7 +892,7 @@ export default function TemplatesTab() {
             ${(prepSheet.topThreePriorities || []).map((p: string, idx: number) => `
               <tr class="item-row">
                 <td><strong># ${idx + 1}</strong></td>
-                <td><strong>${p || "N/A"}</strong></td>
+                <td><strong>${escapeHtml(p || "N/A")}</strong></td>
               </tr>
             `).join("")}
             ${(!prepSheet.topThreePriorities || prepSheet.topThreePriorities.length === 0) ? `<tr><td colspan="2" style="text-align: center; color: #64748b;">No priorities entered.</td></tr>` : ""}
@@ -889,11 +900,11 @@ export default function TemplatesTab() {
         </table>
 
         <div class="section-header">3. Self-Regulation & Personal Grounding Plan (Stress Management)</div>
-        <div class="text-block">${prepSheet.mentalGroundingPlan || "No grounding notes listed."}</div>
+        <div class="text-block">${escapeHtml(prepSheet.mentalGroundingPlan || "No grounding notes listed.")}</div>
 
         <div class="section-header">4. Courtroom Support Role Allocation</div>
         <div class="text-block">
-          <strong>Identified Support Note-Taker:</strong> ${prepSheet.whoIsTakingNotes || "None assigned. Family member can sit in courtroom support desks."}
+          <strong>Identified Support Note-Taker:</strong> ${escapeHtml(prepSheet.whoIsTakingNotes || "None assigned. Family member can sit in courtroom support desks.")}
         </div>
       `;
     } else if (activeBuilderTab === "answer-33b") {
@@ -909,19 +920,19 @@ export default function TemplatesTab() {
           <tr>
             <td>
               <strong>Applicant (Children's Aid Society Name):</strong><br/>
-              ${form33b.applicantName || "Children's Aid Society"}<br/><br/>
+              ${escapeHtml(form33b.applicantName || "Children's Aid Society")}<br/><br/>
               <strong>Respondent Parent:</strong><br/>
-              ${form33b.respondentName || "Not Specified"}<br/><br/>
+              ${escapeHtml(form33b.respondentName || "Not Specified")}<br/><br/>
               <strong>Date of Society's Application:</strong><br/>
-              ${form33b.applicationDate || "Not Specified"}
+              ${escapeHtml(form33b.applicationDate || "Not Specified")}
             </td>
             <td>
               <strong>Court Registry Local Office:</strong><br/>
-              ${form33b.courtRegistryName || "Not Specified"}<br/><br/>
+              ${escapeHtml(form33b.courtRegistryName || "Not Specified")}<br/><br/>
               <strong>Court File Number (Case #):</strong><br/>
-              ${form33b.caseNumber || "Not Specified"}<br/><br/>
+              ${escapeHtml(form33b.caseNumber || "Not Specified")}<br/><br/>
               <strong>Subject Child(ren) names:</strong><br/>
-              ${form33b.childNames || "Not Specified"}
+              ${escapeHtml(form33b.childNames || "Not Specified")}
             </td>
           </tr>
         </table>
@@ -929,10 +940,10 @@ export default function TemplatesTab() {
         <div class="document-title">Respondent's Answer (Child Protection)</div>
 
         <div class="section-header">1. Respondent parent's legal claim details</div>
-        <div class="text-block"><strong>Proposed Order Requested:</strong><br/>${form33b.claimDetails || "Not Specified"}</div>
+        <div class="text-block"><strong>Proposed Order Requested:</strong><br/>${escapeHtml(form33b.claimDetails || "Not Specified")}</div>
 
         <div class="section-header">2. Agreed Statements of Fact</div>
-        <div class="text-block">The Respondent Parent agrees with the following statements of fact made in the Society's application:<br/>${form33b.agreedFacts || "No specific agreed paragraphs listed."}</div>
+        <div class="text-block">The Respondent Parent agrees with the following statements of fact made in the Society's application:<br/>${escapeHtml(form33b.agreedFacts || "No specific agreed paragraphs listed.")}</div>
 
         <div class="section-header">3. Disagreed CAS Assertions & Counter-Evidence (Rule 17 Reply Index)</div>
         <table class="data-table">
@@ -946,9 +957,9 @@ export default function TemplatesTab() {
           <tbody>
             ${form33b.disagreedFacts.map((item: any) => `
               <tr class="item-row">
-                <td style="color: #991b1b; font-weight: bold;">${item.societyStatement || "N/A"}</td>
-                <td style="color: #166534; font-weight: 500;">${item.parentResponse || "N/A"}</td>
-                <td>${item.supportingEvidence || "N/A"}</td>
+                <td style="color: #991b1b; font-weight: bold;">${escapeHtml(item.societyStatement || "N/A")}</td>
+                <td style="color: #166534; font-weight: 500;">${escapeHtml(item.parentResponse || "N/A")}</td>
+                <td>${escapeHtml(item.supportingEvidence || "N/A")}</td>
               </tr>
             `).join("")}
             ${form33b.disagreedFacts.length === 0 ? `<tr><td colspan="3" style="text-align: center; color: #64748b;">No disagreed assertions listed.</td></tr>` : ""}
@@ -956,7 +967,7 @@ export default function TemplatesTab() {
         </table>
 
         <div class="section-header">4. Respondent Parent's Statement of Factual Circumstances (Omitted by Society)</div>
-        <div class="text-block">${form33b.parentStatementOfFacts || "No additional factual statements entered."}</div>
+        <div class="text-block">${escapeHtml(form33b.parentStatementOfFacts || "No additional factual statements entered.")}</div>
       `;
     } else if (activeBuilderTab === "plan-of-care") {
       title = "Personalized Plan of Care";
@@ -971,11 +982,11 @@ export default function TemplatesTab() {
           <tr>
             <td>
               <strong>Child(ren) Names:</strong><br/>
-              <span style="font-size: 13px; font-weight: bold; color: #b91c1c;">${planOfCare.childName || "Not Entered"}</span>
+              <span style="font-size: 13px; font-weight: bold; color: #b91c1c;">${escapeHtml(planOfCare.childName || "Not Entered")}</span>
             </td>
             <td>
               <strong>Birthdate & Age:</strong><br/>
-              <span style="font-size: 13px; font-weight: bold; color: #1e3a8a;">${planOfCare.birthdate || "Not Entered"}</span>
+              <span style="font-size: 13px; font-weight: bold; color: #1e3a8a;">${escapeHtml(planOfCare.birthdate || "Not Entered")}</span>
             </td>
           </tr>
         </table>
@@ -983,32 +994,32 @@ export default function TemplatesTab() {
         <div class="document-title">Parent's Personalized Plan of Care</div>
 
         <div class="section-header">1. Proposed Living & Placement Arrangements</div>
-        <div class="text-block">${planOfCare.livingArrangements || "No housing plan details entered."}</div>
+        <div class="text-block">${escapeHtml(planOfCare.livingArrangements || "No housing plan details entered.")}</div>
 
         <div class="section-header">2. Safety Protocols & Supervision Plan (Kinship Network)</div>
-        <div class="text-block">${planOfCare.safetySupervision || "No safety/supervision protocols entered."}</div>
+        <div class="text-block">${escapeHtml(planOfCare.safetySupervision || "No safety/supervision protocols entered.")}</div>
 
         <div class="section-header">3. Educational Goals & School Continuity</div>
-        <div class="text-block">${planOfCare.educationNeeds || "No educational details entered."}</div>
+        <div class="text-block">${escapeHtml(planOfCare.educationNeeds || "No educational details entered.")}</div>
 
         <div class="section-header">4. Healthcare, Dental & Pediatric Therapy Coordination</div>
-        <div class="text-block">${planOfCare.healthcareDevelopment || "No health development schedules entered."}</div>
+        <div class="text-block">${escapeHtml(planOfCare.healthcareDevelopment || "No health development schedules entered.")}</div>
 
         <div class="section-header">5. Cultural Preservation & Heritage Connections</div>
-        <div class="text-block">${planOfCare.cultureReligion || "No cultural or religious heritage activities entered."}</div>
+        <div class="text-block">${escapeHtml(planOfCare.cultureReligion || "No cultural or religious heritage activities entered.")}</div>
 
         <div class="section-header">6. Parent-Child Bond preservation & Kinship Access Schedules</div>
-        <div class="text-block">${planOfCare.contactAccessArrangements || "No access details entered."}</div>
+        <div class="text-block">${escapeHtml(planOfCare.contactAccessArrangements || "No access details entered.")}</div>
 
         <div class="section-header">7. Active Parent Counseling & Positive Parenting Support Programs</div>
-        <div class="text-block">${planOfCare.parentSupportServices || "No rehabilitation programs listed."}</div>
+        <div class="text-block">${escapeHtml(planOfCare.parentSupportServices || "No rehabilitation programs listed.")}</div>
       `;
     }
 
     const htmlContent = `
       <html>
         <head>
-          <title>${title} - OPA Educational Desk</title>
+          <title>${escapeHtml(title)} - OPA Educational Desk</title>
           ${sharedStyle}
         </head>
         <body>
@@ -2486,7 +2497,9 @@ export default function TemplatesTab() {
         <div className="hidden print-only pt-8 border-t border-dashed text-[10px] text-slate-500 flex justify-between">
           <span>Printed via CYFSA Ontario Parent Portal</span>
           <span>Educational draft purposes only • Consult a Lawyer</span>
-          <span>Time: May 25, 2026</span>
+          {/* BUG FOUND IN AUDIT: this was a hardcoded "May 25, 2026" regardless of the actual
+              print date — every exported document claimed the same fixed, wrong date. */}
+          <span>Time: {new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</span>
         </div>
       </div>
     </div>

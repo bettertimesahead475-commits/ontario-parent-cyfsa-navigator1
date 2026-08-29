@@ -51,6 +51,31 @@ import {
 import { db, auth } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
 
+// Escapes a value for safe interpolation into the raw HTML strings the print/export
+// views build (both as element text and inside HTML attributes like `class="..."`).
+// Print reports embed AI-generated report fields (influenced by the content of an
+// uploaded, potentially adversarial document) and even raw uploaded file names —
+// both are attacker-reachable, so nothing here can be trusted to already be safe HTML.
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string
+  ));
+}
+
+// Renders **bold** markdown segments from AI-generated text as real React
+// elements instead of raw HTML. The lawyer case brief bullets come straight
+// from the model's analysis of an uploaded (and therefore untrusted/
+// adversary-controllable) CAS document — injecting them via
+// dangerouslySetInnerHTML would let a maliciously crafted document coerce
+// the model into emitting live, executable HTML in the parent's browser.
+function renderBoldText(text: string): React.ReactNode[] {
+  return text.split(/(\*\*.*?\*\*)/g).map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") && part.length >= 4
+      ? <strong key={i}>{part.slice(2, -2)}</strong>
+      : <React.Fragment key={i}>{part}</React.Fragment>
+  );
+}
+
 interface OrganizedFile {
   id: string;
   name: string;
@@ -431,6 +456,7 @@ export default function DocumentAnalyzerTab() {
   // Deep Scan states
   const [isDeepScanning, setIsDeepScanning] = useState<boolean>(false);
   const [deepScanFileId, setDeepScanFileId] = useState<string | null>(null);
+  const [deepScanError, setDeepScanError] = useState<string | null>(null);
   const [deepScanReports, setDeepScanReports] = useState<{ [fileId: string]: any }>(() => {
     try {
       const saved = localStorage.getItem("OPA_DEEPSCAN_REPORTS");
@@ -440,87 +466,41 @@ export default function DocumentAnalyzerTab() {
     }
   });
 
-  const triggerDeepScan = (file: OrganizedFile) => {
+  const triggerDeepScan = async (file: OrganizedFile) => {
+    if (!file.content || !file.content.trim()) {
+      setDeepScanError("This file has no extracted text to scan yet.");
+      return;
+    }
+
     setIsDeepScanning(true);
     setDeepScanFileId(file.id);
+    setDeepScanError(null);
 
-    setTimeout(() => {
-      const isTranscript = file.name.toLowerCase().includes("transcript");
-      const isCorrespondence = file.category === "CAS Correspondence";
-      
-      let gaps: string[] = [];
-      let missingEvidence: string[] = [];
-      let retorts: { claim: string; objection: string; action: string }[] = [];
+    try {
+      const response = await apiFetch("/api/deep-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentText: file.content,
+          documentName: file.name,
+          category: file.category,
+          model: claudeModel
+        })
+      });
 
-      if (isCorrespondence) {
-        gaps = [
-          "Omission of emergency apprehension thresholds: CAS asserts general safety concerns but completely fails to document any imminent threat or substantial harm parameters.",
-          "Duty to consult counsel: Corresponding communications indicate CAS did not properly advise you of your S.12 rights to consult counsel within 12 hours of initial interview.",
-          "Highly speculative opinions: Caseworker reports are heavily colored by subjective descriptors (e.g. 'dismissive', 'evasive') without specific supporting direct quotes."
-        ];
-        missingEvidence = [
-          "Continuous text/SMS thread exports: Direct printouts showing friendly, cooperative scheduling attempts to contradict worker claims of parental avoidance.",
-          "Third-party child logs: Written declarations from friends, family, or coaches showing the child showed positive behavior immediately following visits."
-        ];
-        retorts = [
-          {
-            claim: "Worker alleges parent repeatedly refused access for wellness checks.",
-            objection: "Parent objected due to lack of notice during child's sleep window, but proposed 3 immediate rescheduled morning times.",
-            action: "Cite CYFSA S.81(2) and present rescheduled emails to demonstrate active cooperation."
-          },
-          {
-            claim: "Family notes declare parent has 'chaotic and uncooperative' state of mind.",
-            objection: "Worker's observation is subjective/hearsay and lacks professional verification.",
-            action: "Present a therapist declaration or school attendance certificates showing consistency and pristine structure."
-          }
-        ];
-      } else if (isTranscript) {
-        gaps = [
-          "Double hearsay testifying: Society workers are testifying on children's behavior based entirely on third-party emails that have not been sworn.",
-          "Incomplete Part X disclosure: The testimony references internal registry records which CAS did not provide in disclosure indexes."
-        ];
-        missingEvidence = [
-          "Certified complete companion transcripts: Transcripts from cross-examination logs illustrating inconsistencies in the worker's narrative.",
-          "Witness corroboration letters: Signed affidavits from visitation observers indicating the session had structured, gentle play."
-        ];
-        retorts = [
-          {
-            claim: "Caseworker alleges child manifested sudden regression and distress upon seeing the parent.",
-            objection: "Caseworker's claim directly contradicts visitation log entry stating 'child greeted parent warmly and with smiles.'",
-            action: "Impeach caseworker's testimony on the stand using the Society's own concurrent visitation records."
-          }
-        ];
-      } else {
-        gaps = [
-          "Notice period violations: Draft fails to highlight that CAS did not provide the required 5-day notice before initiating the protection application.",
-          "Unbacked legal assertions: The petition states 'severe emotional harm' under S.74 but lacks any medical or psychological assessment from a qualified clinician."
-        ];
-        missingEvidence = [
-          "Positive visit logs: Detailed tracker illustrating Luc's happy, constructive behavior.",
-          "Character declarations: Positive written representations from teachers showing the child's academic and emotional stability."
-        ];
-        retorts = [
-          {
-            claim: "CAS challenges the parent's timeline of access requests.",
-            objection: "The parent's calendar is highly coordinated and backed by active phone bills.",
-            action: "Bring forward billing logs to verify exact time parent made attempts to reach out."
-          }
-        ];
-      }
-
-      const report = {
-        gaps,
-        missingEvidence,
-        retorts,
-        timestamp: new Date().toLocaleDateString()
-      };
+      const data = await safeReadJson(response);
+      const report = { ...data, timestamp: new Date().toLocaleDateString() };
 
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
       localStorage.setItem("OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
+    } catch (err: any) {
+      console.error("[deep scan] request failed:", err);
+      setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
+    } finally {
       setIsDeepScanning(false);
       setDeepScanFileId(null);
-    }, 2500);
+    }
   };
 
   // Active Legislative Citation side-by-side modal/drawer states
@@ -1358,12 +1338,21 @@ export default function DocumentAnalyzerTab() {
       const meta = selectedReport.metadata || {};
       const fileNumber = meta.fileNumber || currentTemplatesProgress?.form33b?.caseNumber || "";
       const applicantName = meta.applicantName || currentTemplatesProgress?.form33b?.applicantName || "";
-      // FIX: respondentName no longer trusts AI-extracted metadata blindly. This app currently
-      // has one user (you), so it's hardcoded to your name to prevent the wrong party (e.g. the
-      // other parent named in a source document) from ending up on your legal documents.
-      // TODO before selling this to other parents: replace with a confirmed "your name" field
-      // the user sets once, instead of a hardcoded value.
-      const respondentName = "Christopher Pelkie";
+      // BUG FOUND IN AUDIT: respondentName was hardcoded to a specific real person's name
+      // ("Christopher Pelkie") — presumably the original developer's own name, left in from
+      // testing. Every user of this shared, multi-account app (not a single-user personal tool —
+      // see SignUpTab.tsx's Advocate Passport signup) would have had that name inserted as the
+      // respondent AND the sworn affiant on their own real legal court documents. Fixed to read
+      // the signed-in user's own profile name instead, falling back to an empty string (never a
+      // fabricated or borrowed name) so the parent is prompted to fill in their own name.
+      let currentUserName = "";
+      try {
+        const savedProfile = localStorage.getItem("OPA_USER_PROFILE");
+        if (savedProfile) currentUserName = JSON.parse(savedProfile)?.fullName || "";
+      } catch (e) {
+        console.warn("Failed to read user profile for form handover:", e);
+      }
+      const respondentName = currentTemplatesProgress?.form33b?.respondentName || currentUserName;
       const childNames = meta.childNames || currentTemplatesProgress?.form33b?.childNames || "";
       const hearingDate = meta.hearingDate || selectedReport.analysisDate || new Date().toISOString().slice(0, 10);
 
@@ -1872,9 +1861,6 @@ export default function DocumentAnalyzerTab() {
     const activeQuery = forcedQuery || chatInput;
     if (!activeQuery.trim()) return;
 
-    // Check custom subscription limits
-    const existingUserQueriesCount = ragChatMessages.filter((m) => m.sender === "user").length;
-
     // Append user query message
     const userMsg: RAGChatMessage = {
       id: "user-" + Date.now(),
@@ -1934,7 +1920,6 @@ export default function DocumentAnalyzerTab() {
       };
       setRAGChatMessages(prev => [...prev, errorMsg]);
     } finally {
-      setIsRAGQuerying(true);
       setIsRAGQuerying(false);
     }
   };
@@ -1961,56 +1946,6 @@ export default function DocumentAnalyzerTab() {
       default:
         return <Clock className="w-4 h-4 text-slate-400" />;
     }
-  };
-
-  // Micro Markdown text highlighter for interactive cited references
-  const parseMarkdownCitations = (sourceText: string) => {
-    if (!sourceText) return "";
-    const boldRegex = /\*\*(.*?)\*\*/g;
-    const bulletRegex = /^\s*-\s+(.*)$/gm;
-    
-    // Simple custom markup parser to guarantee clean, collision-free text tags
-    let formattedText = sourceText;
-
-    // Convert bold
-    formattedText = formattedText.replace(boldRegex, '<strong class="font-bold text-gray-950">$1</strong>');
-    
-    // Highlight bracket citations e.g. [Source: CAS_Observation_Letter.txt]
-    const citeRegex = /\[Source:\s*(.*?)\]/g;
-    formattedText = formattedText.replace(citeRegex, (match, cleanName) => {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-brand-50 hover:bg-brand-100 border border-brand-200 text-brand-800 rounded font-mono text-[10px] cursor-pointer transition-colors font-semibold select-none" onclick="window.highlightCaseFile('${cleanName}')" title="Click to view file">📂 ${cleanName}</span>`;
-    });
-
-    // Replace specific statutory names with real, fully accessible URL links to the e-Laws website
-    const statutes = [
-      { regex: /s\.\s*74|section\s+74/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK123", label: "s. 74 (Child in Need of Protection Ground)" },
-      { regex: /s\.\s*94|section\s+94/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK161", label: "s. 94 (The 5-Day Temporary Care Rule)" },
-      { regex: /s\.\s*81|section\s+81/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK136", label: "s. 81 (Apprehension & Imminent Danger)" },
-      { regex: /s\.\s*125|section\s+125/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK215", label: "s. 125 (Mandatory Duty to Report)" },
-      { regex: /s\.\s*3|section\s+3\b/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK3", label: "s. 3 (Expressed Rights of the Child)" },
-      { regex: /s\.\s*101|section\s+101/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK173", label: "s. 101 (Extended Society Care / Crown Wardship)" },
-      { regex: /s\.\s*87|section\s+87/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK145", label: "s. 87 (Statutory Publication Bans)" },
-      { regex: /\bclra\b|children's\s+law\s+reform\s+act/gi, url: "https://www.ontario.ca/laws/statute/90c12#BK9", label: "Ontario CLRA Parentage" },
-      { regex: /\bevidence\s+act\b/gi, url: "https://www.canlii.org/en/on/laws/stat/rso-1990-c-e23/latest/rso-1990-c-e23.html", label: "Ontario Evidence Act" },
-      { regex: /\bcharter\s+of\s+rights|canadian\s+charter\b/gi, url: "https://www.canlii.org/en/ca/laws/stat/const-1982/latest/const-1982.html", label: "Canadian Charter of Rights and Freedoms" }
-    ];
-
-    statutes.forEach(s => {
-      formattedText = formattedText.replace(s.regex, (match) => {
-        return `<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-1.5 py-0.2 bg-brand-50 hover:bg-brand-100 border border-brand-150 text-brand-700 rounded text-[10px] font-semibold transition-colors decoration-none" title="Visit actual Ontario e-Laws page for ${s.label}">⚖️ ${match} <span class="text-[8px] opacity-70">↗</span></a>`;
-      });
-    });
-
-    // Parse bullet lines
-    const lines = formattedText.split("\n");
-    const parsedLines = lines.map(line => {
-      if (line.trim().startsWith("- ")) {
-        return `<li class="ml-4 list-disc pl-1 py-0.5">${line.trim().substring(2)}</li>`;
-      }
-      return line;
-    });
-
-    return parsedLines.join("\n");
   };
 
   // Mount custom print trigger for footer
@@ -2287,17 +2222,19 @@ export default function DocumentAnalyzerTab() {
           <div style="margin-top: 15px;">
             ${ragChatMessages.map(msg => {
               const author = msg.sender === "user" ? "Client (Parent)" : "CYFSA AI Statutory Assistant";
-              const rawFormattedText = msg.text
+              // Escape first, then apply the bold/citation markup so the <strong>/<span> tags
+              // this intentionally inserts don't themselves get escaped away.
+              const rawFormattedText = escapeHtml(msg.text)
                 .replace(/\*\*(.*?)\*\//g, '<strong>$1</strong>')
                 .replace(/\[Source:\s*(.*?)\]/g, '<span>[$1]</span>');
               return `
                 <div class="chat-block ${msg.sender === "user" ? "chat-user" : "chat-ai"}">
-                  <span class="chat-author">${author} • ${msg.timestamp}</span>
+                  <span class="chat-author">${escapeHtml(author)} • ${escapeHtml(msg.timestamp)}</span>
                   <div class="chat-text">${rawFormattedText}</div>
                   ${msg.citations && msg.citations.length > 0 ? `
                     <div style="margin-top: 12px; font-size: 10.5px; border-top: 1px solid rgba(0,0,0,0.06); padding-top: 8px; color: #4f46e5;">
-                      <strong>Sources referenced during dynamic search retrieval:</strong> 
-                      ${msg.citations.map(cit => `<code>${cit.name}</code> (${cit.category})`).join(", ")}
+                      <strong>Sources referenced during dynamic search retrieval:</strong>
+                      ${msg.citations.map(cit => `<code>${escapeHtml(cit.name)}</code> (${escapeHtml(cit.category)})`).join(", ")}
                     </div>
                   ` : ""}
                 </div>
@@ -2318,7 +2255,7 @@ export default function DocumentAnalyzerTab() {
         </div>
       `;
     } else if (activeTab === "organizer" && selectedReport) {
-      title = `Admissibility Audit - ${selectedReport.documentTitle || activeSelectedFile?.name || "Report"}`;
+      title = `Admissibility Audit - ${escapeHtml(selectedReport.documentTitle || activeSelectedFile?.name || "Report")}`;
       const evidenceIndex = selectedReport.evidenceStrengthIndex || {
         score: 0,
         components: {},
@@ -2352,11 +2289,11 @@ export default function DocumentAnalyzerTab() {
 
           <div class="meta-bar">
             Document Checked:
-            <strong>${selectedReport.documentTitle || activeSelectedFile?.name || "N/A"}</strong>
+            <strong>${escapeHtml(selectedReport.documentTitle || activeSelectedFile?.name || "N/A")}</strong>
             • Type:
-            <strong>${selectedReport.documentType || "Casework Correspondence"}</strong>
+            <strong>${escapeHtml(selectedReport.documentType || "Casework Correspondence")}</strong>
             • Date of Audit:
-            <strong>${selectedReport.analysisDate || "Current"}</strong>
+            <strong>${escapeHtml(selectedReport.analysisDate || "Current")}</strong>
           </div>
         </div>
 
@@ -2411,7 +2348,7 @@ export default function DocumentAnalyzerTab() {
                     </div>
 
                     <div style="font-size:11px; color:#64748b; margin-top:5px;">
-                      ${component.explanation || "No component explanation was returned."}
+                      ${escapeHtml(component.explanation || "No component explanation was returned.")}
                     </div>
                   </div>
                 `;
@@ -2437,7 +2374,7 @@ export default function DocumentAnalyzerTab() {
 
           ${evidenceIndex.limitations ? `
             <div style="margin-top:12px; font-size:11px; color:#64748b;">
-              <strong>Limitation:</strong> ${evidenceIndex.limitations}
+              <strong>Limitation:</strong> ${escapeHtml(evidenceIndex.limitations)}
             </div>
           ` : ""}
         </div>
@@ -2449,26 +2386,32 @@ export default function DocumentAnalyzerTab() {
               The following assertions or opinions extracted from this file carry an inherent risk of being unsworn out-of-court narratives. Direct parental counters are compiled inline to assist your counsel.
             </p>
             <div style="margin-top: 10px;">
-              ${selectedReport.redFlags.map(rf => `
+              ${selectedReport.redFlags.map(rf => {
+                // Severity drives a CSS class (threat-CRITICAL/WARNING/NOTICE) as well as
+                // display text — whitelist it for the class so an unexpected AI-returned
+                // value can't be used to break out of the class attribute.
+                const knownSeverity = ["CRITICAL", "WARNING", "NOTICE"].includes(rf.severity) ? rf.severity : "WARNING";
+                return `
                 <div class="threat-flag">
-                  <div class="threat-header threat-${rf.severity || 'WARNING'}">
-                    <span>${rf.category || 'Red Flag'} [${rf.severity || 'WARNING'}]</span>
-                    <strong>${rf.legalReference || ''}</strong>
+                  <div class="threat-header threat-${knownSeverity}">
+                    <span>${escapeHtml(rf.category || 'Red Flag')} [${escapeHtml(rf.severity || 'WARNING')}]</span>
+                    <strong>${escapeHtml(rf.legalReference || '')}</strong>
                   </div>
                   <div class="threat-body">
                     <strong>Quote Detected in File:</strong><br/>
-                    <div class="threat-phrase">"${rf.phraseDetected}"</div><br/><br/>
-                    <strong>Educational Advisory:</strong> ${rf.explanation}<br/><br/>
-                    <strong>Verification Requirement:</strong> ${rf.verifyRequirement}
+                    <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div><br/><br/>
+                    <strong>Educational Advisory:</strong> ${escapeHtml(rf.explanation)}<br/><br/>
+                    <strong>Verification Requirement:</strong> ${escapeHtml(rf.verifyRequirement)}
                     ${rf.parentActionStep ? `
                       <div class="threat-action">
                         <strong>🛡️ Self-Defense Counter-Action Step:</strong><br/>
-                        ${rf.parentActionStep}
+                        ${escapeHtml(rf.parentActionStep)}
                       </div>
                     ` : ""}
                   </div>
                 </div>
-              `).join("")}
+              `;
+              }).join("")}
             </div>
           </div>
         ` : ""}
@@ -2488,14 +2431,14 @@ export default function DocumentAnalyzerTab() {
               <tbody>
                 ${selectedReport.thresholdAnalysis.map(th => `
                   <tr>
-                    <td><strong>${th.thresholdChecked}</strong></td>
+                    <td><strong>${escapeHtml(th.thresholdChecked)}</strong></td>
                     <td>
                       <span style="font-weight: bold; color: ${th.isMet === 'Yes' ? '#991b1b' : th.isMet === 'No' ? '#166534' : '#92400e'}">
-                        ${th.isMet}
+                        ${escapeHtml(th.isMet)}
                       </span>
                     </td>
-                    <td>${th.reasoning}</td>
-                    <td><font color="#4f46e5"><code>${th.primarySourceLaw}</code></font></td>
+                    <td>${escapeHtml(th.reasoning)}</td>
+                    <td><font color="#4f46e5"><code>${escapeHtml(th.primarySourceLaw)}</code></font></td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -2518,13 +2461,13 @@ export default function DocumentAnalyzerTab() {
               <tbody>
                 ${selectedReport.proceduralTimelineViolations.map(vi => `
                   <tr>
-                    <td><strong>${vi.timelineRule}</strong></td>
-                    <td>${vi.documentAssertion}</td>
+                    <td><strong>${escapeHtml(vi.timelineRule)}</strong></td>
+                    <td>${escapeHtml(vi.documentAssertion)}</td>
                     <td>
-                      ${vi.evaluation}
-                      ${vi.parentActionStep ? `<br/><br/><span style="color:#b45309; font-size:11px; font-weight:bold;">🛡️ Parent Action: ${vi.parentActionStep}</span>` : ""}
+                      ${escapeHtml(vi.evaluation)}
+                      ${vi.parentActionStep ? `<br/><br/><span style="color:#b45309; font-size:11px; font-weight:bold;">🛡️ Parent Action: ${escapeHtml(vi.parentActionStep)}</span>` : ""}
                     </td>
-                    <td><font color="#4f46e5"><code>${vi.citation}</code></font></td>
+                    <td><font color="#4f46e5"><code>${escapeHtml(vi.citation)}</code></font></td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -2536,7 +2479,7 @@ export default function DocumentAnalyzerTab() {
           <div class="section-card">
             <h3 class="section-title">✊ Human & Charter Rights Observations</h3>
             <ul class="bullet-list">
-              ${selectedReport.charterAndHumanRightsIssues.map(issue => `<li>${issue}</li>`).join("")}
+              ${selectedReport.charterAndHumanRightsIssues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
             </ul>
           </div>
         ` : ""}
@@ -2547,7 +2490,7 @@ export default function DocumentAnalyzerTab() {
             <div style="margin-bottom: 15px;">
               <strong style="font-size: 13px; color: #0f172a;">Information to Verify & Double-Check:</strong>
               <ul class="bullet-list" style="margin-top: 5px;">
-                ${selectedReport.whatToVerify.map(item => `<li>${item}</li>`).join("")}
+                ${selectedReport.whatToVerify.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
@@ -2556,7 +2499,7 @@ export default function DocumentAnalyzerTab() {
             <div style="margin-bottom: 15px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
               <strong style="font-size: 13px; color: #4338ca;">Specific Questions for Your Retained Lawyer:</strong>
               <ul class="bullet-list" style="margin-top: 5px; color: #4338ca;">
-                ${selectedReport.whatToAskALawyer.map(item => `<li>${item}</li>`).join("")}
+                ${selectedReport.whatToAskALawyer.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
@@ -2565,7 +2508,7 @@ export default function DocumentAnalyzerTab() {
             <div style="border-top: 1px solid #f1f5f9; padding-top: 15px;">
               <strong style="font-size: 13px; color: #b45309;">Inconsistencies or Missing Casework Elements:</strong>
               <ul class="bullet-list" style="margin-top: 5px; color: #78350f;">
-                ${selectedReport.whatIsMissing.map(item => `<li>${item}</li>`).join("")}
+                ${selectedReport.whatIsMissing.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
@@ -2601,15 +2544,15 @@ export default function DocumentAnalyzerTab() {
             <tbody>
               ${organizedFiles.map(f => `
                 <tr>
-                  <td><strong>${f.category}</strong></td>
-                  <td><code>${f.name}</code></td>
+                  <td><strong>${escapeHtml(f.category)}</strong></td>
+                  <td><code>${escapeHtml(f.name)}</code></td>
                   <td>${(f.size / 1024).toFixed(1)} KB</td>
                   <td>
                     <span style="font-weight: bold; color: ${f.analysisStatus === 'completed' ? '#166534' : f.analysisStatus === 'analyzing' ? '#2563eb' : '#64748b'}">
-                      ${f.analysisStatus.toUpperCase()}
+                      ${escapeHtml(f.analysisStatus.toUpperCase())}
                     </span>
                   </td>
-                  <td>${f.uploadedAt}</td>
+                  <td>${escapeHtml(f.uploadedAt)}</td>
                 </tr>
               `).join("")}
               ${organizedFiles.length === 0 ? `<tr><td colspan="5" style="text-align: center; color: #64748b;">No documents uploaded to case file cabinet yet.</td></tr>` : ""}
@@ -2622,7 +2565,7 @@ export default function DocumentAnalyzerTab() {
     const htmlContent = `
       <html>
         <head>
-          <title>${title} - ParentShield PDF Suite</title>
+          <title>${escapeHtml(title)} - ParentShield PDF Suite</title>
           ${sharedStyle}
         </head>
         <body>
@@ -3245,7 +3188,7 @@ export default function DocumentAnalyzerTab() {
                                 printWindow.document.write(`
                                   <html>
                                     <head>
-                                      <title>Print Certified Transcript - ${activeSelectedFile.name}</title>
+                                      <title>Print Certified Transcript - ${escapeHtml(activeSelectedFile.name)}</title>
                                       <style>
                                         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
                                         body {
@@ -3291,7 +3234,7 @@ export default function DocumentAnalyzerTab() {
                                     <body>
                                       <div class="transcript">
                                         <div class="margin-line"></div>
-                                        <pre>${activeSelectedFile.content}</pre>
+                                        <pre>${escapeHtml(activeSelectedFile.content)}</pre>
                                       </div>
                                       <script>window.print();</script>
                                     </body>
@@ -3461,6 +3404,14 @@ export default function DocumentAnalyzerTab() {
                           <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
                             <div className="bg-brand-500 h-full w-[65%] rounded-full" />
                           </div>
+                        </div>
+                      )}
+
+                      {/* Deep Scan Error State */}
+                      {deepScanError && !isDeepScanning && !deepScanReports[activeSelectedFile.id] && (
+                        <div className="bg-rose-950/40 border border-rose-500/30 rounded-xl p-4 text-xs text-rose-200 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                          <span>{deepScanError}</span>
                         </div>
                       )}
 
@@ -4360,17 +4311,11 @@ export default function DocumentAnalyzerTab() {
                                       </button>
                                     </div>
                                     <ul className="space-y-1.5 list-disc pl-4 text-xs text-slate-600 leading-normal">
-                                      {report.lawyerCaseBrief.map((bullet: string, idx: number) => {
-                                        // Highlight standard bolding patterns from AI response
-                                        const cleanBullet = bullet.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                                        return (
-                                          <li 
-                                            key={idx}
-                                            dangerouslySetInnerHTML={{ __html: cleanBullet }}
-                                            className="marker:text-slate-400 font-normal"
-                                          />
-                                        );
-                                      })}
+                                      {report.lawyerCaseBrief.map((bullet: string, idx: number) => (
+                                        <li key={idx} className="marker:text-slate-400 font-normal">
+                                          {renderBoldText(bullet)}
+                                        </li>
+                                      ))}
                                     </ul>
                                   </div>
                                   )}
@@ -4382,6 +4327,163 @@ export default function DocumentAnalyzerTab() {
                       </div>
                     )}
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: MULTI-FILE CASE CHAT (RAG) */}
+            {/* BUG FOUND IN AUDIT: this tab's button (and claudeFocus, chatInput, isRAGQuerying,
+                executeRAGQuery, triggerSampleRAGQuery, chatBottomRef, ragChatMessages) were all
+                fully wired up, but no JSX ever rendered when activeTab === "rag-chat" — clicking
+                the tab just showed a blank panel. Rebuilt the chat UI these were clearly built to
+                drive. */}
+            {activeTab === "rag-chat" && (
+              <div className="h-full flex flex-col bg-white rounded-2xl border border-gray-150 shadow-xs overflow-hidden">
+                <div className="p-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50">
+                  <div>
+                    <h4 className="font-display font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                      <MessageSquare className="w-4 h-4 text-brand-600" /> Multi-File Case Assistant
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5 max-w-md">
+                      Ask questions across every file in your Case Cabinet. Answers cite the specific source file and remember the conversation so far.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[9px] font-mono text-slate-500 uppercase font-bold">Focus:</span>
+                    <select
+                      value={claudeFocus}
+                      onChange={(e) => setClaudeFocus(e.target.value)}
+                      className="text-[10px] font-mono border border-slate-200 rounded px-2 py-1 bg-white outline-none cursor-pointer"
+                    >
+                      <option value="legal-auditor">Statutory Compliance Audit</option>
+                      <option value="family-advocate">Empathetic Family Advocacy</option>
+                      <option value="evidentiary-auditor">Evidentiary Auditing</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30 max-h-[520px] min-h-[320px]">
+                  {ragChatMessages.map((msg) => (
+                    <div key={msg.id} className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}>
+                      <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
+                        msg.sender === "user"
+                          ? "bg-brand-900 text-white rounded-tr-none"
+                          : "bg-white border border-slate-200 text-slate-800 rounded-tl-none"
+                      }`}>
+                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                        {msg.citations && msg.citations.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">
+                            {msg.citations.map((c, i) => (
+                              <span key={i} className="text-[9px] font-mono bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded border border-brand-100">
+                                {c.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[8.5px] text-slate-400 mt-1 font-mono px-1">{msg.timestamp}</span>
+                    </div>
+                  ))}
+                  {isRAGQuerying && (
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Synthesizing an answer across your case files...
+                    </div>
+                  )}
+                  <div ref={chatBottomRef} />
+                </div>
+
+                <div className="px-4 py-2 border-t border-slate-100 flex gap-1.5 overflow-x-auto">
+                  {[
+                    "What CYFSA sections apply to this case?",
+                    "Are there any hearsay statements I should challenge?",
+                    "Summarize the timeline across all my documents.",
+                  ].map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      disabled={isRAGQuerying}
+                      onClick={() => triggerSampleRAGQuery(q)}
+                      className="shrink-0 px-2.5 py-1 text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-brand-50 hover:text-brand-900 border border-slate-200 rounded-full whitespace-nowrap disabled:opacity-50 cursor-pointer transition-colors"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+
+                <form
+                  onSubmit={(e) => { e.preventDefault(); executeRAGQuery(); }}
+                  className="p-3 border-t border-slate-100 flex items-center gap-2 bg-white"
+                >
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    disabled={isRAGQuerying}
+                    placeholder={organizedFiles.length > 0 ? "Ask about your case files..." : "Upload documents first, then ask a question..."}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-75"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isRAGQuerying || !chatInput.trim()}
+                    className="p-2 bg-brand-950 hover:bg-slate-900 disabled:bg-slate-200 text-white rounded-xl flex items-center justify-center cursor-pointer shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* TAB 3: SAVED BRIEFS ARCHIVE */}
+            {/* BUG FOUND IN AUDIT: same problem as the rag-chat tab above — savedBriefs,
+                setSavedBriefs, and every "Archive Brief" button throughout this file wrote into
+                this state, but nothing ever rendered it back when activeTab === "saved-briefs". */}
+            {activeTab === "saved-briefs" && (
+              <div className="space-y-4">
+                {savedBriefs.length === 0 ? (
+                  <div className="bg-slate-50 border border-dashed border-gray-200 rounded-2xl p-12 text-center space-y-3">
+                    <Briefcase className="w-12 h-12 text-slate-300 mx-auto" />
+                    <h4 className="font-display font-semibold text-gray-700 text-sm">No Saved Briefs Yet</h4>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      Archive a Lawyer Case Brief from any analyzed document's audit results to see it here.
+                    </p>
+                  </div>
+                ) : (
+                  savedBriefs.map((brief) => (
+                    <div key={brief.id} className="bg-white rounded-2xl border border-gray-150 p-5 space-y-3 shadow-xs">
+                      <div className="flex justify-between items-start gap-3 border-b border-gray-100 pb-3">
+                        <div>
+                          <span className="text-[9px] font-mono font-bold uppercase text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-100">
+                            {brief.documentCategory}
+                          </span>
+                          <h4 className="font-display font-bold text-gray-900 text-sm mt-1">{brief.documentTitle}</h4>
+                          <span className="text-[10px] text-slate-400 font-mono block mt-0.5">Saved {brief.savedAt}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSavedBriefs(prev => prev.filter(b => b.id !== brief.id))}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                          title="Delete this saved brief"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <ul className="space-y-1.5 list-disc pl-4 text-xs text-slate-600 leading-normal">
+                        {brief.lawyerCaseBrief.map((bullet, idx) => (
+                          <li key={idx}>{renderBoldText(bullet)}</li>
+                        ))}
+                      </ul>
+                      <textarea
+                        value={brief.notes || ""}
+                        onChange={(e) => {
+                          const text = e.target.value;
+                          setSavedBriefs(prev => prev.map(b => b.id === brief.id ? { ...b, notes: text } : b));
+                        }}
+                        placeholder="Add your own notes about this brief..."
+                        rows={2}
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-brand-500"
+                      />
+                    </div>
+                  ))
                 )}
               </div>
             )}
@@ -4552,6 +4654,57 @@ export default function DocumentAnalyzerTab() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Legislative Citation Verification Modal */}
+      {/* BUG FOUND IN AUDIT: every "Verify Law: ... ↗" button throughout the audit report calls
+          openLegislativeReference(), which sets activeLegislativeCitation — but nothing ever
+          rendered a modal reading that state back, so clicking those buttons silently did
+          nothing. getStatuteDetails()/getLegislativeUrl() were fully built to back this exact
+          modal. Wired it up. */}
+      {activeLegislativeCitation && (
+        <div
+          className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setActiveLegislativeCitation(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-lg w-full shadow-2xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(() => {
+              const details = getStatuteDetails(activeLegislativeCitation);
+              return (
+                <>
+                  <div className="flex justify-between items-start gap-3 border-b border-gray-100 pb-3">
+                    <div>
+                      <h3 className="font-display font-bold text-gray-900 text-base">{details.title}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">{details.subtitle}</p>
+                    </div>
+                    <button
+                      onClick={() => setActiveLegislativeCitation(null)}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-150 rounded-xl p-3.5 text-xs text-slate-700 leading-relaxed font-mono">
+                    {details.exactText}
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">{details.explanation}</p>
+                  <a
+                    href={getLegislativeUrl(activeLegislativeCitation)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    View Official Ontario e-Laws Source
+                  </a>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
     </div>
   );

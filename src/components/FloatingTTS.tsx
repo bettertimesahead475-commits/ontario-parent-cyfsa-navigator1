@@ -141,7 +141,7 @@ export default function FloatingTTS() {
     return cleanSegments.slice(0, 15).join(". "); // Limiting to first 15 cohesive segments to avoid overflowing synthesis
   };
 
-  const startSpeaking = (targetText: string) => {
+  const startSpeaking = (targetText: string, rateOverride?: number) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       alert("TTS not supported in this browser.");
       return;
@@ -160,7 +160,7 @@ export default function FloatingTTS() {
 
     const utterance = new SpeechSynthesisUtterance(polishedText);
     utteranceRef.current = utterance;
-    utterance.rate = speechRate;
+    utterance.rate = rateOverride ?? speechRate;
 
     // Apply selected voice
     if (selectedVoiceName) {
@@ -221,11 +221,14 @@ export default function FloatingTTS() {
   const updateSpeechRate = (newRate: number) => {
     setSpeechRate(newRate);
     if (isPlaying && utteranceRef.current) {
-      // Synthesis engines require a restart to pick up rate updates
+      // Synthesis engines require a restart to pick up rate updates. Pass
+      // newRate explicitly rather than relying on the speechRate state,
+      // since this setTimeout callback closes over this render's stale
+      // value and the state update above hasn't been applied yet.
       const textToResume = currentlySpeakingText;
       stopSpeaking();
       setTimeout(() => {
-        startSpeaking(textToResume);
+        startSpeaking(textToResume, newRate);
       }, 100);
     }
   };
