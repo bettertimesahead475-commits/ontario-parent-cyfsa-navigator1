@@ -73,18 +73,22 @@ const GLOSSARY_ITEMS: TerminologyItem[] = [
     fullDefinition: "Under s. 81(1) of the CYFSA, a child protection worker or peace officer may apprehend a child without a warrant ONLY if they have reasonable and probable grounds to believe the child is in immediate danger of serious harm, and that waiting to obtain a warrant from a judge would jeopardize the child's safety. This is an extraordinary emergency power.",
     sectionReference: "CYFSA s. 81(1)",
     category: "Procedure",
-    implications: "CAS must prove that there was a genuine emergency. S. 81 does not allow removals based on historical, vague, or slow-moving concerns. Once a child is apprehended, a formal court review must be initiated within 5 days.",
-    tips: "If an apprehension occurs, remain completely calm in front of workers to avoid 'hostility' allegations. Demand to know the exact 'imminent risk' grounds, write down every detail immediately, and contact a child welfare lawyer to prepare for the 5-Day Temporary Care Hearing."
+    implications: "CAS must prove that there was a genuine emergency. S. 81 does not allow removals based on historical, vague, or slow-moving concerns. Once a child is apprehended, Ontario child protection law requires a formal court review within a short statutory window (commonly referred to as the 5-day rule) — the exact current section number is unverified in this tool; confirm it with your lawyer rather than relying on a section number stated elsewhere in this app.",
+    tips: "If an apprehension occurs, remain completely calm in front of workers to avoid 'hostility' allegations. Demand to know the exact 'imminent risk' grounds, write down every detail immediately, and contact a child welfare lawyer to prepare for the 5-Day Temporary Care Hearing.",
   },
   {
     id: "term-five-day-hearing",
     term: "5-Day Temporary Care Hearing",
     shortDefinition: "The mandatory initial court review that must happen within five court days after an emergency removal.",
-    fullDefinition: "Section 94 of the CYFSA dictates that if a child is apprehended without a warrant, CAS must bring the matter before a judge of the Ontario Court of Justice within five (5) court days. At this first appearance (often called the 'Five-Day Hearing' or 'Temporary Care and Custody Hearing'), the judge must decide if the child should remain in temporary CAS care or be returned to the parent pending a full trial.",
-    sectionReference: "CYFSA s. 94",
+    // FIX (flagged in audit, Aug 29 2026): this previously cited "Section 94 of the CYFSA" for
+    // this rule. s.94(5) is confirmed to actually be a placement-with-relative consideration
+    // clause tied to temporary care orders, not this hearing-timeline rule — the citation was
+    // wrong, not just unverified, and has been removed rather than corrected to a guess.
+    fullDefinition: "Ontario child protection law requires that if a child is apprehended without a warrant, CAS must bring the matter before a judge of the Ontario Court of Justice within a short statutory window (commonly referred to as the 5-day rule). At this first appearance (often called the 'Five-Day Hearing' or 'Temporary Care and Custody Hearing'), the judge must decide if the child should remain in temporary CAS care or be returned to the parent pending a full trial. The exact current CYFSA section number for this rule is unverified in this tool — it is NOT s.94, which governs a different topic (placement-with-relative consideration during temporary care orders). Confirm the correct section with your lawyer before citing one.",
+    sectionReference: "⚠️ Unverified — confirm exact section with counsel before relying on this",
     category: "Procedure",
     implications: "This is your first opportunity to contest the removal. The onus is on CAS to present clear, credible evidence showing that returning the child to you poses an immediate, unmanageable safety risk that cannot be mitigated with a supervision order or safety plan.",
-    tips: "Do not agree to temporary CAS custody 'by consent' out of fear. Consult your lawyer. If you have stable family members who can act as safety supervisors, present them immediately as kinship placement alternatives to keep your child out of foster care."
+    tips: "Do not agree to temporary CAS custody 'by consent' out of fear. Consult your lawyer. If you have stable family members who can act as safety supervisors, present them immediately as kinship placement alternatives to keep your child out of foster care.",
   },
   {
     id: "term-least-intrusive",
