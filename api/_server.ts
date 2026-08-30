@@ -197,6 +197,16 @@ async function generateContentWithFallback(
     system?: string;
     messages: any[];
     max_tokens?: number;
+    // BUG FOUND: Claude Sonnet 5 runs adaptive thinking BY DEFAULT on every request that
+    // doesn't explicitly disable it, and max_tokens is a hard cap on thinking + response
+    // TOGETHER (confirmed in Anthropic's own Sonnet 5 migration docs). That's the real reason
+    // truncation was document-dependent rather than purely length-dependent: however much the
+    // model adaptively decided to "think" on a given document ate into the same budget the
+    // actual JSON output needed, with no way to predict it in advance. For structured
+    // extraction tasks like this (fill in a fixed schema), thinking isn't needed - explicitly
+    // disabling it removes that unpredictable variable entirely. Defaults to disabled since
+    // every current caller in this file is a structured-extraction task.
+    enableThinking?: boolean;
   },
   primaryModel: string = "claude-sonnet-5"
 ): Promise<{ text: string }> {
@@ -221,7 +231,13 @@ async function generateContentWithFallback(
   console.log(`[AI Engine] Claude routing. Model: ${model}`);
   const response = await client.messages.create({
     model,
-    max_tokens: params.max_tokens || 8000,
+    // Raised again - Sonnet 5's actual ceiling is 128,000, confirmed against Anthropic's own
+    // docs (AWS Bedrock model card, platform "what's new" page). The prior defaults of 8000/
+    // 16000 were conservative guesses nowhere near the real limit, and combined with adaptive
+    // thinking eating into the same budget (see enableThinking above), were truncating real
+    // documents in production.
+    max_tokens: params.max_tokens || 16000,
+    thinking: params.enableThinking ? undefined : { type: "disabled" as const },
     system: params.system,
     messages,
   });
