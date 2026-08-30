@@ -104,8 +104,8 @@ export default function App() {
             {/* Left Brand Area */}
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
-                <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-brand-600 fill-brand-50" />
+                <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
+                  <img src="/logo.png" alt="ParentShield logo" className="w-full h-full object-cover" />
                 </div>
               </div>
               <div className="text-left">
