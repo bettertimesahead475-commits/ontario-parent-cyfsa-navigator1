@@ -71,7 +71,10 @@ export default function LawyerDirectoryTab() {
     return "";
   };
 
-  const cities = ["All", "Toronto", "Ottawa", "Mississauga", "Hamilton", "Sudbury"];
+  // Derived from the actual roster rather than hardcoded, so this list can't go stale again the
+  // way it did when LAWYERS was replaced with real data and every one of these fake cities
+  // stopped matching any real entry.
+  const cities = ["All", ...Array.from(new Set(LAWYERS.map(l => l.city))).sort()];
 
   const filteredLawyers = LAWYERS.filter((lawyer) => {
     const matchCity = selectedCity === "All" || lawyer.city === selectedCity;
@@ -214,8 +217,8 @@ export default function LawyerDirectoryTab() {
                     <span>{lawyer.name}</span>
                     <ChevronRight className="w-5 h-5 text-brand-500 shrink-0" />
                   </h3>
-                  <p className="text-xs text-slate-600 font-semibold mt-0.5">{lawyer.firm}</p>
-                  
+                  {lawyer.firm && <p className="text-xs text-slate-600 font-semibold mt-0.5">{lawyer.firm}</p>}
+
                   <p className="text-xs text-slate-600 mt-2.5 leading-relaxed bg-slate-50/40 p-3 rounded-xl border border-gray-100">
                     {lawyer.educationNotes}
                   </p>
@@ -255,7 +258,7 @@ export default function LawyerDirectoryTab() {
                 <h3 className="font-display font-bold text-gray-900 text-base mt-1">
                   Intake for: {selectedLawyer.name}
                 </h3>
-                <span className="text-xs text-gray-500 block mt-0.5">{selectedLawyer.firm}</span>
+                {selectedLawyer.firm && <span className="text-xs text-gray-500 block mt-0.5">{selectedLawyer.firm}</span>}
               </div>
 
               {intakeSuccessMessage ? (
@@ -385,10 +388,12 @@ export default function LawyerDirectoryTab() {
 
               {/* Informational icons */}
               <div className="pt-2 flex flex-col gap-2">
-                <div className="flex gap-2 text-[11px] text-slate-600">
-                  <Mail className="w-4 h-4 text-brand-400 shrink-0" />
-                  <span>Direct Intake: {selectedLawyer.email}</span>
-                </div>
+                {selectedLawyer.email && (
+                  <div className="flex gap-2 text-[11px] text-slate-600">
+                    <Mail className="w-4 h-4 text-brand-400 shrink-0" />
+                    <span>Direct Intake: {selectedLawyer.email}</span>
+                  </div>
+                )}
                 <div className="flex gap-2 text-[11px] text-slate-600">
                   <Phone className="w-4 h-4 text-brand-400 shrink-0" />
                   <span>Defense Hotline: {selectedLawyer.phone}</span>
