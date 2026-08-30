@@ -321,8 +321,22 @@ Separately, under s. 13 (Part II), a child in care has their OWN right to a plan
     title: "Voluntary Mental Health & Substance-Use Engagement: Why Starting Early Helps Your Case",
     badge: "Practical Strategy",
     category: "Rights",
-    summary: "Starting counselling, treatment, or a recovery program on your own — before CAS or a court ever orders it — is not a named right under the CYFSA. It's real, documented evidence that the best-interests test and the society's own Plan of Care requirement are already built to weigh in your favour.",
-    fullBody: `This is a strategy, not a right. The CYFSA has no section titled "proactive enrollment" or anything like it, and nothing here should be read as claiming one exists. What's true instead is that two provisions already in this app — s. 74(3)(c)(viii) and s. 100 — describe exactly what a judge is required to weigh, and voluntary, sustained engagement is the kind of concrete, documented fact that moves those two factors in a parent's favour.
+    summary: "The CYFSA has no ground that just says \"the parent has a mental health condition\" or \"uses drugs\" — CAS must prove an actual failure to adequately care for the child, or a real risk of one, never the condition alone. Starting counselling, treatment, or a recovery program on your own — before CAS or a court ever orders it — is real, documented evidence that there's no such ongoing failure, and is exactly what the best-interests test and the Plan of Care requirement already weigh in your favour.",
+    fullBody: `THE CRITICAL POINT, first: the CYFSA has no ground that says "the parent has a mental health condition" or "the parent uses drugs," as such. Every ground CAS can actually use requires them to prove that the condition caused, or creates a real, specific risk of, an actual failure to adequately care for or supervise the child — never just that the condition or history exists. Having a diagnosis or a substance-use history is not, by itself, ever enough.
+
+The grounds that actually get used in these cases, quoted directly from s. 74(2):
+
+s. 74(2)(a)/(b) — physical harm, or a risk of it, "inflicted by the person having charge of the child or caused by or resulting from that person's (i) failure to adequately care for, provide for, supervise or protect the child, or (ii) pattern of neglect in caring for, providing for, supervising or protecting the child." This is the ground CAS actually has to build a case under in most mental-health- or substance-use-related matters. A parent's condition is only relevant to the extent it's tied to a specific, demonstrated failure or risk of failure — not the condition alone.
+
+s. 74(2)(e) — the child requires treatment and "the child's parent or the person having charge of the child does not provide the treatment or access to the treatment." This is about the child's own treatment needs, not the parent's — don't confuse the two. A parent's own mental health or substance-use treatment is a separate question from whether they're providing treatment their child needs.
+
+s. 74(2)(k) — the parent "has died or is unavailable to exercise the rights of custody over the child" and has not made adequate provision for the child's care. This only applies where a parent's condition genuinely makes them unavailable or unable to exercise custody — not where a parent is present and struggling.
+
+The burden is on CAS to connect the dots with actual evidence of impact on the child. A hospital record, a diagnosis, or a past charge, on its own, proves none of these grounds — CAS has to show the specific failure, or specific risk of failure, that actually resulted.
+
+This is exactly where the rest of this entry connects: voluntarily engaging with treatment is exactly the kind of thing that helps show there's no ongoing failure to care — which is what s. 74(2)(a)/(b) actually requires, not the underlying condition itself. Everything below is about how to build that record.
+
+This is a strategy, not a right. The CYFSA has no section titled "proactive enrollment" or anything like it, and nothing here should be read as claiming one exists. What's true instead is that two provisions already in this app — s. 74(3)(c)(viii) and s. 100 — describe exactly what a judge is required to weigh, and voluntary, sustained engagement is the kind of concrete, documented fact that moves those two factors in a parent's favour.
 
 s. 74(3)(c)(viii) — the best-interests test — directs the court to consider "the merits of a plan for the child's care proposed by a society... compared with the merits of the child remaining with or returning to a parent." That is a direct, side-by-side comparison. If the only thing on the "returning to a parent" side of that comparison is a promise to comply with a future order, it's a weaker showing than a documented record — a counsellor's letter, program attendance records, a sponsor's contact information, urine screens — that already exists, independently of CAS, before anyone required it.
 
@@ -332,21 +346,29 @@ Why proactive — not waiting to be ordered — matters practically: a parent wh
 
 None of this means a mental health or substance-use history is being treated as proof of unfitness — it is the opposite. The whole point of these two provisions is that the court looks at what is actually happening now, not at a diagnosis or a past incident in isolation. Voluntary, documented engagement is exactly the kind of current fact that these two sections are built to weigh, and it is available to any parent regardless of what led to the case.`,
     primarySources: [
+      { label: "CYFSA, S.O. 2017, c. 14, Sched. 1", url: "https://www.ontario.ca/laws/statute/17c14", citation: "s. 74(2)(a), (b), (e), (k) — the actual protection grounds available in mental-health/substance-use-related cases" },
       { label: "CYFSA, S.O. 2017, c. 14, Sched. 1", url: "https://www.ontario.ca/laws/statute/17c14", citation: "s. 74(3)(c)(viii) — best-interests factor comparing the society's plan against the child remaining with or returning to a parent" },
       { label: "CYFSA, S.O. 2017, c. 14, Sched. 1", url: "https://www.ontario.ca/laws/statute/17c14", citation: "s. 100(a) and (c) — Plan of Care's required remedial-services description and time-estimate" }
     ],
     guidelines: [
+      "Know the real standard: a diagnosis, a hospital record, or a past charge is not a ground on its own — CAS has to show a specific failure to adequately care for the child, or a specific, demonstrated risk of one. If a document just states the condition without connecting it to an actual failure or risk, that's a gap worth raising with your lawyer.",
       "If you're already engaging with mental health or substance-use support, tell your lawyer now — even if CAS hasn't asked and no order requires it. It's usable evidence only if it's actually in the record.",
       "Ask your counsellor, program, or physician for something in writing: a letter confirming enrollment and attendance, dates, and (with your consent) general progress — independent documentation carries more weight than your own account of it.",
       "Keep your own simple log of appointments, sessions, or meetings attended, in case the provider's own records are slow to produce.",
       "Starting this work does not require CAS's involvement or a court order first — voluntary engagement before either exists is exactly what strengthens the comparison under s. 74(3)(c)(viii)."
     ],
     checklistItems: [
+      { label: "Is CAS pointing to the condition, or to a specific failure?", description: "A diagnosis or substance-use history alone doesn't meet s. 74(2)(a)/(b) — check whether CAS has actually identified a specific failure to adequately care for the child, or a specific, demonstrated risk of one." },
       { label: "Started before being ordered to?", description: "Voluntary engagement that predates any court order or CAS demand is the clearest version of this evidence — note the actual start date." },
       { label: "Independently documented?", description: "A letter or record from the provider, not just your own description, is what actually gets weighed as evidence." },
       { label: "Told your lawyer?", description: "This only helps your case if your lawyer knows it exists and can put it in front of the court — don't assume CAS will raise it for you." }
     ],
     factVersusFiction: [
+      {
+        fiction: "If I have a mental health diagnosis or a substance-use history, that's enough on its own for CAS to prove my child is in need of protection.",
+        fact: "It is not. The CYFSA has no ground based on the condition or history alone — s. 74(2)(a) and (b) require CAS to prove an actual failure to adequately care for, provide for, supervise, or protect the child (or a pattern of neglect), or a real risk of one, and to connect that failure or risk to the parent's condition. A diagnosis or history is only relevant if CAS ties it to a specific, demonstrated failure or risk — never on its own.",
+        sourceExplanation: "CYFSA s. 74(2)(a) and (b), quoted verbatim and verified against the current consolidated text."
+      },
       {
         fiction: "Getting help with a mental health or substance-use issue will be used against me, or means CAS already thinks I'm unfit.",
         fact: "Voluntary, documented engagement is the kind of concrete merit s. 74(3)(c)(viii) directs the court to weigh on the side of a child remaining with or returning to a parent — it is evidence in your favour, not an admission.",
