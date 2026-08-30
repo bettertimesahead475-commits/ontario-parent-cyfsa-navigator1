@@ -386,39 +386,62 @@ None of this means a mental health or substance-use history is being treated as 
     title: "Your Own Rights Under Ontario's Mental Health Act",
     badge: "Different Law",
     category: "Rights",
-    summary: "If you — not your child — are the one facing a psychiatric assessment or an involuntary hold, that is governed by a completely separate statute, Ontario's Mental Health Act, not the CYFSA. It has its own protections.",
+    summary: "If you — not your child — are the one facing a psychiatric assessment or an involuntary hold, that is governed by a completely separate statute, Ontario's Mental Health Act, not the CYFSA. It sets exact detention periods, a mandatory rights-advice process, and an independent tribunal review — all with specific section numbers.",
     fullBody: `This is a different legal domain from everything else in this guide. The CYFSA governs child protection proceedings. If you yourself are facing a psychiatric assessment or an involuntary hold, that is governed by Ontario's Mental Health Act (R.S.O. 1990, c. M.7) — a separate statute with its own rules, its own forms, and its own review process. The two can happen around the same time in a person's life, but they are not the same proceeding, and what applies to one does not automatically apply to the other.
 
-A note on sourcing: every CYFSA citation elsewhere in this guide has been checked directly against the full consolidated statute text. For this Mental Health Act entry, ontario.ca and CanLII were not reachable to do the same pinpoint verification, so specific section numbers are deliberately left out below rather than guessed — a wrong section number is worse than none. What follows is limited to protections that are safely and generally true of the Act's framework, described without a numbered citation. Confirm the exact section for any of these with a lawyer, a rights adviser, or the Consent and Capacity Board directly.
+**Psychiatric assessment application — "Form 1" (s. 15):** a physician who examines you may apply for a psychiatric assessment where you've threatened or attempted self-harm, behaved violently toward another, or shown a lack of competence to care for yourself, AND the physician believes you have a mental disorder likely to result in serious bodily harm to yourself or another, or serious physical impairment. A Form 1 is authority, for seven days from signing, to take you into custody and detain you for examination for up to 72 hours (s. 15(5)).
 
-Three things generally hold:
+**Involuntary admission — "Form 3" (s. 20):** after the 72-hour assessment period, the attending physician must either release you, admit you as an informal/voluntary patient, or — only if specific statutory conditions are met — complete a certificate of involuntary admission. s. 20(1.1) covers someone with a documented history of a recurring mental disorder who has improved before but is now at risk again; s. 20(5) covers the more general case, requiring the physician to be of the opinion both that your disorder is likely to cause serious bodily harm or serious physical impairment, and that you are not suitable for informal or voluntary admission.
 
-You have a right to be told why you're being assessed. If you're brought in for a psychiatric assessment or examination, you're entitled to be informed of the reason.
+**Exact detention periods (s. 20(4)):** a certificate of involuntary admission lasts up to 2 weeks; the first certificate of renewal, up to 1 additional month; the second, up to 2 additional months; the third, up to 3 additional months; and each certificate of continuation after that, up to 3 additional months at a time. Detention does not extend automatically past these periods without a new certificate.
 
-You have a right to legal and rights advice if you're placed on an involuntary hold. Ontario's involuntary-admission process includes a mechanism for a rights adviser (sometimes tied to the "Form 1" process) to explain your status and your options to you.
+**Notice and rights advice — the real, actionable right (s. 38, s. 38.1):** whenever a certificate of involuntary admission, renewal, or continuation is completed, the attending physician must promptly give you written notice — of the reasons for detention, your entitlement to a Board hearing, your right to retain and instruct counsel without delay, and, where applicable, your right to request specific Board orders — and must promptly notify a rights adviser, who must then meet with you in person to explain the certificate and your right to have it reviewed. This protection applies even before formal certification: s. 38.1 requires the same written notice for someone merely subject to a s. 15 application, before any certificate is issued.
 
-The Consent and Capacity Board is the real, independent tribunal that reviews involuntary status. It is not part of CAS, and it is not part of the family court hearing any related CYFSA matter — it is a separate adjudicative body that can review whether an involuntary hold should continue.
+**Review by the Consent and Capacity Board — the real challenge mechanism (s. 39, s. 41):** you, or anyone on your behalf, can apply to the Board to inquire into whether the legal prerequisites for your admission or continuation as an involuntary patient are actually met, every time a new certificate takes effect (s. 39(1)-(2)). This review also happens automatically, whether or not you apply, on the first certificate of continuation and every fourth one after that (s. 39(4)) — a built-in safeguard against being forgotten in the system. At the hearing, the Board must decide whether the prerequisites are still met at the time of the hearing itself, not just when the certificate was first signed, and must rescind the certificate if they are not (s. 41(1), (3)).
+
+**Appeal (s. 48):** you, or another party to a Board proceeding, can appeal the Board's decision to the Superior Court of Justice on a question of law, fact, or both.
+
+**Community Treatment Orders (s. 33.1):** a separate, less restrictive mechanism lets a physician issue a community treatment order requiring you to follow a treatment plan while living in the community rather than being detained — but only with your (or your substitute decision-maker's) actual, informed consent. Before that consent counts, you must first have consulted a rights adviser and been told of your legal rights (s. 33.1(4)(e)-(f)), and you have an explicit right to retain and instruct counsel and to be told of that right (s. 33.1(8)). A community treatment order can be challenged the same way, through an application to the Board.
 
 If this happens to you while a CYFSA matter involving your children is also active, tell your family lawyer immediately — it can be relevant to both proceedings, and your lawyer needs to know quickly, not after the fact.`,
     primarySources: [
-      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "General reference to the Act only — no specific section is cited here, since ontario.ca/CanLII could not be reached to verify pinpoint section numbers. Confirm the exact section with counsel or the Consent and Capacity Board." }
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 15, s. 15(5) — Application for psychiatric assessment ('Form 1') and the 72-hour detention-for-examination authority" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 20(1.1), s. 20(5) — Conditions for a certificate of involuntary admission ('Form 3')" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 20(4) — Exact detention periods for involuntary admission, renewal, and continuation" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 38, s. 38.1 — Written notice and in-person rights-adviser meeting, including before formal certification" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 39, s. 41 — Consent and Capacity Board review, including the automatic deemed-application safeguard" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 48 — Appeal of a Board decision to the Superior Court of Justice" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 33.1 — Community Treatment Orders, including the consent and prior rights-advice requirements" }
     ],
     guidelines: [
-      "Ask directly and immediately why you're being assessed or held — you're entitled to be told, and asking plainly is reasonable.",
-      "Ask for a rights adviser or legal advice as soon as you're placed on an involuntary hold — this is a normal part of the process, not something you need to justify asking for.",
-      "If you believe your involuntary status is wrong, ask how to bring it to the Consent and Capacity Board — that review process exists precisely for this.",
+      "Ask directly and immediately why you're being assessed or held — s. 38/s. 38.1 entitle you to written notice of the reasons, and asking plainly is reasonable.",
+      "Ask for a rights adviser or legal advice as soon as you're placed on an involuntary hold — s. 38 requires the facility to notify a rights adviser and arrange an in-person meeting; this is a normal part of the process, not something you need to justify asking for.",
+      "Track the certificate dates — s. 20(4) sets exact detention periods (2 weeks, then 1, 2, 3 months, then 3 months per continuation), so you can know when a certificate is due to expire or come up for automatic Board review.",
+      "If you believe your involuntary status is wrong, ask how to bring it to the Consent and Capacity Board under s. 39 — that review process exists precisely for this, and doesn't require you to wait for the automatic review.",
+      "If you're asked to consent to a Community Treatment Order, confirm you've actually had the s. 33.1(4)(e) rights-advice consultation first — your consent is only valid if that happened.",
       "Tell your family lawyer right away if this happens while any CYFSA matter is active, even if it feels unrelated — let your lawyer decide what's relevant."
     ],
     checklistItems: [
-      { label: "Were you told why?", description: "You're entitled to be informed of the reason for a psychiatric assessment or hold — if that didn't happen, say so to a rights adviser or lawyer." },
-      { label: "Did you get rights advice?", description: "An involuntary hold should come with access to a rights adviser or legal advice explaining your status and options." },
-      { label: "Do you know how to reach the Consent and Capacity Board?", description: "This is the independent tribunal that reviews involuntary status — ask a rights adviser or lawyer how to bring a review before it." }
+      { label: "Were you told why?", description: "s. 38/s. 38.1 entitle you to written notice of the reasons for a psychiatric assessment application or a certificate — if that didn't happen, say so to a rights adviser or lawyer." },
+      { label: "Did you get rights advice?", description: "s. 38 requires the facility to notify a rights adviser, who must meet with you in person to explain your status and options." },
+      { label: "Do you know your certificate's expiry date?", description: "s. 20(4) fixes exact detention periods — confirm which certificate you're under and when it expires or is due for renewal or automatic Board review." },
+      { label: "Do you know how to reach the Consent and Capacity Board?", description: "s. 39 lets you apply for a Board review at any time a certificate is in effect — ask a rights adviser or lawyer how to bring one." }
     ],
     factVersusFiction: [
       {
         fiction: "If I'm placed on a psychiatric hold, no one has to explain why, and there's no one independent I can go to about it.",
-        fact: "You're generally entitled to be told the reason for the assessment, to get rights or legal advice during an involuntary hold, and to have your status reviewed by the Consent and Capacity Board — an independent tribunal, separate from both CAS and the family court.",
-        sourceExplanation: "General principles under Ontario's Mental Health Act, R.S.O. 1990, c. M.7. Specific section numbers are intentionally not cited — ontario.ca and CanLII were not reachable from this environment to verify them against the statute text. Confirm exact sections with counsel or the Consent and Capacity Board."
+        fact: "s. 38 and s. 38.1 require written notice of the reasons for detention and a rights adviser's in-person explanation of your status — even before formal certification — and s. 39/s. 41 let you (or anyone on your behalf) have your status reviewed by the Consent and Capacity Board, an independent tribunal separate from both CAS and the family court.",
+        sourceExplanation: "Mental Health Act, R.S.O. 1990, c. M.7, s. 38, s. 38.1, s. 39, s. 41 — verified against the full consolidated statute text."
+      },
+      {
+        fiction: "Once I'm certified involuntary, I can be held indefinitely without anyone re-checking whether that's still justified.",
+        fact: "s. 20(4) caps each certificate at a fixed period — 2 weeks for the first, then escalating renewal periods — and s. 39(4) automatically triggers a Board review on the first certificate of continuation and every fourth one after that, whether or not you apply yourself.",
+        sourceExplanation: "Mental Health Act, R.S.O. 1990, c. M.7, s. 20(4), s. 39(4) — verified against the full consolidated statute text."
+      },
+      {
+        fiction: "A Community Treatment Order just needs a doctor's sign-off — I don't get a say.",
+        fact: "A CTO requires your (or your substitute decision-maker's) actual consent, and that consent is only valid after you've first consulted a rights adviser and been told your legal rights.",
+        sourceExplanation: "Mental Health Act, R.S.O. 1990, c. M.7, s. 33.1(4)(e)-(f), s. 33.1(8) — verified against the full consolidated statute text."
       }
     ]
   },
