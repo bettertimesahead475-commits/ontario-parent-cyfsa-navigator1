@@ -658,91 +658,55 @@ export const RESEARCH_SUMMARIES: ResearchSummary[] = [
   }
 ];
 
+// Source: Legal Aid Ontario, LONDON DISTRICT, ENGLISH, CHILD PROTECTION (CFSA) lawyer list,
+// dated September 15, 2025. This list changes over time - confirm current status with Legal
+// Aid Ontario before relying on it.
+//
+// Fields not provided anywhere in the official list (firm, email, website) are left blank
+// rather than invented - a blank field tells a parent "we don't have this," where a fabricated
+// one would falsely imply a working method of contact. `firm` is populated only for McPhail,
+// the one entry whose source address itself names a firm (Cohen Highley LLP); every other
+// listing reads as solo/independent certificate practice. `city` reflects the actual city named
+// in each lawyer's source address, not a rounded-up regional label.
+const LAO_CFSA_EDUCATION_NOTE =
+  "Legal Aid Ontario approved certificate lawyer for CYFSA (child protection) matters, London District. Verify current availability and CYFSA experience directly when contacting.";
+
 export const LAWYERS: LawyerProfile[] = [
-  {
-    id: "lawyer-1",
-    name: "Catherine Vance",
-    firm: "Vance Family Defense",
-    city: "Toronto",
-    phone: "416-555-0182",
-    email: "cvance@vancefamilydefense.ca",
-    website: "https://www.ontario.ca/page/legal-aid-ontario",
-    educationNotes: "Exclusively defends parents against CAS. Expert in Section 81 warrant contestation and striking hearsay affidavits. Serves Greater Toronto Area.",
-    languages: ["English", "French"],
-    subscriptionSlot: "Exclusive"
-  },
-  {
-    id: "lawyer-2",
-    name: "Marcus Okonkwo",
-    firm: "Okonkwo & Advocates LLP",
-    city: "Toronto",
-    phone: "416-555-0199",
-    email: "m.okonkwo@okonkwoodvocates.ca",
-    website: "https://www.ontario.ca/page/legal-aid-ontario",
-    educationNotes: "Specialist in First Nations, Inuit and Métis Customary Care representation. Focused on defending families under CYFSA Part IV and section 74.",
-    languages: ["English", "Yoruba", "Igbo"],
-    subscriptionSlot: "Priority"
-  },
-  {
-    id: "lawyer-3",
-    name: "Amélie Desjardins",
-    firm: "Desjardins Droit Familial",
-    city: "Ottawa",
-    phone: "613-555-0112",
-    email: "a.desjardins@desjardinsdroit.ca",
-    website: "https://www.ontario.ca/page/legal-aid-ontario",
-    educationNotes: "Bilingual Ontario family barrister with 12 years of child protection litigation. Experienced in Superior Court status applications and CAS disclosure motions.",
-    languages: ["English", "French"],
-    subscriptionSlot: "Exclusive"
-  },
-  {
-    id: "lawyer-4",
-    name: "Robert Miller",
-    firm: "Miller Law Alliance",
-    city: "Ottawa",
-    phone: "613-555-0145",
-    email: "r.miller@millerlawalliance.ca",
-    website: "https://www.ontario.ca/page/legal-aid-ontario",
-    educationNotes: "Handles emergency child preservation cases. Extensive experience working with Legal Aid Certificates in the Ottawa-Carleton municipality.",
-    languages: ["English"],
-    subscriptionSlot: "Priority"
-  },
-  {
-    id: "lawyer-5",
-    name: "Sarah Patel",
-    firm: "Patel Family Adherence",
-    city: "Mississauga",
-    phone: "905-555-0221",
-    email: "spatel@patelfamilylaw.ca",
-    website: "https://www.ontario.ca/page/legal-aid-ontario",
-    educationNotes: "Focuses on parent coaching during CAS safety plan negotiations. Highly skilled in early dismissal motions and kinship assessments.",
-    languages: ["English", "Hindi", "Gujarati", "Urdu"],
-    subscriptionSlot: "Exclusive"
-  },
-  {
-    id: "lawyer-6",
-    name: "Timothy Finch",
-    firm: "Sudbury Legal defense",
-    city: "Sudbury",
-    phone: "705-555-0371",
-    email: "t finch@sudburydefense.ca",
-    website: "https://www.ontario.ca/page/legal-aid-ontario",
-    educationNotes: "Serves Northern Ontario parents. Expert in rural CAS worker overreach defenses, Section 7 Charter litigation, and local band advocacy.",
-    languages: ["English"],
-    subscriptionSlot: "Exclusive"
-  },
-  {
-    id: "lawyer-7",
-    name: "Grace Sterling",
-    firm: "Hamilton Family Rights",
-    city: "Hamilton",
-    phone: "905-555-0819",
-    email: "g.sterling@hamiltonrights.ca",
-    website: "https://www.ontario.ca/page/legal-aid-ontario",
-    educationNotes: "Advocate with deep understanding of early kinship pathways. Defends fathers and mothers against protective apprehensions.",
-    languages: ["English"],
-    subscriptionSlot: "Exclusive"
-  }
+  { id: "cunningham-robert", name: "Robert R. Cunningham", firm: "", city: "London", phone: "519-433-9061", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "egbedeyi-emmanuel-ellen", name: "Ellen Egbedeyi-Emmanuel", firm: "", city: "Burlington", phone: "905-332-2763", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "glover-william", name: "William J. Glover", firm: "", city: "St. Thomas", phone: "519-633-0200", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "gonzalez-ponce-sandra", name: "Sandra Margarita Gonzalez Ponce", firm: "", city: "Toronto", phone: "647-715-9009", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "orkin-katherine", name: "Katherine Elise Orkin", firm: "", city: "London", phone: "519-902-1192", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "willsher-adrian", name: "Adrian Alexander Willsher", firm: "", city: "St. Thomas", phone: "226-377-7217", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "adiele-chioma", name: "Chioma Ezinne Adiele", firm: "", city: "London", phone: "519-601-9010", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "alvim-arthur", name: "Arthur C.R. Alvim", firm: "", city: "London", phone: "519-868-4500", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "blokker-lawrence", name: "Lawrence A. Blokker", firm: "", city: "London", phone: "519-657-8985", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "dragila-marnelle", name: "Marnelle Dragila", firm: "", city: "London", phone: "519-859-6232", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "eze-nora", name: "Nora Nnenna Eze", firm: "", city: "London", phone: "519-200-0065", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "francis-danica", name: "Danica Latoya Francis", firm: "", city: "London", phone: "226-884-5331", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "groot-miraya", name: "Miraya Groot", firm: "", city: "London", phone: "519-701-3626", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "guslits-bayly", name: "Bayly Adina Guslits", firm: "", city: "London", phone: "519-661-6712", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "hersch-toenie", name: "Toenie Zane Hersch", firm: "", city: "London", phone: "519-661-6771", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  // Source address is "1286 Townline Rd, Southwold ON N0L 2G0" - Southwold, not London;
+  // using the actual city named rather than rounding up to London.
+  { id: "hill-ashley", name: "Ashley Nicole Hill", firm: "", city: "Southwold", phone: "519-694-0772", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "hodder-alexander", name: "Alexander Christopher Hodder", firm: "", city: "London", phone: "519-800-6041", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "kamali-ryan", name: "Ryan Kamali", firm: "", city: "London", phone: "519-701-3626", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "khot-salim", name: "Salim Khot", firm: "", city: "London", phone: "519-858-4958", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "kikinova-alla", name: "Alla Kikinova", firm: "", city: "London", phone: "226-663-9096", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "long-kelsey", name: "Kelsey Heather Long", firm: "", city: "London", phone: "519-858-4958", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "mann-tamra", name: "Tamra Allison Mann", firm: "", city: "London", phone: "519-204-3333", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "mcphail-kelli", name: "Kelli Michelle McPhail", firm: "Cohen Highley LLP", city: "London", phone: "519-672-9330", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "murphy-jacqueline", name: "Jacqueline Carly Murphy", firm: "", city: "London", phone: "519-488-5263", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "osmani-anita", name: "Anita Osmani", firm: "", city: "London", phone: "519-661-6768", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "osunade-folusho", name: "Folusho Wuraola Osunade", firm: "", city: "London", phone: "519-266-6736", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "ouellette-stephanie", name: "Stephanie Ouellette", firm: "", city: "London", phone: "519-701-3626", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "rathod-abhimanyu", name: "Abhimanyu Mehul Rathod", firm: "", city: "London", phone: "519-672-9330", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "reich-leonard", name: "Leonard G. Reich", firm: "", city: "London", phone: "519-858-3285", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "vallillee-eric", name: "Eric Michael Vallillee", firm: "", city: "London", phone: "519-488-5263", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "van-deven-alice", name: "Alice Helen Van Deven", firm: "", city: "London", phone: "519-672-1075", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "wadhwa-isha", name: "Isha Wadhwa", firm: "", city: "London", phone: "548-689-9291", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" },
+  { id: "winninger-david", name: "David Winninger", firm: "", city: "London", phone: "519-858-3152", email: "", website: "", educationNotes: LAO_CFSA_EDUCATION_NOTE, languages: ["English"], subscriptionSlot: "Standard" }
 ];
 
 export const EMPTY_AFFIDAVIT: AffidavitDraft = {
