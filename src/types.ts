@@ -13,7 +13,7 @@ export interface CYFSATopic {
   id: string;
   title: string;
   badge?: string;
-  category: "Removal" | "Protection Grounds" | "Worker Authority" | "Rights" | "Evidence Rules" | "Timelines" | "Syllabi & Community";
+  category: "Removal" | "Protection Grounds" | "Worker Authority" | "Rights" | "Evidence Rules" | "Timelines" | "Indigenous Rights" | "Syllabi & Community";
   summary: string;
   fullBody: string;
   primarySources: PrimarySourceLink[];
