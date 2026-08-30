@@ -317,6 +317,90 @@ Separately, under s. 13 (Part II), a child in care has their OWN right to a plan
     ]
   },
   {
+    id: "proactive-mental-health-substance-engagement",
+    title: "Voluntary Mental Health & Substance-Use Engagement: Why Starting Early Helps Your Case",
+    badge: "Practical Strategy",
+    category: "Rights",
+    summary: "Starting counselling, treatment, or a recovery program on your own — before CAS or a court ever orders it — is not a named right under the CYFSA. It's real, documented evidence that the best-interests test and the society's own Plan of Care requirement are already built to weigh in your favour.",
+    fullBody: `This is a strategy, not a right. The CYFSA has no section titled "proactive enrollment" or anything like it, and nothing here should be read as claiming one exists. What's true instead is that two provisions already in this app — s. 74(3)(c)(viii) and s. 100 — describe exactly what a judge is required to weigh, and voluntary, sustained engagement is the kind of concrete, documented fact that moves those two factors in a parent's favour.
+
+s. 74(3)(c)(viii) — the best-interests test — directs the court to consider "the merits of a plan for the child's care proposed by a society... compared with the merits of the child remaining with or returning to a parent." That is a direct, side-by-side comparison. If the only thing on the "returning to a parent" side of that comparison is a promise to comply with a future order, it's a weaker showing than a documented record — a counsellor's letter, program attendance records, a sponsor's contact information, urine screens — that already exists, independently of CAS, before anyone required it.
+
+s. 100(a) requires the society's own Plan of Care to include "a description of the services to be provided to remedy the condition or situation on the basis of which the child was found to be in need of protection." If a parent has already started that exact remedial work — the same category of service CAS would otherwise be proposing to mandate — that changes the practical shape of the plan the court reviews: the "estimate of the time required" under s. 100(c) can reasonably be shorter, and the record no longer depends entirely on CAS's own account of what's needed and whether it's working.
+
+Why proactive — not waiting to be ordered — matters practically: a parent who identifies a concern and acts on it before being compelled generates their own paper trail, independent of anything CAS produces. It also speaks to s. 74(3)(c)(ix), the "effects on the child of delay in the disposition of the case" — a parent who is already doing the work is not the source of any delay, and that is a fact the court can see for itself rather than take on faith.
+
+None of this means a mental health or substance-use history is being treated as proof of unfitness — it is the opposite. The whole point of these two provisions is that the court looks at what is actually happening now, not at a diagnosis or a past incident in isolation. Voluntary, documented engagement is exactly the kind of current fact that these two sections are built to weigh, and it is available to any parent regardless of what led to the case.`,
+    primarySources: [
+      { label: "CYFSA, S.O. 2017, c. 14, Sched. 1", url: "https://www.ontario.ca/laws/statute/17c14", citation: "s. 74(3)(c)(viii) — best-interests factor comparing the society's plan against the child remaining with or returning to a parent" },
+      { label: "CYFSA, S.O. 2017, c. 14, Sched. 1", url: "https://www.ontario.ca/laws/statute/17c14", citation: "s. 100(a) and (c) — Plan of Care's required remedial-services description and time-estimate" }
+    ],
+    guidelines: [
+      "If you're already engaging with mental health or substance-use support, tell your lawyer now — even if CAS hasn't asked and no order requires it. It's usable evidence only if it's actually in the record.",
+      "Ask your counsellor, program, or physician for something in writing: a letter confirming enrollment and attendance, dates, and (with your consent) general progress — independent documentation carries more weight than your own account of it.",
+      "Keep your own simple log of appointments, sessions, or meetings attended, in case the provider's own records are slow to produce.",
+      "Starting this work does not require CAS's involvement or a court order first — voluntary engagement before either exists is exactly what strengthens the comparison under s. 74(3)(c)(viii)."
+    ],
+    checklistItems: [
+      { label: "Started before being ordered to?", description: "Voluntary engagement that predates any court order or CAS demand is the clearest version of this evidence — note the actual start date." },
+      { label: "Independently documented?", description: "A letter or record from the provider, not just your own description, is what actually gets weighed as evidence." },
+      { label: "Told your lawyer?", description: "This only helps your case if your lawyer knows it exists and can put it in front of the court — don't assume CAS will raise it for you." }
+    ],
+    factVersusFiction: [
+      {
+        fiction: "Getting help with a mental health or substance-use issue will be used against me, or means CAS already thinks I'm unfit.",
+        fact: "Voluntary, documented engagement is the kind of concrete merit s. 74(3)(c)(viii) directs the court to weigh on the side of a child remaining with or returning to a parent — it is evidence in your favour, not an admission.",
+        sourceExplanation: "CYFSA s. 74(3)(c)(viii), verified against the current consolidated text."
+      },
+      {
+        fiction: "There's a specific CYFSA right that lets me demand credit for proactively enrolling in services.",
+        fact: "No such named right exists in the CYFSA. This is a practical consequence of how two existing provisions — the best-interests test and the Plan of Care requirement — already direct the court to weigh evidence, not a separate entitlement you can invoke.",
+        sourceExplanation: "CYFSA s. 74(3)(c)(viii) and s. 100(a), verified against the current consolidated text; no section creates a distinct 'proactive enrollment' right."
+      }
+    ]
+  },
+  {
+    id: "parent-rights-mental-health-act",
+    title: "Your Own Rights Under Ontario's Mental Health Act",
+    badge: "Different Law",
+    category: "Rights",
+    summary: "If you — not your child — are the one facing a psychiatric assessment or an involuntary hold, that is governed by a completely separate statute, Ontario's Mental Health Act, not the CYFSA. It has its own protections.",
+    fullBody: `This is a different legal domain from everything else in this guide. The CYFSA governs child protection proceedings. If you yourself are facing a psychiatric assessment or an involuntary hold, that is governed by Ontario's Mental Health Act (R.S.O. 1990, c. M.7) — a separate statute with its own rules, its own forms, and its own review process. The two can happen around the same time in a person's life, but they are not the same proceeding, and what applies to one does not automatically apply to the other.
+
+A note on sourcing: every CYFSA citation elsewhere in this guide has been checked directly against the full consolidated statute text. For this Mental Health Act entry, ontario.ca and CanLII were not reachable to do the same pinpoint verification, so specific section numbers are deliberately left out below rather than guessed — a wrong section number is worse than none. What follows is limited to protections that are safely and generally true of the Act's framework, described without a numbered citation. Confirm the exact section for any of these with a lawyer, a rights adviser, or the Consent and Capacity Board directly.
+
+Three things generally hold:
+
+You have a right to be told why you're being assessed. If you're brought in for a psychiatric assessment or examination, you're entitled to be informed of the reason.
+
+You have a right to legal and rights advice if you're placed on an involuntary hold. Ontario's involuntary-admission process includes a mechanism for a rights adviser (sometimes tied to the "Form 1" process) to explain your status and your options to you.
+
+The Consent and Capacity Board is the real, independent tribunal that reviews involuntary status. It is not part of CAS, and it is not part of the family court hearing any related CYFSA matter — it is a separate adjudicative body that can review whether an involuntary hold should continue.
+
+If this happens to you while a CYFSA matter involving your children is also active, tell your family lawyer immediately — it can be relevant to both proceedings, and your lawyer needs to know quickly, not after the fact.`,
+    primarySources: [
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "General reference to the Act only — no specific section is cited here, since ontario.ca/CanLII could not be reached to verify pinpoint section numbers. Confirm the exact section with counsel or the Consent and Capacity Board." }
+    ],
+    guidelines: [
+      "Ask directly and immediately why you're being assessed or held — you're entitled to be told, and asking plainly is reasonable.",
+      "Ask for a rights adviser or legal advice as soon as you're placed on an involuntary hold — this is a normal part of the process, not something you need to justify asking for.",
+      "If you believe your involuntary status is wrong, ask how to bring it to the Consent and Capacity Board — that review process exists precisely for this.",
+      "Tell your family lawyer right away if this happens while any CYFSA matter is active, even if it feels unrelated — let your lawyer decide what's relevant."
+    ],
+    checklistItems: [
+      { label: "Were you told why?", description: "You're entitled to be informed of the reason for a psychiatric assessment or hold — if that didn't happen, say so to a rights adviser or lawyer." },
+      { label: "Did you get rights advice?", description: "An involuntary hold should come with access to a rights adviser or legal advice explaining your status and options." },
+      { label: "Do you know how to reach the Consent and Capacity Board?", description: "This is the independent tribunal that reviews involuntary status — ask a rights adviser or lawyer how to bring a review before it." }
+    ],
+    factVersusFiction: [
+      {
+        fiction: "If I'm placed on a psychiatric hold, no one has to explain why, and there's no one independent I can go to about it.",
+        fact: "You're generally entitled to be told the reason for the assessment, to get rights or legal advice during an involuntary hold, and to have your status reviewed by the Consent and Capacity Board — an independent tribunal, separate from both CAS and the family court.",
+        sourceExplanation: "General principles under Ontario's Mental Health Act, R.S.O. 1990, c. M.7. Specific section numbers are intentionally not cited — ontario.ca and CanLII were not reachable from this environment to verify them against the statute text. Confirm exact sections with counsel or the Consent and Capacity Board."
+      }
+    ]
+  },
+  {
     id: "kinship-family-placement-preference",
     title: "Kinship & Family Placement Preference",
     badge: "New",
