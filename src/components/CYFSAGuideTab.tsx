@@ -396,7 +396,7 @@ export default function CYFSAGuideTab() {
       <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl shadow-xs grid grid-cols-1 md:grid-cols-12 gap-4 items-center" id="privacy-upload-banner">
         <div className="md:col-span-8 space-y-2">
           <div className="flex items-center gap-2">
-            <div className="p-1 bg-brand-50 border border-brand-150 rounded-md text-brand-700">
+            <div className="p-1 bg-brand-50 border border-brand-100 rounded-md text-brand-700">
               <UploadCloud className="w-4 h-4 shrink-0" />
             </div>
             <h4 className="font-display font-bold text-slate-900 text-sm md:text-base tracking-tight">
@@ -421,7 +421,7 @@ export default function CYFSAGuideTab() {
             </span>
           </div>
         </div>
-        <div className="md:col-span-4 bg-white border border-slate-150 p-4 rounded-lg flex flex-col justify-center items-center text-center space-y-1.5 shadow-2xs">
+        <div className="md:col-span-4 bg-white border border-slate-100 p-4 rounded-lg flex flex-col justify-center items-center text-center space-y-1.5 shadow-2xs">
           <Lock className="w-5 h-5 text-brand-950" />
           <span className="font-display font-extrabold text-xs text-brand-950 uppercase tracking-wider">Zero Storage Active</span>
           <p className="text-[10px] text-slate-500 font-medium leading-normal max-w-xs">
@@ -520,35 +520,35 @@ export default function CYFSAGuideTab() {
             <div className="grid grid-cols-2 gap-2 text-[10px] font-mono font-bold">
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Plan of Care" } }))}
-                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-200 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
                 title="Explain Plan of Care"
               >
                 Plan of Care
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Temporary Care Agreement" } }))}
-                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-200 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
                 title="Explain Temporary Care Agreement"
               >
                 TCA Agreement
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Supervision Order" } }))}
-                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-200 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
                 title="Explain Supervision Order"
               >
                 Supervision Order
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Extended Society Care" } }))}
-                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-200 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate"
                 title="Explain Extended Society Care"
               >
                 Extended Care
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent("open-terminology-glossary", { detail: { term: "Least Intrusive Intervention" } }))}
-                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-250 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate col-span-2"
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-amber-200 hover:text-white rounded-xl transition text-left cursor-pointer border border-white/5 truncate col-span-2"
                 title="Explain Least Intrusive principle"
               >
                 Least Intrusive Principle
@@ -585,7 +585,7 @@ export default function CYFSAGuideTab() {
                 </div>
 
                 {/* Primary Source Verification Links */}
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-150 space-y-3" id="primary-sources">
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-3" id="primary-sources">
                   <span className="text-xs font-mono font-medium text-slate-600 uppercase flex items-center gap-1.5">
                     <Scale className="w-3.5 h-3.5 text-brand-600" /> Primary Statutory References
                   </span>
@@ -666,9 +666,9 @@ export default function CYFSAGuideTab() {
                       const revealKey = `${selectedTopic.id}-${idx}`;
                       const isRevealed = revealedFictions[revealKey];
                       return (
-                        <div key={idx} className="border border-gray-150 rounded-xl overflow-hidden shadow-2xs">
+                        <div key={idx} className="border border-gray-100 rounded-xl overflow-hidden shadow-2xs">
                           {/* Fiction Section */}
-                          <div className="bg-rose-50/50 p-4 border-b border-gray-150">
+                          <div className="bg-rose-50/50 p-4 border-b border-gray-100">
                             <span className="text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 bg-rose-100 text-rose-800 rounded">
                               Common Misconception (Fiction)
                             </span>
@@ -690,7 +690,7 @@ export default function CYFSAGuideTab() {
 
                           {/* Fact Section */}
                           {isRevealed && (
-                            <div className="bg-emerald-50/60 p-4 border-t border-gray-150 animate-fadeIn text-left">
+                            <div className="bg-emerald-50/60 p-4 border-t border-gray-100 animate-fadeIn text-left">
                               <span className="text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">
                                 Legal Fact
                               </span>

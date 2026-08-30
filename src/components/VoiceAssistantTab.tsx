@@ -173,7 +173,7 @@ export default function VoiceAssistantTab() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="voice-grid">
         {/* Left Side: Speech Synthesizer Narrator */}
         <div className="lg:col-span-7 space-y-4" id="speech-synthesizer">
-          <div className="bg-white rounded-xl border border-gray-150 p-6 space-y-5 text-left shadow-2xs">
+          <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5 text-left shadow-2xs">
             <div className="flex justify-between items-center pb-2 border-b">
               <span className="text-[10px] font-mono tracking-widest text-brand-600 font-bold uppercase flex items-center gap-1">
                 <Headphones className="w-3.5 h-3.5" /> Interactive Text-to-Speech Narrator
@@ -235,7 +235,7 @@ export default function VoiceAssistantTab() {
                 ) : (
                   <button
                     onClick={handlePlayNarrator}
-                    className="p-2.5 bg-brand-650 hover:bg-brand-700 text-white rounded-full cursor-pointer transition-all shadow-md hover:scale-105"
+                    className="p-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-full cursor-pointer transition-all shadow-md hover:scale-105"
                     title="Play Narration Description"
                   >
                     <Play className="w-4 h-4 fill-white" />
@@ -283,7 +283,7 @@ export default function VoiceAssistantTab() {
                     <Volume2 className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-semibold block">{sum.title}</span>
-                      <span className="text-[10px] text-gray-550 block truncate max-w-[150px]">{sum.text}</span>
+                      <span className="text-[10px] text-gray-500 block truncate max-w-[150px]">{sum.text}</span>
                     </div>
                   </button>
                 ))}
@@ -294,7 +294,7 @@ export default function VoiceAssistantTab() {
 
         {/* Right Side: Speech-to-Text Recorder dictation */}
         <div className="lg:col-span-5 space-y-4" id="speech-recognition-stt">
-          <div className="bg-white rounded-xl border border-gray-150 p-6 space-y-5 text-left shadow-2xs">
+          <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5 text-left shadow-2xs">
             <div className="flex justify-between items-center pb-2 border-b">
               <span className="text-[10px] font-mono tracking-widest text-[var(--color-brand-600)] font-bold uppercase flex items-center gap-1">
                 <Mic className="w-3.5 h-3.5" /> Voice Dictation Note-taker
@@ -311,7 +311,7 @@ export default function VoiceAssistantTab() {
             </p>
 
             {/* Live Visual Speech Pulser */}
-            <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-xl border border-dashed border-gray-250 relative overflow-hidden">
+            <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-xl border border-dashed border-gray-200 relative overflow-hidden">
               {isRecording && (
                 <div className="absolute inset-0 bg-brand-200/10 flex items-center justify-center pointer-events-none">
                   <span className="w-16 h-16 rounded-full bg-brand-500/15 animate-ping" />
@@ -325,7 +325,7 @@ export default function VoiceAssistantTab() {
                 className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
                   isRecording 
                     ? "bg-rose-600 text-white animate-pulse shadow-md relative z-10" 
-                    : "bg-brand-600 hover:bg-brand-750 text-white shadow-xs cursor-pointer hover:scale-105"
+                    : "bg-brand-600 hover:bg-brand-700 text-white shadow-xs cursor-pointer hover:scale-105"
                 }`}
               >
                 {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 animate-bounce" />}

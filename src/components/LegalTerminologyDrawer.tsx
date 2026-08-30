@@ -261,7 +261,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
         <div className="absolute inset-y-0 right-0 max-w-full flex">
           <div 
             ref={drawerRef}
-            className={`w-screen max-w-lg bg-white shadow-2xl flex flex-col border-l border-slate-150 transform transition-transform duration-300 ease-in-out ${
+            className={`w-screen max-w-lg bg-white shadow-2xl flex flex-col border-l border-slate-100 transform transition-transform duration-300 ease-in-out ${
               isOpen ? "translate-x-0" : "translate-x-full"
             }`}
             id="terminology-drawer-panel"
@@ -319,10 +319,10 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                 {/* Extended Legal Definition */}
                 <div className="space-y-1.5">
                   <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 select-none">
-                    <FileText className="w-3.5 h-3.5 text-slate-350" />
+                    <FileText className="w-3.5 h-3.5 text-slate-300" />
                     <span>Statutory Full Definition</span>
                   </h4>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 text-xs text-slate-700 leading-relaxed font-sans whitespace-pre-wrap">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs text-slate-700 leading-relaxed font-sans whitespace-pre-wrap">
                     {selectedItem.fullDefinition}
                   </div>
                 </div>
@@ -333,7 +333,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                     <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
                     <span>Parental Implications & Rights</span>
                   </h4>
-                  <div className="bg-amber-50/30 p-4 rounded-xl border border-amber-100 text-xs text-slate-750 leading-relaxed font-sans">
+                  <div className="bg-amber-50/30 p-4 rounded-xl border border-amber-100 text-xs text-slate-700 leading-relaxed font-sans">
                     {selectedItem.implications}
                   </div>
                 </div>
@@ -344,7 +344,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                     <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
                     <span>Advisory Shield • Coaching Tips</span>
                   </h4>
-                  <div className="bg-emerald-50/20 p-4 rounded-xl border border-emerald-100 text-xs text-slate-750 leading-relaxed font-sans">
+                  <div className="bg-emerald-50/20 p-4 rounded-xl border border-emerald-100 text-xs text-slate-700 leading-relaxed font-sans">
                     {selectedItem.tips}
                   </div>
                 </div>
@@ -380,7 +380,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
               /* GLOSSARY LIST VIEW WITH FILTERS & SEARCH */
               <div className="flex-1 overflow-hidden flex flex-col" id="glossary-list-view">
                 {/* Search Bar Block */}
-                <div className="p-4 bg-slate-50 border-b border-slate-150 space-y-3 shrink-0">
+                <div className="p-4 bg-slate-50 border-b border-slate-100 space-y-3 shrink-0">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
                     <input
@@ -388,7 +388,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search legal terms (e.g., Plan of Care, TCA)..."
-                      className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-slate-250 rounded-xl outline-none focus:ring-1 focus:ring-brand-500 text-slate-800 font-medium"
+                      className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-slate-200 rounded-xl outline-none focus:ring-1 focus:ring-brand-500 text-slate-800 font-medium"
                     />
                     {searchQuery && (
                       <button 
@@ -422,7 +422,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                 {/* Scrollable list items */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3" id="glossary-items-viewport">
                   {filteredItems.length === 0 ? (
-                    <div className="text-center py-12 px-6 bg-slate-50 border border-slate-150 rounded-2xl space-y-2">
+                    <div className="text-center py-12 px-6 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
                       <HelpCircle className="w-8 h-8 text-slate-300 mx-auto" />
                       <h4 className="font-display font-bold text-xs text-slate-700">No Terminology Found</h4>
                       <p className="text-[10.5px] text-slate-400 max-w-[280px] mx-auto mt-1 leading-normal">
@@ -434,14 +434,14 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
                       <div
                         key={item.id}
                         onClick={() => setSelectedItem(item)}
-                        className="bg-white border border-slate-200 hover:border-brand-250 hover:bg-brand-50/10 p-3.5 rounded-xl text-left cursor-pointer transition-all group relative flex flex-col justify-between shadow-2xs hover:shadow-xs"
+                        className="bg-white border border-slate-200 hover:border-brand-200 hover:bg-brand-50/10 p-3.5 rounded-xl text-left cursor-pointer transition-all group relative flex flex-col justify-between shadow-2xs hover:shadow-xs"
                       >
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-2 border-b border-slate-50 pb-1">
                             <span className="text-[8px] font-mono font-extrabold uppercase bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 border border-slate-200/50">
                               {item.category}
                             </span>
-                            <span className="text-[9px] text-brand-750 font-mono font-bold shrink-0">
+                            <span className="text-[9px] text-brand-700 font-mono font-bold shrink-0">
                               {item.sectionReference}
                             </span>
                           </div>
@@ -467,13 +467,13 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
             )}
 
             {/* Drawer Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-150 flex items-center justify-between shrink-0">
+            <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
               <span className="text-[9px] text-slate-400 font-mono uppercase tracking-wider select-none">
                 ParentShield Glossary Desk • Ontario S.O. 2017
               </span>
               <button
                 onClick={onClose}
-                className="px-3 py-1 bg-slate-850 hover:bg-slate-900 text-white rounded font-sans text-[10px] font-bold uppercase tracking-wide cursor-pointer"
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded font-sans text-[10px] font-bold uppercase tracking-wide cursor-pointer"
               >
                 Close Glossary
               </button>

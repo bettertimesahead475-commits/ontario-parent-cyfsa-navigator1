@@ -235,7 +235,12 @@ describe("POST /api/analyze", () => {
     expect(res.status).toBe(400);
   });
 
-  it("always requests 16000 max_tokens, and falls back an unknown model to claude-sonnet-5", async () => {
+  // /api/analyze issues two concurrent Claude calls (a "core" pass and a "deep-dive" pass —
+  // see the comment above documentContentBlock in _server.ts) instead of one, so every test
+  // below queues a resolved/rejected value for each of the two calls the endpoint actually
+  // makes, in the order they're constructed: core first, then deep-dive.
+  it("always requests 8000 max_tokens on both concurrent calls, and falls back an unknown model to claude-sonnet-5", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     const res = await request(app)
       .post("/api/analyze")
@@ -243,29 +248,35 @@ describe("POST /api/analyze", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.documentTitle).toBe("Uploaded Document");
-    expect(mockCreateMessage).toHaveBeenCalledTimes(1);
-    const callArgs = mockCreateMessage.mock.calls[0][0];
-    expect(callArgs.max_tokens).toBe(16000);
-    expect(callArgs.model).toBe("claude-sonnet-5");
+    expect(mockCreateMessage).toHaveBeenCalledTimes(2);
+    for (const call of mockCreateMessage.mock.calls) {
+      expect(call[0].max_tokens).toBe(8000);
+      expect(call[0].model).toBe("claude-sonnet-5");
+    }
   });
 
-  it("honors an explicitly valid model", async () => {
+  it("honors an explicitly valid model on both concurrent calls", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     await request(app)
       .post("/api/analyze")
       .send({ textContent: "some affidavit text", model: "claude-haiku-4-5-20251001" });
-    const callArgs = mockCreateMessage.mock.calls[0][0];
-    expect(callArgs.model).toBe("claude-haiku-4-5-20251001");
+    expect(mockCreateMessage).toHaveBeenCalledTimes(2);
+    for (const call of mockCreateMessage.mock.calls) {
+      expect(call[0].model).toBe("claude-haiku-4-5-20251001");
+    }
   });
 
-  it("returns a clear error instead of fabricating a report when the response isn't valid JSON", async () => {
+  it("returns a clear error instead of fabricating a report when either response isn't valid JSON", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("not json at all"));
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.body.documentTitle).toBeUndefined();
   });
 
-  it("maps a rate-limit error from the model to HTTP 429", async () => {
+  it("maps a rate-limit error from either concurrent call to HTTP 429", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("rate limit exceeded"), { status: 429 }));
     const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
     expect(res.status).toBe(429);
@@ -340,6 +351,71 @@ describe("POST /api/extract-evidence", () => {
     const res = await request(app).post("/api/extract-evidence").send({ narrativeText: "Yesterday the worker visited." });
     expect(res.status).toBe(200);
     expect(res.body.whatHappened).toBe("A visit occurred.");
+  });
+});
+
+describe("POST /api/deep-scan", () => {
+  const MINIMAL_DEEP_SCAN = {
+    gaps: [],
+    missingEvidence: [],
+    retorts: [],
+    disclaimer: "disclaimer",
+  };
+
+  it("rejects empty document text", async () => {
+    const res = await request(app).post("/api/deep-scan").send({ documentText: "   " });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns the structured deep-scan report on success, requesting 16000 max_tokens", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
+    const res = await request(app)
+      .post("/api/deep-scan")
+      .send({ documentText: "Some CAS worker observation notes.", documentName: "notes.txt", category: "Worker Notes" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.disclaimer).toBe("disclaimer");
+    const callArgs = mockCreateMessage.mock.calls[0][0];
+    expect(callArgs.max_tokens).toBe(16000);
+  });
+
+  it("tells the model there is no prior analysis when none is supplied", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
+    await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    const sentPrompt = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
+    expect(sentPrompt).toContain("No prior analysis is available");
+  });
+
+  it("forwards the prior analysis's red flags and instructs the model not to repeat them", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
+    await request(app)
+      .post("/api/deep-scan")
+      .send({
+        documentText: "Some document text.",
+        priorAnalysis: {
+          redFlags: [{ severity: "CRITICAL", category: "Hearsay", phraseDetected: "the worker said the child was unsafe", explanation: "uncorroborated" }],
+          thresholdAnalysis: [{ thresholdChecked: "CYFSA s. 74", isMet: "Inconclusive", reasoning: "not enough facts" }],
+          whatIsMissing: ["A signed consent form"],
+        },
+      });
+    const sentPrompt = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
+    expect(sentPrompt).toContain("the worker said the child was unsafe");
+    expect(sentPrompt).toContain("Do NOT repeat any of these");
+    expect(sentPrompt).toContain("A signed consent form");
+  });
+
+  it("returns a clear error instead of fabricating a report when the response isn't valid JSON", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("not json at all"));
+    const res = await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.gaps).toBeUndefined();
+  });
+
+  it("maps a rate-limit error from the model to HTTP 429", async () => {
+    mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("rate limit exceeded"), { status: 429 }));
+    const res = await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    expect(res.status).toBe(429);
+    expect(res.body.isRateLimit).toBe(true);
   });
 });
 
