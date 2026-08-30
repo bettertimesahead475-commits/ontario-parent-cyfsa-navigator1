@@ -317,6 +317,135 @@ Separately, under s. 13 (Part II), a child in care has their OWN right to a plan
     ]
   },
   {
+    id: "proactive-mental-health-substance-engagement",
+    title: "Voluntary Mental Health & Substance-Use Engagement: Why Starting Early Helps Your Case",
+    badge: "Practical Strategy",
+    category: "Rights",
+    summary: "The CYFSA has no ground that just says \"the parent has a mental health condition\" or \"uses drugs\" — CAS must prove an actual failure to adequately care for the child, or a real risk of one, never the condition alone. Starting counselling, treatment, or a recovery program on your own — before CAS or a court ever orders it — is real, documented evidence that there's no such ongoing failure, and is exactly what the best-interests test and the Plan of Care requirement already weigh in your favour.",
+    fullBody: `THE CRITICAL POINT, first: the CYFSA has no ground that says "the parent has a mental health condition" or "the parent uses drugs," as such. Every ground CAS can actually use requires them to prove that the condition caused, or creates a real, specific risk of, an actual failure to adequately care for or supervise the child — never just that the condition or history exists. Having a diagnosis or a substance-use history is not, by itself, ever enough.
+
+The grounds that actually get used in these cases, quoted directly from s. 74(2):
+
+s. 74(2)(a)/(b) — physical harm, or a risk of it, "inflicted by the person having charge of the child or caused by or resulting from that person's (i) failure to adequately care for, provide for, supervise or protect the child, or (ii) pattern of neglect in caring for, providing for, supervising or protecting the child." This is the ground CAS actually has to build a case under in most mental-health- or substance-use-related matters. A parent's condition is only relevant to the extent it's tied to a specific, demonstrated failure or risk of failure — not the condition alone.
+
+s. 74(2)(e) — the child requires treatment and "the child's parent or the person having charge of the child does not provide the treatment or access to the treatment." This is about the child's own treatment needs, not the parent's — don't confuse the two. A parent's own mental health or substance-use treatment is a separate question from whether they're providing treatment their child needs.
+
+s. 74(2)(k) — the parent "has died or is unavailable to exercise the rights of custody over the child" and has not made adequate provision for the child's care. This only applies where a parent's condition genuinely makes them unavailable or unable to exercise custody — not where a parent is present and struggling.
+
+The burden is on CAS to connect the dots with actual evidence of impact on the child. A hospital record, a diagnosis, or a past charge, on its own, proves none of these grounds — CAS has to show the specific failure, or specific risk of failure, that actually resulted.
+
+This is exactly where the rest of this entry connects: voluntarily engaging with treatment is exactly the kind of thing that helps show there's no ongoing failure to care — which is what s. 74(2)(a)/(b) actually requires, not the underlying condition itself. Everything below is about how to build that record.
+
+This is a strategy, not a right. The CYFSA has no section titled "proactive enrollment" or anything like it, and nothing here should be read as claiming one exists. What's true instead is that two provisions already in this app — s. 74(3)(c)(viii) and s. 100 — describe exactly what a judge is required to weigh, and voluntary, sustained engagement is the kind of concrete, documented fact that moves those two factors in a parent's favour.
+
+s. 74(3)(c)(viii) — the best-interests test — directs the court to consider "the merits of a plan for the child's care proposed by a society... compared with the merits of the child remaining with or returning to a parent." That is a direct, side-by-side comparison. If the only thing on the "returning to a parent" side of that comparison is a promise to comply with a future order, it's a weaker showing than a documented record — a counsellor's letter, program attendance records, a sponsor's contact information, urine screens — that already exists, independently of CAS, before anyone required it.
+
+s. 100(a) requires the society's own Plan of Care to include "a description of the services to be provided to remedy the condition or situation on the basis of which the child was found to be in need of protection." If a parent has already started that exact remedial work — the same category of service CAS would otherwise be proposing to mandate — that changes the practical shape of the plan the court reviews: the "estimate of the time required" under s. 100(c) can reasonably be shorter, and the record no longer depends entirely on CAS's own account of what's needed and whether it's working.
+
+Why proactive — not waiting to be ordered — matters practically: a parent who identifies a concern and acts on it before being compelled generates their own paper trail, independent of anything CAS produces. It also speaks to s. 74(3)(c)(ix), the "effects on the child of delay in the disposition of the case" — a parent who is already doing the work is not the source of any delay, and that is a fact the court can see for itself rather than take on faith.
+
+None of this means a mental health or substance-use history is being treated as proof of unfitness — it is the opposite. The whole point of these two provisions is that the court looks at what is actually happening now, not at a diagnosis or a past incident in isolation. Voluntary, documented engagement is exactly the kind of current fact that these two sections are built to weigh, and it is available to any parent regardless of what led to the case.`,
+    primarySources: [
+      { label: "CYFSA, S.O. 2017, c. 14, Sched. 1", url: "https://www.ontario.ca/laws/statute/17c14", citation: "s. 74(2)(a), (b), (e), (k) — the actual protection grounds available in mental-health/substance-use-related cases" },
+      { label: "CYFSA, S.O. 2017, c. 14, Sched. 1", url: "https://www.ontario.ca/laws/statute/17c14", citation: "s. 74(3)(c)(viii) — best-interests factor comparing the society's plan against the child remaining with or returning to a parent" },
+      { label: "CYFSA, S.O. 2017, c. 14, Sched. 1", url: "https://www.ontario.ca/laws/statute/17c14", citation: "s. 100(a) and (c) — Plan of Care's required remedial-services description and time-estimate" }
+    ],
+    guidelines: [
+      "Know the real standard: a diagnosis, a hospital record, or a past charge is not a ground on its own — CAS has to show a specific failure to adequately care for the child, or a specific, demonstrated risk of one. If a document just states the condition without connecting it to an actual failure or risk, that's a gap worth raising with your lawyer.",
+      "If you're already engaging with mental health or substance-use support, tell your lawyer now — even if CAS hasn't asked and no order requires it. It's usable evidence only if it's actually in the record.",
+      "Ask your counsellor, program, or physician for something in writing: a letter confirming enrollment and attendance, dates, and (with your consent) general progress — independent documentation carries more weight than your own account of it.",
+      "Keep your own simple log of appointments, sessions, or meetings attended, in case the provider's own records are slow to produce.",
+      "Starting this work does not require CAS's involvement or a court order first — voluntary engagement before either exists is exactly what strengthens the comparison under s. 74(3)(c)(viii)."
+    ],
+    checklistItems: [
+      { label: "Is CAS pointing to the condition, or to a specific failure?", description: "A diagnosis or substance-use history alone doesn't meet s. 74(2)(a)/(b) — check whether CAS has actually identified a specific failure to adequately care for the child, or a specific, demonstrated risk of one." },
+      { label: "Started before being ordered to?", description: "Voluntary engagement that predates any court order or CAS demand is the clearest version of this evidence — note the actual start date." },
+      { label: "Independently documented?", description: "A letter or record from the provider, not just your own description, is what actually gets weighed as evidence." },
+      { label: "Told your lawyer?", description: "This only helps your case if your lawyer knows it exists and can put it in front of the court — don't assume CAS will raise it for you." }
+    ],
+    factVersusFiction: [
+      {
+        fiction: "If I have a mental health diagnosis or a substance-use history, that's enough on its own for CAS to prove my child is in need of protection.",
+        fact: "It is not. The CYFSA has no ground based on the condition or history alone — s. 74(2)(a) and (b) require CAS to prove an actual failure to adequately care for, provide for, supervise, or protect the child (or a pattern of neglect), or a real risk of one, and to connect that failure or risk to the parent's condition. A diagnosis or history is only relevant if CAS ties it to a specific, demonstrated failure or risk — never on its own.",
+        sourceExplanation: "CYFSA s. 74(2)(a) and (b), quoted verbatim and verified against the current consolidated text."
+      },
+      {
+        fiction: "Getting help with a mental health or substance-use issue will be used against me, or means CAS already thinks I'm unfit.",
+        fact: "Voluntary, documented engagement is the kind of concrete merit s. 74(3)(c)(viii) directs the court to weigh on the side of a child remaining with or returning to a parent — it is evidence in your favour, not an admission.",
+        sourceExplanation: "CYFSA s. 74(3)(c)(viii), verified against the current consolidated text."
+      },
+      {
+        fiction: "There's a specific CYFSA right that lets me demand credit for proactively enrolling in services.",
+        fact: "No such named right exists in the CYFSA. This is a practical consequence of how two existing provisions — the best-interests test and the Plan of Care requirement — already direct the court to weigh evidence, not a separate entitlement you can invoke.",
+        sourceExplanation: "CYFSA s. 74(3)(c)(viii) and s. 100(a), verified against the current consolidated text; no section creates a distinct 'proactive enrollment' right."
+      }
+    ]
+  },
+  {
+    id: "parent-rights-mental-health-act",
+    title: "Your Own Rights Under Ontario's Mental Health Act",
+    badge: "Different Law",
+    category: "Rights",
+    summary: "If you — not your child — are the one facing a psychiatric assessment or an involuntary hold, that is governed by a completely separate statute, Ontario's Mental Health Act, not the CYFSA. It sets exact detention periods, a mandatory rights-advice process, and an independent tribunal review — all with specific section numbers.",
+    fullBody: `This is a different legal domain from everything else in this guide. The CYFSA governs child protection proceedings. If you yourself are facing a psychiatric assessment or an involuntary hold, that is governed by Ontario's Mental Health Act (R.S.O. 1990, c. M.7) — a separate statute with its own rules, its own forms, and its own review process. The two can happen around the same time in a person's life, but they are not the same proceeding, and what applies to one does not automatically apply to the other.
+
+**Psychiatric assessment application — "Form 1" (s. 15):** a physician who examines you may apply for a psychiatric assessment where you've threatened or attempted self-harm, behaved violently toward another, or shown a lack of competence to care for yourself, AND the physician believes you have a mental disorder likely to result in serious bodily harm to yourself or another, or serious physical impairment. A Form 1 is authority, for seven days from signing, to take you into custody and detain you for examination for up to 72 hours (s. 15(5)).
+
+**Involuntary admission — "Form 3" (s. 20):** after the 72-hour assessment period, the attending physician must either release you, admit you as an informal/voluntary patient, or — only if specific statutory conditions are met — complete a certificate of involuntary admission. s. 20(1.1) covers someone with a documented history of a recurring mental disorder who has improved before but is now at risk again; s. 20(5) covers the more general case, requiring the physician to be of the opinion both that your disorder is likely to cause serious bodily harm or serious physical impairment, and that you are not suitable for informal or voluntary admission.
+
+**Exact detention periods (s. 20(4)):** a certificate of involuntary admission lasts up to 2 weeks; the first certificate of renewal, up to 1 additional month; the second, up to 2 additional months; the third, up to 3 additional months; and each certificate of continuation after that, up to 3 additional months at a time. Detention does not extend automatically past these periods without a new certificate.
+
+**Notice and rights advice — the real, actionable right (s. 38, s. 38.1):** whenever a certificate of involuntary admission, renewal, or continuation is completed, the attending physician must promptly give you written notice — of the reasons for detention, your entitlement to a Board hearing, your right to retain and instruct counsel without delay, and, where applicable, your right to request specific Board orders — and must promptly notify a rights adviser, who must then meet with you in person to explain the certificate and your right to have it reviewed. This protection applies even before formal certification: s. 38.1 requires the same written notice for someone merely subject to a s. 15 application, before any certificate is issued.
+
+**Review by the Consent and Capacity Board — the real challenge mechanism (s. 39, s. 41):** you, or anyone on your behalf, can apply to the Board to inquire into whether the legal prerequisites for your admission or continuation as an involuntary patient are actually met, every time a new certificate takes effect (s. 39(1)-(2)). This review also happens automatically, whether or not you apply, on the first certificate of continuation and every fourth one after that (s. 39(4)) — a built-in safeguard against being forgotten in the system. At the hearing, the Board must decide whether the prerequisites are still met at the time of the hearing itself, not just when the certificate was first signed, and must rescind the certificate if they are not (s. 41(1), (3)).
+
+**Appeal (s. 48):** you, or another party to a Board proceeding, can appeal the Board's decision to the Superior Court of Justice on a question of law, fact, or both.
+
+**Community Treatment Orders (s. 33.1):** a separate, less restrictive mechanism lets a physician issue a community treatment order requiring you to follow a treatment plan while living in the community rather than being detained — but only with your (or your substitute decision-maker's) actual, informed consent. Before that consent counts, you must first have consulted a rights adviser and been told of your legal rights (s. 33.1(4)(e)-(f)), and you have an explicit right to retain and instruct counsel and to be told of that right (s. 33.1(8)). A community treatment order can be challenged the same way, through an application to the Board.
+
+If this happens to you while a CYFSA matter involving your children is also active, tell your family lawyer immediately — it can be relevant to both proceedings, and your lawyer needs to know quickly, not after the fact.`,
+    primarySources: [
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 15, s. 15(5) — Application for psychiatric assessment ('Form 1') and the 72-hour detention-for-examination authority" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 20(1.1), s. 20(5) — Conditions for a certificate of involuntary admission ('Form 3')" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 20(4) — Exact detention periods for involuntary admission, renewal, and continuation" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 38, s. 38.1 — Written notice and in-person rights-adviser meeting, including before formal certification" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 39, s. 41 — Consent and Capacity Board review, including the automatic deemed-application safeguard" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 48 — Appeal of a Board decision to the Superior Court of Justice" },
+      { label: "Mental Health Act, R.S.O. 1990, c. M.7", url: "https://www.ontario.ca/laws/statute/90m07", citation: "s. 33.1 — Community Treatment Orders, including the consent and prior rights-advice requirements" }
+    ],
+    guidelines: [
+      "Ask directly and immediately why you're being assessed or held — s. 38/s. 38.1 entitle you to written notice of the reasons, and asking plainly is reasonable.",
+      "Ask for a rights adviser or legal advice as soon as you're placed on an involuntary hold — s. 38 requires the facility to notify a rights adviser and arrange an in-person meeting; this is a normal part of the process, not something you need to justify asking for.",
+      "Track the certificate dates — s. 20(4) sets exact detention periods (2 weeks, then 1, 2, 3 months, then 3 months per continuation), so you can know when a certificate is due to expire or come up for automatic Board review.",
+      "If you believe your involuntary status is wrong, ask how to bring it to the Consent and Capacity Board under s. 39 — that review process exists precisely for this, and doesn't require you to wait for the automatic review.",
+      "If you're asked to consent to a Community Treatment Order, confirm you've actually had the s. 33.1(4)(e) rights-advice consultation first — your consent is only valid if that happened.",
+      "Tell your family lawyer right away if this happens while any CYFSA matter is active, even if it feels unrelated — let your lawyer decide what's relevant."
+    ],
+    checklistItems: [
+      { label: "Were you told why?", description: "s. 38/s. 38.1 entitle you to written notice of the reasons for a psychiatric assessment application or a certificate — if that didn't happen, say so to a rights adviser or lawyer." },
+      { label: "Did you get rights advice?", description: "s. 38 requires the facility to notify a rights adviser, who must meet with you in person to explain your status and options." },
+      { label: "Do you know your certificate's expiry date?", description: "s. 20(4) fixes exact detention periods — confirm which certificate you're under and when it expires or is due for renewal or automatic Board review." },
+      { label: "Do you know how to reach the Consent and Capacity Board?", description: "s. 39 lets you apply for a Board review at any time a certificate is in effect — ask a rights adviser or lawyer how to bring one." }
+    ],
+    factVersusFiction: [
+      {
+        fiction: "If I'm placed on a psychiatric hold, no one has to explain why, and there's no one independent I can go to about it.",
+        fact: "s. 38 and s. 38.1 require written notice of the reasons for detention and a rights adviser's in-person explanation of your status — even before formal certification — and s. 39/s. 41 let you (or anyone on your behalf) have your status reviewed by the Consent and Capacity Board, an independent tribunal separate from both CAS and the family court.",
+        sourceExplanation: "Mental Health Act, R.S.O. 1990, c. M.7, s. 38, s. 38.1, s. 39, s. 41 — verified against the full consolidated statute text."
+      },
+      {
+        fiction: "Once I'm certified involuntary, I can be held indefinitely without anyone re-checking whether that's still justified.",
+        fact: "s. 20(4) caps each certificate at a fixed period — 2 weeks for the first, then escalating renewal periods — and s. 39(4) automatically triggers a Board review on the first certificate of continuation and every fourth one after that, whether or not you apply yourself.",
+        sourceExplanation: "Mental Health Act, R.S.O. 1990, c. M.7, s. 20(4), s. 39(4) — verified against the full consolidated statute text."
+      },
+      {
+        fiction: "A Community Treatment Order just needs a doctor's sign-off — I don't get a say.",
+        fact: "A CTO requires your (or your substitute decision-maker's) actual consent, and that consent is only valid after you've first consulted a rights adviser and been told your legal rights.",
+        sourceExplanation: "Mental Health Act, R.S.O. 1990, c. M.7, s. 33.1(4)(e)-(f), s. 33.1(8) — verified against the full consolidated statute text."
+      }
+    ]
+  },
+  {
     id: "kinship-family-placement-preference",
     title: "Kinship & Family Placement Preference",
     badge: "New",
