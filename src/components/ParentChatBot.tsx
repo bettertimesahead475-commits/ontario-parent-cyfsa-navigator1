@@ -6,6 +6,7 @@ import {
   Trash2, Scale, HelpCircle, ChevronUp, ChevronDown, Check, Zap 
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { getUserKey } from "../utils/storage";
 
 interface LocalFile {
   name: string;
@@ -70,7 +71,7 @@ export default function ParentChatBot() {
   // Load files from localStorage and subscribe to updates
   const syncFilesFromCabinet = () => {
     try {
-      const progress = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
+      const progress = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
       if (progress) {
         const parsed = JSON.parse(progress);
         if (parsed?.organizedFiles && Array.isArray(parsed.organizedFiles)) {

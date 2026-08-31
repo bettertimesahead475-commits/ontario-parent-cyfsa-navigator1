@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { db, auth } from "../firebase";
 import { collection, query, where, getDocs, deleteDoc, doc, orderBy } from "firebase/firestore";
 import { SavedDocument } from "../types";
+import { getUserKey } from "../utils/storage";
 
 export default function SavedDocumentsTab() {
   const [location, setLocation] = useLocation();
@@ -63,7 +64,7 @@ export default function SavedDocumentsTab() {
 
   const handleOpen = (doc: SavedDocument) => {
     if (doc.type === 'template') {
-      localStorage.setItem("OPA_TEMPLATES_PROGRESS", doc.content);
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", doc.content);
       setLocation("/templates");
     } else if (doc.type === 'analysis') {
       // Need a way to load analysis report into DocumentAnalyzerTab
