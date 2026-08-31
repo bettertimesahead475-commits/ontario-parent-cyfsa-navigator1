@@ -26,6 +26,7 @@ const mockAccess = vi.hoisted(() => ({
   requestAccess: vi.fn(),
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
+  verifySessionToken: vi.fn(),
   TIER_PRICES: { Pro: 19, Premium: 49 },
 }));
 
@@ -91,8 +92,39 @@ const MINIMAL_ANALYSIS = {
   lawyerCaseBrief: [],
 };
 
+// Routes gated by requireSession() (see _server.ts) expect this header; the
+// mocked verifySessionToken below only recognizes this exact token.
+const VALID_SESSION_TOKEN = "valid-test-session-token";
+const AUTH_HEADER = { Authorization: `Bearer ${VALID_SESSION_TOKEN}` };
+const GATED_ROUTES = [
+  "/api/analyze",
+  "/api/case-timeline",
+  "/api/rag-query",
+  "/api/extract-evidence",
+  "/api/deep-scan",
+  "/api/transcribe",
+  "/api/transcribe-audio",
+];
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockAccess.verifySessionToken.mockImplementation((token: string) =>
+    token === VALID_SESSION_TOKEN ? { email: "parent@example.com", tier: "Pro" } : null
+  );
+});
+
+describe("session-gated AI routes", () => {
+  it.each(GATED_ROUTES)("rejects %s with 401 when no session token is sent", async (route) => {
+    const res = await request(app).post(route).send({});
+    expect(res.status).toBe(401);
+    expect(mockAccess.verifySessionToken).not.toHaveBeenCalled();
+  });
+
+  it.each(GATED_ROUTES)("rejects %s with 401 when the session token is invalid/expired", async (route) => {
+    const res = await request(app).post(route).set("Authorization", "Bearer garbage").send({});
+    expect(res.status).toBe(401);
+    expect(mockAccess.verifySessionToken).toHaveBeenCalledWith("garbage");
+  });
 });
 
 describe("GET /api/health", () => {
@@ -231,7 +263,7 @@ describe("POST /api/extract-text", () => {
 
 describe("POST /api/analyze", () => {
   it("rejects a request with no text or file", async () => {
-    const res = await request(app).post("/api/analyze").send({});
+    const res = await request(app).post("/api/analyze").set(AUTH_HEADER).send({});
     expect(res.status).toBe(400);
   });
 
@@ -244,6 +276,7 @@ describe("POST /api/analyze", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     const res = await request(app)
       .post("/api/analyze")
+      .set(AUTH_HEADER)
       .send({ textContent: "some affidavit text", model: "not-a-real-model" });
 
     expect(res.status).toBe(200);
@@ -260,6 +293,7 @@ describe("POST /api/analyze", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     await request(app)
       .post("/api/analyze")
+      .set(AUTH_HEADER)
       .send({ textContent: "some affidavit text", model: "claude-haiku-4-5-20251001" });
     expect(mockCreateMessage).toHaveBeenCalledTimes(2);
     for (const call of mockCreateMessage.mock.calls) {
@@ -270,7 +304,7 @@ describe("POST /api/analyze", () => {
   it("returns a clear error instead of fabricating a report when either response isn't valid JSON", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("not json at all"));
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
-    const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
+    const res = await request(app).post("/api/analyze").set(AUTH_HEADER).send({ textContent: "some text" });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.body.documentTitle).toBeUndefined();
   });
@@ -278,7 +312,7 @@ describe("POST /api/analyze", () => {
   it("maps a rate-limit error from either concurrent call to HTTP 429", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("rate limit exceeded"), { status: 429 }));
-    const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
+    const res = await request(app).post("/api/analyze").set(AUTH_HEADER).send({ textContent: "some text" });
     expect(res.status).toBe(429);
     expect(res.body.isRateLimit).toBe(true);
   });
@@ -286,7 +320,7 @@ describe("POST /api/analyze", () => {
 
 describe("POST /api/case-timeline", () => {
   it("rejects fewer than two documents", async () => {
-    const res = await request(app).post("/api/case-timeline").send({ documents: [{ name: "a", text: "x" }] });
+    const res = await request(app).post("/api/case-timeline").set(AUTH_HEADER).send({ documents: [{ name: "a", text: "x" }] });
     expect(res.status).toBe(400);
   });
 
@@ -294,6 +328,7 @@ describe("POST /api/case-timeline", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ timeline: [], conflicts: [], openItems: [] }));
     const res = await request(app)
       .post("/api/case-timeline")
+      .set(AUTH_HEADER)
       .send({
         documents: [
           { name: "affidavit.txt", text: "Event on Jan 1." },
@@ -308,7 +343,7 @@ describe("POST /api/case-timeline", () => {
 
 describe("POST /api/rag-query", () => {
   it("rejects a missing query", async () => {
-    const res = await request(app).post("/api/rag-query").send({ files: [] });
+    const res = await request(app).post("/api/rag-query").set(AUTH_HEADER).send({ files: [] });
     expect(res.status).toBe(400);
   });
 
@@ -316,6 +351,7 @@ describe("POST /api/rag-query", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Here's my answer."));
     const res = await request(app)
       .post("/api/rag-query")
+      .set(AUTH_HEADER)
       .send({
         query: "What did the worker say about overnight visits?",
         files: [],
@@ -334,7 +370,7 @@ describe("POST /api/rag-query", () => {
 
   it("omits the conversation-history block when no history is given", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Answer without history."));
-    await request(app).post("/api/rag-query").send({ query: "A question", files: [] });
+    await request(app).post("/api/rag-query").set(AUTH_HEADER).send({ query: "A question", files: [] });
     const sentPrompt = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
     expect(sentPrompt).not.toContain("CONVERSATION SO FAR");
   });
@@ -342,13 +378,13 @@ describe("POST /api/rag-query", () => {
 
 describe("POST /api/extract-evidence", () => {
   it("rejects empty narrative text", async () => {
-    const res = await request(app).post("/api/extract-evidence").send({ narrativeText: "   " });
+    const res = await request(app).post("/api/extract-evidence").set(AUTH_HEADER).send({ narrativeText: "   " });
     expect(res.status).toBe(400);
   });
 
   it("returns the structured extraction on success", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ date: "2026-08-01", whatHappened: "A visit occurred." }));
-    const res = await request(app).post("/api/extract-evidence").send({ narrativeText: "Yesterday the worker visited." });
+    const res = await request(app).post("/api/extract-evidence").set(AUTH_HEADER).send({ narrativeText: "Yesterday the worker visited." });
     expect(res.status).toBe(200);
     expect(res.body.whatHappened).toBe("A visit occurred.");
   });
@@ -363,7 +399,7 @@ describe("POST /api/deep-scan", () => {
   };
 
   it("rejects empty document text", async () => {
-    const res = await request(app).post("/api/deep-scan").send({ documentText: "   " });
+    const res = await request(app).post("/api/deep-scan").set(AUTH_HEADER).send({ documentText: "   " });
     expect(res.status).toBe(400);
   });
 
@@ -371,6 +407,7 @@ describe("POST /api/deep-scan", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
     const res = await request(app)
       .post("/api/deep-scan")
+      .set(AUTH_HEADER)
       .send({ documentText: "Some CAS worker observation notes.", documentName: "notes.txt", category: "Worker Notes" });
 
     expect(res.status).toBe(200);
@@ -381,7 +418,7 @@ describe("POST /api/deep-scan", () => {
 
   it("tells the model there is no prior analysis when none is supplied", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
-    await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    await request(app).post("/api/deep-scan").set(AUTH_HEADER).send({ documentText: "Some document text." });
     const sentPrompt = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
     expect(sentPrompt).toContain("No prior analysis is available");
   });
@@ -390,6 +427,7 @@ describe("POST /api/deep-scan", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
     await request(app)
       .post("/api/deep-scan")
+      .set(AUTH_HEADER)
       .send({
         documentText: "Some document text.",
         priorAnalysis: {
@@ -406,14 +444,14 @@ describe("POST /api/deep-scan", () => {
 
   it("returns a clear error instead of fabricating a report when the response isn't valid JSON", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("not json at all"));
-    const res = await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    const res = await request(app).post("/api/deep-scan").set(AUTH_HEADER).send({ documentText: "Some document text." });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.body.gaps).toBeUndefined();
   });
 
   it("maps a rate-limit error from the model to HTTP 429", async () => {
     mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("rate limit exceeded"), { status: 429 }));
-    const res = await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    const res = await request(app).post("/api/deep-scan").set(AUTH_HEADER).send({ documentText: "Some document text." });
     expect(res.status).toBe(429);
     expect(res.body.isRateLimit).toBe(true);
   });
@@ -421,13 +459,13 @@ describe("POST /api/deep-scan", () => {
 
 describe("POST /api/transcribe", () => {
   it("rejects a request with neither narrative text nor audio", async () => {
-    const res = await request(app).post("/api/transcribe").send({});
+    const res = await request(app).post("/api/transcribe").set(AUTH_HEADER).send({});
     expect(res.status).toBe(400);
   });
 
   it("formats a typed narrative into a journal entry via Claude", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Dear journal, ..."));
-    const res = await request(app).post("/api/transcribe").send({ narrativeText: "the worker came by" });
+    const res = await request(app).post("/api/transcribe").set(AUTH_HEADER).send({ narrativeText: "the worker came by" });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.transcribedText).toBe("Dear journal, ...");
@@ -437,6 +475,7 @@ describe("POST /api/transcribe", () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "spoken words here" });
     const res = await request(app)
       .post("/api/transcribe")
+      .set(AUTH_HEADER)
       .send({ audioData: "base64audio", mimeType: "audio/webm", fileName: "call.webm" });
     expect(res.status).toBe(200);
     expect(res.body.transcribedText).toContain("spoken words here");
@@ -447,6 +486,7 @@ describe("POST /api/transcribe", () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "   " });
     const res = await request(app)
       .post("/api/transcribe")
+      .set(AUTH_HEADER)
       .send({ audioData: "base64audio", mimeType: "audio/webm" });
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
@@ -454,20 +494,20 @@ describe("POST /api/transcribe", () => {
 
 describe("POST /api/transcribe-audio", () => {
   it("rejects a request with no audio data", async () => {
-    const res = await request(app).post("/api/transcribe-audio").send({});
+    const res = await request(app).post("/api/transcribe-audio").set(AUTH_HEADER).send({});
     expect(res.status).toBe(400);
   });
 
   it("returns the transcription on success", async () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "hello there" });
-    const res = await request(app).post("/api/transcribe-audio").send({ audioData: "base64audio", mimeType: "audio/webm" });
+    const res = await request(app).post("/api/transcribe-audio").set(AUTH_HEADER).send({ audioData: "base64audio", mimeType: "audio/webm" });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, text: "hello there" });
   });
 
   it("degrades gracefully to a 200 fallback instead of an error when transcription fails", async () => {
     mockGenerateContent.mockRejectedValueOnce(new Error("Gemini is down"));
-    const res = await request(app).post("/api/transcribe-audio").send({ audioData: "base64audio", mimeType: "audio/webm" });
+    const res = await request(app).post("/api/transcribe-audio").set(AUTH_HEADER).send({ audioData: "base64audio", mimeType: "audio/webm" });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.isFallback).toBe(true);

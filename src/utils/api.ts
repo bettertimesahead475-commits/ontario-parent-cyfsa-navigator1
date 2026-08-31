@@ -1,8 +1,21 @@
 /**
- * Robust API helper that routes relative routes correctly.
+ * Robust API helper that routes relative routes correctly. Also attaches the
+ * paid-tier session token (issued by /api/activate-code, stored after a
+ * parent redeems an access code) as a Bearer token, since several backend
+ * routes require it — see requireSession() in api/_server.ts.
  */
 export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  return fetch(input, init);
+  let token: string | null = null;
+  try {
+    token = localStorage.getItem("ps_session_token");
+  } catch {
+    // localStorage unavailable (private browsing, etc.) — proceed unauthenticated.
+  }
+  if (!token) return fetch(input, init);
+
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...init, headers });
 }
 
 /**

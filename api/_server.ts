@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, TIER_PRICES, type Tier } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, TIER_PRICES, type Tier } from "./services/access.js";
 
 dotenv.config();
 
@@ -374,6 +374,23 @@ app.use(compression());
 app.use(express.json({ limit: "100mb" }));
 
 
+  // Requires a valid, unexpired session token (issued by /api/activate-code
+  // after a paid Pro/Premium access code is redeemed — see services/access.ts).
+  // Sent as `Authorization: Bearer <token>`. Writes the 401 response itself
+  // when the check fails, so callers should just `if (!requireSession(...)) return;`.
+  function requireSession(req: Request, res: Response): { email: string; tier: Tier } | null {
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const session = token ? verifySessionToken(token) : null;
+    if (!session) {
+      res.status(401).json({
+        error: "This feature requires an active Pro or Premium plan. Activate your access code (or upgrade) on the Membership page.",
+      });
+      return null;
+    }
+    return session;
+  }
+
   // API 1: Health endpoint
   app.get("/api/health", (req: Request, res: Response) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
@@ -503,6 +520,7 @@ app.use(express.json({ limit: "100mb" }));
   });
 
   app.post("/api/analyze", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     let targetText = "";
     let fileDataObj: any = null;
     try {
@@ -822,6 +840,7 @@ ${analysisRules}`;
   // mirrors exactly how the manual cross-referencing distinguished "confirmed in writing"
   // from "described by the parent, not yet located in any document."
   app.post("/api/case-timeline", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
       const { documents, model, parentClaims } = req.body as {
         documents?: { name: string; text: string; sourceDate?: string }[];
@@ -932,6 +951,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     let queryVal = "";
     let filesVal: any[] = [];
     let focusVal = "";
@@ -1075,6 +1095,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
   // API: Joint voice/text dictation evidence extraction endpoint
   app.post("/api/extract-evidence", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     let narrativeTextVal = "";
     try {
       const { narrativeText } = req.body;
@@ -1147,6 +1168,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   // second, deeper look. It now receives that prior report and is explicitly told
   // not to restate what it already found, but to dig into what it missed.
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
       const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {
@@ -1244,6 +1266,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
   // (see transcribeAudioWithGemini), and typed narratives are reformatted
   // as the parent's own account, not dressed up as court dialogue.
   app.post("/api/transcribe", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
       const { narrativeText, audioData, mimeType, fileName } = req.body || {};
 
@@ -1307,6 +1330,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
   // API: Voice Audio Memo Transcription (Microphone integration for parents)
   app.post("/api/transcribe-audio", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
       const { audioData, mimeType } = req.body;
       if (!audioData) {
