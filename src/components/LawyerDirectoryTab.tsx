@@ -146,7 +146,14 @@ export default function LawyerDirectoryTab() {
       </div>
 
       {/* Lawyer Directory Onboarding Notice */}
-      
+      <div className="w-full mt-8 p-4 bg-slate-100 rounded-lg border border-slate-200 text-center">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          📍 Region: London District &amp; Surrounding Jurisdictions
+        </p>
+        <p className="text-xs text-slate-400 mt-1">
+          🍁 Additional Ontario districts and family panels coming soon.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="lawyer-registry-layout">
         {/* Left Side: Directory search list */}
