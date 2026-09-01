@@ -57,13 +57,19 @@ export const getAccessToken = async (): Promise<string | null> => {
 
 /**
  * Minimal-scope sign-in for the mandatory account gate (analyzer/templates/signup routes).
- * BUG FOUND IN AUDIT: the only sign-in flow that existed (googleSignIn above) requests
- * Drive/Gmail/Photos read access as part of ONE popup consent screen - meaning making sign-in
- * mandatory as-is would force every new user to grant broad Google data access just to open
- * the analyzer, whether or not they ever use "Connect Google Services". This is a separate,
- * minimal-scope popup (email/profile only, no addScope calls) for that mandatory gate. The
- * existing googleSignIn/provider above remains untouched and still only fires when someone
- * explicitly clicks "Connect Google Services".
+ *
+ * History worth knowing if this ever needs revisiting: this was briefly switched to
+ * signInWithRedirect() to work around a "click sign-in, popup flashes and closes" symptom on
+ * mobile. That switch turned out to trade one bug for a different one - Chrome's "bounce
+ * tracking mitigation" clears storage for gen-lang-client-....firebaseapp.com (the
+ * intermediate domain Firebase's redirect flow bounces through) before the app ever gets to
+ * read the sign-in result back, so getRedirectResult() came back empty every time (confirmed
+ * via Chrome DevTools' Issues tab: "Chrome may soon delete state for intermediate websites in
+ * a recent navigation chain"). Reverted to signInWithPopup() - it never navigates the
+ * top-level page away, so it isn't affected by that Chrome feature. The original popup
+ * failure was very likely actually caused by the domain not yet being on Firebase's
+ * Authorized Domains list at the time (a separate, since-fixed issue) - not a fundamental
+ * mobile-popup problem, so popup should now work correctly with that fixed.
  */
 export const signInMinimal = async (): Promise<User | null> => {
   try {

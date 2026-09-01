@@ -181,17 +181,10 @@ export interface ParentPrepWorksheet {
 export interface LawyerProfile {
   id: string;
   name: string;
-  firm: string;
-  city: string;
+  address: string;
   phone: string;
-  email: string;
-  website: string;
-  educationNotes: string; // CYFSA knowledge / family defense focus
-  languages: string[];
-  subscriptionSlot: "Exclusive" | "Priority" | "Standard";
-  intakeNote?: string;
+  city: string;
 }
-
 export interface Form33BAnswer {
   courtRegistryName: string;
   caseNumber: string;
