@@ -22,6 +22,7 @@ import StatutoryBookmarkSidebar from "./components/StatutoryBookmarkSidebar";
 import FloatingTTS from "./components/FloatingTTS";
 import LegalTerminologyDrawer from "./components/LegalTerminologyDrawer";
 import ConnectorSearchBot from "./components/ConnectorSearchBot";
+import ParentChatBot from "./components/ParentChatBot";
 import PricingTab from "./components/PricingTab";
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
@@ -395,6 +396,7 @@ export default function App() {
       <ConnectorSearchBot />
       <StatutoryBookmarkSidebar />
       <FloatingTTS />
+      <ParentChatBot />
       
       {/* Symmetrical Floating Glossary Access (Bottom Left) */}
       <button
