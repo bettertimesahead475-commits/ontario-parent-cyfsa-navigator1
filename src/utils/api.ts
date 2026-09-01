@@ -1,3 +1,5 @@
+import { getUserKey } from "./storage";
+
 /**
  * Robust API helper that routes relative routes correctly. Also attaches the
  * paid-tier session token (issued by /api/activate-code, stored after a
@@ -7,7 +9,10 @@
 export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   let token: string | null = null;
   try {
-    token = localStorage.getItem("ps_session_token");
+    // PricingTab stores this under the signed-in user's namespaced key (see
+    // utils/storage.ts's getUserKey) — fall back to the legacy global key for
+    // anyone who redeemed a code before per-account namespacing existed.
+    token = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token");
   } catch {
     // localStorage unavailable (private browsing, etc.) — proceed unauthenticated.
   }

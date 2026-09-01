@@ -55,6 +55,27 @@ export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
 };
 
+/**
+ * Minimal-scope sign-in for the mandatory account gate (analyzer/templates/signup routes).
+ * BUG FOUND IN AUDIT: the only sign-in flow that existed (googleSignIn above) requests
+ * Drive/Gmail/Photos read access as part of ONE popup consent screen - meaning making sign-in
+ * mandatory as-is would force every new user to grant broad Google data access just to open
+ * the analyzer, whether or not they ever use "Connect Google Services". This is a separate,
+ * minimal-scope popup (email/profile only, no addScope calls) for that mandatory gate. The
+ * existing googleSignIn/provider above remains untouched and still only fires when someone
+ * explicitly clicks "Connect Google Services".
+ */
+export const signInMinimal = async (): Promise<User | null> => {
+  try {
+    const minimalProvider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, minimalProvider);
+    return result.user;
+  } catch (error: any) {
+    console.error('Minimal sign-in error:', error);
+    throw error;
+  }
+};
+
 export const logout = async () => {
   await auth.signOut();
   cachedAccessToken = null;

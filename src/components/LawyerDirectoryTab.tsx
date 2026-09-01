@@ -8,6 +8,7 @@ import { LAWYERS } from "../data";
 import { LawyerProfile } from "../types";
 import { Search, MapPin, Scale, ChevronRight, CheckCircle, ShieldCheck, Mail, Phone, Info, AlertCircle, RefreshCw, Sparkles } from "lucide-react";
 import { apiFetch, safeReadJson } from "../utils/api";
+import { getUserKey } from "../utils/storage";
 
 export default function LawyerDirectoryTab() {
   const [selectedCity, setSelectedCity] = useState<string>("All");
@@ -25,7 +26,7 @@ export default function LawyerDirectoryTab() {
 
   const loadFlaggedIssues = (): string => {
     try {
-      const savedDocProgress = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
+      const savedDocProgress = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
       if (savedDocProgress) {
         const parsed = JSON.parse(savedDocProgress);
         const report = parsed?.selectedReport;

@@ -23,6 +23,9 @@ import FloatingTTS from "./components/FloatingTTS";
 import LegalTerminologyDrawer from "./components/LegalTerminologyDrawer";
 import ConnectorSearchBot from "./components/ConnectorSearchBot";
 import PricingTab from "./components/PricingTab";
+import RequireAuth from "./components/RequireAuth";
+import MigrationNotice from "./components/MigrationNotice";
+import { getUserKey } from "./utils/storage";
 
 // Core icons represent core section identity
 import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
@@ -34,7 +37,7 @@ export default function App() {
 
   const [userProfile, setUserProfile] = useState<any>(() => {
     try {
-      const saved = localStorage.getItem("OPA_USER_PROFILE");
+      const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn("Failed to load user profile in header:", e);
@@ -45,7 +48,7 @@ export default function App() {
   useEffect(() => {
     const handleProfileUpdate = () => {
       try {
-        const saved = localStorage.getItem("OPA_USER_PROFILE");
+        const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
         setUserProfile(saved ? JSON.parse(saved) : null);
       } catch (e) {
         console.warn(e);
@@ -62,7 +65,7 @@ export default function App() {
 
   const [currentTier, setCurrentTier] = useState<"Basic" | "Pro" | "Premium">(() => {
     try {
-      const stored = localStorage.getItem("ps_session_tier");
+      const stored = localStorage.getItem(getUserKey("ps_session_tier") || "ps_session_tier");
       if (stored === "Pro" || stored === "Premium") return stored;
     } catch (e) {
       console.warn("Failed to read stored tier:", e);
@@ -215,6 +218,8 @@ export default function App() {
         )}
       </header>
 
+      <MigrationNotice />
+
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
       <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -264,11 +269,15 @@ export default function App() {
           </Route>
 
           <Route path="/document-analyzer">
-            <DocumentAnalyzerTab />
+            <RequireAuth>
+              <DocumentAnalyzerTab />
+            </RequireAuth>
           </Route>
 
           <Route path="/templates">
-            <TemplatesTab />
+            <RequireAuth>
+              <TemplatesTab />
+            </RequireAuth>
           </Route>
 
           <Route path="/saved-documents">
@@ -284,7 +293,9 @@ export default function App() {
           </Route>
 
           <Route path="/signup">
-            <SignUpTab />
+            <RequireAuth>
+              <SignUpTab />
+            </RequireAuth>
           </Route>
 
           {/* Fallback route */}

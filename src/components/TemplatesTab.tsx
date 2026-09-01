@@ -12,6 +12,7 @@ import { apiFetch, safeReadJson } from "../utils/api";
 import DictateButton from "./DictateButton";
 import { db, auth } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
+import { getUserKey } from "../utils/storage";
 
 const EMPTY_FORM33B: Form33BAnswer = {
   courtRegistryName: "Ontario Court of Justice",
@@ -66,7 +67,7 @@ export default function TemplatesTab() {
   // Parse saved progressive states
   const parsedProg = (() => {
     try {
-      const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+      const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error("Failed to parse templates progressive draft from localStorage:", e);
@@ -174,11 +175,11 @@ export default function TemplatesTab() {
   const [handoverDocName, setHandoverDocName] = useState<string | null>(null);
 
   useEffect(() => {
-    const docName = localStorage.getItem("OPA_HANDOVER_ALERT");
+    const docName = localStorage.getItem(getUserKey("OPA_HANDOVER_ALERT") || "OPA_HANDOVER_ALERT");
     if (docName) {
       setHandoverDocName(docName);
       try {
-        const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+        const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed.form33b) setForm33b(parsed.form33b);
@@ -193,7 +194,7 @@ export default function TemplatesTab() {
       } catch (err) {
         console.error("Failed to load handover data:", err);
       }
-      localStorage.removeItem("OPA_HANDOVER_ALERT");
+      localStorage.removeItem(getUserKey("OPA_HANDOVER_ALERT") || "OPA_HANDOVER_ALERT");
     }
   }, []);
 
@@ -343,7 +344,7 @@ export default function TemplatesTab() {
         caseTimelineOpenItems,
         lastSaved: Date.now()
       };
-      localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setSaveStatus(`Saved at ${timeStr}`);
       setTimeout(() => setSaveStatus(null), 3000);
@@ -417,7 +418,7 @@ export default function TemplatesTab() {
           caseTimelineOpenItems,
           lastSaved: Date.now()
         };
-        localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
+        localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
         setIsAutoSaving(false);
       } catch (e) {
         console.warn("Storage quota warning for auto-save in templates:", e);
@@ -2343,7 +2344,7 @@ export default function TemplatesTab() {
                   onClick={() => {
                     // Try to auto-populate from Document Analyzer flagged issues!
                     try {
-                      const docProg = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
+                      const docProg = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
                       if (docProg) {
                         const parsed = JSON.parse(docProg);
                         const report = parsed?.selectedReport;

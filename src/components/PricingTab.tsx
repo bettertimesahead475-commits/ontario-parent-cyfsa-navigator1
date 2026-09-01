@@ -6,6 +6,7 @@
 import React, { useState } from "react";
 import { AccessTier } from "../types";
 import { Check, Sparkles, Loader2, Shield, ArrowRight, CheckCircle, Scale, Coins } from "lucide-react";
+import { getUserKey } from "../utils/storage";
 
 interface PricingTabProps {
   currentTier: AccessTier;
@@ -110,9 +111,9 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid email or code.");
-      localStorage.setItem("ps_session_token", data.token);
-      localStorage.setItem("ps_session_email", data.email);
-      localStorage.setItem("ps_session_tier", data.tier);
+      localStorage.setItem(getUserKey("ps_session_token") || "ps_session_token", data.token);
+      localStorage.setItem(getUserKey("ps_session_email") || "ps_session_email", data.email);
+      localStorage.setItem(getUserKey("ps_session_tier") || "ps_session_tier", data.tier);
       onSuccess(data.tier);
     } catch (err: any) {
       onError(err.message || "Verification failed.");
