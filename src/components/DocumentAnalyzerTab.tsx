@@ -45,11 +45,8 @@ import {
   Save,
   Copy,
   ExternalLink,
-  X,
-  CloudUpload
+  X
 } from "lucide-react";
-import { db, auth } from "../firebase";
-import { doc, setDoc } from "firebase/firestore";
 import { getUserKey } from "../utils/storage";
 
 // Escapes a value for safe interpolation into the raw HTML strings the print/export
@@ -442,21 +439,6 @@ export default function DocumentAnalyzerTab() {
 
   // Active Audit Visual State
   const [selectedReport, setSelectedReport] = useState<AnalysisReport | null>(() => {
-    // BUG FOUND IN AUDIT: SavedDocumentsTab.tsx's "Open Document" button for a saved analysis
-    // writes the report to localStorage under "OPA_LOAD_ANALYSIS_REPORT" and navigates here,
-    // but nothing in this file ever read that key back - the report was silently dropped every
-    // time, and the user just landed on whatever the default/empty view was. Wired up here:
-    // if that handoff key is present, it takes priority over the regular saved-progress restore,
-    // and is cleared immediately after being consumed so it doesn't reload on every future visit.
-    try {
-      const handoff = localStorage.getItem("OPA_LOAD_ANALYSIS_REPORT");
-      if (handoff) {
-        localStorage.removeItem("OPA_LOAD_ANALYSIS_REPORT");
-        return JSON.parse(handoff);
-      }
-    } catch (e) {
-      console.error("Failed to load handed-off analysis report:", e);
-    }
     return parsedProg?.selectedReport || null;
   });
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState<boolean>(false);
@@ -743,46 +725,6 @@ export default function DocumentAnalyzerTab() {
     } catch (e) {
       console.error("Failed to manually save Document Analyzer state to localStorage:", e);
       setSaveStatus("Limit Exceeded");
-    }
-  };
-
-  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
-  const saveToCloud = async () => {
-    if (!auth.currentUser) {
-      alert("You must be logged in to save to the cloud. Please visit the Advocate Passport tab.");
-      return;
-    }
-    
-    setIsSavingToCloud(true);
-    try {
-      const stateToSave = {
-        organizedFiles,
-        selectedFileId,
-        activeFolder,
-        ragChatMessages,
-        selectedReport,
-        activeTab,
-        savedBriefs
-      };
-      
-      const docId = `analysis_${Date.now()}`;
-      await setDoc(doc(db, "users", auth.currentUser.uid, "saved_documents", docId), {
-        id: docId,
-        userId: auth.currentUser.uid,
-        title: selectedReport ? `Analysis Report - ${selectedReport.documentTitle}` : 'Document Analyzer Draft',
-        type: 'analysis',
-        content: JSON.stringify(stateToSave),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      
-      setSaveStatus("Saved to Cloud ✓");
-      setTimeout(() => setSaveStatus(null), 3000);
-    } catch (e: any) {
-      console.error("Failed to save to cloud:", e);
-      alert("Failed to save to cloud: " + (e.message || "Unknown error"));
-    } finally {
-      setIsSavingToCloud(false);
     }
   };
 
@@ -2841,15 +2783,6 @@ export default function DocumentAnalyzerTab() {
               {saveStatus ? saveStatus : "Auto-saved"}
             </span>
 
-            <button
-              onClick={saveToCloud}
-              disabled={isSavingToCloud}
-              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-emerald-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs disabled:opacity-50"
-              title="Save to your account in the cloud"
-            >
-              {isSavingToCloud ? <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" /> : <CloudUpload className="w-3 h-3 text-emerald-600" />}
-              Cloud Save
-            </button>
             <button
               onClick={saveProgress}
               className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"

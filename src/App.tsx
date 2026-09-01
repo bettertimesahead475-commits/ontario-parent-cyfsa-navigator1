@@ -17,7 +17,6 @@ import TemplatesTab from "./components/TemplatesTab";
 import VoiceAssistantTab from "./components/VoiceAssistantTab";
 import LawyerDirectoryTab from "./components/LawyerDirectoryTab";
 import SignUpTab from "./components/SignUpTab";
-import SavedDocumentsTab from "./components/SavedDocumentsTab";
 import StatutoryBookmarkSidebar from "./components/StatutoryBookmarkSidebar";
 import FloatingTTS from "./components/FloatingTTS";
 import LegalTerminologyDrawer from "./components/LegalTerminologyDrawer";
@@ -29,7 +28,7 @@ import MigrationNotice from "./components/MigrationNotice";
 import { getUserKey } from "./utils/storage";
 
 // Core icons represent core section identity
-import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
+import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User } from "lucide-react";
 
 export default function App() {
   useGlobalResetListener();
@@ -279,10 +278,6 @@ export default function App() {
             <RequireAuth>
               <TemplatesTab />
             </RequireAuth>
-          </Route>
-
-          <Route path="/saved-documents">
-            <SavedDocumentsTab />
           </Route>
 
           <Route path="/voice-assistant">
