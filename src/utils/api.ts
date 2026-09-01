@@ -1,10 +1,15 @@
 import { getUserKey } from "./storage";
+import { auth } from "./firebase";
 
 /**
- * Robust API helper that routes relative routes correctly. Also attaches the
- * paid-tier session token (issued by /api/activate-code, stored after a
- * parent redeems an access code) as a Bearer token, since several backend
- * routes require it — see requireSession() in api/_server.ts.
+ * Robust API helper that routes relative routes correctly. Also attaches:
+ *  - the paid-tier session token (issued by /api/activate-code, stored after a parent
+ *    redeems an access code) as a Bearer token, since several backend routes require it —
+ *    see requireSession() in api/_server.ts.
+ *  - the signed-in Firebase user's email as X-User-Email, since /api/analyze and
+ *    /api/extract-evidence use it to grant each account one free use before the paid gate
+ *    applies — see allowFreeToolUse()/checkAndConsumeFreeToolUse() in api/_server.ts /
+ *    services/access.ts.
  */
 export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   let token: string | null = null;
@@ -16,10 +21,19 @@ export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   } catch {
     // localStorage unavailable (private browsing, etc.) — proceed unauthenticated.
   }
-  if (!token) return fetch(input, init);
+
+  let userEmail: string | null = null;
+  try {
+    userEmail = auth.currentUser?.email || null;
+  } catch {
+    // Firebase not initialized/available — proceed without it.
+  }
+
+  if (!token && !userEmail) return fetch(input, init);
 
   const headers = new Headers(init?.headers);
-  if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  if (userEmail && !headers.has("X-User-Email")) headers.set("X-User-Email", userEmail);
   return fetch(input, { ...init, headers });
 }
 

@@ -27,6 +27,7 @@ const mockAccess = vi.hoisted(() => ({
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
   verifySessionToken: vi.fn(),
+  checkAndConsumeFreeToolUse: vi.fn(),
   TIER_PRICES: { Pro: 19, Premium: 49 },
 }));
 
@@ -111,6 +112,9 @@ beforeEach(() => {
   mockAccess.verifySessionToken.mockImplementation((token: string) =>
     token === VALID_SESSION_TOKEN ? { email: "parent@example.com", tier: "Pro" } : null
   );
+  // Default: no free use left, so tests using AUTH_HEADER exercise the paid path as before;
+  // tests for the free-tier grant override this per-call.
+  mockAccess.checkAndConsumeFreeToolUse.mockResolvedValue(false);
 });
 
 describe("session-gated AI routes", () => {
@@ -267,6 +271,45 @@ describe("POST /api/analyze", () => {
     expect(res.status).toBe(400);
   });
 
+  it("grants a free use via X-User-Email when the free-tool-usage table has a free pass left", async () => {
+    mockAccess.checkAndConsumeFreeToolUse.mockResolvedValueOnce(true);
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("X-User-Email", "parent@example.com")
+      .send({ textContent: "some affidavit text" });
+    expect(res.status).toBe(200);
+    expect(mockAccess.checkAndConsumeFreeToolUse).toHaveBeenCalledWith("parent@example.com", "analyze");
+  });
+
+  it("falls back to the paid gate (401) once the free pass is already spent", async () => {
+    mockAccess.checkAndConsumeFreeToolUse.mockResolvedValueOnce(false);
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("X-User-Email", "parent@example.com")
+      .send({ textContent: "some affidavit text" });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects outright with no session and no email at all", async () => {
+    const res = await request(app).post("/api/analyze").send({ textContent: "some affidavit text" });
+    expect(res.status).toBe(401);
+    expect(mockAccess.checkAndConsumeFreeToolUse).not.toHaveBeenCalled();
+  });
+
+  it("skips the free-use check entirely for an already-paid session", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(AUTH_HEADER)
+      .set("X-User-Email", "parent@example.com")
+      .send({ textContent: "some affidavit text" });
+    expect(res.status).toBe(200);
+    expect(mockAccess.checkAndConsumeFreeToolUse).not.toHaveBeenCalled();
+  });
+
   // /api/analyze issues two concurrent Claude calls (a "core" pass and a "deep-dive" pass —
   // see the comment above documentContentBlock in _server.ts) instead of one, so every test
   // below queues a resolved/rejected value for each of the two calls the endpoint actually
@@ -393,6 +436,32 @@ describe("POST /api/extract-evidence", () => {
   it("rejects empty narrative text", async () => {
     const res = await request(app).post("/api/extract-evidence").set(AUTH_HEADER).send({ narrativeText: "   " });
     expect(res.status).toBe(400);
+  });
+
+  it("grants a free use via X-User-Email when the free-tool-usage table has a free pass left", async () => {
+    mockAccess.checkAndConsumeFreeToolUse.mockResolvedValueOnce(true);
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ date: "2026-08-01", whatHappened: "A visit occurred." }));
+    const res = await request(app)
+      .post("/api/extract-evidence")
+      .set("X-User-Email", "parent@example.com")
+      .send({ narrativeText: "Yesterday the worker visited." });
+    expect(res.status).toBe(200);
+    expect(mockAccess.checkAndConsumeFreeToolUse).toHaveBeenCalledWith("parent@example.com", "extract-evidence");
+  });
+
+  it("falls back to the paid gate (401) once the free pass is already spent", async () => {
+    mockAccess.checkAndConsumeFreeToolUse.mockResolvedValueOnce(false);
+    const res = await request(app)
+      .post("/api/extract-evidence")
+      .set("X-User-Email", "parent@example.com")
+      .send({ narrativeText: "Yesterday the worker visited." });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects outright with no session and no email at all", async () => {
+    const res = await request(app).post("/api/extract-evidence").send({ narrativeText: "Yesterday the worker visited." });
+    expect(res.status).toBe(401);
+    expect(mockAccess.checkAndConsumeFreeToolUse).not.toHaveBeenCalled();
   });
 
   it("returns the structured extraction on success", async () => {
