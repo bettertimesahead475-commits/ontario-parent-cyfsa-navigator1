@@ -8,7 +8,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { useLocation } from "wouter";
 import { jsPDF } from "jspdf";
-import { safeReadJson } from "../utils/api";
+import { apiFetch, safeReadJson } from "../utils/api";
 import { getUserKey } from "../utils/storage";
 
 interface UserProfile {
@@ -213,7 +213,7 @@ export default function SignUpTab() {
           const base64payload = base64data.split(",")[1];
 
           // Send to secure server transcription
-          const response = await fetch("/api/transcribe-audio", {
+          const response = await apiFetch("/api/transcribe-audio", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

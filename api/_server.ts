@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, TIER_PRICES, type Tier } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
 
 dotenv.config();
 
@@ -374,6 +374,52 @@ app.use(compression());
 app.use(express.json({ limit: "100mb" }));
 
 
+  // Requires a valid, unexpired session token (issued by /api/activate-code
+  // after a paid Pro/Premium access code is redeemed — see services/access.ts).
+  // Sent as `Authorization: Bearer <token>`. Writes the 401 response itself
+  // when the check fails, so callers should just `if (!requireSession(...)) return;`.
+  function requireSession(req: Request, res: Response): { email: string; tier: Tier } | null {
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const session = token ? verifySessionToken(token) : null;
+    if (!session) {
+      res.status(401).json({
+        error: "This feature requires an active Pro or Premium plan. Activate your access code (or upgrade) on the Membership page.",
+      });
+      return null;
+    }
+    return session;
+  }
+
+  function hasValidSession(req: Request): boolean {
+    const authHeader = req.headers.authorization || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    return !!(token && verifySessionToken(token));
+  }
+
+  // Gate for /api/analyze and /api/extract-evidence specifically: "1 free, then pay". A
+  // signed-in parent (identified by the X-User-Email header apiFetch() attaches from the
+  // RequireAuth Firebase sign-in) gets one free use of each tool before the regular
+  // Pro/Premium session-token wall applies — see checkAndConsumeFreeToolUse() and the
+  // free_tool_usage table in services/access.ts. Writes the 401 response itself on failure,
+  // same contract as requireSession().
+  async function allowFreeToolUse(req: Request, res: Response, tool: FreeTool): Promise<boolean> {
+    if (hasValidSession(req)) return true; // paid users never touch the free-use table
+
+    const email = String(req.headers["x-user-email"] || "").toLowerCase().trim();
+    if (email) {
+      try {
+        if (await checkAndConsumeFreeToolUse(email, tool)) return true;
+      } catch (err) {
+        console.error(`[free-tool-usage] ${tool}`, err);
+        // Fail closed to the paid gate below rather than granting unlimited free use if the
+        // usage table is unreachable.
+      }
+    }
+
+    return !!requireSession(req, res);
+  }
+
   // API 1: Health endpoint
   app.get("/api/health", (req: Request, res: Response) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
@@ -503,6 +549,7 @@ app.use(express.json({ limit: "100mb" }));
   });
 
   app.post("/api/analyze", async (req: Request, res: Response) => {
+    if (!(await allowFreeToolUse(req, res, "analyze"))) return;
     let targetText = "";
     let fileDataObj: any = null;
     try {
@@ -822,6 +869,7 @@ ${analysisRules}`;
   // mirrors exactly how the manual cross-referencing distinguished "confirmed in writing"
   // from "described by the parent, not yet located in any document."
   app.post("/api/case-timeline", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
       const { documents, model, parentClaims } = req.body as {
         documents?: { name: string; text: string; sourceDate?: string }[];
@@ -932,6 +980,10 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
+    // The free "OPA Coach" chat (ParentChatBot.tsx) sends focus: "family-advocate" and stays
+    // ungated; every other focus (the Document Analyzer's paid RAG deep-scan chat) requires
+    // a valid session.
+    if (req.body?.focus !== "family-advocate" && !requireSession(req, res)) return;
     let queryVal = "";
     let filesVal: any[] = [];
     let focusVal = "";
@@ -1075,6 +1127,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
   // API: Joint voice/text dictation evidence extraction endpoint
   app.post("/api/extract-evidence", async (req: Request, res: Response) => {
+    if (!(await allowFreeToolUse(req, res, "extract-evidence"))) return;
     let narrativeTextVal = "";
     try {
       const { narrativeText } = req.body;
@@ -1147,6 +1200,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   // second, deeper look. It now receives that prior report and is explicitly told
   // not to restate what it already found, but to dig into what it missed.
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
       const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {

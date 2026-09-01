@@ -1,8 +1,40 @@
+import { getUserKey } from "./storage";
+import { auth } from "./firebase";
+
 /**
- * Robust API helper that routes relative routes correctly.
+ * Robust API helper that routes relative routes correctly. Also attaches:
+ *  - the paid-tier session token (issued by /api/activate-code, stored after a parent
+ *    redeems an access code) as a Bearer token, since several backend routes require it —
+ *    see requireSession() in api/_server.ts.
+ *  - the signed-in Firebase user's email as X-User-Email, since /api/analyze and
+ *    /api/extract-evidence use it to grant each account one free use before the paid gate
+ *    applies — see allowFreeToolUse()/checkAndConsumeFreeToolUse() in api/_server.ts /
+ *    services/access.ts.
  */
 export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  return fetch(input, init);
+  let token: string | null = null;
+  try {
+    // PricingTab stores this under the signed-in user's namespaced key (see
+    // utils/storage.ts's getUserKey) — fall back to the legacy global key for
+    // anyone who redeemed a code before per-account namespacing existed.
+    token = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token");
+  } catch {
+    // localStorage unavailable (private browsing, etc.) — proceed unauthenticated.
+  }
+
+  let userEmail: string | null = null;
+  try {
+    userEmail = auth.currentUser?.email || null;
+  } catch {
+    // Firebase not initialized/available — proceed without it.
+  }
+
+  if (!token && !userEmail) return fetch(input, init);
+
+  const headers = new Headers(init?.headers);
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  if (userEmail && !headers.has("X-User-Email")) headers.set("X-User-Email", userEmail);
+  return fetch(input, { ...init, headers });
 }
 
 /**

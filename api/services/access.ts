@@ -114,6 +114,22 @@ export function verifySessionToken(token: string): { email: string; tier: Tier }
   }
 }
 
+// --- Free-tier quota: "1 free, then pay" for /api/analyze and /api/extract-evidence --------
+// Backed by the free_tool_usage table (email, tool) with a unique constraint on the pair.
+// The insert IS the claim: if it succeeds, this is the parent's first (free) use of that
+// tool; if it fails on the unique constraint, they've already spent it. This is race-safe
+// under concurrent requests, unlike a select-then-insert check.
+export type FreeTool = "analyze" | "extract-evidence";
+
+export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool): Promise<boolean> {
+  const db = getSupabase();
+  const normalizedEmail = email.toLowerCase().trim();
+  const { error } = await db.from("free_tool_usage").insert({ email: normalizedEmail, tool });
+  if (!error) return true;
+  if (error.code === "23505") return false; // unique_violation — already used this tool's free pass
+  throw Object.assign(new Error(`Failed to check free tool usage: ${error.message}`), { statusCode: 500 });
+}
+
 // --- Step 1: parent requests access before paying --------------------------
 export async function requestAccess(email: string, tier: Tier) {
   const db = getSupabase();

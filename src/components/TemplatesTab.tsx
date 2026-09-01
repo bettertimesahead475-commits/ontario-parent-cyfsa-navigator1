@@ -7,11 +7,9 @@ import { useAppReset } from "../hooks/useAppReset";
 import React, { useState, useEffect } from "react";
 import { EMPTY_AFFIDAVIT } from "../data";
 import { AffidavitDraft, CaseTimelineItem, EvidenceLogItem, IssueSummarySheet, ParentPrepWorksheet, Form33BAnswer, PlanOfCare } from "../types";
-import { Plus, Trash, Printer, ShieldAlert, CheckCircle, Scale, FileText, LayoutGrid, Calendar, BookOpen, Clock, Layers, Info, Mic, Square, Sparkles, Loader2, RefreshCw, AlertTriangle, Save, ArrowRight, Check, Lock, Heart, CloudUpload } from "lucide-react";
+import { Plus, Trash, Printer, ShieldAlert, CheckCircle, Scale, FileText, LayoutGrid, Calendar, BookOpen, Clock, Layers, Info, Mic, Square, Sparkles, Loader2, RefreshCw, AlertTriangle, Save, ArrowRight, Check, Lock, Heart } from "lucide-react";
 import { apiFetch, safeReadJson } from "../utils/api";
 import DictateButton from "./DictateButton";
-import { db, auth } from "../firebase";
-import { doc, setDoc } from "firebase/firestore";
 import { getUserKey } from "../utils/storage";
 
 const EMPTY_FORM33B: Form33BAnswer = {
@@ -354,50 +352,6 @@ export default function TemplatesTab() {
     }
   };
 
-  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
-  const saveToCloud = async () => {
-    if (!auth.currentUser) {
-      alert("You must be logged in to save to the cloud. Please visit the Advocate Passport tab.");
-      return;
-    }
-    
-    setIsSavingToCloud(true);
-    try {
-      const stateToSave = {
-        activeBuilderTab,
-        affidavit,
-        timelineItems,
-        evidenceLog,
-        issueSheets,
-        prepSheet,
-        form33b,
-        planOfCare,
-        caseNumberWarnings,
-        caseTimelineConflicts,
-        caseTimelineOpenItems,
-        lastSaved: Date.now()
-      };
-
-      const docId = `template_${Date.now()}`;
-      await setDoc(doc(db, "users", auth.currentUser.uid, "saved_documents", docId), {
-        id: docId,
-        userId: auth.currentUser.uid,
-        title: form33b.applicantName ? `Templates Draft - ${form33b.applicantName} vs ${form33b.respondentName}` : 'Templates Draft',
-        type: 'template',
-        content: JSON.stringify(stateToSave),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      
-      setSaveStatus("Saved to Cloud ✓");
-      setTimeout(() => setSaveStatus(null), 3000);
-    } catch (e: any) {
-      console.error("Failed to save to cloud:", e);
-      alert("Failed to save to cloud: " + (e.message || "Unknown error"));
-    } finally {
-      setIsSavingToCloud(false);
-    }
-  };
 
   // Auto-save whenever structural state changes (with 800ms debounce)
   useEffect(() => {
@@ -1293,15 +1247,6 @@ export default function TemplatesTab() {
                   : "Auto-saved Device Draft"}
             </span>
 
-            <button
-              onClick={saveToCloud}
-              disabled={isSavingToCloud}
-              className="px-1.5 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-sans font-bold text-[9px] rounded cursor-pointer border border-purple-200 uppercase tracking-wide flex items-center gap-0.5 transition-all hover:shadow-2xs animate-fade-in disabled:opacity-50"
-              title="Save to your account in the cloud"
-            >
-              {isSavingToCloud ? <Loader2 className="w-2.5 h-2.5 text-purple-600 animate-spin" /> : <CloudUpload className="w-2.5 h-2.5 text-purple-600" />}
-              Cloud Save
-            </button>
             <button
               onClick={saveProgress}
               className="px-1.5 py-0.5 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[9px] rounded cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-0.5 transition-all hover:shadow-2xs animate-fade-in"
