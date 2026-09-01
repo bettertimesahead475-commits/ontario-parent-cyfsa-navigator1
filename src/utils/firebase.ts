@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -57,21 +57,34 @@ export const getAccessToken = async (): Promise<string | null> => {
 
 /**
  * Minimal-scope sign-in for the mandatory account gate (analyzer/templates/signup routes).
- * BUG FOUND IN AUDIT: the only sign-in flow that existed (googleSignIn above) requests
- * Drive/Gmail/Photos read access as part of ONE popup consent screen - meaning making sign-in
- * mandatory as-is would force every new user to grant broad Google data access just to open
- * the analyzer, whether or not they ever use "Connect Google Services". This is a separate,
- * minimal-scope popup (email/profile only, no addScope calls) for that mandatory gate. The
- * existing googleSignIn/provider above remains untouched and still only fires when someone
- * explicitly clicks "Connect Google Services".
+ * BUG FOUND: this originally used signInWithPopup(), which is well-known to fail silently on
+ * mobile browsers - the popup opens, flashes briefly, then closes on its own due to
+ * third-party storage/cookie restrictions common on mobile Chrome, with no usable error ever
+ * surfacing (exactly the "click it, it flashes, disappears, asks to click again" symptom).
+ * Switched to signInWithRedirect(), the standard, mobile-reliable alternative: it navigates
+ * the whole page to Google's sign-in flow and back, rather than relying on a popup window
+ * that mobile browsers often can't complete. See getRedirectSignInResult() below, which
+ * RequireAuth.tsx calls on mount to pick up the result after the redirect completes.
  */
-export const signInMinimal = async (): Promise<User | null> => {
+export const signInMinimal = async (): Promise<void> => {
+  const minimalProvider = new GoogleAuthProvider();
+  await signInWithRedirect(auth, minimalProvider);
+  // The browser navigates away here - there is nothing further to do in this function.
+  // The actual signed-in user is picked up after redirect via getRedirectSignInResult().
+};
+
+/**
+ * Call this once, on app/component mount, to complete a signInWithRedirect() flow that was
+ * started by signInMinimal() above. Returns the signed-in user if a redirect just completed,
+ * or null if there was no pending redirect (the normal case on every load that isn't
+ * immediately after a sign-in attempt).
+ */
+export const getRedirectSignInResult = async (): Promise<User | null> => {
   try {
-    const minimalProvider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, minimalProvider);
-    return result.user;
+    const result = await getRedirectResult(auth);
+    return result?.user || null;
   } catch (error: any) {
-    console.error('Minimal sign-in error:', error);
+    console.error('Redirect sign-in error:', error);
     throw error;
   }
 };

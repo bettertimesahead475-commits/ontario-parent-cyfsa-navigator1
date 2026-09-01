@@ -9,7 +9,7 @@
  */
 import { useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { auth, signInMinimal } from "../utils/firebase";
+import { auth, signInMinimal, getRedirectSignInResult } from "../utils/firebase";
 import { Shield, Loader2 } from "lucide-react";
 
 export default function RequireAuth({ children }: { children: ReactNode }) {
@@ -18,6 +18,14 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Pick up the result of a signInWithRedirect() that just completed (the page will have
+    // navigated away to Google and back by the time this runs). Must run before/alongside
+    // onAuthStateChanged below, since on some browsers the redirect result needs to be
+    // consumed once before the auth state listener reliably reflects the new user.
+    getRedirectSignInResult().catch((e: any) => {
+      setError("Sign-in didn't go through. Please try again.");
+    });
+
     const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsubscribe();
   }, []);
@@ -27,10 +35,10 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
     setError(null);
     try {
       await signInMinimal();
-      // onAuthStateChanged above will pick up the new user automatically.
+      // signInWithRedirect navigates the whole page away - nothing more happens here until
+      // the page reloads after Google's flow completes.
     } catch (e: any) {
       setError("Sign-in didn't go through. Please try again.");
-    } finally {
       setSigningIn(false);
     }
   };
