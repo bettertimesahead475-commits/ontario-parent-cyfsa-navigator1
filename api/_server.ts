@@ -951,7 +951,10 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
-    if (!requireSession(req, res)) return;
+    // The free "OPA Coach" chat (ParentChatBot.tsx) sends focus: "family-advocate" and stays
+    // ungated; every other focus (the Document Analyzer's paid RAG deep-scan chat) requires
+    // a valid session.
+    if (req.body?.focus !== "family-advocate" && !requireSession(req, res)) return;
     let queryVal = "";
     let filesVal: any[] = [];
     let focusVal = "";
@@ -1266,7 +1269,6 @@ OUTPUT — return strictly this JSON schema, nothing else:
   // (see transcribeAudioWithGemini), and typed narratives are reformatted
   // as the parent's own account, not dressed up as court dialogue.
   app.post("/api/transcribe", async (req: Request, res: Response) => {
-    if (!requireSession(req, res)) return;
     try {
       const { narrativeText, audioData, mimeType, fileName } = req.body || {};
 
@@ -1330,7 +1332,6 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
   // API: Voice Audio Memo Transcription (Microphone integration for parents)
   app.post("/api/transcribe-audio", async (req: Request, res: Response) => {
-    if (!requireSession(req, res)) return;
     try {
       const { audioData, mimeType } = req.body;
       if (!audioData) {

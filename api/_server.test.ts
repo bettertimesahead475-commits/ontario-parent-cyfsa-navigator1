@@ -96,14 +96,14 @@ const MINIMAL_ANALYSIS = {
 // mocked verifySessionToken below only recognizes this exact token.
 const VALID_SESSION_TOKEN = "valid-test-session-token";
 const AUTH_HEADER = { Authorization: `Bearer ${VALID_SESSION_TOKEN}` };
+// /api/transcribe and /api/transcribe-audio are intentionally free/ungated (voice journaling
+// is not a paid feature). /api/rag-query is conditionally gated — see the dedicated tests
+// below — so it isn't in this uniform list either.
 const GATED_ROUTES = [
   "/api/analyze",
   "/api/case-timeline",
-  "/api/rag-query",
   "/api/extract-evidence",
   "/api/deep-scan",
-  "/api/transcribe",
-  "/api/transcribe-audio",
 ];
 
 beforeEach(() => {
@@ -374,6 +374,19 @@ describe("POST /api/rag-query", () => {
     const sentPrompt = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
     expect(sentPrompt).not.toContain("CONVERSATION SO FAR");
   });
+
+  it("rejects a non-family-advocate query with 401 when no session token is sent", async () => {
+    const res = await request(app).post("/api/rag-query").send({ query: "A question", files: [], focus: "legal-auditor" });
+    expect(res.status).toBe(401);
+  });
+
+  it("lets the free OPA Coach chat (focus: family-advocate) through with no session token", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Free coach answer."));
+    const res = await request(app).post("/api/rag-query").send({ query: "A question", files: [], focus: "family-advocate" });
+    expect(res.status).toBe(200);
+    expect(res.body.answer).toBe("Free coach answer.");
+    expect(mockAccess.verifySessionToken).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/extract-evidence", () => {
@@ -458,14 +471,21 @@ describe("POST /api/deep-scan", () => {
 });
 
 describe("POST /api/transcribe", () => {
+  it("is not gated — works with no session token", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Dear journal, ..."));
+    const res = await request(app).post("/api/transcribe").send({ narrativeText: "the worker came by" });
+    expect(res.status).toBe(200);
+    expect(mockAccess.verifySessionToken).not.toHaveBeenCalled();
+  });
+
   it("rejects a request with neither narrative text nor audio", async () => {
-    const res = await request(app).post("/api/transcribe").set(AUTH_HEADER).send({});
+    const res = await request(app).post("/api/transcribe").send({});
     expect(res.status).toBe(400);
   });
 
   it("formats a typed narrative into a journal entry via Claude", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Dear journal, ..."));
-    const res = await request(app).post("/api/transcribe").set(AUTH_HEADER).send({ narrativeText: "the worker came by" });
+    const res = await request(app).post("/api/transcribe").send({ narrativeText: "the worker came by" });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.transcribedText).toBe("Dear journal, ...");
@@ -475,7 +495,6 @@ describe("POST /api/transcribe", () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "spoken words here" });
     const res = await request(app)
       .post("/api/transcribe")
-      .set(AUTH_HEADER)
       .send({ audioData: "base64audio", mimeType: "audio/webm", fileName: "call.webm" });
     expect(res.status).toBe(200);
     expect(res.body.transcribedText).toContain("spoken words here");
@@ -486,28 +505,34 @@ describe("POST /api/transcribe", () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "   " });
     const res = await request(app)
       .post("/api/transcribe")
-      .set(AUTH_HEADER)
       .send({ audioData: "base64audio", mimeType: "audio/webm" });
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
 });
 
 describe("POST /api/transcribe-audio", () => {
+  it("is not gated — works with no session token", async () => {
+    mockGenerateContent.mockResolvedValueOnce({ text: "hello there" });
+    const res = await request(app).post("/api/transcribe-audio").send({ audioData: "base64audio", mimeType: "audio/webm" });
+    expect(res.status).toBe(200);
+    expect(mockAccess.verifySessionToken).not.toHaveBeenCalled();
+  });
+
   it("rejects a request with no audio data", async () => {
-    const res = await request(app).post("/api/transcribe-audio").set(AUTH_HEADER).send({});
+    const res = await request(app).post("/api/transcribe-audio").send({});
     expect(res.status).toBe(400);
   });
 
   it("returns the transcription on success", async () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "hello there" });
-    const res = await request(app).post("/api/transcribe-audio").set(AUTH_HEADER).send({ audioData: "base64audio", mimeType: "audio/webm" });
+    const res = await request(app).post("/api/transcribe-audio").send({ audioData: "base64audio", mimeType: "audio/webm" });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, text: "hello there" });
   });
 
   it("degrades gracefully to a 200 fallback instead of an error when transcription fails", async () => {
     mockGenerateContent.mockRejectedValueOnce(new Error("Gemini is down"));
-    const res = await request(app).post("/api/transcribe-audio").set(AUTH_HEADER).send({ audioData: "base64audio", mimeType: "audio/webm" });
+    const res = await request(app).post("/api/transcribe-audio").send({ audioData: "base64audio", mimeType: "audio/webm" });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.isFallback).toBe(true);
