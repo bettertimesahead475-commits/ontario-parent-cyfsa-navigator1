@@ -13,6 +13,8 @@ import DictateButton from "./DictateButton";
 import { db, auth } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { getUserKey } from "../utils/storage";
+import { useRedaction } from "../utils/redaction";
+import RedactionToggle from "./RedactionToggle";
 
 const EMPTY_FORM33B: Form33BAnswer = {
   courtRegistryName: "Ontario Court of Justice",
@@ -53,6 +55,7 @@ const EMPTY_PLANOFCARE: PlanOfCare = {
 
 export default function TemplatesTab() {
   const { resetAll } = useAppReset();
+  const { enabled: redactionEnabled, toggle: toggleRedaction, redact } = useRedaction();
   // Save status indicator
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
@@ -659,20 +662,20 @@ export default function TemplatesTab() {
           <tr>
             <td>
               <strong>Applicant (Parent/Party):</strong><br/>
-              ${escapeHtml(affidavit.applicantName || "Not Specified")}<br/><br/>
+              ${escapeHtml(redact(affidavit.applicantName) || "Not Specified")}<br/><br/>
               <strong>Respondent(s):</strong><br/>
-              ${escapeHtml(affidavit.respondentName || "Not Specified")}
+              ${escapeHtml(redact(affidavit.respondentName) || "Not Specified")}
             </td>
             <td>
               <strong>Court Registry Local Office:</strong><br/>
               ${escapeHtml(affidavit.courtRegistryName || "Not Specified")}<br/><br/>
               <strong>Subject Children names & Dates of Birth:</strong><br/>
-              ${escapeHtml(affidavit.childNames || "Not Specified")} ${affidavit.childBirthdates ? `(Born: ${escapeHtml(affidavit.childBirthdates)})` : ""}
+              ${escapeHtml(redact(affidavit.childNames) || "Not Specified")} ${affidavit.childBirthdates ? `(Born: ${escapeHtml(redact(affidavit.childBirthdates))})` : ""}
             </td>
           </tr>
         </table>
 
-        <div class="document-title">Affidavit of ${escapeHtml(affidavit.authorName || "Drafting Parent")}</div>
+        <div class="document-title">Affidavit of ${escapeHtml(redact(affidavit.authorName) || "Drafting Parent")}</div>
 
         <div class="text-block">
           I, <strong>${escapeHtml(affidavit.authorName || "Drafting Parent")}</strong>, of the Province of Ontario, Canada, make oath and say (or solemnly affirm) as follows:
@@ -954,7 +957,7 @@ export default function TemplatesTab() {
               <strong>Applicant (Children's Aid Society Name):</strong><br/>
               ${escapeHtml(form33b.applicantName || "Children's Aid Society")}<br/><br/>
               <strong>Respondent Parent:</strong><br/>
-              ${escapeHtml(form33b.respondentName || "Not Specified")}<br/><br/>
+              ${escapeHtml(redact(form33b.respondentName) || "Not Specified")}<br/><br/>
               <strong>Date of Society's Application:</strong><br/>
               ${escapeHtml(form33b.applicationDate || "Not Specified")}
             </td>
@@ -962,9 +965,9 @@ export default function TemplatesTab() {
               <strong>Court Registry Local Office:</strong><br/>
               ${escapeHtml(form33b.courtRegistryName || "Not Specified")}<br/><br/>
               <strong>Court File Number (Case #):</strong><br/>
-              ${escapeHtml(form33b.caseNumber || "Not Specified")}<br/><br/>
+              ${escapeHtml(redact(form33b.caseNumber) || "Not Specified")}<br/><br/>
               <strong>Subject Child(ren) names:</strong><br/>
-              ${escapeHtml(form33b.childNames || "Not Specified")}
+              ${escapeHtml(redact(form33b.childNames) || "Not Specified")}
             </td>
           </tr>
         </table>
@@ -1329,6 +1332,8 @@ export default function TemplatesTab() {
               {resetConfirm ? "Confirm" : "Reset"}
             </button>
           </div>
+
+          <RedactionToggle enabled={redactionEnabled} onToggle={toggleRedaction} />
 
           <button
             onClick={handlePrint}
