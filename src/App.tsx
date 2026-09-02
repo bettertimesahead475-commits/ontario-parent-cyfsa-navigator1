@@ -8,6 +8,7 @@ import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener, useAppReset } from "./hooks/useAppReset";
 import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Import Modular Subcomponents direct statically for ultra-fast instantaneous view switching with no skeleton flickers
 import CYFSAGuideTab from "./components/CYFSAGuideTab";
@@ -413,6 +414,7 @@ export default function App() {
       />
 
       <Analytics />
+      <SpeedInsights />
     </div>
   );
 }
