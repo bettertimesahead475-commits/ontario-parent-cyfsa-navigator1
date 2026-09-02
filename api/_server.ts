@@ -311,18 +311,29 @@ function handleAIError(error: any, contextDescription: string, res: Response) {
   console.error(`[AI Error] during ${contextDescription}:`, error);
   const errMsg = (error?.message || "").toLowerCase();
   const status = (error as any)?.status;
-  
-  const isRateLimit = 
-    status === 429 || 
-    errMsg.includes("429") || 
-    errMsg.includes("quota") || 
+
+  // BUG FOUND: this list didn't match "503"/"unavailable"/"high demand" - even though
+  // generateGeminiContentWithRetry (above) already treats those exact words as transient and
+  // retries on them. That meant once retries were exhausted on a genuine Google outage, the
+  // raw Gemini error JSON (e.g. {"error":{"code":503,"message":"...high demand...",
+  // "status":"UNAVAILABLE"}}) fell through every check here and got dumped straight into the
+  // response as the user-facing error text - a parent seeing raw API JSON instead of a plain
+  // sentence. Expanded to match the same transient-detection words used by the retry logic.
+  const isRateLimit =
+    status === 429 ||
+    status === 503 ||
+    errMsg.includes("429") ||
+    errMsg.includes("503") ||
+    errMsg.includes("quota") ||
     errMsg.includes("rate limit") ||
     errMsg.includes("overloaded") ||
-    errMsg.includes("exhausted");
+    errMsg.includes("exhausted") ||
+    errMsg.includes("unavailable") ||
+    errMsg.includes("high demand");
 
   if (isRateLimit) {
     return res.status(429).json({
-      error: "AI provider quota or rate limit exceeded (429). Please wait and try again.",
+      error: "The AI service is experiencing high demand right now. Please wait a moment and try again - this is temporary and not a problem with your document.",
       isRateLimit: true
     });
   }
@@ -333,8 +344,10 @@ function handleAIError(error: any, contextDescription: string, res: Response) {
     });
   }
 
+  // Final fallback - never pass a raw provider error message straight through to the user,
+  // since it can be an unformatted JSON blob (see above) rather than a readable sentence.
   res.status(status || 500).json({
-    error: error?.message || `An unexpected error occurred during ${contextDescription}.`
+    error: `Something went wrong during ${contextDescription}. Please try again in a moment.`
   });
 }
 
