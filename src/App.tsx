@@ -7,6 +7,7 @@ import React, { useState, useEffect } from "react";
 import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener, useAppReset } from "./hooks/useAppReset";
+import { Analytics } from "@vercel/analytics/react";
 
 // Import Modular Subcomponents direct statically for ultra-fast instantaneous view switching with no skeleton flickers
 import CYFSAGuideTab from "./components/CYFSAGuideTab";
@@ -411,6 +412,7 @@ export default function App() {
         onClose={() => setTerminologyOpen(false)} 
       />
 
+      <Analytics />
     </div>
   );
 }
