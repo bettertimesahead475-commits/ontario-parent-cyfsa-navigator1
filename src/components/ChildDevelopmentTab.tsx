@@ -164,11 +164,6 @@ export default function ChildDevelopmentTab() {
           <p className="text-xs md:text-sm text-slate-300 leading-relaxed font-light">
             When submitting responsive affidavits, avoid purely emotional attacks against child protective workers (e.g., 'the worker is malicious and hates our family'). Instead, present structured, positive parenting schedules backed by child attachment theories. Showcase that bringing your child home, or placing them immediately with kin relative to foster institutions, protects their neurological well-being and is highly compatible with peer-reviewed child science.
           </p>
-          <div className="pt-2">
-            <span className="text-[10px] text-slate-400 italic block">
-              "Judges in Ontario are increasingly receptive to trauma-informed plans that establish concrete family stability." - Law Society of Ontario briefings.
-            </span>
-          </div>
         </div>
       </div>
     </div>
