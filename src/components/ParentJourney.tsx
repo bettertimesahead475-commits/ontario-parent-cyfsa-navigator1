@@ -43,18 +43,74 @@ function StatutoryTopicList({ topicIds }: { topicIds: string[] }) {
     .map(id => CYFSA_TOPICS.find(t => t.id === id))
     .filter((t): t is NonNullable<typeof t> => Boolean(t));
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {topics.map(topic => (
-        <article key={topic.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article key={topic.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
           {topic.badge && <span className="text-[11px] font-bold uppercase tracking-wide text-brand-600">{topic.badge}</span>}
-          <h3 className="mt-1 font-display text-base font-bold text-slate-900">{topic.title}</h3>
+          <h3 className="mt-1 font-display text-lg font-bold text-slate-900">{topic.title}</h3>
           <p className="mt-2 text-sm leading-relaxed text-slate-600">{topic.summary}</p>
+
+          <p className="mt-4 whitespace-pre-line text-sm leading-relaxed text-slate-700">{topic.fullBody}</p>
+
+          {topic.guidelines.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Recommended action steps</p>
+              <ul className="mt-2 space-y-2">
+                {topic.guidelines.map((g, i) => (
+                  <li key={i} className="flex gap-2 rounded-lg border border-emerald-100 bg-emerald-50/40 p-2.5 text-xs leading-relaxed text-slate-700">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-800">{i + 1}</span>
+                    <span>{g}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {topic.checklistItems.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Watch-for checklist</p>
+              <div className="mt-2 space-y-2">
+                {topic.checklistItems.map((item, i) => (
+                  <div key={i} className="rounded-lg border border-amber-100 bg-amber-50/40 p-3 text-xs">
+                    <p className="font-bold text-slate-800">{item.label}</p>
+                    <p className="mt-0.5 leading-relaxed text-slate-600">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {topic.factVersusFiction.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-rose-700">Fact vs. fiction</p>
+              <div className="mt-2 space-y-2">
+                {topic.factVersusFiction.map((fvf, i) => (
+                  <div key={i} className="overflow-hidden rounded-lg border border-slate-100">
+                    <p className="bg-rose-50 p-2.5 text-xs italic text-rose-900">"{fvf.fiction}"</p>
+                    <p className="bg-emerald-50 p-2.5 text-xs text-emerald-900">{fvf.fact}</p>
+                    <p className="bg-slate-50 p-2 text-[11px] text-slate-500">{fvf.sourceExplanation}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {topic.primarySources.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {topic.primarySources.map((s, i) => (
+                <a key={i} href={s.url} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600 hover:border-brand-300 hover:text-brand-700">
+                  {s.label}{s.citation ? ` — ${s.citation}` : ""}
+                </a>
+              ))}
+            </div>
+          )}
+
           <Link href="/cyfsa-guide">
             <span
               onClick={() => jumpToGuideTopic(topic.id)}
-              className="mt-3 inline-flex cursor-pointer items-center gap-1 text-xs font-bold text-brand-700"
+              className="mt-4 inline-flex cursor-pointer items-center gap-1 text-xs font-bold text-brand-700"
             >
-              Read the full statutory guide, with citations <ArrowRight className="h-3.5 w-3.5" />
+              Open in the searchable Detailed Guide <ArrowRight className="h-3.5 w-3.5" />
             </span>
           </Link>
         </article>
@@ -177,14 +233,23 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
       if (ce.detail?.type !== "journey") return;
       let title = "Ontario Parent Assist — Preparation Guide";
       let body = "";
+      const renderTopicFull = (t: NonNullable<ReturnType<typeof CYFSA_TOPICS.find>>) => `
+        <div class="section-card">
+          <div class="section-title">${t.title}</div>
+          <p class="body-text">${t.summary}</p>
+          <p class="body-text">${t.fullBody.replace(/\n/g, "<br/>")}</p>
+          ${t.guidelines.length ? `<p class="body-text"><strong>Recommended action steps:</strong></p><ul class="body-text">${t.guidelines.map(g => `<li>${g}</li>`).join("")}</ul>` : ""}
+          ${t.checklistItems.length ? `<p class="body-text"><strong>Watch-for checklist:</strong></p>${t.checklistItems.map(c => `<div class="watch-item"><span class="watch-title">${c.label}</span><span class="watch-desc">${c.description}</span></div>`).join("")}` : ""}
+          ${t.factVersusFiction.length ? `<p class="body-text"><strong>Fact vs. fiction:</strong></p><ul class="body-text">${t.factVersusFiction.map(f => `<li><em>"${f.fiction}"</em> — ${f.fact} (${f.sourceExplanation})</li>`).join("")}</ul>` : ""}
+        </div>`;
       if (page === "rights") {
         title = "Understanding Your Family Rights";
-        const topics = RIGHTS_TOPIC_IDS.map(id => CYFSA_TOPICS.find(t => t.id === id)).filter(Boolean) as typeof CYFSA_TOPICS;
-        body = topics.map(t => `<div class="section-card"><div class="section-title">${t!.title}</div><p class="body-text">${t!.summary}</p></div>`).join("");
+        const topics = RIGHTS_TOPIC_IDS.map(id => CYFSA_TOPICS.find(t => t.id === id)).filter(Boolean) as NonNullable<ReturnType<typeof CYFSA_TOPICS.find>>[];
+        body = topics.map(renderTopicFull).join("");
       } else if (page === "procedure") {
         title = "The Process and Legal Thresholds CAS Must Meet";
-        const topics = PROCEDURE_TOPIC_IDS.map(id => CYFSA_TOPICS.find(t => t.id === id)).filter(Boolean) as typeof CYFSA_TOPICS;
-        body = topics.map(t => `<div class="section-card"><div class="section-title">${t!.title}</div><p class="body-text">${t!.summary}</p></div>`).join("");
+        const topics = PROCEDURE_TOPIC_IDS.map(id => CYFSA_TOPICS.find(t => t.id === id)).filter(Boolean) as NonNullable<ReturnType<typeof CYFSA_TOPICS.find>>[];
+        body = topics.map(renderTopicFull).join("");
       } else if (page === "roadmap") {
         title = "The 7-Stage Case Roadmap";
         body = ROADMAP_STAGES.map(s => `
