@@ -103,11 +103,11 @@ const GLOSSARY_ITEMS: TerminologyItem[] = [
   {
     id: "term-child-protection-grounds",
     term: "Child in Need of Protection",
-    shortDefinition: "The rigorous legal definition containing 12 statutory risk thresholds required to justify CAS legal intervention.",
-    fullDefinition: "Defined under s. 74(2) of the CYFSA, a child is 'in need of protection' only if they meet at least one of 12 highly specific statutory categories. These include: physical harm, risk of physical harm, sexual abuse, emotional harm, mental or emotional neglect, medical neglect, and abandonment. CAS bears the legal burden of proving these grounds on a 'balance of probabilities' (more likely than not).",
+    shortDefinition: "The rigorous legal definition containing 17 statutory risk clauses required to justify CAS legal intervention.",
+    fullDefinition: "Defined under s. 74(2) of the CYFSA, a child is 'in need of protection' only if they meet at least one of 17 highly specific statutory clauses (expanded in 2021 to add two child-sex-trafficking clauses, and again for a prescribed 16/17-year-old circumstance). These include: physical harm, risk of physical harm, sexual abuse or exploitation (including trafficking), emotional harm, medical neglect, and parental death or unavailability. CAS bears the legal burden of proving these grounds on a 'balance of probabilities' (more likely than not).",
     sectionReference: "CYFSA s. 74(2)",
     category: "Rights & Standards",
-    implications: "CAS cannot intervene simply because they dislike your parenting style, housekeeping, or financial status. They must tie their allegations directly to one of these 12 strict legal grounds and provide solid factual evidence, not speculation.",
+    implications: "CAS cannot intervene simply because they dislike your parenting style, housekeeping, or financial status. They must tie their allegations directly to one of these 17 strict legal clauses and provide solid factual evidence, not speculation.",
     tips: "Read the exact protection grounds cited in your CAS court papers. Work with your lawyer to systematically audit the CAS allegations. Point out hearsay, opinions, and unsubstantiated claims that fail to meet these high statutory thresholds."
   },
   {

@@ -196,7 +196,7 @@ export default function ParentChatBot() {
   const educationalChips = [
     { label: "🛡️ What are my rights on home visits?", query: "What are my legal rights when a CAS worker shows up at my door or requests a home inspection?" },
     { label: "🗣️ How do I fight hearsay reports?", query: "How under Ontario evidence rules can I challenge hearsay statements or anonymous neighbor reports in child welfare court?" },
-    { label: "⚖️ What 12 things must CAS prove?", query: "What are the 12 strict statutory things CAS is required to prove to a judge under s.74 of the CYFSA before they can declare a child in need of protection?" },
+    { label: "⚖️ What must CAS prove under s.74?", query: "What are the 17 statutory clauses CAS is required to prove at least one of, to a judge under s.74(2) of the CYFSA, before they can declare a child in need of protection?" },
     { label: "📝 Help me create a kinship safety plan", query: "How do I draft an effective kinship safety plan with approved family backups to rebut CAS claims that the child must be removed?" }
   ];
 
@@ -456,10 +456,9 @@ export default function ParentChatBot() {
                   <Send className="w-4 h-4" />
                 </button>
               </form>
-              <div className="flex items-center justify-between mt-1.5 text-[8.5px] text-slate-400 font-medium font-sans">
-                <span>📚 Purely educational guidance portal</span>
-                <span>Jurisdiction: Ontario Compliant</span>
-              </div>
+              <p className="mt-1.5 text-[8px] text-slate-400 font-medium font-sans leading-snug">
+                <strong className="text-slate-500">MANDATORY LEGAL EDUCATIONAL STATEMENT:</strong> This chat is generated for informational/educational objectives only under secondary statutory guidelines of the Child, Youth and Family Services Act (CYFSA) S.O. 2017, Chapter 14. This does not represent formal counsel or legal aid representations. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this chat.
+              </p>
             </div>
           </motion.div>
         )}
