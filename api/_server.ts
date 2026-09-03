@@ -1118,13 +1118,14 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
          
          Be precise. Distinguish direct first-hand facts from hearsay.
          The current date is ${todayIso}. Use YYYY-MM-DD format for dates. If the user mentions "yesterday", "today", "Friday", etc., calculate relative to ${todayIso}. If no date is mentioned or inferable, default to "${todayIso}".
+         End every report with the disclaimer field, unmodified.
          IMPORTANT: Output ONLY the correct JSON structure. Do not output markdown block wrappers unless it is robustly formatted in \`\`\`json ... \`\`\` code blocks. Do not include introductory or concluding conversational prose.`;
 
       const promptText = `
         RAW VOICE DICTATION / TEXT NARRATIVE FROM PARENT:
         "${narrativeText}"
 
-        Analyze the narrative above and extract the structural details to generate a formatted evidence log template. 
+        Analyze the narrative above and extract the structural details to generate a formatted evidence log template.
         Your response must STRICTLY match the following JSON schema:
         {
           "date": "YYYY-MM-DD format based on narrative",
@@ -1133,7 +1134,8 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
           "statementsMade": "Explicit quotes or spoken statements made by the worker, supervisor, or parent during the interaction.",
           "hearsayFlag": "Must be exactly one of: 'Direct Evidence', 'Hearsay (Worker told me)', or 'Double Hearsay (Worker said another said)'. If the narrative recounts what a worker claimed that a neighbor or third-party said, this constitutes Hearsay or Double Hearsay.",
           "audioPhotoLog": "Suggested trace name for any media or logs described, or a logical description of proof (e.g. 'Thermostat photograph, parent audio recording, door cam footage').",
-          "questionsForCounsel": "A highly relevant, strategic question that the parent should ask their family defense lawyer regarding the statutory rules or legal validity of this specific interaction."
+          "questionsForCounsel": "A highly relevant, strategic question that the parent should ask their family defense lawyer regarding the statutory rules or legal validity of this specific interaction.",
+          "disclaimer": "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."
         }
       `;
 
