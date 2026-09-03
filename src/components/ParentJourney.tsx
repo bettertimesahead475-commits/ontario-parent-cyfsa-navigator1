@@ -276,9 +276,17 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
   if (page === "home") return <div className="space-y-10">
     <JourneyNav />
     <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-brand-950 to-brand-800 px-6 py-12 text-white shadow-xl sm:px-10 md:py-16">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-200">Ontario Parent Assist</p>
-      <h1 className="mt-4 max-w-3xl font-display text-4xl font-black leading-tight md:text-6xl">A calmer place to understand the child protection process.</h1>
-      <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-200">Learn what to track, understand the stages ahead, audit documents for questions to raise with counsel, and build an organized, lawyer-ready case file.</p>
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-200">Knowledge is power</p>
+      <div className="mt-5 flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/20">
+        <img src="/logo.png" alt="ParentShield logo" className="h-full w-full object-cover" />
+      </div>
+      <h1 className="mt-5 max-w-3xl font-display text-4xl font-black leading-tight md:text-6xl">Know your rights.</h1>
+      <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-200">
+        Here's what you'll learn. Your rights as a parent. What CAS can and can't do. How an investigation
+        really works. What happens in the first 5 days after a removal. The full 7-stage roadmap for your
+        case. And the law's own rule that removal must be a last resort, not a first step.
+        You'll know all of this before you ever need to upload a document.
+      </p>
       <div className="mt-8 flex flex-wrap gap-3"><Link href="/rights"><span className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-brand-900">Begin with family rights <ArrowRight className="h-4 w-4" /></span></Link><Link href="/document-analyzer"><span className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-5 py-3 text-sm font-bold text-white">Audit a document <FileSearch className="h-4 w-4" /></span></Link></div>
     </section>
     <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
