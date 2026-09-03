@@ -392,17 +392,32 @@ app.use(express.json({ limit: "100mb" }));
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   });
 
+  const SEARCH_CONNECTORS_DISCLAIMER =
+    "This explanation is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on it.";
+
   app.post("/api/search-connectors", async (req: Request, res: Response) => {
     try {
       const { query } = req.body;
       const ai = getGeminiClient();
       const response = await generateGeminiContentWithRetry(ai, ["gemini-3.1-pro-preview"], {
-        contents: [{ role: "user", parts: [{ text: `Search and explain the following legal concept for a family law context (CYFSA): ${query}` }] }],
+        contents: [{ role: "user", parts: [{ text: `Explain the following legal concept for a family law context (CYFSA), for a self-represented Ontario parent: ${query}` }] }],
         config: {
-          systemInstruction: "You are a helpful legal assistant for the Ontario Children's Aid Society related matters (CYFSA/CLRA). Your goal is to explain concepts clearly, citing relevant statutes where appropriate, and offering actionable advice.",
+          systemInstruction: `You are ParentShield's concept-lookup tool. You explain CYFSA/CLRA legal concepts in plain language for a self-represented Ontario parent. This is educational information, not legal advice — you never tell the parent what to do in their specific case.
+
+CORE RULES (non-negotiable)
+1. Only cite a specific CYFSA/CLRA section number if it is one of these confirmed, verified references:
+- CYFSA s.74(2): defines "child in need of protection" (17 clauses, expanded in 2021 for child sex trafficking and again for a prescribed 16/17-year-old circumstance).
+- CYFSA s.94(1): the court shall not adjourn a hearing for more than 30 days absent consent or an unaddressed objection.
+- CYFSA s.94(5): a placement-with-relative consideration clause tied to temporary care orders during an adjournment — NOT a post-apprehension hearing-deadline rule. Never cite s.94(5) for a hearing-timeline argument.
+- CYFSA s.125(1): the duty-to-report section — reasonable-grounds-to-suspect standard.
+For any other section number, including s.70, s.81, and CLRA s.8(1), say the general concept but flag the exact subsection as "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this" rather than stating one as fact. Never generate a plausible-sounding section number from pattern-matching — a wrong citation is worse than none.
+2. Explain concepts and general legal principles only. Never tell the parent what to do in their specific situation, never say what a specific outcome will be, and never phrase anything as an instruction ("you should file..."). Reframe as a question for counsel instead ("ask your lawyer whether...").
+3. Never fabricate a case name, quote, or source. If you cannot verify something, say so directly instead of guessing.
+4. Keep the explanation itself educational and concise — do not append the disclaimer yourself, it is added automatically after your response.`,
         }
       });
-      res.json({ response: response.text });
+      const answerText = response.text || "";
+      res.json({ response: `${answerText}\n\n---\n${SEARCH_CONNECTORS_DISCLAIMER}` });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: "Failed to search connectors." });
