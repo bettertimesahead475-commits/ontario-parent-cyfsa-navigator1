@@ -186,7 +186,7 @@ export default function FamilyCourtTab() {
                   <div>
                     <h5 className="text-xs font-semibold text-emerald-900">Parental Safety Reminder</h5>
                     <p className="text-[11px] text-emerald-800 leading-relaxed mt-1">
-                      Always double check if the CAS worker served you documents within the statutory rules (no less than 24 hours prior to first hearing, and 7 business days for conference briefs under Rule 17). Protesting late service is your right.
+                      Always double check if the CAS worker served you documents within the required notice periods under the Family Law Rules, O. Reg. 114/99 — commonly cited as no less than 24 hours' notice before a first hearing, and 7 business days for conference briefs under Rule 17, though the exact period depends on the specific document and motion type. Confirm the precise rule and subrule that applies to your document with your lawyer or the court office before relying on this. Protesting late service is your right.
                     </p>
                   </div>
                 </div>
@@ -208,7 +208,7 @@ export default function FamilyCourtTab() {
             </span>
             <h4 className="font-display text-base font-bold mt-2">The Case Brief Magic</h4>
             <p className="text-xs text-slate-400 mt-1 lines-clamp-3 leading-relaxed">
-              Under Rule 17, Form 17B briefs are destroyed by the court once your conference ends. This is done to promote completely open negotiations. What is discussed at conferences cannot be used against you in a trial.
+              Under Rule 17 of the Family Law Rules, O. Reg. 114/99, Form 17B briefs are destroyed by the court once your conference ends, to promote open negotiations. What is discussed at a case conference generally cannot be referred to later, subject to limited exceptions set out in the Rules — confirm with your lawyer before relying on this for anything you plan to say at a conference.
             </p>
           </div>
         </div>
