@@ -717,7 +717,7 @@ ${analysisRules}`;
             {
               "thresholdChecked": "Child in Need of Protection grounds (CYFSA s. 74)",
               "isMet": "Yes / No / Inconclusive",
-              "reasoning": "Check whether any of the 16 grounds defined under s. 74 of the CYFSA are asserted in the file. Evaluate whether assertion stands on uncorroborated hearsay or objective proof.",
+              "reasoning": "Check whether any of the 17 clauses defined under s. 74(2) of the CYFSA are asserted in the file. Evaluate whether assertion stands on uncorroborated hearsay or objective proof.",
               "primarySourceLaw": "CYFSA 2017, Section 74"
             },
             {

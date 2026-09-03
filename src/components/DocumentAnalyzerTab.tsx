@@ -3946,7 +3946,7 @@ export default function DocumentAnalyzerTab() {
                         </div>
                       </FoldableSection>
 
-                      {/* The 12 Statutory Things CAS Must Prove (Coaching Section) */}
+                      {/* The 17 Statutory Things CAS Must Prove (Coaching Section) */}
                       <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-2xl space-y-4">
                         <div className="flex items-start gap-3">
                           <div className="p-2 bg-brand-50 border border-brand-100 rounded-lg text-brand-700 shrink-0">
@@ -3954,10 +3954,10 @@ export default function DocumentAnalyzerTab() {
                           </div>
                           <div>
                             <h5 className="font-display font-extrabold text-[#0f172a] text-sm tracking-wide uppercase">
-                              The 12 Things CAS Must Prove to a Judge (Section 74)
+                              The 17 Clauses CAS Must Prove Under (Section 74)
                             </h5>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                              Ontario Child, Youth and Family Services Act (CYFSA) statutory evidentiary thresholds.
+                              Ontario Child, Youth and Family Services Act (CYFSA) s. 74(2) statutory evidentiary thresholds — a child is "in need of protection" only if at least one of these 17 clauses is met.
                             </p>
                           </div>
                         </div>
@@ -3965,17 +3965,22 @@ export default function DocumentAnalyzerTab() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                           {[
                             { ground: "1. Physical Harm [s. 74(2)(a)]", desc: "The child has suffered physical harm inflicted by a parent, or due to parental failure." },
-                            { ground: "2. Substantial Risk of Physical Harm [s. 74(2)(b)]", desc: "A severe, active risk of physical harm that the parent fails/is unable to protect against." },
-                            { ground: "3. Sexual Abuse [s. 74(2)(c)]", desc: "The child has been sexually abused/exploited, or parent knew and failed to protect." },
-                            { ground: "4. Substantial Risk of Sexual Abuse [s. 74(2)(d)]", desc: "A substantial risk of abuse, with parent unable or failing to protect." },
-                            { ground: "5. Medical Neglect [s. 74(2)(e)]", desc: "Parent refuses or is unable to provide/consent to essential medical treatment." },
-                            { ground: "6. Emotional Harm [s. 74(2)(f)]", desc: "The child has suffered severe emotional harm (anxiety, withdrawal) and parent refuses treatment." },
-                            { ground: "7. Substantial Risk of Emotional Harm [s. 74(2)(g)]", desc: "Active risk of emotional harm, with parental failure to participate in therapy." },
-                            { ground: "8. Abandonment [s. 74(2)(h)]", desc: "The child has been abandoned, or the parent is deceased/unavailable without care provision." },
-                            { ground: "9. Parental Impairment [s. 74(2)(i)]", desc: "Risk of harm due to parental physical/mental difficulties, and refusal of services." },
-                            { ground: "10. Inability to Control [s. 74(2)(j)]", desc: "Child's behavior is uncontrollable, causing risk of physical/emotional harm." },
-                            { ground: "11. Criminal Conduct Context [s. 74(2)(k)]", desc: "Child is under 12, has caused serious bodily harm, and parent refuses treatment." },
-                            { ground: "12. Inadequate Supervision [s. 74(2)(l)]", desc: "Child under 12 left unsupervised, or in circumstances showing systemic failure of care." }
+                            { ground: "2. Risk of Physical Harm [s. 74(2)(b)]", desc: "A risk of physical harm of the same kind, that the parent fails/is unable to protect against." },
+                            { ground: "3. Sexual Abuse or Exploitation [s. 74(2)(c)]", desc: "The child has been sexually abused/exploited, or parent knew and failed to protect." },
+                            { ground: "4. Risk of Sexual Abuse or Exploitation [s. 74(2)(d)]", desc: "A risk of abuse or exploitation of the same kind, with parent unable or failing to protect." },
+                            { ground: "5. Child Sex Trafficking [s. 74(2)(d.1)]", desc: "The child has been sexually exploited through trafficking (added 2021)." },
+                            { ground: "6. Risk of Child Sex Trafficking [s. 74(2)(d.2)]", desc: "A risk of sexual exploitation through trafficking (added 2021)." },
+                            { ground: "7. Medical Neglect [s. 74(2)(e)]", desc: "Parent refuses or is unable to provide/consent to essential medical treatment." },
+                            { ground: "8. Emotional Harm [s. 74(2)(f)]", desc: "The child has suffered emotional harm (anxiety, withdrawal) linked to the caregiver's conduct." },
+                            { ground: "9. Emotional Harm, Services Refused [s. 74(2)(g)]", desc: "Emotional harm as above, and the caregiver refuses services or treatment to remedy it." },
+                            { ground: "10. Risk of Emotional Harm [s. 74(2)(h)]", desc: "A risk of emotional harm of the same kind as (f)." },
+                            { ground: "11. Risk of Emotional Harm, Services Refused [s. 74(2)(i)]", desc: "Risk of emotional harm as above, and the caregiver refuses preventive services or treatment." },
+                            { ground: "12. Developmental Impairment [s. 74(2)(j)]", desc: "A condition that could seriously impair development if untreated, and treatment is refused." },
+                            { ground: "13. Parental Death/Unavailability [s. 74(2)(k)]", desc: "The parent has died or is unavailable, with no adequate provision made for the child's care." },
+                            { ground: "14. Under 12, Serious Harm Caused [s. 74(2)(l)]", desc: "Child is under 12, has caused serious harm/damage, and needed services are refused." },
+                            { ground: "15. Under 12, Repeat Minor Harm [s. 74(2)(m)]", desc: "Child is under 12, has repeatedly caused minor harm through inadequate supervision." },
+                            { ground: "16. Brought With Consent [s. 74(2)(n)]", desc: "Parent can't care for the child, who is brought to court with the parent's (and child's) consent." },
+                            { ground: "17. Prescribed 16/17-Year-Old Circumstance [s. 74(2)(o)]", desc: "The child is 16 or 17 and a regulation-defined prescribed circumstance exists." }
                           ].map((item, i) => (
                             <div key={i} className="bg-white border border-slate-100 p-3 rounded-xl space-y-1 shadow-2xs hover:border-brand-100 transition-all">
                               <span className="text-[11px] font-bold text-slate-900 block font-sans">{item.ground}</span>
@@ -3990,7 +3995,7 @@ export default function DocumentAnalyzerTab() {
                             <span className="text-sm">⚠️</span> Critical Parent Defense Action Tip:
                           </div>
                           <p className="text-amber-950 text-xs leading-relaxed">
-                            You must <strong>read through your CAS paperwork very carefully!</strong> Every letter, email, home observation note, or court application should be combed word-by-word. Look for subjective worker labels, uncorroborated rumors, missing timestamps, or violations of these 12 strict proof grounds.
+                            You must <strong>read through your CAS paperwork very carefully!</strong> Every letter, email, home observation note, or court application should be combed word-by-word. Look for subjective worker labels, uncorroborated rumors, missing timestamps, or violations of these 17 statutory clauses.
                           </p>
                           <p className="text-amber-900 text-[11px] leading-normal font-semibold">
                             💡 <strong>The Analyzer Will Pick This Up!</strong> Simply upload your documents to the Case Cabinet and run our AI Evidentiary Audit. Our system will automatically detect these violations, extract the exact offending quotes, and map out your legal objections in real time!

@@ -196,7 +196,7 @@ export default function ParentChatBot() {
   const educationalChips = [
     { label: "🛡️ What are my rights on home visits?", query: "What are my legal rights when a CAS worker shows up at my door or requests a home inspection?" },
     { label: "🗣️ How do I fight hearsay reports?", query: "How under Ontario evidence rules can I challenge hearsay statements or anonymous neighbor reports in child welfare court?" },
-    { label: "⚖️ What 12 things must CAS prove?", query: "What are the 12 strict statutory things CAS is required to prove to a judge under s.74 of the CYFSA before they can declare a child in need of protection?" },
+    { label: "⚖️ What must CAS prove under s.74?", query: "What are the 17 statutory clauses CAS is required to prove at least one of, to a judge under s.74(2) of the CYFSA, before they can declare a child in need of protection?" },
     { label: "📝 Help me create a kinship safety plan", query: "How do I draft an effective kinship safety plan with approved family backups to rebut CAS claims that the child must be removed?" }
   ];
 
