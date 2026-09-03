@@ -8,11 +8,34 @@ import { CYFSA_TOPICS } from "../data";
 import { CYFSATopic } from "../types";
 import { BookOpen, Scale, AlertTriangle, ShieldCheck, CheckSquare, Info, ChevronRight, HelpCircle, FileText, Search, Lock, UploadCloud } from "lucide-react";
 
+// Key used by ParentJourney's "Family rights" / "CAS procedure" steps to deep-link a parent
+// straight to one specific statutory topic here, instead of dropping them on the guide's
+// default topic and making them hunt for the one they actually came here to read.
+const GUIDE_JUMP_KEY = "OPA_GUIDE_JUMP_TOPIC";
+
 export default function CYFSAGuideTab() {
-  const [selectedTopicId, setSelectedTopicId] = useState<string>("emergency-removal");
+  const [selectedTopicId, setSelectedTopicId] = useState<string>(() => {
+    try {
+      const jumpTo = sessionStorage.getItem(GUIDE_JUMP_KEY);
+      if (jumpTo && CYFSA_TOPICS.some(t => t.id === jumpTo)) return jumpTo;
+    } catch {
+      /* sessionStorage unavailable — fall through to the default topic below */
+    }
+    return "emergency-removal";
+  });
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [revealedFictions, setRevealedFictions] = useState<Record<string, boolean>>({});
+
+  // Consume the jump target once, so a later visit to /cyfsa-guide (e.g. via the top nav)
+  // goes back to showing the real default rather than getting stuck on a stale deep-link.
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem(GUIDE_JUMP_KEY);
+    } catch {
+      /* best-effort */
+    }
+  }, []);
 
   const selectedTopic = CYFSA_TOPICS.find(t => t.id === selectedTopicId) || CYFSA_TOPICS[0];
 
