@@ -958,6 +958,9 @@ OUTPUT — return strictly this JSON schema, nothing else:
     }
   });
 
+  const RAG_QUERY_DISCLAIMER =
+    "This response is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on it.";
+
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
     let queryVal = "";
@@ -1020,9 +1023,9 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       let focusGuideline = "";
       if (focus === "family-advocate") {
         focusGuideline = `
-        FOCUS: EMPATHETIC FAMILY ADVOCACY & PARENTAL COACHING
-        Your response style should be highly supportive, calm, clear, and focused on helping families navigate child protection with grace and safety. 
-        Coach them on how to communicate with CAS workers, what boundaries they should keep, and suggest realistic day-to-day strategies to preserve family cohesion and avoid escalating conflicts unnecessarily.`;
+        FOCUS: EMPATHETIC FAMILY EDUCATION
+        Your response style should be highly supportive, calm, clear, and focused on helping families understand the child protection process. This is educational information, not coaching or advice on what to do in this parent's specific situation.
+        Explain in plain language what the general CYFSA process involves, what a parent's general rights and options are, and where to find further support (a lawyer, Legal Aid Ontario, a Band or Indigenous Child and Family Services Agency where relevant). For anything that turns on this family's specific facts — exactly what to say to a specific worker, how to respond to a specific request, what boundaries to set in a specific interaction — do not instruct the parent directly; reframe it as a question for their lawyer or Legal Aid Ontario.`;
       } else if (focus === "evidentiary-auditor") {
         focusGuideline = `
         FOCUS: CAS EVIDENTIARY AUDITING & CRITICAL EVIDENCE ANALYSIS
@@ -1067,7 +1070,10 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
          TONE
          Direct, plain-language, and warm — this is a person managing one of the hardest things in their life. Correcting an overstated claim and being supportive of the parent are not in tension; the most useful thing you can do for them is make sure nothing they rely on falls apart under real scrutiny later.
 
-         ${focusGuideline}`;
+         ${focusGuideline}
+
+         DISCLAIMER
+         End every response with, on its own line: "${RAG_QUERY_DISCLAIMER}"`;
 
       const historyBlock = conversationHistory.length > 0
         ? `CONVERSATION SO FAR (most recent last — use this; do not treat this message as the first thing the parent has said):\n` +
@@ -1092,7 +1098,8 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
       res.json({
         answer: responseText,
-        citations: topMatches.map((f: any) => ({ name: f.name, category: f.category, score: f.score }))
+        citations: topMatches.map((f: any) => ({ name: f.name, category: f.category, score: f.score })),
+        disclaimer: RAG_QUERY_DISCLAIMER
       });
 
     } catch (err: any) {
