@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { Link } from "wouter";
-import { ArrowRight, BookOpen, CalendarDays, FileSearch, Heart, Scale, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarDays, FileSearch, Heart, Scale, ShieldCheck, Users, Search, Shield } from "lucide-react";
 import { CYFSA_TOPICS } from "../data";
 import { ROADMAP_STAGES } from "../data-transferred";
 import { printBrandedDocument } from "../utils/printExport";
@@ -284,11 +284,15 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       {[
         [Heart, "1. Family rights", "Parent responsibilities, the child’s wellbeing, and preserving family connections.", "/rights"],
-        [Scale, "2. CAS procedure", "What to document about concerns, evidence, emergency action, and alternatives.", "/cyfsa-procedure"],
-        [CalendarDays, "3. First 5 days", "Track removal, service, court dates, and documents while preparing questions.", "/five-day-rule"],
-        [FileSearch, "4. 45-day roadmap", "Analyze files, organize verified facts, and prepare a brief for counsel.", "/45-day-roadmap"],
+        [Scale, "2. Charter rights", "Your constitutional rights during any CAS interaction — entry, questioning, and counsel.", "/charter-rights"],
+        [BookOpen, "3. CAS procedure", "What to document about concerns, evidence, emergency action, and alternatives.", "/cyfsa-procedure"],
+        [Search, "4. Investigation process", "How a CAS investigation actually proceeds, stage by stage, and what to watch for.", "/investigation"],
+        [CalendarDays, "5. First 5 days", "Track removal, service, court dates, and documents while preparing questions.", "/five-day-rule"],
+        [FileSearch, "6. 45-day roadmap", "The full 7-stage case roadmap, from first contact to case closure.", "/45-day-roadmap"],
+        [Shield, "7. Defense strategies", "How the Act's order hierarchy works, and questions worth raising with your lawyer.", "/defense-strategies"],
       ].map(([Icon, title, body, path]: any) => <Link key={path} href={path}><article className="h-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md"><Icon className="h-6 w-6 text-brand-600" /><h2 className="mt-4 font-display text-lg font-bold text-slate-900">{title}</h2><p className="mt-2 text-sm leading-relaxed text-slate-600">{body}</p><span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-brand-700">Open <ArrowRight className="h-3.5 w-3.5" /></span></article></Link>)}
       </section>
+    <section className="rounded-2xl border border-brand-200 bg-brand-50 p-5"><p className="text-xs font-bold uppercase tracking-wide text-brand-700">Once you've worked through the above</p><h3 className="mt-1 font-display text-lg font-bold text-slate-900">You'll know enough to question what's in your file — before you upload anything</h3><p className="mt-2 text-sm leading-relaxed text-slate-700">The document analyzer works best once you already know what a real statutory violation looks like. That's why it comes last, not first.</p><Link href="/document-analyzer"><span className="mt-3 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-white">Now audit a document <FileSearch className="h-3.5 w-3.5" /></span></Link></section>
     <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-relaxed text-amber-950"><ShieldCheck className="mb-2 h-5 w-5 text-amber-700" /><strong>Use this as a preparation tool, not a replacement for legal advice.</strong> If there is an urgent removal, court date, or safety concern, contact a lawyer or Legal Aid Ontario promptly.</section>
   </div>;
 

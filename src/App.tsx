@@ -98,9 +98,9 @@ export default function App() {
     { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
     { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
     { name: "Defense Strategies", path: "/defense-strategies", icon: <Shield className="w-4 h-4" /> },
+    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
     { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
     { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
-    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
     { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
     { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
   ];
