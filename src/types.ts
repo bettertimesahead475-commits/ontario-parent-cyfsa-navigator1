@@ -29,6 +29,40 @@ export interface CYFSATopic {
   }[];
 }
 
+export interface RoadmapStage {
+  id: number;
+  code: string;
+  title: string;
+  timeline: string;
+  description: string;
+  whatHappens: string[];
+  keyDeadlines: string[];
+  documentsNeeded: string[];
+  yourActionPlan: string[];
+  commonTraps: string[];
+  /** Only set when a claim in this stage could not be confirmed against the saved CYFSA text
+   *  in legal-reference/ — surfaced in the UI as a caution rather than silently dropped, so a
+   *  parent isn't left thinking a checked list is fully verified when one line isn't. */
+  unverifiedNote?: string;
+}
+
+export interface CharterRight {
+  section: string;
+  title: string;
+  legalText: string;
+  meaning: string;
+  casConstraint: string[];
+  script: string;
+}
+
+export interface EmergencyContact {
+  name: string;
+  phone: string;
+  hours: string;
+  description: string;
+  website: string;
+}
+
 export interface CourtStep {
   id: string;
   title: string;

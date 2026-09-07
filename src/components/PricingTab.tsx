@@ -15,7 +15,7 @@ interface PricingTabProps {
 }
 
 const FALLBACK_TIER_PRICES: Record<"Pro" | "Premium", number> = { Pro: 19, Premium: 49 };
-const PAYMENT_EMAIL = "ontarioparentassist@gmail.com";
+const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
 
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
 
