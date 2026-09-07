@@ -273,35 +273,255 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     return () => window.removeEventListener("trigger-print-pdf", handler);
   }, [page]);
 
-  if (page === "home") return <div className="space-y-10">
+// NEW HOMEPAGE CONVERSION FUNNEL — Analyzer-first with social proof
+// Replace the entire `if (page === "home")` section with this
+
+  if (page === "home") return <div className="space-y-0">
     <JourneyNav />
-    <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-brand-950 to-brand-800 px-6 py-12 text-white shadow-xl sm:px-10 md:py-16">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-200">Knowledge is power</p>
-      <div className="mt-5 flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/20">
-        <img src="/logo.png" alt="ParentShield logo" className="h-full w-full object-cover" />
+    
+    {/* HERO: Problem-focused, curiosity-driven */}
+    <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-brand-950 to-brand-800 px-6 py-12 text-white shadow-xl sm:px-10 md:py-20">
+      <div className="mx-auto max-w-5xl">
+        <p className="text-xs font-bold uppercase tracking-widest text-brand-200">REAL ANALYSIS • REAL RESULTS</p>
+        <h1 className="mt-4 font-display text-4xl font-black leading-tight md:text-5xl">What your CAS affidavits really say — and what they don't.</h1>
+        <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-200">
+          Upload the court documents from your case and see what a professional document audit finds: contradictions, unsupported claims, missing evidence, and the questions worth discussing with your lawyer.
+        </p>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href="/document-analyzer">
+            <span className="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-base font-bold text-brand-900 transition hover:bg-slate-100">
+              ANALYZE A DOCUMENT <ArrowRight className="h-5 w-5" />
+            </span>
+          </Link>
+          <button className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-6 py-3 text-base font-bold text-white transition hover:bg-white/10">
+            See what we found
+          </button>
+        </div>
       </div>
-      <h1 className="mt-5 max-w-3xl font-display text-4xl font-black leading-tight md:text-6xl">Know your rights.</h1>
-      <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-200">
-        Here's what you'll learn. Your rights as a parent. What CAS can and can't do. How an investigation
-        really works. What happens in the first 5 days after a removal. The full 7-stage roadmap for your
-        case. And the law's own rule that removal must be a last resort, not a first step.
-        You'll know all of this before you ever need to upload a document.
-      </p>
-      <div className="mt-8 flex flex-wrap gap-3"><Link href="/rights"><span className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-bold text-brand-900">Begin with family rights <ArrowRight className="h-4 w-4" /></span></Link><Link href="/document-analyzer"><span className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-5 py-3 text-sm font-bold text-white">Audit a document <FileSearch className="h-4 w-4" /></span></Link></div>
     </section>
-    <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      {[
-        [Heart, "1. Family rights", "Parent responsibilities, the child’s wellbeing, and preserving family connections.", "/rights"],
-        [Scale, "2. Charter rights", "Your constitutional rights during any CAS interaction — entry, questioning, and counsel.", "/charter-rights"],
-        [BookOpen, "3. CAS procedure", "What to document about concerns, evidence, emergency action, and alternatives.", "/cyfsa-procedure"],
-        [Search, "4. Investigation process", "How a CAS investigation actually proceeds, stage by stage, and what to watch for.", "/investigation"],
-        [CalendarDays, "5. First 5 days", "Track removal, service, court dates, and documents while preparing questions.", "/five-day-rule"],
-        [FileSearch, "6. 45-day roadmap", "The full 7-stage case roadmap, from first contact to case closure.", "/45-day-roadmap"],
-        [Shield, "7. Defense strategies", "How the Act's order hierarchy works, and questions worth raising with your lawyer.", "/defense-strategies"],
-      ].map(([Icon, title, body, path]: any) => <Link key={path} href={path}><article className="h-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md"><Icon className="h-6 w-6 text-brand-600" /><h2 className="mt-4 font-display text-lg font-bold text-slate-900">{title}</h2><p className="mt-2 text-sm leading-relaxed text-slate-600">{body}</p><span className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-brand-700">Open <ArrowRight className="h-3.5 w-3.5" /></span></article></Link>)}
-      </section>
-    <section className="rounded-2xl border border-brand-200 bg-brand-50 p-5"><p className="text-xs font-bold uppercase tracking-wide text-brand-700">Once you've worked through the above</p><h3 className="mt-1 font-display text-lg font-bold text-slate-900">You'll know enough to question what's in your file — before you upload anything</h3><p className="mt-2 text-sm leading-relaxed text-slate-700">The document analyzer works best once you already know what a real statutory violation looks like. That's why it comes last, not first.</p><Link href="/document-analyzer"><span className="mt-3 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-white">Now audit a document <FileSearch className="h-3.5 w-3.5" /></span></Link></section>
-    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-relaxed text-amber-950"><ShieldCheck className="mb-2 h-5 w-5 text-amber-700" /><strong>Use this as a preparation tool, not a replacement for legal advice.</strong> If there is an urgent removal, court date, or safety concern, contact a lawyer or Legal Aid Ontario promptly.</section>
+
+    {/* DEMO: Real results from real case */}
+    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-24 bg-white">
+      <div className="mx-auto max-w-5xl">
+        <p className="text-center text-xs font-bold uppercase tracking-widest text-brand-600">REAL CASE ANALYSIS</p>
+        <h2 className="mt-3 text-center font-display text-3xl font-bold text-slate-900 md:text-4xl">Here's what we found in an actual CAS affidavit</h2>
+        <p className="mt-4 text-center text-base text-slate-600">A parent from Ontario received a CAS affidavit in a child protection case. We analyzed it. Here's what emerged.</p>
+      </div>
+
+      <div className="mx-auto max-w-5xl grid gap-8 md:grid-cols-3">
+        {/* ORIGINAL DOCUMENT */}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">STEP 1: ORIGINAL DOCUMENT</p>
+          <h3 className="mt-3 font-display text-lg font-bold text-slate-900">Form 14A Affidavit</h3>
+          <p className="mt-2 text-xs text-slate-500">Court document filed by CAS manager</p>
+          <div className="mt-4 space-y-3 rounded-lg bg-white p-4 border border-slate-200 text-xs leading-relaxed text-slate-700">
+            <p className="font-semibold text-slate-900">"On September 30, 2025, [Respondent] attended the Agency and advised me of the following..."</p>
+            <p>"[REDACTED] viewed [REDACTED]'s bank account and saw transfers to a gambling site."</p>
+            <p>"Immediate removal necessary due to risk. History of non-compliance documented."</p>
+            <p className="italic text-slate-500">+ 15 pages of additional narrative, police exhibits, historical claims</p>
+          </div>
+        </div>
+
+        {/* ANALYSIS OUTPUT */}
+        <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-6">
+          <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">STEP 2: ANALYSIS FINDINGS</p>
+          <h3 className="mt-3 font-display text-lg font-bold text-slate-900">Evidence Audit Results</h3>
+          <p className="mt-2 text-xs text-slate-500">What the document really contains</p>
+          
+          <div className="mt-4 space-y-3">
+            <div className="rounded-lg bg-white p-3 border border-emerald-200">
+              <p className="text-xs font-bold text-emerald-900">SCORE: 46/100</p>
+              <p className="mt-1 text-xs text-slate-600">Evidence strength assessment</p>
+            </div>
+            
+            <div className="rounded-lg bg-white p-3 border border-amber-200 bg-amber-50">
+              <p className="text-xs font-bold text-amber-900">⚠️ HEARSAY</p>
+              <p className="mt-1 text-xs text-slate-600">Paragraphs 7–28 report secondhand accounts. Weight depends on corroboration and cross-examination availability.</p>
+            </div>
+
+            <div className="rounded-lg bg-white p-3 border border-rose-200 bg-rose-50">
+              <p className="text-xs font-bold text-rose-900">⚠️ UNSUPPORTED</p>
+              <p className="mt-1 text-xs text-slate-600">Gambling claim has no bank statements, screenshots, or exhibits attached.</p>
+            </div>
+
+            <div className="rounded-lg bg-white p-3 border border-blue-200 bg-blue-50">
+              <p className="text-xs font-bold text-blue-900">⚠️ CONTRADICTION</p>
+              <p className="mt-1 text-xs text-slate-600">Police exhibit states "full custody with [other parent]" — affidavit claims otherwise.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* RESPONSE DRAFT */}
+        <div className="rounded-2xl border border-slate-300 bg-white p-6 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">STEP 3: YOUR RESPONSE</p>
+          <h3 className="mt-3 font-display text-lg font-bold text-slate-900">Form 33B Answer Draft</h3>
+          <p className="mt-2 text-xs text-slate-500">Counter-narrative for your lawyer</p>
+          <div className="mt-4 space-y-2 text-xs leading-relaxed text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <p className="font-semibold text-slate-900">CAS CLAIM:</p>
+            <p className="italic text-slate-600">"Bank records show transfers to gambling site."</p>
+            <p className="mt-2 font-semibold text-slate-900">YOUR COUNTER:</p>
+            <p>"This claim lacks documentary support — no bank statements attached. Request CAS produce the actual records they reference."</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-5xl rounded-2xl border border-blue-200 bg-blue-50 p-6">
+        <p className="text-sm text-blue-900">
+          <strong>What this shows:</strong> The analyzer identifies specific evidentiary weaknesses in the CAS case. Your lawyer uses these findings to prepare responses, cross-examination questions, and discovery requests. The better you understand the document's actual strengths and gaps, the better counsel you can instruct.
+        </p>
+      </div>
+    </section>
+
+    {/* PROOF POINTS: Why parents trust this */}
+    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-slate-50">
+      <div className="mx-auto max-w-5xl">
+        <h2 className="text-center font-display text-3xl font-bold text-slate-900">Why this matters</h2>
+        <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <BookOpen className="h-6 w-6 text-brand-600" />
+            <p className="mt-3 font-bold text-slate-900">Educational</p>
+            <p className="mt-1 text-xs text-slate-600">Teaches you what to look for in legal documents — hearsay, corroboration, contradictions.</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <FileSearch className="h-6 w-6 text-brand-600" />
+            <p className="mt-3 font-bold text-slate-900">Evidence-focused</p>
+            <p className="mt-1 text-xs text-slate-600">Analyzes what's actually in your documents, not assumptions.</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <Scale className="h-6 w-6 text-brand-600" />
+            <p className="mt-3 font-bold text-slate-900">Not legal advice</p>
+            <p className="mt-1 text-xs text-slate-600">Doesn't predict outcomes — gives you better questions for counsel.</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <Heart className="h-6 w-6 text-brand-600" />
+            <p className="mt-3 font-bold text-slate-900">Your documents</p>
+            <p className="mt-1 text-xs text-slate-600">Stay private to your account. You control who sees them.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* PROCESS: Three simple steps */}
+    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-white">
+      <div className="mx-auto max-w-5xl">
+        <h2 className="text-center font-display text-3xl font-bold text-slate-900">How it works</h2>
+        <div className="mt-12 grid gap-8 md:grid-cols-3">
+          <div className="text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-brand-700 font-display font-bold text-lg">1</div>
+            <p className="mt-4 font-display text-lg font-bold text-slate-900">Upload your document</p>
+            <p className="mt-2 text-sm text-slate-600">Court documents, CAS correspondence, affidavits, reports — any evidence from your case.</p>
+          </div>
+          <div className="text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-brand-700 font-display font-bold text-lg">2</div>
+            <p className="mt-4 font-display text-lg font-bold text-slate-900">We analyze it</p>
+            <p className="mt-2 text-sm text-slate-600">Evidence strength audit, citation check, corroboration assessment, contradiction detection.</p>
+          </div>
+          <div className="text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-brand-700 font-display font-bold text-lg">3</div>
+            <p className="mt-4 font-display text-lg font-bold text-slate-900">Review findings</p>
+            <p className="mt-2 text-sm text-slate-600">Understand what's strong, what's weak, and what questions to ask your lawyer.</p>
+          </div>
+        </div>
+        <div className="mt-10 text-center">
+          <Link href="/document-analyzer">
+            <span className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-brand-700">
+              ANALYZE YOUR CASE <ArrowRight className="h-4 w-4" />
+            </span>
+          </Link>
+        </div>
+      </div>
+    </section>
+
+    {/* WHAT WE CHECK FOR */}
+    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-slate-50">
+      <div className="mx-auto max-w-5xl">
+        <h2 className="text-center font-display text-3xl font-bold text-slate-900">What the analyzer checks</h2>
+        <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[
+            ["📊 Evidence strength", "Overall quality and weight of the evidence presented"],
+            ["🔗 Corroboration", "Which claims are backed by attached documents vs. hearsay"],
+            ["⚖️ Contradictions", "Conflicts between different parts of the same document"],
+            ["📄 Source attribution", "Whether claims are directly witnessed or secondhand"],
+            ["❓ Unsupported claims", "Assertions made without documentary evidence"],
+            ["🔍 Procedural issues", "Questions about how evidence was gathered"],
+          ].map(([title, desc]) => (
+            <div key={title} className="rounded-lg border border-slate-200 bg-white p-4">
+              <p className="font-bold text-slate-900">{title}</p>
+              <p className="mt-1 text-sm text-slate-600">{desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    {/* WHAT YOU CAN UPLOAD */}
+    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-white">
+      <div className="mx-auto max-w-5xl">
+        <h2 className="text-center font-display text-3xl font-bold text-slate-900">Documents we analyze</h2>
+        <div className="mt-8 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          {[
+            "📄 Affidavits",
+            "📄 CAS correspondence",
+            "📄 Court documents",
+            "📄 Case notes",
+            "📄 Police reports",
+            "📄 Assessment documents",
+            "📄 Letters & notices",
+            "📄 All court records",
+          ].map(doc => (
+            <div key={doc} className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-700 text-center">
+              {doc}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    {/* EDUCATION: Learning resources */}
+    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-brand-50">
+      <div className="mx-auto max-w-5xl text-center">
+        <h2 className="font-display text-3xl font-bold text-slate-900">Want to understand the law?</h2>
+        <p className="mt-4 text-base text-slate-700">After you've analyzed your documents, dive deeper into the legal framework with these educational resources.</p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Link href="/rights">
+            <span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">
+              Family Rights <ArrowRight className="h-4 w-4" />
+            </span>
+          </Link>
+          <Link href="/cyfsa-guide">
+            <span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">
+              CYFSA Guide <ArrowRight className="h-4 w-4" />
+            </span>
+          </Link>
+          <Link href="/45-day-roadmap">
+            <span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">
+              Case Roadmap <ArrowRight className="h-4 w-4" />
+            </span>
+          </Link>
+        </div>
+      </div>
+    </section>
+
+    {/* FINAL CTA */}
+    <section className="space-y-6 px-6 py-16 text-center sm:px-10 md:py-24 bg-gradient-to-br from-brand-600 to-brand-700">
+      <div className="mx-auto max-w-3xl text-white">
+        <h2 className="font-display text-3xl font-black md:text-4xl">Don't read your paperwork alone.</h2>
+        <p className="mt-4 text-lg text-brand-100">Upload your documents and get a professional evidence audit. Better preparation. Better questions for your lawyer. Better outcome.</p>
+        <Link href="/document-analyzer">
+          <span className="mt-8 inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 text-lg font-bold text-brand-700 transition hover:bg-slate-100">
+            ANALYZE MY DOCUMENTS <ArrowRight className="h-6 w-6" />
+          </span>
+        </Link>
+      </div>
+    </section>
+
+    {/* DISCLAIMER */}
+    <section className="border-t border-slate-200 px-6 py-8 sm:px-10 bg-amber-50">
+      <div className="mx-auto max-w-5xl rounded-lg border border-amber-200 bg-white p-4 text-sm leading-relaxed text-amber-950">
+        <ShieldCheck className="mb-2 h-5 w-5 text-amber-700" />
+        <strong>Use this as a preparation tool, not a replacement for legal advice.</strong> If there is an urgent removal, court date, or safety concern, contact a lawyer or Legal Aid Ontario promptly.
+      </div>
+    </section>
   </div>;
 
   const content = pageCopy[page];
