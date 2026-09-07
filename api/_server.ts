@@ -392,17 +392,32 @@ app.use(express.json({ limit: "100mb" }));
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   });
 
+  const SEARCH_CONNECTORS_DISCLAIMER =
+    "This explanation is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on it.";
+
   app.post("/api/search-connectors", async (req: Request, res: Response) => {
     try {
       const { query } = req.body;
       const ai = getGeminiClient();
       const response = await generateGeminiContentWithRetry(ai, ["gemini-3.1-pro-preview"], {
-        contents: [{ role: "user", parts: [{ text: `Search and explain the following legal concept for a family law context (CYFSA): ${query}` }] }],
+        contents: [{ role: "user", parts: [{ text: `Explain the following legal concept for a family law context (CYFSA), for a self-represented Ontario parent: ${query}` }] }],
         config: {
-          systemInstruction: "You are a helpful legal assistant for the Ontario Children's Aid Society related matters (CYFSA/CLRA). Your goal is to explain concepts clearly, citing relevant statutes where appropriate, and offering actionable advice.",
+          systemInstruction: `You are ParentShield's concept-lookup tool. You explain CYFSA/CLRA legal concepts in plain language for a self-represented Ontario parent. This is educational information, not legal advice — you never tell the parent what to do in their specific case.
+
+CORE RULES (non-negotiable)
+1. Only cite a specific CYFSA/CLRA section number if it is one of these confirmed, verified references:
+- CYFSA s.74(2): defines "child in need of protection" (17 clauses, expanded in 2021 for child sex trafficking and again for a prescribed 16/17-year-old circumstance).
+- CYFSA s.94(1): the court shall not adjourn a hearing for more than 30 days absent consent or an unaddressed objection.
+- CYFSA s.94(5): a placement-with-relative consideration clause tied to temporary care orders during an adjournment — NOT a post-apprehension hearing-deadline rule. Never cite s.94(5) for a hearing-timeline argument.
+- CYFSA s.125(1): the duty-to-report section — reasonable-grounds-to-suspect standard.
+For any other section number, including s.70, s.81, and CLRA s.8(1), say the general concept but flag the exact subsection as "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this" rather than stating one as fact. Never generate a plausible-sounding section number from pattern-matching — a wrong citation is worse than none.
+2. Explain concepts and general legal principles only. Never tell the parent what to do in their specific situation, never say what a specific outcome will be, and never phrase anything as an instruction ("you should file..."). Reframe as a question for counsel instead ("ask your lawyer whether...").
+3. Never fabricate a case name, quote, or source. If you cannot verify something, say so directly instead of guessing.
+4. Keep the explanation itself educational and concise — do not append the disclaimer yourself, it is added automatically after your response.`,
         }
       });
-      res.json({ response: response.text });
+      const answerText = response.text || "";
+      res.json({ response: `${answerText}\n\n---\n${SEARCH_CONNECTORS_DISCLAIMER}` });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: "Failed to search connectors." });
@@ -717,7 +732,7 @@ ${analysisRules}`;
             {
               "thresholdChecked": "Child in Need of Protection grounds (CYFSA s. 74)",
               "isMet": "Yes / No / Inconclusive",
-              "reasoning": "Check whether any of the 16 grounds defined under s. 74 of the CYFSA are asserted in the file. Evaluate whether assertion stands on uncorroborated hearsay or objective proof.",
+              "reasoning": "Check whether any of the 17 clauses defined under s. 74(2) of the CYFSA are asserted in the file. Evaluate whether assertion stands on uncorroborated hearsay or objective proof.",
               "primarySourceLaw": "CYFSA 2017, Section 74"
             },
             {
@@ -943,6 +958,9 @@ OUTPUT — return strictly this JSON schema, nothing else:
     }
   });
 
+  const RAG_QUERY_DISCLAIMER =
+    "This response is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on it.";
+
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
     let queryVal = "";
@@ -1005,9 +1023,9 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       let focusGuideline = "";
       if (focus === "family-advocate") {
         focusGuideline = `
-        FOCUS: EMPATHETIC FAMILY ADVOCACY & PARENTAL COACHING
-        Your response style should be highly supportive, calm, clear, and focused on helping families navigate child protection with grace and safety. 
-        Coach them on how to communicate with CAS workers, what boundaries they should keep, and suggest realistic day-to-day strategies to preserve family cohesion and avoid escalating conflicts unnecessarily.`;
+        FOCUS: EMPATHETIC FAMILY EDUCATION
+        Your response style should be highly supportive, calm, clear, and focused on helping families understand the child protection process. This is educational information, not coaching or advice on what to do in this parent's specific situation.
+        Explain in plain language what the general CYFSA process involves, what a parent's general rights and options are, and where to find further support (a lawyer, Legal Aid Ontario, a Band or Indigenous Child and Family Services Agency where relevant). For anything that turns on this family's specific facts — exactly what to say to a specific worker, how to respond to a specific request, what boundaries to set in a specific interaction — do not instruct the parent directly; reframe it as a question for their lawyer or Legal Aid Ontario.`;
       } else if (focus === "evidentiary-auditor") {
         focusGuideline = `
         FOCUS: CAS EVIDENTIARY AUDITING & CRITICAL EVIDENCE ANALYSIS
@@ -1052,7 +1070,10 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
          TONE
          Direct, plain-language, and warm — this is a person managing one of the hardest things in their life. Correcting an overstated claim and being supportive of the parent are not in tension; the most useful thing you can do for them is make sure nothing they rely on falls apart under real scrutiny later.
 
-         ${focusGuideline}`;
+         ${focusGuideline}
+
+         DISCLAIMER
+         End every response with, on its own line: "${RAG_QUERY_DISCLAIMER}"`;
 
       const historyBlock = conversationHistory.length > 0
         ? `CONVERSATION SO FAR (most recent last — use this; do not treat this message as the first thing the parent has said):\n` +
@@ -1077,7 +1098,8 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
       res.json({
         answer: responseText,
-        citations: topMatches.map((f: any) => ({ name: f.name, category: f.category, score: f.score }))
+        citations: topMatches.map((f: any) => ({ name: f.name, category: f.category, score: f.score })),
+        disclaimer: RAG_QUERY_DISCLAIMER
       });
 
     } catch (err: any) {
@@ -1103,13 +1125,14 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
          
          Be precise. Distinguish direct first-hand facts from hearsay.
          The current date is ${todayIso}. Use YYYY-MM-DD format for dates. If the user mentions "yesterday", "today", "Friday", etc., calculate relative to ${todayIso}. If no date is mentioned or inferable, default to "${todayIso}".
+         End every report with the disclaimer field, unmodified.
          IMPORTANT: Output ONLY the correct JSON structure. Do not output markdown block wrappers unless it is robustly formatted in \`\`\`json ... \`\`\` code blocks. Do not include introductory or concluding conversational prose.`;
 
       const promptText = `
         RAW VOICE DICTATION / TEXT NARRATIVE FROM PARENT:
         "${narrativeText}"
 
-        Analyze the narrative above and extract the structural details to generate a formatted evidence log template. 
+        Analyze the narrative above and extract the structural details to generate a formatted evidence log template.
         Your response must STRICTLY match the following JSON schema:
         {
           "date": "YYYY-MM-DD format based on narrative",
@@ -1118,7 +1141,8 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
           "statementsMade": "Explicit quotes or spoken statements made by the worker, supervisor, or parent during the interaction.",
           "hearsayFlag": "Must be exactly one of: 'Direct Evidence', 'Hearsay (Worker told me)', or 'Double Hearsay (Worker said another said)'. If the narrative recounts what a worker claimed that a neighbor or third-party said, this constitutes Hearsay or Double Hearsay.",
           "audioPhotoLog": "Suggested trace name for any media or logs described, or a logical description of proof (e.g. 'Thermostat photograph, parent audio recording, door cam footage').",
-          "questionsForCounsel": "A highly relevant, strategic question that the parent should ask their family defense lawyer regarding the statutory rules or legal validity of this specific interaction."
+          "questionsForCounsel": "A highly relevant, strategic question that the parent should ask their family defense lawyer regarding the statutory rules or legal validity of this specific interaction.",
+          "disclaimer": "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."
         }
       `;
 
