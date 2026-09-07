@@ -1,0 +1,10 @@
+User-agent: *
+Disallow: /api/
+Disallow: /document-analyzer
+Disallow: /saved-documents
+Disallow: /voice-assistant
+Disallow: /signup
+Disallow: /templates
+Disallow: /lawyers
+
+# ParentShield is a private legal-document tool. Keep internal app workflows out of crawlers.

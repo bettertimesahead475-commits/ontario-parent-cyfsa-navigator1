@@ -3,7 +3,7 @@
  * Durable static/bundle caching tailored for fast loads in areas with poor cellular reception (courtrooms).
  */
 
-const CACHE_NAME = "opa-courtroom-cache-v3";
+const CACHE_NAME = "opa-courtroom-cache-v4";
 
 const OFFLINE_URLS = [
   "/",
@@ -46,6 +46,21 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const requestUrl = new URL(event.request.url);
+  const allowedCrossOriginHosts = new Set([
+    "https://fonts.googleapis.com",
+    "https://fonts.gstatic.com"
+  ]);
+
+  // Only handle HTTP(S) requests for this app shell and explicitly precached font CDNs.
+  // Let browser extensions, Firestore streaming/listen channels, and all other
+  // cross-origin requests pass directly to the browser/network stack.
+  if (requestUrl.protocol !== "http:" && requestUrl.protocol !== "https:") {
+    return;
+  }
+
+  if (requestUrl.origin !== self.location.origin && !allowedCrossOriginHosts.has(requestUrl.origin)) {
+    return;
+  }
 
   // BUG FOUND IN AUDIT (regression): this repo had already fixed a crash where
   // cache.put() throws "Request scheme 'chrome-extension' is unsupported" when a browser
@@ -58,7 +73,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Never intercept API endpoints to prevent blocking AI or transcribing backends
-  if (requestUrl.pathname.startsWith("/api/")) {
+  if (requestUrl.origin === self.location.origin && requestUrl.pathname.startsWith("/api/")) {
     return;
   }
 
