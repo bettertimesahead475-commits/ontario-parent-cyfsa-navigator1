@@ -4,6 +4,7 @@ import { ArrowRight, BookOpen, CalendarDays, FileSearch, Heart, Scale, ShieldChe
 import { CYFSA_TOPICS } from "../data";
 import { ROADMAP_STAGES } from "../data-transferred";
 import { printBrandedDocument } from "../utils/printExport";
+import { EvidenceStrengthDemo } from "./EvidenceStrengthDemo";
 
 // Same key CYFSAGuideTab.tsx reads on mount — set it right before navigating there so the
 // parent lands on the exact topic they clicked, not the guide's unrelated default.
@@ -300,77 +301,8 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
       </div>
     </section>
 
-    {/* DEMO: Real results from real case */}
-    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-24 bg-white">
-      <div className="mx-auto max-w-5xl">
-        <p className="text-center text-xs font-bold uppercase tracking-widest text-brand-600">REAL CASE ANALYSIS</p>
-        <h2 className="mt-3 text-center font-display text-3xl font-bold text-slate-900 md:text-4xl">Here's what we found in an actual CAS affidavit</h2>
-        <p className="mt-4 text-center text-base text-slate-600">A parent from Ontario received a CAS affidavit in a child protection case. We analyzed it. Here's what emerged.</p>
-      </div>
-
-      <div className="mx-auto max-w-5xl grid gap-8 md:grid-cols-3">
-        {/* ORIGINAL DOCUMENT */}
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">STEP 1: ORIGINAL DOCUMENT</p>
-          <h3 className="mt-3 font-display text-lg font-bold text-slate-900">Form 14A Affidavit</h3>
-          <p className="mt-2 text-xs text-slate-500">Court document filed by CAS manager</p>
-          <div className="mt-4 space-y-3 rounded-lg bg-white p-4 border border-slate-200 text-xs leading-relaxed text-slate-700">
-            <p className="font-semibold text-slate-900">"On September 30, 2025, [Respondent] attended the Agency and advised me of the following..."</p>
-            <p>"[REDACTED] viewed [REDACTED]'s bank account and saw transfers to a gambling site."</p>
-            <p>"Immediate removal necessary due to risk. History of non-compliance documented."</p>
-            <p className="italic text-slate-500">+ 15 pages of additional narrative, police exhibits, historical claims</p>
-          </div>
-        </div>
-
-        {/* ANALYSIS OUTPUT */}
-        <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-6">
-          <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">STEP 2: ANALYSIS FINDINGS</p>
-          <h3 className="mt-3 font-display text-lg font-bold text-slate-900">Evidence Audit Results</h3>
-          <p className="mt-2 text-xs text-slate-500">What the document really contains</p>
-          
-          <div className="mt-4 space-y-3">
-            <div className="rounded-lg bg-white p-3 border border-emerald-200">
-              <p className="text-xs font-bold text-emerald-900">SCORE: 46/100</p>
-              <p className="mt-1 text-xs text-slate-600">Evidence strength assessment</p>
-            </div>
-            
-            <div className="rounded-lg bg-white p-3 border border-amber-200 bg-amber-50">
-              <p className="text-xs font-bold text-amber-900">⚠️ HEARSAY</p>
-              <p className="mt-1 text-xs text-slate-600">Paragraphs 7–28 report secondhand accounts. Weight depends on corroboration and cross-examination availability.</p>
-            </div>
-
-            <div className="rounded-lg bg-white p-3 border border-rose-200 bg-rose-50">
-              <p className="text-xs font-bold text-rose-900">⚠️ UNSUPPORTED</p>
-              <p className="mt-1 text-xs text-slate-600">Gambling claim has no bank statements, screenshots, or exhibits attached.</p>
-            </div>
-
-            <div className="rounded-lg bg-white p-3 border border-blue-200 bg-blue-50">
-              <p className="text-xs font-bold text-blue-900">⚠️ CONTRADICTION</p>
-              <p className="mt-1 text-xs text-slate-600">Police exhibit states "full custody with [other parent]" — affidavit claims otherwise.</p>
-            </div>
-          </div>
-        </div>
-
-        {/* RESPONSE DRAFT */}
-        <div className="rounded-2xl border border-slate-300 bg-white p-6 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">STEP 3: YOUR RESPONSE</p>
-          <h3 className="mt-3 font-display text-lg font-bold text-slate-900">Form 33B Answer Draft</h3>
-          <p className="mt-2 text-xs text-slate-500">Counter-narrative for your lawyer</p>
-          <div className="mt-4 space-y-2 text-xs leading-relaxed text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-200">
-            <p className="font-semibold text-slate-900">CAS CLAIM:</p>
-            <p className="italic text-slate-600">"Bank records show transfers to gambling site."</p>
-            <p className="mt-2 font-semibold text-slate-900">YOUR COUNTER:</p>
-            <p>"This claim lacks documentary support — no bank statements attached. Request CAS produce the actual records they reference."</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-5xl rounded-2xl border border-blue-200 bg-blue-50 p-6">
-        <p className="text-sm text-blue-900">
-          <strong>What this shows:</strong> The analyzer identifies specific evidentiary weaknesses in the CAS case. Your lawyer uses these findings to prepare responses, cross-examination questions, and discovery requests. The better you understand the document's actual strengths and gaps, the better counsel you can instruct.
-        </p>
-      </div>
-    </section>
+    {/* DEMO: Evidence Strength Analysis Methodology */}
+    <EvidenceStrengthDemo />
 
     {/* PROOF POINTS: Why parents trust this */}
     <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-slate-50">
