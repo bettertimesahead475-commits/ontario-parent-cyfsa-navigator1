@@ -11,6 +11,8 @@ import { apiFetch, safeReadJson } from "../utils/api";
 import { initAuth, googleSignIn, logout } from "../utils/firebase";
 import { fetchDriveFiles, fetchDriveFileContent, fetchRecentEmails } from "../utils/workspace";
 import { useLocation } from "wouter";
+import RedactionToggle from "./RedactionToggle";
+import { useRedaction } from "../utils/redaction";
 import { 
   Upload, 
   FileText, 
@@ -175,6 +177,12 @@ const GLOSSARY_TERMS = [
 export default function DocumentAnalyzerTab() {
   const { resetAll } = useAppReset();
   const [, setLocation] = useLocation();
+  
+  // Redaction support
+  const { enabled: redactionEnabled, toggle: toggleRedaction, redactDocumentText } = useRedaction();
+  const [originalDocumentText, setOriginalDocumentText] = useState<string>("");
+  const [knownNamesToRedact, setKnownNamesToRedact] = useState<string[]>([]);
+  
   // Save status indicator
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
@@ -3036,6 +3044,19 @@ export default function DocumentAnalyzerTab() {
                               onClick={() => {
                                 setSelectedFileId(item.id);
                                 setSelectedReport(item.analysisReport || null);
+                                // Capture original document text for redaction
+                                if (item.content && typeof item.content === 'string') {
+                                  // If it's base64 (PDF/image), decode first if possible; otherwise use as-is
+                                  try {
+                                    const decoded = atob(item.content);
+                                    setOriginalDocumentText(decoded.substring(0, 5000)); // First 5000 chars
+                                  } catch {
+                                    // If not valid base64, treat as plain text
+                                    setOriginalDocumentText(item.content.substring(0, 5000));
+                                  }
+                                } else {
+                                  setOriginalDocumentText("");
+                                }
                               }}
                               className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between gap-1.5 group select-none ${
                                 fileActive 
@@ -3675,6 +3696,32 @@ export default function DocumentAnalyzerTab() {
                             {selectedReport.completenessScore}%
                           </div>
                         </div>
+                      </div>
+
+                      {/* Redaction Toggle & Preview */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-slate-600">
+                            <span className="font-semibold">Preparing to share?</span> Hide names, dates, and file numbers before taking a screenshot or printing.
+                          </div>
+                          <RedactionToggle enabled={redactionEnabled} onToggle={toggleRedaction} />
+                        </div>
+                        
+                        {/* Document Preview with Redaction Applied */}
+                        {originalDocumentText && (
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                            <p className="text-[10px] font-mono font-bold uppercase text-slate-600 mb-2">
+                              {redactionEnabled ? "📄 Redacted Document Preview" : "📄 Document Preview"}
+                            </p>
+                            <div className="text-xs leading-relaxed text-slate-700 bg-white p-3 rounded border border-slate-200 font-mono max-h-40 overflow-auto whitespace-pre-wrap break-words">
+                              {redactionEnabled 
+                                ? redactDocumentText(originalDocumentText, knownNamesToRedact)
+                                : originalDocumentText
+                              }
+                              {originalDocumentText.length >= 5000 && <p className="text-slate-500 mt-2">... (document continues)</p>}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Educational disclaimer */}
@@ -4370,6 +4417,17 @@ export default function DocumentAnalyzerTab() {
                                   onClick={() => {
                                     setSelectedFileId(file.id);
                                     setSelectedReport(file.analysisReport || null);
+                                    // Capture original document text for redaction
+                                    if (file.content && typeof file.content === 'string') {
+                                      try {
+                                        const decoded = atob(file.content);
+                                        setOriginalDocumentText(decoded.substring(0, 5000));
+                                      } catch {
+                                        setOriginalDocumentText(file.content.substring(0, 5000));
+                                      }
+                                    } else {
+                                      setOriginalDocumentText("");
+                                    }
                                   }}
                                   className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-xs font-semibold cursor-pointer transition"
                                 >
