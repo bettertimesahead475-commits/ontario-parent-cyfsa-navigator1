@@ -12,6 +12,13 @@ export async function fetchDriveFiles(searchQuery?: string) {
     }
   );
   const data = await res.json();
+  // BUG FOUND IN AUDIT: the cached access token never expires or refreshes (see firebase.ts),
+  // and Google OAuth tokens are typically only valid ~1 hour. Once it goes stale, Google returns
+  // a 401 with a DIFFERENT error message than the plain "Not authenticated" this function throws
+  // when there's no token at all — so the UI's existing reconnect prompt (which checks for that
+  // exact string) never fired for an expired token, just a confusing raw API error instead.
+  // Normalizing any 401 to the same message so the same reconnect UX handles both cases.
+  if (res.status === 401) throw new Error('Not authenticated');
   if (data.error) throw new Error(data.error.message);
   return data.files || [];
 }
@@ -62,36 +69,40 @@ export async function fetchRecentEmails(searchQuery?: string) {
     headers: { Authorization: `Bearer ${token}` },
   });
   const listData = await listRes.json();
+  // Same expired-token normalization as fetchDriveFiles above.
+  if (listRes.status === 401) throw new Error('Not authenticated');
   if (listData.error) throw new Error(listData.error.message);
 
   const messages = listData.messages || [];
-  
-  const emails = [];
-  for (const msg of messages) {
-    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    
-    // Extract Subject and Body
-    let subject = 'No Subject';
-    const headers = data.payload?.headers || [];
-    for (const h of headers) {
-      if (h.name === 'Subject') subject = h.value;
-    }
 
-    let body = '';
-    if (data.snippet) {
-        body = data.snippet;
-    }
+  // BUG FOUND IN AUDIT: this fetched each message's details one at a time in a sequential
+  // for-loop (await inside the loop), meaning 10 messages meant 10 sequential network round
+  // trips end-to-end instead of overlapping them — the same class of unnecessary-serial-latency
+  // bug as the OCR+analysis one fixed earlier today. Parallelized with Promise.all.
+  const emails = await Promise.all(
+    messages.map(async (msg: any) => {
+      const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
 
-    emails.push({
-      id: msg.id,
-      subject,
-      snippet: body,
-      timestamp: data.internalDate
-    });
-  }
+      // Extract Subject and Body
+      let subject = 'No Subject';
+      const headers = data.payload?.headers || [];
+      for (const h of headers) {
+        if (h.name === 'Subject') subject = h.value;
+      }
+
+      const body = data.snippet || '';
+
+      return {
+        id: msg.id,
+        subject,
+        snippet: body,
+        timestamp: data.internalDate
+      };
+    })
+  );
 
   return emails;
 }

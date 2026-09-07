@@ -11,6 +11,8 @@ import { apiFetch, safeReadJson } from "../utils/api";
 import { initAuth, googleSignIn, logout } from "../utils/firebase";
 import { fetchDriveFiles, fetchDriveFileContent, fetchRecentEmails } from "../utils/workspace";
 import { useLocation } from "wouter";
+import RedactionToggle from "./RedactionToggle";
+import { useRedaction } from "../utils/redaction";
 import { 
   Upload, 
   FileText, 
@@ -50,7 +52,32 @@ import {
 } from "lucide-react";
 import { db, auth } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
-import { LegalCaseBrief } from "./LegalCaseBrief";
+import { getUserKey } from "../utils/storage";
+
+// Escapes a value for safe interpolation into the raw HTML strings the print/export
+// views build (both as element text and inside HTML attributes like `class="..."`).
+// Print reports embed AI-generated report fields (influenced by the content of an
+// uploaded, potentially adversarial document) and even raw uploaded file names —
+// both are attacker-reachable, so nothing here can be trusted to already be safe HTML.
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string
+  ));
+}
+
+// Renders **bold** markdown segments from AI-generated text as real React
+// elements instead of raw HTML. The lawyer case brief bullets come straight
+// from the model's analysis of an uploaded (and therefore untrusted/
+// adversary-controllable) CAS document — injecting them via
+// dangerouslySetInnerHTML would let a maliciously crafted document coerce
+// the model into emitting live, executable HTML in the parent's browser.
+function renderBoldText(text: string): React.ReactNode[] {
+  return text.split(/(\*\*.*?\*\*)/g).map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") && part.length >= 4
+      ? <strong key={i}>{part.slice(2, -2)}</strong>
+      : <React.Fragment key={i}>{part}</React.Fragment>
+  );
+}
 
 interface OrganizedFile {
   id: string;
@@ -120,30 +147,55 @@ const GLOSSARY_TERMS = [
     term: "Section 81 Removal",
     abbreviation: "Apprehension Standard",
     definition: "Permits uninvited entry and emergency child apprehension ONLY upon establishing 'imminent risk of serious body/medical harm'. General untidiness fails this high statutory threshold.",
-    section: "CYFSA, s. 81(1)",
+    // FIX (flagged in audit): the exact subsection was stated as settled fact without
+    // verification. s.81 covers this general area but the precise subsection needs
+    // confirmation against the actual statute or with counsel before being relied on.
+    section: "CYFSA, s. 81 (exact subsection unverified — confirm with counsel)",
     triggers: ["section 81", "apprehend", "removed", "imminent risk", "s.81", "apprehension"]
   },
   {
     term: "300-Day Presumption",
     abbreviation: "CLRA Parentage",
     definition: "Presumes parentage of a child if birth occurs within 300 days of relationship separation or cohabitation ending. CAS must proactively assess and serve them as formal parties.",
-    section: "CLRA, s. 8(1)",
+    // FIX (flagged in audit): same issue — unverified exact subsection presented as fact.
+    section: "CLRA, s. 8 (exact subsection unverified — confirm with counsel)",
     triggers: ["300-day", "300 days", "parentage rule", "relationship ending", "clra"]
   },
   {
-    term: "Supporting Children's Futures",
-    abbreviation: "SCFA 2024 Amendments",
-    definition: "Royal Assent June 2024. Imposes mandatory frequent CAS monitoring visits to children and enforces children's direct rights to contact the Ontario Ombudsman.",
-    section: "SCFA, 2024",
-    triggers: ["scfa", "futures act", "children's futures", "ombudsman"]
+    term: "Supporting Children's Futures / Supporting Children and Students Acts",
+    abbreviation: "Ombudsman & monitoring rights",
+    // FIX (flagged in audit): these are two separate acts passed a year apart, not one
+    // "SCFA 2024" amendment. Bill 188 (2024) amended CYFSA Part II re: children's rights to
+    // be informed about the Ombudsman; Bill 33 (2025) separately expanded the Ombudsman's own
+    // mandate to investigate CAS and licensed-provider services under CYFSA.
+    definition: "Bill 188, Supporting Children's Futures Act, 2024 (Royal Assent June 2024) requires CAS to inform children of their right to contact the Ontario Ombudsman. Bill 33, Supporting Children and Students Act, 2025, separately expanded the Ombudsman's own mandate to investigate complaints about CAS and licensed residential providers.",
+    section: "S.O. 2024, c. 17 (Bill 188) and S.O. 2025, c. 12, Sched. 4 (Bill 33) — cite separately, never combined",
+    triggers: ["scfa", "futures act", "children's futures", "ombudsman", "bill 33"]
   }
 ];
 
 export default function DocumentAnalyzerTab() {
   const { resetAll } = useAppReset();
   const [, setLocation] = useLocation();
+  
+  // Redaction support
+  const { enabled: redactionEnabled, toggle: toggleRedaction, redactDocumentText } = useRedaction();
+  const [originalDocumentText, setOriginalDocumentText] = useState<string>("");
+  const [knownNamesToRedact, setKnownNamesToRedact] = useState<string[]>([]);
+  
   // Save status indicator
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+  // Initialize and load saved progress from localStorage
+  const parsedProg = (() => {
+    try {
+      const saved = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error("Failed to parse progress from localStorage", e);
+      return null;
+    }
+  })();
 
   // Workspace integration state
   const [needsAuth, setNeedsAuth] = useState(false);
@@ -278,22 +330,41 @@ export default function DocumentAnalyzerTab() {
     }
   };
 
-  // Initial helpers to parse local state
-  const parsedProg = (() => {
-    try {
-      const loadRequest = localStorage.getItem("OPA_LOAD_ANALYSIS_REPORT");
-      if (loadRequest) {
-        localStorage.removeItem("OPA_LOAD_ANALYSIS_REPORT");
-        return JSON.parse(loadRequest);
-      }
-      
-      const saved = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error("Failed to parse document analyzer cached progress:", e);
-    }
-    return null;
-  })();
+  // Foldable Section component
+  const FoldableSection = ({ title, icon, count, isOpen, onToggle, children }: any) => (
+    <div className="border border-slate-200 rounded-xl overflow-hidden mb-4 bg-white">
+      <button
+        onClick={onToggle}
+        className="w-full p-4 bg-slate-50 flex items-center justify-between hover:bg-slate-100 transition-colors"
+      >
+        <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
+          {icon} {title} {count !== undefined && `(${count})`}
+        </h5>
+        {isOpen ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+      </button>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+          >
+            <div className="p-4">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+
+  const [openReportSections, setOpenReportSections] = useState({
+    redFlags: true,
+    timeline: true,
+    thresholds: true,
+    verification: true,
+    missing: true,
+    questions: true
+  });
+  const [factCheckEnabled, setFactCheckEnabled] = useState(false);
 
   // Organized Custom File Repository State (Client-Side State with robust defaults)
   const [organizedFiles, setOrganizedFiles] = useState<OrganizedFile[]>(() => {
@@ -322,11 +393,78 @@ export default function DocumentAnalyzerTab() {
   });
   const [chatInput, setChatInput] = useState<string>("");
   const [isRAGQuerying, setIsRAGQuerying] = useState<boolean>(false);
-  const [claudeModel, setClaudeModel] = useState<string>("claude-3-5-haiku-20241022");
+  // Cross-Document Case Timeline: merges every document in the case vault into one
+  // sourced, dated timeline and flags conflicts/open items between them. See
+  // /api/case-timeline in api/_server.ts for the rules this must follow (never invent a
+  // date/quote/citation; open items only when one document promises something a later
+  // document silently drops; the parent's own framing is never adopted beyond what the
+  // documents themselves show).
+  const [caseTimeline, setCaseTimeline] = useState<any | null>(null);
+  const [isBuildingTimeline, setIsBuildingTimeline] = useState<boolean>(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+  // Free-text box for the parent's own account of events — this is what lets the timeline
+  // check a specific claim ("they paid me $2,000 for the recording") against the documents,
+  // the same way a real conversation catches an overstated or unconfirmed claim. Without
+  // this, the tool can only compare documents against each other, not against what the
+  // parent actually believes happened.
+  const [parentClaimsInput, setParentClaimsInput] = useState<string>("");
+
+  const handleBuildCaseTimeline = async () => {
+    const docsForTimeline = organizedFiles
+      .filter(f => f.content && f.content.trim().length > 0)
+      .map(f => ({ name: f.name, text: f.content }));
+
+    if (docsForTimeline.length < 2) {
+      setTimelineError("Add at least two documents with readable text to the case vault before building a cross-document timeline.");
+      return;
+    }
+
+    setIsBuildingTimeline(true);
+    setTimelineError(null);
+    try {
+      const res = await apiFetch("/api/case-timeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documents: docsForTimeline, model: claudeModel, parentClaims: parentClaimsInput }),
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `Request failed (${res.status})`);
+      }
+      const data = await res.json();
+      setCaseTimeline(data);
+    } catch (e: any) {
+      console.error("[case timeline] build failed:", e);
+      setTimelineError(e?.message || "Failed to build the case timeline. Please try again.");
+    } finally {
+      setIsBuildingTimeline(false);
+    }
+  };
+  // BUG FOUND IN AUDIT: this defaulted to "claude-sonnet-4-20250514", which isn't in the
+  // backend's actual valid model set (CLAUDE_MODELS = {"claude-sonnet-5", "claude-haiku-4-5-20251001"}
+  // in api/_server.ts). The backend silently substitutes "claude-sonnet-5" whenever an unknown
+  // model string comes in, so this default (and, worse, both options in the dropdown below) never
+  // actually did anything - the model selector was a non-functional illusion of choice.
+  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-5");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Active Audit Visual State
   const [selectedReport, setSelectedReport] = useState<AnalysisReport | null>(() => {
+    // BUG FOUND IN AUDIT: SavedDocumentsTab.tsx's "Open Document" button for a saved analysis
+    // writes the report to localStorage under "OPA_LOAD_ANALYSIS_REPORT" and navigates here,
+    // but nothing in this file ever read that key back - the report was silently dropped every
+    // time, and the user just landed on whatever the default/empty view was. Wired up here:
+    // if that handoff key is present, it takes priority over the regular saved-progress restore,
+    // and is cleared immediately after being consumed so it doesn't reload on every future visit.
+    try {
+      const handoff = localStorage.getItem("OPA_LOAD_ANALYSIS_REPORT");
+      if (handoff) {
+        localStorage.removeItem("OPA_LOAD_ANALYSIS_REPORT");
+        return JSON.parse(handoff);
+      }
+    } catch (e) {
+      console.error("Failed to load handed-off analysis report:", e);
+    }
     return parsedProg?.selectedReport || null;
   });
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState<boolean>(false);
@@ -335,96 +473,57 @@ export default function DocumentAnalyzerTab() {
   // Deep Scan states
   const [isDeepScanning, setIsDeepScanning] = useState<boolean>(false);
   const [deepScanFileId, setDeepScanFileId] = useState<string | null>(null);
+  const [deepScanError, setDeepScanError] = useState<string | null>(null);
   const [deepScanReports, setDeepScanReports] = useState<{ [fileId: string]: any }>(() => {
     try {
-      const saved = localStorage.getItem("OPA_DEEPSCAN_REPORTS");
+      const saved = localStorage.getItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS");
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
     }
   });
 
-  const triggerDeepScan = (file: OrganizedFile) => {
+  const triggerDeepScan = async (file: OrganizedFile) => {
+    if (!file.content || !file.content.trim()) {
+      setDeepScanError("This file has no extracted text to scan yet.");
+      return;
+    }
+
     setIsDeepScanning(true);
     setDeepScanFileId(file.id);
+    setDeepScanError(null);
 
-    setTimeout(() => {
-      const isTranscript = file.name.toLowerCase().includes("transcript");
-      const isCorrespondence = file.category === "CAS Correspondence";
-      
-      let gaps: string[] = [];
-      let missingEvidence: string[] = [];
-      let retorts: { claim: string; objection: string; action: string }[] = [];
+    try {
+      const response = await apiFetch("/api/deep-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentText: file.content,
+          documentName: file.name,
+          category: file.category,
+          model: claudeModel,
+          // Gives the deep scan the first-pass report already run for this file, so it can
+          // dig into what that pass missed instead of re-finding the same red flags.
+          priorAnalysis: file.analysisReport || null
+        })
+      });
 
-      if (isCorrespondence) {
-        gaps = [
-          "Omission of emergency apprehension thresholds: CAS asserts general safety concerns but completely fails to document any imminent threat or substantial harm parameters.",
-          "Duty to consult counsel: Corresponding communications indicate CAS did not properly advise you of your S.12 rights to consult counsel within 12 hours of initial interview.",
-          "Highly speculative opinions: Caseworker reports are heavily colored by subjective descriptors (e.g. 'dismissive', 'evasive') without specific supporting direct quotes."
-        ];
-        missingEvidence = [
-          "Continuous text/SMS thread exports: Direct printouts showing friendly, cooperative scheduling attempts to contradict worker claims of parental avoidance.",
-          "Third-party child logs: Written declarations from friends, family, or coaches showing the child showed positive behavior immediately following visits."
-        ];
-        retorts = [
-          {
-            claim: "Worker alleges parent repeatedly refused access for wellness checks.",
-            objection: "Parent objected due to lack of notice during child's sleep window, but proposed 3 immediate rescheduled morning times.",
-            action: "Cite CYFSA S.81(2) and present rescheduled emails to demonstrate active cooperation."
-          },
-          {
-            claim: "Family notes declare parent has 'chaotic and uncooperative' state of mind.",
-            objection: "Worker's observation is subjective/hearsay and lacks professional verification.",
-            action: "Present a therapist declaration or school attendance certificates showing consistency and pristine structure."
-          }
-        ];
-      } else if (isTranscript) {
-        gaps = [
-          "Double hearsay testifying: Society workers are testifying on children's behavior based entirely on third-party emails that have not been sworn.",
-          "Incomplete Part X disclosure: The testimony references internal registry records which CAS did not provide in disclosure indexes."
-        ];
-        missingEvidence = [
-          "Certified complete companion transcripts: Transcripts from cross-examination logs illustrating inconsistencies in the worker's narrative.",
-          "Witness corroboration letters: Signed affidavits from visitation observers indicating the session had structured, gentle play."
-        ];
-        retorts = [
-          {
-            claim: "Caseworker alleges child manifested sudden regression and distress upon seeing the parent.",
-            objection: "Caseworker's claim directly contradicts visitation log entry stating 'child greeted parent warmly and with smiles.'",
-            action: "Impeach caseworker's testimony on the stand using the Society's own concurrent visitation records."
-          }
-        ];
-      } else {
-        gaps = [
-          "Notice period violations: Draft fails to highlight that CAS did not provide the required 5-day notice before initiating the protection application.",
-          "Unbacked legal assertions: The petition states 'severe emotional harm' under S.74 but lacks any medical or psychological assessment from a qualified clinician."
-        ];
-        missingEvidence = [
-          "Positive visit logs: Detailed tracker illustrating Luc's happy, constructive behavior.",
-          "Character declarations: Positive written representations from teachers showing the child's academic and emotional stability."
-        ];
-        retorts = [
-          {
-            claim: "CAS challenges the parent's timeline of access requests.",
-            objection: "The parent's calendar is highly coordinated and backed by active phone bills.",
-            action: "Bring forward billing logs to verify exact time parent made attempts to reach out."
-          }
-        ];
+      const data = await safeReadJson(response);
+      if (!response.ok) {
+        throw new Error(data.error || `Deep scan failed (${response.status})`);
       }
-
-      const report = {
-        gaps,
-        missingEvidence,
-        retorts,
-        timestamp: new Date().toLocaleDateString()
-      };
+      const report = { ...data, timestamp: new Date().toLocaleDateString() };
 
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
-      localStorage.setItem("OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
+      localStorage.setItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
+    } catch (err: any) {
+      console.error("[deep scan] request failed:", err);
+      setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
+    } finally {
       setIsDeepScanning(false);
       setDeepScanFileId(null);
-    }, 2500);
+    }
   };
 
   // Active Legislative Citation side-by-side modal/drawer states
@@ -470,21 +569,36 @@ export default function DocumentAnalyzerTab() {
   const STATUTORY_TEXT_DB: Record<string, { title: string; subtitle: string; exactText: string; explanation: string }> = {
     "CYFSA 2017, Section 94(1)": {
       title: "CYFSA 2017, Section 94(1)",
-      subtitle: "5 Court Days Limit for Warrantless Removal Hearings",
-      exactText: "94 (1) If a child is apprehended under section 81 or 82 and is not returned to a parent or other person under section 83, the society shall, as soon as practicable and in any event within five court days after the apprehension, bring the matter before the court...",
-      explanation: "CAS carries no legal authority to withhold children without a formal judicial hearing past the 5 court-day limit. Every day of retention past this limit acts as an illegal detention of the minor."
+      subtitle: "30-Day Adjournment Limit",
+      // BUG FIX (flagged in audit): this entry previously fabricated a "5 court days" removal-hearing
+      // rule and attributed invented statutory text to s.94(1). The real five-day hearing deadline
+      // after a warrantless apprehension is s. 88, not s. 94 at all — s.94(1) actually caps how long
+      // a hearing can be adjourned. Text below is the real s.94(1), verified against the consolidated
+      // CYFSA text saved in legal-reference/.
+      exactText: "94 (1) The court shall not adjourn a hearing for more than 30 days, (a) unless all the parties present and the person who will be caring for the child during the adjournment consent; or (b) if the court is aware that a party who is not present at the hearing objects to the longer adjournment.",
+      explanation: "This governs how long a hearing can be adjourned once it's already before the court — it is not the deadline for first bringing an apprehended child before a court (that's s. 88, see the five-day rule entry). Ask your lawyer whether any adjournment past 30 days had the required consent or lack of objection on the record."
     },
     "CYFSA 2017, Section 94(2)": {
       title: "CYFSA 2017, Section 94(2)",
-      subtitle: "Interim Care Standard - CAS Carries the Burden of Proof",
-      exactText: "94 (2) At a hearing under this section, the court shall make an interim order regarding the child's care, and the society carries the burden of establishing that there is no less disruptive way to protect the child.",
-      explanation: "Shifting the burden onto parents is illegal in Ontario. CAS must prove why placement inside the parental home represents an active, unmanageable danger that cannot be mitigated by alternative support plans."
+      subtitle: "Temporary Care Order During an Adjournment",
+      exactText: "94 (2) Where a hearing is adjourned, the court shall make a temporary order for care and custody providing that the child (a) remain in or be returned to the person who had charge of the child immediately before intervention; (b) remain in or be returned to that person subject to the society's supervision; (c) be placed with another person, with that person's consent, subject to the society's supervision; or (d) remain or be placed in the care and custody of the society, but not in a place of temporary detention or custody.",
+      explanation: "The court must pick one of these four placement options whenever it adjourns a hearing — it is not, by itself, a burden-of-proof rule. Under s. 94(4), the court can't choose option (c) or (d) unless satisfied there's a risk the child would suffer harm that can't be adequately addressed by option (a) or (b)."
     },
     "CYFSA 2017, Section 81": {
       title: "CYFSA 2017, Section 81",
-      subtitle: "Warrantless Apprehension Standards, 'Imminent Risk of Serious Harm'",
-      exactText: "81 (1) A child youth and family services worker or peace officer may take a child into temporary custody without a warrant if there are reasonable and probable grounds to believe that there is an imminent risk of serious harm to the child...",
-      explanation: "Vague, subjective casework impressions of 'mess' or 'non-cooperation' do not fulfill the Section 81 safety test. Imminent physical, sexual, or major medical injury is required to act without a warrant."
+      subtitle: "Warrantless Apprehension Standard: 'Substantial Risk to Health or Safety'",
+      // BUG FIX (flagged in audit): this previously used "imminent risk of serious harm," which is not
+      // the statutory wording and was already corrected elsewhere in the app (data.ts, the analyze
+      // prompt). The real s.81(7) threshold is "substantial risk to the child's health or safety," and
+      // it only applies to children under 16 — 16/17 year olds are not covered by this subsection.
+      exactText: "81 (7) A child protection worker who believes on reasonable and probable grounds that (a) a child is in need of protection; (b) the child is younger than 16; and (c) there would be a substantial risk to the child's health or safety during the time necessary to bring the matter on for a hearing or obtain a warrant, may without a warrant bring the child to a place of safety.",
+      explanation: "This warrantless power only applies to children under 16 and requires a substantial risk to health or safety during the time it would take to get a warrant or hearing — not a general 'imminent danger' standard, and not available at all for a 16 or 17 year old under this subsection. Compare against s. 81(2), the warrant-based power, which has a different threshold."
+    },
+    "CYFSA, S.O. 2017, c. 14, s. 88": {
+      title: "CYFSA 2017, Section 88",
+      subtitle: "Time in Place of Safety Limited (The Five-Day Hearing Rule)",
+      exactText: "As soon as practicable, but in any event within five days after a child is brought to a place of safety under section 81, the matter shall be brought before a court for a hearing under subsection 90(1), unless the child is returned or a temporary care agreement is made instead.",
+      explanation: "This is the real five-day rule — not section 94, which covers adjournment limits and temporary-care placement considerations instead. If the matter isn't brought before a court within five days of a warrantless apprehension, ask your lawyer whether this deadline was met."
     },
     "Ontario Evidence Act & Family Law Rules": {
       title: "Ontario Evidence Act & Family Law Rules",
@@ -510,29 +624,28 @@ export default function DocumentAnalyzerTab() {
       exactText: "Section 2 (2) 5: Service providers must actively account for First Nations, Inuit, and Métis cultures and prioritize direct kin custom-care arrangements prior to stranger placements.",
       explanation: "Setting foster care with strangers before consulting the Métis Nation or indigenous family council violates major statutory duty directives of Ontario child protection acts."
     },
-    "CYFSA, S.O. 2017, c. 14, s. 94": {
-      title: "CYFSA 2017, Section 94",
-      subtitle: "The 5-Day Holding Limitation for Emergency Custody",
-      exactText: "CAS must present the child before a judge within 5 court-stamped days of warrantless removal from control.",
-      explanation: "If they schedule or file after 5 days, the retaining of the child faces severe procedural nullity. Parents must instruct their lawyer to file for emergency return."
-    },
     "CYFSA, S.O. 2017, c.14, s.74": {
       title: "CYFSA 2017, Section 74",
       subtitle: "Comprehensive Custody Intervention Thresholds",
       exactText: "A child is in need of protection ONLY if there forms a real, severe likelihood of physical, emotional, or medical injury under standard section 74 sub-sections.",
       explanation: "The court holds zero authority to interfere with family autonomy in the absence of severe physical or medical hazards. Minor housekeeping concerns or low-income are insufficient."
-    },
-    "CYFSA, S.O. 2017, c.14, s.94(1)": {
-      title: "CYFSA 2017, Section 94(1)",
-      subtitle: "Primary Five-Day Limit For Warrantless Removal Review",
-      exactText: "The society shall, as soon as practicable and in any event within five court days after apprehension, initiate an intervention review in court.",
-      explanation: "A cornerstone of parental liberty. Ensure the exact schedule is reviewed with court registers to confirm filing times."
     }
+    // BUG FIX (flagged in audit): a duplicate "CYFSA, S.O. 2017, c.14, s.94(1)" entry used to sit
+    // here with fabricated statute text (another copy of the wrong "5 court days" claim, see the
+    // real s. 94(1)/s. 88 entries above). It was never actually reachable through
+    // getStatuteDetails() below — the lookup keys don't match this format — so it was dead code
+    // carrying wrong legal content for no functional reason. Removed rather than fixed in place.
   };
 
   const getStatuteDetails = (citation: string) => {
     const normalized = citation.toLowerCase();
     
+    // BUG FIX (flagged in audit): "88" must be checked before "8" prefixes on "81" collide, and
+    // before the generic "94" branch below routed every plain "s. 94" mention to a fabricated
+    // 5-day-rule entry — s. 88 is the real five-day rule, s. 94 is the adjournment-limit section.
+    if (normalized.includes("88") || normalized.includes("five-day") || normalized.includes("five day")) {
+      return STATUTORY_TEXT_DB["CYFSA, S.O. 2017, c. 14, s. 88"];
+    }
     if (normalized.includes("94(1)") || normalized.includes("94 (1)")) {
       return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(1)"];
     }
@@ -540,7 +653,7 @@ export default function DocumentAnalyzerTab() {
       return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(2)"];
     }
     if (normalized.includes("94")) {
-      return STATUTORY_TEXT_DB["CYFSA, S.O. 2017, c. 14, s. 94"] || STATUTORY_TEXT_DB["CYFSA 2017, Section 94(1)"];
+      return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(1)"];
     }
     if (normalized.includes("81") || normalized.includes("apprehension")) {
       return STATUTORY_TEXT_DB["CYFSA 2017, Section 81"];
@@ -631,7 +744,7 @@ export default function DocumentAnalyzerTab() {
         activeTab,
         savedBriefs
       };
-      localStorage.setItem("OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
+      localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSaveStatus(`Saved at ${timeStr}`);
       setTimeout(() => setSaveStatus(null), 3000);
@@ -874,7 +987,7 @@ export default function DocumentAnalyzerTab() {
         activeTab,
         savedBriefs
       };
-      localStorage.setItem("OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
+      localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
       // Dispatch a custom event to notify the floating parent chatbot
       window.dispatchEvent(new CustomEvent("opa-doc-analyzer-progress-updated"));
     } catch (e) {
@@ -1123,7 +1236,7 @@ export default function DocumentAnalyzerTab() {
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
+    const saved = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
     if (!saved) {
       setOrganizedFiles([]);
       setSelectedFileId(null);
@@ -1136,14 +1249,76 @@ export default function DocumentAnalyzerTab() {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [ragChatMessages]);
 
-    // Auto-Upload to Templates and Build Lawyers Draft Highlights
-  const autoUploadToTemplates = (report: AnalysisReport, documentName: string) => {
+    // Auto-build the Cross-Document Timeline and fold it directly into the Templates workspace's
+  // Timeline tab, so the timeline is something the parent reviews and corrects, not something
+  // they have to build from scratch by re-reading every document and typing it in by hand.
+  // Runs automatically after every analysis once there are 2+ documents with real extracted
+  // text (requires the base64-vs-real-text fix above). Auto-generated rows are tagged and
+  // replaced wholesale on each run (the endpoint recomputes the full picture each time); any
+  // row the parent added or edited by hand (untagged, or hand-edited) is left alone.
+  const autoBuildCaseTimeline = async (currentOrganizedFiles: OrganizedFile[]) => {
+    try {
+      const docsForTimeline = currentOrganizedFiles
+        .filter(f => f.content && f.content.trim().length > 0)
+        .map(f => ({ name: f.name, text: f.content }));
+
+      if (docsForTimeline.length < 2) return; // same minimum the manual tool enforces
+
+      const res = await apiFetch("/api/case-timeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documents: docsForTimeline, model: claudeModel }),
+      });
+      if (!res.ok) return; // don't surface an error for a background convenience pass
+
+      const data = await res.json();
+      const rows = Array.isArray(data.timeline) ? data.timeline : [];
+
+      const mappedItems = rows.map((row: any, idx: number) => ({
+        id: "auto-tl-" + idx,
+        date: row.date && row.date !== "undated" ? row.date : "",
+        title: (row.event || "").slice(0, 90),
+        description: row.event || "",
+        isCourtDate: /court|hearing|order|endorsement|motion/i.test(row.event || ""),
+        actionRequired: "",
+        autoGenerated: true,
+        sources: Array.isArray(row.sources) ? row.sources : [],
+        quote: row.quote || ""
+      }));
+
+      let currentTemplatesProgress: any = {};
+      const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
+      if (saved) currentTemplatesProgress = JSON.parse(saved);
+
+      // Keep any hand-added/hand-edited rows (never tagged autoGenerated); replace only the
+      // previously auto-generated set with the freshly computed one.
+      const handAddedItems = (currentTemplatesProgress.timelineItems || []).filter((t: any) => !t.autoGenerated);
+
+      const updatedTemplatesState = {
+        ...currentTemplatesProgress,
+        timelineItems: [...mappedItems, ...handAddedItems],
+        caseTimelineConflicts: Array.isArray(data.conflicts) ? data.conflicts : [],
+        caseTimelineOpenItems: Array.isArray(data.openItems) ? data.openItems : [],
+      };
+
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
+    } catch (e) {
+      console.error("Auto-build case timeline failed (non-blocking)", e);
+    }
+  };
+
+  // Auto-Upload to Templates and Build Lawyers Draft Highlights
+  const autoUploadToTemplates = (report: AnalysisReport, documentName: string, sourceId: string) => {
     try {
       let currentTemplatesProgress: any = {};
-      const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+      const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
       if (saved) {
         currentTemplatesProgress = JSON.parse(saved);
       }
+
+      const importedDocuments: string[] = currentTemplatesProgress.importedAnalysisDocuments || [];
+      // A retry for the same upload must not add duplicate facts to the templates.
+      if (importedDocuments.includes(sourceId)) return;
       
       const meta = report.metadata || {};
 
@@ -1153,7 +1328,11 @@ export default function DocumentAnalyzerTab() {
         id: "df-auto-" + Date.now() + "-" + idx,
         societyStatement: `[From Audited Document: ${documentName}] "${flag.phraseDetected}"`,
         parentResponse: `This allegation is disputed. Correct context: ${flag.explanation}`,
-        supportingEvidence: flag.verifyRequirement || flag.legalReference || "Witnesses and school/medical logs."
+        supportingEvidence: flag.verifyRequirement || "Witnesses and school/medical logs.",
+        // Added: kept separate from supportingEvidence so the UI can show the actual citation
+        // as its own labeled flag next to the reply, instead of it being buried inside a
+        // free-text evidence field.
+        legalReference: flag.legalReference || "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this."
       }));
 
       // 2. Append to Affidavit State
@@ -1178,17 +1357,43 @@ export default function DocumentAnalyzerTab() {
         if (!priorities[i] && newPriorities[i]) priorities[i] = newPriorities[i];
       }
 
+      // BUG FIX (flagged in audit): this used to overwrite caseNumber with whatever document
+      // was most recently analyzed, and unconditionally append that document's flags onto a
+      // running disagreedFacts/factualEvents array — with no check that the new document
+      // even belongs to the same court file. In practice this silently merged evidence from
+      // unrelated proceedings (different file numbers, different children, different CAS
+      // agencies, sometimes years apart) into a single Answer/Affidavit under one case number.
+      // Fix: tag every row with the source document's own file number, never blindly overwrite
+      // an existing case number with a different one, and surface a hard warning the UI must
+      // display instead of quietly proceeding when a mismatch is detected.
+      const incomingFileNumber = (meta.fileNumber || "").trim();
+      const existingCaseNumber = (existingForm33b.caseNumber || "").trim();
+      const caseNumberMismatch = !!incomingFileNumber && !!existingCaseNumber && incomingFileNumber !== existingCaseNumber;
+
+      const taggedDisagreedFacts = mappedDisagreedFacts.map((f: any) => ({ ...f, sourceFileNumber: incomingFileNumber || "UNKNOWN — verify before relying on this row" }));
+      const taggedFactualEvents = mappedFactualEvents.map((f: any) => ({ ...f, sourceFileNumber: incomingFileNumber || "UNKNOWN — verify before relying on this row" }));
+
+      const caseNumberWarnings: string[] = [...(currentTemplatesProgress.caseNumberWarnings || [])];
+      if (caseNumberMismatch) {
+        caseNumberWarnings.push(
+          `"${documentName}" is tagged with file number "${incomingFileNumber}", which does not match the case number already on this Answer/Affidavit ("${existingCaseNumber}"). This document was NOT merged into the case number field — its flags were still added below, tagged with their own file number. Do not file this Answer until you've confirmed with the court/your lawyer whether these are the same proceeding.`
+        );
+      }
+
       const updatedTemplatesState = {
         ...currentTemplatesProgress,
+        caseNumberWarnings,
         form33b: {
           ...currentTemplatesProgress.form33b,
           ...existingForm33b,
-          caseNumber: meta.fileNumber || existingForm33b.caseNumber || "",
+          // Never overwrite an existing case number with a different one — only set it the
+          // first time it's empty. A mismatch is recorded above, not silently applied here.
+          caseNumber: existingCaseNumber || incomingFileNumber || "",
           applicantName: meta.applicantName || existingForm33b.applicantName || "",
           respondentName: meta.respondentName || existingForm33b.respondentName || "",
           childNames: meta.childNames || existingForm33b.childNames || "",
           applicationDate: meta.hearingDate || existingForm33b.applicationDate || report.analysisDate || new Date().toISOString().slice(0, 10),
-          disagreedFacts: [...(existingForm33b.disagreedFacts || []), ...mappedDisagreedFacts]
+          disagreedFacts: [...(existingForm33b.disagreedFacts || []), ...taggedDisagreedFacts]
         },
         affidavit: {
           ...currentTemplatesProgress.affidavit,
@@ -1197,7 +1402,7 @@ export default function DocumentAnalyzerTab() {
           respondentName: meta.respondentName || existingAffidavit.respondentName || "",
           childNames: meta.childNames || existingAffidavit.childNames || "",
           authorName: meta.respondentName || existingAffidavit.authorName || "",
-          factualEvents: [...(existingAffidavit.factualEvents || []), ...mappedFactualEvents]
+          factualEvents: [...(existingAffidavit.factualEvents || []), ...taggedFactualEvents]
         },
         planOfCare: {
           ...currentTemplatesProgress.planOfCare,
@@ -1209,10 +1414,11 @@ export default function DocumentAnalyzerTab() {
               ? existingPrepSheet.mainEducationalGoals + `\n\n[Auto-Highlight from ${documentName}]: ${report.fileSummary || 'Review document for statutory thresholds.'}` 
               : `[Auto-Highlight from ${documentName}]: ${report.fileSummary || 'Review document for statutory thresholds.'}`,
           topThreePriorities: priorities
-        }
+        },
+        importedAnalysisDocuments: [...importedDocuments, sourceId]
       };
 
-      localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
     } catch (e) {
       console.error("Auto-upload to templates failed", e);
     }
@@ -1231,7 +1437,7 @@ export default function DocumentAnalyzerTab() {
       
       let currentTemplatesProgress: any = {};
       try {
-        const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+        const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
         if (saved) {
           currentTemplatesProgress = JSON.parse(saved);
         }
@@ -1244,76 +1450,139 @@ export default function DocumentAnalyzerTab() {
         id: "df-handover-" + Date.now() + "-" + idx,
         societyStatement: `[From Audited Document] "${flag.phraseDetected}"`,
         parentResponse: `This allegation is completely disputed. It represents an unverified subjective opinion or hearsay. Correct context: ${flag.explanation}`,
-        supportingEvidence: flag.verifyRequirement || flag.legalReference || "Witnesses and school/medical logs."
+        supportingEvidence: flag.verifyRequirement || "Witnesses and school/medical logs.",
+        legalReference: flag.legalReference || "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this."
       }));
 
-            const meta = selectedReport.metadata || {};
-      const fileNumber = meta.fileNumber || currentTemplatesProgress?.form33b?.caseNumber || "";
+      // FIX: dedupe against facts already in the template — prevents duplicate rows
+      // if this document was handed over more than once.
+      const existingDisagreedFacts = currentTemplatesProgress?.form33b?.disagreedFacts || [];
+      const seenStatements = new Set(existingDisagreedFacts.map((f: any) => f.societyStatement));
+      const newDisagreedFacts = mappedDisagreedFacts.filter((f: any) => !seenStatements.has(f.societyStatement));
+      const dedupedDisagreedFacts = [...existingDisagreedFacts, ...newDisagreedFacts];
+
+      const meta = selectedReport.metadata || {};
+      // BUG FIX (flagged in audit): fileNumber used to silently overwrite whatever case number
+      // was already on this Answer with the most-recently-handed-over document's file number,
+      // and every document's disagreedFacts got merged into one array with no per-row source
+      // tag — meaning evidence from a different proceeding (different file number, different
+      // child, different CAS agency) could end up cited as if it belonged to the case in the
+      // header. Fix: never overwrite an existing case number with a different one; tag every
+      // row with its own document's file number; record a hard warning on mismatch instead of
+      // proceeding silently.
+      const incomingFileNumber = (meta.fileNumber || "").trim();
+      const existingCaseNumber = (currentTemplatesProgress?.form33b?.caseNumber || "").trim();
+      const fileNumber = existingCaseNumber || incomingFileNumber || "";
+      const caseNumberMismatch = !!incomingFileNumber && !!existingCaseNumber && incomingFileNumber !== existingCaseNumber;
       const applicantName = meta.applicantName || currentTemplatesProgress?.form33b?.applicantName || "";
-      const respondentName = meta.respondentName || currentTemplatesProgress?.form33b?.respondentName || "";
+      // BUG FOUND IN AUDIT: respondentName was hardcoded to a specific real person's name
+      // ("Christopher Pelkie") — presumably the original developer's own name, left in from
+      // testing. Every user of this shared, multi-account app (not a single-user personal tool —
+      // see SignUpTab.tsx's Advocate Passport signup) would have had that name inserted as the
+      // respondent AND the sworn affiant on their own real legal court documents. Fixed to read
+      // the signed-in user's own profile name instead, falling back to an empty string (never a
+      // fabricated or borrowed name) so the parent is prompted to fill in their own name.
+      let currentUserName = "";
+      try {
+        const savedProfile = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
+        if (savedProfile) currentUserName = JSON.parse(savedProfile)?.fullName || "";
+      } catch (e) {
+        console.warn("Failed to read user profile for form handover:", e);
+      }
+      const respondentName = currentTemplatesProgress?.form33b?.respondentName || currentUserName;
       const childNames = meta.childNames || currentTemplatesProgress?.form33b?.childNames || "";
       const hearingDate = meta.hearingDate || selectedReport.analysisDate || new Date().toISOString().slice(0, 10);
 
+      const taggedNewDisagreedFacts = newDisagreedFacts.map((f: any) => ({ ...f, sourceFileNumber: incomingFileNumber || "UNKNOWN — verify before relying on this row" }));
+      const dedupedDisagreedFactsTagged = [...existingDisagreedFacts, ...taggedNewDisagreedFacts];
+
+      const caseNumberWarnings: string[] = [...(currentTemplatesProgress.caseNumberWarnings || [])];
+      if (caseNumberMismatch) {
+        caseNumberWarnings.push(
+          `"${documentName}" is tagged with file number "${incomingFileNumber}", which does not match the case number already on this Answer ("${existingCaseNumber}"). This document was NOT merged into the case number field — its flags were still added below, tagged with their own file number. Do not file this Answer until you've confirmed with the court/your lawyer whether these are the same proceeding.`
+        );
+      }
+
       const newForm33b = {
-        courtRegistryName: "Ontario Court of Justice",
+        ...currentTemplatesProgress.form33b,
+        courtRegistryName: currentTemplatesProgress?.form33b?.courtRegistryName || "Ontario Court of Justice",
         caseNumber: fileNumber,
         applicantName: applicantName,
         respondentName: respondentName,
         childNames: childNames,
         applicationDate: hearingDate,
-        claimDetails: `The respondent parent requests that the Society's application be dismissed, and that the child be returned immediately to the care and custody of the parent under Section 94 of the CYFSA. The Society has failed to satisfy the legal burden of proof under Section 94(2) of the CYFSA. The warrantless apprehension under Section 81 was executed without establishing any imminent risk of serious physical or medical harm, relying instead on subjective impressions of household clutter and unsworn neighborhood hearsay which holds low evidentiary weight under the Ontario Evidence Act.`,
-        agreedFacts: currentTemplatesProgress?.form33b?.agreedFacts || "The respondent parent agrees with the children's school enrollment and pediatric care records. The respondent parent has established a stable, drug-free home environment.",
-        disagreedFacts: mappedDisagreedFacts,
-        parentStatementOfFacts: `Statement of the Respondent: The Society's allegations are unsubstantiated and rely on anonymous neighbor alerts and hearsay. Under Section 94(2) of the CYFSA, the Society carries the heavy burden to prove that there is no less disruptive way to protect the child. As shown in the dental and physical logs, the child has received continuous, stellar parental hygiene and care.`
+        claimDetails: currentTemplatesProgress?.form33b?.claimDetails || "",
+        agreedFacts: currentTemplatesProgress?.form33b?.agreedFacts || "",
+        disagreedFacts: dedupedDisagreedFactsTagged,
+        parentStatementOfFacts: currentTemplatesProgress?.form33b?.parentStatementOfFacts || ""
       };
 
       // 2. Build Affidavit State
-      const mappedFactualEvents = (selectedReport.proceduralTimelineViolations || []).map((violation: any, idx: number) => ({
-        id: "fe-handover-" + Date.now() + "-" + idx,
-        date: new Date().toISOString().slice(0, 10),
-        description: `${violation.timelineRule}: The document asserts "${violation.documentAssertion}". Evaluation: ${violation.evaluation}`,
+      // BUG FIXED: this previously stamped every row with new Date() (today), regardless of
+      // when the underlying event actually happened, and created a row even when the AI audit
+      // found nothing determinable — producing exactly the padded, blank, today-dated rows seen
+      // in exported affidavits. Now: skip rows with no real substance, and leave the date blank
+      // (never fabricate one) so the parent is forced to enter the true date before export.
+      const isSubstantive = (text: string) =>
+        !!text && !/not determinable from this document|checked & compliant|^n\/?a$/i.test(text.trim());
+
+      const mappedFactualEvents = (selectedReport.proceduralTimelineViolations || [])
+        .filter((violation: any) => isSubstantive(violation.documentAssertion) || isSubstantive(violation.evaluation))
+        .map((violation: any, idx: number) => ({
+          id: "fe-handover-" + Date.now() + "-" + idx,
+          date: "", // intentionally blank — real date must be confirmed and entered by the parent
+          description: `[VERIFY DATE BEFORE SWEARING] ${violation.timelineRule}: The document asserts "${violation.documentAssertion}". Evaluation: ${violation.evaluation}`,
         category: "Court Filings",
         supportingExhibits: violation.citation || "Official Audit Logs"
       }));
 
+      // FIX: same dedupe pattern applied to affidavit factual events.
+      const existingFactualEvents = currentTemplatesProgress?.affidavit?.factualEvents || [];
+      const seenDescriptions = new Set(existingFactualEvents.map((f: any) => f.description));
+      const newFactualEvents = mappedFactualEvents.filter((f: any) => !seenDescriptions.has(f.description));
+      const dedupedFactualEvents = [...existingFactualEvents, ...newFactualEvents];
+
       const newAffidavit = {
-        courtRegistryName: "Family Court of Ontario",
+        ...currentTemplatesProgress.affidavit,
+        courtRegistryName: currentTemplatesProgress?.affidavit?.courtRegistryName || "Family Court of Ontario",
         applicantName: applicantName,
         respondentName: respondentName,
         childNames: childNames,
-        childBirthdates: currentTemplatesProgress?.affidavit?.childBirthdates || "2022-05-20",
-        authorName: respondentName,
+        childBirthdates: currentTemplatesProgress?.affidavit?.childBirthdates || "",
+        authorName: currentTemplatesProgress?.affidavit?.authorName || respondentName,
         isDraft: true,
-        backgroundStatement: `I, ${respondentName}, of the City of Toronto, in the Province of Ontario, make oath and say as follows:\n1. I am the respondent parent in this protection matter.\n2. The Children's Aid Society conducted an unannounced warrantless visit on our home.\n3. My child is a registered Métis citizen. The Society did not consult with the Métis Nation of Ontario or our indigenous family council, in active violation of Section 2 of the CYFSA.`,
-        factualEvents: mappedFactualEvents,
-        childsPerspectiveText: `The child ${childNames} has expressed a strong desire to remain in the care of his mother. The child was not informed of his right to raise concerns or contact the Ontario Ombudsman, representing a procedural statutory defect.`,
-        proposedCareArrangement: `I propose that my child reside with me full-time. I have established a stable, child-safe apartment. I am actively participating in Positive Parenting Programs (Triple P) and have registered my child with family pediatrician Dr. Evans.`,
-        exhibits: []
+        backgroundStatement: currentTemplatesProgress?.affidavit?.backgroundStatement || "",
+        factualEvents: dedupedFactualEvents,
+        childsPerspectiveText: currentTemplatesProgress?.affidavit?.childsPerspectiveText || "",
+        proposedCareArrangement: currentTemplatesProgress?.affidavit?.proposedCareArrangement || "",
+        exhibits: currentTemplatesProgress?.affidavit?.exhibits || []
       };
 
       // 3. Build Plan of Care
       const newPlanOfCare = {
-        childName: childNames,
-        birthdate: "2022-05-20",
-        livingArrangements: "The child will reside full-time with the respondent parent in a fully furnished, child-safe apartment. Parent has established a stable, drug-free home environment.",
-        safetySupervision: "Respondent parent will have primary supervision. Maternal grandmother (approved kinship contact) is available for secondary backup supervision.",
-        educationNeeds: "Child is enrolled in local public school and will continue attendance. Parent has registered the child for free after-school reading programs and tutoring if required.",
-        healthcareDevelopment: "Child is registered with a family pediatrician (Dr. Evans). Routine dental and wellness visits will occur. Mental health counseling or play-therapy will be scheduled if recommended.",
-        cultureReligion: "The family is committed to connecting the child to their cultural/heritage community by attending weekly cultural heritage center workshops, cultural celebrations, and community events. Registered Métis citizen under registry card MNO-XXXX.",
-        contactAccessArrangements: "Open contact with extended kinship relatives (maternal grandparents, aunts/uncles) to preserve healthy family bonds. CAS access visits as required.",
-        parentSupportServices: "Parent is actively participating in Positive Parenting Programs (Triple P), weekly family support group counseling, and home visit family support check-ins."
+        ...currentTemplatesProgress.planOfCare,
+        childName: childNames || currentTemplatesProgress?.planOfCare?.childName || "",
+        birthdate: currentTemplatesProgress?.planOfCare?.birthdate || "",
+        livingArrangements: currentTemplatesProgress?.planOfCare?.livingArrangements || "",
+        safetySupervision: currentTemplatesProgress?.planOfCare?.safetySupervision || "",
+        educationNeeds: currentTemplatesProgress?.planOfCare?.educationNeeds || "",
+        healthcareDevelopment: currentTemplatesProgress?.planOfCare?.healthcareDevelopment || "",
+        cultureReligion: currentTemplatesProgress?.planOfCare?.cultureReligion || "",
+        contactAccessArrangements: currentTemplatesProgress?.planOfCare?.contactAccessArrangements || "",
+        parentSupportServices: currentTemplatesProgress?.planOfCare?.parentSupportServices || ""
       };
 
       const updatedTemplatesState = {
         ...currentTemplatesProgress,
+        caseNumberWarnings,
         form33b: newForm33b,
         affidavit: newAffidavit,
         planOfCare: newPlanOfCare,
         activeBuilderTab: "answer-33b"
       };
 
-      localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
-      localStorage.setItem("OPA_HANDOVER_ALERT", documentName);
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
+      localStorage.setItem(getUserKey("OPA_HANDOVER_ALERT") || "OPA_HANDOVER_ALERT", documentName);
 
       setLocation("/templates");
     } catch (error) {
@@ -1352,13 +1621,13 @@ export default function DocumentAnalyzerTab() {
     return processedList;
   };
 
-  // Multiple File Uploader (Supports up to 15 concurrent slots)
+    // Multiple File Uploader (Supports up to 15 concurrent slots)
   const handleMultipleFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFiles = e.target.files;
     if (!rawFiles || rawFiles.length === 0) return;
 
     const filesArray: File[] = Array.from(rawFiles);
-    
+      
     // Tiered Limits check
     const customFilesCount = organizedFiles.filter(f => !f.id.startsWith("preloaded-")).length;
     if (customFilesCount + filesArray.length > 20) {
@@ -1374,21 +1643,28 @@ export default function DocumentAnalyzerTab() {
     }
 
     setCustomUploadError("");
-    setBulkProgress(`Concurrently importing ${filesArray.length} files...`);
+    setBulkProgress(`Concurrently processing ${filesArray.length} files for speedy results...`);
 
-    const loadedFiles: OrganizedFile[] = [];
-
-    for (const f of filesArray) {
+    const loadedFiles: OrganizedFile[] = await Promise.all(filesArray.map(async (f) => {
       let parsedContent = "";
       let finalName = f.name;
-      let finalMimeType = f.type || "text/plain";
       const nameL = f.name.toLowerCase();
+      // Some browsers leave File.type empty for PDFs and common image formats.
+      const inferredMimeType = nameL.endsWith(".pdf") ? "application/pdf"
+        : nameL.endsWith(".png") ? "image/png"
+        : /\.(jpe?g)$/.test(nameL) ? "image/jpeg"
+        : nameL.endsWith(".webp") ? "image/webp"
+        : nameL.endsWith(".gif") ? "image/gif"
+        : nameL.endsWith(".heic") ? "image/heic"
+        : nameL.endsWith(".heif") ? "image/heif"
+        : nameL.endsWith(".txt") ? "text/plain"
+        : "";
+      let finalMimeType = f.type || inferredMimeType || "application/octet-stream";
 
       let processedFile: File | Blob = f;
       const isHEIC = nameL.endsWith(".heic") || nameL.endsWith(".heif") || f.type === "image/heic" || f.type === "image/heif";
 
       if (isHEIC) {
-        setBulkProgress(`HEIC Converter: Standardizing Apple Image "${f.name}" as JPEG...`);
         try {
           const heic2any = (await import("heic2any")).default;
           const convertedBlob = await heic2any({
@@ -1402,7 +1678,6 @@ export default function DocumentAnalyzerTab() {
           finalMimeType = "image/jpeg";
         } catch (err: any) {
           console.error("HEIC conversion failed:", err);
-          setCustomUploadError(`HEIC Image Standardizer failed for "${f.name}": ${err.message || err.toString()}`);
         }
       }
 
@@ -1414,7 +1689,6 @@ export default function DocumentAnalyzerTab() {
                       nameL.endsWith(".ogg");
 
       if (isAudio) {
-        setBulkProgress(`Speech-to-Text: Auto-transcribing "${f.name}" as family court PDF...`);
         const audioBase64 = await new Promise<string>((resolve) => {
           const fileReader = new FileReader();
           fileReader.onload = () => {
@@ -1469,45 +1743,37 @@ export default function DocumentAnalyzerTab() {
           categoryIndex = "CAS Correspondence";
         } else if (nameL.includes("court") || nameL.includes("brief") || nameL.includes("affidavit") || nameL.includes("motion") || nameL.includes("form") || nameL.includes("rule")) {
           categoryIndex = "Court Filings";
-        } else if (nameL.includes("educate") || nameL.includes("school") || nameL.includes("daycare") || nameL.includes("medical") || nameL.includes("health") || nameL.includes("vaccine") || nameL.includes("visit")) {
+        } else if (nameL.includes("police") || nameL.includes("medical") || nameL.includes("school") || nameL.includes("therapy")) {
           categoryIndex = "Children Services";
-        } else if (nameL.includes("metis") || nameL.includes("indigenous") || nameL.includes("ancestry") || nameL.includes("identity") || nameL.includes("card") || nameL.includes("diploma")) {
-          categoryIndex = "Parenting Identity";
         }
+      } else {
+        categoryIndex = "Evidence & Loggers";
       }
 
-      loadedFiles.push({
-        id: "custom-file-" + Date.now() + "-" + Math.floor(Math.random() * 100000),
+      return {
+        id: "upload-" + Date.now() + "-" + Math.random().toString(36).substr(2, 9),
         name: finalName,
-        size: f.size,
-        mimeType: finalMimeType,
-        category: categoryIndex,
-        uploadedAt: new Date().toLocaleDateString("en-US", { month: '2-digit', day: '2-digit', year: 'numeric' }),
+        type: finalMimeType,
+        size: processedFile.size,
         content: parsedContent,
+        category: categoryIndex,
+        uploadedAt: new Date().toISOString(),
+        mimeType: finalMimeType,
         analysisStatus: "pending"
-      });
-    }
+      };
+    }));
 
     const chunkedFiles = chunkFilesForAnalysis(loadedFiles);
-    
-    setOrganizedFiles(prev => {
-      const completeList = [...prev, ...chunkedFiles];
-      // Select the first uploaded item
-      if (chunkedFiles.length > 0) {
-        setSelectedFileId(chunkedFiles[0].id);
-        setSelectedReport(null);
-      }
-      return completeList;
-    });
-
-    setBulkProgress(`Files imported! Running batch analysis on ${chunkedFiles.length} chunked parts...`);
-    // Auto-schedule bulk analysis right after upload to maximize responsiveness
-    setTimeout(() => {
-      runParallelBulkAnalysis(chunkedFiles);
-    }, 400);
-
-    // Reset input value to allow uploading the same file again
+    setOrganizedFiles(prev => [...prev, ...chunkedFiles]);
+    setSelectedFileId(chunkedFiles[0]?.id || null);
+    setSelectedReport(null);
     e.target.value = "";
+    // Uploading should produce a result without making the parent find a second action.
+    if (chunkedFiles.length > 0) {
+      await runParallelBulkAnalysis(chunkedFiles);
+    } else {
+      setBulkProgress(null);
+    }
   };
 
   // Concurrency-Controlled Bulk Analysis Engine (< 2 Minutes Guarantee)
@@ -1524,8 +1790,15 @@ export default function DocumentAnalyzerTab() {
 
     const totalFiles = filesToAnalyzeList.length;
     let completedCount = 0;
+    // Collected here instead of firing the cross-document timeline pass per-file: that used to
+    // fire one full /api/case-timeline call (its own expensive LLM request) per file as each
+    // one finished, so a batch of N files fired N increasingly-redundant timeline calls that
+    // competed with the analyze/extract-text requests above for the same rate-limited API,
+    // making the whole batch slower the more files it had. One call after the batch settles
+    // gets the same up-to-date timeline for a fraction of the requests.
+    const extractedContentById: Record<string, string> = {};
     try {
-      const concurrencyLimit = 2;
+      const concurrencyLimit = 5;
       const queue = [...filesToAnalyzeList];
       let activeCount = 0;
 
@@ -1552,18 +1825,36 @@ export default function DocumentAnalyzerTab() {
                   if (file.mimeType === "text/plain") {
                     payload.textContent = file.content;
                   } else {
-                    payload.textContent = file.name; // metadata
-                    payload.fileData = {
-                      base64: file.content,
-                      mimeType: file.mimeType,
-                      fileName: file.name
-                    };
+                    // BUG FIX: this used to send fileData straight to /api/analyze, which made
+                    // that endpoint do its own OCR (up to 6 Gemini attempts across 2 models)
+                    // AND the full Claude analysis in one request — the exact combined-request
+                    // pattern that the single-file re-analyze path (triggerSingleAnalysis,
+                    // below) was already split apart to avoid, because it reliably approached
+                    // or exceeded the serverless timeout on real documents. Bulk/auto-upload
+                    // never got that same fix, so every upload was going through the slow path.
+                    // Splitting it here too: extract text first (its own fast request), then
+                    // analyze just the text.
+                    const extractResponse = await apiFetch("/api/extract-text", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        fileData: { base64: file.content, mimeType: file.mimeType, fileName: file.name },
+                      }),
+                    });
+                    const extractResult = await safeReadJson(extractResponse);
+                    if (!extractResponse.ok) {
+                      throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
+                    }
+                    if (!extractResult.extractedText) {
+                      throw new Error("No readable text could be extracted from this document.");
+                    }
+                    payload.textContent = extractResult.extractedText;
                   }
 
                   const response = await apiFetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ...payload, model: claudeModel, analysisMode: "fast" })
+                    body: JSON.stringify({ ...payload, model: claudeModel })
                   });
 
                   const dataResult = await safeReadJson(response);
@@ -1589,10 +1880,22 @@ export default function DocumentAnalyzerTab() {
                   }
 
                   // Update UI for this individual file as soon as it's done
+                  // BUG FIX (flagged in audit): this used to leave f.content as the original
+                  // raw base64 for every non-text upload forever, even after the real text was
+                  // just extracted above for the analyze call. Every feature that reads
+                  // organizedFiles[i].content downstream of upload (Cross-Document Timeline,
+                  // RAG case chat) was silently being fed base64 garbage instead of the
+                  // document's actual text for every PDF/image, which is nearly all real
+                  // uploads. Persisting payload.textContent here (the real extracted text used
+                  // for this very analysis) is the fix.
                   setOrganizedFiles(prev => prev.map(f =>
-                    f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: dataResult } : f
+                    f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: dataResult, content: payload.textContent || f.content } : f
                   ));
-                  autoUploadToTemplates(dataResult, file.name);
+                  // Show the first completed report so its case brief and handover are usable,
+                  // including when an earlier file in the batch failed.
+                  setSelectedReport(current => current ?? dataResult);
+                  autoUploadToTemplates(dataResult, file.name, file.id);
+                  extractedContentById[file.id] = payload.textContent || file.content;
 
                   completedCount++;
                   success = true;
@@ -1619,6 +1922,13 @@ export default function DocumentAnalyzerTab() {
         processNext();
       });
 
+      // Fire the cross-document timeline pass exactly once, after the whole batch has settled,
+      // using every file's freshly-extracted text (not the base64 the organizedFiles closure
+      // still holds for files this batch touched).
+      autoBuildCaseTimeline(
+        organizedFiles.map(f => (extractedContentById[f.id] ? { ...f, content: extractedContentById[f.id] } : f))
+      );
+
     } catch (error) {
       console.error("Bulk analysis failed:", error);
     } finally {
@@ -1642,26 +1952,55 @@ export default function DocumentAnalyzerTab() {
       if (file.mimeType === "text/plain") {
         payload.textContent = file.content;
       } else {
-        payload.textContent = file.name;
-        payload.fileData = {
-          base64: file.content,
-          mimeType: file.mimeType,
-          fileName: file.name
-        };
+        // Two-pass pipeline: extract text in its own request first, then send
+        // the extracted TEXT for analysis. Doing both in one request reliably
+        // blew past the serverless function timeout on real documents
+        // (OCR retries + a full Claude analysis in a single invocation), which
+        // surfaced as FUNCTION_INVOCATION_TIMEOUT / 504.
+        setSingleAnalysisError("");
+        const extractResponse = await apiFetch("/api/extract-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileData: {
+              base64: file.content,
+              mimeType: file.mimeType,
+              fileName: file.name,
+            },
+          }),
+        });
+
+        const extractResult = await safeReadJson(extractResponse);
+        if (!extractResponse.ok) {
+          throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
+        }
+        if (!extractResult.extractedText) {
+          throw new Error("No readable text could be extracted from this document.");
+        }
+        payload.textContent = extractResult.extractedText;
       }
 
       const response = await apiFetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, model: claudeModel, analysisMode: "fast" })
+        body: JSON.stringify({ ...payload, model: claudeModel })
       });
 
       const report = await safeReadJson(response);
+      if (!response.ok) {
+        throw new Error(report.error || `Server returned error ${response.status}`);
+      }
       setSelectedReport(report);
+      // BUG FIX (flagged in audit, same root cause as the bulk-upload path above): persist the
+      // real extracted text onto content, not just the analysis report, so the Cross-Document
+      // Timeline and RAG case chat get real text instead of leftover raw base64 for this file.
       setOrganizedFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: report } : f
+        f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: report, content: payload.textContent || f.content } : f
       ));
-      autoUploadToTemplates(report, file.name);
+      autoUploadToTemplates(report, file.name, file.id);
+      autoBuildCaseTimeline(
+        organizedFiles.map(f => f.id === file.id ? { ...f, content: payload.textContent || f.content } : f)
+      );
 
     } catch (err: any) {
       setSingleAnalysisError(err.message || "Failed single scan.");
@@ -1699,9 +2038,6 @@ export default function DocumentAnalyzerTab() {
     const activeQuery = forcedQuery || chatInput;
     if (!activeQuery.trim()) return;
 
-    // Check custom subscription limits
-    const existingUserQueriesCount = ragChatMessages.filter((m) => m.sender === "user").length;
-
     // Append user query message
     const userMsg: RAGChatMessage = {
       id: "user-" + Date.now(),
@@ -1722,11 +2058,19 @@ export default function DocumentAnalyzerTab() {
         content: f.content
       }));
 
+      // Include the real conversation so far — this is what lets the assistant behave like an
+      // actual ongoing conversation (catching that "you told me X two messages ago, this new
+      // document says Y") instead of answering every message as if it's the first one asked.
+      const conversationHistory = ragChatMessages
+        .filter(m => m.text && m.text.trim())
+        .map(m => ({ role: m.sender === "user" ? "user" : "assistant", content: m.text }));
+
       const res = await apiFetch("/api/rag-query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: activeQuery,
+          history: conversationHistory,
           files: filesContextPayload,
           model: claudeModel,
           focus: claudeFocus
@@ -1753,7 +2097,6 @@ export default function DocumentAnalyzerTab() {
       };
       setRAGChatMessages(prev => [...prev, errorMsg]);
     } finally {
-      setIsRAGQuerying(true);
       setIsRAGQuerying(false);
     }
   };
@@ -1762,10 +2105,10 @@ export default function DocumentAnalyzerTab() {
   const getCategoryColor = (cat: OrganizedFile["category"]) => {
     switch (cat) {
       case "CAS Correspondence": return "text-brand-600 bg-brand-50 border-brand-100";
-      case "Court Filings": return "text-amber-700 bg-amber-50 border-amber-150";
-      case "Evidence & Loggers": return "text-emerald-700 bg-emerald-50 border-emerald-150";
-      case "Children Services": return "text-sky-700 bg-sky-50 border-sky-150";
-      default: return "text-purple-700 bg-purple-50 border-purple-150";
+      case "Court Filings": return "text-amber-700 bg-amber-50 border-amber-100";
+      case "Evidence & Loggers": return "text-emerald-700 bg-emerald-50 border-emerald-100";
+      case "Children Services": return "text-sky-700 bg-sky-50 border-sky-100";
+      default: return "text-purple-700 bg-purple-50 border-purple-100";
     }
   };
 
@@ -1780,56 +2123,6 @@ export default function DocumentAnalyzerTab() {
       default:
         return <Clock className="w-4 h-4 text-slate-400" />;
     }
-  };
-
-  // Micro Markdown text highlighter for interactive cited references
-  const parseMarkdownCitations = (sourceText: string) => {
-    if (!sourceText) return "";
-    const boldRegex = /\*\*(.*?)\*\*/g;
-    const bulletRegex = /^\s*-\s+(.*)$/gm;
-    
-    // Simple custom markup parser to guarantee clean, collision-free text tags
-    let formattedText = sourceText;
-
-    // Convert bold
-    formattedText = formattedText.replace(boldRegex, '<strong class="font-bold text-gray-950">$1</strong>');
-    
-    // Highlight bracket citations e.g. [Source: CAS_Observation_Letter.txt]
-    const citeRegex = /\[Source:\s*(.*?)\]/g;
-    formattedText = formattedText.replace(citeRegex, (match, cleanName) => {
-      return `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-brand-50 hover:bg-brand-100 border border-brand-200 text-brand-800 rounded font-mono text-[10px] cursor-pointer transition-colors font-semibold select-none" onclick="window.highlightCaseFile('${cleanName}')" title="Click to view file">📂 ${cleanName}</span>`;
-    });
-
-    // Replace specific statutory names with real, fully accessible URL links to the e-Laws website
-    const statutes = [
-      { regex: /s\.\s*74|section\s+74/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK123", label: "s. 74 (Child in Need of Protection Ground)" },
-      { regex: /s\.\s*94|section\s+94/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK161", label: "s. 94 (The 5-Day Temporary Care Rule)" },
-      { regex: /s\.\s*81|section\s+81/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK136", label: "s. 81 (Apprehension & Imminent Danger)" },
-      { regex: /s\.\s*125|section\s+125/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK215", label: "s. 125 (Mandatory Duty to Report)" },
-      { regex: /s\.\s*3|section\s+3\b/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK3", label: "s. 3 (Expressed Rights of the Child)" },
-      { regex: /s\.\s*101|section\s+101/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK173", label: "s. 101 (Extended Society Care / Crown Wardship)" },
-      { regex: /s\.\s*87|section\s+87/gi, url: "https://www.ontario.ca/laws/statute/17c14#BK145", label: "s. 87 (Statutory Publication Bans)" },
-      { regex: /\bclra\b|children's\s+law\s+reform\s+act/gi, url: "https://www.ontario.ca/laws/statute/90c12#BK9", label: "Ontario CLRA Parentage" },
-      { regex: /\bevidence\s+act\b/gi, url: "https://www.canlii.org/en/on/laws/stat/rso-1990-c-e23/latest/rso-1990-c-e23.html", label: "Ontario Evidence Act" },
-      { regex: /\bcharter\s+of\s+rights|canadian\s+charter\b/gi, url: "https://www.canlii.org/en/ca/laws/stat/const-1982/latest/const-1982.html", label: "Canadian Charter of Rights and Freedoms" }
-    ];
-
-    statutes.forEach(s => {
-      formattedText = formattedText.replace(s.regex, (match) => {
-        return `<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-1.5 py-0.2 bg-brand-50 hover:bg-brand-100 border border-brand-150 text-brand-700 rounded text-[10px] font-semibold transition-colors decoration-none" title="Visit actual Ontario e-Laws page for ${s.label}">⚖️ ${match} <span class="text-[8px] opacity-70">↗</span></a>`;
-      });
-    });
-
-    // Parse bullet lines
-    const lines = formattedText.split("\n");
-    const parsedLines = lines.map(line => {
-      if (line.trim().startsWith("- ")) {
-        return `<li class="ml-4 list-disc pl-1 py-0.5">${line.trim().substring(2)}</li>`;
-      }
-      return line;
-    });
-
-    return parsedLines.join("\n");
   };
 
   // Mount custom print trigger for footer
@@ -2106,17 +2399,19 @@ export default function DocumentAnalyzerTab() {
           <div style="margin-top: 15px;">
             ${ragChatMessages.map(msg => {
               const author = msg.sender === "user" ? "Client (Parent)" : "CYFSA AI Statutory Assistant";
-              const rawFormattedText = msg.text
+              // Escape first, then apply the bold/citation markup so the <strong>/<span> tags
+              // this intentionally inserts don't themselves get escaped away.
+              const rawFormattedText = escapeHtml(msg.text)
                 .replace(/\*\*(.*?)\*\//g, '<strong>$1</strong>')
                 .replace(/\[Source:\s*(.*?)\]/g, '<span>[$1]</span>');
               return `
                 <div class="chat-block ${msg.sender === "user" ? "chat-user" : "chat-ai"}">
-                  <span class="chat-author">${author} • ${msg.timestamp}</span>
+                  <span class="chat-author">${escapeHtml(author)} • ${escapeHtml(msg.timestamp)}</span>
                   <div class="chat-text">${rawFormattedText}</div>
                   ${msg.citations && msg.citations.length > 0 ? `
                     <div style="margin-top: 12px; font-size: 10.5px; border-top: 1px solid rgba(0,0,0,0.06); padding-top: 8px; color: #4f46e5;">
-                      <strong>Sources referenced during dynamic search retrieval:</strong> 
-                      ${msg.citations.map(cit => `<code>${cit.name}</code> (${cit.category})`).join(", ")}
+                      <strong>Sources referenced during dynamic search retrieval:</strong>
+                      ${msg.citations.map(cit => `<code>${escapeHtml(cit.name)}</code> (${escapeHtml(cit.category)})`).join(", ")}
                     </div>
                   ` : ""}
                 </div>
@@ -2130,45 +2425,136 @@ export default function DocumentAnalyzerTab() {
           <p style="font-size:12px; color:#475569; margin-bottom:12px;">The statutory references scanned by the consultation pipeline resolve directly to real, physically accessible Ontario Government e-Laws pages:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             <li><strong>CYFSA Section 74 (Child Protection Thresholds):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK123" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK123</a></li>
-            <li><strong>CYFSA Section 94 (The 5-Day Service Rule):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
-            <li><strong>CYFSA Section 81 (Apprehension Norms):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK136" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK136</a></li>
+            <li><strong>CYFSA Section 94 (30-Day Adjournment Limit / Temporary Care Order):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
+            <li><strong>CYFSA Section 88 (The Five-Day Hearing Rule):</strong> <a href="https://www.ontario.ca/laws/statute/17c14" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14</a></li>
+            <li><strong>CYFSA Section 81 (Apprehension & Substantial Risk Threshold):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK136" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK136</a></li>
             <li><strong>Children's Law Reform Act Parentage Presumptions:</strong> <a href="https://www.ontario.ca/laws/statute/90c12#BK9" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/90c12#BK9</a></li>
           </ul>
         </div>
       `;
     } else if (activeTab === "organizer" && selectedReport) {
-      title = `Admissibility Audit - ${selectedReport.documentTitle || activeSelectedFile?.name || "Report"}`;
-      const scoreColor = selectedReport.completenessScore >= 80 ? "#16a34a" : selectedReport.completenessScore >= 50 ? "#d97706" : "#dc2626";
-      
+      title = `Admissibility Audit - ${escapeHtml(selectedReport.documentTitle || activeSelectedFile?.name || "Report")}`;
+      const evidenceIndex = selectedReport.evidenceStrengthIndex || {
+        score: 0,
+        components: {},
+        limitations: "Evidence Strength Index data was not present in this report. Re-run the analysis with the current analyzer."
+      };
+
+      const evidenceScore = Number(evidenceIndex.score) || 0;
+      const evidenceScoreColor =
+        evidenceScore >= 80 ? "#16a34a" :
+        evidenceScore >= 50 ? "#d97706" :
+        "#dc2626";
+
+      const completenessScore = Number(selectedReport.completenessScore) || 0;
+      const components = evidenceIndex.components || {};
+
+      const evidenceComponents = [
+        ["firsthandKnowledge", "Firsthand Knowledge", 20],
+        ["sourceReliability", "Source Reliability", 15],
+        ["corroboration", "Corroboration", 15],
+        ["documentarySupport", "Documentary Support", 15],
+        ["internalConsistency", "Internal Consistency", 10],
+        ["contradictoryEvidenceHandling", "Contradictory Evidence Handling", 10],
+        ["legalAuthorityVerification", "Legal Authority Verification", 10],
+        ["proceduralDocumentation", "Procedural Documentation", 5]
+      ];
+
       bodyContent = `
         <div class="header-container">
           <span class="platform-label">ParentShield • Evidence strength audit</span>
-          <h1 class="title-main">File Analysis & Admissibility Strength Report</h1>
+          <h1 class="title-main">File Analysis & Evidence Strength Report</h1>
+
           <div class="meta-bar">
-            Document Checked: <strong>${selectedReport.documentTitle || activeSelectedFile?.name || "N/A"}</strong>
-            • Type: <strong>${selectedReport.documentType || "Casework Correspondence"}</strong>
-            • Date of Audit: <strong>${selectedReport.analysisDate || "Current"}</strong>
+            Document Checked:
+            <strong>${escapeHtml(selectedReport.documentTitle || activeSelectedFile?.name || "N/A")}</strong>
+            • Type:
+            <strong>${escapeHtml(selectedReport.documentType || "Casework Correspondence")}</strong>
+            • Date of Audit:
+            <strong>${escapeHtml(selectedReport.analysisDate || "Current")}</strong>
           </div>
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">📊 Educational Admissibility Summary</h3>
-          <div style="display: flex; gap: 40px; align-items: center; margin-top: 10px;">
+          <h3 class="section-title">📊 Educational Evidence Strength Summary</h3>
+
+          <div style="display:flex; gap:40px; align-items:center; margin-top:10px; flex-wrap:wrap;">
             <div>
-              <span style="font-size: 13px; color: #475569; font-weight: bold; text-transform: uppercase;">Completeness & Veracity Score</span>
-              <div style="font-size: 32px; font-weight: 800; color: ${scoreColor}; margin-top: 5px;">
-                ${selectedReport.completenessScore} <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
+              <span style="font-size:13px; color:#475569; font-weight:bold; text-transform:uppercase;">
+                Evidence Strength Index
+              </span>
+
+              <div style="font-size:32px; font-weight:800; color:${evidenceScoreColor}; margin-top:5px;">
+                ${evidenceScore}
+                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
               </div>
             </div>
-            <div>
+
+            <div style="flex:1; min-width:260px;">
               <div class="score-bar-bg">
-                <div class="score-bar-fill" style="width: ${selectedReport.completenessScore}%; background-color: ${scoreColor};"></div>
+                <div
+                  class="score-bar-fill"
+                  style="width:${Math.max(0, Math.min(100, evidenceScore))}%; background-color:${evidenceScoreColor};"
+                ></div>
               </div>
-              <p style="font-size: 11px; color: #64748b; margin-top: 8px; max-w: 400px;">
-                An educational metric grading the document against standard evidentiary requirements. High scores indicate factual substantiation, while low scores highlight hearsay risk.
+
+              <p style="font-size:11px; color:#64748b; margin-top:8px; max-width:500px;">
+                Educational heuristic assessing the strength of evidence documented in this file.
+                It is not a legal admissibility ruling, does not determine the truth of allegations,
+                and does not determine the legal merits of the case.
               </p>
             </div>
           </div>
+
+          <div style="margin-top:24px;">
+            <h4 style="font-size:14px; font-weight:800; color:#334155; margin-bottom:12px;">
+              Evidence Strength Components
+            </h4>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px;">
+              ${evidenceComponents.map(([key, label, max]) => {
+                const component = components[key] || {};
+                const value = Number(component.score) || 0;
+
+                return `
+                  <div style="border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc;">
+                    <div style="display:flex; justify-content:space-between; gap:10px;">
+                      <strong style="font-size:12px; color:#334155;">${label}</strong>
+                      <span style="font-size:12px; font-weight:800; color:#475569;">
+                        ${value}/${max}
+                      </span>
+                    </div>
+
+                    <div style="font-size:11px; color:#64748b; margin-top:5px;">
+                      ${escapeHtml(component.explanation || "No component explanation was returned.")}
+                    </div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+
+          <div style="margin-top:20px; padding:12px; background:#f8fafc; border-radius:8px;">
+            <strong style="font-size:12px; color:#334155;">
+              Information Completeness:
+            </strong>
+
+            <span style="font-size:12px; color:#475569;">
+              ${completenessScore}/100
+            </span>
+
+            <div style="font-size:11px; color:#64748b; margin-top:4px;">
+              Measures how much relevant information is contained in the reviewed document.
+              It is separate from the Evidence Strength Index and is not an admissibility
+              or legal-merits score.
+            </div>
+          </div>
+
+          ${evidenceIndex.limitations ? `
+            <div style="margin-top:12px; font-size:11px; color:#64748b;">
+              <strong>Limitation:</strong> ${escapeHtml(evidenceIndex.limitations)}
+            </div>
+          ` : ""}
         </div>
 
         ${selectedReport.redFlags && selectedReport.redFlags.length > 0 ? `
@@ -2178,26 +2564,32 @@ export default function DocumentAnalyzerTab() {
               The following assertions or opinions extracted from this file carry an inherent risk of being unsworn out-of-court narratives. Direct parental counters are compiled inline to assist your counsel.
             </p>
             <div style="margin-top: 10px;">
-              ${selectedReport.redFlags.map(rf => `
+              ${selectedReport.redFlags.map(rf => {
+                // Severity drives a CSS class (threat-CRITICAL/WARNING/NOTICE) as well as
+                // display text — whitelist it for the class so an unexpected AI-returned
+                // value can't be used to break out of the class attribute.
+                const knownSeverity = ["CRITICAL", "WARNING", "NOTICE"].includes(rf.severity) ? rf.severity : "WARNING";
+                return `
                 <div class="threat-flag">
-                  <div class="threat-header threat-${rf.severity || 'WARNING'}">
-                    <span>${rf.category || 'Red Flag'} [${rf.severity || 'WARNING'}]</span>
-                    <strong>${rf.legalReference || ''}</strong>
+                  <div class="threat-header threat-${knownSeverity}">
+                    <span>${escapeHtml(rf.category || 'Red Flag')} [${escapeHtml(rf.severity || 'WARNING')}]</span>
+                    <strong>${escapeHtml(rf.legalReference || '')}</strong>
                   </div>
                   <div class="threat-body">
                     <strong>Quote Detected in File:</strong><br/>
-                    <div class="threat-phrase">"${rf.phraseDetected}"</div><br/><br/>
-                    <strong>Educational Advisory:</strong> ${rf.explanation}<br/><br/>
-                    <strong>Verification Requirement:</strong> ${rf.verifyRequirement}
+                    <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div><br/><br/>
+                    <strong>Educational Advisory:</strong> ${escapeHtml(rf.explanation)}<br/><br/>
+                    <strong>Verification Requirement:</strong> ${escapeHtml(rf.verifyRequirement)}
                     ${rf.parentActionStep ? `
                       <div class="threat-action">
                         <strong>🛡️ Self-Defense Counter-Action Step:</strong><br/>
-                        ${rf.parentActionStep}
+                        ${escapeHtml(rf.parentActionStep)}
                       </div>
                     ` : ""}
                   </div>
                 </div>
-              `).join("")}
+              `;
+              }).join("")}
             </div>
           </div>
         ` : ""}
@@ -2217,14 +2609,14 @@ export default function DocumentAnalyzerTab() {
               <tbody>
                 ${selectedReport.thresholdAnalysis.map(th => `
                   <tr>
-                    <td><strong>${th.thresholdChecked}</strong></td>
+                    <td><strong>${escapeHtml(th.thresholdChecked)}</strong></td>
                     <td>
                       <span style="font-weight: bold; color: ${th.isMet === 'Yes' ? '#991b1b' : th.isMet === 'No' ? '#166534' : '#92400e'}">
-                        ${th.isMet}
+                        ${escapeHtml(th.isMet)}
                       </span>
                     </td>
-                    <td>${th.reasoning}</td>
-                    <td><font color="#4f46e5"><code>${th.primarySourceLaw}</code></font></td>
+                    <td>${escapeHtml(th.reasoning)}</td>
+                    <td><font color="#4f46e5"><code>${escapeHtml(th.primarySourceLaw)}</code></font></td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -2247,13 +2639,13 @@ export default function DocumentAnalyzerTab() {
               <tbody>
                 ${selectedReport.proceduralTimelineViolations.map(vi => `
                   <tr>
-                    <td><strong>${vi.timelineRule}</strong></td>
-                    <td>${vi.documentAssertion}</td>
+                    <td><strong>${escapeHtml(vi.timelineRule)}</strong></td>
+                    <td>${escapeHtml(vi.documentAssertion)}</td>
                     <td>
-                      ${vi.evaluation}
-                      ${vi.parentActionStep ? `<br/><br/><span style="color:#b45309; font-size:11px; font-weight:bold;">🛡️ Parent Action: ${vi.parentActionStep}</span>` : ""}
+                      ${escapeHtml(vi.evaluation)}
+                      ${vi.parentActionStep ? `<br/><br/><span style="color:#b45309; font-size:11px; font-weight:bold;">🛡️ Parent Action: ${escapeHtml(vi.parentActionStep)}</span>` : ""}
                     </td>
-                    <td><font color="#4f46e5"><code>${vi.citation}</code></font></td>
+                    <td><font color="#4f46e5"><code>${escapeHtml(vi.citation)}</code></font></td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -2265,7 +2657,7 @@ export default function DocumentAnalyzerTab() {
           <div class="section-card">
             <h3 class="section-title">✊ Human & Charter Rights Observations</h3>
             <ul class="bullet-list">
-              ${selectedReport.charterAndHumanRightsIssues.map(issue => `<li>${issue}</li>`).join("")}
+              ${selectedReport.charterAndHumanRightsIssues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
             </ul>
           </div>
         ` : ""}
@@ -2276,7 +2668,7 @@ export default function DocumentAnalyzerTab() {
             <div style="margin-bottom: 15px;">
               <strong style="font-size: 13px; color: #0f172a;">Information to Verify & Double-Check:</strong>
               <ul class="bullet-list" style="margin-top: 5px;">
-                ${selectedReport.whatToVerify.map(item => `<li>${item}</li>`).join("")}
+                ${selectedReport.whatToVerify.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
@@ -2285,7 +2677,7 @@ export default function DocumentAnalyzerTab() {
             <div style="margin-bottom: 15px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
               <strong style="font-size: 13px; color: #4338ca;">Specific Questions for Your Retained Lawyer:</strong>
               <ul class="bullet-list" style="margin-top: 5px; color: #4338ca;">
-                ${selectedReport.whatToAskALawyer.map(item => `<li>${item}</li>`).join("")}
+                ${selectedReport.whatToAskALawyer.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
@@ -2294,7 +2686,7 @@ export default function DocumentAnalyzerTab() {
             <div style="border-top: 1px solid #f1f5f9; padding-top: 15px;">
               <strong style="font-size: 13px; color: #b45309;">Inconsistencies or Missing Casework Elements:</strong>
               <ul class="bullet-list" style="margin-top: 5px; color: #78350f;">
-                ${selectedReport.whatIsMissing.map(item => `<li>${item}</li>`).join("")}
+                ${selectedReport.whatIsMissing.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
@@ -2330,15 +2722,15 @@ export default function DocumentAnalyzerTab() {
             <tbody>
               ${organizedFiles.map(f => `
                 <tr>
-                  <td><strong>${f.category}</strong></td>
-                  <td><code>${f.name}</code></td>
+                  <td><strong>${escapeHtml(f.category)}</strong></td>
+                  <td><code>${escapeHtml(f.name)}</code></td>
                   <td>${(f.size / 1024).toFixed(1)} KB</td>
                   <td>
                     <span style="font-weight: bold; color: ${f.analysisStatus === 'completed' ? '#166534' : f.analysisStatus === 'analyzing' ? '#2563eb' : '#64748b'}">
-                      ${f.analysisStatus.toUpperCase()}
+                      ${escapeHtml(f.analysisStatus.toUpperCase())}
                     </span>
                   </td>
-                  <td>${f.uploadedAt}</td>
+                  <td>${escapeHtml(f.uploadedAt)}</td>
                 </tr>
               `).join("")}
               ${organizedFiles.length === 0 ? `<tr><td colspan="5" style="text-align: center; color: #64748b;">No documents uploaded to case file cabinet yet.</td></tr>` : ""}
@@ -2351,7 +2743,7 @@ export default function DocumentAnalyzerTab() {
     const htmlContent = `
       <html>
         <head>
-          <title>${title} - ParentShield PDF Suite</title>
+          <title>${escapeHtml(title)} - ParentShield PDF Suite</title>
           ${sharedStyle}
         </head>
         <body>
@@ -2414,7 +2806,7 @@ export default function DocumentAnalyzerTab() {
     <div className="space-y-6" id="document-analyzer-tab">
       
       {/* Platform Sub-Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 border-b border-gray-150 pb-4">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 border-b border-gray-100 pb-4">
         <div className="text-left">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-1 bg-brand-900 text-white rounded-lg text-xs font-mono font-bold tracking-wider uppercase flex items-center gap-1 shadow-xs">
@@ -2425,13 +2817,31 @@ export default function DocumentAnalyzerTab() {
             </span>
           </div>
           <h2 className="font-display text-2xl font-bold text-gray-900 mt-2">Ontario Child Welfare File Organizer & Case Assistant</h2>
-          <p className="text-xs text-gray-500 mt-1 max-w-2xl leading-relaxed">
+          <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
             Manage text logs, school journals, and CAS documents. Upload up to 15 files at a time to quick-analyze, then perform a deep scan on each to see if crucial evidence is missing. You can query your files instantly using the Case Assistant.
           </p>
         </div>
 
-        {/* Action tabs switcher & Session persistence */}
+                {/* Action tabs switcher & Session persistence */}
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center self-start">
+          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
+            <span className="text-[10px] text-slate-500 font-mono pl-1 shrink-0 flex items-center gap-1 font-bold uppercase tracking-wider">
+              AI Intelligence
+            </span>
+            <select
+              value={claudeModel}
+              onChange={(e) => setClaudeModel(e.target.value)}
+              className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors"
+            >
+              {/* BUG FOUND IN AUDIT: both previous options ("claude-sonnet-4-20250514" and
+                  "claude-3-5-sonnet-20241022") were invalid model strings the backend would
+                  silently reject and replace with claude-sonnet-5 regardless of selection - this
+                  dropdown did nothing. Now offers the two models the backend actually accepts. */}
+              <option value="claude-sonnet-5">Claude Sonnet 5</option>
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (faster)</option>
+            </select>
+          </div>
+          
           {/* Active Session status & manual save controller */}
           <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
             <span className="text-[10px] text-slate-500 font-mono pl-1 shrink-0 flex items-center gap-1">
@@ -2450,7 +2860,7 @@ export default function DocumentAnalyzerTab() {
             </button>
             <button
               onClick={saveProgress}
-              className="px-2 py-1 bg-black hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
+              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
               title="Save all changes securely to browser storage"
             >
               <Save className="w-3 h-3 text-brand-600" />
@@ -2459,7 +2869,7 @@ export default function DocumentAnalyzerTab() {
 
             <button
               onClick={exportSummaryLog}
-              className="px-2 py-1 bg-black hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
+              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
               title="Export a summary log of all analyzed documents and chat history as a chronological text report"
             >
               <Download className="w-3 h-3 text-brand-600" />
@@ -2476,7 +2886,7 @@ export default function DocumentAnalyzerTab() {
                   }
                 });
               }}
-              className="px-2 py-1 bg-black hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
+              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
               title="Wipe full stored cache"
               id="wipe-session-btn"
             >
@@ -2491,8 +2901,8 @@ export default function DocumentAnalyzerTab() {
               onClick={() => setActiveTab("organizer")}
               className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === "organizer" 
-                  ? "bg-black text-gray-900 shadow-xs" 
-                  : "text-gray-500 hover:text-gray-900"
+                  ? "bg-white text-gray-900 shadow-xs" 
+                  : "text-slate-600 hover:text-gray-900"
               }`}
             >
               <Folder className="w-3.5 h-3.5 shrink-0" /> Case Organizer & Audits
@@ -2502,8 +2912,8 @@ export default function DocumentAnalyzerTab() {
               onClick={() => setActiveTab("rag-chat")}
               className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === "rag-chat" 
-                  ? "bg-black text-gray-900 shadow-xs" 
-                  : "text-gray-500 hover:text-gray-900"
+                  ? "bg-white text-gray-900 shadow-xs" 
+                  : "text-slate-600 hover:text-gray-900"
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5 shrink-0" /> Multi-File Case Chat
@@ -2513,8 +2923,8 @@ export default function DocumentAnalyzerTab() {
               onClick={() => setActiveTab("saved-briefs")}
               className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === "saved-briefs" 
-                  ? "bg-black text-gray-900 shadow-xs" 
-                  : "text-gray-500 hover:text-gray-900"
+                  ? "bg-white text-gray-900 shadow-xs" 
+                  : "text-slate-600 hover:text-gray-900"
               }`}
               id="saved-briefs-tab"
             >
@@ -2530,7 +2940,7 @@ export default function DocumentAnalyzerTab() {
         {/* LEFT COLUMN: MULTIPLE FILES UPLOADER & ORGANIZE FOLDERS */}
         <div className="lg:col-span-5 space-y-4" id="organizer-sidebar">
           
-          <div className="bg-black rounded-xl border border-gray-150 p-4 space-y-4 text-left shadow-2xs">
+          <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-4 text-left shadow-2xs">
             
             {/* Folder Header */}
             <div className="flex justify-between items-center pb-2.5 border-b border-gray-100">
@@ -2547,7 +2957,7 @@ export default function DocumentAnalyzerTab() {
             <div className="space-y-1.5">
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-150 hover:border-brand-500 rounded-xl p-5 text-center cursor-pointer bg-slate-50 hover:bg-black hover:shadow-xs transition-all relative group"
+                className="border-2 border-dashed border-gray-100 hover:border-brand-500 rounded-xl p-5 text-center cursor-pointer bg-slate-50 hover:bg-white hover:shadow-xs transition-all relative group"
               >
                 <input
                   type="file"
@@ -2561,7 +2971,7 @@ export default function DocumentAnalyzerTab() {
                 <span className="font-display font-semibold text-gray-800 text-xs block">
                   Click to select multiple casework files or audio logs
                 </span>
-                <span className="text-[10px] text-gray-400 block mt-1">
+                <span className="text-[10px] text-slate-500 block mt-1">
                   Supports TXT, PDF, HEIC/HEIF, Photo, and Audio recordings • Auto-transcribed & Stored in PDF format
                 </span>
               </div>
@@ -2611,20 +3021,20 @@ export default function DocumentAnalyzerTab() {
                       className="w-full px-3.5 py-3 hover:bg-slate-50 flex items-center justify-between text-left transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <Folder className={`w-4.5 h-4.5 shrink-0 ${folderFiles.length > 0 ? "text-brand-800 fill-brand-50" : "text-gray-300"}`} />
+                        <Folder className={`w-4.5 h-4.5 shrink-0 ${folderFiles.length > 0 ? "text-brand-800 fill-brand-50" : "text-slate-400"}`} />
                         <span className="text-xs font-semibold text-gray-800">{catFolder}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-200/60 rounded-full font-bold text-gray-600">
+                        <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-200/60 rounded-full font-bold text-slate-700">
                           {folderFiles.length}
                         </span>
-                        {isSelected ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+                        {isSelected ? <ChevronDown className="w-3.5 h-3.5 text-slate-500" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500" />}
                       </div>
                     </button>
 
                     {/* Folder file items */}
                     {(isSelected || activeFolder === null) && folderFiles.length > 0 && (
-                      <div className="px-3 pb-3 pt-1 space-y-1.5 border-t border-gray-50 bg-black">
+                      <div className="px-3 pb-3 pt-1 space-y-1.5 border-t border-gray-50 bg-white">
                         {folderFiles.map((item) => {
                           const fileActive = selectedFileId === item.id;
                           return (
@@ -2634,6 +3044,19 @@ export default function DocumentAnalyzerTab() {
                               onClick={() => {
                                 setSelectedFileId(item.id);
                                 setSelectedReport(item.analysisReport || null);
+                                // Capture original document text for redaction
+                                if (item.content && typeof item.content === 'string') {
+                                  // If it's base64 (PDF/image), decode first if possible; otherwise use as-is
+                                  try {
+                                    const decoded = atob(item.content);
+                                    setOriginalDocumentText(decoded.substring(0, 5000)); // First 5000 chars
+                                  } catch {
+                                    // If not valid base64, treat as plain text
+                                    setOriginalDocumentText(item.content.substring(0, 5000));
+                                  }
+                                } else {
+                                  setOriginalDocumentText("");
+                                }
                               }}
                               className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between gap-1.5 group select-none ${
                                 fileActive 
@@ -2647,7 +3070,7 @@ export default function DocumentAnalyzerTab() {
                                   <span className="text-xs font-medium text-gray-800 block truncate leading-none">
                                     {item.name}
                                   </span>
-                                  <span className="text-[9px] font-mono text-gray-400 block mt-1">
+                                  <span className="text-[9px] font-mono text-slate-500 block mt-1">
                                     {(item.size / 1024).toFixed(1)} KB • {item.uploadedAt}
                                   </span>
                                 </div>
@@ -2689,24 +3112,24 @@ export default function DocumentAnalyzerTab() {
           </div>
 
           {/* Live Audio Transcription Panel */}
-          <div className="border border-brand-150 rounded-xl overflow-hidden bg-brand-50/40 p-3.5 space-y-3">
+          <div className="border border-brand-100 rounded-xl overflow-hidden bg-brand-50/40 p-3.5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-brand-950">
                 <Mic className="w-4 h-4 shrink-0 text-brand-600 animate-pulse" />
                 <span className="font-display font-bold text-xs">Record Live Meeting / Conversation</span>
               </div>
-              <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-850 font-mono text-[8px] font-bold uppercase shrink-0">
+              <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-800 font-mono text-[8px] font-bold uppercase shrink-0">
                 Auto-Analyze
               </span>
             </div>
 
             {isTranscribing && (
-              <div className="flex flex-col items-center justify-center space-y-2 py-6 bg-black/70 border border-brand-100 rounded-xl">
+              <div className="flex flex-col items-center justify-center space-y-2 py-6 bg-white/70 border border-brand-100 rounded-xl">
                 <Loader2 className="w-6 h-6 text-brand-900 animate-spin" />
                 <span className="text-xs font-semibold text-brand-950 animate-pulse text-center">
                   AI Transcribing & Auditing Conversation...
                 </span>
-                <span className="text-[10px] text-gray-400">
+                <span className="text-[10px] text-slate-500">
                   This analyzes the speech and imports it into your case folders.
                 </span>
               </div>
@@ -2728,8 +3151,8 @@ export default function DocumentAnalyzerTab() {
                   </button>
                 </div>
 
-                {/* Animated waveform */}
-                <div className="flex items-end justify-center gap-1 h-6 px-4 py-1 bg-black/50 rounded-lg">
+                {/* Waveform simulator */}
+                <div className="flex items-end justify-center gap-1 h-6 px-4 py-1 bg-white/50 rounded-lg">
                   <span className="w-1 bg-red-500 rounded-full animate-bounce h-4" style={{ animationDelay: '0.1s', animationDuration: '0.5s' }}></span>
                   <span className="w-1 bg-red-500 rounded-full animate-bounce h-2" style={{ animationDelay: '0.3s', animationDuration: '0.7s' }}></span>
                   <span className="w-1 bg-red-500 rounded-full animate-bounce h-5" style={{ animationDelay: '0s', animationDuration: '0.4s' }}></span>
@@ -2737,7 +3160,7 @@ export default function DocumentAnalyzerTab() {
                   <span className="w-1 bg-red-500 rounded-full animate-bounce h-4" style={{ animationDelay: '0.2s', animationDuration: '0.8s' }}></span>
                 </div>
 
-                <div className="bg-black/85 p-2.5 rounded-lg border border-red-150 text-[11px] leading-normal text-slate-800 max-h-24 overflow-y-auto italic text-left">
+                <div className="bg-white/85 p-2.5 rounded-lg border border-red-100 text-[11px] leading-normal text-slate-800 max-h-24 overflow-y-auto italic text-left">
                   {transcript || "Listening... Speak clearly into your microphone."}
                 </div>
               </div>
@@ -2769,11 +3192,11 @@ export default function DocumentAnalyzerTab() {
 
             {transcript.trim() && !isRecording && !isTranscribing && (
               <div className="space-y-2 animate-fadeIn pt-1.5 border-t border-brand-100 text-left">
-                <span className="text-[9px] text-gray-500 font-mono font-bold block">EDIT RECORDED SPEECH TEXT BEFORE TRANSCRIPTION PDF GENERATION:</span>
+                <span className="text-[9px] text-slate-600 font-mono font-bold block">EDIT RECORDED SPEECH TEXT BEFORE TRANSCRIPTION PDF GENERATION:</span>
                 <textarea
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
-                  className="w-full text-xs bg-black border border-gray-150 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-brand-500 h-20 resize-none leading-relaxed text-slate-800"
+                  className="w-full text-xs bg-white border border-gray-100 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-brand-500 h-20 resize-none leading-relaxed text-slate-800"
                 />
                 <button
                   onClick={handleSaveSpeechTranscript}
@@ -2787,21 +3210,21 @@ export default function DocumentAnalyzerTab() {
             )}
 
             {voiceError && (
-              <p className="text-[10px] text-red-600 font-mono italic leading-normal bg-red-50 p-2 rounded-lg border border-red-150 text-left">{voiceError}</p>
+              <p className="text-[10px] text-red-600 font-mono italic leading-normal bg-red-50 p-2 rounded-lg border border-red-100 text-left">{voiceError}</p>
             )}
           </div>
 
           {/* Collapsible Glossary component of complex legal/CYFSA terminology */}
-          <div className={`border border-slate-150 rounded-xl overflow-hidden shadow-2xs transition-all ${isGlossaryOpen ? "bg-black" : "bg-slate-50"}`}>
+          <div className={`border border-slate-100 rounded-xl overflow-hidden shadow-2xs transition-all ${isGlossaryOpen ? "bg-white" : "bg-slate-50"}`}>
             <button
               type="button"
               onClick={() => setIsGlossaryOpen(!isGlossaryOpen)}
-              className="w-full p-3 flex justify-between items-center bg-slate-50 hover:bg-black transition-colors"
+              className="w-full p-3 flex justify-between items-center bg-slate-50 hover:bg-white transition-colors"
             >
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-slate-700 shrink-0" />
                 <span className="font-display font-semibold text-xs text-slate-800">CYFSA & Family Law Glossary</span>
-                <span className="px-1.5 py-0.5 rounded-full bg-brand-50 border border-brand-100 text-brand-850 font-mono text-[9px] font-bold uppercase leading-none">
+                <span className="px-1.5 py-0.5 rounded-full bg-brand-50 border border-brand-100 text-brand-800 font-mono text-[9px] font-bold uppercase leading-none">
                   Auto-Check
                 </span>
               </div>
@@ -2810,7 +3233,7 @@ export default function DocumentAnalyzerTab() {
 
             {isGlossaryOpen && (
               <div className="p-3.5 space-y-3.5 border-t border-slate-100 animate-fadeIn text-left">
-                <p className="text-[10px] text-gray-400 leading-normal">
+                <p className="text-[10px] text-slate-500 leading-normal">
                   This glossary automatically scans terms in your active document and highlights them with active indicators.
                 </p>
 
@@ -2819,7 +3242,7 @@ export default function DocumentAnalyzerTab() {
                   value={glossarySearch}
                   onChange={(e) => setGlossarySearch(e.target.value)}
                   placeholder="Search terminology, e.g. CYFSA, Hearsay..."
-                  className="w-full text-xs p-2 border border-slate-150 rounded-lg outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 bg-slate-50/50 text-slate-800"
+                  className="w-full text-xs p-2 border border-slate-100 rounded-lg outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 bg-slate-50/50 text-slate-800"
                 />
 
                 <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -2838,7 +3261,7 @@ export default function DocumentAnalyzerTab() {
                         className={`p-2.5 rounded-lg border transition-all ${
                           isMatched 
                             ? "bg-emerald-50/20 border-emerald-200 shadow-3xs" 
-                            : "bg-black border-slate-150"
+                            : "bg-white border-slate-100"
                         }`}
                       >
                         <div 
@@ -2859,7 +3282,7 @@ export default function DocumentAnalyzerTab() {
                             </div>
                             <span className="text-[10px] text-slate-500 block leading-normal mt-0.5">{item.abbreviation} • <span className="font-mono">{item.section}</span></span>
                           </div>
-                          <span className="text-[10px] text-gray-400 font-mono">
+                          <span className="text-[10px] text-slate-500 font-mono">
                             {isExpanded ? "Collapse" : "Explain"}
                           </span>
                         </div>
@@ -2892,7 +3315,7 @@ export default function DocumentAnalyzerTab() {
                 <div className="space-y-4 text-left">
                   
                   {/* File Metadata Header */}
-                  <div className="bg-black rounded-xl border border-gray-150 p-4 shadow-3xs flex flex-wrap justify-between items-center gap-3">
+                  <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-3xs flex flex-wrap justify-between items-center gap-3">
                     <div className="min-w-0">
                       <span className={`px-2.5 py-0.5 border text-[10px] font-semibold rounded-full font-mono uppercase inline-block ${getCategoryColor(activeSelectedFile.category)}`}>
                         {activeSelectedFile.category}
@@ -2900,7 +3323,7 @@ export default function DocumentAnalyzerTab() {
                       <h3 className="font-display font-extrabold text-[#0f172a] text-lg mt-1 truncate">
                         {activeSelectedFile.name}
                       </h3>
-                      <p className="text-[10px] font-mono text-gray-400 mt-0.5">
+                      <p className="text-[10px] font-mono text-slate-500 mt-0.5">
                         Uploaded on {activeSelectedFile.uploadedAt} • Type: {activeSelectedFile.mimeType}
                       </p>
                     </div>
@@ -2926,10 +3349,17 @@ export default function DocumentAnalyzerTab() {
                   </div>
                 </div>
 
+                  {singleAnalysisError && (
+                    <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2" id="single-analysis-error-banner">
+                      <span className="font-bold shrink-0">⚠️ Audit failed:</span>
+                      <span className="break-words">{singleAnalysisError}</span>
+                    </div>
+                  )}
+
                   {/* Document content viewer with custom Court Transcript Rendering & Density Limits Check */}
-                  <div className="bg-black rounded-xl border border-gray-150 p-4 space-y-1.5 relative overflow-hidden" id="file-plain-viewer">
+                  <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-1.5 relative overflow-hidden" id="file-plain-viewer">
                     <div className="flex flex-wrap justify-between items-center pb-2 border-b border-gray-100 gap-2">
-                      <h5 className="font-mono text-[10px] text-gray-400 font-extrabold uppercase flex items-center gap-1">
+                      <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase flex items-center gap-1">
                         <FileText className="w-3.5 h-3.5 shrink-0" />
                         {activeSelectedFile.name.toLowerCase().includes("transcript") ? "VERBATIM COURT TRANSCRIPTION REPORT" : "File Plaintext Context"}
                       </h5>
@@ -2949,7 +3379,7 @@ export default function DocumentAnalyzerTab() {
                                 printWindow.document.write(`
                                   <html>
                                     <head>
-                                      <title>Print Certified Transcript - ${activeSelectedFile.name}</title>
+                                      <title>Print Certified Transcript - ${escapeHtml(activeSelectedFile.name)}</title>
                                       <style>
                                         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
                                         body {
@@ -2995,7 +3425,7 @@ export default function DocumentAnalyzerTab() {
                                     <body>
                                       <div class="transcript">
                                         <div class="margin-line"></div>
-                                        <pre>${activeSelectedFile.content}</pre>
+                                        <pre>${escapeHtml(activeSelectedFile.content)}</pre>
                                       </div>
                                       <script>window.print();</script>
                                     </body>
@@ -3006,7 +3436,7 @@ export default function DocumentAnalyzerTab() {
                                 window.print();
                               }
                             }}
-                            className="text-[10px] font-mono bg-brand-50 hover:bg-brand-100 text-brand-700 hover:text-brand-850 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                            className="text-[10px] font-mono bg-brand-50 hover:bg-brand-100 text-brand-700 hover:text-brand-800 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
                           >
                             <Printer className="w-3 h-3 shrink-0" />
                             Print Transcript PDF
@@ -3026,7 +3456,7 @@ export default function DocumentAnalyzerTab() {
                         placeholder="Scrolls/highlights matches. Click 'Locate Phrase' on any violation card below..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="bg-black border border-brand-200 rounded px-2 py-1 text-xs grow outline-brand-500 font-mono text-slate-700 placeholder:text-gray-400"
+                        className="bg-white border border-brand-200 rounded px-2 py-1 text-xs grow outline-brand-500 font-mono text-slate-700 placeholder:text-slate-500"
                       />
                       {searchQuery && (
                         <button
@@ -3041,6 +3471,21 @@ export default function DocumentAnalyzerTab() {
 
                     {/* Word and Character Density Quality indicator bar */}
                     {(() => {
+                      // For text/plain files, activeSelectedFile.content really is the
+                      // text, so a word count is meaningful. For PDFs/images, content
+                      // is the raw base64 file bytes — counting "words" in that (no
+                      // whitespace) always returns ~1, which made this badge show
+                      // "Low Context" for every single PDF regardless of how
+                      // substantial it actually was. Real text extraction for those
+                      // files happens server-side (Gemini OCR) during analysis, so we
+                      // can't judge word density client-side before that runs.
+                      if (activeSelectedFile.mimeType !== "text/plain") {
+                        return (
+                          <div className="p-2 border rounded-lg text-[10px] leading-relaxed flex items-center gap-1 px-3 bg-slate-50 text-slate-600 border-slate-200 select-none text-left">
+                            <span>📄 This document will be read via OCR text extraction when you run the audit — its content isn't previewable here beforehand.</span>
+                          </div>
+                        );
+                      }
                       const wordCount = activeSelectedFile.content ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length : 0;
                       let densityBadgeColor = "bg-rose-50 text-rose-700 border-rose-200";
                       let densityText = "⚠️ Low Context: Might result in generalized answers. Consider uploading or dictating additional details.";
@@ -3083,7 +3528,7 @@ export default function DocumentAnalyzerTab() {
                       <div className="max-h-56 overflow-y-auto p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs font-mono text-slate-700 whitespace-pre-wrap leading-relaxed text-left" id="file-plain-content-viewer">
                         {activeSelectedFile.mimeType === "text/plain" 
                           ? getHighlightedText(activeSelectedFile.content, searchQuery) 
-                          : `[Document Data Encoded Buffer File (${activeSelectedFile.name}). Metadata trace indices: "${activeSelectedFile.name.replace(/_/g, " ")}"]`}
+                          : `This is a ${activeSelectedFile.mimeType.startsWith("image/") ? "image" : "PDF"} file — its raw content isn't shown here as plain text. Run the audit above to have it read and analyzed.`}
                       </div>
                     )}
 
@@ -3153,6 +3598,14 @@ export default function DocumentAnalyzerTab() {
                         </div>
                       )}
 
+                      {/* Deep Scan Error State */}
+                      {deepScanError && !isDeepScanning && !deepScanReports[activeSelectedFile.id] && (
+                        <div className="bg-rose-950/40 border border-rose-500/30 rounded-xl p-4 text-xs text-rose-200 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                          <span>{deepScanError}</span>
+                        </div>
+                      )}
+
                       {/* Deep Scan Report Content */}
                       {deepScanReports[activeSelectedFile.id] && !isDeepScanning && (
                         <div className="space-y-4 pt-2 border-t border-slate-800 animate-fadeIn text-left">
@@ -3164,8 +3617,8 @@ export default function DocumentAnalyzerTab() {
                               <span>Statutory Omissions Identified (What CAS Omitted)</span>
                             </h5>
                             <div className="grid grid-cols-1 gap-2">
-                              {deepScanReports[activeSelectedFile.id].gaps.map((gap: string, i: number) => (
-                                <div key={i} className="bg-rose-955/20 border border-rose-900/30 p-3 rounded-xl text-slate-200 text-xs font-sans leading-relaxed">
+                              {(deepScanReports[activeSelectedFile.id].gaps || []).map((gap: string, i: number) => (
+                                <div key={i} className="bg-rose-950/20 border border-rose-900/30 p-3 rounded-xl text-slate-200 text-xs font-sans leading-relaxed">
                                   <strong>Omits Details:</strong> {gap}
                                 </div>
                               ))}
@@ -3180,8 +3633,8 @@ export default function DocumentAnalyzerTab() {
                               <span>Parent's Evidence Response Checklist (To prove missing gaps)</span>
                             </h5>
                             <div className="grid grid-cols-1 gap-2">
-                              {deepScanReports[activeSelectedFile.id].missingEvidence.map((ev: string, i: number) => (
-                                <div key={i} className="bg-amber-955/20 border border-amber-900/30 p-3 rounded-xl text-slate-200 text-xs font-sans leading-relaxed flex items-start gap-2">
+                              {(deepScanReports[activeSelectedFile.id].missingEvidence || []).map((ev: string, i: number) => (
+                                <div key={i} className="bg-amber-950/20 border border-amber-900/30 p-3 rounded-xl text-slate-200 text-xs font-sans leading-relaxed flex items-start gap-2">
                                   <span className="text-amber-400 font-bold shrink-0">☑</span>
                                   <span>{ev}</span>
                                 </div>
@@ -3196,17 +3649,17 @@ export default function DocumentAnalyzerTab() {
                               <span>Avenue of Defense & Hearing Retorts</span>
                             </h5>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-1">
-                              {deepScanReports[activeSelectedFile.id].retorts.map((ret: any, i: number) => (
+                              {(deepScanReports[activeSelectedFile.id].retorts || []).map((ret: any, i: number) => (
                                 <div key={i} className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-2 text-xs">
                                   <div className="border-b border-slate-800 pb-1.5">
                                     <span className="text-[10px] font-mono text-rose-400 font-bold uppercase">Society Assert:</span>
-                                    <p className="text-slate-350 italic mt-0.5 font-medium">"{ret.claim}"</p>
+                                    <p className="text-slate-300 italic mt-0.5 font-medium">"{ret.claim}"</p>
                                   </div>
                                   <div className="space-y-1">
                                     <span className="text-[10px] font-mono text-brand-400 font-bold uppercase block">Legal Rebuttal Rule:</span>
                                     <p className="text-slate-200">{ret.objection}</p>
                                   </div>
-                                  <div className="bg-brand-950/40 border border-brand-900/30 p-2 rounded-lg text-brand-205 text-[11px] leading-relaxed">
+                                  <div className="bg-brand-950/40 border border-brand-900/30 p-2 rounded-lg text-brand-200 text-[11px] leading-relaxed">
                                     <strong>Step Action:</strong> {ret.action}
                                   </div>
                                 </div>
@@ -3222,27 +3675,53 @@ export default function DocumentAnalyzerTab() {
 
                   {/* Detailed AI Audit Section */}
                   {selectedReport ? (
-                    <div className="bg-black rounded-2xl border border-[#e2e8f0] p-5 md:p-6 space-y-6 shadow-xs animate-fadeIn">
+                    <div className="bg-white rounded-2xl border border-[#e2e8f0] p-5 md:p-6 space-y-6 shadow-xs animate-fadeIn">
                       
                       {/* Sub analysis title */}
                       <div className="flex justify-between items-center pb-4 border-b border-gray-100">
                         <div>
-                          <span className="text-[10px] font-mono font-bold uppercase text-brand-650 flex items-center gap-1 leading-none">
+                          <span className="text-[10px] font-mono font-bold uppercase text-brand-600 flex items-center gap-1 leading-none">
                             <FileCheck className="w-3.5 h-3.5 text-emerald-600" /> Audited Findings
                           </span>
                           <h4 className="font-display font-bold text-[#0f172a] text-base mt-1">
                             {selectedReport.documentTitle}
                           </h4>
                         </div>
-                        <div className="text-right flex items-center gap-2 p-2 bg-slate-50 border border-gray-150 rounded-xl shrink-0">
+                        <div className="text-right flex items-center gap-2 p-2 bg-slate-50 border border-gray-100 rounded-xl shrink-0">
                           <div>
-                            <span className="text-[8px] font-mono tracking-wider block text-gray-400 font-bold">INTEGRITY WEIGHT</span>
+                            <span className="text-[8px] font-mono tracking-wider block text-slate-500 font-bold">INTEGRITY WEIGHT</span>
                             <span className="text-xs text-slate-500">Credibility Index</span>
                           </div>
                           <div className="w-9 h-9 rounded-full bg-brand-900 flex items-center justify-center font-display font-extrabold text-white text-xs">
                             {selectedReport.completenessScore}%
                           </div>
                         </div>
+                      </div>
+
+                      {/* Redaction Toggle & Preview */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-slate-600">
+                            <span className="font-semibold">Preparing to share?</span> Hide names, dates, and file numbers before taking a screenshot or printing.
+                          </div>
+                          <RedactionToggle enabled={redactionEnabled} onToggle={toggleRedaction} />
+                        </div>
+                        
+                        {/* Document Preview with Redaction Applied */}
+                        {originalDocumentText && (
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                            <p className="text-[10px] font-mono font-bold uppercase text-slate-600 mb-2">
+                              {redactionEnabled ? "📄 Redacted Document Preview" : "📄 Document Preview"}
+                            </p>
+                            <div className="text-xs leading-relaxed text-slate-700 bg-white p-3 rounded border border-slate-200 font-mono max-h-40 overflow-auto whitespace-pre-wrap break-words">
+                              {redactionEnabled 
+                                ? redactDocumentText(originalDocumentText, knownNamesToRedact)
+                                : originalDocumentText
+                              }
+                              {originalDocumentText.length >= 5000 && <p className="text-slate-500 mt-2">... (document continues)</p>}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Educational disclaimer */}
@@ -3265,7 +3744,7 @@ export default function DocumentAnalyzerTab() {
                       </div>
 
                       {/* State-Managed Handover Section */}
-                      <div className="bg-brand-50 border border-brand-150 rounded-2xl p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-3xs">
+                      <div className="bg-brand-50 border border-brand-100 rounded-2xl p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-3xs">
                         <div className="space-y-1 text-left">
                           <h5 className="font-bold text-brand-950 flex items-center gap-1.5 text-xs uppercase tracking-wide leading-tight">
                             <Sparkles className="w-4 h-4 text-brand-600 animate-pulse shrink-0" /> Auto-populate Legal Court Forms & Statements
@@ -3325,11 +3804,13 @@ export default function DocumentAnalyzerTab() {
                               onClick={() => {
                                 const textToCopy = selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
                                 if (textToCopy) {
-                                  navigator.clipboard.writeText(textToCopy);
-                                  alert("Success: Lawyer Case Brief copied to clipboard!");
+                                  navigator.clipboard.writeText(textToCopy).then(
+                                    () => alert("Success: Lawyer Case Brief copied to clipboard!"),
+                                    () => alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access.")
+                                  );
                                 }
                               }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
                               title="Copy brief text to clipboard"
                             >
                               <Copy className="w-3.5 h-3.5 text-brand-400" />
@@ -3351,7 +3832,7 @@ export default function DocumentAnalyzerTab() {
                                   URL.revokeObjectURL(url);
                                 }
                               }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
                               title="Download brief as .txt"
                             >
                               <Download className="w-3.5 h-3.5 text-brand-400" />
@@ -3388,7 +3869,7 @@ export default function DocumentAnalyzerTab() {
                                 setSavedBriefs(prev => [newBrief, ...prev]);
                                 alert("Success: This case brief has been archived in the Saved Briefs tab! You can add notes, delete, or switch between saved briefs there.");
                               }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-emerald-400 hover:text-emerald-300 rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
                               title="Archive this brief in the Saved Briefs tab"
                             >
                               <Save className="w-3.5 h-3.5 text-emerald-400" />
@@ -3406,7 +3887,7 @@ export default function DocumentAnalyzerTab() {
                                   activeTab,
                                   savedBriefs
                                 };
-                                localStorage.setItem("OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
+                                localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
                                 setLocation("/lawyers");
                                 alert("Success: Your Detailed Case Brief has been synchronized with the Lawyer Directory. Select a lawyer in the directory to see your pre-filled intake brief!");
                               }}
@@ -3417,18 +3898,26 @@ export default function DocumentAnalyzerTab() {
                               <span>Sync to Lawyer Directory Intake</span>
                             </button>
                           </div>
-                        
                         </div>
                       )}
-
                       {/* Red Flags & Hearsay */}
-                      <div className="space-y-4">
-                        <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
-                          <ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" /> Evidence Objections & Hearsay ({selectedReport.redFlags.length})
-                        </h5>
+                      <FoldableSection 
+                        title={
+                          <div className="flex items-center justify-between w-full">
+                            <span>Evidence Objections & Hearsay ({selectedReport.redFlags.length})</span>
+                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                               <input type="checkbox" checked={factCheckEnabled} onChange={() => setFactCheckEnabled(!factCheckEnabled)} />
+                               <span className="text-[9px]">Fact-Check</span>
+                            </div>
+                          </div>
+                        }
+                        icon={<ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" />} 
+                        isOpen={openReportSections.redFlags}
+                        onToggle={() => setOpenReportSections(prev => ({ ...prev, redFlags: !prev.redFlags }))}
+                      >
                         <div className="space-y-3.5">
                           {selectedReport.redFlags.map((flag, idx) => (
-                            <div key={idx} className="bg-black border border-gray-200 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-brand-200 transition-colors">
+                            <div key={idx} className="bg-white border border-gray-200 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-brand-200 transition-colors">
                               <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-gray-100">
                                 <span className={`px-2.5 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider ${
                                   flag.severity.includes("CRITICAL") ? "bg-rose-100 text-rose-800" : flag.severity.includes("Worth") ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-800"
@@ -3436,6 +3925,13 @@ export default function DocumentAnalyzerTab() {
                                   {flag.severity}
                                 </span>
                                 <span className="font-mono font-bold text-rose-800 text-[11px]">{flag.category}</span>
+                                {factCheckEnabled && (
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider ${
+                                    flag.legalReference && flag.legalReference !== "N/A" ? "bg-green-100 text-green-800" : "bg-rose-100 text-rose-800"
+                                  }`}>
+                                    {flag.legalReference && flag.legalReference !== "N/A" ? "VERIFIED" : "UNVERIFIED"}
+                                  </span>
+                                )}
                                 <button
                                   onClick={() => openLegislativeReference(flag.legalReference)}
                                   className="font-mono text-brand-700 hover:text-brand-900 font-bold text-[10px] bg-brand-50 hover:bg-brand-100 border border-brand-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
@@ -3445,7 +3941,7 @@ export default function DocumentAnalyzerTab() {
                                 </button>
                               </div>
                               {flag.phraseDetected && (
-                                <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-150 rounded-lg">
+                                <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
                                   <div className="flex justify-between items-center">
                                     <span className="text-[9px] font-mono font-extrabold text-slate-400 uppercase tracking-wider">Phrase in Document:</span>
                                     <button
@@ -3461,7 +3957,7 @@ export default function DocumentAnalyzerTab() {
                                       🔍 Locate Phrase
                                     </button>
                                   </div>
-                                  <p className="italic text-slate-700 leading-normal font-medium bg-black p-2 border border-slate-100 rounded text-[11.5px]">
+                                  <p className="italic text-slate-700 leading-normal font-medium bg-white p-2 border border-slate-100 rounded text-[11.5px]">
                                     "{flag.phraseDetected}"
                                   </p>
                                 
@@ -3494,9 +3990,8 @@ export default function DocumentAnalyzerTab() {
                               <Check className="w-4 h-4" /> No severe hearsay or timeline objections flagged.
                             </div>
                           )}
-  
                         </div>
-                      </div>
+                      </FoldableSection>
 
                       {/* The 12 Statutory Things CAS Must Prove (Coaching Section) */}
                       <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-2xl space-y-4">
@@ -3529,7 +4024,7 @@ export default function DocumentAnalyzerTab() {
                             { ground: "11. Criminal Conduct Context [s. 74(2)(k)]", desc: "Child is under 12, has caused serious bodily harm, and parent refuses treatment." },
                             { ground: "12. Inadequate Supervision [s. 74(2)(l)]", desc: "Child under 12 left unsupervised, or in circumstances showing systemic failure of care." }
                           ].map((item, i) => (
-                            <div key={i} className="bg-black border border-slate-150 p-3 rounded-xl space-y-1 shadow-2xs hover:border-brand-150 transition-all">
+                            <div key={i} className="bg-white border border-slate-100 p-3 rounded-xl space-y-1 shadow-2xs hover:border-brand-100 transition-all">
                               <span className="text-[11px] font-bold text-slate-900 block font-sans">{item.ground}</span>
                               <p className="text-[10.5px] text-slate-500 leading-normal">{item.desc}</p>
                             </div>
@@ -3558,7 +4053,7 @@ export default function DocumentAnalyzerTab() {
                           </h5>
                           <div className="space-y-3.5">
                             {selectedReport.proceduralTimelineViolations.map((violation, idx) => (
-                              <div key={idx} className="bg-black border border-amber-250/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-colors">
+                              <div key={idx} className="bg-white border border-amber-200/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-colors">
                                 <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-100">
                                   <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider bg-amber-100 text-amber-800 uppercase">
                                     TIMELINE RULE
@@ -3566,7 +4061,7 @@ export default function DocumentAnalyzerTab() {
                                   <span className="font-mono font-bold text-amber-900 text-[11px]">{violation.timelineRule}</span>
                                   <button
                                     onClick={() => openLegislativeReference(violation.citation)}
-                                    className="font-mono text-amber-900 hover:text-amber-950 font-bold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-250 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                    className="font-mono text-amber-900 hover:text-amber-950 font-bold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
                                     title="Click to open Verified Source reference modal"
                                   >
                                     <Scale className="w-3 h-3 text-amber-600" /> Verify: {violation.citation} ↗
@@ -3574,7 +4069,7 @@ export default function DocumentAnalyzerTab() {
                                 </div>
                                 
                                 {violation.documentAssertion && (
-                                  <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-150 rounded-lg">
+                                  <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
                                     <div className="flex justify-between items-center">
                                       <span className="text-[9px] font-mono font-extrabold text-slate-400 uppercase tracking-wider">Assertion in Document:</span>
                                       <button
@@ -3590,12 +4085,12 @@ export default function DocumentAnalyzerTab() {
                                         🔍 Locate Segment
                                       </button>
                                     </div>
-                                    <p className="italic text-slate-700 leading-normal font-medium bg-black p-2 border border-slate-100 rounded text-[11.5px]">
+                                    <p className="italic text-slate-700 leading-normal font-medium bg-white p-2 border border-slate-100 rounded text-[11.5px]">
                                       "{violation.documentAssertion}"
                                     </p>
                                   </div>
                                   )}
-        
+          
                                 
                                 <p className="text-slate-600 leading-normal text-[11.5px]">
                                   <strong>Evaluation:</strong> {violation.evaluation}
@@ -3607,7 +4102,7 @@ export default function DocumentAnalyzerTab() {
                                     <span><strong>Verification Locator:</strong> <span className="underline font-bold">{violation.locationInDocument}</span></span>
                                   </div>
                                 )}
-        
+          
 
                                 <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-lg text-[11px] text-amber-950 font-medium space-y-1">
                                   <div className="font-bold text-amber-900 border-b border-amber-200/50 pb-0.5 flex items-center gap-1">
@@ -3629,8 +4124,8 @@ export default function DocumentAnalyzerTab() {
                         </h5>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {selectedReport.thresholdAnalysis.map((thresh, idx) => (
-                            <div key={idx} className="p-3 bg-black border border-gray-150 rounded-lg space-y-1.5">
-                              <div className="flex justify-between items-center text-[10px] font-mono text-gray-400 font-bold uppercase">
+                            <div key={idx} className="p-3 bg-white border border-gray-100 rounded-lg space-y-1.5">
+                              <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 font-bold uppercase">
                                 <span>{thresh.thresholdChecked}</span>
                                 <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
                                   Met: {thresh.isMet}
@@ -3640,7 +4135,7 @@ export default function DocumentAnalyzerTab() {
                               <span className="text-[9px] text-brand-700 font-mono block font-bold mt-1">Law: {thresh.primarySourceLaw}</span>
                             </div>
                           ))}
-</div>
+                        </div>
                       </div>
 
                       {/* Tri checklists */}
@@ -3681,7 +4176,7 @@ export default function DocumentAnalyzerTab() {
 
                     </div>
                   ) : (
-                    <div className="bg-slate-50 border border-dashed border-gray-150 py-12 rounded-2xl text-center space-y-4">
+                    <div className="bg-slate-50 border border-dashed border-gray-100 py-12 rounded-2xl text-center space-y-4">
                       {isSingleAnalyzing ? (
                         <div className="space-y-4">
                           <div className="relative inline-block">
@@ -3697,7 +4192,7 @@ export default function DocumentAnalyzerTab() {
                           <Sparkles className="w-12 h-12 text-slate-300 mx-auto" />
                           <div className="space-y-1">
                             <h5 className="font-display font-bold text-gray-700 text-sm">No analysis active on this file</h5>
-                            <p className="text-xs text-gray-400 max-w-sm mx-auto p-1">
+                            <p className="text-xs text-slate-500 max-w-sm mx-auto p-1">
                               This file is organized in Case Locker but lacks an active audit. Click "Run Fast Statutory Audit" to scan it concurrently.
                             </p>
                           </div>
@@ -3728,15 +4223,149 @@ export default function DocumentAnalyzerTab() {
 
                   {organizedFiles.length === 0 ? (
                     <div className="bg-slate-50 border border-dashed border-gray-200 rounded-2xl p-12 text-center flex flex-col items-center justify-center space-y-4">
-                      <FileText className="w-16 h-16 text-gray-300" />
+                      <FileText className="w-16 h-16 text-slate-400" />
                       <div>
                         <h4 className="font-display font-semibold text-gray-700 text-sm">No Files Uploaded Yet</h4>
-                        <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                        <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                           Upload family documents, CAS reports, court letters, or voice journals in the Left Case Folders panel to populate this live Multi-Case Ledger.
                         </p>
                       </div>
                     </div>
                   ) : (
+                    <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-3xs space-y-3" id="cross-document-timeline-card">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-display font-bold text-[#0f172a] text-sm">Cross-Document Case Timeline</h4>
+                          <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
+                            Merges every document below into one dated, sourced timeline — and flags where two documents
+                            disagree, or where one document promises something (like a second worker reviewing a
+                            recording) that never shows up again anywhere else. Every line is tied back to a specific
+                            document; nothing is invented.
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleBuildCaseTimeline}
+                          disabled={isBuildingTimeline || organizedFiles.filter(f => f.content?.trim()).length < 2}
+                          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all disabled:bg-slate-300 shrink-0"
+                          title={organizedFiles.filter(f => f.content?.trim()).length < 2 ? "Add at least two documents with text first" : ""}
+                        >
+                          {isBuildingTimeline ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
+                          <span>{isBuildingTimeline ? "Cross-referencing..." : "Build Case Timeline"}</span>
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-mono font-extrabold uppercase text-slate-500">
+                          Your Own Account (optional, but this is what makes the check real)
+                        </label>
+                        <textarea
+                          value={parentClaimsInput}
+                          onChange={(e) => setParentClaimsInput(e.target.value)}
+                          placeholder={`Type what you believe happened, in your own words — e.g. "Joseph told me he heard adult voices and would get a second worker to review it, but that never went anywhere." Each specific claim will be checked against the documents below and marked as confirmed, contradicted, or not addressed — the same way a lawyer or a careful colleague would check it before you rely on it.`}
+                          rows={3}
+                          className="mt-1 w-full text-xs border border-gray-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                        />
+                      </div>
+
+
+                      {timelineError && (
+                        <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2">
+                          <span className="font-bold shrink-0">⚠️</span>
+                          <span className="break-words">{timelineError}</span>
+                        </div>
+                      )}
+
+                      {caseTimeline && (
+                        <div className="space-y-5 pt-2">
+                          {Array.isArray(caseTimeline.timeline) && caseTimeline.timeline.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Timeline</h5>
+                              <div className="space-y-2">
+                                {caseTimeline.timeline.map((row: any, i: number) => (
+                                  <div key={i} className="border border-gray-100 rounded-lg p-3 text-xs">
+                                    <div className="flex justify-between gap-2 flex-wrap">
+                                      <span className="font-bold text-slate-800">{row.date || "undated"}</span>
+                                      <span className="text-[10px] font-mono text-slate-400">
+                                        {Array.isArray(row.sources) ? row.sources.join(" · ") : ""}
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-700 mt-1">{row.event}</p>
+                                    {row.quote && <p className="text-slate-500 italic mt-1">"{row.quote}"</p>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {Array.isArray(caseTimeline.conflicts) && caseTimeline.conflicts.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-amber-700 font-extrabold uppercase mb-2">Conflicts Between Documents</h5>
+                              <div className="space-y-2">
+                                {caseTimeline.conflicts.map((c: any, i: number) => (
+                                  <div key={i} className="border border-amber-200 bg-amber-50 rounded-lg p-3 text-xs space-y-1">
+                                    <p className="font-bold text-amber-900">{c.topic}</p>
+                                    <p><span className="font-mono text-[10px] text-slate-500">{c?.documentA?.source}:</span> {c?.documentA?.saysWhat}</p>
+                                    <p><span className="font-mono text-[10px] text-slate-500">{c?.documentB?.source}:</span> {c?.documentB?.saysWhat}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {Array.isArray(caseTimeline.openItems) && caseTimeline.openItems.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-brand-700 font-extrabold uppercase mb-2">Open Items (Promised, Never Followed Up)</h5>
+                              <div className="space-y-2">
+                                {caseTimeline.openItems.map((o: any, i: number) => (
+                                  <div key={i} className="border border-brand-200 bg-brand-50 rounded-lg p-3 text-xs space-y-1">
+                                    <p><span className="font-mono text-[10px] text-slate-500">Promised in {o.promisedIn}:</span> {o.whatWasPromised}</p>
+                                    <p className="text-slate-500">Never addressed in: {o.neverAddressedIn}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {Array.isArray(caseTimeline.claimChecks) && caseTimeline.claimChecks.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Your Claims, Checked Against the Documents</h5>
+                              <div className="space-y-2">
+                                {caseTimeline.claimChecks.map((c: any, i: number) => {
+                                  const verdictStyle = c.verdict === "CONFIRMED"
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                    : c.verdict === "CONTRADICTED"
+                                    ? "border-red-200 bg-red-50 text-red-800"
+                                    : "border-slate-200 bg-slate-50 text-slate-600";
+                                  return (
+                                    <div key={i} className={`border rounded-lg p-3 text-xs space-y-1 ${verdictStyle}`}>
+                                      <div className="flex justify-between gap-2 flex-wrap">
+                                        <p className="font-bold">{c.claim}</p>
+                                        <span className="text-[10px] font-mono uppercase font-extrabold shrink-0">{c.verdict}</span>
+                                      </div>
+                                      <p>{c.explanation}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {Array.isArray(caseTimeline.requiresConfirmation) && caseTimeline.requiresConfirmation.length > 0 && (
+                            <div>
+                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Questions for Counsel</h5>
+                              <ul className="list-disc list-inside text-xs text-slate-700 space-y-1">
+                                {caseTimeline.requiresConfirmation.map((q: string, i: number) => <li key={i}>{q}</li>)}
+                              </ul>
+                            </div>
+                          )}
+
+                          <p className="text-[10px] text-slate-400 italic border-t border-gray-100 pt-2">{caseTimeline.disclaimer}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {organizedFiles.length > 0 && (
                     <div className="space-y-4">
                       {organizedFiles.map((file) => {
                         const hasReport = file.analysisStatus === "completed" && file.analysisReport;
@@ -3745,7 +4374,7 @@ export default function DocumentAnalyzerTab() {
                         return (
                           <div 
                             key={file.id} 
-                            className="bg-black rounded-xl border border-gray-150 p-5 text-left space-y-4 shadow-xs hover:shadow-md transition duration-200"
+                            className="bg-white rounded-xl border border-gray-100 p-5 text-left space-y-4 shadow-xs hover:shadow-md transition duration-200"
                           >
                             {/* File Card Top Row */}
                             <div className="flex flex-wrap justify-between items-start gap-3 border-b border-gray-100 pb-3">
@@ -3756,7 +4385,7 @@ export default function DocumentAnalyzerTab() {
                                 <h4 className="font-display font-bold text-gray-900 text-base mt-1 flex items-center gap-1.5">
                                   <span>{file.name}</span>
                                 </h4>
-                                <p className="text-[10px] font-mono text-gray-400 mt-0.5">
+                                <p className="text-[10px] font-mono text-slate-500 mt-0.5">
                                   Uploaded: {file.uploadedAt} • Size: {Math.round(file.content.length / 1024)} KB
                                 </p>
                               </div>
@@ -3788,6 +4417,17 @@ export default function DocumentAnalyzerTab() {
                                   onClick={() => {
                                     setSelectedFileId(file.id);
                                     setSelectedReport(file.analysisReport || null);
+                                    // Capture original document text for redaction
+                                    if (file.content && typeof file.content === 'string') {
+                                      try {
+                                        const decoded = atob(file.content);
+                                        setOriginalDocumentText(decoded.substring(0, 5000));
+                                      } catch {
+                                        setOriginalDocumentText(file.content.substring(0, 5000));
+                                      }
+                                    } else {
+                                      setOriginalDocumentText("");
+                                    }
                                   }}
                                   className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-xs font-semibold cursor-pointer transition"
                                 >
@@ -3855,7 +4495,7 @@ export default function DocumentAnalyzerTab() {
 
                                 {/* Lawyer Case Brief Bullets */}
                                 {report.lawyerCaseBrief && report.lawyerCaseBrief.length > 0 && (
-                                  <div className="bg-slate-50 border border-slate-150 rounded-lg p-3.5 space-y-2">
+                                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3.5 space-y-2">
                                     <div className="flex justify-between items-center border-b pb-1.5 border-slate-200">
                                       <span className="text-[10px] font-mono font-bold uppercase text-slate-700 tracking-wider flex items-center gap-1">
                                         <Briefcase className="w-3 h-3 text-slate-500" /> Lawyer Case Brief (Auto-Extracted):
@@ -3899,17 +4539,11 @@ export default function DocumentAnalyzerTab() {
                                       </button>
                                     </div>
                                     <ul className="space-y-1.5 list-disc pl-4 text-xs text-slate-600 leading-normal">
-                                      {report.lawyerCaseBrief.map((bullet: string, idx: number) => {
-                                        // Highlight standard bolding patterns from AI response
-                                        const cleanBullet = bullet.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                                        return (
-                                          <li 
-                                            key={idx}
-                                            dangerouslySetInnerHTML={{ __html: cleanBullet }}
-                                            className="marker:text-slate-400 font-normal"
-                                          />
-                                        );
-                                      })}
+                                      {report.lawyerCaseBrief.map((bullet: string, idx: number) => (
+                                        <li key={idx} className="marker:text-slate-400 font-normal">
+                                          {renderBoldText(bullet)}
+                                        </li>
+                                      ))}
                                     </ul>
                                   </div>
                                   )}
@@ -3924,12 +4558,169 @@ export default function DocumentAnalyzerTab() {
                 )}
               </div>
             )}
+
+            {/* TAB 2: MULTI-FILE CASE CHAT (RAG) */}
+            {/* BUG FOUND IN AUDIT: this tab's button (and claudeFocus, chatInput, isRAGQuerying,
+                executeRAGQuery, triggerSampleRAGQuery, chatBottomRef, ragChatMessages) were all
+                fully wired up, but no JSX ever rendered when activeTab === "rag-chat" — clicking
+                the tab just showed a blank panel. Rebuilt the chat UI these were clearly built to
+                drive. */}
+            {activeTab === "rag-chat" && (
+              <div className="h-full flex flex-col bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
+                <div className="p-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50">
+                  <div>
+                    <h4 className="font-display font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                      <MessageSquare className="w-4 h-4 text-brand-600" /> Multi-File Case Assistant
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5 max-w-md">
+                      Ask questions across every file in your Case Cabinet. Answers cite the specific source file and remember the conversation so far.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[9px] font-mono text-slate-500 uppercase font-bold">Focus:</span>
+                    <select
+                      value={claudeFocus}
+                      onChange={(e) => setClaudeFocus(e.target.value)}
+                      className="text-[10px] font-mono border border-slate-200 rounded px-2 py-1 bg-white outline-none cursor-pointer"
+                    >
+                      <option value="legal-auditor">Statutory Compliance Audit</option>
+                      <option value="family-advocate">Empathetic Family Advocacy</option>
+                      <option value="evidentiary-auditor">Evidentiary Auditing</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30 max-h-[520px] min-h-[320px]">
+                  {ragChatMessages.map((msg) => (
+                    <div key={msg.id} className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}>
+                      <div className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
+                        msg.sender === "user"
+                          ? "bg-brand-900 text-white rounded-tr-none"
+                          : "bg-white border border-slate-200 text-slate-800 rounded-tl-none"
+                      }`}>
+                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                        {msg.citations && msg.citations.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">
+                            {msg.citations.map((c, i) => (
+                              <span key={i} className="text-[9px] font-mono bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded border border-brand-100">
+                                {c.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[8.5px] text-slate-400 mt-1 font-mono px-1">{msg.timestamp}</span>
+                    </div>
+                  ))}
+                  {isRAGQuerying && (
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Synthesizing an answer across your case files...
+                    </div>
+                  )}
+                  <div ref={chatBottomRef} />
+                </div>
+
+                <div className="px-4 py-2 border-t border-slate-100 flex gap-1.5 overflow-x-auto">
+                  {[
+                    "What CYFSA sections apply to this case?",
+                    "Are there any hearsay statements I should challenge?",
+                    "Summarize the timeline across all my documents.",
+                  ].map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      disabled={isRAGQuerying}
+                      onClick={() => triggerSampleRAGQuery(q)}
+                      className="shrink-0 px-2.5 py-1 text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-brand-50 hover:text-brand-900 border border-slate-200 rounded-full whitespace-nowrap disabled:opacity-50 cursor-pointer transition-colors"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+
+                <form
+                  onSubmit={(e) => { e.preventDefault(); executeRAGQuery(); }}
+                  className="p-3 border-t border-slate-100 flex items-center gap-2 bg-white"
+                >
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    disabled={isRAGQuerying}
+                    placeholder={organizedFiles.length > 0 ? "Ask about your case files..." : "Upload documents first, then ask a question..."}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-75"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isRAGQuerying || !chatInput.trim()}
+                    className="p-2 bg-brand-950 hover:bg-slate-900 disabled:bg-slate-200 text-white rounded-xl flex items-center justify-center cursor-pointer shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* TAB 3: SAVED BRIEFS ARCHIVE */}
+            {/* BUG FOUND IN AUDIT: same problem as the rag-chat tab above — savedBriefs,
+                setSavedBriefs, and every "Archive Brief" button throughout this file wrote into
+                this state, but nothing ever rendered it back when activeTab === "saved-briefs". */}
+            {activeTab === "saved-briefs" && (
+              <div className="space-y-4">
+                {savedBriefs.length === 0 ? (
+                  <div className="bg-slate-50 border border-dashed border-gray-200 rounded-2xl p-12 text-center space-y-3">
+                    <Briefcase className="w-12 h-12 text-slate-300 mx-auto" />
+                    <h4 className="font-display font-semibold text-gray-700 text-sm">No Saved Briefs Yet</h4>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      Archive a Lawyer Case Brief from any analyzed document's audit results to see it here.
+                    </p>
+                  </div>
+                ) : (
+                  savedBriefs.map((brief) => (
+                    <div key={brief.id} className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3 shadow-xs">
+                      <div className="flex justify-between items-start gap-3 border-b border-gray-100 pb-3">
+                        <div>
+                          <span className="text-[9px] font-mono font-bold uppercase text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-100">
+                            {brief.documentCategory}
+                          </span>
+                          <h4 className="font-display font-bold text-gray-900 text-sm mt-1">{brief.documentTitle}</h4>
+                          <span className="text-[10px] text-slate-400 font-mono block mt-0.5">Saved {brief.savedAt}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSavedBriefs(prev => prev.filter(b => b.id !== brief.id))}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                          title="Delete this saved brief"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <ul className="space-y-1.5 list-disc pl-4 text-xs text-slate-600 leading-normal">
+                        {brief.lawyerCaseBrief.map((bullet, idx) => (
+                          <li key={idx}>{renderBoldText(bullet)}</li>
+                        ))}
+                      </ul>
+                      <textarea
+                        value={brief.notes || ""}
+                        onChange={(e) => {
+                          const text = e.target.value;
+                          setSavedBriefs(prev => prev.map(b => b.id === brief.id ? { ...b, notes: text } : b));
+                        }}
+                        placeholder="Add your own notes about this brief..."
+                        rows={2}
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 outline-none focus:ring-1 focus:ring-brand-500"
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       {/* WORKSPACE INTEGRATION MODAL */}
       {isWorkspaceModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-black rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-slate-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-slate-200">
             <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
               <div className="flex items-center gap-2">
                 <Folder className="w-5 h-5 text-brand-600" />
@@ -4058,7 +4849,7 @@ export default function DocumentAnalyzerTab() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+            className="fixed inset-0 bg-white/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -4091,6 +4882,57 @@ export default function DocumentAnalyzerTab() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Legislative Citation Verification Modal */}
+      {/* BUG FOUND IN AUDIT: every "Verify Law: ... ↗" button throughout the audit report calls
+          openLegislativeReference(), which sets activeLegislativeCitation — but nothing ever
+          rendered a modal reading that state back, so clicking those buttons silently did
+          nothing. getStatuteDetails()/getLegislativeUrl() were fully built to back this exact
+          modal. Wired it up. */}
+      {activeLegislativeCitation && (
+        <div
+          className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setActiveLegislativeCitation(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-lg w-full shadow-2xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {(() => {
+              const details = getStatuteDetails(activeLegislativeCitation);
+              return (
+                <>
+                  <div className="flex justify-between items-start gap-3 border-b border-gray-100 pb-3">
+                    <div>
+                      <h3 className="font-display font-bold text-gray-900 text-base">{details.title}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">{details.subtitle}</p>
+                    </div>
+                    <button
+                      onClick={() => setActiveLegislativeCitation(null)}
+                      className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-xs text-slate-700 leading-relaxed font-mono">
+                    {details.exactText}
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">{details.explanation}</p>
+                  <a
+                    href={getLegislativeUrl(activeLegislativeCitation)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    View Official Ontario e-Laws Source
+                  </a>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
     </div>
   );

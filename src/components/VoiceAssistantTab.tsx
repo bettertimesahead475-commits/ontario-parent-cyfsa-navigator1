@@ -28,7 +28,12 @@ export default function VoiceAssistantTab() {
     },
     {
       title: "1. The Emergency Removal Summary",
-      text: "Statutory summary on removals. Under Section 81 of the Child, Youth and Family Services Act, CAS can apprehend a child without a warrant only in cases of imminent and immediate risk of serious physical harm. By Section 94, they must schedule a judicial review before a family court judge within five court days. If they fail to meet this timeline, they commit a critical procedural violation. Parents possess the right to seek kinship placement alternatives and request immediate Legal Aid assistance."
+      // BUG FIX (flagged in audit): this used to say the worker's threshold is "imminent and
+      // immediate risk of serious physical harm" and that "Section 94" sets the five-day judicial
+      // review deadline. Neither is the real statutory wording — section 81(7)'s actual threshold
+      // is "substantial risk to the child's health or safety," and the real five-day hearing
+      // deadline is section 88, not 94 (section 94 is the 30-day adjournment-limit section).
+      text: "Statutory summary on removals. Under Section 81 of the Child, Youth and Family Services Act, a worker can bring a child to a place of safety without a warrant only where there are reasonable grounds to believe the child is under 16, is in need of protection, and there would be a substantial risk to the child's health or safety during the time it would take to get a warrant or hearing. By Section 88, the matter must be brought before a family court judge for a hearing within five days. If they fail to meet this timeline, ask your lawyer whether this represents a procedural defect. Parents possess the right to seek kinship placement alternatives and request immediate Legal Aid assistance."
     },
     {
       title: "2. Family Court Rule 17 Briefs",
@@ -86,14 +91,24 @@ export default function VoiceAssistantTab() {
 
   // Play narration (TTS)
   const handlePlayNarrator = () => {
-    window.speechSynthesis.cancel(); // cancel any active utterance
-
+    // BUG FOUND IN AUDIT: two compounding bugs here. First, window.speechSynthesis.cancel() used
+    // to run unconditionally at the very top of this function, before even checking whether we
+    // were resuming from a pause - so the "resume" branch below always cancelled the paused
+    // speech first, then tried to resume() an utterance queue that had just been wiped, which
+    // does nothing. Second, even if that were fixed, the resume branch set isPaused back to
+    // `true` instead of `false` - the opposite of what had just happened - which meant that
+    // after the very first pause, this component would try to "resume" forever afterward even
+    // when the user had selected a completely different narration to play, since isPaused never
+    // got reset. Fixed by only cancelling on a genuine fresh start, and setting isPaused
+    // correctly when resuming.
     if (isPaused) {
       window.speechSynthesis.resume();
-      setIsPaused(true);
+      setIsPaused(false);
       setIsPlaying(true);
       return;
     }
+
+    window.speechSynthesis.cancel(); // cancel any active utterance before starting a fresh one
 
     const utterance = new SpeechSynthesisUtterance(selectedNarrativeText);
     utterance.rate = speechRate;
@@ -154,7 +169,7 @@ export default function VoiceAssistantTab() {
       {/* Intro Block */}
       <div className="text-left max-w-3xl">
         <h2 className="font-display text-2xl font-bold text-gray-900">Auditory Summaries & Voice Dictation Assistant</h2>
-        <p className="text-xs md:text-sm text-gray-600 mt-2 leading-relaxed">
+        <p className="text-xs md:text-sm text-slate-700 mt-2 leading-relaxed">
           This accessibility dashboard helps parents with reading deficits, anxiety, or writing constraints. Listen to human-sounding summaries of complex Ontario statutes or verbally dictate your child welfare logs to preserve fresh observations.
         </p>
       </div>
@@ -163,7 +178,7 @@ export default function VoiceAssistantTab() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="voice-grid">
         {/* Left Side: Speech Synthesizer Narrator */}
         <div className="lg:col-span-7 space-y-4" id="speech-synthesizer">
-          <div className="bg-black rounded-xl border border-gray-150 p-6 space-y-5 text-left shadow-2xs">
+          <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5 text-left shadow-2xs">
             <div className="flex justify-between items-center pb-2 border-b">
               <span className="text-[10px] font-mono tracking-widest text-brand-600 font-bold uppercase flex items-center gap-1">
                 <Headphones className="w-3.5 h-3.5" /> Interactive Text-to-Speech Narrator
@@ -175,14 +190,23 @@ export default function VoiceAssistantTab() {
 
             {/* Read Aloud Text Area */}
             <div className="space-y-2">
-              <label className="text-[11px] font-mono tracking-wider font-semibold text-gray-400 uppercase">
+              <label className="text-[11px] font-mono tracking-wider font-semibold text-slate-500 uppercase">
                 Active Speech Narrator Block
               </label>
               <textarea
                 value={selectedNarrativeText}
-                onChange={(e) => setSelectedNarrativeText(e.target.value)}
+                onChange={(e) => {
+                  setSelectedNarrativeText(e.target.value);
+                  // Same fix as the preloaded-summary buttons above: editing the text while
+                  // paused must not leave isPaused pointing at now-stale speech.
+                  if (isPlaying || isPaused) {
+                    window.speechSynthesis.cancel();
+                    setIsPlaying(false);
+                    setIsPaused(false);
+                  }
+                }}
                 rows={6}
-                className="w-full bg-slate-50 border border-gray-200 focus:bg-black text-xs md:text-sm leading-relaxed p-4 rounded-xl focus:outline-none"
+                className="w-full bg-slate-50 border border-gray-200 focus:bg-white text-xs md:text-sm leading-relaxed p-4 rounded-xl focus:outline-none"
               />
             </div>
 
@@ -190,7 +214,7 @@ export default function VoiceAssistantTab() {
             <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border">
               {/* Speed Slider */}
               <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400 font-semibold uppercase font-mono">Speed rate</span>
+                <span className="text-xs text-slate-500 font-semibold uppercase font-mono">Speed rate</span>
                 <input
                   type="range"
                   min="0.5"
@@ -200,7 +224,7 @@ export default function VoiceAssistantTab() {
                   onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
                   className="w-24 cursor-pointer"
                   />
-                <span className="text-xs font-semibold text-gray-600 font-mono">{speechRate}x</span>
+                <span className="text-xs font-semibold text-slate-700 font-mono">{speechRate}x</span>
               </div>
 
               {/* Action Buttons */}
@@ -216,7 +240,7 @@ export default function VoiceAssistantTab() {
                 ) : (
                   <button
                     onClick={handlePlayNarrator}
-                    className="p-2.5 bg-brand-650 hover:bg-brand-700 text-white rounded-full cursor-pointer transition-all shadow-md hover:scale-105"
+                    className="p-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-full cursor-pointer transition-all shadow-md hover:scale-105"
                     title="Play Narration Description"
                   >
                     <Play className="w-4 h-4 fill-white" />
@@ -235,7 +259,7 @@ export default function VoiceAssistantTab() {
 
             {/* Preloaded Statutory Narratives triggers */}
             <div className="space-y-2">
-              <label className="text-[11px] font-mono text-gray-400 uppercase tracking-wider font-semibold block">
+              <label className="text-[11px] font-mono text-slate-500 uppercase tracking-wider font-semibold block">
                 Select Preloaded Statutory Narratives
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -244,21 +268,27 @@ export default function VoiceAssistantTab() {
                     key={index}
                     onClick={() => {
                       setSelectedNarrativeText(sum.text);
-                      if (isPlaying) {
+                      // BUG FOUND IN AUDIT: this reset isPlaying when switching to a different
+                      // summary, but never reset isPaused - so pausing, then picking a different
+                      // summary, then clicking Play would resume the OLD (stale) utterance
+                      // instead of reading the newly selected text, since handlePlayNarrator's
+                      // resume branch only checks isPaused.
+                      if (isPlaying || isPaused) {
                         window.speechSynthesis.cancel();
                         setIsPlaying(false);
+                        setIsPaused(false);
                       }
                     }}
                     className={`p-3 border rounded-xl text-left text-xs transition-colors flex items-start gap-2 cursor-pointer ${
                       selectedNarrativeText === sum.text
                         ? "border-brand-500 bg-brand-50/50 text-brand-900"
-                        : "border-gray-200 hover:bg-slate-50 text-gray-700 bg-black"
+                        : "border-gray-200 hover:bg-slate-50 text-gray-700 bg-white"
                     }`}
                   >
                     <Volume2 className="w-4 h-4 text-brand-500 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-semibold block">{sum.title}</span>
-                      <span className="text-[10px] text-gray-550 block truncate max-w-[150px]">{sum.text}</span>
+                      <span className="text-[10px] text-gray-500 block truncate max-w-[150px]">{sum.text}</span>
                     </div>
                   </button>
                 ))}
@@ -269,7 +299,7 @@ export default function VoiceAssistantTab() {
 
         {/* Right Side: Speech-to-Text Recorder dictation */}
         <div className="lg:col-span-5 space-y-4" id="speech-recognition-stt">
-          <div className="bg-black rounded-xl border border-gray-150 p-6 space-y-5 text-left shadow-2xs">
+          <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5 text-left shadow-2xs">
             <div className="flex justify-between items-center pb-2 border-b">
               <span className="text-[10px] font-mono tracking-widest text-[var(--color-brand-600)] font-bold uppercase flex items-center gap-1">
                 <Mic className="w-3.5 h-3.5" /> Voice Dictation Note-taker
@@ -281,12 +311,12 @@ export default function VoiceAssistantTab() {
               </span>
             </div>
 
-            <p className="text-xs text-gray-500 leading-normal">
+            <p className="text-xs text-slate-600 leading-normal">
               Dictate your notes hands-free. Speak into your microphone, and we will translate your spoken syllables into structured written paragraphs for your diary.
             </p>
 
             {/* Live Visual Speech Pulser */}
-            <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-xl border border-dashed border-gray-250 relative overflow-hidden">
+            <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-xl border border-dashed border-gray-200 relative overflow-hidden">
               {isRecording && (
                 <div className="absolute inset-0 bg-brand-200/10 flex items-center justify-center pointer-events-none">
                   <span className="w-16 h-16 rounded-full bg-brand-500/15 animate-ping" />
@@ -300,13 +330,13 @@ export default function VoiceAssistantTab() {
                 className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
                   isRecording 
                     ? "bg-rose-600 text-white animate-pulse shadow-md relative z-10" 
-                    : "bg-brand-600 hover:bg-brand-750 text-white shadow-xs cursor-pointer hover:scale-105"
+                    : "bg-brand-600 hover:bg-brand-700 text-white shadow-xs cursor-pointer hover:scale-105"
                 }`}
               >
                 {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 animate-bounce" />}
               </button>
 
-              <span className="text-[11px] font-mono uppercase tracking-wider text-gray-400 mt-3 block font-semibold relative z-10">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 mt-3 block font-semibold relative z-10">
                 {isRecording ? "Recording vocal notes..." : "Click mic to start speaking"}
               </span>
             </div>
@@ -314,14 +344,18 @@ export default function VoiceAssistantTab() {
             {/* Spoken Text Result Box */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <label className="text-[10px] font-mono tracking-wider font-semibold text-gray-400 uppercase">
+                <label className="text-[10px] font-mono tracking-wider font-semibold text-slate-500 uppercase">
                   Spoken Written Output
                 </label>
                 {spokenTranscript && (
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(spokenTranscript);
-                      alert("Transcript copyable! Paste it straight into your evidentiary logs draft.");
+                      // BUG FOUND IN AUDIT: unguarded clipboard write - see LegalTerminologyDrawer
+                      // fix for the full explanation. Fixed the same way everywhere it appeared.
+                      navigator.clipboard.writeText(spokenTranscript).then(
+                        () => alert("Transcript copyable! Paste it straight into your evidentiary logs draft."),
+                        () => alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access.")
+                      );
                     }}
                     className="text-[10px] font-semibold text-brand-600 hover:underline"
                   >
@@ -337,7 +371,7 @@ export default function VoiceAssistantTab() {
             <div className="flex justify-between">
               <button
                 onClick={() => setSpokenTranscript("")}
-                className="text-[11px] text-gray-500 font-semibold hover:underline cursor-pointer"
+                className="text-[11px] text-slate-600 font-semibold hover:underline cursor-pointer"
               >
                 Reset Dictation
               </button>

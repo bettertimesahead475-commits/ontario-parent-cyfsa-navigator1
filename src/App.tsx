@@ -1,14 +1,20 @@
 /**
  * @license
- * SPDX-License-Identifier: Apache-2.5
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import React, { useState, useEffect } from "react";
-import { Link, Route, Switch, useLocation } from "wouter";
+import { Link, Route, Switch, useLocation, Redirect } from "wouter";
+import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener, useAppReset } from "./hooks/useAppReset";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Import Modular Subcomponents direct statically for ultra-fast instantaneous view switching with no skeleton flickers
 import CYFSAGuideTab from "./components/CYFSAGuideTab";
+import CharterRightsTab from "./components/CharterRightsTab";
+import InvestigationTab from "./components/InvestigationTab";
+import DefenseStrategiesTab from "./components/DefenseStrategiesTab";
 import FamilyCourtTab from "./components/FamilyCourtTab";
 import ChildDevelopmentTab from "./components/ChildDevelopmentTab";
 import DocumentAnalyzerTab from "./components/DocumentAnalyzerTab";
@@ -21,6 +27,10 @@ import StatutoryBookmarkSidebar from "./components/StatutoryBookmarkSidebar";
 import FloatingTTS from "./components/FloatingTTS";
 import LegalTerminologyDrawer from "./components/LegalTerminologyDrawer";
 import ConnectorSearchBot from "./components/ConnectorSearchBot";
+import PricingTab from "./components/PricingTab";
+import RequireAuth from "./components/RequireAuth";
+import MigrationNotice from "./components/MigrationNotice";
+import { getUserKey } from "./utils/storage";
 
 // Core icons represent core section identity
 import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
@@ -32,7 +42,7 @@ export default function App() {
 
   const [userProfile, setUserProfile] = useState<any>(() => {
     try {
-      const saved = localStorage.getItem("OPA_USER_PROFILE");
+      const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn("Failed to load user profile in header:", e);
@@ -43,7 +53,7 @@ export default function App() {
   useEffect(() => {
     const handleProfileUpdate = () => {
       try {
-        const saved = localStorage.getItem("OPA_USER_PROFILE");
+        const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
         setUserProfile(saved ? JSON.parse(saved) : null);
       } catch (e) {
         console.warn(e);
@@ -58,6 +68,16 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [terminologyOpen, setTerminologyOpen] = useState<boolean>(false);
 
+  const [currentTier, setCurrentTier] = useState<"Basic" | "Pro" | "Premium">(() => {
+    try {
+      const stored = localStorage.getItem(getUserKey("ps_session_tier") || "ps_session_tier");
+      if (stored === "Pro" || stored === "Premium") return stored;
+    } catch (e) {
+      console.warn("Failed to read stored tier:", e);
+    }
+    return "Basic";
+  });
+
   // Global listener to easily toggle Glossary from any custom event
   useEffect(() => {
     const handleOpenGlossary = () => {
@@ -69,38 +89,35 @@ export default function App() {
     };
   }, []);
 
-  // Sync route on first load to make home clean
-  useEffect(() => {
-    if (location === "/" || location === "") {
-      setLocation("/cyfsa-guide");
-    }
-  }, [location, setLocation]);
-
   const navItems = [
-    { name: "CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Family Court Process", path: "/family-court", icon: <Clock className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Child Development Impact", path: "/child-development", icon: <Heart className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4 text-brand-500 shrink-0 animate-pulse" /> },
-    { name: "Draft Templates", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Saved Documents", path: "/saved-documents", icon: <FolderHeart className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Voice Assistant", path: "/voice-assistant", icon: <Headphones className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Lawyer Referrals", path: "/lawyers", icon: <Users className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
-    { name: "Advocate Passport", path: "/signup", icon: <Shield className="w-4 h-4 text-slate-500 group-hover:text-brand-600 transition-colors shrink-0" /> },
+    { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
+    { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
+    { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
+    { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
+    { name: "Investigation Process", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
+    { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
+    { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
+    { name: "Defense Strategies", path: "/defense-strategies", icon: <Shield className="w-4 h-4" /> },
+    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
+    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
+    { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
+    { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
+    { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
   ];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between font-sans selection:bg-brand-100 selection:text-brand-900" id="root-viewport">
-
+      
       {/* Top Professional Header Bar */}
-      <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
+      <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
-
+            
             {/* Left Brand Area */}
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
-                <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-brand-600 fill-brand-50" />
+                <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
+                  <img src="/logo.png" alt="ParentShield logo" className="w-full h-full object-cover" />
                 </div>
               </div>
               <div className="text-left">
@@ -119,7 +136,11 @@ export default function App() {
                 <Link href="/signup">
                   <div className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all">
                     <User className="w-3 h-3 text-slate-500" />
-                    <span>Passport: {userProfile.fullName.split(" ")[0]} 🛡️</span>
+                    {/* BUG FOUND IN AUDIT: this crashed the entire header (and therefore every
+                        page, since this is app-shell code) if a saved profile existed but was
+                        missing fullName for any reason - corrupted/partial localStorage data,
+                        manual tampering, etc. Added a safe fallback. */}
+                    <span>Passport: {(userProfile.fullName || "Parent").split(" ")[0]} 🛡️</span>
                   </div>
                 </Link>
               ) : (
@@ -178,9 +199,9 @@ export default function App() {
                   <div
                     onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold ${
-                      isActive
-                        ? "bg-brand-700 text-white"
-                        : "text-slate-700 hover:bg-slate-50 bg-white border border-slate-200"
+                      isActive 
+                        ? "bg-brand-600 text-white" 
+                        : "text-slate-600 hover:bg-slate-50 bg-white border border-slate-100"
                     }`}
                   >
                     {item.icon}
@@ -206,6 +227,8 @@ export default function App() {
         )}
       </header>
 
+      <MigrationNotice />
+
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
       <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -217,7 +240,7 @@ export default function App() {
                   <div
                     className={`group px-4 py-2.5 font-display rounded-xl transition-all text-xs font-semibold uppercase tracking-wider cursor-pointer flex items-center gap-2 ${
                       isActive
-                        ? "bg-brand-700 text-white shadow-sm shadow-brand-600/10"
+                        ? "bg-brand-600 text-white shadow-sm shadow-brand-600/10"
                         : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
                     }`}
                   >
@@ -233,9 +256,29 @@ export default function App() {
       {/* Primary Main Content Area container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10" id="main-frame-area">
         <Switch>
-
+          <Route path="/"><ParentJourney page="home" /></Route>
+          <Route path="/rights"><ParentJourney page="rights" /></Route>
+          <Route path="/cyfsa-procedure"><ParentJourney page="procedure" /></Route>
+          <Route path="/five-day-rule"><ParentJourney page="five-day" /></Route>
+          <Route path="/45-day-roadmap"><ParentJourney page="roadmap" /></Route>
           <Route path="/cyfsa-guide">
             <CYFSAGuideTab />
+          </Route>
+
+          <Route path="/charter-rights">
+            <CharterRightsTab />
+          </Route>
+
+          <Route path="/investigation">
+            <InvestigationTab />
+          </Route>
+
+          <Route path="/defense-strategies">
+            <DefenseStrategiesTab />
+          </Route>
+
+          <Route path="/pricing">
+            <PricingTab currentTier={currentTier} onChangeTier={setCurrentTier} />
           </Route>
 
           <Route path="/family-court">
@@ -247,11 +290,15 @@ export default function App() {
           </Route>
 
           <Route path="/document-analyzer">
-            <DocumentAnalyzerTab />
+            <RequireAuth>
+              <DocumentAnalyzerTab />
+            </RequireAuth>
           </Route>
 
           <Route path="/templates">
-            <TemplatesTab />
+            <RequireAuth>
+              <TemplatesTab />
+            </RequireAuth>
           </Route>
 
           <Route path="/saved-documents">
@@ -267,23 +314,13 @@ export default function App() {
           </Route>
 
           <Route path="/signup">
-            <SignUpTab />
+            <RequireAuth>
+              <SignUpTab />
+            </RequireAuth>
           </Route>
 
           {/* Fallback route */}
-          <Route>
-            <div className="text-center py-20">
-              <Scale className="w-16 h-16 text-gray-300 mx-auto animate-pulse" />
-              <h2 className="font-display font-bold text-gray-850 text-xl mt-4">Statutory Portal Synchronizing...</h2>
-              <p className="text-gray-500 text-xs mt-1">Please select the tabs above to explore child welfare laws.</p>
-              <button
-                onClick={() => setLocation("/cyfsa-guide")}
-                className="mt-4 px-4 py-2 bg-brand-700 hover:bg-brand-800 font-bold text-xs text-white rounded-lg cursor-pointer"
-              >
-                Go to Statutory Guide
-              </button>
-            </div>
-          </Route>
+          <Route><Redirect to="/" /></Route>
 
         </Switch>
       </main>
@@ -291,7 +328,7 @@ export default function App() {
       {/* Professional Legal Footnote footer */}
       <footer className="bg-white border-t border-slate-200 py-6 md:py-8 mt-12 no-print" id="app-footer">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-
+          
           {/* Real-time PDF / Printexport contextual launcher block */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl" id="footer-print-actions">
             <div>
@@ -306,6 +343,14 @@ export default function App() {
                   ? "Save your current court workbook draft (Affidavit, Factual Chronology, Interaction Diary, or Rebuttals) as a formal PDF."
                   : location === "/document-analyzer"
                   ? "Save your current Multi-File RAG Chat consultation transcript or active Document Verification Report as a structured PDF."
+                  : location === "/charter-rights"
+                  ? "Export the Charter rights breakdown and emergency contacts as a formatted PDF."
+                  : location === "/investigation"
+                  ? "Export the investigation timeline and any watchpoints you've flagged as a formatted PDF."
+                  : location === "/defense-strategies"
+                  ? "Export the order-hierarchy and lawyer-discussion points as a formatted PDF."
+                  : ["/rights", "/cyfsa-procedure", "/five-day-rule", "/45-day-roadmap"].includes(location)
+                  ? "Export this step of the guided journey as a formatted PDF."
                   : "Save a clean, formatted educational draft copy of the active ParentShield views."}
               </p>
             </div>
@@ -313,7 +358,7 @@ export default function App() {
               {location === "/cyfsa-guide" ? (
                 <button
                   onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "guide" } }))}
-                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-800 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   id="footer-print-guide-btn"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -322,7 +367,7 @@ export default function App() {
               ) : location === "/templates" ? (
                 <button
                   onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "template" } }))}
-                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-800 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   id="footer-print-template-btn"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -331,16 +376,52 @@ export default function App() {
               ) : location === "/document-analyzer" ? (
                 <button
                   onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "document-analyzer" } }))}
-                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-800 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   id="footer-print-analyzer-btn"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Export Chat or Analysis Report</span>
                 </button>
+              ) : location === "/charter-rights" ? (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "charter-rights" } }))}
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="footer-print-charter-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Charter Rights guide</span>
+                </button>
+              ) : location === "/investigation" ? (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "investigation" } }))}
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="footer-print-investigation-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print investigation guide</span>
+                </button>
+              ) : location === "/defense-strategies" ? (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "defense-strategies" } }))}
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="footer-print-defense-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print defense strategies guide</span>
+                </button>
+              ) : ["/rights", "/cyfsa-procedure", "/five-day-rule", "/45-day-roadmap"].includes(location) ? (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "journey" } }))}
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="footer-print-journey-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print this step as a PDF</span>
+                </button>
               ) : (
                 <button
                   onClick={() => window.print()}
-                  className="w-full sm:w-auto px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                   id="footer-print-general-btn"
                 >
                   <Printer className="w-3.5 h-3.5 text-slate-500" />
@@ -359,7 +440,7 @@ export default function App() {
             <div className="space-y-1 text-center sm:text-right font-mono text-[10px]">
               <span className="block text-slate-600 font-bold">Jurisdiction: Ontario Court of Justice, Canada</span>
               <span className="block text-slate-500 mt-0.5">Primary sources updated: Q2 2026</span>
-              <button
+              <button 
                 onClick={() => {
                   if (confirm("Are you sure you want to perform a Global System Reset? This will wipe ALL cached data, templates, notes, and profiles across all tabs.")) {
                     resetAll();
@@ -379,22 +460,24 @@ export default function App() {
       <ConnectorSearchBot />
       <StatutoryBookmarkSidebar />
       <FloatingTTS />
-
+      
       {/* Symmetrical Floating Glossary Access (Bottom Left) */}
       <button
         onClick={() => setTerminologyOpen(true)}
         title="Open CYFSA Legal Terminology Glossary"
-        className="fixed bottom-6 left-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-white border-slate-300 text-brand-700 hover:bg-brand-50 hover:text-brand-700 z-[98] no-print group hover:scale-105"
+        className="fixed bottom-6 left-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-white border-slate-200 text-brand-600 hover:bg-brand-50 hover:text-brand-700 z-[98] no-print group hover:scale-105"
         id="legal-terminology-floating-btn"
       >
         <BookOpen className="w-5 h-5 group-hover:scale-110 transition-transform" />
       </button>
 
-      <LegalTerminologyDrawer
-        isOpen={terminologyOpen}
-        onClose={() => setTerminologyOpen(false)}
+      <LegalTerminologyDrawer 
+        isOpen={terminologyOpen} 
+        onClose={() => setTerminologyOpen(false)} 
       />
 
+      <Analytics />
+      <SpeedInsights />
     </div>
   );
 }

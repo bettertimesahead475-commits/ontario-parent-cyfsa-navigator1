@@ -6,6 +6,7 @@ import {
   Trash2, Scale, HelpCircle, ChevronUp, ChevronDown, Check, Zap 
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { getUserKey } from "../utils/storage";
 
 interface LocalFile {
   name: string;
@@ -26,6 +27,18 @@ export default function ParentChatBot() {
   const { resetAll } = useAppReset();
   const [resetConfirm, setResetConfirm] = useState(false);
   const [isOpen, setIsOpen] = useState<boolean>(false);
+
+  // Always give the user a way out: Escape closes the panel even if the
+  // floating close button is somehow obscured on a small screen.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
   const [files, setFiles] = useState<LocalFile[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -48,7 +61,9 @@ export default function ParentChatBot() {
   
   const [input, setInput] = useState<string>("");
   const [isQuerying, setIsQuerying] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<string>("claude-3-5-sonnet-20241022");
+  // BUG FOUND IN AUDIT: same non-functional model selector bug fixed in DocumentAnalyzerTab.tsx -
+  // this defaulted to an invalid model string the backend silently rejects and replaces.
+  const [selectedModel, setSelectedModel] = useState<string>("claude-sonnet-5");
   const [showFilesList, setShowFilesList] = useState<boolean>(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -56,7 +71,7 @@ export default function ParentChatBot() {
   // Load files from localStorage and subscribe to updates
   const syncFilesFromCabinet = () => {
     try {
-      const progress = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
+      const progress = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
       if (progress) {
         const parsed = JSON.parse(progress);
         if (parsed?.organizedFiles && Array.isArray(parsed.organizedFiles)) {
@@ -119,12 +134,22 @@ export default function ParentChatBot() {
         content: f.content
       }));
 
+      // BUG FOUND IN AUDIT: this chat never sent its own conversation history to the backend,
+      // so /api/rag-query treated every message as the first thing the parent ever said — the
+      // exact same "no memory" bug already fixed in the Document Analyzer's case chat earlier
+      // today, just present here too in this separate chat interface. Fixed the same way: send
+      // the prior turns so the backend can actually reference them.
+      const conversationHistory = messages
+        .filter(m => m.text && m.text.trim())
+        .map(m => ({ role: m.sender === "user" ? "user" : "assistant", content: m.text }));
+
       // Call our robust backend RAG endpoint with "family-advocate" focus for educational guidance
       const res = await apiFetch("/api/rag-query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: queryText,
+          history: conversationHistory,
           files: filesContext,
           model: selectedModel,
           focus: "family-advocate" // Highly supportive, calm, educational parent-coaching focus
@@ -148,7 +173,7 @@ export default function ParentChatBot() {
       const errMsg: ChatMessage = {
         id: "ai-err-" + Date.now(),
         sender: "ai",
-        text: `**RAG Connection Issue:** ${err.message || "Unable to retrieve advisor feedback from the server."} Let's double check if your \`ANTHROPIC_API_KEY\` is active inside the environment settings.`,
+        text: `**RAG Connection Issue:** ${err.message || "Unable to retrieve advisor feedback from the server."} Let's double check if your \`ANTHROPIC_API_KEY\` or \`GEMINI_API_KEY\` is active inside the environment settings.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, errMsg]);
@@ -214,7 +239,7 @@ export default function ParentChatBot() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         title="Open Educational Case Advisor Chat"
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-brand-950 border-brand-900 text-white hover:bg-slate-900 z-[98] no-print group hover:scale-105"
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-brand-950 border-brand-900 text-white hover:bg-slate-900 z-[100] no-print group hover:scale-105"
         id="parent-coaching-floating-btn"
       >
         <AnimatePresence mode="wait">
@@ -256,7 +281,7 @@ export default function ParentChatBot() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.95 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="fixed bottom-24 right-6 w-[360px] md:w-[410px] h-[580px] bg-black border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[98] no-print"
+            className="fixed bottom-24 right-4 left-4 sm:left-auto sm:right-6 sm:w-[360px] md:w-[410px] h-[70vh] max-h-[580px] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[99] no-print"
             id="parent-coaching-sidebar"
           >
             {/* Header section with brand and educational badges */}
@@ -330,10 +355,11 @@ export default function ParentChatBot() {
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="bg-brand-900 border border-brand-850 text-[10px] font-semibold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-amber-300 transition-colors"
+                  className="bg-brand-900 border border-brand-800 text-[10px] font-semibold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-amber-300 transition-colors"
                 >
-                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (High Intelligence)</option>
-                  <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Fast reasoning)</option>
+                  {/* BUG FOUND IN AUDIT: same invalid-model-options bug as DocumentAnalyzerTab.tsx. */}
+                  <option value="claude-sonnet-5">Claude Sonnet 5</option>
+                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (faster)</option>
                 </select>
               </div>
             </div>
@@ -348,7 +374,7 @@ export default function ParentChatBot() {
                   <div className={`max-w-[85%] rounded-2xl p-3 shadow-xs ${
                     msg.sender === "user" 
                       ? "bg-brand-900 text-white rounded-tr-none" 
-                      : "bg-black border border-slate-200 text-slate-800 rounded-tl-none"
+                      : "bg-white border border-slate-200 text-slate-800 rounded-tl-none"
                   }`}>
                     {msg.sender === "ai" ? (
                       <div className="space-y-1.5">
@@ -374,7 +400,7 @@ export default function ParentChatBot() {
 
               {isQuerying && (
                 <div className="flex flex-col items-start animate-pulse">
-                  <div className="bg-black border border-slate-200 rounded-2xl rounded-tl-none p-3.5 flex items-center gap-2 max-w-[85%] shadow-xs">
+                  <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-none p-3.5 flex items-center gap-2 max-w-[85%] shadow-xs">
                     <span className="w-2 h-2 bg-brand-600 rounded-full animate-bounce delay-100"></span>
                     <span className="w-2 h-2 bg-brand-600 rounded-full animate-bounce delay-200"></span>
                     <span className="w-2 h-2 bg-brand-600 rounded-full animate-bounce delay-300"></span>
@@ -386,7 +412,7 @@ export default function ParentChatBot() {
             </div>
 
             {/* Educational Prompt Chips & Helper Menu */}
-            <div className="px-3 py-2 bg-black border-t border-slate-150 shrink-0 space-y-1.5">
+            <div className="px-3 py-2 bg-white border-t border-slate-100 shrink-0 space-y-1.5">
               <div className="flex items-center gap-1 text-[9px] text-brand-950 font-bold tracking-wider uppercase font-sans">
                 <HelpCircle className="w-3.5 h-3.5 text-brand-700" />
                 <span>Parent Case-Prep Quick Guide:</span>
@@ -406,7 +432,7 @@ export default function ParentChatBot() {
             </div>
 
             {/* Input Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-150 shrink-0">
+            <div className="p-3 bg-slate-50 border-t border-slate-100 shrink-0">
               <form 
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -420,7 +446,7 @@ export default function ParentChatBot() {
                   onChange={(e) => setInput(e.target.value)}
                   disabled={isQuerying}
                   placeholder={files.length > 0 ? "Ask about your files..." : "Ask a CYFSA / rights question..."}
-                  className="flex-1 bg-black border border-slate-200/90 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-75"
+                  className="flex-1 bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-75"
                 />
                 <button
                   type="submit"

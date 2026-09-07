@@ -1,0 +1,83 @@
+Mental Health Act, R.S.O. 1990, c. M.7
+Consolidation Period: From December 21, 2015 to the e-Laws currency date.
+Last amendment: 2015, c. 36, s. 1-16.
+Full text provided directly by Chris (copied from the official e-Laws statute page,
+https://www.ontario.ca/laws/statute/90m07), verified 2026-08-30.
+
+KEY DEFINITIONS
+
+"Board" means the Consent and Capacity Board continued under the Health Care Consent Act, 1996.
+
+"involuntary patient" means a person who is detained in a psychiatric facility under a
+certificate of involuntary admission, a certificate of renewal or a certificate of continuation.
+
+"rights adviser" means a person, or a member of a category of persons, qualified to perform
+the functions of a rights adviser under this Act and designated by a psychiatric facility, the
+Minister or by the regulations to perform those functions, but does not include a person
+involved in the direct clinical care of the person to whom the rights advice is to be given.
+
+PART II - HOSPITALIZATION
+
+Application for psychiatric assessment (s. 15) - "Form 1"
+A physician who examines a person may make an application for a psychiatric assessment where
+the person has threatened/attempted self-harm, behaved violently toward another, or shown a
+lack of competence to care for themselves, AND the physician is of the opinion the person is
+suffering from a mental disorder likely to result in serious bodily harm to themselves,
+serious bodily harm to another, or serious physical impairment of themselves. The application
+is authority, for seven days from signing, to take the person into custody and detain them for
+examination for up to 72 hours (s. 15(5)).
+
+Duty of attending physician / conditions for involuntary admission (s. 20) - "Form 3"
+After the 72-hour assessment period, the attending physician must either release the person,
+admit them as an informal/voluntary patient, or - only if specific conditions are met -
+complete a certificate of involuntary admission. Two separate sets of conditions exist:
+s. 20(1.1) covers a person with a documented history of a recurring mental disorder who has
+shown clinical improvement before but is now at risk again; s. 20(5) covers the more general
+case: the physician must be of the opinion BOTH that the patient's mental disorder is likely
+to result in serious bodily harm to themselves, serious bodily harm to another, or serious
+physical impairment, AND that the patient is not suitable for admission as an informal or
+voluntary patient.
+
+Detention periods (s. 20(4)) - the actual timeline
+- Certificate of involuntary admission: up to 2 weeks
+- First certificate of renewal: up to 1 additional month
+- Second certificate of renewal: up to 2 additional months
+- Third certificate of renewal: up to 3 additional months
+- Certificate of continuation (first or subsequent): up to 3 additional months each
+
+Notice and rights advice (s. 38) - the real, actionable right
+Whenever a certificate of involuntary admission, renewal, or continuation is completed, the
+attending physician MUST (1) promptly give the patient a written notice, and (2) promptly
+notify a rights adviser. The written notice must tell the patient: (a) the reasons for the
+detention; (b) that they are entitled to a hearing before the Board; (c) that they have the
+right to retain and instruct counsel without delay; and (d) where applicable, the right to
+request specific Board orders under s. 41.1. The rights adviser must then promptly meet with
+the patient in person and explain the significance of the certificate and their right to have
+it reviewed (s. 38(3)). This applies even before formal certification: s. 38.1 requires the
+same kind of written notice (reasons for detention + right to counsel) for a person merely
+subject to a s. 15 application or s. 32 order, before any certificate is even issued.
+
+Review by the Board (ss. 39, 41) - the real challenge mechanism
+An involuntary patient, or anyone on their behalf, can apply to the Consent and Capacity Board
+"to inquire into whether or not the prerequisites set out in this Act for admission or
+continuation as an involuntary patient are met" (s. 39(1)). This can be done every time a new
+certificate takes effect (s. 39(2)), and is automatically deemed to happen on the first
+certificate of continuation and every fourth one after that even if the patient does nothing
+(s. 39(4)) - a built-in safeguard against being forgotten in the system. At the hearing, the
+Board must review whether the legal prerequisites are STILL met at the time of the hearing,
+not just when the certificate was first signed (s. 41(1)), and must rescind the certificate if
+they are not (s. 41(3)).
+
+Appeal (s. 48)
+A party to a Board proceeding may appeal the Board's decision to the Superior Court of Justice
+on a question of law or fact or both.
+
+Community Treatment Orders (s. 33.1 onward)
+A separate, less restrictive mechanism: a physician may issue a community treatment order
+requiring someone to comply with a treatment plan while living in the community rather than
+being detained, but ONLY with the person's (or substitute decision-maker's) actual consent
+(s. 33.1(4)(f)) - and specifically requires that the person has first consulted with a rights
+adviser and been advised of their legal rights (s. 33.1(4)(e)), with narrow exceptions. The
+person also has an explicit right to retain and instruct counsel and to be informed of that
+right (s. 33.1(8)). A community treatment order can be challenged the same way - an
+application to the Board under s. 39.1.

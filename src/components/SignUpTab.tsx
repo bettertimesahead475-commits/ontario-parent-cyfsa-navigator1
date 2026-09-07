@@ -8,6 +8,8 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { useLocation } from "wouter";
 import { jsPDF } from "jspdf";
+import { safeReadJson } from "../utils/api";
+import { getUserKey } from "../utils/storage";
 
 interface UserProfile {
   fullName: string;
@@ -32,12 +34,12 @@ interface PassportNote {
 export default function SignUpTab() {
   const [, setLocation] = useLocation();
   const [currentTier, setCurrentTier] = useState<string>(() => {
-    return localStorage.getItem("OPA_MEMBERSHIP_TIER") || "Basic";
+    return localStorage.getItem(getUserKey("OPA_MEMBERSHIP_TIER") || "OPA_MEMBERSHIP_TIER") || "Basic";
   });
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem("OPA_USER_PROFILE");
+      const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn("Failed to load user profile:", e);
@@ -62,7 +64,7 @@ export default function SignUpTab() {
   // Quick Memo & Notes states
   const [notes, setNotes] = useState<PassportNote[]>(() => {
     try {
-      const saved = localStorage.getItem("OPA_PASSPORT_NOTES");
+      const saved = localStorage.getItem(getUserKey("OPA_PASSPORT_NOTES") || "OPA_PASSPORT_NOTES");
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       console.warn("Failed to load local notes:", e);
@@ -197,27 +199,42 @@ export default function SignUpTab() {
       const reader = new FileReader();
       reader.readAsDataURL(blob);
       reader.onloadend = async () => {
-        const base64data = reader.result as string;
-        const base64payload = base64data.split(",")[1];
+        // BUG FOUND IN AUDIT: everything inside this onloadend callback used to run with no
+        // try/catch of its own. The outer function's try/catch only wraps the synchronous setup
+        // (creating the reader, calling readAsDataURL) — onloadend fires later, asynchronously,
+        // by which point the outer try/catch has already finished and can no longer catch
+        // anything. If the fetch failed, or the response wasn't valid JSON (e.g. a 500 HTML
+        // error page), the resulting exception was unhandled and setIsTranscribing(false) never
+        // ran — leaving the UI stuck showing "transcribing" indefinitely after any network
+        // hiccup. Wrapped in its own try/catch/finally so a failure here is handled the same way
+        // failures in the outer try are, and the spinner always clears.
+        try {
+          const base64data = reader.result as string;
+          const base64payload = base64data.split(",")[1];
 
-        // Send to secure server transcription
-        const response = await fetch("/api/transcribe-audio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            audioData: base64payload,
-            mimeType: blob.type || "audio/webm"
-          })
-        });
+          // Send to secure server transcription
+          const response = await fetch("/api/transcribe-audio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audioData: base64payload,
+              mimeType: blob.type || "audio/webm"
+            })
+          });
 
-        const data = await response.json();
-        if (data.success) {
-          const textResult = data.text || liveTranscription || "Spoken memo recorded successfully.";
-          saveNewNote(textResult);
-        } else {
-          saveNewNote(liveTranscription || "Speech memo recorded but transcribing failed.");
+          const data = await safeReadJson(response);
+          if (data.success) {
+            const textResult = data.text || liveTranscription || "Spoken memo recorded successfully.";
+            saveNewNote(textResult);
+          } else {
+            saveNewNote(liveTranscription || "Speech memo recorded but transcribing failed.");
+          }
+        } catch (innerErr) {
+          console.error("Transcription error (inside onloadend):", innerErr);
+          saveNewNote(liveTranscription || "Spoken thought saved without online formatting.");
+        } finally {
+          setIsTranscribing(false);
         }
-        setIsTranscribing(false);
       };
     } catch (err) {
       console.error("Transcription error:", err);
@@ -302,14 +319,14 @@ export default function SignUpTab() {
 
     const updatedNotes = [newNote, ...notes];
     setNotes(updatedNotes);
-    localStorage.setItem("OPA_PASSPORT_NOTES", JSON.stringify(updatedNotes));
+    localStorage.setItem(getUserKey("OPA_PASSPORT_NOTES") || "OPA_PASSPORT_NOTES", JSON.stringify(updatedNotes));
   };
 
   const deleteNote = (id: string) => {
     if (confirm("Are you sure you want to permanently delete this memo note from your private local database?")) {
       const updated = notes.filter(n => n.id !== id);
       setNotes(updated);
-      localStorage.setItem("OPA_PASSPORT_NOTES", JSON.stringify(updated));
+      localStorage.setItem(getUserKey("OPA_PASSPORT_NOTES") || "OPA_PASSPORT_NOTES", JSON.stringify(updated));
     }
   };
 
@@ -326,7 +343,7 @@ export default function SignUpTab() {
       return n;
     });
     setNotes(updated);
-    localStorage.setItem("OPA_PASSPORT_NOTES", JSON.stringify(updated));
+    localStorage.setItem(getUserKey("OPA_PASSPORT_NOTES") || "OPA_PASSPORT_NOTES", JSON.stringify(updated));
     setEditingNoteId(null);
   };
 
@@ -383,11 +400,11 @@ export default function SignUpTab() {
         involvedAgency,
         passcode,
         memberSince: new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" }),
-        advocateId: `PSA-2026-${randomSuffix}`
+        advocateId: `PSA-${new Date().getFullYear()}-${randomSuffix}`
       };
 
       try {
-        localStorage.setItem("OPA_USER_PROFILE", JSON.stringify(newProfile));
+        localStorage.setItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE", JSON.stringify(newProfile));
         setProfile(newProfile);
         setRegistrationSuccess(true);
         // Custom event to notify headers and assistants
@@ -403,7 +420,7 @@ export default function SignUpTab() {
   const handleLogout = () => {
     if (confirm("Are you sure you want to log out of your Advocate Passport? Your stored worksheets will remain locally encrypted but locked until you re-authenticate.")) {
       try {
-      localStorage.removeItem("OPA_USER_PROFILE");
+      localStorage.removeItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
       setProfile(null);
       setRegistrationSuccess(false);
       // Reset form
@@ -421,9 +438,9 @@ export default function SignUpTab() {
     <div className="space-y-8 animate-fadeIn" id="signup-tab-container">
       
       {/* Header Segment */}
-      <div className="text-left space-y-2 border-b border-gray-150 pb-5">
+      <div className="text-left space-y-2 border-b border-gray-100 pb-5">
         <div className="flex items-center gap-2 text-brand-900 font-bold tracking-wider uppercase text-[10px] md:text-xs">
-          <Shield className="w-4 h-4 text-brand-650" />
+          <Shield className="w-4 h-4 text-brand-600" />
           <span>ParentShield Security Portal</span>
         </div>
         <h2 className="font-display font-bold text-gray-900 text-2xl md:text-3xl tracking-tight">
@@ -437,7 +454,7 @@ export default function SignUpTab() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* Left Side: Form or Active Passport Status */}
-        <div className="lg:col-span-7 bg-black border border-gray-200 rounded-2xl shadow-xs p-6 md:p-8 space-y-6">
+        <div className="lg:col-span-7 bg-white border border-gray-200 rounded-2xl shadow-xs p-6 md:p-8 space-y-6">
           
           <AnimatePresence mode="wait">
             {!profile ? (
@@ -479,7 +496,7 @@ export default function SignUpTab() {
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         placeholder="e.g. Jane Doe"
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
                       />
                     </div>
 
@@ -494,7 +511,7 @@ export default function SignUpTab() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="jane.doe@example.com"
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none transition"
                       />
                     </div>
                   </div>
@@ -509,7 +526,7 @@ export default function SignUpTab() {
                       <select
                         value={role}
                         onChange={(e) => setRole(e.target.value)}
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
                       >
                         {caseRoles.map((r, idx) => (
                           <option key={idx} value={r}>{r}</option>
@@ -525,7 +542,7 @@ export default function SignUpTab() {
                       <select
                         value={region}
                         onChange={(e) => setRegion(e.target.value)}
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
                       >
                         <option value="Greater Toronto Area (GTA)">Greater Toronto Area (GTA)</option>
                         <option value="Western Ontario (London, Windsor, etc.)">Western Ontario</option>
@@ -543,7 +560,7 @@ export default function SignUpTab() {
                     <select
                       value={involvedAgency}
                       onChange={(e) => setInvolvedAgency(e.target.value)}
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
+                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none cursor-pointer"
                     >
                       {ontarioAgencies.map((agency, idx) => (
                         <option key={idx} value={agency}>{agency}</option>
@@ -566,7 +583,7 @@ export default function SignUpTab() {
                         value={passcode}
                         onChange={(e) => setPasscode(e.target.value.replace(/[^0-9]/g, ""))}
                         placeholder="XXXX"
-                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-800 focus:bg-black focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none font-mono tracking-widest transition"
+                        className="w-full bg-slate-50/50 border border-slate-200 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none font-mono tracking-widest transition"
                       />
                       <button
                         type="button"
@@ -608,7 +625,7 @@ export default function SignUpTab() {
                 transition={{ duration: 0.2 }}
                 className="space-y-6"
               >
-                <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-150 p-4 rounded-xl text-emerald-950">
+                <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 p-4 rounded-xl text-emerald-950">
                   <CheckCircle className="w-6 h-6 text-emerald-600 shrink-0" />
                   <div>
                     <h4 className="font-display font-extrabold text-sm uppercase tracking-wide text-emerald-900">
@@ -740,7 +757,7 @@ export default function SignUpTab() {
 
                             {/* Live Interim Speech Preview */}
                             {isRecording && liveTranscription && (
-                              <div className="w-full bg-black border border-slate-200/80 p-3 rounded-lg text-slate-700 text-xs italic leading-relaxed text-center max-w-md shadow-3xs" id="live-transcription-preview">
+                              <div className="w-full bg-white border border-slate-200/80 p-3 rounded-lg text-slate-700 text-xs italic leading-relaxed text-center max-w-md shadow-3xs" id="live-transcription-preview">
                                 <span className="font-bold text-[10px] text-brand-900 not-italic uppercase tracking-wide block mb-1">Live Dictation Transcript Preview:</span>
                                 "{liveTranscription}"
                               </div>
@@ -766,7 +783,7 @@ export default function SignUpTab() {
                                 placeholder="Search memo content..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:bg-black outline-none w-full sm:w-48 transition"
+                                className="pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:bg-white outline-none w-full sm:w-48 transition"
                               />
                             </div>
                           )}
@@ -776,7 +793,7 @@ export default function SignUpTab() {
                         <div className="space-y-3.5">
                           {notes.length === 0 ? (
                             <div className="text-center py-8 px-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/30">
-                              <Mic className="w-8 h-8 text-slate-350 mx-auto mb-2" />
+                              <Mic className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                               <span className="font-display font-bold text-xs text-slate-700 uppercase tracking-wide block">No notes or memos recorded</span>
                               <p className="text-[11px] text-slate-400 max-w-xs mx-auto mt-1 leading-normal">
                                 Tap the record button above to capture statutory meeting thoughts, caseworker review memories, or home notes securely.
@@ -796,7 +813,7 @@ export default function SignUpTab() {
                               }
 
                               return filtered.map((note) => (
-                                <div key={note.id} className="bg-black border border-slate-200 hover:border-slate-300 rounded-xl p-4 shadow-3xs hover:shadow-2xs transition-all space-y-3">
+                                <div key={note.id} className="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-4 shadow-3xs hover:shadow-2xs transition-all space-y-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="space-y-0.5">
                                       <div className="flex items-center gap-2">
@@ -833,8 +850,10 @@ export default function SignUpTab() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          navigator.clipboard.writeText(note.text);
-                                          alert("Transcribed note content copied to clipboard!");
+                                          navigator.clipboard.writeText(note.text).then(
+                                            () => alert("Transcribed note content copied to clipboard!"),
+                                            () => alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access.")
+                                          );
                                         }}
                                         className="p-1 hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded transition cursor-pointer"
                                         title="Copy text content"
@@ -858,7 +877,7 @@ export default function SignUpTab() {
                                       <textarea
                                         value={editingNoteText}
                                         onChange={(e) => setEditingNoteText(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:bg-black outline-none resize-none h-24"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:bg-white outline-none resize-none h-24"
                                       />
                                       <div className="flex justify-end gap-2">
                                         <button
@@ -901,7 +920,7 @@ export default function SignUpTab() {
                     >
                       <h3 className="font-display font-bold text-slate-900 text-base">Your Profile Credentials:</h3>
                       
-                      <div className="grid grid-cols-2 gap-4 text-xs font-medium text-slate-700 bg-slate-50/50 p-4 rounded-xl border border-slate-150">
+                      <div className="grid grid-cols-2 gap-4 text-xs font-medium text-slate-700 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
                         <div className="space-y-1">
                           <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Full Name:</span>
                           <span className="text-slate-900 font-semibold">{profile.fullName}</span>
@@ -918,7 +937,7 @@ export default function SignUpTab() {
                           <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Ontario Region:</span>
                           <span className="text-slate-900 font-semibold">{profile.region}</span>
                         </div>
-                        <div className="space-y-1 col-span-2 border-t border-slate-150 pt-2.5 mt-1.5">
+                        <div className="space-y-1 col-span-2 border-t border-slate-100 pt-2.5 mt-1.5">
                           <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Involved CAS Agency:</span>
                           <span className="text-slate-950 font-bold block">{profile.involvedAgency}</span>
                         </div>
@@ -927,7 +946,7 @@ export default function SignUpTab() {
                       <div className="flex gap-3 pt-4">
                         <button
                           onClick={handleLogout}
-                          className="flex-1 bg-black border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-display font-extrabold uppercase tracking-wider text-[10.5px] py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          className="flex-1 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-display font-extrabold uppercase tracking-wider text-[10.5px] py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <LogOut className="w-3.5 h-3.5" />
                           <span>Lock & Log Out</span>
@@ -1017,7 +1036,7 @@ export default function SignUpTab() {
               </div>
               
               {/* Virtual clean aesthetic barcode bar */}
-              <div className="flex items-center gap-0.5 bg-black/10 p-1.5 rounded border border-white/5">
+              <div className="flex items-center gap-0.5 bg-white/10 p-1.5 rounded border border-white/5">
                 <div className="w-0.5 h-4 bg-slate-300"></div>
                 <div className="w-1 h-4 bg-slate-300"></div>
                 <div className="w-0.5 h-4 bg-slate-300"></div>

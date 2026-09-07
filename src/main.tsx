@@ -3,20 +3,13 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Firebase Connection Test
-import { doc, getDocFromServer } from 'firebase/firestore';
-import { db } from './firebase';
-
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
-    }
-  }
-}
-testConnection();
+// BUG FOUND IN AUDIT: this file used to run an unconditional Firestore read
+// (doc(db, 'test', 'connection')) on every single page load in production,
+// for every user, forever — clearly a one-off manual connectivity check from
+// development that got left wired into the real app. It consumed a real
+// Firestore read quota on every load, surfaced nothing to the user even on
+// failure (just a console.error), and served no actual purpose for real
+// traffic. Removed entirely.
 
 // --- Native Android API Proxy Ready ---
 // We now use apiFetch helper for clean safe routing in native container layouts
