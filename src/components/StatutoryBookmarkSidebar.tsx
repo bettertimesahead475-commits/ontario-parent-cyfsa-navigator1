@@ -40,17 +40,23 @@ const PRELOADED_ITEMS: LegalItem[] = [
   {
     id: "cyfsa-81",
     title: "Apprehension Without Warrant",
-    citation: "CYFSA s. 81",
+    citation: "CYFSA s. 81(7)",
     category: "Statutory Section",
-    content: "A children's aid worker or peace officer may apprehend a child without a warrant ONLY if there are reasonable and probable grounds to believe that there is an immediate risk of serious harm to the child, and that a warrant would take too long to obtain. Vague claims fail this high statutory threshold.",
+    // BUG FIX (flagged in audit): "immediate risk of serious harm" is not the statutory wording —
+    // the real s.81(7) threshold is "substantial risk to the child's health or safety," and it only
+    // applies to children under 16 (this power isn't available at all for a 16/17 year old).
+    content: "A children's aid worker or peace officer may bring a child to a place of safety without a warrant only if there are reasonable and probable grounds to believe the child is in need of protection, is younger than 16, and there would be a substantial risk to the child's health or safety during the time it would take to get a warrant or hearing. Not available for 16/17 year olds under this subsection.",
     isPreloaded: true
   },
   {
-    id: "cyfsa-94",
+    id: "cyfsa-88",
     title: "The Strict 5-Day Review Rule",
-    citation: "CYFSA s. 94",
+    // BUG FIX (flagged in audit): this was mislabeled "CYFSA s. 94" — s. 94 is the 30-day
+    // adjournment-limit/temporary-care-order section. The real five-day hearing deadline after a
+    // warrantless apprehension is s. 88, verified against the consolidated CYFSA text.
+    citation: "CYFSA s. 88",
     category: "Statutory Section",
-    content: "Immediately upon emergency removal, the child welfare agency must bring the matter before a judge within five (5) court days to justify why the child was taken and seek a temporary order. Failure to do so constitutes a major statutory procedural defect.",
+    content: "As soon as practicable, but in any event within five days after a child is brought to a place of safety, the matter must be brought before a court for a hearing, the child returned, or a temporary care agreement made. Note: the Act says \"five days,\" not \"five court days\" — confirm with counsel exactly how the days are counted in your registry.",
     isPreloaded: true
   },
   {
@@ -70,11 +76,15 @@ const PRELOADED_ITEMS: LegalItem[] = [
     isPreloaded: true
   },
   {
-    id: "cyfsa-70",
+    id: "cyfsa-72",
     title: "Mandatory Indigenous Band Consultation",
-    citation: "CYFSA s. 70",
+    // BUG FIX (flagged in audit): this was mislabeled "CYFSA s. 70" — s. 70 is actually about a
+    // band or Indigenous community designating its own child and family service authority, not a
+    // consultation duty. The real ongoing consultation-duty section is s. 72, verified against the
+    // consolidated CYFSA text.
+    citation: "CYFSA s. 72",
     category: "Statutory Section",
-    content: "The welfare agency is statutorily mandated to exhaustively explore Customary Care and consult with the child's designated Band, First Nations, Inuit, or Métis community before taking any intervention steps.",
+    content: "A society, person, or entity providing services or exercising powers under the CYFSA with respect to First Nations, Inuit, or Métis children shall regularly consult with their bands and communities about the services or powers exercised and matters affecting the children — including bringing a child to a place of safety, residential placement, and family support services.",
     isPreloaded: true
   },
   {

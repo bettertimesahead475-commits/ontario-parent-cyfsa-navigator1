@@ -28,7 +28,12 @@ export default function VoiceAssistantTab() {
     },
     {
       title: "1. The Emergency Removal Summary",
-      text: "Statutory summary on removals. Under Section 81 of the Child, Youth and Family Services Act, CAS can apprehend a child without a warrant only in cases of imminent and immediate risk of serious physical harm. By Section 94, they must schedule a judicial review before a family court judge within five court days. If they fail to meet this timeline, they commit a critical procedural violation. Parents possess the right to seek kinship placement alternatives and request immediate Legal Aid assistance."
+      // BUG FIX (flagged in audit): this used to say the worker's threshold is "imminent and
+      // immediate risk of serious physical harm" and that "Section 94" sets the five-day judicial
+      // review deadline. Neither is the real statutory wording — section 81(7)'s actual threshold
+      // is "substantial risk to the child's health or safety," and the real five-day hearing
+      // deadline is section 88, not 94 (section 94 is the 30-day adjournment-limit section).
+      text: "Statutory summary on removals. Under Section 81 of the Child, Youth and Family Services Act, a worker can bring a child to a place of safety without a warrant only where there are reasonable grounds to believe the child is under 16, is in need of protection, and there would be a substantial risk to the child's health or safety during the time it would take to get a warrant or hearing. By Section 88, the matter must be brought before a family court judge for a hearing within five days. If they fail to meet this timeline, ask your lawyer whether this represents a procedural defect. Parents possess the right to seek kinship placement alternatives and request immediate Legal Aid assistance."
     },
     {
       title: "2. Family Court Rule 17 Briefs",

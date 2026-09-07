@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useLocation } from "wouter";
 import { jsPDF } from "jspdf";
 import { safeReadJson } from "../utils/api";
+import { getUserKey } from "../utils/storage";
 
 interface UserProfile {
   fullName: string;
@@ -33,12 +34,12 @@ interface PassportNote {
 export default function SignUpTab() {
   const [, setLocation] = useLocation();
   const [currentTier, setCurrentTier] = useState<string>(() => {
-    return localStorage.getItem("OPA_MEMBERSHIP_TIER") || "Basic";
+    return localStorage.getItem(getUserKey("OPA_MEMBERSHIP_TIER") || "OPA_MEMBERSHIP_TIER") || "Basic";
   });
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem("OPA_USER_PROFILE");
+      const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn("Failed to load user profile:", e);
@@ -63,7 +64,7 @@ export default function SignUpTab() {
   // Quick Memo & Notes states
   const [notes, setNotes] = useState<PassportNote[]>(() => {
     try {
-      const saved = localStorage.getItem("OPA_PASSPORT_NOTES");
+      const saved = localStorage.getItem(getUserKey("OPA_PASSPORT_NOTES") || "OPA_PASSPORT_NOTES");
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       console.warn("Failed to load local notes:", e);
@@ -318,14 +319,14 @@ export default function SignUpTab() {
 
     const updatedNotes = [newNote, ...notes];
     setNotes(updatedNotes);
-    localStorage.setItem("OPA_PASSPORT_NOTES", JSON.stringify(updatedNotes));
+    localStorage.setItem(getUserKey("OPA_PASSPORT_NOTES") || "OPA_PASSPORT_NOTES", JSON.stringify(updatedNotes));
   };
 
   const deleteNote = (id: string) => {
     if (confirm("Are you sure you want to permanently delete this memo note from your private local database?")) {
       const updated = notes.filter(n => n.id !== id);
       setNotes(updated);
-      localStorage.setItem("OPA_PASSPORT_NOTES", JSON.stringify(updated));
+      localStorage.setItem(getUserKey("OPA_PASSPORT_NOTES") || "OPA_PASSPORT_NOTES", JSON.stringify(updated));
     }
   };
 
@@ -342,7 +343,7 @@ export default function SignUpTab() {
       return n;
     });
     setNotes(updated);
-    localStorage.setItem("OPA_PASSPORT_NOTES", JSON.stringify(updated));
+    localStorage.setItem(getUserKey("OPA_PASSPORT_NOTES") || "OPA_PASSPORT_NOTES", JSON.stringify(updated));
     setEditingNoteId(null);
   };
 
@@ -403,7 +404,7 @@ export default function SignUpTab() {
       };
 
       try {
-        localStorage.setItem("OPA_USER_PROFILE", JSON.stringify(newProfile));
+        localStorage.setItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE", JSON.stringify(newProfile));
         setProfile(newProfile);
         setRegistrationSuccess(true);
         // Custom event to notify headers and assistants
@@ -419,7 +420,7 @@ export default function SignUpTab() {
   const handleLogout = () => {
     if (confirm("Are you sure you want to log out of your Advocate Passport? Your stored worksheets will remain locally encrypted but locked until you re-authenticate.")) {
       try {
-      localStorage.removeItem("OPA_USER_PROFILE");
+      localStorage.removeItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
       setProfile(null);
       setRegistrationSuccess(false);
       // Reset form

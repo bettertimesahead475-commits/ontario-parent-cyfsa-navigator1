@@ -7,9 +7,14 @@ import React, { useState, useEffect } from "react";
 import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener, useAppReset } from "./hooks/useAppReset";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Import Modular Subcomponents direct statically for ultra-fast instantaneous view switching with no skeleton flickers
 import CYFSAGuideTab from "./components/CYFSAGuideTab";
+import CharterRightsTab from "./components/CharterRightsTab";
+import InvestigationTab from "./components/InvestigationTab";
+import DefenseStrategiesTab from "./components/DefenseStrategiesTab";
 import FamilyCourtTab from "./components/FamilyCourtTab";
 import ChildDevelopmentTab from "./components/ChildDevelopmentTab";
 import DocumentAnalyzerTab from "./components/DocumentAnalyzerTab";
@@ -23,6 +28,9 @@ import FloatingTTS from "./components/FloatingTTS";
 import LegalTerminologyDrawer from "./components/LegalTerminologyDrawer";
 import ConnectorSearchBot from "./components/ConnectorSearchBot";
 import PricingTab from "./components/PricingTab";
+import RequireAuth from "./components/RequireAuth";
+import MigrationNotice from "./components/MigrationNotice";
+import { getUserKey } from "./utils/storage";
 
 // Core icons represent core section identity
 import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
@@ -34,7 +42,7 @@ export default function App() {
 
   const [userProfile, setUserProfile] = useState<any>(() => {
     try {
-      const saved = localStorage.getItem("OPA_USER_PROFILE");
+      const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn("Failed to load user profile in header:", e);
@@ -45,7 +53,7 @@ export default function App() {
   useEffect(() => {
     const handleProfileUpdate = () => {
       try {
-        const saved = localStorage.getItem("OPA_USER_PROFILE");
+        const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
         setUserProfile(saved ? JSON.parse(saved) : null);
       } catch (e) {
         console.warn(e);
@@ -62,7 +70,7 @@ export default function App() {
 
   const [currentTier, setCurrentTier] = useState<"Basic" | "Pro" | "Premium">(() => {
     try {
-      const stored = localStorage.getItem("ps_session_tier");
+      const stored = localStorage.getItem(getUserKey("ps_session_tier") || "ps_session_tier");
       if (stored === "Pro" || stored === "Premium") return stored;
     } catch (e) {
       console.warn("Failed to read stored tier:", e);
@@ -84,12 +92,16 @@ export default function App() {
   const navItems = [
     { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
     { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
+    { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
     { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
+    { name: "Investigation Process", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
     { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
     { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
+    { name: "Defense Strategies", path: "/defense-strategies", icon: <Shield className="w-4 h-4" /> },
+    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
     { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
     { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
-    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
+    { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
     { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
   ];
 
@@ -104,8 +116,8 @@ export default function App() {
             {/* Left Brand Area */}
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
-                <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-brand-600 fill-brand-50" />
+                <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
+                  <img src="/logo.png" alt="ParentShield logo" className="w-full h-full object-cover" />
                 </div>
               </div>
               <div className="text-left">
@@ -215,6 +227,8 @@ export default function App() {
         )}
       </header>
 
+      <MigrationNotice />
+
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
       <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -251,6 +265,18 @@ export default function App() {
             <CYFSAGuideTab />
           </Route>
 
+          <Route path="/charter-rights">
+            <CharterRightsTab />
+          </Route>
+
+          <Route path="/investigation">
+            <InvestigationTab />
+          </Route>
+
+          <Route path="/defense-strategies">
+            <DefenseStrategiesTab />
+          </Route>
+
           <Route path="/pricing">
             <PricingTab currentTier={currentTier} onChangeTier={setCurrentTier} />
           </Route>
@@ -264,11 +290,15 @@ export default function App() {
           </Route>
 
           <Route path="/document-analyzer">
-            <DocumentAnalyzerTab />
+            <RequireAuth>
+              <DocumentAnalyzerTab />
+            </RequireAuth>
           </Route>
 
           <Route path="/templates">
-            <TemplatesTab />
+            <RequireAuth>
+              <TemplatesTab />
+            </RequireAuth>
           </Route>
 
           <Route path="/saved-documents">
@@ -284,7 +314,9 @@ export default function App() {
           </Route>
 
           <Route path="/signup">
-            <SignUpTab />
+            <RequireAuth>
+              <SignUpTab />
+            </RequireAuth>
           </Route>
 
           {/* Fallback route */}
@@ -311,6 +343,14 @@ export default function App() {
                   ? "Save your current court workbook draft (Affidavit, Factual Chronology, Interaction Diary, or Rebuttals) as a formal PDF."
                   : location === "/document-analyzer"
                   ? "Save your current Multi-File RAG Chat consultation transcript or active Document Verification Report as a structured PDF."
+                  : location === "/charter-rights"
+                  ? "Export the Charter rights breakdown and emergency contacts as a formatted PDF."
+                  : location === "/investigation"
+                  ? "Export the investigation timeline and any watchpoints you've flagged as a formatted PDF."
+                  : location === "/defense-strategies"
+                  ? "Export the order-hierarchy and lawyer-discussion points as a formatted PDF."
+                  : ["/rights", "/cyfsa-procedure", "/five-day-rule", "/45-day-roadmap"].includes(location)
+                  ? "Export this step of the guided journey as a formatted PDF."
                   : "Save a clean, formatted educational draft copy of the active ParentShield views."}
               </p>
             </div>
@@ -341,6 +381,42 @@ export default function App() {
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Export Chat or Analysis Report</span>
+                </button>
+              ) : location === "/charter-rights" ? (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "charter-rights" } }))}
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="footer-print-charter-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Charter Rights guide</span>
+                </button>
+              ) : location === "/investigation" ? (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "investigation" } }))}
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="footer-print-investigation-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print investigation guide</span>
+                </button>
+              ) : location === "/defense-strategies" ? (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "defense-strategies" } }))}
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="footer-print-defense-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print defense strategies guide</span>
+                </button>
+              ) : ["/rights", "/cyfsa-procedure", "/five-day-rule", "/45-day-roadmap"].includes(location) ? (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("trigger-print-pdf", { detail: { type: "journey" } }))}
+                  className="w-full sm:w-auto px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  id="footer-print-journey-btn"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print this step as a PDF</span>
                 </button>
               ) : (
                 <button
@@ -400,6 +476,8 @@ export default function App() {
         onClose={() => setTerminologyOpen(false)} 
       />
 
+      <Analytics />
+      <SpeedInsights />
     </div>
   );
 }

@@ -11,6 +11,8 @@ import { apiFetch, safeReadJson } from "../utils/api";
 import { initAuth, googleSignIn, logout } from "../utils/firebase";
 import { fetchDriveFiles, fetchDriveFileContent, fetchRecentEmails } from "../utils/workspace";
 import { useLocation } from "wouter";
+import RedactionToggle from "./RedactionToggle";
+import { useRedaction } from "../utils/redaction";
 import { 
   Upload, 
   FileText, 
@@ -50,6 +52,7 @@ import {
 } from "lucide-react";
 import { db, auth } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
+import { getUserKey } from "../utils/storage";
 
 // Escapes a value for safe interpolation into the raw HTML strings the print/export
 // views build (both as element text and inside HTML attributes like `class="..."`).
@@ -174,13 +177,19 @@ const GLOSSARY_TERMS = [
 export default function DocumentAnalyzerTab() {
   const { resetAll } = useAppReset();
   const [, setLocation] = useLocation();
+  
+  // Redaction support
+  const { enabled: redactionEnabled, toggle: toggleRedaction, redactDocumentText } = useRedaction();
+  const [originalDocumentText, setOriginalDocumentText] = useState<string>("");
+  const [knownNamesToRedact, setKnownNamesToRedact] = useState<string[]>([]);
+  
   // Save status indicator
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   // Initialize and load saved progress from localStorage
   const parsedProg = (() => {
     try {
-      const saved = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
+      const saved = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
       return saved ? JSON.parse(saved) : null;
     } catch (e) {
       console.error("Failed to parse progress from localStorage", e);
@@ -467,7 +476,7 @@ export default function DocumentAnalyzerTab() {
   const [deepScanError, setDeepScanError] = useState<string | null>(null);
   const [deepScanReports, setDeepScanReports] = useState<{ [fileId: string]: any }>(() => {
     try {
-      const saved = localStorage.getItem("OPA_DEEPSCAN_REPORTS");
+      const saved = localStorage.getItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS");
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -507,7 +516,7 @@ export default function DocumentAnalyzerTab() {
 
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
-      localStorage.setItem("OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
+      localStorage.setItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
     } catch (err: any) {
       console.error("[deep scan] request failed:", err);
       setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
@@ -560,21 +569,36 @@ export default function DocumentAnalyzerTab() {
   const STATUTORY_TEXT_DB: Record<string, { title: string; subtitle: string; exactText: string; explanation: string }> = {
     "CYFSA 2017, Section 94(1)": {
       title: "CYFSA 2017, Section 94(1)",
-      subtitle: "5 Court Days Limit for Warrantless Removal Hearings",
-      exactText: "94 (1) If a child is apprehended under section 81 or 82 and is not returned to a parent or other person under section 83, the society shall, as soon as practicable and in any event within five court days after the apprehension, bring the matter before the court...",
-      explanation: "CAS carries no legal authority to withhold children without a formal judicial hearing past the 5 court-day limit. Every day of retention past this limit acts as an illegal detention of the minor."
+      subtitle: "30-Day Adjournment Limit",
+      // BUG FIX (flagged in audit): this entry previously fabricated a "5 court days" removal-hearing
+      // rule and attributed invented statutory text to s.94(1). The real five-day hearing deadline
+      // after a warrantless apprehension is s. 88, not s. 94 at all — s.94(1) actually caps how long
+      // a hearing can be adjourned. Text below is the real s.94(1), verified against the consolidated
+      // CYFSA text saved in legal-reference/.
+      exactText: "94 (1) The court shall not adjourn a hearing for more than 30 days, (a) unless all the parties present and the person who will be caring for the child during the adjournment consent; or (b) if the court is aware that a party who is not present at the hearing objects to the longer adjournment.",
+      explanation: "This governs how long a hearing can be adjourned once it's already before the court — it is not the deadline for first bringing an apprehended child before a court (that's s. 88, see the five-day rule entry). Ask your lawyer whether any adjournment past 30 days had the required consent or lack of objection on the record."
     },
     "CYFSA 2017, Section 94(2)": {
       title: "CYFSA 2017, Section 94(2)",
-      subtitle: "Interim Care Standard - CAS Carries the Burden of Proof",
-      exactText: "94 (2) At a hearing under this section, the court shall make an interim order regarding the child's care, and the society carries the burden of establishing that there is no less disruptive way to protect the child.",
-      explanation: "Shifting the burden onto parents is illegal in Ontario. CAS must prove why placement inside the parental home represents an active, unmanageable danger that cannot be mitigated by alternative support plans."
+      subtitle: "Temporary Care Order During an Adjournment",
+      exactText: "94 (2) Where a hearing is adjourned, the court shall make a temporary order for care and custody providing that the child (a) remain in or be returned to the person who had charge of the child immediately before intervention; (b) remain in or be returned to that person subject to the society's supervision; (c) be placed with another person, with that person's consent, subject to the society's supervision; or (d) remain or be placed in the care and custody of the society, but not in a place of temporary detention or custody.",
+      explanation: "The court must pick one of these four placement options whenever it adjourns a hearing — it is not, by itself, a burden-of-proof rule. Under s. 94(4), the court can't choose option (c) or (d) unless satisfied there's a risk the child would suffer harm that can't be adequately addressed by option (a) or (b)."
     },
     "CYFSA 2017, Section 81": {
       title: "CYFSA 2017, Section 81",
-      subtitle: "Warrantless Apprehension Standards, 'Imminent Risk of Serious Harm'",
-      exactText: "81 (1) A child youth and family services worker or peace officer may take a child into temporary custody without a warrant if there are reasonable and probable grounds to believe that there is an imminent risk of serious harm to the child...",
-      explanation: "Vague, subjective casework impressions of 'mess' or 'non-cooperation' do not fulfill the Section 81 safety test. Imminent physical, sexual, or major medical injury is required to act without a warrant."
+      subtitle: "Warrantless Apprehension Standard: 'Substantial Risk to Health or Safety'",
+      // BUG FIX (flagged in audit): this previously used "imminent risk of serious harm," which is not
+      // the statutory wording and was already corrected elsewhere in the app (data.ts, the analyze
+      // prompt). The real s.81(7) threshold is "substantial risk to the child's health or safety," and
+      // it only applies to children under 16 — 16/17 year olds are not covered by this subsection.
+      exactText: "81 (7) A child protection worker who believes on reasonable and probable grounds that (a) a child is in need of protection; (b) the child is younger than 16; and (c) there would be a substantial risk to the child's health or safety during the time necessary to bring the matter on for a hearing or obtain a warrant, may without a warrant bring the child to a place of safety.",
+      explanation: "This warrantless power only applies to children under 16 and requires a substantial risk to health or safety during the time it would take to get a warrant or hearing — not a general 'imminent danger' standard, and not available at all for a 16 or 17 year old under this subsection. Compare against s. 81(2), the warrant-based power, which has a different threshold."
+    },
+    "CYFSA, S.O. 2017, c. 14, s. 88": {
+      title: "CYFSA 2017, Section 88",
+      subtitle: "Time in Place of Safety Limited (The Five-Day Hearing Rule)",
+      exactText: "As soon as practicable, but in any event within five days after a child is brought to a place of safety under section 81, the matter shall be brought before a court for a hearing under subsection 90(1), unless the child is returned or a temporary care agreement is made instead.",
+      explanation: "This is the real five-day rule — not section 94, which covers adjournment limits and temporary-care placement considerations instead. If the matter isn't brought before a court within five days of a warrantless apprehension, ask your lawyer whether this deadline was met."
     },
     "Ontario Evidence Act & Family Law Rules": {
       title: "Ontario Evidence Act & Family Law Rules",
@@ -600,29 +624,28 @@ export default function DocumentAnalyzerTab() {
       exactText: "Section 2 (2) 5: Service providers must actively account for First Nations, Inuit, and Métis cultures and prioritize direct kin custom-care arrangements prior to stranger placements.",
       explanation: "Setting foster care with strangers before consulting the Métis Nation or indigenous family council violates major statutory duty directives of Ontario child protection acts."
     },
-    "CYFSA, S.O. 2017, c. 14, s. 94": {
-      title: "CYFSA 2017, Section 94",
-      subtitle: "The 5-Day Holding Limitation for Emergency Custody",
-      exactText: "CAS must present the child before a judge within 5 court-stamped days of warrantless removal from control.",
-      explanation: "If they schedule or file after 5 days, the retaining of the child faces severe procedural nullity. Parents must instruct their lawyer to file for emergency return."
-    },
     "CYFSA, S.O. 2017, c.14, s.74": {
       title: "CYFSA 2017, Section 74",
       subtitle: "Comprehensive Custody Intervention Thresholds",
       exactText: "A child is in need of protection ONLY if there forms a real, severe likelihood of physical, emotional, or medical injury under standard section 74 sub-sections.",
       explanation: "The court holds zero authority to interfere with family autonomy in the absence of severe physical or medical hazards. Minor housekeeping concerns or low-income are insufficient."
-    },
-    "CYFSA, S.O. 2017, c.14, s.94(1)": {
-      title: "CYFSA 2017, Section 94(1)",
-      subtitle: "Primary Five-Day Limit For Warrantless Removal Review",
-      exactText: "The society shall, as soon as practicable and in any event within five court days after apprehension, initiate an intervention review in court.",
-      explanation: "A cornerstone of parental liberty. Ensure the exact schedule is reviewed with court registers to confirm filing times."
     }
+    // BUG FIX (flagged in audit): a duplicate "CYFSA, S.O. 2017, c.14, s.94(1)" entry used to sit
+    // here with fabricated statute text (another copy of the wrong "5 court days" claim, see the
+    // real s. 94(1)/s. 88 entries above). It was never actually reachable through
+    // getStatuteDetails() below — the lookup keys don't match this format — so it was dead code
+    // carrying wrong legal content for no functional reason. Removed rather than fixed in place.
   };
 
   const getStatuteDetails = (citation: string) => {
     const normalized = citation.toLowerCase();
     
+    // BUG FIX (flagged in audit): "88" must be checked before "8" prefixes on "81" collide, and
+    // before the generic "94" branch below routed every plain "s. 94" mention to a fabricated
+    // 5-day-rule entry — s. 88 is the real five-day rule, s. 94 is the adjournment-limit section.
+    if (normalized.includes("88") || normalized.includes("five-day") || normalized.includes("five day")) {
+      return STATUTORY_TEXT_DB["CYFSA, S.O. 2017, c. 14, s. 88"];
+    }
     if (normalized.includes("94(1)") || normalized.includes("94 (1)")) {
       return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(1)"];
     }
@@ -630,7 +653,7 @@ export default function DocumentAnalyzerTab() {
       return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(2)"];
     }
     if (normalized.includes("94")) {
-      return STATUTORY_TEXT_DB["CYFSA, S.O. 2017, c. 14, s. 94"] || STATUTORY_TEXT_DB["CYFSA 2017, Section 94(1)"];
+      return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(1)"];
     }
     if (normalized.includes("81") || normalized.includes("apprehension")) {
       return STATUTORY_TEXT_DB["CYFSA 2017, Section 81"];
@@ -721,7 +744,7 @@ export default function DocumentAnalyzerTab() {
         activeTab,
         savedBriefs
       };
-      localStorage.setItem("OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
+      localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setSaveStatus(`Saved at ${timeStr}`);
       setTimeout(() => setSaveStatus(null), 3000);
@@ -964,7 +987,7 @@ export default function DocumentAnalyzerTab() {
         activeTab,
         savedBriefs
       };
-      localStorage.setItem("OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
+      localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
       // Dispatch a custom event to notify the floating parent chatbot
       window.dispatchEvent(new CustomEvent("opa-doc-analyzer-progress-updated"));
     } catch (e) {
@@ -1213,7 +1236,7 @@ export default function DocumentAnalyzerTab() {
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
+    const saved = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
     if (!saved) {
       setOrganizedFiles([]);
       setSelectedFileId(null);
@@ -1264,7 +1287,7 @@ export default function DocumentAnalyzerTab() {
       }));
 
       let currentTemplatesProgress: any = {};
-      const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+      const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
       if (saved) currentTemplatesProgress = JSON.parse(saved);
 
       // Keep any hand-added/hand-edited rows (never tagged autoGenerated); replace only the
@@ -1278,7 +1301,7 @@ export default function DocumentAnalyzerTab() {
         caseTimelineOpenItems: Array.isArray(data.openItems) ? data.openItems : [],
       };
 
-      localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
     } catch (e) {
       console.error("Auto-build case timeline failed (non-blocking)", e);
     }
@@ -1288,7 +1311,7 @@ export default function DocumentAnalyzerTab() {
   const autoUploadToTemplates = (report: AnalysisReport, documentName: string, sourceId: string) => {
     try {
       let currentTemplatesProgress: any = {};
-      const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+      const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
       if (saved) {
         currentTemplatesProgress = JSON.parse(saved);
       }
@@ -1395,7 +1418,7 @@ export default function DocumentAnalyzerTab() {
         importedAnalysisDocuments: [...importedDocuments, sourceId]
       };
 
-      localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
     } catch (e) {
       console.error("Auto-upload to templates failed", e);
     }
@@ -1414,7 +1437,7 @@ export default function DocumentAnalyzerTab() {
       
       let currentTemplatesProgress: any = {};
       try {
-        const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+        const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
         if (saved) {
           currentTemplatesProgress = JSON.parse(saved);
         }
@@ -1461,7 +1484,7 @@ export default function DocumentAnalyzerTab() {
       // fabricated or borrowed name) so the parent is prompted to fill in their own name.
       let currentUserName = "";
       try {
-        const savedProfile = localStorage.getItem("OPA_USER_PROFILE");
+        const savedProfile = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
         if (savedProfile) currentUserName = JSON.parse(savedProfile)?.fullName || "";
       } catch (e) {
         console.warn("Failed to read user profile for form handover:", e);
@@ -1558,8 +1581,8 @@ export default function DocumentAnalyzerTab() {
         activeBuilderTab: "answer-33b"
       };
 
-      localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
-      localStorage.setItem("OPA_HANDOVER_ALERT", documentName);
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(updatedTemplatesState));
+      localStorage.setItem(getUserKey("OPA_HANDOVER_ALERT") || "OPA_HANDOVER_ALERT", documentName);
 
       setLocation("/templates");
     } catch (error) {
@@ -2402,8 +2425,9 @@ export default function DocumentAnalyzerTab() {
           <p style="font-size:12px; color:#475569; margin-bottom:12px;">The statutory references scanned by the consultation pipeline resolve directly to real, physically accessible Ontario Government e-Laws pages:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             <li><strong>CYFSA Section 74 (Child Protection Thresholds):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK123" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK123</a></li>
-            <li><strong>CYFSA Section 94 (The 5-Day Service Rule):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
-            <li><strong>CYFSA Section 81 (Apprehension Norms):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK136" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK136</a></li>
+            <li><strong>CYFSA Section 94 (30-Day Adjournment Limit / Temporary Care Order):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
+            <li><strong>CYFSA Section 88 (The Five-Day Hearing Rule):</strong> <a href="https://www.ontario.ca/laws/statute/17c14" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14</a></li>
+            <li><strong>CYFSA Section 81 (Apprehension & Substantial Risk Threshold):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK136" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK136</a></li>
             <li><strong>Children's Law Reform Act Parentage Presumptions:</strong> <a href="https://www.ontario.ca/laws/statute/90c12#BK9" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/90c12#BK9</a></li>
           </ul>
         </div>
@@ -3020,6 +3044,19 @@ export default function DocumentAnalyzerTab() {
                               onClick={() => {
                                 setSelectedFileId(item.id);
                                 setSelectedReport(item.analysisReport || null);
+                                // Capture original document text for redaction
+                                if (item.content && typeof item.content === 'string') {
+                                  // If it's base64 (PDF/image), decode first if possible; otherwise use as-is
+                                  try {
+                                    const decoded = atob(item.content);
+                                    setOriginalDocumentText(decoded.substring(0, 5000)); // First 5000 chars
+                                  } catch {
+                                    // If not valid base64, treat as plain text
+                                    setOriginalDocumentText(item.content.substring(0, 5000));
+                                  }
+                                } else {
+                                  setOriginalDocumentText("");
+                                }
                               }}
                               className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all flex items-center justify-between gap-1.5 group select-none ${
                                 fileActive 
@@ -3661,6 +3698,32 @@ export default function DocumentAnalyzerTab() {
                         </div>
                       </div>
 
+                      {/* Redaction Toggle & Preview */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-slate-600">
+                            <span className="font-semibold">Preparing to share?</span> Hide names, dates, and file numbers before taking a screenshot or printing.
+                          </div>
+                          <RedactionToggle enabled={redactionEnabled} onToggle={toggleRedaction} />
+                        </div>
+                        
+                        {/* Document Preview with Redaction Applied */}
+                        {originalDocumentText && (
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                            <p className="text-[10px] font-mono font-bold uppercase text-slate-600 mb-2">
+                              {redactionEnabled ? "📄 Redacted Document Preview" : "📄 Document Preview"}
+                            </p>
+                            <div className="text-xs leading-relaxed text-slate-700 bg-white p-3 rounded border border-slate-200 font-mono max-h-40 overflow-auto whitespace-pre-wrap break-words">
+                              {redactionEnabled 
+                                ? redactDocumentText(originalDocumentText, knownNamesToRedact)
+                                : originalDocumentText
+                              }
+                              {originalDocumentText.length >= 5000 && <p className="text-slate-500 mt-2">... (document continues)</p>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Educational disclaimer */}
                       <div className="p-3 ml-0 bg-[#fffbeb] border border-[#fef3c7]/80 rounded-xl text-xs text-amber-900 flex gap-2">
                         <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
@@ -3824,7 +3887,7 @@ export default function DocumentAnalyzerTab() {
                                   activeTab,
                                   savedBriefs
                                 };
-                                localStorage.setItem("OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
+                                localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
                                 setLocation("/lawyers");
                                 alert("Success: Your Detailed Case Brief has been synchronized with the Lawyer Directory. Select a lawyer in the directory to see your pre-filled intake brief!");
                               }}
@@ -4354,6 +4417,17 @@ export default function DocumentAnalyzerTab() {
                                   onClick={() => {
                                     setSelectedFileId(file.id);
                                     setSelectedReport(file.analysisReport || null);
+                                    // Capture original document text for redaction
+                                    if (file.content && typeof file.content === 'string') {
+                                      try {
+                                        const decoded = atob(file.content);
+                                        setOriginalDocumentText(decoded.substring(0, 5000));
+                                      } catch {
+                                        setOriginalDocumentText(file.content.substring(0, 5000));
+                                      }
+                                    } else {
+                                      setOriginalDocumentText("");
+                                    }
                                   }}
                                   className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-xs font-semibold cursor-pointer transition"
                                 >

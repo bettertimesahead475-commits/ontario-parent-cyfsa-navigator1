@@ -12,6 +12,9 @@ import { apiFetch, safeReadJson } from "../utils/api";
 import DictateButton from "./DictateButton";
 import { db, auth } from "../firebase";
 import { doc, setDoc } from "firebase/firestore";
+import { getUserKey } from "../utils/storage";
+import { useRedaction } from "../utils/redaction";
+import RedactionToggle from "./RedactionToggle";
 
 const EMPTY_FORM33B: Form33BAnswer = {
   courtRegistryName: "Ontario Court of Justice",
@@ -52,6 +55,7 @@ const EMPTY_PLANOFCARE: PlanOfCare = {
 
 export default function TemplatesTab() {
   const { resetAll } = useAppReset();
+  const { enabled: redactionEnabled, toggle: toggleRedaction, redact } = useRedaction();
   // Save status indicator
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
@@ -66,7 +70,7 @@ export default function TemplatesTab() {
   // Parse saved progressive states
   const parsedProg = (() => {
     try {
-      const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+      const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error("Failed to parse templates progressive draft from localStorage:", e);
@@ -174,11 +178,11 @@ export default function TemplatesTab() {
   const [handoverDocName, setHandoverDocName] = useState<string | null>(null);
 
   useEffect(() => {
-    const docName = localStorage.getItem("OPA_HANDOVER_ALERT");
+    const docName = localStorage.getItem(getUserKey("OPA_HANDOVER_ALERT") || "OPA_HANDOVER_ALERT");
     if (docName) {
       setHandoverDocName(docName);
       try {
-        const saved = localStorage.getItem("OPA_TEMPLATES_PROGRESS");
+        const saved = localStorage.getItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS");
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed.form33b) setForm33b(parsed.form33b);
@@ -193,7 +197,7 @@ export default function TemplatesTab() {
       } catch (err) {
         console.error("Failed to load handover data:", err);
       }
-      localStorage.removeItem("OPA_HANDOVER_ALERT");
+      localStorage.removeItem(getUserKey("OPA_HANDOVER_ALERT") || "OPA_HANDOVER_ALERT");
     }
   }, []);
 
@@ -343,7 +347,7 @@ export default function TemplatesTab() {
         caseTimelineOpenItems,
         lastSaved: Date.now()
       };
-      localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
+      localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setSaveStatus(`Saved at ${timeStr}`);
       setTimeout(() => setSaveStatus(null), 3000);
@@ -417,7 +421,7 @@ export default function TemplatesTab() {
           caseTimelineOpenItems,
           lastSaved: Date.now()
         };
-        localStorage.setItem("OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
+        localStorage.setItem(getUserKey("OPA_TEMPLATES_PROGRESS") || "OPA_TEMPLATES_PROGRESS", JSON.stringify(stateToSave));
         setIsAutoSaving(false);
       } catch (e) {
         console.warn("Storage quota warning for auto-save in templates:", e);
@@ -658,20 +662,20 @@ export default function TemplatesTab() {
           <tr>
             <td>
               <strong>Applicant (Parent/Party):</strong><br/>
-              ${escapeHtml(affidavit.applicantName || "Not Specified")}<br/><br/>
+              ${escapeHtml(redact(affidavit.applicantName) || "Not Specified")}<br/><br/>
               <strong>Respondent(s):</strong><br/>
-              ${escapeHtml(affidavit.respondentName || "Not Specified")}
+              ${escapeHtml(redact(affidavit.respondentName) || "Not Specified")}
             </td>
             <td>
               <strong>Court Registry Local Office:</strong><br/>
               ${escapeHtml(affidavit.courtRegistryName || "Not Specified")}<br/><br/>
               <strong>Subject Children names & Dates of Birth:</strong><br/>
-              ${escapeHtml(affidavit.childNames || "Not Specified")} ${affidavit.childBirthdates ? `(Born: ${escapeHtml(affidavit.childBirthdates)})` : ""}
+              ${escapeHtml(redact(affidavit.childNames) || "Not Specified")} ${affidavit.childBirthdates ? `(Born: ${escapeHtml(redact(affidavit.childBirthdates))})` : ""}
             </td>
           </tr>
         </table>
 
-        <div class="document-title">Affidavit of ${escapeHtml(affidavit.authorName || "Drafting Parent")}</div>
+        <div class="document-title">Affidavit of ${escapeHtml(redact(affidavit.authorName) || "Drafting Parent")}</div>
 
         <div class="text-block">
           I, <strong>${escapeHtml(affidavit.authorName || "Drafting Parent")}</strong>, of the Province of Ontario, Canada, make oath and say (or solemnly affirm) as follows:
@@ -953,7 +957,7 @@ export default function TemplatesTab() {
               <strong>Applicant (Children's Aid Society Name):</strong><br/>
               ${escapeHtml(form33b.applicantName || "Children's Aid Society")}<br/><br/>
               <strong>Respondent Parent:</strong><br/>
-              ${escapeHtml(form33b.respondentName || "Not Specified")}<br/><br/>
+              ${escapeHtml(redact(form33b.respondentName) || "Not Specified")}<br/><br/>
               <strong>Date of Society's Application:</strong><br/>
               ${escapeHtml(form33b.applicationDate || "Not Specified")}
             </td>
@@ -961,9 +965,9 @@ export default function TemplatesTab() {
               <strong>Court Registry Local Office:</strong><br/>
               ${escapeHtml(form33b.courtRegistryName || "Not Specified")}<br/><br/>
               <strong>Court File Number (Case #):</strong><br/>
-              ${escapeHtml(form33b.caseNumber || "Not Specified")}<br/><br/>
+              ${escapeHtml(redact(form33b.caseNumber) || "Not Specified")}<br/><br/>
               <strong>Subject Child(ren) names:</strong><br/>
-              ${escapeHtml(form33b.childNames || "Not Specified")}
+              ${escapeHtml(redact(form33b.childNames) || "Not Specified")}
             </td>
           </tr>
         </table>
@@ -1328,6 +1332,8 @@ export default function TemplatesTab() {
               {resetConfirm ? "Confirm" : "Reset"}
             </button>
           </div>
+
+          <RedactionToggle enabled={redactionEnabled} onToggle={toggleRedaction} />
 
           <button
             onClick={handlePrint}
@@ -2343,7 +2349,7 @@ export default function TemplatesTab() {
                   onClick={() => {
                     // Try to auto-populate from Document Analyzer flagged issues!
                     try {
-                      const docProg = localStorage.getItem("OPA_DOC_ANALYZER_PROGRESS");
+                      const docProg = localStorage.getItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS");
                       if (docProg) {
                         const parsed = JSON.parse(docProg);
                         const report = parsed?.selectedReport;
