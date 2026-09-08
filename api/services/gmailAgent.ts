@@ -284,6 +284,17 @@ export async function scanForPayments(): Promise<ScanResult> {
       const approval = await approvePayment(referenceNumber, amount);
       result.approved.push(approval);
 
+      // approvePayment() already tried to email the code directly to the parent - that's the
+      // whole point of the automated path. If it couldn't (SMTP down, no email on file), the
+      // payment is still correctly approved and the code still exists, but nobody knows to
+      // send it, so this needs the same admin alert as an unmatched message would get.
+      if (!approval.emailSent) {
+        await sendAdminAlert(
+          `[CYFSA Navigator] Payment approved but code email failed to send - ${referenceNumber}`,
+          `Payment ${referenceNumber} was matched and approved automatically, and an access code was generated, but the email delivering it to the parent (${approval.email || "no email on file"}) failed to send.\n\nGmail message: ${gmailMessageLink(messageId)}\n\nThe code already exists in access_codes for this reference number - send it to the parent manually.`
+        );
+      }
+
       await db.from("gmail_processed_messages").insert({ message_id: messageId, matched_reference: referenceNumber, outcome: "approved" });
       await gmail.users.messages.modify({ userId: "me", id: messageId, requestBody: { addLabelIds: [labelId!] } });
     } catch (e: any) {

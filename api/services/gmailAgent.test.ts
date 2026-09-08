@@ -151,6 +151,60 @@ describe("scanForPayments - unmatched message alerting", () => {
     expect(inserted[0].alerted_at).not.toBeNull();
   });
 
+  it("does not send an admin alert when a matched payment is approved and its code email sends fine", async () => {
+    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-6" }] } });
+    mockGmailApi.users.messages.get.mockResolvedValue({ data: gmailMessage("msg-6", "Re: PS-GOOD1, transfer of $19.00 deposited.") });
+    mockAccess.approvePayment.mockResolvedValueOnce({
+      email: "parent@example.com",
+      tier: "Pro",
+      code: "AAAA-BBBB",
+      referenceNumber: "PS-GOOD1",
+      emailSent: true,
+    });
+
+    const inserted: any[] = [];
+    mockAccess.getSupabase.mockReturnValue(
+      fakeSupabase({
+        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
+        payments: { list: () => ({ data: [], error: null }) },
+      })
+    );
+
+    const result = await scanForPayments();
+
+    expect(result.approved).toHaveLength(1);
+    expect(mockSendMail).not.toHaveBeenCalled();
+    expect(inserted[0].outcome).toBe("approved");
+  });
+
+  it("alerts Chris when a matched payment is approved but its code email fails to send", async () => {
+    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-7" }] } });
+    mockGmailApi.users.messages.get.mockResolvedValue({ data: gmailMessage("msg-7", "Re: PS-FAIL1, transfer of $19.00 deposited.") });
+    mockAccess.approvePayment.mockResolvedValueOnce({
+      email: "parent@example.com",
+      tier: "Pro",
+      code: "CCCC-DDDD",
+      referenceNumber: "PS-FAIL1",
+      emailSent: false,
+    });
+
+    const inserted: any[] = [];
+    mockAccess.getSupabase.mockReturnValue(
+      fakeSupabase({
+        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
+        payments: { list: () => ({ data: [], error: null }) },
+      })
+    );
+
+    const result = await scanForPayments();
+
+    expect(result.approved).toHaveLength(1);
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
+    expect(mockSendMail.mock.calls[0][0].subject).toContain("PS-FAIL1");
+    expect(mockSendMail.mock.calls[0][0].text).toContain("parent@example.com");
+    expect(inserted[0].outcome).toBe("approved");
+  });
+
   it("does not alert or reprocess a message already recorded in gmail_processed_messages", async () => {
     mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-4" }] } });
 

@@ -10,11 +10,16 @@
 // separate access code for one payment. approvePayment() now claims the payment with an
 // UPDATE ... WHERE status = 'pending' and only proceeds if that update actually matched a
 // row - see the comment above it in access.ts.
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
 process.env.SESSION_SECRET = "test-session-secret";
+
+const { mockSendMail } = vi.hoisted(() => ({ mockSendMail: vi.fn() }));
+vi.mock("nodemailer", () => ({
+  default: { createTransport: () => ({ sendMail: mockSendMail }) },
+}));
 
 // getSupabase() in access.ts memoizes createClient()'s return value on first call and reuses
 // it for the rest of the process, so mocking createClient() itself to return a thin proxy -
@@ -95,6 +100,14 @@ function useFakeDb(db: FakeDb) {
   currentDb.ref = db;
 }
 
+beforeEach(() => {
+  mockSendMail.mockClear();
+  mockSendMail.mockResolvedValue({});
+  delete process.env.SMTP_HOST;
+  delete process.env.SMTP_USER;
+  delete process.env.SMTP_PASS;
+});
+
 describe("approvePayment - concurrency", () => {
   it("approves a single valid request normally", async () => {
     const db = createFakeDb({ reference_number: "PS-ABCDE", amount: 19, plan: "Pro", status: "pending", notes: "email:parent@example.com" });
@@ -134,5 +147,64 @@ describe("approvePayment - concurrency", () => {
 
     await expect(approvePayment("PS-DONE1", 19)).rejects.toThrow("No pending payment found");
     expect(db._accessCodes).toHaveLength(0);
+  });
+});
+
+// This is the actual point of tonight's work: a parent who pays must automatically receive
+// their code with zero human step, on BOTH the manual admin-approve route and the automated
+// Gmail-agent path. Both routes call this exact same approvePayment() (see api/_server.ts's
+// /api/admin/approve-payment and api/services/gmailAgent.ts's scanForPayments()), so proving
+// the email fires here proves it for both callers - see gmailAgent.test.ts for the
+// automated path's own coverage of what happens when this send fails.
+describe("approvePayment - parent email delivery", () => {
+  it("emails the access code directly to the parent when SMTP is configured", async () => {
+    process.env.SMTP_HOST = "smtp.example.com";
+    process.env.SMTP_USER = "user";
+    process.env.SMTP_PASS = "pass";
+
+    const db = createFakeDb({ reference_number: "PS-MAIL1", amount: 49, plan: "Premium", status: "pending", notes: "email:parent@example.com" });
+    useFakeDb(db);
+
+    const result = await approvePayment("PS-MAIL1", 49);
+
+    expect(result.emailSent).toBe(true);
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
+    const sentMail = mockSendMail.mock.calls[0][0];
+    expect(sentMail.to).toBe("parent@example.com");
+    expect(sentMail.subject).toContain("Premium");
+    expect(sentMail.text).toContain("PS-MAIL1");
+    expect(sentMail.text).toContain(result.code);
+    expect(sentMail.text).toContain("Membership page");
+  });
+
+  it("returns emailSent: false without failing the approval when SMTP isn't configured", async () => {
+    // beforeEach already leaves SMTP_HOST/USER/PASS unset.
+    const db = createFakeDb({ reference_number: "PS-MAIL2", amount: 19, plan: "Pro", status: "pending", notes: "email:parent@example.com" });
+    useFakeDb(db);
+
+    const result = await approvePayment("PS-MAIL2", 19);
+
+    expect(result.emailSent).toBe(false);
+    expect(mockSendMail).not.toHaveBeenCalled();
+    // The approval itself must still have gone through - the code is real and exists,
+    // it just wasn't delivered automatically.
+    expect(db._paymentsRow().status).toBe("approved");
+    expect(db._accessCodes).toHaveLength(1);
+  });
+
+  it("still approves and mints the code even if the email send itself fails", async () => {
+    process.env.SMTP_HOST = "smtp.example.com";
+    process.env.SMTP_USER = "user";
+    process.env.SMTP_PASS = "pass";
+    mockSendMail.mockRejectedValueOnce(new Error("SMTP connection refused"));
+
+    const db = createFakeDb({ reference_number: "PS-MAIL3", amount: 19, plan: "Pro", status: "pending", notes: "email:parent@example.com" });
+    useFakeDb(db);
+
+    const result = await approvePayment("PS-MAIL3", 19);
+
+    expect(result.emailSent).toBe(false);
+    expect(db._paymentsRow().status).toBe("approved");
+    expect(db._accessCodes).toHaveLength(1);
   });
 });

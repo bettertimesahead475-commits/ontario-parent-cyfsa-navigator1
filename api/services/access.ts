@@ -17,8 +17,10 @@
 //      (gated by ADMIN_SECRET header in the route). Verifies the amount
 //      matches or exceeds the tier price, flips the payment to 'approved',
 //      generates a one-time access code, stores only its SHA-256 hash in
-//      `access_codes`, and returns the plaintext code exactly once so it
-//      can be sent to the parent.
+//      `access_codes`, and emails the plaintext code directly to the
+//      parent (see sendAccessCodeEmail() below) - this is the only place
+//      it's ever sent anywhere, on both the manual admin-approve route and
+//      the automated Gmail-agent path, since both call this one function.
 //   3. verifyAccessCode(email, code) — parent-facing. Checks the code
 //      against the stored hash, confirms it's unused and unexpired, marks
 //      it used, and returns a signed session token (HMAC, no session table
@@ -216,9 +218,54 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
   });
   if (codeErr) throw Object.assign(new Error(`Payment was marked approved but code generation failed: ${codeErr.message}`), { statusCode: 500 });
 
-  // Plaintext code is only ever visible right here — send it to the parent
-  // yourself (email/text). It is never stored in plaintext anywhere.
-  return { email, tier, code, referenceNumber };
+  // Plaintext code is only ever visible right here - it's never stored anywhere, so this
+  // email IS the delivery mechanism, not a courtesy copy. Both callers (the manual
+  // /api/admin/approve-payment route and the Gmail agent's automated scanForPayments()) go
+  // through this one function, so wiring the send here - rather than in each caller - is
+  // what makes it actually automatic on both paths instead of relying on Chris to forward it
+  // by hand. A failed send does NOT fail the approval (the payment is already correctly
+  // marked approved and the code already exists - that's the source of truth); the caller
+  // gets emailSent: false back and decides what to do about it.
+  const emailSent = await sendAccessCodeEmail(email, tier, code, referenceNumber);
+
+  return { email, tier, code, referenceNumber, emailSent };
+}
+
+// --- Delivers the plaintext code to the parent - the only point it's ever sent anywhere ---
+async function sendAccessCodeEmail(email: string, tier: Tier, code: string, referenceNumber: string): Promise<boolean> {
+  const hasSmtpConfig = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  if (!hasSmtpConfig) {
+    console.error("[access-code email] SMTP not configured - code NOT emailed to parent:", referenceNumber);
+    return false;
+  }
+  if (!email) {
+    console.error("[access-code email] No parent email on file - code NOT emailed:", referenceNumber);
+    return false;
+  }
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: email,
+      subject: `Your Ontario Parent Assist access code (${tier})`,
+      text:
+        `Your Interac e-transfer (reference ${referenceNumber}) has been confirmed. Here is your ${tier} access code:\n\n` +
+        `${code}\n\n` +
+        `To activate it: go to the Membership page, enter this email address (${email}) and the code above under "Enter Access Code," then click Activate.\n\n` +
+        `This code is single-use and expires in ${CODE_TTL_DAYS} days if not activated. Keep it somewhere safe until then.\n\n` +
+        `If you weren't expecting this email, you can ignore it.`,
+    });
+    return true;
+  } catch (mailErr) {
+    console.error("[access-code email] send failed", mailErr);
+    return false;
+  }
 }
 
 // --- Step 3: parent redeems email + code -----------------------------------
