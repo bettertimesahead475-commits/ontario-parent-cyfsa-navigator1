@@ -1,8 +1,37 @@
+import { auth } from "./firebase";
+import { getUserKey } from "./storage";
+
 /**
- * Robust API helper that routes relative routes correctly.
+ * Robust API helper that routes relative routes correctly, and attaches
+ * identity headers every request needs for the paywall:
+ *  - Authorization: Bearer <Firebase ID token>, if a parent is signed in
+ *    (this is how the server knows *who* is asking, for the free-tier count)
+ *  - X-PS-Session: <paid session token>, if one is stored locally (Pro/Premium
+ *    unlock — takes priority over the free-tier check server-side)
+ * Both are safe to send on every request; routes that don't care simply
+ * ignore them.
  */
-export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  return fetch(input, init);
+export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      const idToken = await user.getIdToken();
+      headers.set("Authorization", `Bearer ${idToken}`);
+    }
+  } catch (e) {
+    console.warn("Failed to attach Firebase ID token to request:", e);
+  }
+
+  try {
+    const sessionToken = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token");
+    if (sessionToken) headers.set("X-PS-Session", sessionToken);
+  } catch (e) {
+    console.warn("Failed to attach session token to request:", e);
+  }
+
+  return fetch(input, { ...init, headers });
 }
 
 /**

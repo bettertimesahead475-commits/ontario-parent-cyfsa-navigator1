@@ -22,11 +22,9 @@ import TemplatesTab from "./components/TemplatesTab";
 import VoiceAssistantTab from "./components/VoiceAssistantTab";
 import LawyerDirectoryTab from "./components/LawyerDirectoryTab";
 import SignUpTab from "./components/SignUpTab";
-import SavedDocumentsTab from "./components/SavedDocumentsTab";
 import StatutoryBookmarkSidebar from "./components/StatutoryBookmarkSidebar";
 import FloatingTTS from "./components/FloatingTTS";
 import LegalTerminologyDrawer from "./components/LegalTerminologyDrawer";
-import ConnectorSearchBot from "./components/ConnectorSearchBot";
 import PricingTab from "./components/PricingTab";
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
@@ -301,10 +299,6 @@ export default function App() {
             </RequireAuth>
           </Route>
 
-          <Route path="/saved-documents">
-            <SavedDocumentsTab />
-          </Route>
-
           <Route path="/voice-assistant">
             <VoiceAssistantTab />
           </Route>
@@ -457,7 +451,6 @@ export default function App() {
         </div>
       </footer>
 
-      <ConnectorSearchBot />
       <StatutoryBookmarkSidebar />
       <FloatingTTS />
       

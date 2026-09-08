@@ -8,8 +8,6 @@ import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson } from "../utils/api";
-import { initAuth, googleSignIn, logout } from "../utils/firebase";
-import { fetchDriveFiles, fetchDriveFileContent, fetchRecentEmails } from "../utils/workspace";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -50,8 +48,6 @@ import {
   X,
   CloudUpload
 } from "lucide-react";
-import { db, auth } from "../firebase";
-import { doc, setDoc } from "firebase/firestore";
 import { getUserKey } from "../utils/storage";
 
 // Escapes a value for safe interpolation into the raw HTML strings the print/export
@@ -197,139 +193,6 @@ export default function DocumentAnalyzerTab() {
     }
   })();
 
-  // Workspace integration state
-  const [needsAuth, setNeedsAuth] = useState(false);
-  const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
-  const [workspaceFiles, setWorkspaceFiles] = useState<any[]>([]);
-  const [workspaceEmails, setWorkspaceEmails] = useState<any[]>([]);
-  const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
-
-  useEffect(() => {
-    initAuth(
-      () => setNeedsAuth(false),
-      () => setNeedsAuth(true)
-    );
-
-    const handleImportWorkspace = (e: any) => {
-      if (e.detail) {
-        if (e.detail.type === 'drive') {
-          handleImportDriveFile(e.detail.file);
-        } else if (e.detail.type === 'email') {
-          handleImportEmail(e.detail.email);
-        }
-      }
-    };
-    
-    window.addEventListener('opa-import-workspace', handleImportWorkspace);
-    return () => window.removeEventListener('opa-import-workspace', handleImportWorkspace);
-  }, []); // Need organizedFiles if handleImportDriveFile relies on state? Wait, handleImportDriveFile uses setState callback, so we don't need organizedFiles in deps necessarily, but it's safe.
-
-
-  const handleWorkspaceLogin = async () => {
-    try {
-      await googleSignIn();
-      setNeedsAuth(false);
-      loadWorkspaceData();
-    } catch (e) {
-      console.error("Workspace login failed:", e);
-    }
-  };
-
-  const loadWorkspaceData = async () => {
-    setIsLoadingWorkspace(true);
-    try {
-      const [files, emails] = await Promise.all([
-        fetchDriveFiles().catch(() => []),
-        fetchRecentEmails().catch(() => [])
-      ]);
-      setWorkspaceFiles(files);
-      setWorkspaceEmails(emails);
-    } catch (e) {
-      console.error("Failed to load workspace data:", e);
-    } finally {
-      setIsLoadingWorkspace(false);
-    }
-  };
-
-  const handleImportDriveFile = async (file: any) => {
-    try {
-      setIsLoadingWorkspace(true);
-      const content = await fetchDriveFileContent(file.id, file.mimeType);
-      
-      const newFile: OrganizedFile = {
-        id: "workspace-file-" + Date.now(),
-        name: file.name,
-        size: parseInt(file.size || "1024", 10),
-        mimeType: file.mimeType === "application/vnd.google-apps.document" ? "text/plain" : file.mimeType,
-        category: "Evidence & Loggers",
-        uploadedAt: new Date().toLocaleDateString("en-US", { month: '2-digit', day: '2-digit', year: 'numeric' }),
-        content,
-        analysisStatus: "pending"
-      };
-
-      const chunkedFiles = chunkFilesForAnalysis([newFile]);
-      setOrganizedFiles(prev => {
-        const list = [...prev, ...chunkedFiles];
-        setSelectedFileId(chunkedFiles[0].id);
-        setSelectedReport(null);
-        return list;
-      });
-
-      setIsWorkspaceModalOpen(false);
-      setActiveTab("organizer");
-      setActiveFolder("Evidence & Loggers");
-      setTimeout(() => {
-        runParallelBulkAnalysis(chunkedFiles);
-      }, 400);
-
-    } catch (err: any) {
-      alert("Failed to import file: " + err.message);
-    } finally {
-      setIsLoadingWorkspace(false);
-    }
-  };
-
-  const handleImportEmail = async (email: any) => {
-    try {
-      const content = `Subject: ${email.subject}\nDate: ${new Date(parseInt(email.timestamp)).toLocaleString()}\n\nSnippet: ${email.snippet}`;
-      const newFile: OrganizedFile = {
-        id: "workspace-email-" + Date.now(),
-        name: `Email: ${email.subject}.txt`,
-        size: content.length,
-        mimeType: "text/plain",
-        category: "CAS Correspondence",
-        uploadedAt: new Date().toLocaleDateString("en-US", { month: '2-digit', day: '2-digit', year: 'numeric' }),
-        content,
-        analysisStatus: "pending"
-      };
-
-      const chunkedFiles = chunkFilesForAnalysis([newFile]);
-      setOrganizedFiles(prev => {
-        const list = [...prev, ...chunkedFiles];
-        setSelectedFileId(chunkedFiles[0].id);
-        setSelectedReport(null);
-        return list;
-      });
-
-      setIsWorkspaceModalOpen(false);
-      setActiveTab("organizer");
-      setActiveFolder("CAS Correspondence");
-      setTimeout(() => {
-        runParallelBulkAnalysis(chunkedFiles);
-      }, 400);
-
-    } catch (err: any) {
-      alert("Failed to import email: " + err.message);
-    }
-  };
-
-  const openWorkspaceModal = () => {
-    setIsWorkspaceModalOpen(true);
-    if (!needsAuth) {
-      loadWorkspaceData();
-    }
-  };
-
   // Foldable Section component
   const FoldableSection = ({ title, icon, count, isOpen, onToggle, children }: any) => (
     <div className="border border-slate-200 rounded-xl overflow-hidden mb-4 bg-white">
@@ -450,21 +313,6 @@ export default function DocumentAnalyzerTab() {
 
   // Active Audit Visual State
   const [selectedReport, setSelectedReport] = useState<AnalysisReport | null>(() => {
-    // BUG FOUND IN AUDIT: SavedDocumentsTab.tsx's "Open Document" button for a saved analysis
-    // writes the report to localStorage under "OPA_LOAD_ANALYSIS_REPORT" and navigates here,
-    // but nothing in this file ever read that key back - the report was silently dropped every
-    // time, and the user just landed on whatever the default/empty view was. Wired up here:
-    // if that handoff key is present, it takes priority over the regular saved-progress restore,
-    // and is cleared immediately after being consumed so it doesn't reload on every future visit.
-    try {
-      const handoff = localStorage.getItem("OPA_LOAD_ANALYSIS_REPORT");
-      if (handoff) {
-        localStorage.removeItem("OPA_LOAD_ANALYSIS_REPORT");
-        return JSON.parse(handoff);
-      }
-    } catch (e) {
-      console.error("Failed to load handed-off analysis report:", e);
-    }
     return parsedProg?.selectedReport || null;
   });
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState<boolean>(false);
@@ -754,45 +602,6 @@ export default function DocumentAnalyzerTab() {
     }
   };
 
-  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
-  const saveToCloud = async () => {
-    if (!auth.currentUser) {
-      alert("You must be logged in to save to the cloud. Please visit the Advocate Passport tab.");
-      return;
-    }
-    
-    setIsSavingToCloud(true);
-    try {
-      const stateToSave = {
-        organizedFiles,
-        selectedFileId,
-        activeFolder,
-        ragChatMessages,
-        selectedReport,
-        activeTab,
-        savedBriefs
-      };
-      
-      const docId = `analysis_${Date.now()}`;
-      await setDoc(doc(db, "users", auth.currentUser.uid, "saved_documents", docId), {
-        id: docId,
-        userId: auth.currentUser.uid,
-        title: selectedReport ? `Analysis Report - ${selectedReport.documentTitle}` : 'Document Analyzer Draft',
-        type: 'analysis',
-        content: JSON.stringify(stateToSave),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      
-      setSaveStatus("Saved to Cloud ✓");
-      setTimeout(() => setSaveStatus(null), 3000);
-    } catch (e: any) {
-      console.error("Failed to save to cloud:", e);
-      alert("Failed to save to cloud: " + (e.message || "Unknown error"));
-    } finally {
-      setIsSavingToCloud(false);
-    }
-  };
 
   const exportSummaryLog = () => {
     try {
@@ -1869,6 +1678,12 @@ export default function DocumentAnalyzerTab() {
 
                   if (!response.ok) {
                     const errMsg = (dataResult.error || "").toLowerCase();
+                    if (dataResult.code === "SIGN_IN_REQUIRED" || dataResult.code === "FREE_LIMIT_REACHED") {
+                      // No retry can fix "not signed in" or "out of free uses" - force the
+                      // loop to stop now instead of burning two more pointless attempts.
+                      attempts = maxAttempts;
+                      throw new Error(dataResult.error);
+                    }
                     if (errMsg.includes("quota") || errMsg.includes("429") || errMsg.includes("rate") || errMsg.includes("exhausted")) {
                       attempts++;
                       if (attempts >= maxAttempts) throw new Error("Quota limit exceeded.");
@@ -2850,15 +2665,6 @@ export default function DocumentAnalyzerTab() {
             </span>
 
             <button
-              onClick={saveToCloud}
-              disabled={isSavingToCloud}
-              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-emerald-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs disabled:opacity-50"
-              title="Save to your account in the cloud"
-            >
-              {isSavingToCloud ? <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" /> : <CloudUpload className="w-3 h-3 text-emerald-600" />}
-              Cloud Save
-            </button>
-            <button
               onClick={saveProgress}
               className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
               title="Save all changes securely to browser storage"
@@ -2975,20 +2781,6 @@ export default function DocumentAnalyzerTab() {
                   Supports TXT, PDF, HEIC/HEIF, Photo, and Audio recordings • Auto-transcribed & Stored in PDF format
                 </span>
               </div>
-              <button 
-                onClick={openWorkspaceModal}
-                className="flex items-center gap-2 w-full justify-center p-3 mt-2 bg-brand-50 text-brand-700 text-xs font-semibold rounded-lg hover:bg-brand-100 transition-colors"
-              >
-                <span className="shrink-0 text-brand-500">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                    <path d="M12 6.58c1.62 0 3.06.55 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                  </svg>
-                </span>
-                Connect Google Services
-              </button>
             </div>
               
               {customUploadError && (
@@ -4722,131 +4514,6 @@ export default function DocumentAnalyzerTab() {
             )}
           </div>
         </div>
-      {/* WORKSPACE INTEGRATION MODAL */}
-      {isWorkspaceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-slate-200">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
-              <div className="flex items-center gap-2">
-                <Folder className="w-5 h-5 text-brand-600" />
-                <h3 className="font-display font-bold text-gray-900">Import from Google Workspace</h3>
-              </div>
-              <button 
-                onClick={() => setIsWorkspaceModalOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-500 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="p-5 overflow-y-auto flex-1">
-              {needsAuth ? (
-                <div className="text-center py-10 space-y-4">
-                  <div className="bg-brand-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <ShieldAlert className="w-8 h-8 text-brand-500" />
-                  </div>
-                  <h4 className="font-display font-bold text-slate-800 text-lg">Connect your Google Account</h4>
-                  <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
-                    Link your account to securely import case files from Google Drive and read relevant correspondence from Gmail.
-                  </p>
-                  <button 
-                    onClick={handleWorkspaceLogin}
-                    className="gsi-material-button mt-4"
-                  >
-                    <div className="gsi-material-button-state"></div>
-                    <div className="gsi-material-button-content-wrapper">
-                      <div className="gsi-material-button-icon">
-                        <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" xmlnsXlink="http://www.w3.org/1999/xlink" style={{display: 'block'}}>
-                          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-                          <path fill="none" d="M0 0h48v48H0z"></path>
-                        </svg>
-                      </div>
-                      <span className="gsi-material-button-contents">Sign in with Google</span>
-                    </div>
-                  </button>
-                </div>
-              ) : isLoadingWorkspace ? (
-                <div className="flex flex-col items-center justify-center py-16 space-y-3">
-                  <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
-                  <p className="text-slate-500 text-sm font-medium animate-pulse">Loading Workspace items...</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Google Drive Files */}
-                  <div>
-                    <h4 className="text-xs font-bold font-mono text-slate-500 uppercase mb-3 px-1 border-b pb-2">Recent Google Drive Files</h4>
-                    {workspaceFiles.length === 0 ? (
-                      <p className="text-sm text-slate-400 italic px-2">No supported files found.</p>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {workspaceFiles.map(file => (
-                          <div 
-                            key={file.id} 
-                            onClick={() => handleImportDriveFile(file)}
-                            className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg hover:border-brand-300 hover:bg-brand-50 cursor-pointer transition-colors group"
-                          >
-                            <FileText className="w-5 h-5 text-brand-400 group-hover:text-brand-600" />
-                            <div className="overflow-hidden">
-                              <p className="text-sm font-semibold text-slate-800 truncate">{file.name}</p>
-                              <p className="text-[10px] text-slate-500">{new Date(file.modifiedTime).toLocaleDateString()}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Gmail Messages */}
-                  <div>
-                    <h4 className="text-xs font-bold font-mono text-slate-500 uppercase mb-3 px-1 border-b pb-2">Recent Gmail Correspondence</h4>
-                    {workspaceEmails.length === 0 ? (
-                      <p className="text-sm text-slate-400 italic px-2">No recent emails found.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {workspaceEmails.map(email => (
-                          <div 
-                            key={email.id} 
-                            onClick={() => handleImportEmail(email)}
-                            className="p-3 border border-slate-200 rounded-lg hover:border-brand-300 hover:bg-brand-50 cursor-pointer transition-colors group flex items-start gap-3"
-                          >
-                            <MessageSquare className="w-5 h-5 text-brand-400 group-hover:text-brand-600 shrink-0 mt-0.5" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-semibold text-slate-800 truncate">{email.subject}</p>
-                              <p className="text-xs text-slate-500 truncate mt-0.5">{email.snippet}</p>
-                              <p className="text-[10px] text-slate-400 mt-1 font-mono">{new Date(parseInt(email.timestamp)).toLocaleString()}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-              {!needsAuth ? (
-                <button 
-                  onClick={logout}
-                  className="text-xs font-mono text-slate-500 hover:text-rose-600 transition-colors"
-                >
-                  Disconnect Google Account
-                </button>
-              ) : <div></div>}
-              <button 
-                onClick={() => setIsWorkspaceModalOpen(false)}
-                className="px-4 py-2 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-lg text-xs font-semibold transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    
       {/* Confirm Modal */}
       <AnimatePresence>
         {confirmModal && (

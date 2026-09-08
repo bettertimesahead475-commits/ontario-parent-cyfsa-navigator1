@@ -14,7 +14,10 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, TIER_PRICES, type Tier } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, TIER_PRICES, type Tier } from "./services/access.js";
+import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
+import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
+import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments } from "./services/gmailAgent.js";
 
 dotenv.config();
 
@@ -465,6 +468,64 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
   });
 
+  // API 1d: Admin-only, one-time setup — returns the Google consent URL Chris
+  // visits in a real browser to grant this app read access to HIS OWN inbox
+  // (donations.ontarioparentassist@gmail.com), so the agent below can watch
+  // for Interac Autodeposit notifications. Never touches a parent's account.
+  // Header: x-admin-secret: <ADMIN_SECRET>
+  app.get("/api/admin/gmail-auth-url", (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const url = getGmailAuthUrl();
+      res.json({ url });
+    } catch (err: any) {
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to build Gmail auth URL." });
+    }
+  });
+
+  // API 1e: One-time setup — Google redirects here after Chris grants consent
+  // in the browser. Protected by a `state` param matching ADMIN_SECRET rather
+  // than a header, since Google's redirect can't be made to send custom
+  // headers. Returns the refresh token exactly once for Chris to copy into
+  // Vercel's GMAIL_REFRESH_TOKEN env var - it is never stored anywhere here.
+  app.get("/api/admin/gmail-callback", async (req: Request, res: Response) => {
+    try {
+      const { code } = req.query;
+      if (!code || typeof code !== "string") {
+        return res.status(400).send("Missing authorization code.");
+      }
+      const refreshToken = await exchangeGmailAuthCode(code);
+      res.type("text/plain").send(
+        `Success. Copy everything between the quotes below into Vercel -> Project -> Settings -> Environment Variables -> GMAIL_REFRESH_TOKEN, then redeploy:\n\n"${refreshToken}"\n\nThis token is shown only once and is not stored anywhere by this server.`
+      );
+    } catch (err: any) {
+      console.error("[/api/admin/gmail-callback]", err);
+      res.status(err.statusCode || 500).send(err.message || "Failed to complete Gmail authorization.");
+    }
+  });
+
+  // API 1f: Runs the actual payment-detection scan. Callable two ways:
+  //   - Manually, with header x-admin-secret: <ADMIN_SECRET>
+  //   - By a Vercel Cron job, which Vercel automatically calls with
+  //     Authorization: Bearer <CRON_SECRET> when CRON_SECRET is set - see
+  //     vercel.json's `crons` entry.
+  app.get("/api/admin/check-payments", async (req: Request, res: Response) => {
+    try {
+      const adminSecretOk = process.env.ADMIN_SECRET && req.headers["x-admin-secret"] === process.env.ADMIN_SECRET;
+      const cronSecretOk = process.env.CRON_SECRET && req.headers["authorization"] === `Bearer ${process.env.CRON_SECRET}`;
+      if (!adminSecretOk && !cronSecretOk) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const result = await scanForPayments();
+      res.json(result);
+    } catch (err: any) {
+      console.error("[/api/admin/check-payments]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Payment scan failed." });
+    }
+  });
+
   app.get("/api/access-pricing", (_req: Request, res: Response) => {
     res.json({ prices: TIER_PRICES });
   });
@@ -541,6 +602,36 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         return res.status(400).json({
           error: "Missing content. Please provide document text or upload a document."
         });
+      }
+
+      // --- Paywall: a valid Pro/Premium session token means unlimited use.
+      // Otherwise the caller must be a verified signed-in parent, checked
+      // against their free-use count. This is the actual enforcement of the
+      // "1 free analysis" tier — previously nothing here checked anything.
+      let uid: string | null = null;
+      let userEmail: string | null = null;
+      const sessionToken = req.header("x-ps-session");
+      const paidSession = sessionToken ? verifySessionToken(sessionToken) : null;
+
+      if (!paidSession) {
+        const identity = await verifyFirebaseToken(req.header("authorization"));
+        if (!identity) {
+          return res.status(401).json({
+            error: "Please sign in to use the Document Analyzer.",
+            code: "SIGN_IN_REQUIRED"
+          });
+        }
+        uid = identity.uid;
+        userEmail = identity.email;
+        const used = await getFreeUsage(uid);
+        if (used >= FREE_ANALYSES_LIMIT) {
+          return res.status(402).json({
+            error: "You've used your free analysis. Upgrade to Pro or Premium for unlimited document analysis.",
+            code: "FREE_LIMIT_REACHED",
+            usedCount: used,
+            limit: FREE_ANALYSES_LIMIT
+          });
+        }
       }
 
       targetText = textContent || "";
@@ -827,6 +918,17 @@ ${analysisRules}`;
 
       // Field-disjoint by construction (see the two schemas above), so a plain merge is safe.
       const report = { ...coreReport, ...deepDiveReport };
+
+      if (!paidSession && uid) {
+        try {
+          await recordFreeUse(uid, userEmail);
+        } catch (usageErr) {
+          // A parent's completed analysis must never be withheld because our own
+          // usage bookkeeping failed - log it and let the real result through.
+          console.error("[document analysis] Failed to record free-tier usage (non-fatal):", usageErr);
+        }
+      }
+
       res.json(report);
 
     } catch (error: any) {
