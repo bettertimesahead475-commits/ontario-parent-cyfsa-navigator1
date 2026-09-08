@@ -180,6 +180,28 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     );
   }
 
+  // Atomically claim this payment before doing anything else: scoping the UPDATE to
+  // status = 'pending' and checking whether it actually matched a row is what makes this
+  // safe against two near-simultaneous calls for the same reference number (e.g. an admin
+  // approving by hand while the Gmail agent's cron is mid-run, or two overlapping cron
+  // invocations at the 2-minute interval). Without this, both callers would pass the SELECT
+  // above before either had written anything, and both would go on to mint and issue a
+  // separate access code for the same payment. Postgres serializes the two UPDATEs even
+  // though the SELECTs can race, so exactly one of them ever sees a matched row here.
+  const { data: claimed, error: claimErr } = await db
+    .from("payments")
+    .update({ status: "approved", approved_at: new Date().toISOString() })
+    .eq("reference_number", referenceNumber)
+    .eq("status", "pending")
+    .select("reference_number");
+  if (claimErr) throw Object.assign(new Error(`Failed to claim payment for approval: ${claimErr.message}`), { statusCode: 500 });
+  if (!claimed || claimed.length === 0) {
+    throw Object.assign(
+      new Error("This payment was already approved by a concurrent request. No second access code was issued."),
+      { statusCode: 409 }
+    );
+  }
+
   const email = (payment.notes || "").replace(/^email:/, "").trim();
   const tier = payment.plan as Tier;
   const code = generateAccessCode();
@@ -192,13 +214,7 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     code_hash: hashCode(code),
     expires_at: new Date(Date.now() + CODE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
   });
-  if (codeErr) throw Object.assign(new Error(`Payment matched but code generation failed: ${codeErr.message}`), { statusCode: 500 });
-
-  const { error: updateErr } = await db
-    .from("payments")
-    .update({ status: "approved", approved_at: new Date().toISOString() })
-    .eq("reference_number", referenceNumber);
-  if (updateErr) throw Object.assign(new Error(`Code was generated but payment status failed to update: ${updateErr.message}`), { statusCode: 500 });
+  if (codeErr) throw Object.assign(new Error(`Payment was marked approved but code generation failed: ${codeErr.message}`), { statusCode: 500 });
 
   // Plaintext code is only ever visible right here — send it to the parent
   // yourself (email/text). It is never stored in plaintext anywhere.
