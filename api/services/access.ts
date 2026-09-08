@@ -114,6 +114,26 @@ export function verifySessionToken(token: string): { email: string; tier: Tier }
   }
 }
 
+// --- Free-tier quota: "1 free, then pay" for /api/analyze and /api/extract-evidence --------
+// Backed by the free_tool_usage table (email, tool unique pair; tool CHECK-constrained to
+// 'analyze'/'extract-evidence'). This table already existed in the live DB, unused by any
+// route - /api/analyze has its own separate uid-keyed free_usage table/counter (see
+// services/usage.ts); this one is for extract-evidence, keyed by the verified email a
+// Firebase ID token carries (never a client-supplied header). The insert IS the claim: if it
+// succeeds, this is the parent's first (free) use of that tool; if it fails on the unique
+// constraint, they've already spent it. Race-safe under concurrent requests, unlike a
+// select-then-insert check.
+export type FreeTool = "analyze" | "extract-evidence";
+
+export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool): Promise<boolean> {
+  const db = getSupabase();
+  const normalizedEmail = email.toLowerCase().trim();
+  const { error } = await db.from("free_tool_usage").insert({ email: normalizedEmail, tool });
+  if (!error) return true;
+  if (error.code === "23505") return false; // unique_violation - already used this tool's free pass
+  throw Object.assign(new Error(`Failed to check free tool usage: ${error.message}`), { statusCode: 500 });
+}
+
 // --- Step 1: parent requests access before paying --------------------------
 export async function requestAccess(email: string, tier: Tier) {
   const db = getSupabase();

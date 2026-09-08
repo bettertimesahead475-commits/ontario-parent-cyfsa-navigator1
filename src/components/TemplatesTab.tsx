@@ -276,7 +276,11 @@ export default function TemplatesTab() {
       });
 
       const data = await safeReadJson(response);
-      
+
+      if (!response.ok) {
+        throw new Error(data.error || `AI extraction failed (${response.status})`);
+      }
+
       const newLog: EvidenceLogItem = {
         id: "el-" + Date.now(),
         // BUG FOUND IN AUDIT: this used to fall back to a hardcoded "2026-06-06" if the AI
