@@ -1894,6 +1894,10 @@ export default function DocumentAnalyzerTab() {
 
       const data = await safeReadJson(res);
 
+      if (!res.ok) {
+        throw new Error(data.error || `Case chat request failed (${res.status})`);
+      }
+
       const aiMsg: RAGChatMessage = {
         id: "ai-" + Date.now(),
         sender: "ai",

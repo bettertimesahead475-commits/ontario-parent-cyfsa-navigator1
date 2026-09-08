@@ -26,7 +26,19 @@ const mockAccess = vi.hoisted(() => ({
   requestAccess: vi.fn(),
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
+  verifySessionToken: vi.fn(),
+  checkAndConsumeFreeToolUse: vi.fn(),
   TIER_PRICES: { Pro: 19, Premium: 49 },
+}));
+
+const mockFirebaseAdmin = vi.hoisted(() => ({
+  verifyFirebaseToken: vi.fn(),
+}));
+
+const mockUsage = vi.hoisted(() => ({
+  getFreeUsage: vi.fn(),
+  recordFreeUse: vi.fn(),
+  FREE_ANALYSES_LIMIT: 1,
 }));
 
 vi.mock("@anthropic-ai/sdk", () => ({
@@ -48,6 +60,8 @@ vi.mock("nodemailer", () => ({
 }));
 
 vi.mock("./services/access.js", () => mockAccess);
+vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
+vi.mock("./services/usage.js", () => mockUsage);
 
 // `process.env.VERCEL` must be set BEFORE _server.ts is evaluated: it gates
 // whether the module calls setupViteAndStart() (which would otherwise spin
@@ -91,8 +105,21 @@ const MINIMAL_ANALYSIS = {
   lawyerCaseBrief: [],
 };
 
+// A valid Pro/Premium session token, sent as `x-ps-session`, for tests that exercise
+// tool behavior rather than the paywall itself. Gating-specific tests below send no
+// header (or an unrecognized one) and assert the 401/402 instead.
+const PAID_SESSION_TOKEN = "valid-session-token";
+const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN });
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockAccess.verifySessionToken.mockImplementation((token: string) =>
+    token === PAID_SESSION_TOKEN ? { email: "paid@example.com", tier: "Pro" } : null
+  );
+  mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue(null);
+  mockUsage.getFreeUsage.mockResolvedValue(0);
+  mockUsage.recordFreeUse.mockResolvedValue(undefined);
+  mockAccess.checkAndConsumeFreeToolUse.mockResolvedValue(false);
 });
 
 describe("GET /api/health", () => {
@@ -244,6 +271,7 @@ describe("POST /api/analyze", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     const res = await request(app)
       .post("/api/analyze")
+      .set(paid())
       .send({ textContent: "some affidavit text", model: "not-a-real-model" });
 
     expect(res.status).toBe(200);
@@ -260,6 +288,7 @@ describe("POST /api/analyze", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     await request(app)
       .post("/api/analyze")
+      .set(paid())
       .send({ textContent: "some affidavit text", model: "claude-haiku-4-5-20251001" });
     expect(mockCreateMessage).toHaveBeenCalledTimes(2);
     for (const call of mockCreateMessage.mock.calls) {
@@ -270,7 +299,7 @@ describe("POST /api/analyze", () => {
   it("returns a clear error instead of fabricating a report when either response isn't valid JSON", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("not json at all"));
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
-    const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "some text" });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.body.documentTitle).toBeUndefined();
   });
@@ -278,15 +307,49 @@ describe("POST /api/analyze", () => {
   it("maps a rate-limit error from either concurrent call to HTTP 429", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("rate limit exceeded"), { status: 429 }));
-    const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "some text" });
     expect(res.status).toBe(429);
     expect(res.body.isRateLimit).toBe(true);
+  });
+
+  it("rejects an unauthenticated, unpaid request with SIGN_IN_REQUIRED", async () => {
+    const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("allows a signed-in parent's first free analysis, then blocks the second", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "parent@example.com" });
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer valid-firebase-token")
+      .send({ textContent: "some text" });
+    expect(res.status).toBe(200);
+    expect(mockUsage.recordFreeUse).toHaveBeenCalledWith("uid-1", "parent@example.com");
+
+    mockUsage.getFreeUsage.mockResolvedValue(1); // already used their one free analysis
+    const res2 = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer valid-firebase-token")
+      .send({ textContent: "some text" });
+    expect(res2.status).toBe(402);
+    expect(res2.body.code).toBe("FREE_LIMIT_REACHED");
   });
 });
 
 describe("POST /api/case-timeline", () => {
-  it("rejects fewer than two documents", async () => {
+  it("rejects an unpaid request before even validating the body", async () => {
     const res = await request(app).post("/api/case-timeline").send({ documents: [{ name: "a", text: "x" }] });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("SESSION_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects fewer than two documents", async () => {
+    const res = await request(app).post("/api/case-timeline").set(paid()).send({ documents: [{ name: "a", text: "x" }] });
     expect(res.status).toBe(400);
   });
 
@@ -294,6 +357,7 @@ describe("POST /api/case-timeline", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ timeline: [], conflicts: [], openItems: [] }));
     const res = await request(app)
       .post("/api/case-timeline")
+      .set(paid())
       .send({
         documents: [
           { name: "affidavit.txt", text: "Event on Jan 1." },
@@ -307,8 +371,30 @@ describe("POST /api/case-timeline", () => {
 });
 
 describe("POST /api/rag-query", () => {
+  it("keeps the free OPA Coach chat (focus: family-advocate) ungated", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Here's my answer."));
+    const res = await request(app)
+      .post("/api/rag-query")
+      .send({ query: "What happens at a 5-day hearing?", files: [], focus: "family-advocate" });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects an unpaid request for any other focus", async () => {
+    const res = await request(app)
+      .post("/api/rag-query")
+      .send({ query: "Audit this document", files: [], focus: "evidentiary-auditor" });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("SESSION_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unpaid request with no focus at all (the default statutory-audit mode)", async () => {
+    const res = await request(app).post("/api/rag-query").send({ query: "Audit this document", files: [] });
+    expect(res.status).toBe(402);
+  });
+
   it("rejects a missing query", async () => {
-    const res = await request(app).post("/api/rag-query").send({ files: [] });
+    const res = await request(app).post("/api/rag-query").set(paid()).send({ files: [] });
     expect(res.status).toBe(400);
   });
 
@@ -316,6 +402,7 @@ describe("POST /api/rag-query", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Here's my answer."));
     const res = await request(app)
       .post("/api/rag-query")
+      .set(paid())
       .send({
         query: "What did the worker say about overnight visits?",
         files: [],
@@ -334,23 +421,52 @@ describe("POST /api/rag-query", () => {
 
   it("omits the conversation-history block when no history is given", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Answer without history."));
-    await request(app).post("/api/rag-query").send({ query: "A question", files: [] });
+    await request(app).post("/api/rag-query").set(paid()).send({ query: "A question", files: [] });
     const sentPrompt = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
     expect(sentPrompt).not.toContain("CONVERSATION SO FAR");
   });
 });
 
 describe("POST /api/extract-evidence", () => {
+  it("rejects an unauthenticated, unpaid request with SIGN_IN_REQUIRED", async () => {
+    const res = await request(app).post("/api/extract-evidence").send({ narrativeText: "Yesterday the worker visited." });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+  });
+
   it("rejects empty narrative text", async () => {
-    const res = await request(app).post("/api/extract-evidence").send({ narrativeText: "   " });
+    const res = await request(app).post("/api/extract-evidence").set(paid()).send({ narrativeText: "   " });
     expect(res.status).toBe(400);
   });
 
-  it("returns the structured extraction on success", async () => {
+  it("returns the structured extraction on success for a paid session", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ date: "2026-08-01", whatHappened: "A visit occurred." }));
-    const res = await request(app).post("/api/extract-evidence").send({ narrativeText: "Yesterday the worker visited." });
+    const res = await request(app)
+      .post("/api/extract-evidence")
+      .set(paid())
+      .send({ narrativeText: "Yesterday the worker visited." });
     expect(res.status).toBe(200);
     expect(res.body.whatHappened).toBe("A visit occurred.");
+  });
+
+  it("allows a signed-in parent's first free extraction, then blocks the second", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-2", email: "parent2@example.com" });
+    mockAccess.checkAndConsumeFreeToolUse.mockResolvedValueOnce(true);
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ date: "2026-08-01", whatHappened: "A visit occurred." }));
+    const res = await request(app)
+      .post("/api/extract-evidence")
+      .set("Authorization", "Bearer valid-firebase-token")
+      .send({ narrativeText: "Yesterday the worker visited." });
+    expect(res.status).toBe(200);
+    expect(mockAccess.checkAndConsumeFreeToolUse).toHaveBeenCalledWith("parent2@example.com", "extract-evidence");
+
+    mockAccess.checkAndConsumeFreeToolUse.mockResolvedValueOnce(false); // already used their one free pass
+    const res2 = await request(app)
+      .post("/api/extract-evidence")
+      .set("Authorization", "Bearer valid-firebase-token")
+      .send({ narrativeText: "Yesterday the worker visited again." });
+    expect(res2.status).toBe(402);
+    expect(res2.body.code).toBe("SESSION_REQUIRED");
   });
 });
 
@@ -362,8 +478,14 @@ describe("POST /api/deep-scan", () => {
     disclaimer: "disclaimer",
   };
 
-  it("rejects empty document text", async () => {
+  it("rejects an unpaid request before even validating the body", async () => {
     const res = await request(app).post("/api/deep-scan").send({ documentText: "   " });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("SESSION_REQUIRED");
+  });
+
+  it("rejects empty document text", async () => {
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "   " });
     expect(res.status).toBe(400);
   });
 
@@ -371,6 +493,7 @@ describe("POST /api/deep-scan", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
     const res = await request(app)
       .post("/api/deep-scan")
+      .set(paid())
       .send({ documentText: "Some CAS worker observation notes.", documentName: "notes.txt", category: "Worker Notes" });
 
     expect(res.status).toBe(200);
@@ -381,7 +504,7 @@ describe("POST /api/deep-scan", () => {
 
   it("tells the model there is no prior analysis when none is supplied", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
-    await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
     const sentPrompt = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
     expect(sentPrompt).toContain("No prior analysis is available");
   });
@@ -390,6 +513,7 @@ describe("POST /api/deep-scan", () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
     await request(app)
       .post("/api/deep-scan")
+      .set(paid())
       .send({
         documentText: "Some document text.",
         priorAnalysis: {
@@ -406,14 +530,14 @@ describe("POST /api/deep-scan", () => {
 
   it("returns a clear error instead of fabricating a report when the response isn't valid JSON", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("not json at all"));
-    const res = await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.body.gaps).toBeUndefined();
   });
 
   it("maps a rate-limit error from the model to HTTP 429", async () => {
     mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("rate limit exceeded"), { status: 429 }));
-    const res = await request(app).post("/api/deep-scan").send({ documentText: "Some document text." });
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
     expect(res.status).toBe(429);
     expect(res.body.isRateLimit).toBe(true);
   });

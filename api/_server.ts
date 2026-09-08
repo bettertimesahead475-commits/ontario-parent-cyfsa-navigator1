@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, TIER_PRICES, type Tier } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments } from "./services/gmailAgent.js";
@@ -591,6 +591,50 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
   });
 
+  // --- Shared paywall gates for the AI-cost routes below -----------------
+  // /api/analyze already has its own inline "1 free, then pay" check (see below) - these
+  // cover the routes that were still fully ungated: /api/case-timeline and /api/deep-scan
+  // are hard-gated (no free tier), /api/rag-query is free only for the OPA Coach's
+  // "family-advocate" focus, and /api/extract-evidence gets its own "1 free, then pay" pass.
+
+  function requireSession(req: Request, res: Response): { email: string; tier: Tier } | null {
+    const sessionToken = req.header("x-ps-session");
+    const session = sessionToken ? verifySessionToken(sessionToken) : null;
+    if (!session) {
+      res.status(402).json({
+        error: "This feature requires an active Pro or Premium plan. Activate your access code (or upgrade) on the Membership page.",
+        code: "SESSION_REQUIRED",
+      });
+      return null;
+    }
+    return session;
+  }
+
+  async function allowFreeToolUse(req: Request, res: Response, tool: FreeTool): Promise<boolean> {
+    const sessionToken = req.header("x-ps-session");
+    if (sessionToken && verifySessionToken(sessionToken)) return true; // paid users never touch the free-use table
+
+    const identity = await verifyFirebaseToken(req.header("authorization"));
+    if (!identity) {
+      res.status(401).json({
+        error: "Please sign in to use this tool.",
+        code: "SIGN_IN_REQUIRED",
+      });
+      return false;
+    }
+
+    try {
+      const key = identity.email || identity.uid;
+      if (await checkAndConsumeFreeToolUse(key, tool)) return true;
+    } catch (err) {
+      console.error(`[free-tool-usage] ${tool}`, err);
+      // Fail closed to the paid gate below rather than granting unlimited free use if the
+      // usage table is unreachable.
+    }
+
+    return !!requireSession(req, res);
+  }
+
   app.post("/api/analyze", async (req: Request, res: Response) => {
     let targetText = "";
     let fileDataObj: any = null;
@@ -952,6 +996,7 @@ ${analysisRules}`;
   // mirrors exactly how the manual cross-referencing distinguished "confirmed in writing"
   // from "described by the parent, not yet located in any document."
   app.post("/api/case-timeline", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
       const { documents, model, parentClaims } = req.body as {
         documents?: { name: string; text: string; sourceDate?: string }[];
@@ -1065,6 +1110,10 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
+    // The free "OPA Coach" chat (ParentChatBot.tsx) sends focus: "family-advocate" and stays
+    // ungated - it's informational, not one of the paid document tools. Every other focus
+    // (the Document Analyzer's case chat / deep-scan chat) requires a valid paid session.
+    if (req.body?.focus !== "family-advocate" && !requireSession(req, res)) return;
     let queryVal = "";
     let filesVal: any[] = [];
     let focusVal = "";
@@ -1212,6 +1261,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
   // API: Joint voice/text dictation evidence extraction endpoint
   app.post("/api/extract-evidence", async (req: Request, res: Response) => {
+    if (!(await allowFreeToolUse(req, res, "extract-evidence"))) return;
     let narrativeTextVal = "";
     try {
       const { narrativeText } = req.body;
@@ -1286,6 +1336,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   // second, deeper look. It now receives that prior report and is explicitly told
   // not to restate what it already found, but to dig into what it missed.
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
       const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {

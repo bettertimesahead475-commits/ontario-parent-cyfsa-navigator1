@@ -7,6 +7,6 @@
     "api/index.ts": { "maxDuration": 300 }
   },
   "crons": [
-    { "path": "/api/admin/check-payments", "schedule": "0 13 * * *" }
+    { "path": "/api/admin/check-payments", "schedule": "*/2 * * * *" }
   ]
 }

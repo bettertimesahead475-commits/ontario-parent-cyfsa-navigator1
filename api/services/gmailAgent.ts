@@ -27,12 +27,55 @@
 // ---------------------------------------------------------------------------
 
 import { google } from "googleapis";
-import { getSupabase, approvePayment } from "./access.js";
+import { getSupabase, approvePayment, PAYMENT_EMAIL } from "./access.js";
 
 const SENDER_QUERY = 'from:(interac.ca OR payments.interac.ca) newer_than:7d';
 const REFERENCE_PATTERN = /\bPS-[A-Z0-9]{5}\b/;
 const AMOUNT_PATTERN = /\$\s?([0-9]+(?:\.[0-9]{2})?)/;
 const PROCESSED_LABEL_NAME = "CYFSA-Navigator-Processed";
+
+// A payment stuck "pending" this long with no matching Gmail message at all is the other
+// failure direction from a noMatch/error: the e-transfer notification never arrived in the
+// inbox (or the scan missed it), not that it arrived and failed to match.
+const STALE_PENDING_HOURS = 48;
+
+// ---------------------------------------------------------------------------
+// Admin alerting: the whole point of surfacing a failure is that Chris doesn't have to go
+// looking for it, so a match failure or a stuck payment gets emailed to him directly rather
+// than only logged. Reuses the same nodemailer/SMTP setup already used for lawyer-intake
+// (api/_server.ts) - if SMTP isn't configured, this just logs and returns false rather than
+// throwing, since a missing alert channel should never take down the scan itself.
+// ---------------------------------------------------------------------------
+async function sendAdminAlert(subject: string, text: string): Promise<boolean> {
+  const hasSmtpConfig = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  if (!hasSmtpConfig) {
+    console.error("[gmail-agent alert] SMTP not configured - alert NOT sent:", subject);
+    return false;
+  }
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: process.env.ADMIN_ALERT_EMAIL || PAYMENT_EMAIL,
+      subject,
+      text,
+    });
+    return true;
+  } catch (mailErr) {
+    console.error("[gmail-agent alert] email send failed", mailErr);
+    return false;
+  }
+}
+
+function gmailMessageLink(messageId: string): string {
+  return `https://mail.google.com/mail/u/0/#inbox/${messageId}`;
+}
 
 function getOAuthClient() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -114,23 +157,82 @@ export interface ScanResult {
   approved: { referenceNumber: string; email: string; tier: string; code: string }[];
   noMatch: { messageId: string; reason: string }[];
   errors: { messageId: string; error: string }[];
+  stalePending: { referenceNumber: string; pendingSinceHours: number }[];
+}
+
+/**
+ * Alerts on `payments` rows stuck "pending" for longer than STALE_PENDING_HOURS with no
+ * matching Gmail message ever having arrived at all - the failure direction a per-message
+ * noMatch/error can't catch, since there's no message to log against. Dedup'd against
+ * `stale_payment_alerts` (keyed on reference_number) so the same stuck payment doesn't
+ * re-alert on every cron run.
+ */
+async function checkStalePendingPayments(db: ReturnType<typeof getSupabase>): Promise<ScanResult["stalePending"]> {
+  const alerted: ScanResult["stalePending"] = [];
+  const cutoff = new Date(Date.now() - STALE_PENDING_HOURS * 60 * 60 * 1000).toISOString();
+
+  const { data: stalePayments, error } = await db
+    .from("payments")
+    .select("reference_number, amount, plan, notes, submitted_at")
+    .eq("status", "pending")
+    .lt("submitted_at", cutoff);
+  if (error) {
+    console.error("[gmail-agent] failed to query stale pending payments", error);
+    return alerted;
+  }
+
+  for (const payment of stalePayments || []) {
+    const referenceNumber = payment.reference_number;
+    if (!referenceNumber) continue;
+
+    const { data: alreadyAlerted } = await db
+      .from("stale_payment_alerts")
+      .select("reference_number")
+      .eq("reference_number", referenceNumber)
+      .maybeSingle();
+    if (alreadyAlerted) continue;
+
+    const pendingSinceHours = Math.round((Date.now() - new Date(payment.submitted_at).getTime()) / (60 * 60 * 1000));
+    const email = (payment.notes || "").replace(/^email:/, "").trim();
+
+    const sent = await sendAdminAlert(
+      `[CYFSA Navigator] Payment stuck pending ${pendingSinceHours}h with no matching e-transfer email - ${referenceNumber}`,
+      `A payment request has been pending for ${pendingSinceHours} hours (threshold: ${STALE_PENDING_HOURS}h) with no matching Interac e-transfer notification email found in the inbox at all.\n\n` +
+        `Reference number: ${referenceNumber}\n` +
+        `Plan: ${payment.plan}\n` +
+        `Expected amount: $${payment.amount}\n` +
+        `Parent email: ${email || "(not recorded)"}\n` +
+        `Requested at: ${payment.submitted_at}\n\n` +
+        `This usually means the parent's e-transfer notification was never sent, was missed by the scan, or the parent hasn't actually sent the money yet. Check the inbox manually and/or reach out to the parent.`
+    );
+
+    if (sent) {
+      await db.from("stale_payment_alerts").insert({ reference_number: referenceNumber });
+    }
+    alerted.push({ referenceNumber, pendingSinceHours });
+  }
+
+  return alerted;
 }
 
 /** The actual agent run: scans recent Interac emails, matches, and approves. Call this from a cron or an admin-triggered route. */
 export async function scanForPayments(): Promise<ScanResult> {
   const gmail = getGmailClient();
   const db = getSupabase();
-  const result: ScanResult = { scanned: 0, alreadyProcessed: 0, approved: [], noMatch: [], errors: [] };
+  const result: ScanResult = { scanned: 0, alreadyProcessed: 0, approved: [], noMatch: [], errors: [], stalePending: [] };
 
   const { data: listResp } = await gmail.users.messages.list({ userId: "me", q: SENDER_QUERY, maxResults: 50 });
   const messages = listResp.messages || [];
   result.scanned = messages.length;
-  if (messages.length === 0) return result;
 
-  const labelId = await getOrCreateProcessedLabel(gmail);
+  const labelId = messages.length > 0 ? await getOrCreateProcessedLabel(gmail) : null;
 
   for (const msgRef of messages) {
     const messageId = msgRef.id!;
+    // Populated as matching progresses, so the catch block below can report whatever partial
+    // match was found even if a later step (e.g. approvePayment) is what actually threw.
+    let partialReference: string | null = null;
+    let partialAmount: string | null = null;
     try {
       const { data: already } = await db.from("gmail_processed_messages").select("message_id").eq("message_id", messageId).maybeSingle();
       if (already) {
@@ -143,15 +245,36 @@ export async function scanForPayments(): Promise<ScanResult> {
 
       const refMatch = bodyText.match(REFERENCE_PATTERN);
       const amountMatch = bodyText.match(AMOUNT_PATTERN);
+      partialReference = refMatch?.[0] || null;
+      partialAmount = amountMatch?.[0] || null;
 
       if (!refMatch) {
-        result.noMatch.push({ messageId, reason: "No PS-XXXXX reference number found in message body." });
-        await db.from("gmail_processed_messages").insert({ message_id: messageId, outcome: "no_reference_found" });
+        const reason = "No PS-XXXXX reference number found in message body.";
+        result.noMatch.push({ messageId, reason });
+        const alertSent = await sendAdminAlert(
+          `[CYFSA Navigator] Unmatched payment email - no reference number`,
+          `An Interac notification email couldn't be matched to a payment request.\n\nReason: ${reason}\nGmail message: ${gmailMessageLink(messageId)}\nMatched fragments: none\n\nA parent may have sent real money with nothing to link it to their account - check the inbox manually.`
+        );
+        await db.from("gmail_processed_messages").insert({
+          message_id: messageId,
+          outcome: "no_reference_found",
+          alerted_at: alertSent ? new Date().toISOString() : null,
+        });
         continue;
       }
       if (!amountMatch) {
-        result.noMatch.push({ messageId, reason: `Reference ${refMatch[0]} found but no dollar amount could be parsed.` });
-        await db.from("gmail_processed_messages").insert({ message_id: messageId, matched_reference: refMatch[0], outcome: "no_amount_found" });
+        const reason = `Reference ${refMatch[0]} found but no dollar amount could be parsed.`;
+        result.noMatch.push({ messageId, reason });
+        const alertSent = await sendAdminAlert(
+          `[CYFSA Navigator] Unmatched payment email - no amount - ${refMatch[0]}`,
+          `An Interac notification email couldn't be matched to a payment request.\n\nReason: ${reason}\nGmail message: ${gmailMessageLink(messageId)}\nMatched fragments: reference ${refMatch[0]}, no amount\n\nA parent may have sent real money with nothing to link it to their account - check the inbox manually.`
+        );
+        await db.from("gmail_processed_messages").insert({
+          message_id: messageId,
+          matched_reference: refMatch[0],
+          outcome: "no_amount_found",
+          alerted_at: alertSent ? new Date().toISOString() : null,
+        });
         continue;
       }
 
@@ -161,20 +284,43 @@ export async function scanForPayments(): Promise<ScanResult> {
       const approval = await approvePayment(referenceNumber, amount);
       result.approved.push(approval);
 
+      // approvePayment() already tried to email the code directly to the parent - that's the
+      // whole point of the automated path. If it couldn't (SMTP down, no email on file), the
+      // payment is still correctly approved and the code still exists, but nobody knows to
+      // send it, so this needs the same admin alert as an unmatched message would get.
+      if (!approval.emailSent) {
+        await sendAdminAlert(
+          `[CYFSA Navigator] Payment approved but code email failed to send - ${referenceNumber}`,
+          `Payment ${referenceNumber} was matched and approved automatically, and an access code was generated, but the email delivering it to the parent (${approval.email || "no email on file"}) failed to send.\n\nGmail message: ${gmailMessageLink(messageId)}\n\nThe code already exists in access_codes for this reference number - send it to the parent manually.`
+        );
+      }
+
       await db.from("gmail_processed_messages").insert({ message_id: messageId, matched_reference: referenceNumber, outcome: "approved" });
-      await gmail.users.messages.modify({ userId: "me", id: messageId, requestBody: { addLabelIds: [labelId] } });
+      await gmail.users.messages.modify({ userId: "me", id: messageId, requestBody: { addLabelIds: [labelId!] } });
     } catch (e: any) {
-      result.errors.push({ messageId, error: e.message || String(e) });
+      const errorMessage = e.message || String(e);
+      result.errors.push({ messageId, error: errorMessage });
+      const alertSent = await sendAdminAlert(
+        `[CYFSA Navigator] Payment email processing error${partialReference ? ` - ${partialReference}` : ""}`,
+        `An Interac notification email failed to process.\n\nReason: ${errorMessage}\nGmail message: ${gmailMessageLink(messageId)}\nMatched fragments: reference ${partialReference || "none"}, amount ${partialAmount || "none"}\n\nCheck the inbox and the payments table manually - a parent's real money may be involved.`
+      );
       // Still mark it processed so a permanently-failing message (e.g. reference
       // number for an already-approved or cancelled payment) doesn't get retried
       // and re-logged as an error on every single future run.
       try {
-        await db.from("gmail_processed_messages").insert({ message_id: messageId, outcome: `error: ${e.message || e}` });
+        await db.from("gmail_processed_messages").insert({
+          message_id: messageId,
+          matched_reference: partialReference,
+          outcome: `error: ${errorMessage}`,
+          alerted_at: alertSent ? new Date().toISOString() : null,
+        });
       } catch {
         // best-effort - if even this insert fails, the next run will just see it again
       }
     }
   }
+
+  result.stalePending = await checkStalePendingPayments(db);
 
   return result;
 }

@@ -17,8 +17,10 @@
 //      (gated by ADMIN_SECRET header in the route). Verifies the amount
 //      matches or exceeds the tier price, flips the payment to 'approved',
 //      generates a one-time access code, stores only its SHA-256 hash in
-//      `access_codes`, and returns the plaintext code exactly once so it
-//      can be sent to the parent.
+//      `access_codes`, and emails the plaintext code directly to the
+//      parent (see sendAccessCodeEmail() below) - this is the only place
+//      it's ever sent anywhere, on both the manual admin-approve route and
+//      the automated Gmail-agent path, since both call this one function.
 //   3. verifyAccessCode(email, code) — parent-facing. Checks the code
 //      against the stored hash, confirms it's unused and unexpired, marks
 //      it used, and returns a signed session token (HMAC, no session table
@@ -114,6 +116,26 @@ export function verifySessionToken(token: string): { email: string; tier: Tier }
   }
 }
 
+// --- Free-tier quota: "1 free, then pay" for /api/analyze and /api/extract-evidence --------
+// Backed by the free_tool_usage table (email, tool unique pair; tool CHECK-constrained to
+// 'analyze'/'extract-evidence'). This table already existed in the live DB, unused by any
+// route - /api/analyze has its own separate uid-keyed free_usage table/counter (see
+// services/usage.ts); this one is for extract-evidence, keyed by the verified email a
+// Firebase ID token carries (never a client-supplied header). The insert IS the claim: if it
+// succeeds, this is the parent's first (free) use of that tool; if it fails on the unique
+// constraint, they've already spent it. Race-safe under concurrent requests, unlike a
+// select-then-insert check.
+export type FreeTool = "analyze" | "extract-evidence";
+
+export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool): Promise<boolean> {
+  const db = getSupabase();
+  const normalizedEmail = email.toLowerCase().trim();
+  const { error } = await db.from("free_tool_usage").insert({ email: normalizedEmail, tool });
+  if (!error) return true;
+  if (error.code === "23505") return false; // unique_violation - already used this tool's free pass
+  throw Object.assign(new Error(`Failed to check free tool usage: ${error.message}`), { statusCode: 500 });
+}
+
 // --- Step 1: parent requests access before paying --------------------------
 export async function requestAccess(email: string, tier: Tier) {
   const db = getSupabase();
@@ -160,6 +182,28 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     );
   }
 
+  // Atomically claim this payment before doing anything else: scoping the UPDATE to
+  // status = 'pending' and checking whether it actually matched a row is what makes this
+  // safe against two near-simultaneous calls for the same reference number (e.g. an admin
+  // approving by hand while the Gmail agent's cron is mid-run, or two overlapping cron
+  // invocations at the 2-minute interval). Without this, both callers would pass the SELECT
+  // above before either had written anything, and both would go on to mint and issue a
+  // separate access code for the same payment. Postgres serializes the two UPDATEs even
+  // though the SELECTs can race, so exactly one of them ever sees a matched row here.
+  const { data: claimed, error: claimErr } = await db
+    .from("payments")
+    .update({ status: "approved", approved_at: new Date().toISOString() })
+    .eq("reference_number", referenceNumber)
+    .eq("status", "pending")
+    .select("reference_number");
+  if (claimErr) throw Object.assign(new Error(`Failed to claim payment for approval: ${claimErr.message}`), { statusCode: 500 });
+  if (!claimed || claimed.length === 0) {
+    throw Object.assign(
+      new Error("This payment was already approved by a concurrent request. No second access code was issued."),
+      { statusCode: 409 }
+    );
+  }
+
   const email = (payment.notes || "").replace(/^email:/, "").trim();
   const tier = payment.plan as Tier;
   const code = generateAccessCode();
@@ -172,17 +216,56 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     code_hash: hashCode(code),
     expires_at: new Date(Date.now() + CODE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
   });
-  if (codeErr) throw Object.assign(new Error(`Payment matched but code generation failed: ${codeErr.message}`), { statusCode: 500 });
+  if (codeErr) throw Object.assign(new Error(`Payment was marked approved but code generation failed: ${codeErr.message}`), { statusCode: 500 });
 
-  const { error: updateErr } = await db
-    .from("payments")
-    .update({ status: "approved", approved_at: new Date().toISOString() })
-    .eq("reference_number", referenceNumber);
-  if (updateErr) throw Object.assign(new Error(`Code was generated but payment status failed to update: ${updateErr.message}`), { statusCode: 500 });
+  // Plaintext code is only ever visible right here - it's never stored anywhere, so this
+  // email IS the delivery mechanism, not a courtesy copy. Both callers (the manual
+  // /api/admin/approve-payment route and the Gmail agent's automated scanForPayments()) go
+  // through this one function, so wiring the send here - rather than in each caller - is
+  // what makes it actually automatic on both paths instead of relying on Chris to forward it
+  // by hand. A failed send does NOT fail the approval (the payment is already correctly
+  // marked approved and the code already exists - that's the source of truth); the caller
+  // gets emailSent: false back and decides what to do about it.
+  const emailSent = await sendAccessCodeEmail(email, tier, code, referenceNumber);
 
-  // Plaintext code is only ever visible right here — send it to the parent
-  // yourself (email/text). It is never stored in plaintext anywhere.
-  return { email, tier, code, referenceNumber };
+  return { email, tier, code, referenceNumber, emailSent };
+}
+
+// --- Delivers the plaintext code to the parent - the only point it's ever sent anywhere ---
+async function sendAccessCodeEmail(email: string, tier: Tier, code: string, referenceNumber: string): Promise<boolean> {
+  const hasSmtpConfig = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  if (!hasSmtpConfig) {
+    console.error("[access-code email] SMTP not configured - code NOT emailed to parent:", referenceNumber);
+    return false;
+  }
+  if (!email) {
+    console.error("[access-code email] No parent email on file - code NOT emailed:", referenceNumber);
+    return false;
+  }
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: email,
+      subject: `Your Ontario Parent Assist access code (${tier})`,
+      text:
+        `Your Interac e-transfer (reference ${referenceNumber}) has been confirmed. Here is your ${tier} access code:\n\n` +
+        `${code}\n\n` +
+        `To activate it: go to the Membership page, enter this email address (${email}) and the code above under "Enter Access Code," then click Activate.\n\n` +
+        `This code is single-use and expires in ${CODE_TTL_DAYS} days if not activated. Keep it somewhere safe until then.\n\n` +
+        `If you weren't expecting this email, you can ignore it.`,
+    });
+    return true;
+  } catch (mailErr) {
+    console.error("[access-code email] send failed", mailErr);
+    return false;
+  }
 }
 
 // --- Step 3: parent redeems email + code -----------------------------------
