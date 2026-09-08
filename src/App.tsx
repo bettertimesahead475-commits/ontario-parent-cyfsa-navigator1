@@ -3,29 +3,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { lazy, Suspense, useState, useEffect } from "react";
 import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener, useAppReset } from "./hooks/useAppReset";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
-// Import Modular Subcomponents direct statically for ultra-fast instantaneous view switching with no skeleton flickers
-import CYFSAGuideTab from "./components/CYFSAGuideTab";
-import CharterRightsTab from "./components/CharterRightsTab";
-import InvestigationTab from "./components/InvestigationTab";
-import DefenseStrategiesTab from "./components/DefenseStrategiesTab";
-import FamilyCourtTab from "./components/FamilyCourtTab";
-import ChildDevelopmentTab from "./components/ChildDevelopmentTab";
-import DocumentAnalyzerTab from "./components/DocumentAnalyzerTab";
-import TemplatesTab from "./components/TemplatesTab";
-import VoiceAssistantTab from "./components/VoiceAssistantTab";
-import LawyerDirectoryTab from "./components/LawyerDirectoryTab";
-import SignUpTab from "./components/SignUpTab";
-import StatutoryBookmarkSidebar from "./components/StatutoryBookmarkSidebar";
-import FloatingTTS from "./components/FloatingTTS";
-import LegalTerminologyDrawer from "./components/LegalTerminologyDrawer";
-import PricingTab from "./components/PricingTab";
+// Keep the home journey in the initial bundle; load feature-only views on demand.
+const CYFSAGuideTab = lazy(() => import("./components/CYFSAGuideTab"));
+const CharterRightsTab = lazy(() => import("./components/CharterRightsTab"));
+const InvestigationTab = lazy(() => import("./components/InvestigationTab"));
+const DefenseStrategiesTab = lazy(() => import("./components/DefenseStrategiesTab"));
+const FamilyCourtTab = lazy(() => import("./components/FamilyCourtTab"));
+const ChildDevelopmentTab = lazy(() => import("./components/ChildDevelopmentTab"));
+const DocumentAnalyzerTab = lazy(() => import("./components/DocumentAnalyzerTab"));
+const TemplatesTab = lazy(() => import("./components/TemplatesTab"));
+const VoiceAssistantTab = lazy(() => import("./components/VoiceAssistantTab"));
+const LawyerDirectoryTab = lazy(() => import("./components/LawyerDirectoryTab"));
+const SignUpTab = lazy(() => import("./components/SignUpTab"));
+const StatutoryBookmarkSidebar = lazy(() => import("./components/StatutoryBookmarkSidebar"));
+const FloatingTTS = lazy(() => import("./components/FloatingTTS"));
+const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyDrawer"));
+const PricingTab = lazy(() => import("./components/PricingTab"));
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
 import { getUserKey } from "./utils/storage";
@@ -65,6 +65,12 @@ export default function App() {
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [terminologyOpen, setTerminologyOpen] = useState<boolean>(false);
+  const [nonCriticalWidgetsReady, setNonCriticalWidgetsReady] = useState(false);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setNonCriticalWidgetsReady(true), 1500);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   const [currentTier, setCurrentTier] = useState<"Basic" | "Pro" | "Premium">(() => {
     try {
@@ -253,7 +259,8 @@ export default function App() {
 
       {/* Primary Main Content Area container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10" id="main-frame-area">
-        <Switch>
+        <Suspense fallback={<div className="min-h-48" aria-busy="true" />}>
+          <Switch>
           <Route path="/"><ParentJourney page="home" /></Route>
           <Route path="/rights"><ParentJourney page="rights" /></Route>
           <Route path="/cyfsa-procedure"><ParentJourney page="procedure" /></Route>
@@ -316,7 +323,8 @@ export default function App() {
           {/* Fallback route */}
           <Route><Redirect to="/" /></Route>
 
-        </Switch>
+          </Switch>
+        </Suspense>
       </main>
 
       {/* Professional Legal Footnote footer */}
@@ -451,8 +459,12 @@ export default function App() {
         </div>
       </footer>
 
-      <StatutoryBookmarkSidebar />
-      <FloatingTTS />
+      {nonCriticalWidgetsReady && (
+        <Suspense fallback={null}>
+          <StatutoryBookmarkSidebar />
+          <FloatingTTS />
+        </Suspense>
+      )}
       
       {/* Symmetrical Floating Glossary Access (Bottom Left) */}
       <button
@@ -464,10 +476,14 @@ export default function App() {
         <BookOpen className="w-5 h-5 group-hover:scale-110 transition-transform" />
       </button>
 
-      <LegalTerminologyDrawer 
-        isOpen={terminologyOpen} 
-        onClose={() => setTerminologyOpen(false)} 
-      />
+      {terminologyOpen && (
+        <Suspense fallback={null}>
+          <LegalTerminologyDrawer
+            isOpen={terminologyOpen}
+            onClose={() => setTerminologyOpen(false)}
+          />
+        </Suspense>
+      )}
 
       <Analytics />
       <SpeedInsights />
