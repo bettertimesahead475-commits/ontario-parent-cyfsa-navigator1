@@ -10,7 +10,8 @@
 // separate access code for one payment. approvePayment() now claims the payment with an
 // UPDATE ... WHERE status = 'pending' and only proceeds if that update actually matched a
 // row - see the comment above it in access.ts.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import crypto from "node:crypto";
 
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
@@ -34,7 +35,7 @@ vi.mock("@supabase/supabase-js", () => ({
   }),
 }));
 
-const { approvePayment } = await import("./access.js");
+const { approvePayment, issueSessionToken, verifySessionToken } = await import("./access.js");
 
 type FakeDb = ReturnType<typeof createFakeDb>;
 
@@ -206,5 +207,77 @@ describe("approvePayment - parent email delivery", () => {
     expect(result.emailSent).toBe(false);
     expect(db._paymentsRow().status).toBe("approved");
     expect(db._accessCodes).toHaveLength(1);
+  });
+});
+
+// SECURITY FIX: getSessionSecret() used to fall back to ADMIN_SECRET when SESSION_SECRET was
+// unset, coupling admin-route authentication and paid-session signing into one shared secret.
+// These tests lock in the separation: SESSION_SECRET is its own required secret with no
+// fallback, and access.ts's session functions never read ADMIN_SECRET at all.
+describe("session-signing secret separation", () => {
+  const ORIGINAL_SESSION_SECRET = process.env.SESSION_SECRET;
+  const ORIGINAL_ADMIN_SECRET = process.env.ADMIN_SECRET;
+
+  afterEach(() => {
+    if (ORIGINAL_SESSION_SECRET === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = ORIGINAL_SESSION_SECRET;
+    if (ORIGINAL_ADMIN_SECRET === undefined) delete process.env.ADMIN_SECRET;
+    else process.env.ADMIN_SECRET = ORIGINAL_ADMIN_SECRET;
+  });
+
+  it("signs and verifies a session token using SESSION_SECRET when it is configured", () => {
+    process.env.SESSION_SECRET = "real-session-secret";
+    delete process.env.ADMIN_SECRET;
+
+    const token = issueSessionToken("parent@example.com", "Pro");
+    const result = verifySessionToken(token);
+
+    expect(result).toEqual({ email: "parent@example.com", tier: "Pro" });
+  });
+
+  it("does not fall back to ADMIN_SECRET when SESSION_SECRET is absent", () => {
+    delete process.env.SESSION_SECRET;
+    process.env.ADMIN_SECRET = "admin-only-secret";
+
+    // A token forged with what used to be the fallback secret (ADMIN_SECRET) must not verify -
+    // proving ADMIN_SECRET is no longer usable as a stand-in session-signing key.
+    const payload = Buffer.from(
+      JSON.stringify({ email: "attacker@example.com", tier: "Premium", exp: Date.now() + 60_000 })
+    ).toString("base64url");
+    const sigUsingAdminSecret = crypto.createHmac("sha256", "admin-only-secret").update(payload).digest("base64url");
+    const forgedWithAdminSecret = `${payload}.${sigUsingAdminSecret}`;
+
+    expect(() => verifySessionToken(forgedWithAdminSecret)).toThrow(/SESSION_SECRET/);
+  });
+
+  it("fails closed - throws, never grants access - when SESSION_SECRET is unavailable", () => {
+    delete process.env.SESSION_SECRET;
+    delete process.env.ADMIN_SECRET;
+
+    expect(() => issueSessionToken("parent@example.com", "Pro")).toThrow(/SESSION_SECRET/);
+    expect(() => verifySessionToken("anything.here")).toThrow(/SESSION_SECRET/);
+  });
+
+  it("leaves ADMIN_SECRET and administrative authentication untouched", () => {
+    // x-admin-secret checks in api/_server.ts compare the header directly against
+    // process.env.ADMIN_SECRET and never call into access.ts's session-signing code - this
+    // documents the other half of the separation: access.ts's session functions neither read
+    // nor depend on ADMIN_SECRET in any way, so admin authentication cannot be affected by
+    // paid-session configuration.
+    process.env.ADMIN_SECRET = "admin-only-secret";
+    delete process.env.SESSION_SECRET;
+
+    expect(() => issueSessionToken("parent@example.com", "Pro")).toThrow();
+    expect(process.env.ADMIN_SECRET).toBe("admin-only-secret");
+  });
+
+  it("still rejects a tampered or wrongly-signed token when SESSION_SECRET is configured", () => {
+    process.env.SESSION_SECRET = "real-session-secret";
+
+    const token = issueSessionToken("parent@example.com", "Premium");
+    const [payload] = token.split(".");
+    const wrongSig = crypto.createHmac("sha256", "not-the-real-secret").update(payload).digest("base64url");
+
+    expect(verifySessionToken(`${payload}.${wrongSig}`)).toBeNull();
   });
 });
