@@ -16,6 +16,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
+import { createCase } from "./services/cases.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 
@@ -622,6 +623,68 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     } catch (err: any) {
       console.error("[/api/activate-code]", err);
       res.status(err.statusCode || 500).json({ error: err.message || "Activation failed." });
+    }
+  });
+
+  // Phase 2A: create a case. This is the foundation everything in
+  // PHASE_2_CYFSA_INTELLIGENCE_ARCHITECTURE.md's evidence-intelligence
+  // pipeline will eventually attach to — but this route itself does nothing
+  // beyond persisting a case row and its owner membership. No document
+  // upload, no AI call, no case-sharing here (see that architecture doc's
+  // §24 for why this is deliberately the smallest possible first slice).
+  //
+  // Authentication: a valid Firebase ID token is required — this is a
+  // case-management action available to any signed-in parent, not gated by
+  // payment tier the way the AI-cost routes are, so this intentionally does
+  // NOT reuse requireSession()/allowFreeToolUse() (both paid-tier-aware).
+  // Ownership: the case's owner_uid is always the server-verified Firebase
+  // uid from verifyFirebaseToken() — the request body is never trusted for
+  // any ownership-relevant field, and only `title` is ever read off it.
+  app.post("/api/cases", async (req: Request, res: Response) => {
+    try {
+      const identity = await verifyFirebaseToken(req.header("authorization"));
+      if (!identity) {
+        return res.status(401).json({
+          error: "Please sign in to create a case.",
+          code: "SIGN_IN_REQUIRED",
+        });
+      }
+
+      const body = req.body;
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return res.status(400).json({ error: "A JSON request body is required." });
+      }
+
+      // Explicitly pull only `title` off the body — any other field the
+      // client sends (an ownerUid, a role, a pre-chosen id, etc.) is simply
+      // never read, which is what actually prevents client-controlled
+      // ownership here, not a denylist of "bad" field names.
+      const { title } = body as { title?: unknown };
+      if (typeof title !== "string" || !title.trim()) {
+        return res.status(400).json({ error: "A non-empty `title` string is required." });
+      }
+      const trimmedTitle = title.trim();
+      if (trimmedTitle.length > 200) {
+        return res.status(400).json({ error: "Title is too long (max 200 characters)." });
+      }
+
+      const created = await createCase(identity.uid, trimmedTitle);
+      res.status(201).json({
+        case: {
+          id: created.id,
+          title: created.title,
+          description: created.description,
+          ownerUid: created.ownerUid,
+          createdAt: created.createdAt,
+          updatedAt: created.updatedAt,
+        },
+      });
+    } catch (err: any) {
+      // Deliberately generic here, unlike a few older routes in this file —
+      // this is a brand-new persistence path and a raw Supabase/RPC error
+      // string is exactly the kind of thing that should never reach a client.
+      console.error("[/api/cases]", err);
+      res.status(500).json({ error: "Failed to create case. Please try again." });
     }
   });
 

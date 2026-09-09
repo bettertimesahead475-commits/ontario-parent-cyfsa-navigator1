@@ -53,6 +53,15 @@ const mockGmailAgent = vi.hoisted(() => ({
   verifyOAuthState: vi.fn(),
 }));
 
+// Phase 2A: POST /api/cases. Mocked here the same way access.js/usage.js
+// are — the real createCase() implementation (Postgres RPC atomicity, field
+// mapping) has its own dedicated coverage in api/services/cases.test.ts;
+// this file only needs to prove the ROUTE's auth/ownership/validation
+// behavior, not re-prove the service function works.
+const mockCases = vi.hoisted(() => ({
+  createCase: vi.fn(),
+}));
+
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class MockAnthropic {
     messages = { create: mockCreateMessage };
@@ -75,6 +84,7 @@ vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
 vi.mock("./services/usage.js", () => mockUsage);
 vi.mock("./services/gmailAgent.js", () => mockGmailAgent);
+vi.mock("./services/cases.js", () => mockCases);
 
 // `process.env.VERCEL` must be set BEFORE _server.ts is evaluated: it gates
 // whether the module calls setupViteAndStart() (which would otherwise spin
@@ -284,6 +294,124 @@ describe("GET /api/admin/check-payments", () => {
     const res = await request(app).get("/api/admin/check-payments").set("authorization", "Bearer wrong-token");
     expect(res.status).toBe(401);
     delete process.env.CRON_SECRET;
+  });
+});
+
+describe("POST /api/cases", () => {
+  it("rejects an unauthenticated request", async () => {
+    // beforeEach already leaves verifyFirebaseToken resolving null.
+    const res = await request(app).post("/api/cases").send({ title: "My Case" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("creates a case for a signed-in Firebase user and returns it", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "verified-uid-1", email: "parent@example.com" });
+    mockCases.createCase.mockResolvedValue({
+      id: "case-1",
+      ownerUid: "verified-uid-1",
+      title: "My Case",
+      description: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: "My Case" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.case).toEqual({
+      id: "case-1",
+      title: "My Case",
+      description: null,
+      ownerUid: "verified-uid-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(mockCases.createCase).toHaveBeenCalledWith("verified-uid-1", "My Case");
+  });
+
+  it("uses the server-verified uid as owner, never a client-supplied one (spoofing resistance)", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "real-verified-uid", email: "parent@example.com" });
+    mockCases.createCase.mockResolvedValue({
+      id: "case-2",
+      ownerUid: "real-verified-uid",
+      title: "Spoof Attempt",
+      description: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      // An attacker-controlled body trying to claim a different owner/role/id.
+      .send({ title: "Spoof Attempt", ownerUid: "someone-elses-uid", uid: "someone-elses-uid", userId: "someone-elses-uid", role: "OWNER", id: "attacker-chosen-id" });
+
+    expect(res.status).toBe(201);
+    // The route must have called createCase with ONLY the verified uid and
+    // the title — never anything derived from the spoofed body fields.
+    expect(mockCases.createCase).toHaveBeenCalledWith("real-verified-uid", "Spoof Attempt");
+    expect(res.body.case.ownerUid).toBe("real-verified-uid");
+    expect(res.body.case.id).not.toBe("attacker-chosen-id");
+  });
+
+  it("rejects a missing title", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({});
+    expect(res.status).toBe(400);
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string title", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: 12345 });
+    expect(res.status).toBe(400);
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("rejects a blank/whitespace-only title", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: "   " });
+    expect(res.status).toBe(400);
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("rejects an excessively long title", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: "x".repeat(201) });
+    expect(res.status).toBe(400);
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("does not leak a raw database/RPC error message if case creation fails", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    mockCases.createCase.mockRejectedValue(
+      Object.assign(new Error("Failed to create case: relation \"public.cases\" does not exist"), { statusCode: 500 })
+    );
+
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: "My Case" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).not.toMatch(/relation|does not exist|public\.cases/);
   });
 });
 
