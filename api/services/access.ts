@@ -87,10 +87,15 @@ function timingSafeEqualHex(a: string, b: string): boolean {
 }
 
 // --- Session tokens: HMAC-signed, stateless, no session table needed ------
+// SECURITY FIX: this used to fall back to ADMIN_SECRET when SESSION_SECRET was unset, which
+// meant a single leaked secret could both authenticate admin-only routes (x-admin-secret) AND
+// forge paid-session tokens for any email/tier. Paid-session signing now requires its own,
+// independently configured secret - no fallback, fails closed (throws, same as every other
+// missing-configuration error in this codebase) if it's absent.
 function getSessionSecret(): string {
-  const secret = process.env.SESSION_SECRET || process.env.ADMIN_SECRET;
+  const secret = process.env.SESSION_SECRET;
   if (!secret) {
-    throw Object.assign(new Error("SESSION_SECRET (or ADMIN_SECRET) is not configured."), { statusCode: 503 });
+    throw Object.assign(new Error("SESSION_SECRET is not configured."), { statusCode: 503 });
   }
   return secret;
 }
