@@ -48,6 +48,11 @@ function getFirebaseAdminApp(): App {
  * or the token doesn't check out — callers decide what "no verified identity"
  * means for their route (usually: treat as an unauthenticated free-tier check
  * that has zero free uses left, not as an error).
+ *
+ * `checkRevoked: true` is required here — without it, verifyIdToken() only
+ * checks the token's signature/expiry, so a token issued before an account
+ * was disabled or its sessions revoked would keep authenticating until that
+ * token's own natural expiry regardless of the revocation.
  */
 export async function verifyFirebaseToken(authHeader: string | undefined): Promise<{ uid: string; email: string | null } | null> {
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
@@ -55,7 +60,7 @@ export async function verifyFirebaseToken(authHeader: string | undefined): Promi
   if (!idToken) return null;
 
   try {
-    const decoded = await getAuth(getFirebaseAdminApp()).verifyIdToken(idToken);
+    const decoded = await getAuth(getFirebaseAdminApp()).verifyIdToken(idToken, true);
     return { uid: decoded.uid, email: decoded.email || null };
   } catch (e) {
     console.error("Firebase ID token verification failed:", e);
