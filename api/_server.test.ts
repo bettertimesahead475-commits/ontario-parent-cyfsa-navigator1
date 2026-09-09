@@ -41,6 +41,18 @@ const mockUsage = vi.hoisted(() => ({
   FREE_ANALYSES_LIMIT: 1,
 }));
 
+// Added in Phase 1.5 remediation: previously nothing mocked services/gmailAgent.js at all,
+// which is why /api/admin/gmail-auth-url, /api/admin/gmail-callback, and
+// /api/admin/check-payments had zero test coverage (AUDIT.md Finding L-5) - calling the real
+// module in a test would have hit missing GOOGLE_CLIENT_ID/etc. env vars rather than exercising
+// the route logic itself.
+const mockGmailAgent = vi.hoisted(() => ({
+  getGmailAuthUrl: vi.fn(),
+  exchangeGmailAuthCode: vi.fn(),
+  scanForPayments: vi.fn(),
+  verifyOAuthState: vi.fn(),
+}));
+
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class MockAnthropic {
     messages = { create: mockCreateMessage };
@@ -62,6 +74,7 @@ vi.mock("nodemailer", () => ({
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
 vi.mock("./services/usage.js", () => mockUsage);
+vi.mock("./services/gmailAgent.js", () => mockGmailAgent);
 
 // `process.env.VERCEL` must be set BEFORE _server.ts is evaluated: it gates
 // whether the module calls setupViteAndStart() (which would otherwise spin
@@ -120,6 +133,7 @@ beforeEach(() => {
   mockUsage.getFreeUsage.mockResolvedValue(0);
   mockUsage.recordFreeUse.mockResolvedValue(undefined);
   mockAccess.checkAndConsumeFreeToolUse.mockResolvedValue(false);
+  mockGmailAgent.verifyOAuthState.mockReturnValue(false);
 });
 
 describe("GET /api/health", () => {
@@ -193,6 +207,86 @@ describe("POST /api/admin/approve-payment", () => {
   });
 });
 
+// Added in Phase 1.5 remediation (AUDIT.md Finding L-5: zero test coverage
+// existed for any of these three admin/cron routes before this fix).
+describe("GET /api/admin/gmail-auth-url", () => {
+  it("rejects a request without the correct admin secret", async () => {
+    const res = await request(app).get("/api/admin/gmail-auth-url");
+    expect(res.status).toBe(401);
+    expect(mockGmailAgent.getGmailAuthUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns the Google consent URL with the correct admin secret", async () => {
+    mockGmailAgent.getGmailAuthUrl.mockReturnValue("https://accounts.google.com/o/oauth2/v2/auth?state=abc");
+    const res = await request(app).get("/api/admin/gmail-auth-url").set("x-admin-secret", "test-admin-secret");
+    expect(res.status).toBe(200);
+    expect(res.body.url).toContain("accounts.google.com");
+  });
+});
+
+describe("GET /api/admin/gmail-callback", () => {
+  // SECURITY REGRESSION TEST (Phase 1.5 remediation, AUDIT.md Finding M-1):
+  // a code comment used to claim this route was protected by a `state`
+  // parameter, but no such check actually existed anywhere. These tests
+  // exist to fail if that check is ever removed again.
+  it("rejects a request with no state parameter at all", async () => {
+    const res = await request(app).get("/api/admin/gmail-callback").query({ code: "auth-code-123" });
+    expect(res.status).toBe(401);
+    expect(mockGmailAgent.exchangeGmailAuthCode).not.toHaveBeenCalled();
+  });
+
+  it("rejects a request with an invalid or expired state parameter", async () => {
+    mockGmailAgent.verifyOAuthState.mockReturnValue(false);
+    const res = await request(app).get("/api/admin/gmail-callback").query({ code: "auth-code-123", state: "forged-or-expired" });
+    expect(res.status).toBe(401);
+    expect(mockGmailAgent.exchangeGmailAuthCode).not.toHaveBeenCalled();
+  });
+
+  it("rejects a request with no code even if state is valid", async () => {
+    mockGmailAgent.verifyOAuthState.mockReturnValue(true);
+    const res = await request(app).get("/api/admin/gmail-callback").query({ state: "valid-state" });
+    expect(res.status).toBe(400);
+  });
+
+  it("exchanges the code for a refresh token when both code and state are valid", async () => {
+    mockGmailAgent.verifyOAuthState.mockReturnValue(true);
+    mockGmailAgent.exchangeGmailAuthCode.mockResolvedValueOnce("refresh-token-xyz");
+    const res = await request(app).get("/api/admin/gmail-callback").query({ code: "auth-code-123", state: "valid-state" });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("refresh-token-xyz");
+  });
+});
+
+describe("GET /api/admin/check-payments", () => {
+  it("rejects a request with neither the admin secret nor a valid cron bearer token", async () => {
+    const res = await request(app).get("/api/admin/check-payments");
+    expect(res.status).toBe(401);
+    expect(mockGmailAgent.scanForPayments).not.toHaveBeenCalled();
+  });
+
+  it("runs the scan with the correct admin secret", async () => {
+    mockGmailAgent.scanForPayments.mockResolvedValueOnce({ scanned: 0, alreadyProcessed: 0, matchedPendingApproval: [], noMatch: [], errors: [], stalePending: [] });
+    const res = await request(app).get("/api/admin/check-payments").set("x-admin-secret", "test-admin-secret");
+    expect(res.status).toBe(200);
+    expect(mockGmailAgent.scanForPayments).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the scan when called by Vercel Cron with the correct bearer token", async () => {
+    process.env.CRON_SECRET = "test-cron-secret";
+    mockGmailAgent.scanForPayments.mockResolvedValueOnce({ scanned: 0, alreadyProcessed: 0, matchedPendingApproval: [], noMatch: [], errors: [], stalePending: [] });
+    const res = await request(app).get("/api/admin/check-payments").set("authorization", "Bearer test-cron-secret");
+    expect(res.status).toBe(200);
+    delete process.env.CRON_SECRET;
+  });
+
+  it("rejects an incorrect cron bearer token", async () => {
+    process.env.CRON_SECRET = "test-cron-secret";
+    const res = await request(app).get("/api/admin/check-payments").set("authorization", "Bearer wrong-token");
+    expect(res.status).toBe(401);
+    delete process.env.CRON_SECRET;
+  });
+});
+
 describe("POST /api/activate-code", () => {
   it("rejects a missing code or email", async () => {
     const res = await request(app).post("/api/activate-code").send({ email: "a@b.com" });
@@ -214,14 +308,46 @@ describe("POST /api/activate-code", () => {
 });
 
 describe("POST /api/extract-text", () => {
+  // SECURITY REGRESSION TEST (Phase 1.5 remediation, AUDIT.md Finding H-1):
+  // this endpoint had no authentication at all before this fix - anyone
+  // could call it directly for free, unmetered Gemini OCR. This test exists
+  // specifically to fail if that gate is ever removed again.
+  it("rejects an unauthenticated request with SIGN_IN_REQUIRED", async () => {
+    const res = await request(app).post("/api/extract-text").send({ fileData: { base64: "abcd", mimeType: "text/plain" } });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it("allows a signed-in-but-unpaid (Firebase-verified) caller through, since this step doesn't consume a free-tier slot", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-extract", email: "parent@example.com" });
+    const base64 = Buffer.from("Hello world", "utf-8").toString("base64");
+    const res = await request(app)
+      .post("/api/extract-text")
+      .set("Authorization", "Bearer valid-firebase-token")
+      .send({ fileData: { base64, mimeType: "text/plain" } });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects an oversized base64 payload before calling Gemini", async () => {
+    const oversized = "a".repeat(30_000_001);
+    const res = await request(app)
+      .post("/api/extract-text")
+      .set(paid())
+      .send({ fileData: { base64: oversized, mimeType: "application/pdf" } });
+    expect(res.status).toBe(413);
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
   it("rejects a missing fileData.base64", async () => {
-    const res = await request(app).post("/api/extract-text").send({ fileData: {} });
+    const res = await request(app).post("/api/extract-text").set(paid()).send({ fileData: {} });
     expect(res.status).toBe(400);
   });
 
   it("rejects an unsupported mime type", async () => {
     const res = await request(app)
       .post("/api/extract-text")
+      .set(paid())
       .send({ fileData: { base64: "abcd", mimeType: "application/zip" } });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Unsupported file type/);
@@ -231,6 +357,7 @@ describe("POST /api/extract-text", () => {
     const base64 = Buffer.from("Hello world", "utf-8").toString("base64");
     const res = await request(app)
       .post("/api/extract-text")
+      .set(paid())
       .send({ fileData: { base64, mimeType: "text/plain" } });
     expect(res.status).toBe(200);
     expect(res.body.extractedText).toBe("Hello world");
@@ -241,6 +368,7 @@ describe("POST /api/extract-text", () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "Extracted content" });
     const res = await request(app)
       .post("/api/extract-text")
+      .set(paid())
       .send({ fileData: { base64: "abcd", mimeType: "application/pdf" } });
     expect(res.status).toBe(200);
     expect(res.body.extractedText).toBe("Extracted content");
@@ -251,8 +379,38 @@ describe("POST /api/extract-text", () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "   " });
     const res = await request(app)
       .post("/api/extract-text")
+      .set(paid())
       .send({ fileData: { base64: "abcd", mimeType: "image/png" } });
     expect(res.status).toBe(422);
+  });
+});
+
+// SECURITY REGRESSION TESTS (Phase 1.5 remediation, AUDIT.md Finding H-2):
+// this route had no authentication and zero test coverage at all before this
+// fix - anyone could call it directly for free, unmetered Gemini calls.
+describe("POST /api/search-connectors", () => {
+  it("rejects an unauthenticated request", async () => {
+    const res = await request(app).post("/api/search-connectors").send({ query: "what is a protection order?" });
+    expect(res.status).toBe(402);
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing query for an authenticated caller", async () => {
+    const res = await request(app).post("/api/search-connectors").set(paid()).send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an oversized query", async () => {
+    const res = await request(app).post("/api/search-connectors").set(paid()).send({ query: "a".repeat(2001) });
+    expect(res.status).toBe(400);
+  });
+
+  it("answers a valid, authenticated query and appends the disclaimer", async () => {
+    mockGenerateContent.mockResolvedValueOnce({ text: "A protection order is..." });
+    const res = await request(app).post("/api/search-connectors").set(paid()).send({ query: "what is a protection order?" });
+    expect(res.status).toBe(200);
+    expect(res.body.response).toContain("A protection order is...");
+    expect(res.body.response).toContain("informational/educational purposes only");
   });
 });
 

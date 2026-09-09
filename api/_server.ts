@@ -17,7 +17,7 @@ import { GoogleGenAI } from "@google/genai";
 import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
-import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments } from "./services/gmailAgent.js";
+import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 
 dotenv.config();
 
@@ -366,9 +366,36 @@ app.use(helmet({
   contentSecurityPolicy: false, // Vite requires inline scripts during dev, and some CDNs
 }));
 
-// CORS setup (allowing all for now, can be restricted to frontend domain)
+// CORS setup.
+// SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding M-5): this used to be
+// `process.env.VERCEL_URL ? https://${VERCEL_URL} : '*'` - VERCEL_URL is the
+// deployment-specific hostname Vercel injects (e.g. a random preview URL), not
+// the actual custom production domain, so in production this either allowed
+// the wrong origin or silently fell through to '*' (wide open) whenever
+// VERCEL_URL was unset. Replaced with an explicit allowlist: the real
+// production domain(s), plus anything operator-configured via ALLOWED_ORIGINS
+// (comma-separated) for staging/preview use, plus localhost only outside
+// production. Requests with no Origin header (server-to-server calls, curl,
+// the Vercel Cron hitting /api/admin/check-payments) are always allowed,
+// since CORS is a browser-enforced mechanism and doesn't apply to them.
+const DEFAULT_PRODUCTION_ORIGINS = [
+  "https://cyfsanavigator.com",
+  "https://www.cyfsanavigator.com",
+];
+const EXTRA_ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+const DEV_ORIGINS = process.env.NODE_ENV === "production"
+  ? []
+  : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"];
+const ALLOWED_ORIGINS = new Set([...DEFAULT_PRODUCTION_ORIGINS, ...EXTRA_ALLOWED_ORIGINS, ...DEV_ORIGINS]);
+
 app.use(cors({
-  origin: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '*',
+  origin(origin, callback) {
+    if (!origin || ALLOWED_ORIGINS.has(origin)) return callback(null, true);
+    return callback(new Error(`Origin ${origin} is not allowed by CORS.`));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 
@@ -380,8 +407,35 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false, // Disable built-in validation checks to prevent proxy header warnings
+  // Both this limiter and aiCostLimiter below share one Express app instance across an entire
+  // test file's lifetime (the app is imported once per file), so without this skip, running
+  // enough test cases against rate-limited routes in one file would eventually trip a real
+  // 429 purely from test volume, not from anything the test itself is checking - a
+  // self-inflicted flaky-test bug, not a security control. NODE_ENV is "test" under Vitest by
+  // default (verified empirically, not assumed) and is never "test" in any deployed environment.
+  skip: () => process.env.NODE_ENV === "test",
 });
 app.use('/api', apiLimiter);
+
+// SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding M-4): the generic
+// 100-req/15min-per-IP limiter above is shared by GET /api/health and every
+// AI-cost endpoint alike. This adds a much tighter, dedicated budget for the
+// routes that call a billed external AI provider and do NOT have a per-user
+// paid-session/free-tier counter gating them (either by product design, like
+// /api/transcribe*, or because there's no legitimate reason to allow high
+// volume at all, like /api/search-connectors). Endpoints that already require
+// a paid session or consume a tracked free-use slot (/api/analyze,
+// /api/case-timeline, /api/rag-query, /api/extract-evidence, /api/deep-scan)
+// are already bounded by that accounting and don't need this in addition.
+const aiCostLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20, // 20 AI-provider calls / 15 min / IP for the routes below
+  message: { error: "Too many AI requests from this IP, please try again after 15 minutes." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  skip: () => process.env.NODE_ENV === "test", // see apiLimiter's comment above
+});
 
 // Compress all responses for enhanced load speed (LCP/FCP)
 app.use(compression());
@@ -398,9 +452,25 @@ app.use(express.json({ limit: "100mb" }));
   const SEARCH_CONNECTORS_DISCLAIMER =
     "This explanation is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on it.";
 
-  app.post("/api/search-connectors", async (req: Request, res: Response) => {
+  // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding H-2): this route had
+  // no authentication of any kind and made a live, billed Gemini call for
+  // anyone. It also has zero frontend callers left in this codebase (the
+  // ConnectorSearchBot.tsx component that used to call it was removed;
+  // confirmed via a repo-wide grep for both the component name and this
+  // route path) - there is no documented product requirement for anonymous
+  // use of this specific endpoint, so per this remediation's default rule it
+  // now requires a valid session like the other Claude/Gemini-cost routes,
+  // plus the dedicated AI-cost rate limit and a basic input-size cap.
+  app.post("/api/search-connectors", aiCostLimiter, async (req: Request, res: Response) => {
+    if (!requireSession(req, res)) return;
     try {
-      const { query } = req.body;
+      const { query } = req.body || {};
+      if (!query || typeof query !== "string" || !query.trim()) {
+        return res.status(400).json({ error: "A `query` string is required." });
+      }
+      if (query.length > 2000) {
+        return res.status(400).json({ error: "Query is too long (max 2000 characters)." });
+      }
       const ai = getGeminiClient();
       const response = await generateGeminiContentWithRetry(ai, ["gemini-3.1-pro-preview"], {
         contents: [{ role: "user", parts: [{ text: `Explain the following legal concept for a family law context (CYFSA), for a self-represented Ontario parent: ${query}` }] }],
@@ -486,15 +556,21 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   });
 
   // API 1e: One-time setup — Google redirects here after Chris grants consent
-  // in the browser. Protected by a `state` param matching ADMIN_SECRET rather
-  // than a header, since Google's redirect can't be made to send custom
-  // headers. Returns the refresh token exactly once for Chris to copy into
-  // Vercel's GMAIL_REFRESH_TOKEN env var - it is never stored anywhere here.
+  // in the browser. Protected by a `state` param, since Google's redirect
+  // can't be made to send custom headers.
+  // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding M-1): this comment
+  // used to claim that protection already existed - it did not; the
+  // `state` param was never generated by /api/admin/gmail-auth-url nor
+  // checked here. `getGmailAuthUrl()` now generates a real, short-lived,
+  // HMAC-signed state value, and this handler verifies it below.
   app.get("/api/admin/gmail-callback", async (req: Request, res: Response) => {
     try {
-      const { code } = req.query;
+      const { code, state } = req.query;
       if (!code || typeof code !== "string") {
         return res.status(400).send("Missing authorization code.");
+      }
+      if (!verifyOAuthState(state)) {
+        return res.status(401).send("Missing or invalid/expired state parameter. Start over from GET /api/admin/gmail-auth-url.");
       }
       const refreshToken = await exchangeGmailAuthCode(code);
       res.type("text/plain").send(
@@ -558,11 +634,38 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   // real documents and returning FUNCTION_INVOCATION_TIMEOUT. Splitting them
   // means each request has the whole budget to itself, and the user gets
   // feedback after extraction rather than waiting blind for both.
-  app.post("/api/extract-text", async (req: Request, res: Response) => {
+  // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding H-1): this had NO
+  // authentication at all - anyone could call it directly (bypassing the
+  // frontend entirely) for unlimited, free, billed Gemini OCR, at up to the
+  // global 100MB body limit. Its only caller is DocumentAnalyzerTab.tsx,
+  // which sits behind RequireAuth - so it should never have been reachable by
+  // a signed-out caller in the first place. Gated the same way as
+  // /api/analyze's identity check (paid session OR a verified Firebase ID
+  // token), but this step does NOT consume a free-analysis slot itself -
+  // extraction is a preparatory step, not the billable analysis; quota is
+  // still charged only when /api/analyze itself actually runs. Also added a
+  // server-side size cap on the base64 payload, since no such cap existed
+  // anywhere (frontend or backend) before this fix.
+  const MAX_EXTRACT_BASE64_CHARS = 30_000_000; // ~22MB of real file content
+  app.post("/api/extract-text", aiCostLimiter, async (req: Request, res: Response) => {
     try {
+      const paidSession = verifySessionToken(req.header("x-ps-session") || "");
+      if (!paidSession) {
+        const identity = await verifyFirebaseToken(req.header("authorization"));
+        if (!identity) {
+          return res.status(401).json({
+            error: "Please sign in to use the Document Analyzer.",
+            code: "SIGN_IN_REQUIRED",
+          });
+        }
+      }
+
       const { fileData } = req.body || {};
       if (!fileData || !fileData.base64) {
         return res.status(400).json({ error: "fileData.base64 is required." });
+      }
+      if (typeof fileData.base64 !== "string" || fileData.base64.length > MAX_EXTRACT_BASE64_CHARS) {
+        return res.status(413).json({ error: "File is too large to extract. Please upload a smaller file." });
       }
 
       let base64Data = fileData.base64;
@@ -1433,11 +1536,22 @@ OUTPUT — return strictly this JSON schema, nothing else:
   // has been replaced: real audio is now actually transcribed by Gemini
   // (see transcribeAudioWithGemini), and typed narratives are reformatted
   // as the parent's own account, not dressed up as court dialogue.
-  app.post("/api/transcribe", async (req: Request, res: Response) => {
+  // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding H-3): this route is
+  // intentionally free/unauthenticated by product design (voice journaling is
+  // not a paid feature), which is preserved here - but it had no rate limit
+  // of its own and no size cap on the audio/text payload beyond the global
+  // 100MB body limit. Added the dedicated AI-cost rate limiter and an
+  // explicit payload-size cap.
+  const MAX_TRANSCRIBE_AUDIO_CHARS = 20_000_000; // ~15MB of real audio
+  const MAX_TRANSCRIBE_TEXT_CHARS = 50_000;
+  app.post("/api/transcribe", aiCostLimiter, async (req: Request, res: Response) => {
     try {
       const { narrativeText, audioData, mimeType, fileName } = req.body || {};
 
       if (audioData && mimeType) {
+        if (typeof audioData !== "string" || audioData.length > MAX_TRANSCRIBE_AUDIO_CHARS) {
+          return res.status(413).json({ error: "Audio recording is too large to transcribe." });
+        }
         // Real audio — actually transcribe it.
         const transcribedText = await transcribeAudioWithGemini(audioData, mimeType);
         if (!transcribedText.trim()) {
@@ -1458,6 +1572,9 @@ OUTPUT — return strictly this JSON schema, nothing else:
       const textToFormat = (narrativeText || "").trim();
       if (!textToFormat) {
         return res.status(400).json({ error: "No narrative text or audio was provided." });
+      }
+      if (textToFormat.length > MAX_TRANSCRIBE_TEXT_CHARS) {
+        return res.status(413).json({ error: "Narrative text is too long." });
       }
 
       const today = new Date().toISOString().slice(0, 10);
@@ -1496,11 +1613,17 @@ OUTPUT — return strictly this JSON schema, nothing else:
   });
 
   // API: Voice Audio Memo Transcription (Microphone integration for parents)
-  app.post("/api/transcribe-audio", async (req: Request, res: Response) => {
+  // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding H-3): same
+  // rationale as /api/transcribe above - kept free by design, added the
+  // dedicated AI-cost rate limiter and a payload-size cap.
+  app.post("/api/transcribe-audio", aiCostLimiter, async (req: Request, res: Response) => {
     try {
-      const { audioData, mimeType } = req.body;
+      const { audioData, mimeType } = req.body || {};
       if (!audioData) {
         return res.status(400).json({ error: "No audio data provided for voice memo transcription." });
+      }
+      if (typeof audioData !== "string" || audioData.length > MAX_TRANSCRIBE_AUDIO_CHARS) {
+        return res.status(413).json({ error: "Audio recording is too large to transcribe." });
       }
 
       console.log("[Voice Transcription] Transcribing audio with mimeType:", mimeType);
@@ -1526,6 +1649,15 @@ OUTPUT — return strictly this JSON schema, nothing else:
   // API 3: Lawyer lead intake — emails the request if SMTP is configured,
   // otherwise logs it server-side. Never claims a lawyer was notified
   // unless the email actually sent (or at minimum was recorded).
+  // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding L-3): none of the
+  // user-supplied fields placed into an email subject/reply-to below were
+  // ever stripped of CR/LF characters before this fix. nodemailer's own
+  // mail composer is generally resistant to header injection via these
+  // fields, but that was never independently verified here, and stripping
+  // newlines server-side is a correct, cheap, defense-in-depth control
+  // regardless of what any one mail library happens to already do.
+  const stripHeaderChars = (value: string): string => value.replace(/[\r\n]+/g, " ").trim();
+
   app.post("/api/lawyer-intake", async (req: Request, res: Response) => {
     try {
       const { parentName, lawyerId, email, city, details, consentGiven } = req.body || {};
@@ -1544,13 +1676,14 @@ OUTPUT — return strictly this JSON schema, nothing else:
       }
 
       const referenceNum = "LI-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+      const safeEmail = stripHeaderChars(email);
 
       const intakeRecord = {
         referenceNum,
-        parentName: String(parentName).slice(0, 200),
+        parentName: stripHeaderChars(String(parentName).slice(0, 200)),
         lawyerId: String(lawyerId).slice(0, 100),
-        email,
-        city: city ? String(city).slice(0, 100) : "",
+        email: safeEmail,
+        city: city ? stripHeaderChars(String(city).slice(0, 100)) : "",
         details: details ? String(details).slice(0, 5000) : "",
         receivedAt: new Date().toISOString(),
       };
@@ -1577,9 +1710,9 @@ OUTPUT — return strictly this JSON schema, nothing else:
           await transporter.sendMail({
             from: process.env.SMTP_FROM || process.env.SMTP_USER,
             to: process.env.LAWYER_INTAKE_TO,
-            replyTo: email,
+            replyTo: safeEmail,
             subject: `New lawyer intake [${referenceNum}] — ${intakeRecord.city || "Ontario"}`,
-            text: `Reference: ${referenceNum}\nParent: ${intakeRecord.parentName}\nEmail: ${email}\nLawyer requested: ${lawyerId}\nCity: ${intakeRecord.city}\n\nDetails:\n${intakeRecord.details}`,
+            text: `Reference: ${referenceNum}\nParent: ${intakeRecord.parentName}\nEmail: ${safeEmail}\nLawyer requested: ${lawyerId}\nCity: ${intakeRecord.city}\n\nDetails:\n${intakeRecord.details}`,
           });
           emailSent = true;
         } catch (mailErr) {
