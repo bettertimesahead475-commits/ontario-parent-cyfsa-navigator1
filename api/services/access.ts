@@ -21,10 +21,16 @@
 //      parent (see sendAccessCodeEmail() below) - this is the only place
 //      it's ever sent anywhere, on both the manual admin-approve route and
 //      the automated Gmail-agent path, since both call this one function.
-//   3. verifyAccessCode(email, code) — parent-facing. Checks the code
-//      against the stored hash, confirms it's unused and unexpired, marks
-//      it used, and returns a signed session token (HMAC, no session table
-//      needed) embedding { email, tier, exp }.
+//   3. verifyAccessCode(identity, email, code) — parent-facing, requires a
+//      verified Firebase identity (M-2/Finding-3 remediation). Checks the
+//      code against the stored hash, confirms it's unused and unexpired,
+//      atomically claims it, creates a row in the navigator_paid_sessions
+//      table (see supabase/migrations_pending_approval/
+//      create_navigator_paid_sessions.sql - not yet applied) binding the
+//      session to the verified Firebase uid, and returns a signed,
+//      minimal token (HMAC) embedding only { jti, exp } - the session row
+//      itself, not the token, is authoritative for email/tier/revocation/
+//      expiry. See verifySessionToken()/getActivePaidSession() below.
 // ---------------------------------------------------------------------------
 
 import crypto from "node:crypto";
@@ -100,25 +106,141 @@ function getSessionSecret(): string {
   return secret;
 }
 
-export function issueSessionToken(email: string, tier: Tier, ttlHours = 24 * 30): string {
-  const exp = Date.now() + ttlHours * 60 * 60 * 1000;
-  const payload = Buffer.from(JSON.stringify({ email, tier, exp })).toString("base64url");
+// SECURITY FIX (M-2 / Finding 3): this token used to embed { email, tier, exp } directly,
+// which meant the token itself was fully self-contained and authoritative - anyone holding
+// the bearer string got that email/tier forever (until natural expiry), with no way to
+// revoke one specific session and no binding to the Firebase identity that redeemed it.
+// The token now embeds only { jti, exp }: jti is the primary key of a
+// navigator_paid_sessions row, and every fact that actually matters for an authorization
+// decision (firebase_uid, tier, revoked_at, expires_at) lives in that row and is re-read on
+// every request via getActivePaidSession() below - the token is a lookup key, not a claim.
+export function issueSessionToken(jti: string, expiresAt: string | number): string {
+  const exp = typeof expiresAt === "number" ? expiresAt : new Date(expiresAt).getTime();
+  const payload = Buffer.from(JSON.stringify({ jti, exp })).toString("base64url");
   const sig = crypto.createHmac("sha256", getSessionSecret()).update(payload).digest("base64url");
   return `${payload}.${sig}`;
 }
 
-export function verifySessionToken(token: string): { email: string; tier: Tier } | null {
+// Verifies the token's own signature/structure/expiry only - a cryptographic safeguard, not
+// an authorization decision. A truthy result here proves the token wasn't tampered with and
+// hasn't hit its own (generous) expiry; it does NOT prove the session is still active - the
+// database row (getActivePaidSession) is what's authoritative for revocation/DB-side
+// expiration/tier. Callers must always follow this with a getActivePaidSession() lookup
+// before granting anything.
+export function verifySessionToken(token: string): { jti: string } | null {
   const [payload, sig] = (token || "").split(".");
   if (!payload || !sig) return null;
   const expectedSig = crypto.createHmac("sha256", getSessionSecret()).update(payload).digest("base64url");
   if (!timingSafeEqualHex(sig, expectedSig)) return null;
   try {
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (typeof parsed.jti !== "string" || !parsed.jti) return null;
     if (typeof parsed.exp !== "number" || Date.now() > parsed.exp) return null;
-    return { email: parsed.email, tier: parsed.tier };
+    return { jti: parsed.jti };
   } catch {
     return null;
   }
+}
+
+// --- Database-backed paid sessions (public.navigator_paid_sessions) --------
+// Table defined in supabase/migrations_pending_approval/create_navigator_paid_sessions.sql
+// (reviewed, NOT yet applied to production). firebase_uid is always the server-verified uid
+// from verifyFirebaseToken() - never a client-supplied value.
+export interface PaidSession {
+  id: string;
+  firebaseUid: string;
+  tier: Tier;
+}
+
+function mapPaidSessionRow(row: any): PaidSession {
+  return { id: row.id, firebaseUid: row.firebase_uid, tier: row.tier as Tier };
+}
+
+const DEFAULT_SESSION_TTL_HOURS = 24 * 30;
+
+// Creates the durable session row a redeemed access code produces. accessCodeId must be the
+// id of the access_codes row already atomically claimed by the caller (see verifyAccessCode) -
+// the table's UNIQUE(access_code_id) constraint is the final backstop against a code somehow
+// producing two sessions (e.g. under a bug in the caller's own claim logic), surfaced here as
+// a clean 409 rather than a raw constraint-violation message.
+export async function createPaidSession(params: {
+  firebaseUid: string;
+  email: string | null;
+  tier: Tier;
+  accessCodeId: string;
+  ttlHours?: number;
+}): Promise<{ id: string; expiresAt: string }> {
+  const db = getSupabase();
+  const expiresAt = new Date(Date.now() + (params.ttlHours ?? DEFAULT_SESSION_TTL_HOURS) * 60 * 60 * 1000).toISOString();
+  const { data, error } = await db
+    .from("navigator_paid_sessions")
+    .insert({
+      firebase_uid: params.firebaseUid,
+      email: params.email,
+      tier: params.tier,
+      expires_at: expiresAt,
+      access_code_id: params.accessCodeId,
+    })
+    .select("id, expires_at")
+    .single();
+  if (error) {
+    if (error.code === "23505") {
+      throw Object.assign(new Error("This access code has already been redeemed."), { statusCode: 409, code: error.code });
+    }
+    throw Object.assign(new Error(`Failed to create paid session: ${error.message}`), { statusCode: 500, code: error.code });
+  }
+  return { id: data.id, expiresAt: data.expires_at };
+}
+
+// The single, authoritative check every protected route must perform: a session only counts
+// as active if the row exists, has never been revoked, and hasn't passed its own DB-recorded
+// expiry - the token's own exp claim (verifySessionToken above) is a secondary safeguard, not
+// a substitute for this. Returns null for "not usable" without distinguishing why (not found /
+// revoked / expired) - callers only ever need a yes/no answer, and not distinguishing avoids
+// leaking which case applies to anything client-facing.
+export async function getActivePaidSession(sessionId: string): Promise<PaidSession | null> {
+  const db = getSupabase();
+  const { data, error } = await db
+    .from("navigator_paid_sessions")
+    .select("id, firebase_uid, tier, revoked_at, expires_at")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (error) throw Object.assign(new Error(`Failed to look up paid session: ${error.message}`), { statusCode: 500 });
+  if (!data) return null;
+  if (data.revoked_at) return null;
+  if (new Date(data.expires_at).getTime() <= Date.now()) return null;
+  return mapPaidSessionRow(data);
+}
+
+// --- Revocation ---------------------------------------------------------
+// Both functions are idempotent (scoped to `revoked_at is null`) and return how many rows
+// they actually changed, so a caller can tell "already revoked" apart from "revoked just now"
+// without a separate read. Not exposed to any route without the existing x-admin-secret
+// pattern already used by every other admin action in this codebase (see api/_server.ts) -
+// no new authorization mechanism is introduced here.
+
+export async function revokeSession(sessionId: string, reason?: string | null): Promise<boolean> {
+  const db = getSupabase();
+  const { data, error } = await db
+    .from("navigator_paid_sessions")
+    .update({ revoked_at: new Date().toISOString(), revocation_reason: reason ?? null })
+    .eq("id", sessionId)
+    .is("revoked_at", null)
+    .select("id");
+  if (error) throw Object.assign(new Error(`Failed to revoke session: ${error.message}`), { statusCode: 500 });
+  return !!data && data.length > 0;
+}
+
+export async function revokeAllSessionsForUid(firebaseUid: string, reason?: string | null): Promise<number> {
+  const db = getSupabase();
+  const { data, error } = await db
+    .from("navigator_paid_sessions")
+    .update({ revoked_at: new Date().toISOString(), revocation_reason: reason ?? null })
+    .eq("firebase_uid", firebaseUid)
+    .is("revoked_at", null)
+    .select("id");
+  if (error) throw Object.assign(new Error(`Failed to revoke sessions for uid: ${error.message}`), { statusCode: 500 });
+  return data ? data.length : 0;
 }
 
 // --- Free-tier quota: "1 free, then pay" for /api/analyze and /api/extract-evidence --------
@@ -274,7 +396,15 @@ async function sendAccessCodeEmail(email: string, tier: Tier, code: string, refe
 }
 
 // --- Step 3: parent redeems email + code -----------------------------------
-export async function verifyAccessCode(email: string, code: string) {
+// `identity` is the caller's server-verified Firebase identity (verifyFirebaseToken(),
+// checked by the route before this is ever called) - it is what the resulting paid session
+// is bound to (navigator_paid_sessions.firebase_uid), never the `email` argument. `email` is
+// still required and used exactly as before: it's the lookup key into the existing
+// access_codes table (unmodified by this change - it has no firebase_uid column and is keyed
+// by email), so it remains functionally necessary for finding the right code, but it is no
+// longer what authorizes anything - a caller cannot get a session bound to a Firebase uid
+// other than their own verified one no matter what email string they submit here.
+export async function verifyAccessCode(identity: { uid: string; email: string | null }, email: string, code: string) {
   const db = getSupabase();
   const normalizedEmail = email.toLowerCase().trim();
 
@@ -297,9 +427,35 @@ export async function verifyAccessCode(email: string, code: string) {
     throw Object.assign(new Error("This code has expired. Contact support for a new one."), { statusCode: 401 });
   }
 
-  const { error: updateErr } = await db.from("access_codes").update({ used_at: new Date().toISOString() }).eq("id", match.id);
-  if (updateErr) throw Object.assign(new Error(updateErr.message), { statusCode: 500 });
+  // SECURITY FIX: atomically claim the code before doing anything else, mirroring
+  // approvePayment()'s established claim pattern above. Without scoping this UPDATE to
+  // `used_at is null` and checking whether it actually matched a row, two near-simultaneous
+  // redemption attempts for the same code could both pass the SELECT above before either
+  // UPDATE landed, and both would go on to mint a session - the exact TOCTOU race a prior
+  // audit identified in this function. Postgres serializes the two UPDATEs even though the
+  // SELECTs can race, so exactly one caller ever sees a matched row here. The table's
+  // UNIQUE(access_code_id) constraint (see the pending navigator_paid_sessions migration)
+  // remains a second, independent backstop below - this fix does not replace it, and does not
+  // modify the access_codes table itself.
+  const { data: claimed, error: claimErr } = await db
+    .from("access_codes")
+    .update({ used_at: new Date().toISOString() })
+    .eq("id", match.id)
+    .is("used_at", null)
+    .select("id");
+  if (claimErr) throw Object.assign(new Error(claimErr.message), { statusCode: 500 });
+  if (!claimed || claimed.length === 0) {
+    throw Object.assign(new Error("This code was already redeemed by a concurrent request."), { statusCode: 409 });
+  }
 
-  const token = issueSessionToken(normalizedEmail, match.tier as Tier);
-  return { token, tier: match.tier as Tier, email: normalizedEmail };
+  const tier = match.tier as Tier;
+  const session = await createPaidSession({
+    firebaseUid: identity.uid,
+    email: identity.email,
+    tier,
+    accessCodeId: match.id,
+  });
+
+  const token = issueSessionToken(session.id, session.expiresAt);
+  return { token, tier, email: normalizedEmail };
 }

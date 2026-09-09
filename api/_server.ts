@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
@@ -463,7 +463,7 @@ app.use(express.json({ limit: "100mb" }));
   // now requires a valid session like the other Claude/Gemini-cost routes,
   // plus the dedicated AI-cost rate limit and a basic input-size cap.
   app.post("/api/search-connectors", aiCostLimiter, async (req: Request, res: Response) => {
-    if (!requireSession(req, res)) return;
+    if (!(await requireSession(req, res))) return;
     try {
       const { query } = req.body || {};
       if (!query || typeof query !== "string" || !query.trim()) {
@@ -536,6 +536,47 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     } catch (err: any) {
       console.error("[/api/admin/approve-payment]", err);
       res.status(err.statusCode || 500).json({ error: err.message || "Failed to approve payment." });
+    }
+  });
+
+  // M-2 remediation: admin-only paid-session revocation, gated by the same x-admin-secret
+  // pattern as every other admin action in this file (no new authorization mechanism
+  // introduced). Revoking a session takes effect on the very next request against it, since
+  // requireSession()/allowFreeToolUse() re-check navigator_paid_sessions.revoked_at on every
+  // call rather than trusting anything cached in the token.
+  app.post("/api/admin/revoke-session", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const { sessionId, reason } = req.body || {};
+      if (!sessionId || typeof sessionId !== "string") {
+        return res.status(400).json({ error: "sessionId (string) is required." });
+      }
+      const revoked = await revokeSession(sessionId, typeof reason === "string" ? reason : null);
+      res.json({ revoked });
+    } catch (err: any) {
+      console.error("[/api/admin/revoke-session]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to revoke session." });
+    }
+  });
+
+  // M-2 remediation: admin-only bulk revocation for every currently-active session belonging
+  // to one Firebase uid (e.g. after a refund, a chargeback, or an abuse report).
+  app.post("/api/admin/revoke-sessions-for-uid", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const { firebaseUid, reason } = req.body || {};
+      if (!firebaseUid || typeof firebaseUid !== "string") {
+        return res.status(400).json({ error: "firebaseUid (string) is required." });
+      }
+      const revokedCount = await revokeAllSessionsForUid(firebaseUid, typeof reason === "string" ? reason : null);
+      res.json({ revokedCount });
+    } catch (err: any) {
+      console.error("[/api/admin/revoke-sessions-for-uid]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to revoke sessions." });
     }
   });
 
@@ -612,13 +653,28 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   // SHA-256 + timing-safe compare) via services/access.ts. The previous
   // version here queried a plaintext `code` column that doesn't exist in
   // the actual table, so it could never have worked even when configured.
+  //
+  // SECURITY FIX (M-2 / Finding 3): this route used to accept an
+  // unauthenticated caller-supplied email as the sole identity for the
+  // resulting session - no Firebase sign-in was required at all. A valid
+  // Firebase ID token is now required; the verified uid (never the
+  // submitted `email`, which remains only the lookup key into the
+  // unmodified access_codes table) becomes the identity the new paid
+  // session is bound to. See verifyAccessCode() in services/access.ts.
   app.post("/api/activate-code", async (req: Request, res: Response) => {
     try {
+      const identity = await verifyFirebaseToken(req.header("authorization"));
+      if (!identity) {
+        return res.status(401).json({
+          error: "Please sign in to activate your access code.",
+          code: "SIGN_IN_REQUIRED",
+        });
+      }
       const { code, email } = req.body || {};
       if (!code || !email) {
         return res.status(400).json({ error: "Code and email are required." });
       }
-      const result = await verifyAccessCode(email, code);
+      const result = await verifyAccessCode(identity, email, code);
       res.json({ success: true, tier: result.tier, token: result.token, email: result.email });
     } catch (err: any) {
       console.error("[/api/activate-code]", err);
@@ -712,15 +768,21 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   const MAX_EXTRACT_BASE64_CHARS = 30_000_000; // ~22MB of real file content
   app.post("/api/extract-text", aiCostLimiter, async (req: Request, res: Response) => {
     try {
-      const paidSession = verifySessionToken(req.header("x-ps-session") || "");
-      if (!paidSession) {
-        const identity = await verifyFirebaseToken(req.header("authorization"));
-        if (!identity) {
-          return res.status(401).json({
-            error: "Please sign in to use the Document Analyzer.",
-            code: "SIGN_IN_REQUIRED",
-          });
-        }
+      // SECURITY FIX (M-2 / Finding 3): see requireSession()'s comment above - a session
+      // token alone is no longer sufficient; it must also be a still-active,
+      // Firebase-uid-bound navigator_paid_sessions row for the calling identity.
+      const identity = await verifyFirebaseToken(req.header("authorization"));
+      const parsedSession = verifySessionToken(req.header("x-ps-session") || "");
+      let isPaid = false;
+      if (parsedSession && identity) {
+        const session = await getActivePaidSession(parsedSession.jti);
+        isPaid = !!session && session.firebaseUid === identity.uid;
+      }
+      if (!isPaid && !identity) {
+        return res.status(401).json({
+          error: "Please sign in to use the Document Analyzer.",
+          code: "SIGN_IN_REQUIRED",
+        });
       }
 
       const { fileData } = req.body || {};
@@ -763,24 +825,68 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   // are hard-gated (no free tier), /api/rag-query is free only for the OPA Coach's
   // "family-advocate" focus, and /api/extract-evidence gets its own "1 free, then pay" pass.
 
-  function requireSession(req: Request, res: Response): { email: string; tier: Tier } | null {
+  const SESSION_REQUIRED_MESSAGE =
+    "This feature requires an active Pro or Premium plan. Activate your access code (or upgrade) on the Membership page.";
+
+  // SECURITY FIX (M-2 / Finding 3): a valid `x-ps-session` token used to be sufficient on its
+  // own - it was a fully self-contained, unrevocable claim, never cross-checked against the
+  // caller's own identity. Paid authorization now requires ALL of: a structurally/
+  // cryptographically valid token (verifySessionToken), a verified Firebase identity for the
+  // SAME request, a still-active (not revoked, not DB-expired) navigator_paid_sessions row for
+  // that token's jti (getActivePaidSession - the database is authoritative, not the token's
+  // own exp claim), and that row's firebase_uid matching the verified caller. A stolen token
+  // alone, presented by anyone other than the Firebase identity it was issued to, is no longer
+  // sufficient - and revoking that row (see /api/admin/revoke-* below) takes effect on the
+  // very next request, since this check re-reads the database every time rather than trusting
+  // anything cached in the token.
+  //
+  // `preResolvedIdentity` lets allowFreeToolUse() (which already verifies the Firebase token
+  // once for its own free-tier check) avoid a second, redundant Firebase Admin SDK call when
+  // it falls through to this as its final paid-tier gate.
+  async function requireSession(
+    req: Request,
+    res: Response,
+    preResolvedIdentity?: { uid: string; email: string | null } | null
+  ): Promise<{ uid: string; email: string | null; tier: Tier } | null> {
     const sessionToken = req.header("x-ps-session");
-    const session = sessionToken ? verifySessionToken(sessionToken) : null;
-    if (!session) {
-      res.status(402).json({
-        error: "This feature requires an active Pro or Premium plan. Activate your access code (or upgrade) on the Membership page.",
-        code: "SESSION_REQUIRED",
+    const parsed = sessionToken ? verifySessionToken(sessionToken) : null;
+    if (!parsed) {
+      res.status(402).json({ error: SESSION_REQUIRED_MESSAGE, code: "SESSION_REQUIRED" });
+      return null;
+    }
+
+    const identity = preResolvedIdentity !== undefined ? preResolvedIdentity : await verifyFirebaseToken(req.header("authorization"));
+    if (!identity) {
+      res.status(401).json({
+        error: "Please sign in to continue.",
+        code: "SIGN_IN_REQUIRED",
       });
       return null;
     }
-    return session;
+
+    const session = await getActivePaidSession(parsed.jti);
+    if (!session || session.firebaseUid !== identity.uid) {
+      res.status(402).json({ error: SESSION_REQUIRED_MESSAGE, code: "SESSION_REQUIRED" });
+      return null;
+    }
+
+    return { uid: identity.uid, email: identity.email, tier: session.tier };
   }
 
   async function allowFreeToolUse(req: Request, res: Response, tool: FreeTool): Promise<boolean> {
-    const sessionToken = req.header("x-ps-session");
-    if (sessionToken && verifySessionToken(sessionToken)) return true; // paid users never touch the free-use table
-
+    // Resolved once and reused for both the paid-session binding check below and the
+    // free-tier fallback, rather than verifying the Firebase token twice per request.
     const identity = await verifyFirebaseToken(req.header("authorization"));
+
+    const sessionToken = req.header("x-ps-session");
+    if (sessionToken && identity) {
+      const parsed = verifySessionToken(sessionToken);
+      if (parsed) {
+        const session = await getActivePaidSession(parsed.jti);
+        if (session && session.firebaseUid === identity.uid) return true; // paid users never touch the free-use table
+      }
+    }
+
     if (!identity) {
       res.status(401).json({
         error: "Please sign in to use this tool.",
@@ -798,7 +904,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // usage table is unreachable.
     }
 
-    return !!requireSession(req, res);
+    return !!(await requireSession(req, res, identity));
   }
 
   app.post("/api/analyze", async (req: Request, res: Response) => {
@@ -814,17 +920,29 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         });
       }
 
-      // --- Paywall: a valid Pro/Premium session token means unlimited use.
-      // Otherwise the caller must be a verified signed-in parent, checked
-      // against their free-use count. This is the actual enforcement of the
-      // "1 free analysis" tier — previously nothing here checked anything.
+      // --- Paywall: a valid, DB-active, Firebase-bound Pro/Premium session means unlimited
+      // use. Otherwise the caller must be a verified signed-in parent, checked against their
+      // free-use count. This is the actual enforcement of the "1 free analysis" tier —
+      // previously nothing here checked anything.
+      //
+      // SECURITY FIX (M-2 / Finding 3): a session token alone used to be sufficient (its own
+      // { email, tier, exp } claim was trusted outright). Paid access now additionally
+      // requires a verified Firebase identity for this same request, a still-active (not
+      // revoked, not DB-expired) navigator_paid_sessions row for the token's jti, and that
+      // row's firebase_uid matching the verified caller - see requireSession()'s comment above
+      // for the full rationale, identical here.
       let uid: string | null = null;
       let userEmail: string | null = null;
+      const identity = await verifyFirebaseToken(req.header("authorization"));
       const sessionToken = req.header("x-ps-session");
-      const paidSession = sessionToken ? verifySessionToken(sessionToken) : null;
+      const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
+      let isPaid = false;
+      if (parsedSession && identity) {
+        const session = await getActivePaidSession(parsedSession.jti);
+        isPaid = !!session && session.firebaseUid === identity.uid;
+      }
 
-      if (!paidSession) {
-        const identity = await verifyFirebaseToken(req.header("authorization"));
+      if (!isPaid) {
         if (!identity) {
           return res.status(401).json({
             error: "Please sign in to use the Document Analyzer.",
@@ -1129,7 +1247,7 @@ ${analysisRules}`;
       // Field-disjoint by construction (see the two schemas above), so a plain merge is safe.
       const report = { ...coreReport, ...deepDiveReport };
 
-      if (!paidSession && uid) {
+      if (!isPaid && uid) {
         try {
           await recordFreeUse(uid, userEmail);
         } catch (usageErr) {
@@ -1162,7 +1280,7 @@ ${analysisRules}`;
   // mirrors exactly how the manual cross-referencing distinguished "confirmed in writing"
   // from "described by the parent, not yet located in any document."
   app.post("/api/case-timeline", async (req: Request, res: Response) => {
-    if (!requireSession(req, res)) return;
+    if (!(await requireSession(req, res))) return;
     try {
       const { documents, model, parentClaims } = req.body as {
         documents?: { name: string; text: string; sourceDate?: string }[];
@@ -1279,7 +1397,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
     // The free "OPA Coach" chat (ParentChatBot.tsx) sends focus: "family-advocate" and stays
     // ungated - it's informational, not one of the paid document tools. Every other focus
     // (the Document Analyzer's case chat / deep-scan chat) requires a valid paid session.
-    if (req.body?.focus !== "family-advocate" && !requireSession(req, res)) return;
+    if (req.body?.focus !== "family-advocate" && !(await requireSession(req, res))) return;
     let queryVal = "";
     let filesVal: any[] = [];
     let focusVal = "";
@@ -1502,7 +1620,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   // second, deeper look. It now receives that prior report and is explicitly told
   // not to restate what it already found, but to dig into what it missed.
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
-    if (!requireSession(req, res)) return;
+    if (!(await requireSession(req, res))) return;
     try {
       const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {
