@@ -22,11 +22,11 @@ const { createCase } = await import("./cases.js");
 
 type FakeDb = ReturnType<typeof createFakeDb>;
 
-// Mirrors what create_case_with_owner() actually does in Postgres: one call
-// either produces a case row AND exactly one case_members OWNER row, or
-// (on a simulated failure) produces neither — there is no in-between state,
-// which is the entire point of doing this as one Postgres function instead
-// of two separate client-issued INSERTs.
+// Mirrors what create_navigator_case_with_owner() actually does in Postgres:
+// one call either produces a case row AND exactly one case_members OWNER
+// row, or (on a simulated failure) produces neither — there is no
+// in-between state, which is the entire point of doing this as one Postgres
+// function instead of two separate client-issued INSERTs.
 function createFakeDb(options: { failOnMembershipInsert?: boolean } = {}) {
   const cases: any[] = [];
   const members: any[] = [];
@@ -35,7 +35,7 @@ function createFakeDb(options: { failOnMembershipInsert?: boolean } = {}) {
     _cases: cases,
     _members: members,
     rpc: async (fn: string, args: any) => {
-      if (fn !== "create_case_with_owner") {
+      if (fn !== "create_navigator_case_with_owner") {
         throw new Error(`Unexpected rpc call in test double: ${fn}`);
       }
       if (options.failOnMembershipInsert) {
