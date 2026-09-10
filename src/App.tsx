@@ -6,7 +6,7 @@
 import React, { lazy, Suspense, useState, useEffect } from "react";
 import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
-import { useGlobalResetListener, useAppReset } from "./hooks/useAppReset";
+import { useGlobalResetListener } from "./hooks/useAppReset";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
@@ -36,7 +36,6 @@ import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, U
 
 export default function App() {
   useGlobalResetListener();
-  const { resetAll } = useAppReset();
   const [location, setLocation] = useLocation();
 
   const [userProfile, setUserProfile] = useState<any>(() => {
@@ -443,17 +442,6 @@ export default function App() {
             <div className="space-y-1 text-center sm:text-right font-mono text-[10px]">
               <span className="block text-slate-600 font-bold">Jurisdiction: Ontario Court of Justice, Canada</span>
               <span className="block text-slate-500 mt-0.5">Primary sources updated: Q2 2026</span>
-              <button 
-                onClick={() => {
-                  if (confirm("Are you sure you want to perform a Global System Reset? This will wipe ALL cached data, templates, notes, and profiles across all tabs.")) {
-                    resetAll();
-                  }
-                }}
-                className="block text-red-500 hover:text-red-700 font-bold mt-2 cursor-pointer transition-colors"
-                title="Wipe all application data globally"
-              >
-                Global System Reset
-              </button>
             </div>
           </div>
 
