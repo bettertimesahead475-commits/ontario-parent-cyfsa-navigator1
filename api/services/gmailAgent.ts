@@ -1,10 +1,18 @@
 // ---------------------------------------------------------------------------
-// Automates the manual step in access.ts's approvePayment(): instead of Chris
-// checking his own inbox and running the admin-approve call by hand for every
-// e-transfer, this watches donations.ontarioparentassist@gmail.com (HIS OWN
-// inbox - not a parent's) for Interac Autodeposit notifications, matches the
-// reference number in the message body against a pending `payments` row, and
-// approves it automatically.
+// Automates the DETECTION half of the manual step in access.ts's
+// approvePayment(): instead of Chris checking his own inbox by hand, this
+// watches donations.ontarioparentassist@gmail.com (HIS OWN inbox - not a
+// parent's) for Interac Autodeposit notifications and matches the reference
+// number in the message body against a pending `payments` row.
+//
+// SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding H-4): this used to
+// also call approvePayment() itself the moment a match was found - i.e. a
+// plain-text regex match against an email body was, on its own, sufficient
+// to mint and send a real access code, with no cryptographic or
+// bank-verified signal involved anywhere. That is no longer true: a match
+// now only produces an admin alert with everything Chris needs to make the
+// actual approval call himself. This agent finds candidates; it does not
+// grant access.
 //
 // This reads Chris's own Gmail via a one-time OAuth grant he does himself in
 // a browser (see the auth-url/callback routes in _server.ts) - it never asks
@@ -27,7 +35,8 @@
 // ---------------------------------------------------------------------------
 
 import { google } from "googleapis";
-import { getSupabase, approvePayment, PAYMENT_EMAIL } from "./access.js";
+import crypto from "node:crypto";
+import { getSupabase, PAYMENT_EMAIL } from "./access.js";
 
 const SENDER_QUERY = 'from:(interac.ca OR payments.interac.ca) newer_than:7d';
 const REFERENCE_PATTERN = /\bPS-[A-Z0-9]{5}\b/;
@@ -92,6 +101,46 @@ function getOAuthClient() {
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
+// SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding M-1): the callback
+// route's own comment used to claim this flow was "protected by a `state`
+// param matching ADMIN_SECRET" - no `state` was ever actually generated or
+// checked anywhere, which this remediation's audit step specifically caught
+// as a documented-but-nonexistent control. This implements a real one: a
+// short-lived (10-minute), HMAC-signed state value (not consumed on use),
+// tied to ADMIN_SECRET (the same credential that gated the request that
+// generated it), verified with a timing-safe comparison on the way back.
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+function getOAuthStateSecret(): string {
+  const secret = process.env.ADMIN_SECRET;
+  if (!secret) {
+    throw Object.assign(new Error("ADMIN_SECRET is not configured."), { statusCode: 503 });
+  }
+  return secret;
+}
+
+function generateOAuthState(): string {
+  const nonce = crypto.randomBytes(16).toString("base64url");
+  const exp = Date.now() + OAUTH_STATE_TTL_MS;
+  const payload = `${nonce}.${exp}`;
+  const sig = crypto.createHmac("sha256", getOAuthStateSecret()).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+/** Verifies a `state` value returned by Google actually originated from a call this server made, within the last 10 minutes. */
+export function verifyOAuthState(state: unknown): boolean {
+  if (typeof state !== "string" || !state) return false;
+  const parts = state.split(".");
+  if (parts.length !== 3) return false;
+  const [nonce, expStr, sig] = parts;
+  const expectedSig = crypto.createHmac("sha256", getOAuthStateSecret()).update(`${nonce}.${expStr}`).digest("base64url");
+  const sigBuf = Buffer.from(sig);
+  const expectedBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return false;
+  const exp = Number(expStr);
+  return Number.isFinite(exp) && Date.now() <= exp;
+}
+
 /** Step 1 of one-time setup: the URL Chris visits in a real browser to grant Gmail read access to his own inbox. */
 export function getGmailAuthUrl(): string {
   const oauth2Client = getOAuthClient();
@@ -99,6 +148,7 @@ export function getGmailAuthUrl(): string {
     access_type: "offline", // required to get a refresh_token back
     prompt: "consent", // forces a refresh_token even on repeat authorization
     scope: ["https://www.googleapis.com/auth/gmail.modify"], // .modify (not just .readonly) so we can label processed messages
+    state: generateOAuthState(),
   });
 }
 
@@ -154,7 +204,19 @@ async function getOrCreateProcessedLabel(gmail: ReturnType<typeof google.gmail>)
 export interface ScanResult {
   scanned: number;
   alreadyProcessed: number;
-  approved: { referenceNumber: string; email: string; tier: string; code: string }[];
+  // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding H-4): this used to
+  // be `approved`, and this agent used to call approvePayment() itself the
+  // moment a reference number + dollar amount pattern-matched inside an
+  // email body — no cryptographic or bank-verified signal was ever involved,
+  // just regex matches against message text from an inbox search. That meant
+  // a sufficiently convincing spoofed/crafted email reaching the monitored
+  // inbox (bypassing Gmail's own spam/phishing filtering) could have minted
+  // and emailed a real access code with no money having actually changed
+  // hands. This agent now only ever *detects and alerts* on a match — actual
+  // approval always requires Chris to independently confirm via the existing
+  // admin-secret-gated POST /api/admin/approve-payment route, exactly as a
+  // manually-noticed e-transfer already required before this agent existed.
+  matchedPendingApproval: { referenceNumber: string; amount: number; messageId: string }[];
   noMatch: { messageId: string; reason: string }[];
   errors: { messageId: string; error: string }[];
   stalePending: { referenceNumber: string; pendingSinceHours: number }[];
@@ -215,11 +277,11 @@ async function checkStalePendingPayments(db: ReturnType<typeof getSupabase>): Pr
   return alerted;
 }
 
-/** The actual agent run: scans recent Interac emails, matches, and approves. Call this from a cron or an admin-triggered route. */
+/** The actual agent run: scans recent Interac emails, detects matches, and alerts for manual approval. Call this from a cron or an admin-triggered route. */
 export async function scanForPayments(): Promise<ScanResult> {
   const gmail = getGmailClient();
   const db = getSupabase();
-  const result: ScanResult = { scanned: 0, alreadyProcessed: 0, approved: [], noMatch: [], errors: [], stalePending: [] };
+  const result: ScanResult = { scanned: 0, alreadyProcessed: 0, matchedPendingApproval: [], noMatch: [], errors: [], stalePending: [] };
 
   const { data: listResp } = await gmail.users.messages.list({ userId: "me", q: SENDER_QUERY, maxResults: 50 });
   const messages = listResp.messages || [];
@@ -281,21 +343,35 @@ export async function scanForPayments(): Promise<ScanResult> {
       const referenceNumber = refMatch[0];
       const amount = parseFloat(amountMatch[1]);
 
-      const approval = await approvePayment(referenceNumber, amount);
-      result.approved.push(approval);
+      // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding H-4): this used to call
+      // approvePayment(referenceNumber, amount) directly here - the only "verification" a
+      // payment ever got was a regex match against text in an email. That is not a
+      // cryptographically or bank-verified signal, and per this remediation's explicit
+      // requirement, email-content pattern matching must never independently prove a payment
+      // happened. This now only detects a plausible match and alerts Chris with everything he
+      // needs to make the one-click, admin-secret-gated approval call himself - the exact same
+      // manual step that was always required before this agent existed, just found for him
+      // automatically instead of requiring him to read his own inbox.
+      result.matchedPendingApproval.push({ referenceNumber, amount, messageId });
+      const alertSent = await sendAdminAlert(
+        `[CYFSA Navigator] Payment match found - confirm to approve - ${referenceNumber}`,
+        `A possible e-transfer match was found and needs your confirmation before an access code is issued - this agent no longer auto-approves.\n\n` +
+          `Reference number: ${referenceNumber}\n` +
+          `Amount detected: $${amount}\n` +
+          `Gmail message: ${gmailMessageLink(messageId)}\n\n` +
+          `If this looks like a real, legitimate e-transfer, approve it with:\n` +
+          `POST /api/admin/approve-payment\n` +
+          `  header: x-admin-secret: <ADMIN_SECRET>\n` +
+          `  body: {"referenceNumber":"${referenceNumber}","amountReceived":${amount}}\n\n` +
+          `If this does NOT look legitimate (unexpected sender, mismatched amount, anything that looks spoofed or crafted), do not approve it - leave it pending and investigate the message directly.`
+      );
 
-      // approvePayment() already tried to email the code directly to the parent - that's the
-      // whole point of the automated path. If it couldn't (SMTP down, no email on file), the
-      // payment is still correctly approved and the code still exists, but nobody knows to
-      // send it, so this needs the same admin alert as an unmatched message would get.
-      if (!approval.emailSent) {
-        await sendAdminAlert(
-          `[CYFSA Navigator] Payment approved but code email failed to send - ${referenceNumber}`,
-          `Payment ${referenceNumber} was matched and approved automatically, and an access code was generated, but the email delivering it to the parent (${approval.email || "no email on file"}) failed to send.\n\nGmail message: ${gmailMessageLink(messageId)}\n\nThe code already exists in access_codes for this reference number - send it to the parent manually.`
-        );
-      }
-
-      await db.from("gmail_processed_messages").insert({ message_id: messageId, matched_reference: referenceNumber, outcome: "approved" });
+      await db.from("gmail_processed_messages").insert({
+        message_id: messageId,
+        matched_reference: referenceNumber,
+        outcome: "matched_pending_manual_approval",
+        alerted_at: alertSent ? new Date().toISOString() : null,
+      });
       await gmail.users.messages.modify({ userId: "me", id: messageId, requestBody: { addLabelIds: [labelId!] } });
     } catch (e: any) {
       const errorMessage = e.message || String(e);

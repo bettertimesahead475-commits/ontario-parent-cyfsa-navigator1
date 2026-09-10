@@ -27,6 +27,9 @@ const mockAccess = vi.hoisted(() => ({
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
   verifySessionToken: vi.fn(),
+  getActivePaidSession: vi.fn(),
+  revokeSession: vi.fn(),
+  revokeAllSessionsForUid: vi.fn(),
   checkAndConsumeFreeToolUse: vi.fn(),
   TIER_PRICES: { Pro: 19, Premium: 49 },
 }));
@@ -39,6 +42,27 @@ const mockUsage = vi.hoisted(() => ({
   getFreeUsage: vi.fn(),
   recordFreeUse: vi.fn(),
   FREE_ANALYSES_LIMIT: 1,
+}));
+
+// Added in Phase 1.5 remediation: previously nothing mocked services/gmailAgent.js at all,
+// which is why /api/admin/gmail-auth-url, /api/admin/gmail-callback, and
+// /api/admin/check-payments had zero test coverage (AUDIT.md Finding L-5) - calling the real
+// module in a test would have hit missing GOOGLE_CLIENT_ID/etc. env vars rather than exercising
+// the route logic itself.
+const mockGmailAgent = vi.hoisted(() => ({
+  getGmailAuthUrl: vi.fn(),
+  exchangeGmailAuthCode: vi.fn(),
+  scanForPayments: vi.fn(),
+  verifyOAuthState: vi.fn(),
+}));
+
+// Phase 2A: POST /api/cases. Mocked here the same way access.js/usage.js
+// are — the real createCase() implementation (Postgres RPC atomicity, field
+// mapping) has its own dedicated coverage in api/services/cases.test.ts;
+// this file only needs to prove the ROUTE's auth/ownership/validation
+// behavior, not re-prove the service function works.
+const mockCases = vi.hoisted(() => ({
+  createCase: vi.fn(),
 }));
 
 vi.mock("@anthropic-ai/sdk", () => ({
@@ -62,6 +86,8 @@ vi.mock("nodemailer", () => ({
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
 vi.mock("./services/usage.js", () => mockUsage);
+vi.mock("./services/gmailAgent.js", () => mockGmailAgent);
+vi.mock("./services/cases.js", () => mockCases);
 
 // `process.env.VERCEL` must be set BEFORE _server.ts is evaluated: it gates
 // whether the module calls setupViteAndStart() (which would otherwise spin
@@ -105,21 +131,39 @@ const MINIMAL_ANALYSIS = {
   lawyerCaseBrief: [],
 };
 
-// A valid Pro/Premium session token, sent as `x-ps-session`, for tests that exercise
-// tool behavior rather than the paywall itself. Gating-specific tests below send no
-// header (or an unrecognized one) and assert the 401/402 instead.
+// A valid Pro/Premium session token + the Firebase identity it's bound to, sent together as
+// `x-ps-session` + `Authorization`, for tests that exercise tool behavior rather than the
+// paywall itself. Gating-specific tests below send no header (or an unrecognized one) and
+// assert the 401/402 instead.
+//
+// M-2 / Finding 3 remediation: a session token alone is no longer sufficient - it must also
+// resolve to a still-active navigator_paid_sessions row (getActivePaidSession) whose
+// firebase_uid matches a verified Firebase identity for the SAME request. paid() therefore
+// sends both headers, and the default mocks below wire PAID_SESSION_TOKEN -> PAID_JTI ->
+// a session row bound to PAID_FIREBASE_UID, resolved only when PAID_FIREBASE_TOKEN is the
+// bearer presented - exactly mirroring the real cross-check.
 const PAID_SESSION_TOKEN = "valid-session-token";
-const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN });
+const PAID_JTI = "session-row-1";
+const PAID_FIREBASE_UID = "paid-firebase-uid-1";
+const PAID_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-paid-user";
+const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FIREBASE_TOKEN });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockAccess.verifySessionToken.mockImplementation((token: string) =>
-    token === PAID_SESSION_TOKEN ? { email: "paid@example.com", tier: "Pro" } : null
+  mockAccess.verifySessionToken.mockImplementation((token: string) => (token === PAID_SESSION_TOKEN ? { jti: PAID_JTI } : null));
+  mockAccess.getActivePaidSession.mockImplementation(async (jti: string) =>
+    jti === PAID_JTI ? { id: PAID_JTI, firebaseUid: PAID_FIREBASE_UID, tier: "Pro" } : null
   );
-  mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue(null);
+  // Tests that need a DIFFERENT (e.g. free-tier) identity override this with
+  // .mockResolvedValue({...}) directly, which replaces this implementation entirely for the
+  // rest of that test - unaffected by the header-based branching here.
+  mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header: string | undefined) =>
+    header === PAID_FIREBASE_TOKEN ? { uid: PAID_FIREBASE_UID, email: "paid@example.com" } : null
+  );
   mockUsage.getFreeUsage.mockResolvedValue(0);
   mockUsage.recordFreeUse.mockResolvedValue(undefined);
   mockAccess.checkAndConsumeFreeToolUse.mockResolvedValue(false);
+  mockGmailAgent.verifyOAuthState.mockReturnValue(false);
 });
 
 describe("GET /api/health", () => {
@@ -193,35 +237,293 @@ describe("POST /api/admin/approve-payment", () => {
   });
 });
 
-describe("POST /api/activate-code", () => {
-  it("rejects a missing code or email", async () => {
-    const res = await request(app).post("/api/activate-code").send({ email: "a@b.com" });
+// Added in Phase 1.5 remediation (AUDIT.md Finding L-5: zero test coverage
+// existed for any of these three admin/cron routes before this fix).
+describe("GET /api/admin/gmail-auth-url", () => {
+  it("rejects a request without the correct admin secret", async () => {
+    const res = await request(app).get("/api/admin/gmail-auth-url");
+    expect(res.status).toBe(401);
+    expect(mockGmailAgent.getGmailAuthUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns the Google consent URL with the correct admin secret", async () => {
+    mockGmailAgent.getGmailAuthUrl.mockReturnValue("https://accounts.google.com/o/oauth2/v2/auth?state=abc");
+    const res = await request(app).get("/api/admin/gmail-auth-url").set("x-admin-secret", "test-admin-secret");
+    expect(res.status).toBe(200);
+    expect(res.body.url).toContain("accounts.google.com");
+  });
+});
+
+describe("GET /api/admin/gmail-callback", () => {
+  // SECURITY REGRESSION TEST (Phase 1.5 remediation, AUDIT.md Finding M-1):
+  // a code comment used to claim this route was protected by a `state`
+  // parameter, but no such check actually existed anywhere. These tests
+  // exist to fail if that check is ever removed again.
+  it("rejects a request with no state parameter at all", async () => {
+    const res = await request(app).get("/api/admin/gmail-callback").query({ code: "auth-code-123" });
+    expect(res.status).toBe(401);
+    expect(mockGmailAgent.exchangeGmailAuthCode).not.toHaveBeenCalled();
+  });
+
+  it("rejects a request with an invalid or expired state parameter", async () => {
+    mockGmailAgent.verifyOAuthState.mockReturnValue(false);
+    const res = await request(app).get("/api/admin/gmail-callback").query({ code: "auth-code-123", state: "forged-or-expired" });
+    expect(res.status).toBe(401);
+    expect(mockGmailAgent.exchangeGmailAuthCode).not.toHaveBeenCalled();
+  });
+
+  it("rejects a request with no code even if state is valid", async () => {
+    mockGmailAgent.verifyOAuthState.mockReturnValue(true);
+    const res = await request(app).get("/api/admin/gmail-callback").query({ state: "valid-state" });
     expect(res.status).toBe(400);
   });
 
-  it("returns a session token for a valid code", async () => {
-    mockAccess.verifyAccessCode.mockResolvedValueOnce({ token: "tok", tier: "Pro", email: "a@b.com" });
-    const res = await request(app).post("/api/activate-code").send({ email: "a@b.com", code: "AAAA-BBBB" });
+  it("exchanges the code for a refresh token when both code and state are valid", async () => {
+    mockGmailAgent.verifyOAuthState.mockReturnValue(true);
+    mockGmailAgent.exchangeGmailAuthCode.mockResolvedValueOnce("refresh-token-xyz");
+    const res = await request(app).get("/api/admin/gmail-callback").query({ code: "auth-code-123", state: "valid-state" });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true, tier: "Pro", token: "tok", email: "a@b.com" });
+    expect(res.text).toContain("refresh-token-xyz");
+  });
+});
+
+describe("GET /api/admin/check-payments", () => {
+  it("rejects a request with neither the admin secret nor a valid cron bearer token", async () => {
+    const res = await request(app).get("/api/admin/check-payments");
+    expect(res.status).toBe(401);
+    expect(mockGmailAgent.scanForPayments).not.toHaveBeenCalled();
   });
 
-  it("maps an invalid code to 401", async () => {
+  it("runs the scan with the correct admin secret", async () => {
+    mockGmailAgent.scanForPayments.mockResolvedValueOnce({ scanned: 0, alreadyProcessed: 0, matchedPendingApproval: [], noMatch: [], errors: [], stalePending: [] });
+    const res = await request(app).get("/api/admin/check-payments").set("x-admin-secret", "test-admin-secret");
+    expect(res.status).toBe(200);
+    expect(mockGmailAgent.scanForPayments).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the scan when called by Vercel Cron with the correct bearer token", async () => {
+    process.env.CRON_SECRET = "test-cron-secret";
+    mockGmailAgent.scanForPayments.mockResolvedValueOnce({ scanned: 0, alreadyProcessed: 0, matchedPendingApproval: [], noMatch: [], errors: [], stalePending: [] });
+    const res = await request(app).get("/api/admin/check-payments").set("authorization", "Bearer test-cron-secret");
+    expect(res.status).toBe(200);
+    delete process.env.CRON_SECRET;
+  });
+
+  it("rejects an incorrect cron bearer token", async () => {
+    process.env.CRON_SECRET = "test-cron-secret";
+    const res = await request(app).get("/api/admin/check-payments").set("authorization", "Bearer wrong-token");
+    expect(res.status).toBe(401);
+    delete process.env.CRON_SECRET;
+  });
+});
+
+describe("POST /api/cases", () => {
+  it("rejects an unauthenticated request", async () => {
+    // beforeEach already leaves verifyFirebaseToken resolving null.
+    const res = await request(app).post("/api/cases").send({ title: "My Case" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("creates a case for a signed-in Firebase user and returns it", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "verified-uid-1", email: "parent@example.com" });
+    mockCases.createCase.mockResolvedValue({
+      id: "case-1",
+      ownerUid: "verified-uid-1",
+      title: "My Case",
+      description: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: "My Case" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.case).toEqual({
+      id: "case-1",
+      title: "My Case",
+      description: null,
+      ownerUid: "verified-uid-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(mockCases.createCase).toHaveBeenCalledWith("verified-uid-1", "My Case");
+  });
+
+  it("uses the server-verified uid as owner, never a client-supplied one (spoofing resistance)", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "real-verified-uid", email: "parent@example.com" });
+    mockCases.createCase.mockResolvedValue({
+      id: "case-2",
+      ownerUid: "real-verified-uid",
+      title: "Spoof Attempt",
+      description: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      // An attacker-controlled body trying to claim a different owner/role/id.
+      .send({ title: "Spoof Attempt", ownerUid: "someone-elses-uid", uid: "someone-elses-uid", userId: "someone-elses-uid", role: "OWNER", id: "attacker-chosen-id" });
+
+    expect(res.status).toBe(201);
+    // The route must have called createCase with ONLY the verified uid and
+    // the title — never anything derived from the spoofed body fields.
+    expect(mockCases.createCase).toHaveBeenCalledWith("real-verified-uid", "Spoof Attempt");
+    expect(res.body.case.ownerUid).toBe("real-verified-uid");
+    expect(res.body.case.id).not.toBe("attacker-chosen-id");
+  });
+
+  it("rejects a missing title", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({});
+    expect(res.status).toBe(400);
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string title", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: 12345 });
+    expect(res.status).toBe(400);
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("rejects a blank/whitespace-only title", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: "   " });
+    expect(res.status).toBe(400);
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("rejects an excessively long title", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: "x".repeat(201) });
+    expect(res.status).toBe(400);
+    expect(mockCases.createCase).not.toHaveBeenCalled();
+  });
+
+  it("does not leak a raw database/RPC error message if case creation fails", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-x", email: "x@example.com" });
+    mockCases.createCase.mockRejectedValue(
+      Object.assign(new Error("Failed to create case: relation \"public.cases\" does not exist"), { statusCode: 500 })
+    );
+
+    const res = await request(app)
+      .post("/api/cases")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ title: "My Case" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).not.toMatch(/relation|does not exist|public\.cases/);
+  });
+});
+
+describe("POST /api/activate-code", () => {
+  // SECURITY REGRESSION TEST (M-2 / Finding 3 remediation): this route used to accept an
+  // unauthenticated caller-supplied email as the sole identity for the resulting session -
+  // no Firebase sign-in was required at all. This test exists to fail if that gate is ever
+  // removed again.
+  it("rejects an unauthenticated activation attempt", async () => {
+    const res = await request(app).post("/api/activate-code").send({ email: "a@b.com", code: "AAAA-BBBB" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockAccess.verifyAccessCode).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing code or email even for a signed-in caller", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "a@b.com" });
+    const res = await request(app)
+      .post("/api/activate-code")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ email: "a@b.com" });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns a session token for a valid code, passing the verified identity (not just the email) to the service", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "verified-uid-1", email: "a@b.com" });
+    mockAccess.verifyAccessCode.mockResolvedValueOnce({ token: "tok", tier: "Pro", email: "a@b.com" });
+    const res = await request(app)
+      .post("/api/activate-code")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ email: "a@b.com", code: "AAAA-BBBB" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, tier: "Pro", token: "tok", email: "a@b.com" });
+    expect(mockAccess.verifyAccessCode).toHaveBeenCalledWith(
+      { uid: "verified-uid-1", email: "a@b.com" },
+      "a@b.com",
+      "AAAA-BBBB"
+    );
+  });
+
+  it("maps an invalid code to 401 for a signed-in caller", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "a@b.com" });
     mockAccess.verifyAccessCode.mockRejectedValueOnce(Object.assign(new Error("Invalid email or code."), { statusCode: 401 }));
-    const res = await request(app).post("/api/activate-code").send({ email: "a@b.com", code: "WRONG" });
+    const res = await request(app)
+      .post("/api/activate-code")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ email: "a@b.com", code: "WRONG" });
     expect(res.status).toBe(401);
   });
 });
 
 describe("POST /api/extract-text", () => {
+  // SECURITY REGRESSION TEST (Phase 1.5 remediation, AUDIT.md Finding H-1):
+  // this endpoint had no authentication at all before this fix - anyone
+  // could call it directly for free, unmetered Gemini OCR. This test exists
+  // specifically to fail if that gate is ever removed again.
+  it("rejects an unauthenticated request with SIGN_IN_REQUIRED", async () => {
+    const res = await request(app).post("/api/extract-text").send({ fileData: { base64: "abcd", mimeType: "text/plain" } });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it("allows a signed-in-but-unpaid (Firebase-verified) caller through, since this step doesn't consume a free-tier slot", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-extract", email: "parent@example.com" });
+    const base64 = Buffer.from("Hello world", "utf-8").toString("base64");
+    const res = await request(app)
+      .post("/api/extract-text")
+      .set("Authorization", "Bearer valid-firebase-token")
+      .send({ fileData: { base64, mimeType: "text/plain" } });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects an oversized base64 payload before calling Gemini", async () => {
+    const oversized = "a".repeat(30_000_001);
+    const res = await request(app)
+      .post("/api/extract-text")
+      .set(paid())
+      .send({ fileData: { base64: oversized, mimeType: "application/pdf" } });
+    expect(res.status).toBe(413);
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
   it("rejects a missing fileData.base64", async () => {
-    const res = await request(app).post("/api/extract-text").send({ fileData: {} });
+    const res = await request(app).post("/api/extract-text").set(paid()).send({ fileData: {} });
     expect(res.status).toBe(400);
   });
 
   it("rejects an unsupported mime type", async () => {
     const res = await request(app)
       .post("/api/extract-text")
+      .set(paid())
       .send({ fileData: { base64: "abcd", mimeType: "application/zip" } });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Unsupported file type/);
@@ -231,6 +533,7 @@ describe("POST /api/extract-text", () => {
     const base64 = Buffer.from("Hello world", "utf-8").toString("base64");
     const res = await request(app)
       .post("/api/extract-text")
+      .set(paid())
       .send({ fileData: { base64, mimeType: "text/plain" } });
     expect(res.status).toBe(200);
     expect(res.body.extractedText).toBe("Hello world");
@@ -241,6 +544,7 @@ describe("POST /api/extract-text", () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "Extracted content" });
     const res = await request(app)
       .post("/api/extract-text")
+      .set(paid())
       .send({ fileData: { base64: "abcd", mimeType: "application/pdf" } });
     expect(res.status).toBe(200);
     expect(res.body.extractedText).toBe("Extracted content");
@@ -251,8 +555,38 @@ describe("POST /api/extract-text", () => {
     mockGenerateContent.mockResolvedValueOnce({ text: "   " });
     const res = await request(app)
       .post("/api/extract-text")
+      .set(paid())
       .send({ fileData: { base64: "abcd", mimeType: "image/png" } });
     expect(res.status).toBe(422);
+  });
+});
+
+// SECURITY REGRESSION TESTS (Phase 1.5 remediation, AUDIT.md Finding H-2):
+// this route had no authentication and zero test coverage at all before this
+// fix - anyone could call it directly for free, unmetered Gemini calls.
+describe("POST /api/search-connectors", () => {
+  it("rejects an unauthenticated request", async () => {
+    const res = await request(app).post("/api/search-connectors").send({ query: "what is a protection order?" });
+    expect(res.status).toBe(402);
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing query for an authenticated caller", async () => {
+    const res = await request(app).post("/api/search-connectors").set(paid()).send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an oversized query", async () => {
+    const res = await request(app).post("/api/search-connectors").set(paid()).send({ query: "a".repeat(2001) });
+    expect(res.status).toBe(400);
+  });
+
+  it("answers a valid, authenticated query and appends the disclaimer", async () => {
+    mockGenerateContent.mockResolvedValueOnce({ text: "A protection order is..." });
+    const res = await request(app).post("/api/search-connectors").set(paid()).send({ query: "what is a protection order?" });
+    expect(res.status).toBe(200);
+    expect(res.body.response).toContain("A protection order is...");
+    expect(res.body.response).toContain("informational/educational purposes only");
   });
 });
 
@@ -540,6 +874,96 @@ describe("POST /api/deep-scan", () => {
     const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
     expect(res.status).toBe(429);
     expect(res.body.isRateLimit).toBe(true);
+  });
+});
+
+// M-2 / Finding 3 remediation: a valid-looking x-ps-session token is no longer sufficient by
+// itself on any paid route - it must resolve to a still-active navigator_paid_sessions row
+// AND that row's firebase_uid must match a verified Firebase identity for the same request.
+// /api/deep-scan is used as the representative route (hard-gated, no free tier, so the paid
+// check is the whole story) - the same requireSession() function backs every other
+// paid-only route, so this coverage applies there too.
+describe("Database-backed paid-session authorization (M-2 / Finding 3)", () => {
+  it("rejects a structurally valid token whose session row has been revoked or expired", async () => {
+    // Firebase identity resolves fine, and the token itself parses - but the database says
+    // this session is no longer active (revoked_at set, or expires_at passed).
+    mockAccess.getActivePaidSession.mockResolvedValueOnce(null);
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some text." });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("SESSION_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid, active session row whose firebase_uid does not match the caller's verified identity", async () => {
+    // The session row is real and active, but belongs to someone else - proves a stolen
+    // token can't be used by a different signed-in Firebase account.
+    mockAccess.getActivePaidSession.mockResolvedValueOnce({ id: PAID_JTI, firebaseUid: "someone-elses-uid", tier: "Pro" });
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some text." });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("SESSION_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid session token with no Firebase identity presented at all", async () => {
+    // A bare x-ps-session with no Authorization header - the token alone must not be enough.
+    const res = await request(app).post("/api/deep-scan").set("x-ps-session", PAID_SESSION_TOKEN).send({ documentText: "Some text." });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("allows a fully valid, DB-active, uid-bound session through", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ gaps: [], missingEvidence: [], retorts: [], disclaimer: "d" }));
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some text." });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/admin/revoke-session", () => {
+  it("rejects a request without the correct admin secret", async () => {
+    const res = await request(app).post("/api/admin/revoke-session").send({ sessionId: "session-1" });
+    expect(res.status).toBe(401);
+    expect(mockAccess.revokeSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing sessionId even with the correct secret", async () => {
+    const res = await request(app).post("/api/admin/revoke-session").set("x-admin-secret", "test-admin-secret").send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("revokes the given session id", async () => {
+    mockAccess.revokeSession.mockResolvedValueOnce(true);
+    const res = await request(app)
+      .post("/api/admin/revoke-session")
+      .set("x-admin-secret", "test-admin-secret")
+      .send({ sessionId: "session-1", reason: "refund issued" });
+    expect(res.status).toBe(200);
+    expect(res.body.revoked).toBe(true);
+    expect(mockAccess.revokeSession).toHaveBeenCalledWith("session-1", "refund issued");
+  });
+});
+
+describe("POST /api/admin/revoke-sessions-for-uid", () => {
+  it("rejects a request without the correct admin secret", async () => {
+    const res = await request(app).post("/api/admin/revoke-sessions-for-uid").send({ firebaseUid: "uid-1" });
+    expect(res.status).toBe(401);
+    expect(mockAccess.revokeAllSessionsForUid).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing firebaseUid even with the correct secret", async () => {
+    const res = await request(app).post("/api/admin/revoke-sessions-for-uid").set("x-admin-secret", "test-admin-secret").send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("revokes every active session for the given uid", async () => {
+    mockAccess.revokeAllSessionsForUid.mockResolvedValueOnce(3);
+    const res = await request(app)
+      .post("/api/admin/revoke-sessions-for-uid")
+      .set("x-admin-secret", "test-admin-secret")
+      .send({ firebaseUid: "uid-1", reason: "abuse report" });
+    expect(res.status).toBe(200);
+    expect(res.body.revokedCount).toBe(3);
+    expect(mockAccess.revokeAllSessionsForUid).toHaveBeenCalledWith("uid-1", "abuse report");
   });
 });
 
