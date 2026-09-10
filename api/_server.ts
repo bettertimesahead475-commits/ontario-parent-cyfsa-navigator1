@@ -794,7 +794,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         return res.status(400).json({ error: "`description`, if provided, must be a string." });
       }
 
-      const created = await createMatter(identity.uid, clientId.trim(), trimmedTitle, description ?? null, identity.email);
+      const created = await createMatter(identity.uid, clientId.trim(), trimmedTitle, typeof description === "string" ? description : null, identity.email);
       res.status(201).json({
         matter: {
           id: created.id,
