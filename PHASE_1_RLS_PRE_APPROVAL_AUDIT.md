@@ -1,5 +1,8 @@
 # Phase 1 RLS Migration — Read-Only Pre-Approval Audit
 
+> **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#current-closeout-status--2026-09-10) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
+
+
 **Scope of this document:** a read-only audit of one unapplied file, `supabase/migrations_pending_approval/enable_rls_free_usage_gmail_stale.sql`. No database was modified. No policy was created or altered. No migration was applied. `main` was not touched. This audit was performed on branch `phase-1.5-security-remediation` (HEAD `d027a00`), where the pending migration already lives.
 
 **What was actually done to produce this report:** direct reads of the migration file and every application source file that touches the four tables in question; a repo-wide grep for all four table names with zero exceptions; and read-only SQL queries against the live Supabase project (`qboidsfpjuxeqtfotryj`) — `information_schema.columns`, `information_schema.table_constraints`, `information_schema.role_table_grants`, `pg_policies`, and `pg_class.relrowsecurity` — plus `SELECT count(*)` on all four tables. No `INSERT`/`UPDATE`/`DELETE`/`ALTER`/`CREATE POLICY`/`DROP POLICY` statement was executed against the live database during this pass.

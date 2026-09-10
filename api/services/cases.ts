@@ -2,7 +2,7 @@
 // Phase 2A: the persistent case-ownership foundation. See
 // PHASE_2_CYFSA_INTELLIGENCE_ARCHITECTURE.md and
 // supabase/migrations_pending_approval/create_navigator_case_ownership_foundation.sql
-// (not yet applied - see that file for why, and for the exact schema).
+// (applied as migration 20260909233412; see that file for the schema).
 //
 // Uses the navigator_cases/navigator_case_members tables and the
 // create_navigator_case_with_owner() function - NOT public.cases/
@@ -60,7 +60,7 @@ export async function createCase(ownerUid: string, title: string): Promise<Case>
   if (error) {
     throw Object.assign(new Error(`Failed to create case: ${error.message}`), { statusCode: 500 });
   }
-  // A function declared `returns public.cases` (a single row type, not
+  // A function declared `returns public.navigator_cases` (a single row type, not
   // setof) is returned by PostgREST as one object; defensively also accept
   // an array in case a future revision changes that, rather than assuming
   // one specific shape forever.

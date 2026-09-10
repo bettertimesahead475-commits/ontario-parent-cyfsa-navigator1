@@ -1,5 +1,8 @@
 # Phase 1 Final Security Gate Audit — CYFSA Navigator
 
+> **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#current-closeout-status--2026-09-10) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
+
+
 **Type**: READ-ONLY FINAL SECURITY VERIFICATION. No application code, database schema, Supabase policy, migration, environment variable, or dependency was modified as part of this audit. Nothing was merged, deployed, or created except this document.
 
 **Audited state**: branch `phase-1.5-security-remediation` @ commit `fb4bf066521edeec3bc3e6c686ec339ebb6b17ee`, as it exists on `origin` right now.

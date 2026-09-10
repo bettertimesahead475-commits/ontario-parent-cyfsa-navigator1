@@ -1,5 +1,8 @@
 # Phase 2 — CYFSA Case Intelligence Architecture
 
+> **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#current-closeout-status--2026-09-10) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
+
+
 **Type**: READ-ONLY ARCHITECTURE AND GAP ANALYSIS. No application source code, database schema, RLS policy, API route, package version, or Vercel configuration was modified to produce this document. This is the only file created or changed.
 
 **Audited state**: branch `phase-1.5-security-remediation` @ commit `372ae9ee8954a50c87d0ec8d07c285a788c71b41`, as it exists on `origin` right now (working tree clean, remote synchronized — see §0).

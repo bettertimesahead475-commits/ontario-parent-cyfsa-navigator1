@@ -1,13 +1,13 @@
 // ---------------------------------------------------------------------------
-// Phase 3: the permanent Matter foundation. See
+// Matter foundation (unfinished domain additions in PR #21). See
 // supabase/migrations_pending_approval/create_navigator_matters_foundation.sql
 // (applied) for the exact schema and the create_navigator_matter_with_owner()
 // function this service calls.
 //
 // Uses the accounts/clients/navigator_matters/navigator_matter_members
 // tables and the create_navigator_matter_with_owner() function - NOT
-// navigator_cases/navigator_case_members, which remain in place (inert,
-// unmodified) until a separate, later-authorized task retires them.
+// navigator_cases/navigator_case_members, which remain active through
+// POST /api/cases. Retirement requires a separate authorized task.
 //
 // Reuses the same getSupabase() singleton every other service in this app
 // uses (access.ts, usage.ts, cases.ts, gmailAgent.ts).

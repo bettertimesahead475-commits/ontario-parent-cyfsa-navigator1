@@ -1,5 +1,8 @@
 # Phase 2A Schema Collision — Remediation Design
 
+> **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#current-closeout-status--2026-09-10) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
+
+
 **Type**: READ-ONLY REMEDIATION DESIGN AUDIT. No database migration was applied, no production data was modified, no existing table was dropped/renamed/altered, and no application code was changed to produce this document. This is the only file created.
 
 **Audited state**: branch `phase-1.5-security-remediation` @ commit `b48c56081fa3f0832fdaae625f953f1ffbe9a859` (working tree clean, remote synchronized — see Git State at the end of this document).

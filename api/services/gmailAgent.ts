@@ -106,7 +106,7 @@ function getOAuthClient() {
 // param matching ADMIN_SECRET" - no `state` was ever actually generated or
 // checked anywhere, which this remediation's audit step specifically caught
 // as a documented-but-nonexistent control. This implements a real one: a
-// short-lived (10-minute), HMAC-signed, single-use-in-practice state value,
+// short-lived (10-minute), HMAC-signed state value (not consumed on use),
 // tied to ADMIN_SECRET (the same credential that gated the request that
 // generated it), verified with a timing-safe comparison on the way back.
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -277,7 +277,7 @@ async function checkStalePendingPayments(db: ReturnType<typeof getSupabase>): Pr
   return alerted;
 }
 
-/** The actual agent run: scans recent Interac emails, matches, and approves. Call this from a cron or an admin-triggered route. */
+/** The actual agent run: scans recent Interac emails, detects matches, and alerts for manual approval. Call this from a cron or an admin-triggered route. */
 export async function scanForPayments(): Promise<ScanResult> {
   const gmail = getGmailClient();
   const db = getSupabase();

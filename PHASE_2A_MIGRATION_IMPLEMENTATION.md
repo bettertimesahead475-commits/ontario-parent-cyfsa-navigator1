@@ -1,5 +1,8 @@
 # Phase 2A Migration — Implementation
 
+> **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#current-closeout-status--2026-09-10) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
+
+
 **Type**: Migration-artifact creation + minimal, necessary application-code alignment. **No migration was applied to Supabase. No DDL was executed against production. No production database object was created, altered, or dropped. No legacy table was touched, modified, or renamed.**
 
 **Builds on**: `PHASE_2A_MIGRATION_PRE_APPROVAL_AUDIT.md` (found the original migration collides with legacy `public.cases`/`public.documents`), `PHASE_2A_SCHEMA_COLLISION_REMEDIATION.md` (designed the `navigator_*` replacement, recommendation `SAFE WITH CONDITIONS`), and `PHASE_2A_FINAL_MIGRATION_APPROVAL_AUDIT.md` (found no executable file existed yet implementing that design — `NO EXECUTABLE MIGRATION PRESENT`). This task closes exactly that gap.

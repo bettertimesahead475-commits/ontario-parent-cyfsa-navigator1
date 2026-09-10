@@ -19,14 +19,14 @@
 //      generates a one-time access code, stores only its SHA-256 hash in
 //      `access_codes`, and emails the plaintext code directly to the
 //      parent (see sendAccessCodeEmail() below) - this is the only place
-//      it's ever sent anywhere, on both the manual admin-approve route and
-//      the automated Gmail-agent path, since both call this one function.
+//      it's sent: the manual admin-approve route calls this function.
+//      The Gmail agent only detects matches and alerts the administrator.
 //   3. verifyAccessCode(identity, email, code) — parent-facing, requires a
 //      verified Firebase identity (M-2/Finding-3 remediation). Checks the
 //      code against the stored hash, confirms it's unused and unexpired,
 //      atomically claims it, creates a row in the navigator_paid_sessions
 //      table (see supabase/migrations_pending_approval/
-//      create_navigator_paid_sessions.sql - not yet applied) binding the
+//      create_navigator_paid_sessions.sql - applied 20260909231618) binding the
 //      session to the verified Firebase uid, and returns a signed,
 //      minimal token (HMAC) embedding only { jti, exp } - the session row
 //      itself, not the token, is authoritative for email/tier/revocation/
@@ -92,7 +92,7 @@ function timingSafeEqualHex(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-// --- Session tokens: HMAC-signed, stateless, no session table needed ------
+// --- HMAC-signed lookup tokens backed by durable paid-session rows ------
 // SECURITY FIX: this used to fall back to ADMIN_SECRET when SESSION_SECRET was unset, which
 // meant a single leaked secret could both authenticate admin-only routes (x-admin-secret) AND
 // forge paid-session tokens for any email/tier. Paid-session signing now requires its own,
@@ -144,7 +144,7 @@ export function verifySessionToken(token: string): { jti: string } | null {
 
 // --- Database-backed paid sessions (public.navigator_paid_sessions) --------
 // Table defined in supabase/migrations_pending_approval/create_navigator_paid_sessions.sql
-// (reviewed, NOT yet applied to production). firebase_uid is always the server-verified uid
+// (applied as migration 20260909231618). firebase_uid is always the server-verified uid
 // from verifyFirebaseToken() - never a client-supplied value.
 export interface PaidSession {
   id: string;
@@ -346,11 +346,9 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
   if (codeErr) throw Object.assign(new Error(`Payment was marked approved but code generation failed: ${codeErr.message}`), { statusCode: 500 });
 
   // Plaintext code is only ever visible right here - it's never stored anywhere, so this
-  // email IS the delivery mechanism, not a courtesy copy. Both callers (the manual
-  // /api/admin/approve-payment route and the Gmail agent's automated scanForPayments()) go
-  // through this one function, so wiring the send here - rather than in each caller - is
-  // what makes it actually automatic on both paths instead of relying on Chris to forward it
-  // by hand. A failed send does NOT fail the approval (the payment is already correctly
+  // email IS the delivery mechanism, not a courtesy copy. The manual
+  // /api/admin/approve-payment route calls this function; Gmail scanning only alerts.
+  // Sending here delivers the code after manual approval without manual forwarding. A failed send does NOT fail the approval (the payment is already correctly
   // marked approved and the code already exists - that's the source of truth); the caller
   // gets emailSent: false back and decides what to do about it.
   const emailSent = await sendAccessCodeEmail(email, tier, code, referenceNumber);

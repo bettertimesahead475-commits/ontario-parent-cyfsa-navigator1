@@ -1,5 +1,40 @@
 # Phase 1.5 Security Remediation & Verification
 
+## Current closeout status — 2026-09-10
+
+This section supersedes the historical status claims and next-step instructions below and in the other Phase audit/planning documents. PR #21 contains security remediation **and** unfinished account/client/case/matter foundations; its scope is no longer security-only. No later phase is authorized by these documents.
+
+Verified code HEAD: `831893cd0d604b68722b2bf5cd42afd996672c2f`. GitHub Actions run #88 passed `npm ci`, `npm run lint` (complete TypeScript check), `npm test`, and `npm run build` (Vite frontend plus esbuild server). **139 tests passed in 5 files**: server 92, access 29, Gmail 8, Firebase 7, cases 3. There are no matter-specific tests. The npm-ci audit reported **11 vulnerabilities: 10 moderate, 1 high**; a separate standalone npm-audit command was not run. The lockfile contains nodemailer 6.10.1, not v10. Vite reported a chunk-size warning. Both Vercel commit statuses succeeded; READY previews are not a live authenticated end-to-end test. See PR checks for any subsequent documentation-only commit.
+
+### Migration status
+
+Read-only verification of project `qboidsfpjuxeqtfotryj` checked the migration ledger, columns, RLS, function definitions and execution privileges. Directory names and SQL header approval warnings are historical; the ledger and current schema establish the following status. No migration was applied, removed or edited during closeout.
+
+| File in supabase/migrations_pending_approval | Classification | Ledger version / reason |
+| --- | --- | --- |
+| enable_rls_free_usage_gmail_stale.sql | applied | 20260909144539 |
+| create_navigator_paid_sessions.sql | applied | 20260909231618 |
+| create_accounts_foundation.sql | applied | 20260909232624 |
+| create_navigator_case_ownership_foundation.sql | applied | 20260909233412 |
+| create_navigator_matters_foundation.sql | applied | 20260910001952 |
+| create_case_ownership_foundation.sql | obsolete | Unsafe to apply: collides with legacy cases/documents; superseded by navigator-prefixed migration. |
+
+There are **no pending-approval migrations** among these six files. All tables, columns and both owner-creation RPCs used by current application code exist in the verified database. The matter migration renamed navigator_documents.case_id to matter_id; no current application path uses either column or the document tables. Both case and matter creation APIs remain active. No current code requires an unapplied migration. This does not verify that every deployment's environment points to this project, or substitute for a live write-flow test.
+
+### Remaining blockers and scope decision
+
+- The account/client/matter flow is unfinished: no client provisioning route or UI and no matter-specific tests. Case and matter APIs coexist; navigator_cases is not inert. Owner-creation tests mock the database and do not prove live transaction behavior. Account status exists but is not enforced by the matter RPC.
+- Several Express 4 async routes await paid-session validation before their try/catch (search-connectors, case-timeline, paid rag-query and deep-scan). Database/session-validation exceptions can escape route error handling.
+- Access-code redemption claims the code before separately inserting/signing a paid session. Failure after claiming can consume a code without delivering a session. Existing stateless tokens are rejected by the new session format; recovery/reissue for already-used codes needs rollout review.
+- Previously deferred risks remain: dependency advisories, disabled CSP, localStorage token storage, in-memory/IP rate limits, and no authenticated provider/SMTP end-to-end validation. Passing tests do not establish that these risks are harmless.
+
+**Keep PR #21 draft; do not merge yet.** Recommend separating the account/client/case/matter additions and associated Phase planning from security remediation, together with the unrelated global-reset UI removal. Retain paid-session security changes and their migration history together. Applied database objects must remain untouched by any future source split. No split, configuration change, migration execution or later-phase implementation was performed during closeout.
+
+## Historical verification snapshot
+
+The remainder records earlier checkpoints; counts, scope statements and approval statuses below are not current.
+
+
 **Branch:** `phase-1.5-security-remediation` (off `main` at `760a0cf`, the commit that added `AUDIT.md`)
 **PR:** [#21](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/21) — draft, not merged, per explicit instruction.
 **Scope:** remediate `AUDIT.md`'s findings without breaking production, without unapproved production database changes, and without any Phase 2 feature work.
