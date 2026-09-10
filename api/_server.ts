@@ -17,6 +17,7 @@ import { GoogleGenAI } from "@google/genai";
 import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
+import { createMatter } from "./services/matters.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 
@@ -741,6 +742,77 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // string is exactly the kind of thing that should never reach a client.
       console.error("[/api/cases]", err);
       res.status(500).json({ error: "Failed to create case. Please try again." });
+    }
+  });
+
+  // Phase 3: create a Matter, the permanent domain primitive superseding
+  // navigator_cases (see supabase/migrations_pending_approval/
+  // create_navigator_matters_foundation.sql). POST /api/cases above remains
+  // untouched and fully functional - this is a new, separate route, not a
+  // replacement of it.
+  //
+  // Authentication: a valid Firebase ID token is required, same as
+  // POST /api/cases.
+  // Ownership: the Matter's account_id/OWNER-membership are always resolved
+  // server-side by create_navigator_matter_with_owner() from the verified
+  // Firebase uid - never from the request body. `primary_role` is likewise
+  // never read from the request body: createMatter() (api/services/
+  // matters.ts) resolves it entirely server-side (existing account's own
+  // accounts.primary_role, or the hardcoded product default 'parent' for a
+  // first-time account) - the browser cannot influence it at all.
+  app.post("/api/matters", async (req: Request, res: Response) => {
+    try {
+      const identity = await verifyFirebaseToken(req.header("authorization"));
+      if (!identity) {
+        return res.status(401).json({
+          error: "Please sign in to create a matter.",
+          code: "SIGN_IN_REQUIRED",
+        });
+      }
+
+      const body = req.body;
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return res.status(400).json({ error: "A JSON request body is required." });
+      }
+
+      // Explicitly pull only `clientId`, `title`, and `description` off the
+      // body - no role/primaryRole/accountType/accountId/ownerUid field is
+      // ever read, matching POST /api/cases's existing pattern of preventing
+      // client-controlled identity by simply never reading it.
+      const { clientId, title, description } = body as { clientId?: unknown; title?: unknown; description?: unknown };
+      if (typeof clientId !== "string" || !clientId.trim()) {
+        return res.status(400).json({ error: "A non-empty `clientId` string is required." });
+      }
+      if (typeof title !== "string" || !title.trim()) {
+        return res.status(400).json({ error: "A non-empty `title` string is required." });
+      }
+      const trimmedTitle = title.trim();
+      if (trimmedTitle.length > 200) {
+        return res.status(400).json({ error: "Title is too long (max 200 characters)." });
+      }
+      if (description !== undefined && typeof description !== "string") {
+        return res.status(400).json({ error: "`description`, if provided, must be a string." });
+      }
+
+      const created = await createMatter(identity.uid, clientId.trim(), trimmedTitle, description ?? null, identity.email);
+      res.status(201).json({
+        matter: {
+          id: created.id,
+          accountId: created.accountId,
+          clientId: created.clientId,
+          title: created.title,
+          description: created.description,
+          createdAt: created.createdAt,
+          updatedAt: created.updatedAt,
+        },
+      });
+    } catch (err: any) {
+      // Deliberately generic here, matching POST /api/cases's existing
+      // precedent - a raw Supabase/RPC error string should never reach a
+      // client. The one exception (403) is thrown by createMatter() itself
+      // with an already-safe, client-appropriate message.
+      console.error("[/api/matters]", err);
+      res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Failed to create matter. Please try again." });
     }
   });
 
