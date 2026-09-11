@@ -1,5 +1,25 @@
 # ParentShield (ontario-parent-cyfsa-navigator1) — Audit Handoff
 
+## Security split status — 2026-09-11
+
+Current branch: `split/phase-1-security`, reconstructed from reviewed main `760a0cfbc03bac260d1703183e2dfaaff760e98c` and reviewed feature snapshot `37db0b03a54970f3b7ddc8089a85dabc4b1948b6`.
+
+This branch retains endpoint, Firebase revocation, OAuth, payment and durable-session security, authenticated activation, dependencies and security tests. POST /api/cases and POST /api/matters, their services and domain tests are absent. Existing case-timeline, analyzer, document analysis, extraction, RAG and deep-scan remain. The baseline reset control remains.
+
+The 139-test result below belongs to the original combined branch, not this reconstruction. Current verification is pending. Expected security-only count is 128 tests across four files; that is a prediction, not a passing result.
+
+Phase 2 source and SQL provenance remain preserved in the [immutable reviewed snapshot](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/tree/37db0b03a54970f3b7ddc8089a85dabc4b1948b6) and archive/pr21-37db0b0. The dependent local branch split/phase-2-foundations will preserve the reviewed domain delta after Phase 1 verification. PR #21 and original refs are unchanged; neither reconstructed branch is authorized for push or merge.
+
+The historical live migration inventory below remains evidence from the original closeout, not a new database verification: RLS 20260909144539; paid sessions 20260909231618; accounts 20260909232624; navigator cases/documents 20260909233412; clients/matters/document alignment 20260910001952. Only the two security SQL artifacts belong in this branch; the four Phase 2 SQL artifacts, including the obsolete unsafe original case SQL, remain in the immutable snapshot. Never replay any SQL during this split. Existing Phase 2 database objects may remain present and unused by Phase 1; authentication has no accounts/clients/matters dependency.
+
+Remaining merge blockers include session-validation exceptions outside route error handling, code-claim/session-creation failure recovery, legacy-token rollout, dependency advisories, CORS/rate-limit verification without test bypass, and authenticated end-to-end validation. Phase 2 provisioning remains incomplete and requires matter ownership/validation, generic database errors and isolated transaction tests. This reconstruction does not resolve those issues or authorize Phase 2B. No Supabase or deployment operation is part of this work.
+
+All sections below are historical evidence about the original branch and their stated dates. References there to active domain APIs do not describe this security-only branch.
+
+
+> **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#security-split-status--2026-09-11) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
+
+
 Repo: bettertimesahead475-commits/ontario-parent-cyfsa-navigator1
 Live: ontario-parent-cyfsa-navigator1-ror.vercel.app (Vercel, team ontarioparentassist-7616s-projects)
 
