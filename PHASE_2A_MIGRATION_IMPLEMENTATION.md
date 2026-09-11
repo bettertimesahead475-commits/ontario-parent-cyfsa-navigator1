@@ -1,5 +1,21 @@
 # Phase 2A Migration — Implementation
 
+## Local reconstruction verification — 2026-09-11
+
+Verified reconstructed code at `03b70e3fed06a81f4d544f5ef2404104c333309a`, based on Phase 1 `6dbcbfd1ef020d333adb59063f4d407b8d5b271e`; this subsequent record changes documentation only.
+
+- Node v22.14.0; npm 10.9.2. Dedicated clone cache used; no global configuration changes.
+- npm ci: passed, 504 packages installed. Babel engine and dependency deprecation warnings remain.
+- npm run lint: passed, exit 0, with the unchanged tsconfig.json.
+- npm test: 139 tests passed across 5 files (19.54 seconds).
+- npm run build: passed; Vite and esbuild completed. The existing large-chunk warning remains.
+- npm audit: completed, exit 1, reporting 10 moderate and 1 high vulnerability (Nodemailer and uuid dependency chains). No audit fix or dependency changes were applied.
+- git diff --check: passed. All six migration SQL blobs match archived reviewed source byte-for-byte. Application code matches that source; inherited Phase 1 security remains intact.
+- Only reviewed foundation code and historical planning are restored. No Phase 2B/Phase 3 implementation, migration execution, Supabase access, original-repository access, deployment change, PR change, merge or push occurred.
+
+These checks establish reconstruction fidelity, not merge readiness. Existing session-error handling, redemption recovery and legacy-token rollout concerns remain; account/client provisioning is incomplete, and matter-specific ownership/error and isolated transaction verification remain outstanding.
+
+
 > **Phase 2 reconstruction status — 2026-09-11.** This document preserves reviewed historical planning/audit evidence from `37db0b03a54970f3b7ddc8089a85dabc4b1948b6`. Current local branch `split/phase-2-foundations` inherits verified security branch `split/phase-1-security` at `6dbcbfd1ef020d333adb59063f4d407b8d5b271e` and restores only the reviewed case/matter foundations and reset-button removal. Phase 1 document scope notices describe the parent security branch; case/matter APIs are present on this dependent branch. Historical 139-test evidence is not a fresh verification of this reconstruction. Account/client provisioning remains incomplete; matter-specific and isolated transaction coverage remain outstanding. All SQL artifacts are provenance only: preserve the obsolete case-migration warning and never execute or replay any migration in this split. No Phase 2B or Phase 3 implementation, push, merge, production change or deployment is authorized. PR #21 and original refs remain unchanged.
 
 
