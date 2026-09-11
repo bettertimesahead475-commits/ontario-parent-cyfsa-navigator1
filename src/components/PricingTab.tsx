@@ -7,6 +7,7 @@ import React, { useState } from "react";
 import { AccessTier } from "../types";
 import { Check, Sparkles, Loader2, Shield, ArrowRight, CheckCircle, Scale, Coins } from "lucide-react";
 import { getUserKey } from "../utils/storage";
+import { apiFetch } from "../utils/api";
 
 interface PricingTabProps {
   currentTier: AccessTier;
@@ -104,7 +105,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
     onBusy(true);
     onError("");
     try {
-      const res = await fetch("/api/activate-code", {
+      // Activation now requires a signed-in Firebase identity - the resulting paid session
+      // is bound to it, not to whatever email string is typed below (see M-2/Finding 3
+      // remediation, api/services/access.ts's verifyAccessCode()). apiFetch() attaches the
+      // Firebase ID token automatically when the parent is signed in.
+      const res = await apiFetch("/api/activate-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailToUse, code: codeToRedeem.trim() }),

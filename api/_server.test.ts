@@ -27,6 +27,9 @@ const mockAccess = vi.hoisted(() => ({
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
   verifySessionToken: vi.fn(),
+  getActivePaidSession: vi.fn(),
+  revokeSession: vi.fn(),
+  revokeAllSessionsForUid: vi.fn(),
   checkAndConsumeFreeToolUse: vi.fn(),
   TIER_PRICES: { Pro: 19, Premium: 49 },
 }));
@@ -75,6 +78,7 @@ vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
 vi.mock("./services/usage.js", () => mockUsage);
 vi.mock("./services/gmailAgent.js", () => mockGmailAgent);
+vi.mock("./services/cases.js", () => mockCases);
 
 // `process.env.VERCEL` must be set BEFORE _server.ts is evaluated: it gates
 // whether the module calls setupViteAndStart() (which would otherwise spin
@@ -118,18 +122,35 @@ const MINIMAL_ANALYSIS = {
   lawyerCaseBrief: [],
 };
 
-// A valid Pro/Premium session token, sent as `x-ps-session`, for tests that exercise
-// tool behavior rather than the paywall itself. Gating-specific tests below send no
-// header (or an unrecognized one) and assert the 401/402 instead.
+// A valid Pro/Premium session token + the Firebase identity it's bound to, sent together as
+// `x-ps-session` + `Authorization`, for tests that exercise tool behavior rather than the
+// paywall itself. Gating-specific tests below send no header (or an unrecognized one) and
+// assert the 401/402 instead.
+//
+// M-2 / Finding 3 remediation: a session token alone is no longer sufficient - it must also
+// resolve to a still-active navigator_paid_sessions row (getActivePaidSession) whose
+// firebase_uid matches a verified Firebase identity for the SAME request. paid() therefore
+// sends both headers, and the default mocks below wire PAID_SESSION_TOKEN -> PAID_JTI ->
+// a session row bound to PAID_FIREBASE_UID, resolved only when PAID_FIREBASE_TOKEN is the
+// bearer presented - exactly mirroring the real cross-check.
 const PAID_SESSION_TOKEN = "valid-session-token";
-const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN });
+const PAID_JTI = "session-row-1";
+const PAID_FIREBASE_UID = "paid-firebase-uid-1";
+const PAID_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-paid-user";
+const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FIREBASE_TOKEN });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockAccess.verifySessionToken.mockImplementation((token: string) =>
-    token === PAID_SESSION_TOKEN ? { email: "paid@example.com", tier: "Pro" } : null
+  mockAccess.verifySessionToken.mockImplementation((token: string) => (token === PAID_SESSION_TOKEN ? { jti: PAID_JTI } : null));
+  mockAccess.getActivePaidSession.mockImplementation(async (jti: string) =>
+    jti === PAID_JTI ? { id: PAID_JTI, firebaseUid: PAID_FIREBASE_UID, tier: "Pro" } : null
   );
-  mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue(null);
+  // Tests that need a DIFFERENT (e.g. free-tier) identity override this with
+  // .mockResolvedValue({...}) directly, which replaces this implementation entirely for the
+  // rest of that test - unaffected by the header-based branching here.
+  mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header: string | undefined) =>
+    header === PAID_FIREBASE_TOKEN ? { uid: PAID_FIREBASE_UID, email: "paid@example.com" } : null
+  );
   mockUsage.getFreeUsage.mockResolvedValue(0);
   mockUsage.recordFreeUse.mockResolvedValue(undefined);
   mockAccess.checkAndConsumeFreeToolUse.mockResolvedValue(false);
@@ -288,21 +309,49 @@ describe("GET /api/admin/check-payments", () => {
 });
 
 describe("POST /api/activate-code", () => {
-  it("rejects a missing code or email", async () => {
-    const res = await request(app).post("/api/activate-code").send({ email: "a@b.com" });
+  // SECURITY REGRESSION TEST (M-2 / Finding 3 remediation): this route used to accept an
+  // unauthenticated caller-supplied email as the sole identity for the resulting session -
+  // no Firebase sign-in was required at all. This test exists to fail if that gate is ever
+  // removed again.
+  it("rejects an unauthenticated activation attempt", async () => {
+    const res = await request(app).post("/api/activate-code").send({ email: "a@b.com", code: "AAAA-BBBB" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockAccess.verifyAccessCode).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing code or email even for a signed-in caller", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "a@b.com" });
+    const res = await request(app)
+      .post("/api/activate-code")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ email: "a@b.com" });
     expect(res.status).toBe(400);
   });
 
-  it("returns a session token for a valid code", async () => {
+  it("returns a session token for a valid code, passing the verified identity (not just the email) to the service", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "verified-uid-1", email: "a@b.com" });
     mockAccess.verifyAccessCode.mockResolvedValueOnce({ token: "tok", tier: "Pro", email: "a@b.com" });
-    const res = await request(app).post("/api/activate-code").send({ email: "a@b.com", code: "AAAA-BBBB" });
+    const res = await request(app)
+      .post("/api/activate-code")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ email: "a@b.com", code: "AAAA-BBBB" });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, tier: "Pro", token: "tok", email: "a@b.com" });
+    expect(mockAccess.verifyAccessCode).toHaveBeenCalledWith(
+      { uid: "verified-uid-1", email: "a@b.com" },
+      "a@b.com",
+      "AAAA-BBBB"
+    );
   });
 
-  it("maps an invalid code to 401", async () => {
+  it("maps an invalid code to 401 for a signed-in caller", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "a@b.com" });
     mockAccess.verifyAccessCode.mockRejectedValueOnce(Object.assign(new Error("Invalid email or code."), { statusCode: 401 }));
-    const res = await request(app).post("/api/activate-code").send({ email: "a@b.com", code: "WRONG" });
+    const res = await request(app)
+      .post("/api/activate-code")
+      .set("Authorization", "Bearer irrelevant-in-this-mock")
+      .send({ email: "a@b.com", code: "WRONG" });
     expect(res.status).toBe(401);
   });
 });
@@ -698,6 +747,96 @@ describe("POST /api/deep-scan", () => {
     const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
     expect(res.status).toBe(429);
     expect(res.body.isRateLimit).toBe(true);
+  });
+});
+
+// M-2 / Finding 3 remediation: a valid-looking x-ps-session token is no longer sufficient by
+// itself on any paid route - it must resolve to a still-active navigator_paid_sessions row
+// AND that row's firebase_uid must match a verified Firebase identity for the same request.
+// /api/deep-scan is used as the representative route (hard-gated, no free tier, so the paid
+// check is the whole story) - the same requireSession() function backs every other
+// paid-only route, so this coverage applies there too.
+describe("Database-backed paid-session authorization (M-2 / Finding 3)", () => {
+  it("rejects a structurally valid token whose session row has been revoked or expired", async () => {
+    // Firebase identity resolves fine, and the token itself parses - but the database says
+    // this session is no longer active (revoked_at set, or expires_at passed).
+    mockAccess.getActivePaidSession.mockResolvedValueOnce(null);
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some text." });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("SESSION_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid, active session row whose firebase_uid does not match the caller's verified identity", async () => {
+    // The session row is real and active, but belongs to someone else - proves a stolen
+    // token can't be used by a different signed-in Firebase account.
+    mockAccess.getActivePaidSession.mockResolvedValueOnce({ id: PAID_JTI, firebaseUid: "someone-elses-uid", tier: "Pro" });
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some text." });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("SESSION_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid session token with no Firebase identity presented at all", async () => {
+    // A bare x-ps-session with no Authorization header - the token alone must not be enough.
+    const res = await request(app).post("/api/deep-scan").set("x-ps-session", PAID_SESSION_TOKEN).send({ documentText: "Some text." });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("allows a fully valid, DB-active, uid-bound session through", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ gaps: [], missingEvidence: [], retorts: [], disclaimer: "d" }));
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some text." });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/admin/revoke-session", () => {
+  it("rejects a request without the correct admin secret", async () => {
+    const res = await request(app).post("/api/admin/revoke-session").send({ sessionId: "session-1" });
+    expect(res.status).toBe(401);
+    expect(mockAccess.revokeSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing sessionId even with the correct secret", async () => {
+    const res = await request(app).post("/api/admin/revoke-session").set("x-admin-secret", "test-admin-secret").send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("revokes the given session id", async () => {
+    mockAccess.revokeSession.mockResolvedValueOnce(true);
+    const res = await request(app)
+      .post("/api/admin/revoke-session")
+      .set("x-admin-secret", "test-admin-secret")
+      .send({ sessionId: "session-1", reason: "refund issued" });
+    expect(res.status).toBe(200);
+    expect(res.body.revoked).toBe(true);
+    expect(mockAccess.revokeSession).toHaveBeenCalledWith("session-1", "refund issued");
+  });
+});
+
+describe("POST /api/admin/revoke-sessions-for-uid", () => {
+  it("rejects a request without the correct admin secret", async () => {
+    const res = await request(app).post("/api/admin/revoke-sessions-for-uid").send({ firebaseUid: "uid-1" });
+    expect(res.status).toBe(401);
+    expect(mockAccess.revokeAllSessionsForUid).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing firebaseUid even with the correct secret", async () => {
+    const res = await request(app).post("/api/admin/revoke-sessions-for-uid").set("x-admin-secret", "test-admin-secret").send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("revokes every active session for the given uid", async () => {
+    mockAccess.revokeAllSessionsForUid.mockResolvedValueOnce(3);
+    const res = await request(app)
+      .post("/api/admin/revoke-sessions-for-uid")
+      .set("x-admin-secret", "test-admin-secret")
+      .send({ firebaseUid: "uid-1", reason: "abuse report" });
+    expect(res.status).toBe(200);
+    expect(res.body.revokedCount).toBe(3);
+    expect(mockAccess.revokeAllSessionsForUid).toHaveBeenCalledWith("uid-1", "abuse report");
   });
 });
 
