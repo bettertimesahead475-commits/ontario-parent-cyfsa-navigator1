@@ -1,5 +1,8 @@
 # Phase 2A Migration — Implementation
 
+> **Phase 2 reconstruction status — 2026-09-11.** This document preserves reviewed historical planning/audit evidence from `37db0b03a54970f3b7ddc8089a85dabc4b1948b6`. Current local branch `split/phase-2-foundations` inherits verified security branch `split/phase-1-security` at `6dbcbfd1ef020d333adb59063f4d407b8d5b271e` and restores only the reviewed case/matter foundations and reset-button removal. Phase 1 document scope notices describe the parent security branch; case/matter APIs are present on this dependent branch. Historical 139-test evidence is not a fresh verification of this reconstruction. Account/client provisioning remains incomplete; matter-specific and isolated transaction coverage remain outstanding. All SQL artifacts are provenance only: preserve the obsolete case-migration warning and never execute or replay any migration in this split. No Phase 2B or Phase 3 implementation, push, merge, production change or deployment is authorized. PR #21 and original refs remain unchanged.
+
+
 > **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#current-closeout-status--2026-09-10) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
 
 
