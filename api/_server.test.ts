@@ -1074,3 +1074,16 @@ describe("POST /api/lawyer-intake", () => {
     }
   });
 });
+
+describe("Lifecycle routes are mounted behind authentication", () => {
+  it.each(["/api/account", "/api/clients", "/api/matters"])("rejects unauthenticated POST %s", async path => {
+    const response = await request(app).post(path).send({});
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe("SIGN_IN_REQUIRED");
+  });
+  it("rejects unauthenticated matter retrieval", async () => {
+    const response = await request(app).get("/api/matters/00000000-0000-4000-8000-000000000001");
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe("SIGN_IN_REQUIRED");
+  });
+});

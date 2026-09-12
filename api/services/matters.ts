@@ -14,6 +14,9 @@
 // ---------------------------------------------------------------------------
 
 import { getSupabase } from "./access.js";
+import { findAccount, resolveAccount } from "./accounts.js";
+import { requireOwnedClient } from "./clients.js";
+import { LifecycleError, requireText, requireUuid } from "./lifecycleErrors.js";
 
 export interface Matter {
   id: string;
@@ -38,29 +41,10 @@ function mapMatterRow(row: any): Matter {
 }
 
 /**
- * Creates a Matter AND its OWNER navigator_matter_members row atomically, via
- * the create_navigator_matter_with_owner() Postgres function (see the
- * migration file for why this - rather than separate application-code
- * inserts - guarantees a Matter can never exist without an OWNER, and an
- * account can never be resolved from anything but a server-verified Firebase
- * uid).
- *
- * `firebaseUid` must already be a server-verified Firebase uid by the time
- * this is called - this function does no authentication itself, matching
- * the pattern createCase() (cases.ts) and every other service function in
- * this app already follows.
- *
- * ROLE DETERMINATION (entirely server-side, never from a caller-supplied
- * argument): if an accounts row already exists for firebaseUid, this
- * function uses that row's own primary_role - unchanged, never overwritten
- * (the RPC's ON CONFLICT (firebase_uid) DO NOTHING guarantees this at the
- * database layer too). If no accounts row exists yet, this function passes
- * the hardcoded product default 'parent' - lawyer/admin accounts are
- * provisioned exclusively through a separate, not-yet-built, server-
- * controlled path, never through self-service Matter creation. There is no
- * `role`/`primaryRole` parameter on this function's public signature - role
- * is decided here, internally, so no caller (including the route above it)
- * can influence it.
+ * Verified Firebase UID only. Account provisioning is independently idempotent;
+ * client ownership is prechecked for a safe 404, then checked again in the RPC.
+ * The reviewed RPC still creates the matter and OWNER membership atomically.
+ * Existing roles are read from accounts, never accepted from the browser.
  */
 export async function createMatter(
   firebaseUid: string,
@@ -69,46 +53,55 @@ export async function createMatter(
   description: string | null,
   email: string | null
 ): Promise<Matter> {
-  const db = getSupabase();
-
-  const { data: existingAccount, error: lookupErr } = await db
-    .from("accounts")
-    .select("primary_role")
-    .eq("firebase_uid", firebaseUid)
-    .maybeSingle();
-  if (lookupErr) {
-    throw Object.assign(new Error(`Failed to look up account: ${lookupErr.message}`), { statusCode: 500 });
+  clientId = requireUuid(clientId, "clientId");
+  title = requireText(title, "title", 200);
+  if (description !== null && (typeof description !== "string" || description.length > 10000)) {
+    throw new LifecycleError(400, "INVALID_REQUEST", "description must be text of at most 10000 characters.");
   }
-  const primaryRole = existingAccount?.primary_role ?? "parent";
+  const db = getSupabase();
+  const account = await resolveAccount(firebaseUid, email);
+  await requireOwnedClient(account.id, clientId);
 
   const { data, error } = await db.rpc("create_navigator_matter_with_owner", {
     p_firebase_uid: firebaseUid,
-    p_primary_role: primaryRole,
+    p_primary_role: account.primaryRole,
     p_client_id: clientId,
     p_title: title,
     p_description: description,
     p_email: email,
   });
   if (error) {
-    // The RPC raises a plain exception (not a distinct Postgres error code)
-    // for "the supplied client does not belong to the resolved account" -
-    // the smallest consistent choice, mirroring createCase()'s existing
-    // generic-500 treatment of its own RPC errors, is to surface this one
-    // specific, expected case as 403 (an authorization failure, not a
-    // caller mistake or a server fault) and fall back to createCase()'s
-    // same generic 500 for anything else, rather than inventing a broader
-    // error-classification framework this codebase has no other example of.
+    // Ownership may change after the precheck; keep the same non-enumerating error.
     if (error.message.includes("does not belong to the resolved account")) {
-      throw Object.assign(new Error("The supplied client does not belong to your account."), { statusCode: 403 });
+      throw new LifecycleError(404, "CLIENT_NOT_FOUND", "Client not found.");
     }
-    throw Object.assign(new Error(`Failed to create matter: ${error.message}`), { statusCode: 500 });
+    throw new Error("Matter creation failed.");
   }
   // A function declared `returns public.navigator_matters` (a single row
   // type, not setof) is returned by PostgREST as one object; defensively
   // also accept an array, matching createCase()'s existing precedent.
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) {
-    throw Object.assign(new Error("Matter creation did not return a row."), { statusCode: 500 });
+    throw new Error("Matter creation did not return a row.");
   }
   return mapMatterRow(row);
+}
+
+export async function getOwnedMatter(firebaseUid: string, matterId: string): Promise<Matter> {
+  matterId = requireUuid(matterId, "matterId");
+  const account = await findAccount(firebaseUid);
+  const notFound = () => new LifecycleError(404, "MATTER_NOT_FOUND", "Matter not found.");
+  if (!account) throw notFound();
+  const db = getSupabase();
+  const { data, error } = await db.from("navigator_matters")
+    .select("id, account_id, client_id, title, description, created_at, updated_at")
+    .eq("id", matterId).eq("account_id", account.id).maybeSingle();
+  if (error) throw new Error("Matter lookup failed.");
+  if (!data) throw notFound();
+  const { data: member, error: memberError } = await db.from("navigator_matter_members")
+    .select("id").eq("matter_id", matterId).eq("account_id", account.id).eq("role", "OWNER").maybeSingle();
+  if (memberError) throw new Error("Matter membership lookup failed.");
+  if (!member) throw notFound();
+  await requireOwnedClient(account.id, data.client_id);
+  return mapMatterRow(data);
 }
