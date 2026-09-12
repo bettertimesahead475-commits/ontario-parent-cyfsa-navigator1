@@ -1076,6 +1076,31 @@ describe("POST /api/lawyer-intake", () => {
 });
 
 describe("Lifecycle routes are mounted behind authentication", () => {
+  it("normalizes malformed JSON through the real parser without exposing internals", async () => {
+    const response = await request(app).post("/api/clients").set("Content-Type", "application/json").send('{"secret":');
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ code: "INVALID_REQUEST_BODY", error: "Invalid JSON request body." });
+    expect(mockFirebaseAdmin.verifyFirebaseToken).not.toHaveBeenCalled();
+  });
+  it("preserves the real 100mb parser cap for oversized lifecycle JSON", async () => {
+    const response = await request(app).post("/api/clients").set("Content-Type", "application/json")
+      .send('{"name":"' + 'x'.repeat(100 * 1024 * 1024) + '"}');
+    expect(response.status).toBe(413);
+    expect(response.body).toEqual({ code: "INVALID_REQUEST_BODY", error: "Request body is too large." });
+    expect(mockFirebaseAdmin.verifyFirebaseToken).not.toHaveBeenCalled();
+  }, 60000);
+  it("allows valid JSON through the parser and preserves route validation status", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "A", email: null });
+    const response = await request(app).post("/api/clients").send({ name: " " });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe("INVALID_REQUEST");
+  });
+  it("normalizes unexpected downstream lifecycle failures through the full server", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockRejectedValueOnce(new Error("SQL secret internal_table stack credential"));
+    const response = await request(app).post("/api/account").send({});
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ code: "ACCOUNT_PROVISIONING_FAILED", error: "Account provisioning failed." });
+  });
   it.each(["/api/account", "/api/clients", "/api/matters"])("rejects unauthenticated POST %s", async path => {
     const response = await request(app).post(path).send({});
     expect(response.status).toBe(401);

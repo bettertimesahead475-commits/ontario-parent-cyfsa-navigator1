@@ -103,5 +103,14 @@ export async function getOwnedMatter(firebaseUid: string, matterId: string): Pro
   if (memberError) throw new Error("Matter membership lookup failed.");
   if (!member) throw notFound();
   await requireOwnedClient(account.id, data.client_id);
-  return mapMatterRow(data);
+  // Prechecks are defense in depth, never the authoritative read. Fail closed
+  // if the pending RPC is unavailable; never return the earlier unlocked row.
+  const { data: authorized, error: authorizationError } = await db.rpc("read_navigator_owned_matter", {
+    p_firebase_uid: firebaseUid, p_matter_id: matterId,
+  });
+  if (authorizationError) throw new Error("Matter authorization failed.");
+  if (!Array.isArray(authorized) || authorized.length !== 1) throw notFound();
+  const row = authorized[0];
+  if (row.id !== matterId || row.account_id !== account.id) throw notFound();
+  return mapMatterRow(row);
 }

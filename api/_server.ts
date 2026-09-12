@@ -443,7 +443,20 @@ const aiCostLimiter = rateLimit({
 app.use(compression());
 
 // Increase payload size limit to digest base64 images / text / documents easily
-app.use(express.json({ limit: "100mb" }));
+const parseJson = express.json({ limit: "100mb" });
+app.use((req, res, next) => {
+  parseJson(req, res, (error: any) => {
+    // Normalize only errors originating in this parser, on lifecycle paths.
+    // CORS/rate-limit middleware and downstream application errors are untouched.
+    if (!error || !/^\/api\/(account|clients|matters)(\/|$)/i.test(req.path)) return next(error);
+    const status = [400, 413, 415].includes(error.status) ? error.status : 500;
+    const messages: Record<number, string> = {
+      400: "Invalid JSON request body.", 413: "Request body is too large.",
+      415: "Unsupported request body encoding.", 500: "Request body could not be processed.",
+    };
+    res.status(status).json({ code: "INVALID_REQUEST_BODY", error: messages[status] });
+  });
+});
 
 
   // API 1: Health endpoint

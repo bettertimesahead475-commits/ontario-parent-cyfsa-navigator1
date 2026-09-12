@@ -93,6 +93,78 @@ tokens, dependency advisories and authenticated integration verification.
 - git diff --check: passed for this milestone's changes.
 - Dependency files, tsconfig, frontend, inherited security services and all six SQL artifacts are unchanged from base.
 
+The verification counts above describe the original lifecycle commit, before
+the narrow security-hardening follow-up below.
+
+## Narrow security hardening (pending database approval)
+
+The shared JSON parser retains its 100mb cap. Only parser-originated failures on
+lifecycle paths are normalized to fixed JSON messages: 400 invalid body, 413
+oversized body, 415 unsupported encoding, or 500 unexpected parser failure.
+No parser error objects, bodies or stacks are serialized. Existing CORS and rate
+middleware remain ahead of the parser and unchanged; lifecycle application
+errors retain their existing status/error handling.
+
+GET /api/matters/:matterId retains all account, matter, OWNER and client prechecks,
+then calls `read_navigator_owned_matter` using only the verified Firebase UID and
+validated matter UUID. Only the RPC result is returned, never the prechecked row.
+Missing/unavailable/failed RPCs fail closed; there is no compatibility fallback.
+Deploying this application before separately approving and applying the pending
+artifact would therefore make authorized matter reads fail with a safe 500.
+
+`supabase/migrations_pending_approval/read_navigator_owned_matter.sql` is a new,
+UNEXECUTED artifact. All previously applied artifacts remain unchanged. The new
+function is VOLATILE, SECURITY INVOKER, with a pinned search_path and a five-second
+lock timeout. EXECUTE is revoked from PUBLIC/anon/authenticated and granted only
+to service_role. It does not accept a caller-selected account or role and does
+not provision accounts or change table data, policies or table grants.
+
+The authoritative operation locks account -> matter -> client -> membership with
+FOR SHARE, checking active status, account ownership, client relationship and
+OWNER role on the locked rows. These locks conflict with status/ownership/role
+updates and deletion, including non-key updates. Revocation that wins the lock
+first is observed after waiting (or the operation errors); revocation that loses
+must wait for this transaction to finish. The final successful check is the
+authorization linearization point. Locks last through transaction completion,
+not HTTP delivery. Serialization failures, deadlocks and timeouts fail closed.
+
+This is an atomic authorization-and-matter-read contract, NOT a reusable grant.
+Future document retrieval must authorize and read protected data in one database
+transaction; calling this RPC then fetching documents in another REST request is
+unsafe. Document intelligence remains out of scope. Existing creation RPC/status
+prechecks are unchanged; their concurrent administrative-write behavior remains
+a separate creation-hardening concern and must not be described as fixed here.
+
+The application tests model RPC acceptance/denial after successful prechecks,
+including status, membership, role, account/client ownership and matter removal.
+They prove fail-closed handling and authoritative data selection, NOT PostgreSQL
+concurrency. Full-server tests cover malformed and genuinely oversized JSON,
+valid JSON routing and unexpected downstream failures.
+
+Disposable database release gate: load the reviewed prerequisites followed by
+this pending artifact ONLY in a confirmed disposable environment. Verify function
+creation, PostgREST result shape, active/foreign/missing/inconsistent fixtures and
+anon/authenticated EXECUTE denial. With two connections, hold an uncommitted
+revocation UPDATE/DELETE on each protected row, invoke the RPC, commit the writer,
+and verify denial. Reverse the order: hold the successful RPC transaction open,
+attempt each revocation and verify it blocks until the reader commits. Verify
+lock timeout and serialization/deadlock failures never return matter data. Use
+consistent lock ordering for multi-row administrative operations. No unit test
+substitutes for this gate. Do not disable production constraints to create wrong
+role fixtures; confirm the existing OWNER-only constraint rejects invalid roles.
+
+Reliability follow-up: client and matter creation have no idempotency key. If a
+creation commits but its HTTP response is lost, retrying can create another row.
+No automatic retry or full idempotency implementation is added in this change.
+
+Hardening verification: 195/195 tests passed across six files (12 added; original
+183 retained), lint/typecheck exit 0, build exit 0 with the existing chunk warning,
+and npm audit exit 1 with 10 moderate / 1 high advisories. No dependency fix ran.
+The initial sandbox typecheck failed with Node EPERM resolving C:\Users\User;
+the successful verification ran outside that filesystem restriction. Diff checks
+passed. No SQL was executed; transaction and privilege behavior remain unverified
+until the disposable-database gate above is completed.
+
 Ready for code review as a backend lifecycle milestone, not production-release
 approval. Isolated PostgreSQL/RLS and real transaction/concurrency validation remain
 outstanding; no database, migration, Vercel, production, or remote-branch mutation

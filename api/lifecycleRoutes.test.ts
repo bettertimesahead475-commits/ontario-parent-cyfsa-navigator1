@@ -25,6 +25,7 @@ function fakeDatabase() {
     created_at: "2026-09-11T00:00:00Z", updated_at: "2026-09-11T00:00:00Z", ...values });
   const db = {
     tables, failure: "", failMembership: false, clientLostAtRpc: false,
+    beforeAuthorization: null as null | (() => void),
     calls: [] as any[],
     from(table: string) {
       let operation = "select";
@@ -67,6 +68,16 @@ function fakeDatabase() {
     },
     async rpc(name: string, args: any) {
       db.calls.push({ rpc: name, args });
+      if (name === "read_navigator_owned_matter") {
+        // Contract double only: does not prove PostgreSQL locking/concurrency.
+        db.beforeAuthorization?.();
+        if (db.failure === "authorization") return { data: null, error: { message: "SQL secret read_navigator_owned_matter" } };
+        const a = tables.accounts.find(x => x.firebase_uid === args.p_firebase_uid && x.status === "active");
+        const m = tables.navigator_matters.find(x => x.id === args.p_matter_id && x.account_id === a?.id);
+        const c = tables.clients.find(x => x.id === m?.client_id && x.account_id === a?.id);
+        const member = tables.navigator_matter_members.find(x => x.matter_id === m?.id && x.account_id === a?.id && x.role === "OWNER");
+        return { data: a && m && c && member ? [m] : [], error: null };
+      }
       if (name !== "create_navigator_matter_with_owner") throw new Error("Unexpected RPC");
       if (db.failure === "rpc") return { data: null, error: { message: "raw SQL secret internal_table" } };
       const account = tables.accounts.find(x => x.firebase_uid === args.p_firebase_uid);
@@ -108,6 +119,34 @@ async function ownedMatter() {
 beforeEach(() => { db = fakeDatabase(); current.db = db; });
 
 describe("account → client → matter lifecycle", () => {
+  it.each(["inactive", "membership", "role", "account", "client", "missing"])("fails closed when final authorization denies %s after prechecks", async reason => {
+    const id = await ownedMatter();
+    db.beforeAuthorization = () => {
+      if (reason === "inactive") db.tables.accounts[0].status = "suspended";
+      if (reason === "membership") db.tables.navigator_matter_members.length = 0;
+      if (reason === "role") db.tables.navigator_matter_members[0].role = "VIEWER";
+      if (reason === "account") db.tables.navigator_matters[0].account_id = "other";
+      if (reason === "client") db.tables.clients[0].account_id = "other";
+      if (reason === "missing") db.tables.navigator_matters.length = 0;
+    };
+    const response = await request(app).get(`/api/matters/${id}`).set("Authorization", "Bearer A");
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ code: "MATTER_NOT_FOUND", error: "Matter not found." });
+    expect(db.calls.at(-1)).toEqual({ rpc: "read_navigator_owned_matter", args: { p_firebase_uid: "A", p_matter_id: id } });
+  });
+  it("returns the authoritative RPC row and sends only verified identity despite query spoofing", async () => {
+    const id = await ownedMatter();
+    db.beforeAuthorization = () => { db.tables.navigator_matters[0] = { ...db.tables.navigator_matters[0], title: "Authoritative" }; };
+    const response = await request(app).get(`/api/matters/${id}?uid=B&account_id=B&role=OWNER`).set("Authorization", "Bearer A");
+    expect(response.status).toBe(200); expect(response.body.matter.title).toBe("Authoritative");
+    expect(db.calls.at(-1)).toEqual({ rpc: "read_navigator_owned_matter", args: { p_firebase_uid: "A", p_matter_id: id } });
+  });
+  it("does not fall back to prechecked data if the authorization RPC fails or is unavailable", async () => {
+    const id = await ownedMatter(); db.failure = "authorization";
+    const response = await request(app).get(`/api/matters/${id}`).set("Authorization", "Bearer A");
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ code: "MATTER_LOOKUP_FAILED", error: "Matter lookup failed." });
+  });
   it.each(["/api/account", "/api/clients", "/api/matters"])("rejects anonymous POST %s without touching the DB", async url => {
     expect((await request(app).post(url).send({})).status).toBe(401);
     expect(db.calls).toHaveLength(0);
