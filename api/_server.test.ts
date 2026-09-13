@@ -15,6 +15,7 @@
 //     transcription failure rather than surfacing an error to the caller.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
+import { PDFDocument } from 'pdf-lib';
 
 const { mockCreateMessage, mockGenerateContent, mockSendMail } = vi.hoisted(() => ({
   mockCreateMessage: vi.fn(),
@@ -541,14 +542,18 @@ describe("POST /api/extract-text", () => {
   });
 
   it("runs PDFs/images through Gemini OCR", async () => {
+    const pdf=await PDFDocument.create();pdf.addPage();
+    const base64=Buffer.from(await pdf.save()).toString('base64');
     mockGenerateContent.mockResolvedValueOnce({ text: "Extracted content" });
     const res = await request(app)
       .post("/api/extract-text")
       .set(paid())
-      .send({ fileData: { base64: "abcd", mimeType: "application/pdf" } });
+      .send({ fileData: { base64, mimeType: "application/pdf" } });
     expect(res.status).toBe(200);
     expect(res.body.extractedText).toBe("Extracted content");
     expect(mockGenerateContent).toHaveBeenCalledTimes(1);
+    expect(res.body.pages).toHaveLength(1);
+    expect(mockGenerateContent.mock.calls[0][0].config.systemInstruction).toContain('UNTRUSTED');
   });
 
   it("returns 422 when nothing readable comes back", async () => {
@@ -1076,6 +1081,22 @@ describe("POST /api/lawyer-intake", () => {
 });
 
 describe("Lifecycle routes are mounted behind authentication", () => {
+  it('denies anonymous document upload without contacting OCR',async()=>{
+    const response=await request(app).post('/api/matters/00000000-0000-4000-8000-000000000001/documents').send({});
+    expect(response.status).toBe(401);expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+  it('denies anonymous source reads',async()=>{
+    const response=await request(app).get('/api/matters/00000000-0000-4000-8000-000000000001/document-versions/00000000-0000-4000-8000-000000000002');
+    expect(response.status).toBe(401);
+  });
+  it('requires the inherited paid-session gate for page evidence extraction',async()=>{
+    const response=await request(app).post('/api/matters/00000000-0000-4000-8000-000000000001/document-versions/00000000-0000-4000-8000-000000000002/pages/00000000-0000-4000-8000-000000000003/evidence').send({});
+    expect(response.status).toBe(402);expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+  it('normalizes malformed source-upload JSON',async()=>{
+    const response=await request(app).post('/api/matters/00000000-0000-4000-8000-000000000001/documents').set('Content-Type','application/json').send('{');
+    expect(response.status).toBe(400);expect(response.body.code).toBe('INVALID_REQUEST_BODY');
+  });
   it("normalizes malformed JSON through the real parser without exposing internals", async () => {
     const response = await request(app).post("/api/clients").set("Content-Type", "application/json").send('{"secret":');
     expect(response.status).toBe(400);

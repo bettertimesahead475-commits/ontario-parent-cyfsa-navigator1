@@ -18,6 +18,9 @@ import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, ge
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
+import { registerDocumentRoutes } from "./documentRoutes.js";
+import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
+import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 
@@ -134,7 +137,7 @@ const isLastModel = modelNames.indexOf(modelName) === modelNames.length - 1;
   throw lastError;
 }
 
-async function extractTextWithGeminiBase64(base64Data: string, mimeType: string): Promise<string> {
+async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): Promise<string> {
   // Simple validation to ensure base64Data is likely valid base64
   const cleanedBase64 = base64Data.trim();
   if (cleanedBase64.length === 0 || /[^A-Za-z0-9+/=\s]/.test(cleanedBase64)) {
@@ -146,6 +149,7 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
     const ai = getGeminiClient();
     const modelsToTry = ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
     const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
+      config: { systemInstruction: SOURCE_SYSTEM },
       contents: [
         {
           role: "user",
@@ -166,6 +170,12 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
     console.error("extractTextWithGeminiBase64 error:", error);
     throw error;
   }
+}
+
+async function extractTextWithGeminiBase64(base64Data: string, mimeType: string): Promise<string> {
+  const source = decodeSource(base64Data, mimeType);
+  const pages = await extractPages(source.bytes, source.mime, ocrSingleSourceWithGemini);
+  return pages.map(p => `[Page ${p.pageNumber}]\n${p.text}`).join("\n\n");
 }
 
 async function transcribeAudioWithGemini(base64Data: string, mimeType: string): Promise<string> {
@@ -759,6 +769,19 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   });
 
   registerLifecycleRoutes(app);
+  registerDocumentRoutes(app, ocrSingleSourceWithGemini, async page => {
+    const response = await getAnthropicClient().messages.create({
+      model: "claude-sonnet-5", max_tokens: 8000,
+      system: SOURCE_SYSTEM + '\nReturn ONLY a JSON array (maximum 50 items), each with page_id, page_number, classification, normalized_statement, exact_quote, confidence (0–1 or null), review_state UNREVIEWED. Classifications: FACT, ALLEGATION, OPINION, PROFESSIONAL_ASSESSMENT, INFERENCE, UNVERIFIED_CLAIM, UNKNOWN. Classify attributed allegations as ALLEGATION, never FACT. Quote only this page. No legal conclusions. Empty array if no supported items.',
+      messages: [{role: 'user', content: JSON.stringify({page_id:page.id,page_number:page.page_number,untrusted_source_text:page.text})}],
+    });
+    if (response.stop_reason !== 'end_turn') throw new Error('Incomplete evidence response');
+    const raw=response.content.filter(part=>part.type==='text').map(part=>part.text).join('');
+    return {items:JSON.parse(raw),usage:{input_tokens:response.usage.input_tokens,output_tokens:response.usage.output_tokens}};
+  }, aiCostLimiter, async (req,res,next) => {
+    try { if (await requireSession(req,res)) next(); }
+    catch { res.status(503).json({code:'SOURCE_UNAVAILABLE',error:'Source operation unavailable.'}); }
+  });
 
   // API 2: Analyze Document Endpoint (Educational advice based on CYFSA of Ontario)
   // Step 1 of the two-pass pipeline: OCR/text extraction only.
@@ -813,14 +836,12 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       if (base64Data.includes(",")) base64Data = base64Data.split(",")[1];
       const mime = fileData.mimeType || "";
 
-      let extractedText = "";
-      if (mime === "application/pdf" || mime.startsWith("image/")) {
-        extractedText = await extractTextWithGeminiBase64(base64Data, mime);
-      } else if (mime.startsWith("text/")) {
-        extractedText = Buffer.from(base64Data, "base64").toString("utf-8");
-      } else {
+      if (!(mime === 'application/pdf' || mime.startsWith('image/') || mime === 'text/plain')) {
         return res.status(400).json({ error: `Unsupported file type for extraction: ${mime}` });
       }
+      const source = decodeSource(base64Data,mime);
+      const pages = await extractPages(source.bytes,source.mime,ocrSingleSourceWithGemini);
+      const extractedText = pages.map(p=>p.text).join('\n\n');
 
       if (!extractedText.trim()) {
         return res.status(422).json({
@@ -828,8 +849,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         });
       }
 
-      res.json({ extractedText, characters: extractedText.length });
+      // Compatibility text remains for legacy reports; pages are authoritative attribution.
+      res.json({ pages, contentHash: source.checksum, extractedText, characters: extractedText.length });
     } catch (err: any) {
+      if (err instanceof LifecycleError) return res.status(err.statusCode).json({code:err.code,error:err.message});
       console.error("[/api/extract-text]", err);
       handleAIError(err, "text extraction", res);
     }

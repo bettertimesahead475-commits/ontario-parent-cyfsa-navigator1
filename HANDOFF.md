@@ -1,121 +1,110 @@
-# ParentShield (ontario-parent-cyfsa-navigator1) — Audit Handoff
+# CYFSA Navigator — Engineering Handoff
 
-## Security split status — 2026-09-11
+## 1. Project
 
-Current branch: `split/phase-1-security`, reconstructed from reviewed main `760a0cfbc03bac260d1703183e2dfaaff760e98c` and reviewed feature snapshot `37db0b03a54970f3b7ddc8089a85dabc4b1948b6`.
+Product: CYFSA Navigator (historically ParentShield / Ontario Parent Assist).
+Repository: `C:\Users\User\Documents\Codex\cyfsa-pr21-split`.
+Active branch: `phase-3-account-client-matter-lifecycle`.
+Current milestone: Stage 4 closeout. Pre-closeout HEAD: `22384a833cf7889493a0835c2b68af9726e1caf1`.
+Resolve the milestone commit using `git log -1 --format=%H -- STAGE_4_CLOSEOUT.md`; verify actual HEAD at every handoff rather than relying on a self-referential hash in this file.
 
-This branch retains endpoint, Firebase revocation, OAuth, payment and durable-session security, authenticated activation, dependencies and security tests. POST /api/cases and POST /api/matters, their services and domain tests are absent. Existing case-timeline, analyzer, document analysis, extraction, RAG and deep-scan remain. The baseline reset control remains.
+React/Vite frontend; Express backend in `api/_server.ts` with lifecycle/document route modules; Firebase Admin verifies identity; Supabase server RPCs enforce ownership and transactional persistence. Gemini performs per-page OCR; Claude proposes evidence from stored pages. Legacy analyzer, timeline and RAG remain separate existing features. Root `server.ts` is the local server entrypoint.
 
-The 139-test result below belongs to the original combined branch, not this reconstruction. Current verification is pending. Expected security-only count is 128 tests across four files; that is a prediction, not a passing result.
+## 2. Current Milestone
 
-Phase 2 source and SQL provenance remain preserved in the [immutable reviewed snapshot](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/tree/37db0b03a54970f3b7ddc8089a85dabc4b1948b6) and archive/pr21-37db0b0. The dependent local branch split/phase-2-foundations will preserve the reviewed domain delta after Phase 1 verification. PR #21 and original refs are unchanged; neither reconstructed branch is authorized for push or merge.
+**STAGE 4 — COMPLETE WITH RELEASE CONDITIONS**
 
-The historical live migration inventory below remains evidence from the original closeout, not a new database verification: RLS 20260909144539; paid sessions 20260909231618; accounts 20260909232624; navigator cases/documents 20260909233412; clients/matters/document alignment 20260910001952. Only the two security SQL artifacts belong in this branch; the four Phase 2 SQL artifacts, including the obsolete unsafe original case SQL, remain in the immutable snapshot. Never replay any SQL during this split. Existing Phase 2 database objects may remain present and unused by Phase 1; authentication has no accounts/clients/matters dependency.
+The page-anchored document/evidence foundation is implemented. Its migration passed read-only audits and was installed only on the disposable validation project. Live isolated PostgreSQL validation returned PASS WITH CONDITIONS. No production migration has been authorized. Stage 5 may begin under a separate scoped task; it is not implemented by this closeout.
 
-Remaining merge blockers include session-validation exceptions outside route error handling, code-claim/session-creation failure recovery, legacy-token rollout, dependency advisories, CORS/rate-limit verification without test bypass, and authenticated end-to-end validation. Phase 2 provisioning remains incomplete and requires matter ownership/validation, generic database errors and isolated transaction tests. This reconstruction does not resolve those issues or authorize Phase 2B. No Supabase or deployment operation is part of this work.
+## 3. Validated Stage 4 Capabilities
 
-All sections below are historical evidence about the original branch and their stated dates. References there to active domain APIs do not describe this security-only branch.
+Stable document identity and content-hashed versions; structurally split physical PDF pages; preserved page text and checksums; extraction/evidence runs; page-anchored evidence; deterministic exact and normalized-whitespace quotes with Unicode code-point offsets; constrained run attribution; explicit classifications and review states; completed-source immutability; transactional authorization; deduplication and extraction retries; independent-session concurrency protection; atomic rollback; restricted RLS/ACL model.
 
+See `PAGE_ANCHORED_FOUNDATION.md` for contracts and `STAGE_4_CLOSEOUT.md` for validation provenance. Review-state changes were validated at the database layer; a human review API/workspace is the next feature, not an existing Stage 4 capability.
 
-> **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#security-split-status--2026-09-11) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
+## 4. Important Invariants
 
+- Allegations must never become facts automatically; AI FACT proposals are downgraded.
+- Verified evidence retains document/version/page/quote/run attribution. Containment is not proof of truth.
+- Matter/document/version/page relationships remain constrained and ownership checked.
+- Evidence provenance remains immutable after completion; supported review-state changes cannot change source coordinates.
+- Evidence INSERT requires a valid active evidence run for the exact source hierarchy and page.
+- Legal conclusions remain reviewable, never definitive automated findings.
+- Uploaded documents are untrusted content, not instructions.
+- exactQuote verification remains deterministic: exact first, declared whitespace normalization second; no fuzzy punctuation repair.
+- Authorization and sensitive retrieval remain inside the same protected transaction.
+- Unsupported or ambiguous quotations require source review and null offsets.
 
-Repo: bettertimesahead475-commits/ontario-parent-cyfsa-navigator1
-Live: ontario-parent-cyfsa-navigator1-ror.vercel.app (Vercel, team ontarioparentassist-7616s-projects)
+## 5. Database State
 
-## What just happened
-Three full audit rounds were completed today (2026-08-28) via chat, covering every file in the
-repo at least once, most twice. All fixes below are already committed to `main` and confirmed
-live (Vercel deployment READY, `tsc --noEmit` clean, `vite build` clean). This document exists so
-a fresh Claude Code session doesn't have to rediscover any of it.
+Disposable validation project: `unfepurousallhocgehl`. **This is NOT Production.**
+The page-evidence migration was installed here for validation only. It remains at `supabase/migrations_pending_approval/create_navigator_page_evidence_foundation.sql`; do not replay it there or treat the directory name as proof it has never run.
+Production status and authorization are separate. Production execution requires explicit approval.
+Excluded historical projects: `tblunklkpzvcfjfknaqw`, `tayiwcwyfaesplqxeeau`, `lrygsrwjjmonhzujckoq`, `nvpfbshqnnhqakvjugkh`. Do not touch them.
+Credentials are not handoff material. Never expose environment files or certificate contents.
 
-## Architecture essentials (read this before touching anything)
-- **Two files are both named "server":** `/server.ts` (repo root, ~11 lines, dev-only stub that
-  imports the real app) and `/api/_server.ts` (~1,250 lines, the ENTIRE actual Express backend —
-  every endpoint, every AI prompt). Vercel only deploys files inside `/api/`, so the root
-  `server.ts` is irrelevant to production. **These two got confused via GitHub's web upload UI
-  today and it broke production once** — always confirm which one you're editing.
-- `/api/services/access.ts` — the real e-transfer payment/access-code flow (Supabase-backed).
-- AI calls go through `generateContentWithFallback()` in `_server.ts` — always pass explicit
-  `max_tokens` for anything with a large output schema. The shared default is 8000; `/api/analyze`
-  and `/api/case-timeline` explicitly override to 16000 because they were truncating at 8000.
-- Valid Claude model strings the backend actually accepts: `claude-sonnet-5`,
-  `claude-haiku-4-5-20251001` (see `CLAUDE_MODELS` in `_server.ts`). Anything else silently falls
-  back to `claude-sonnet-5`.
-- Chat endpoints (`/api/rag-query`) now expect a `history` array in the request body — both
-  frontend chat UIs (`DocumentAnalyzerTab.tsx`'s case chat, `ParentChatBot.tsx`'s "OPA Coach")
-  send it. If a new chat UI gets built, it needs to send `history` too or it'll have no memory.
+## 6. Stage 4 Validation Result
 
-## A pattern worth knowing about
-At least twice today, a bug that had already been fixed in a past session reappeared later
-(a Netlify `_redirects` file, a `wrangler`-based deploy script, a `chrome-extension://` crash
-guard in the service worker). The working theory: manual GitHub web-uploads and/or an automated
-Vercel coding agent have occasionally reintroduced older file versions. Worth being alert to
-regressions of things that look "already fixed" in this changelog.
+**PASS WITH CONDITIONS** — isolated validation on 2026-09-13.
+Live concurrency, rollback, RLS/ACL, evidence-run attribution, quote enforcement, source provenance immutability and real Supabase client contracts passed. Actual five-second lock timeout: **5032 ms**, SQLSTATE **55P03**.
+Migration installed once as a single transaction with CA and hostname verification. No blocking defect was demonstrated. This closeout does not repeat database operations.
 
-## Round 1 — backend correctness (commit ea42d2e)
-- Fixed the TS2769 type error that had been in every build log (role-type ternary widening to
-  `string` instead of `"user"|"assistant"`).
-- `/api/case-timeline` had no explicit `max_tokens` (same truncation risk as analyze) — raised.
-- Removed dead `deploy:pages` script (called `wrangler`, not installed) + duplicate `vite` dep.
-- `.env.example` was missing ~half the real env vars (`ADMIN_SECRET`, `SESSION_SECRET`, all SMTP
-  vars, `SUPABASE_SERVICE_ROLE_KEY`, `LAWYER_INTAKE_TO`) — documented.
+## 7. Remaining Release Conditions
 
-## Round 2 — the other chat, token expiry, misc (commit b235174)
-- `ParentChatBot.tsx` had the same "no conversation memory" bug as the main case chat — fixed.
-- `TemplatesTab.tsx` voice-evidence extractor had a hardcoded fallback date (`"2026-06-06"`).
-- `SignUpTab.tsx` audio upload: async work inside `reader.onloadend` wasn't actually covered by
-  the surrounding try/catch — a network failure there left `isTranscribing` stuck `true` forever.
-- `utils/workspace.ts`: `fetchRecentEmails` fetched messages sequentially instead of in parallel.
-- Google OAuth token never expires/refreshes; normalized 401 handling so an expired token at
-  least triggers the existing "reconnect" prompt instead of a confusing raw error. **Real token
-  refresh is NOT implemented — this is still a gap**, just no longer a silent-confusing one.
-- Removed an unconditional Firestore read that fired on every page load in production forever.
-- Fixed `Apache-2.5` (not a real license) → `Apache-2.0`; fixed a header crash risk
-  (`userProfile.fullName.split(...)` with no guard); fixed a hardcoded year in generated IDs.
+**RELEASE CONDITIONS — NOT STAGE 5 BLOCKERS:**
+Dedicated Firebase-authenticated HTTP integration; dependency advisories; separately reviewed production migration/deployment readiness; volume/retention controls and production hardening.
+Historical security documents also identify session-error handling, code-claim/session-creation recovery, legacy-token rollout, and CORS/rate-limit verification without test bypass. Reassess these against current code before release; Stage 4 validation does not assert that historical issues are resolved. See `PHASE_1_SECURITY_VERIFICATION.md` and `PHASE_1_FINAL_SECURITY_GATE.md`.
 
-## Round 3 — complete file-by-file sweep, remaining ~20 files (commit 3a66b71)
-- Wired up `eslint.config.js` (was orphaned, never actually run — now has a script + explicit dep).
-- Removed `public/_redirects` (Netlify-only, dead under Vercel) and restored a missing
-  `chrome-extension://` scheme guard in `public/sw.js` — both regressions of past fixes.
-- Fixed `metadata.json` still naming the wrong sibling repo.
-- Removed `LegalCaseBrief.tsx`'s dead import (superseded by inline rendering) and deleted
-  `LegislativePortalModal.tsx` entirely (never imported anywhere, its body was a literal
-  `/* ... rest of the modal content */` placeholder comment).
-- **Non-functional model selector** in `DocumentAnalyzerTab.tsx` AND `ParentChatBot.tsx` — both
-  dropdowns offered two options, neither valid per `CLAUDE_MODELS`. Fixed both.
-- **Dead feature**: `SavedDocumentsTab.tsx`'s "Open Document" for a saved analysis wrote to
-  `localStorage["OPA_LOAD_ANALYSIS_REPORT"]` and navigated to the analyzer, but nothing ever read
-  that key back. Wired up the receiving side in `DocumentAnalyzerTab.tsx`.
-- **Real playback logic bug** in `VoiceAssistantTab.tsx`: `speechSynthesis.cancel()` ran
-  unconditionally before checking if this was a resume-from-pause (so resume never worked), AND
-  the resume branch set `isPaused` to `true` instead of `false` (so after the first pause it would
-  try to "resume" forever, even for newly-selected text). Fixed the ordering, the flag, and added
-  the same missing reset to the two places that change narration text mid-pause.
-- Fixed 5 instances of unguarded `navigator.clipboard.writeText()` (no `.then()`/`.catch()`) across
-  `LegalTerminologyDrawer.tsx`, `VoiceAssistantTab.tsx`, `SignUpTab.tsx`,
-  `StatutoryBookmarkSidebar.tsx`, `DocumentAnalyzerTab.tsx` — all showed a false "copied!"
-  confirmation on silent clipboard failures.
-- `PricingTab.tsx` hardcoded its own copy of `TIER_PRICES`/`PAYMENT_EMAIL` instead of the existing
-  (never-called until now) `/api/access-pricing` endpoint — now fetches real values with the
-  hardcoded copy only as a fallback.
+## 8. Stage 5 Objective
 
-## Known, not fixed — flagged as bigger than a bug-fix pass
-1. **No automated tests exist anywhere in this repo.** `npm run lint` is just `tsc --noEmit`.
-2. **Bundle size**: main JS chunk is ~1.9MB (537KB gzipped), plus a 1.35MB `heic2any` chunk. Vite
-   warns on every build. Needs real code-splitting (`dynamic import()`, `manualChunks`), not a
-   quick fix.
-3. **Google OAuth token refresh** is still not implemented (see Round 2) — only the error message
-   on expiry was fixed, not the underlying expiry itself.
-4. No general ESLint rules for the actual TS/React code — `eslint.config.js` only lints
-   `firestore.rules` (that plugin's specific purpose). A real `eslint-plugin-react` /
-   `@typescript-eslint` setup doesn't exist.
-5. Two parallel, similarly-named Vercel projects exist for this codebase historically
-   (`ontario-parent-cyfsa-navigator1` and `remix-ontario-parent-cyfsa-navigator`) — always confirm
-   which one is actually live before assuming a fix landed (checked via `vercel.com` project ID
-   `prj_wbNOXbsCWbj7vyu7JjxlXwt4WQpR` / team `ontarioparentassist-7616s-projects` today).
+**MATTER-SCOPED EVIDENCE REVIEW AND CASE INTELLIGENCE**
+Planned capabilities: evidence review workspace; matter-wide chronology; contradiction/inconsistency detection; corroboration linking; allegation evolution tracking; evidence-gap detection; unanswered-question generation; case-wide summary; direct source jump-back to document/page/quote; review-state propagation.
+Begin with the review workspace. These are roadmap objectives, not claims of existing implementation or blanket permission to implement all of Stage 5.
 
-## Verification standard used throughout today
-Every single fix in this document was verified with `npx tsc --noEmit` (zero errors, project-wide,
-as of the last commit) and `npx vite build` (clean) before committing, and every commit was
-confirmed to reach Vercel `readyState: "READY"` before moving to the next one.
+## 9. Future Roadmap
+
+| Stage | Objective |
+|---|---|
+| 5 | Matter Intelligence |
+| 6 | CYFSA Legal Intelligence and Authority Mapping |
+| 7 | Professional Lawyer Review Workspace |
+| 8 | Litigation Work Product |
+| 9 | Advanced Case-Wide Retrieval / RAG |
+| 10 | Firm Collaboration / Permissions / Audit |
+| 11 | Benchmarking / QA / Release Hardening |
+
+## 10. Current Technical Debt / Known Limitations
+
+Firebase HTTP integration is not fully validated. Dependency advisories remain. Account-wide serialization favors correctness over throughput. Evidence aggregation is unpaginated. Stale evidence-run maintenance is outstanding. OCR metadata records configured fallback models rather than observed provider revisions. Duplicate evidence analysis requests can create separate runs. Completed immutable disposable fixtures remain intentionally retained (inventory in the closeout). No full contradiction engine, persisted matter-wide chronology engine or legal mapper exists. Existing legacy timeline/RAG features do not constitute those future engines.
+
+Pages over 30,000 characters cannot enter evidence extraction until bounded chunking is designed. Binary retention, deletion, queue execution, OCR cost accounting and large-volume behavior need review. The build retains its large-chunk warning.
+
+## 11. Agent Operating Rules
+
+Any AI coding agent must:
+1. Read HANDOFF.md before modifying the repository.
+2. Verify repository, branch and HEAD.
+3. Inspect git status before work.
+4. Never assume Production authorization.
+5. Never execute pending migrations unless explicitly authorized.
+6. Never expose secrets.
+7. Preserve existing security and evidence invariants.
+8. Run tests/typecheck/build before declaring completion.
+9. Update HANDOFF.md if architecture, milestone state or next task changes.
+10. End every work session with an exact summary of files changed, tests, branch, HEAD, working-tree state, database/deployment actions and next recommended task.
+
+## 12. Next Task
+
+NEXT STAGE: **Stage 5**.
+NEXT TASK: **Design and implement the matter-scoped Evidence Review workspace as the first Stage 5 feature.**
+Do not begin Stage 5 automatically. Inspect existing endpoints first; additional database capabilities require separate review and execution authorization.
+
+## Cross-Agent Handoff Protocol
+
+Codex → Claude Code: commit when authorized or intentionally preserve current state; Claude reads HANDOFF.md first, inspects status/branch/HEAD, receives one scoped task, updates this handoff when milestone/architecture changes, and reports changed files, tests and final Git state.
+Claude Code → Codex: use the same process. Prefer independent read-only review before the next correction round. Only one agent edits the shared checkout at a time.
+Neither agent should rely on the other's conversational memory. The repository and HANDOFF.md are the source of truth. A handoff is not authorization to push, deploy or mutate a database.
+
+## Historical handoff provenance
+
+The previous security-split/historical audit handoff is preserved in Git at `22384a833cf7889493a0835c2b68af9726e1caf1:HANDOFF.md`. Its dated claims (including absent domain routes and no automated tests) are historical, not current status. Existing Phase 1/2 audit files remain unchanged.

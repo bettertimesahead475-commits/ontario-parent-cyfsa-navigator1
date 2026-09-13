@@ -85,6 +85,9 @@ interface OrganizedFile {
   content: string; // Plaintext content or base64 representation
   analysisStatus: "pending" | "analyzing" | "completed" | "failed";
   analysisReport?: AnalysisReport;
+  // Legacy local workspace retains structural page attribution. Persistent UUIDs
+  // are issued only by the matter-scoped document API, never invented here.
+  sourcePages?: { pageNumber: number; text: string; extractionMethod: string; checksum: string }[];
 }
 
 interface RAGChatMessage {
@@ -1658,6 +1661,8 @@ export default function DocumentAnalyzerTab() {
                       throw new Error("No readable text could be extracted from this document.");
                     }
                     payload.textContent = extractResult.extractedText;
+                    setOrganizedFiles(prev => prev.map(f => f.id === file.id
+                      ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
                   }
 
                   const response = await apiFetch("/api/analyze", {
@@ -1793,6 +1798,8 @@ export default function DocumentAnalyzerTab() {
           throw new Error("No readable text could be extracted from this document.");
         }
         payload.textContent = extractResult.extractedText;
+        setOrganizedFiles(prev => prev.map(f => f.id === file.id
+          ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
       }
 
       const response = await apiFetch("/api/analyze", {
