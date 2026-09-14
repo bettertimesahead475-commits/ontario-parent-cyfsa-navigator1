@@ -27,6 +27,7 @@ const FloatingTTS = lazy(() => import("./components/FloatingTTS"));
 const ParentChatBot = lazy(() => import("./components/ParentChatBot"));
 const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyDrawer"));
 const PricingTab = lazy(() => import("./components/PricingTab"));
+const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWorkspace"));
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
 import { getUserKey } from "./utils/storage";
@@ -317,6 +318,12 @@ export default function App() {
           <Route path="/signup">
             <RequireAuth>
               <SignUpTab />
+            </RequireAuth>
+          </Route>
+
+          <Route path="/review">
+            <RequireAuth>
+              <EvidenceReviewWorkspace />
             </RequireAuth>
           </Route>
 

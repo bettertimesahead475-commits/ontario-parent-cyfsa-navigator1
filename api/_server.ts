@@ -19,6 +19,7 @@ import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
 import { registerDocumentRoutes } from "./documentRoutes.js";
+import { registerEvidenceReviewRoutes } from "./evidenceReviewRoutes.js";
 import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
@@ -782,6 +783,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     try { if (await requireSession(req,res)) next(); }
     catch { res.status(503).json({code:'SOURCE_UNAVAILABLE',error:'Source operation unavailable.'}); }
   });
+  registerEvidenceReviewRoutes(app);
 
   // API 2: Analyze Document Endpoint (Educational advice based on CYFSA of Ontario)
   // Step 1 of the two-pass pipeline: OCR/text extraction only.
