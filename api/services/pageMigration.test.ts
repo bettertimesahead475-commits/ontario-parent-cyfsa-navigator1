@@ -81,7 +81,7 @@ describe('evidence run attribution contract',()=>{
  it('uses one INSERT-only guard shared with complete_evidence, keeping review updates possible',()=>{
   const guard=sql.split("elsif TG_TABLE_NAME='navigator_evidence_items' then")[1].split('new.updated_at:=')[0];
   expectBefore(guard,'where id=new.document_version_id for update',"if TG_OP='INSERT' then");
-  expect(guard).toContain("if TG_OP='INSERT' then\n   perform public.navigator_require_evidence_run(new.extraction_run_id,new.matter_id,new.document_id,new.document_version_id,new.page_id);\n  end if;");
+  expect(guard.replace(/\r\n/g, '\n')).toContain("if TG_OP='INSERT' then\n   perform public.navigator_require_evidence_run(new.extraction_run_id,new.matter_id,new.document_id,new.document_version_id,new.page_id);\n  end if;");
   expect(guard).toContain("(to_jsonb(new)-'review_state'-'updated_at') is distinct from (to_jsonb(old)-'review_state'-'updated_at')");
   expect(sql).toContain('r:=public.navigator_require_evidence_run(r.id,p_matter_id,d.id,v.id,pg.id);');
  });
