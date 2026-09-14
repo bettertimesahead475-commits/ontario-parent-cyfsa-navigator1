@@ -92,7 +92,7 @@ create table public.navigator_legal_mappings (
   reason_for_relevance text not null check (char_length(reason_for_relevance) between 1 and 2000),
   -- Legal-conclusion language is rejected in application code before insert; this check is a
   -- fail-closed backstop, not the primary enforcement (natural-language matching is inherently partial).
-  check (reason_for_relevance !~* '\bviolat(ed|es|ion)\b|\bbroke the law\b|\bunlawful(ly)?\b|\bproves? misconduct\b|\bis guilty\b|\bcommitted an? offen[cs]e\b|\bcourt erred\b|\bnegligent(ly)?\b|\bliable\b|\bin breach of\b|\bfailed to comply with\b|\bacted contrary to\b'),
+  check (reason_for_relevance !~* '\yviolat(ed|es|ion)\y|\ybroke the law\y|\yunlawful(ly)?\y|\yproves? misconduct\y|\yis guilty\y|\ycommitted an? offen[cs]e\y|\ycourt erred\y|\ynegligent(ly)?\y|\yliable\y|\yin breach of\y|\yfailed to comply with\y|\yacted contrary to\y'),
   -- Relevance/match confidence for this authority identification only — never a probability
   -- that a violation occurred, that a party would prevail, or that any legal conclusion holds.
   confidence double precision check (confidence between 0 and 1),
