@@ -16,7 +16,7 @@
  * - Treatment of uploaded content as untrusted material
  */
 
-export const CONTRACT_VERSION = '1.0.0-stage56-contract';
+export const CONTRACT_VERSION = '1.1.0-stage56-contract-aligned';
 
 export type ClassificationType =
   | 'FACT'
@@ -27,13 +27,23 @@ export type ClassificationType =
   | 'UNVERIFIED_CLAIM'
   | 'UNKNOWN';
 
-export type ReviewState =
+export type EvidenceReviewState =
   | 'UNREVIEWED'
   | 'REVIEWED'
   | 'CONFIRMED'
   | 'DISPUTED'
   | 'REQUIRES_SOURCE'
   | 'NOT_RELEVANT';
+
+export type LegalMappingReviewState =
+  | 'UNREVIEWED'
+  | 'CONFIRMED_RELEVANT'
+  | 'POSSIBLY_RELEVANT'
+  | 'NOT_RELEVANT'
+  | 'REQUIRES_RESEARCH'
+  | 'SUPERSEDED';
+
+export type ReviewState = EvidenceReviewState;
 
 export type LegalAuthorityType =
   | 'STATUTE_SECTION'
@@ -50,7 +60,8 @@ export type LegalVersionAmbiguityReason =
   | 'EXPLICIT_SOURCE_DATE_MISSING';
 
 /**
- * Immutable source provenance pointing to physical source document page & offset
+ * Immutable source provenance pointing to physical evidence item & source document page.
+ * Note: exactQuote and quote offsets belong to navigator_evidence_items in Stage 4 schema.
  */
 export interface SourceProvenance {
   readonly matterId: string;
@@ -85,7 +96,7 @@ export interface ReviewedEvidenceReference {
   readonly matterId: string;
   readonly provenance: SourceProvenance; // Immutable source provenance
   readonly originalClassification: ClassificationType;
-  readonly reviewState: ReviewState;
+  readonly reviewState: EvidenceReviewState;
   readonly reviewedByUserId: string | null;
   readonly reviewedAt: string | null;
   readonly reviewerNotes: string | null;
@@ -140,7 +151,7 @@ export interface LegalMappingReview {
   readonly authorityCandidate: LegalAuthorityCandidate;
   readonly mappedEvidenceReferences: readonly ReviewedEvidenceReference[];
   readonly legalConclusionType: 'CANDIDATE_ISSUE' | 'SUPPORTED_ARGUMENT' | 'REBUTTED_CLAIM' | 'UNRESOLVED_AMBIGUITY';
-  readonly reviewState: ReviewState;
+  readonly reviewState: LegalMappingReviewState;
   readonly isDefinitiveConclusion: false; // Invariant: AI/System mappings are NEVER definitive legal findings
   readonly generatedAt: string;
 }
@@ -275,5 +286,24 @@ export function validateLegalLanguageSafety(text: string): ContractValidationRes
     }
   }
 
+  return { isValid: errors.length === 0, errors };
+}
+
+/**
+ * Validates that client-supplied matterId is never trusted over server-authenticated matter scope
+ * or persisted evidence item matter_id.
+ */
+export function validateMatterAuthorizationBoundary(
+  clientMatterId: string,
+  serverAuthorizedMatterId: string,
+  evidenceItemMatterId: string
+): ContractValidationResult {
+  const errors: string[] = [];
+  if (clientMatterId !== serverAuthorizedMatterId) {
+    errors.push('INVARIANT VIOLATION: Client-supplied matterId does not match server-authorized matter session');
+  }
+  if (evidenceItemMatterId !== serverAuthorizedMatterId) {
+    errors.push('INVARIANT VIOLATION: Evidence item matter_id does not match server-authorized matter session');
+  }
   return { isValid: errors.length === 0, errors };
 }

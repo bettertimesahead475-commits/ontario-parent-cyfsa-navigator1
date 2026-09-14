@@ -71,7 +71,7 @@ export const SYNTHETIC_EVIDENCE_FACT_REVIEWED: ReviewedEvidenceReference = {
   evidenceId: 'ev-001-fact-reviewed',
   matterId: SYNTHETIC_MATTER_ALPHA,
   provenance: PROVENANCE_DOC1_PAGE1,
-  originalClassification: 'UNVERIFIED_CLAIM',
+  originalClassification: 'FACT',
   reviewState: 'CONFIRMED',
   reviewedByUserId: 'user-lawyer-001',
   reviewedAt: '2026-09-14T10:00:00Z',
@@ -84,6 +84,66 @@ export const SYNTHETIC_EVIDENCE_ALLEGATION_UNREVIEWED: ReviewedEvidenceReference
   matterId: SYNTHETIC_MATTER_ALPHA,
   provenance: PROVENANCE_DOC1_PAGE2_ALLEGATION,
   originalClassification: 'ALLEGATION',
+  reviewState: 'UNREVIEWED',
+  reviewedByUserId: null,
+  reviewedAt: null,
+  reviewerNotes: null,
+  isConfirmedFact: false
+};
+
+export const SYNTHETIC_EVIDENCE_OPINION_DISPUTED: ReviewedEvidenceReference = {
+  evidenceId: 'ev-004-opinion-disputed',
+  matterId: SYNTHETIC_MATTER_ALPHA,
+  provenance: PROVENANCE_DOC1_PAGE1,
+  originalClassification: 'OPINION',
+  reviewState: 'DISPUTED',
+  reviewedByUserId: 'user-lawyer-001',
+  reviewedAt: '2026-09-14T10:00:00Z',
+  reviewerNotes: 'Parent disputes worker opinion on scheduling.',
+  isConfirmedFact: false
+};
+
+export const SYNTHETIC_EVIDENCE_ASSESSMENT_REVIEWED: ReviewedEvidenceReference = {
+  evidenceId: 'ev-005-assessment-reviewed',
+  matterId: SYNTHETIC_MATTER_ALPHA,
+  provenance: PROVENANCE_DOC1_PAGE1,
+  originalClassification: 'PROFESSIONAL_ASSESSMENT',
+  reviewState: 'REVIEWED',
+  reviewedByUserId: 'user-lawyer-001',
+  reviewedAt: '2026-09-14T10:00:00Z',
+  reviewerNotes: 'Clinical assessment reviewed.',
+  isConfirmedFact: false
+};
+
+export const SYNTHETIC_EVIDENCE_INFERENCE_REQUIRES_SOURCE: ReviewedEvidenceReference = {
+  evidenceId: 'ev-006-inference-requires-source',
+  matterId: SYNTHETIC_MATTER_ALPHA,
+  provenance: PROVENANCE_DOC1_PAGE1,
+  originalClassification: 'INFERENCE',
+  reviewState: 'REQUIRES_SOURCE',
+  reviewedByUserId: null,
+  reviewedAt: null,
+  reviewerNotes: 'Source document missing attached schedule.',
+  isConfirmedFact: false
+};
+
+export const SYNTHETIC_EVIDENCE_UNVERIFIED_NOT_RELEVANT: ReviewedEvidenceReference = {
+  evidenceId: 'ev-007-unverified-not-relevant',
+  matterId: SYNTHETIC_MATTER_ALPHA,
+  provenance: PROVENANCE_DOC1_PAGE1,
+  originalClassification: 'UNVERIFIED_CLAIM',
+  reviewState: 'NOT_RELEVANT',
+  reviewedByUserId: 'user-lawyer-001',
+  reviewedAt: '2026-09-14T10:00:00Z',
+  reviewerNotes: 'Outside relevant timeframe.',
+  isConfirmedFact: false
+};
+
+export const SYNTHETIC_EVIDENCE_UNKNOWN_UNREVIEWED: ReviewedEvidenceReference = {
+  evidenceId: 'ev-008-unknown-unreviewed',
+  matterId: SYNTHETIC_MATTER_ALPHA,
+  provenance: PROVENANCE_DOC1_PAGE1,
+  originalClassification: 'UNKNOWN',
   reviewState: 'UNREVIEWED',
   reviewedByUserId: null,
   reviewedAt: null,

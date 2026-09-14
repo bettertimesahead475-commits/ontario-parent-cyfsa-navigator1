@@ -4,7 +4,8 @@ import {
   validateSourceProvenance,
   validateFactPromotionInvariant,
   validateLegalMappingContract,
-  validateLegalLanguageSafety
+  validateLegalLanguageSafety,
+  validateMatterAuthorizationBoundary
 } from './stage56Contracts.js';
 import {
   SYNTHETIC_MATTER_ALPHA,
@@ -28,7 +29,7 @@ import {
 
 describe('Stage 5 & Stage 6 Cross-Stage Integration & Contract Audits', () => {
   it('exposes the contract version marker', () => {
-    expect(CONTRACT_VERSION).toBe('1.0.0-stage56-contract');
+    expect(CONTRACT_VERSION).toBe('1.1.0-stage56-contract-aligned');
   });
 
   describe('Invariant 1: Provenance IDs and Integrity', () => {
@@ -137,6 +138,59 @@ describe('Stage 5 & Stage 6 Cross-Stage Integration & Contract Audits', () => {
       expect(res.isValid).toBe(true);
     });
   });
+
+  describe('Invariant 5: Stage 4 Schema Alignment & Matter Trust Boundaries', () => {
+    it('supports all 7 authoritative Stage 4 evidence classifications', () => {
+      const classifications = [
+        'FACT',
+        'ALLEGATION',
+        'OPINION',
+        'PROFESSIONAL_ASSESSMENT',
+        'INFERENCE',
+        'UNVERIFIED_CLAIM',
+        'UNKNOWN'
+      ];
+      expect(classifications).toHaveLength(7);
+      for (const cls of classifications) {
+        const res = validateFactPromotionInvariant(cls as any, 'UNREVIEWED', false);
+        expect(res.isValid).toBe(true);
+      }
+    });
+
+    it('supports all 6 authoritative Stage 4 evidence review states', () => {
+      const states = [
+        'UNREVIEWED',
+        'REVIEWED',
+        'CONFIRMED',
+        'DISPUTED',
+        'REQUIRES_SOURCE',
+        'NOT_RELEVANT'
+      ];
+      expect(states).toHaveLength(6);
+      for (const st of states) {
+        const res = validateFactPromotionInvariant('FACT', st as any, false);
+        expect(res.isValid).toBe(true);
+      }
+    });
+
+    it('enforces non-authoritative client matterId boundary', () => {
+      const valid = validateMatterAuthorizationBoundary(
+        SYNTHETIC_MATTER_ALPHA,
+        SYNTHETIC_MATTER_ALPHA,
+        SYNTHETIC_MATTER_ALPHA
+      );
+      expect(valid.isValid).toBe(true);
+
+      const invalidClient = validateMatterAuthorizationBoundary(
+        'forged-client-matter-id',
+        SYNTHETIC_MATTER_ALPHA,
+        SYNTHETIC_MATTER_ALPHA
+      );
+      expect(invalidClient.isValid).toBe(false);
+      expect(invalidClient.errors[0]).toContain('Client-supplied matterId does not match server-authorized');
+    });
+  });
+
 
   describe('Benchmark Harness & Performance Baseline Counters', () => {
     it('tracks system performance metrics cleanly', () => {
