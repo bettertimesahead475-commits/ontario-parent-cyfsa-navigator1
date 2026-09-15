@@ -1,4 +1,4 @@
-import { getSupabase } from './access.js';
+import { getHumanReviewSupabase } from './humanReviewAccess.js';
 import { LifecycleError, requireUuid } from './lifecycleErrors.js';
 
 const invalid = () => new LifecycleError(400, 'INVALID_REVIEW_REQUEST', 'Invalid review request.');
@@ -16,7 +16,7 @@ export async function reviewIntelligence(uid: string, matterId: string, input: u
   if (!VALID_OBJECT_TYPES.includes(v.objectType as any)) throw invalid();
   if (!VALID_STATES.includes(v.reviewState as any)) throw invalid();
 
-  const { data, error } = await getSupabase().rpc('navigator_intelligence_review_update', {
+  const { data, error } = await getHumanReviewSupabase().rpc('navigator_intelligence_review_update', {
     p_uid: uid,
     p_matter_id: requireUuid(matterId, 'matterId'),
     p_object_type: v.objectType,

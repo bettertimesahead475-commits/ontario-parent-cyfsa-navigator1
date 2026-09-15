@@ -360,12 +360,21 @@ begin
         p_matter_id, p_object_id, p_object_type, actor, previous_state, p_state, previous_freshness, previous_freshness, new_updated_at
     ) returning * into action;
 
-    return jsonb_build_object('id',p_object_id,'review_state',p_state,'updated_at',new_updated_at,'changed',true,'review_action',to_jsonb(action));
-end $$;
-revoke all on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) from public,anon,authenticated,service_role;
-grant execute on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) to service_role;
+     return jsonb_build_object('id',p_object_id,'review_state',p_state,'updated_at',new_updated_at,'changed',true,'review_action',to_jsonb(action));
+ end $$;
 
--- RLS Enablement
+ do $$
+ begin
+     if not exists (select from pg_roles where rolname = 'navigator_human_reviewer') then
+         create role navigator_human_reviewer nologin;
+     end if;
+ end $$;
+ grant usage on schema public to navigator_human_reviewer;
+
+ revoke all on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) from public,anon,authenticated,service_role,navigator_human_reviewer;
+ grant execute on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) to navigator_human_reviewer;
+
+ -- RLS Enablement
 alter table public.navigator_entities enable row level security;
 alter table public.navigator_entity_mentions enable row level security;
 alter table public.navigator_identity_resolutions enable row level security;
@@ -401,6 +410,6 @@ grant select,insert on public.navigator_event_participants to service_role;
 grant update (id, matter_id, event_id, entity_id, role, freshness_state, fingerprint, created_at, updated_at) on public.navigator_event_participants to service_role;
 
 grant select,insert on public.navigator_intelligence_provenance to service_role;
-grant select,insert on public.navigator_intelligence_review_actions to service_role;
+grant select on public.navigator_intelligence_review_actions to service_role;
 
 commit;

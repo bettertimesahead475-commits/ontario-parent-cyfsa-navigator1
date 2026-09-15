@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { registerCaseIntelligenceReviewRoutes } from '../caseIntelligenceReviewRoutes.js';
-import * as access from './access.js';
+import * as humanReviewAccess from './humanReviewAccess.js';
 import * as firebaseAdmin from './firebaseAdmin.js';
 
 describe('Case Intelligence Review API & Service Boundary', () => {
@@ -16,7 +16,7 @@ describe('Case Intelligence Review API & Service Boundary', () => {
     registerCaseIntelligenceReviewRoutes(app);
 
     mockRpc = vi.fn().mockResolvedValue({ data: { id: 'obj-123', review_state: 'CONFIRMED', changed: true } });
-    vi.spyOn(access, 'getSupabase').mockReturnValue({ rpc: mockRpc } as any);
+    vi.spyOn(humanReviewAccess, 'getHumanReviewSupabase').mockReturnValue({ rpc: mockRpc } as any);
   });
 
   describe('Authentication & Capability Boundary', () => {

@@ -107,10 +107,18 @@ describe("Stage 5 M2-A pending migration structural contracts", () => {
       expect(sql).toContain("language plpgsql volatile security definer set search_path=pg_catalog,public,pg_temp set lock_timeout='5s' set timezone='UTC' as $$");
     });
 
-    it("grants least privilege to service_role and revokes from others", () => {
+    it("grants least privilege to service_role and dedicated role", () => {
+      expect(sql).toContain("create role navigator_human_reviewer nologin;");
+      expect(sql).toContain("grant usage on schema public to navigator_human_reviewer;");
+      expect(sql).toContain("revoke all on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) from public,anon,authenticated,service_role,navigator_human_reviewer;");
+      expect(sql).toContain("grant execute on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) to navigator_human_reviewer;");
+      
       expect(sql).toContain("revoke all on public.navigator_entities from public,anon,authenticated,service_role;");
       expect(sql).toContain("grant select,insert on public.navigator_entities to service_role;");
       expect(sql).toContain("grant update (id, matter_id, entity_type, display_name, freshness_state, fingerprint, created_at, updated_at) on public.navigator_entities to service_role;");
+      
+      expect(sql).toContain("revoke all on public.navigator_intelligence_review_actions from public,anon,authenticated,service_role;");
+      expect(sql).toContain("grant select on public.navigator_intelligence_review_actions to service_role;");
     });
   });
 });
