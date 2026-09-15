@@ -51,14 +51,14 @@ export function approvedRetrievalHostnames(jurisdiction: Jurisdiction): readonly
 // history or a caller's label exempts it from this check.
 // ---------------------------------------------------------------------------
 
-function isPrivateOrLoopbackIPv4(ip: string): boolean {
+export function isPrivateOrLoopbackIPv4(ip: string): boolean {
   const parts = ip.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) return true; // fail closed
   const [a, b] = parts;
   return a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
 }
 
-function isPrivateOrLoopbackIPv6(ip: string): boolean {
+export function isPrivateOrLoopbackIPv6(ip: string): boolean {
   const lower = ip.toLowerCase();
   return (
     lower === "::1" ||
@@ -228,9 +228,25 @@ export interface ParseResult {
 }
 
 const SECTION_HEADER = /^(\d+[a-zA-Z]?)\.\s+(.+)$/;
+// Discovered against real e-Laws consolidated CYFSA text during M2-C validation: the official
+// source marks a section's first appearance as `**74 **(1)  text...` — bold markdown, no period
+// after the number, and the first subsection number inlined on the same line — not the plain
+// `74. Heading` shape the M2-B synthetic fixture used. Both forms are recognized; neither
+// replaces the other, so M2-B's own fixtures/tests are unaffected.
+const SECTION_HEADER_ELAWS = /^\*\*(\d+[a-zA-Z]?)\s*\*\*\s*(?:\((\d{1,3})\)\s*)?(.*)$/;
 const SUBSECTION_MARKER = /^\((\d{1,3})\)\s*(.*)$/;
 const PARAGRAPH_MARKER = /^\(([a-z])\)\s*(.*)$/;
 const CLAUSE_MARKER = /^\(([ivxlcdm]{2,})\)\s*(.*)$/i;
+// Discovered against real CYFSA text during M2-C validation: a clause's first item is always
+// labelled "(i)", which is byte-identical to PARAGRAPH_MARKER. Real clause lists always START
+// at "i" and never restart mid-list at another single roman letter, so the collision is
+// narrowly scoped to the literal letter "i" only — deliberately NOT "v"/"x"/"l"/"c"/"d"/"m",
+// since those are all real, common paragraph letters (e.g. a section's 3rd paragraph is "(c)",
+// which must never be swallowed as a clause). This still leaves one narrow, documented residual
+// ambiguity: a section with 9+ paragraphs whose 9th paragraph is genuinely "(i)" immediately
+// after a clause-free paragraph "(h)" would be misread as a clause — accepted as an explicitly
+// out-of-scope limitation (see STAGE_6_M2C doc) rather than solved with sequence look-ahead.
+const CLAUSE_FIRST_ITEM_MARKER = /^\(([iI])\)\s*(.*)$/;
 
 /** Normalizes "s. 74", "section 74", and "74" (in section-header context) to the same canonical `s.74` — but never collapses a subsection/paragraph/clause suffix into its parent's identity. */
 export function normalizeSectionLabel(raw: string): string {
@@ -269,12 +285,28 @@ export function parseStatuteExcerpt(rawText: string): ParseResult {
       ensure(sectionCitation, null);
       append(sectionCitation, m[2]);
       sawAnyMarker = true;
+    } else if ((m = line.match(SECTION_HEADER_ELAWS))) {
+      sectionCitation = normalizeSectionLabel(m[1]);
+      paragraphCitation = null;
+      ensure(sectionCitation, null);
+      if (m[2]) {
+        subsectionCitation = `${sectionCitation}(${m[2]})`;
+        ensure(subsectionCitation, sectionCitation);
+        append(subsectionCitation, m[3]);
+      } else {
+        subsectionCitation = null;
+        append(sectionCitation, m[3]);
+      }
+      sawAnyMarker = true;
     } else if (sectionCitation && (m = line.match(SUBSECTION_MARKER))) {
       subsectionCitation = `${sectionCitation}(${m[1]})`;
       paragraphCitation = null;
       ensure(subsectionCitation, sectionCitation);
       append(subsectionCitation, m[2]);
       sawAnyMarker = true;
+    } else if (paragraphCitation && (m = line.match(CLAUSE_FIRST_ITEM_MARKER))) {
+      sawUnsupportedNesting = true;
+      append(paragraphCitation, line);
     } else if ((subsectionCitation ?? sectionCitation) && (m = line.match(PARAGRAPH_MARKER))) {
       const parent = subsectionCitation ?? sectionCitation!;
       paragraphCitation = `${parent}(${m[1]})`;
