@@ -89,7 +89,7 @@ describe('Case Intelligence Review API & Service Boundary', () => {
         });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('INVALID_REVIEW_REQUEST');
-      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockExecute).not.toHaveBeenCalled();
     });
 
     it('rejects invalid state transitions', async () => {
@@ -103,7 +103,7 @@ describe('Case Intelligence Review API & Service Boundary', () => {
           expectedUpdatedAt: '2025-01-01T12:00:00Z'
         });
       expect(res.status).toBe(400);
-      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockExecute).not.toHaveBeenCalled();
     });
 
     it('translates P0002 to 404 (cross-matter fails or not found)', async () => {
