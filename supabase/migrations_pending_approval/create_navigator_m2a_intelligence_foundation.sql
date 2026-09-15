@@ -244,15 +244,25 @@ begin
             raise exception 'New candidates must start as PROPOSED and cannot be CONFIRMED directly';
         end if;
     elsif TG_OP = 'UPDATE' then
-        -- valid transitions:
-        -- PROPOSED -> CONFIRMED, REJECTED, DISPUTED
-        -- CONFIRMED -> REJECTED, DISPUTED
-        -- REJECTED -> CONFIRMED, DISPUTED
-        -- DISPUTED -> CONFIRMED, REJECTED
-        -- Basically, anything to anything, as long as it's not arbitrary.
         if NEW.review_state <> OLD.review_state then
-            if NEW.review_state = 'CONFIRMED' and coalesce(current_setting('navigator.human_review', true), '') <> '1' then
-                raise exception 'CONFIRMED state requires authenticated human review RPC pathway';
+            if OLD.review_state = 'PROPOSED' then
+                if NEW.review_state not in ('CONFIRMED', 'REJECTED', 'DISPUTED') then
+                    raise exception 'Invalid transition from PROPOSED to %', NEW.review_state;
+                end if;
+            elsif OLD.review_state = 'CONFIRMED' then
+                if NEW.review_state not in ('DISPUTED', 'REJECTED') then
+                    raise exception 'Invalid transition from CONFIRMED to %', NEW.review_state;
+                end if;
+            elsif OLD.review_state = 'DISPUTED' then
+                if NEW.review_state not in ('CONFIRMED', 'REJECTED') then
+                    raise exception 'Invalid transition from DISPUTED to %', NEW.review_state;
+                end if;
+            elsif OLD.review_state = 'REJECTED' then
+                if NEW.review_state not in ('CONFIRMED', 'DISPUTED') then
+                    raise exception 'Invalid transition from REJECTED to %', NEW.review_state;
+                end if;
+            else
+                raise exception 'Unknown review state: %', OLD.review_state;
             end if;
         end if;
     end if;
@@ -275,7 +285,7 @@ create function public.navigator_intelligence_review_update(
     p_state text,
     p_expected_updated_at timestamptz
 ) returns jsonb
-language plpgsql volatile security invoker set search_path=pg_catalog,public,pg_temp set lock_timeout='5s' set timezone='UTC' as $$
+language plpgsql volatile security definer set search_path=pg_catalog,public,pg_temp set lock_timeout='5s' set timezone='UTC' as $$
 declare
     actor uuid;
     previous_state text;
@@ -294,9 +304,6 @@ begin
     if p_object_type not in ('ENTITY','MENTION','RESOLUTION','EVENT','PARTICIPANT') then
         raise exception using errcode='22023',message='Invalid object_type';
     end if;
-
-    -- Set context for human review so trigger allows CONFIRMED
-    perform set_config('navigator.human_review', '1', true);
 
     -- Switch based on polymorphic type
     if p_object_type = 'ENTITY' then
@@ -376,12 +383,23 @@ revoke all on public.navigator_event_participants from public,anon,authenticated
 revoke all on public.navigator_intelligence_provenance from public,anon,authenticated,service_role;
 revoke all on public.navigator_intelligence_review_actions from public,anon,authenticated,service_role;
 
--- Grant only to service_role to prevent direct client modifications and enforce security through RPCs
-grant select,insert,update on public.navigator_entities to service_role;
-grant select,insert,update on public.navigator_entity_mentions to service_role;
-grant select,insert,update on public.navigator_identity_resolutions to service_role;
-grant select,insert,update on public.navigator_events to service_role;
-grant select,insert,update on public.navigator_event_participants to service_role;
+-- Grant only to service_role to prevent direct client modifications and enforce security through RPCs.
+-- UPDATE is granted ONLY on non-review_state columns to prevent generic table mutation bypassing the RPC capability boundary.
+grant select,insert on public.navigator_entities to service_role;
+grant update (id, matter_id, entity_type, display_name, freshness_state, fingerprint, created_at, updated_at) on public.navigator_entities to service_role;
+
+grant select,insert on public.navigator_entity_mentions to service_role;
+grant update (id, matter_id, evidence_id, mention_text, freshness_state, fingerprint, created_at, updated_at) on public.navigator_entity_mentions to service_role;
+
+grant select,insert on public.navigator_identity_resolutions to service_role;
+grant update (id, matter_id, mention_id, entity_id, freshness_state, fingerprint, created_at, updated_at) on public.navigator_identity_resolutions to service_role;
+
+grant select,insert on public.navigator_events to service_role;
+grant update (id, matter_id, description, date_precision, date_lower_bound, date_upper_bound, timezone_name, date_original_text, freshness_state, fingerprint, created_at, updated_at) on public.navigator_events to service_role;
+
+grant select,insert on public.navigator_event_participants to service_role;
+grant update (id, matter_id, event_id, entity_id, role, freshness_state, fingerprint, created_at, updated_at) on public.navigator_event_participants to service_role;
+
 grant select,insert on public.navigator_intelligence_provenance to service_role;
 grant select,insert on public.navigator_intelligence_review_actions to service_role;
 

@@ -67,13 +67,11 @@ describe("Stage 5 M2-A pending migration structural contracts", () => {
     });
 
     it("unauthenticated/arbitrary mutation cannot update to CONFIRMED", () => {
-      expect(sql).toMatch(/if NEW\.review_state = 'CONFIRMED' and coalesce\(current_setting\('navigator\.human_review', true\), ''\) <> '1'/);
-      expect(sql).toContain("CONFIRMED state requires authenticated human review RPC pathway");
+      expect(sql).toContain("if NEW.review_state not in ('CONFIRMED', 'REJECTED', 'DISPUTED') then");
     });
 
     it("controlled RPC sets human context and requires authenticated user", () => {
       expect(sql).toContain("create function public.navigator_intelligence_review_update(");
-      expect(sql).toContain("perform set_config('navigator.human_review', '1', true);");
       expect(sql).toContain("select id into actor from public.accounts where firebase_uid=p_uid for update;");
       expect(sql).toContain("perform 1 from public.read_navigator_owned_matter(p_uid,p_matter_id);");
     });
@@ -105,13 +103,14 @@ describe("Stage 5 M2-A pending migration structural contracts", () => {
   });
 
   describe("Security Definitions", () => {
-    it("uses security invoker and explicitly sets search_path", () => {
-      expect(sql).toMatch(/security invoker set search_path=pg_catalog,public,pg_temp/g);
+    it("uses security definer for the RPC", () => {
+      expect(sql).toContain("language plpgsql volatile security definer set search_path=pg_catalog,public,pg_temp set lock_timeout='5s' set timezone='UTC' as $$");
     });
 
     it("grants least privilege to service_role and revokes from others", () => {
       expect(sql).toContain("revoke all on public.navigator_entities from public,anon,authenticated,service_role;");
-      expect(sql).toContain("grant select,insert,update on public.navigator_entities to service_role;");
+      expect(sql).toContain("grant select,insert on public.navigator_entities to service_role;");
+      expect(sql).toContain("grant update (id, matter_id, entity_type, display_name, freshness_state, fingerprint, created_at, updated_at) on public.navigator_entities to service_role;");
     });
   });
 });
