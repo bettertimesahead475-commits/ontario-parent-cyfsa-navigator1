@@ -1,17 +1,38 @@
-import { createClient } from '@supabase/supabase-js';
+import pg from 'pg';
 
-let supabaseHumanReview: ReturnType<typeof createClient> | null = null;
+let pool: pg.Pool | null = null;
 
-export function getHumanReviewSupabase() {
-  if (supabaseHumanReview) return supabaseHumanReview;
-  
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_HUMAN_REVIEW_KEY;
-
-  if (!url || !key) {
-    throw new Error('Missing SUPABASE_HUMAN_REVIEW_KEY or SUPABASE_URL. Human review DB capability is unconfigured.');
+export async function executeHumanReview(params: {
+  uid: string;
+  matterId: string;
+  objectType: string;
+  objectId: string;
+  state: string;
+  expectedUpdatedAt: string;
+}) {
+  const url = process.env.HUMAN_REVIEW_DATABASE_URL;
+  if (!url) {
+    throw new Error('Missing HUMAN_REVIEW_DATABASE_URL. Human review DB capability is unconfigured.');
   }
 
-  supabaseHumanReview = createClient(url, key);
-  return supabaseHumanReview;
+  if (!pool) {
+    pool = new pg.Pool({
+      connectionString: url,
+      max: 1,
+      ssl: { rejectUnauthorized: false }
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT public.navigator_intelligence_review_update($1, $2, $3, $4, $5, $6) as data`,
+      [params.uid, params.matterId, params.objectType, params.objectId, params.state, params.expectedUpdatedAt]
+    );
+    return { data: result.rows[0]?.data, error: null };
+  } catch (err: any) {
+    return { data: null, error: { code: err.code, message: err.message } };
+  } finally {
+    client.release();
+  }
 }

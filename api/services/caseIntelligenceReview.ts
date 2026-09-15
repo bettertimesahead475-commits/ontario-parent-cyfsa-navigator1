@@ -1,4 +1,4 @@
-import { getHumanReviewSupabase } from './humanReviewAccess.js';
+import { executeHumanReview } from './humanReviewAccess.js';
 import { LifecycleError, requireUuid } from './lifecycleErrors.js';
 
 const invalid = () => new LifecycleError(400, 'INVALID_REVIEW_REQUEST', 'Invalid review request.');
@@ -16,13 +16,13 @@ export async function reviewIntelligence(uid: string, matterId: string, input: u
   if (!VALID_OBJECT_TYPES.includes(v.objectType as any)) throw invalid();
   if (!VALID_STATES.includes(v.reviewState as any)) throw invalid();
 
-  const { data, error } = await getHumanReviewSupabase().rpc('navigator_intelligence_review_update', {
-    p_uid: uid,
-    p_matter_id: requireUuid(matterId, 'matterId'),
-    p_object_type: v.objectType,
-    p_object_id: requireUuid(v.objectId as string, 'objectId'),
-    p_state: v.reviewState,
-    p_expected_updated_at: timestamp(v.expectedUpdatedAt)
+  const { data, error } = await executeHumanReview({
+    uid,
+    matterId: requireUuid(matterId, 'matterId'),
+    objectType: v.objectType as string,
+    objectId: requireUuid(v.objectId as string, 'objectId'),
+    state: v.reviewState as string,
+    expectedUpdatedAt: timestamp(v.expectedUpdatedAt)
   });
 
   if (error) {

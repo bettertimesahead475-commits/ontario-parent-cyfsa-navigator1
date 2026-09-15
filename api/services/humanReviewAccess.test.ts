@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getHumanReviewSupabase } from './humanReviewAccess.js';
-import * as supabaseJs from '@supabase/supabase-js';
+import * as pg from 'pg';
 
 describe('Human Review Database Capability Boundary', () => {
   const originalEnv = process.env;
@@ -14,22 +13,37 @@ describe('Human Review Database Capability Boundary', () => {
     process.env = originalEnv;
   });
 
-  it('fails closed when missing SUPABASE_HUMAN_REVIEW_KEY, no fallback', async () => {
-    // Intentionally remove the key
-    delete process.env.SUPABASE_HUMAN_REVIEW_KEY;
-    
-    // ensure access module was re-imported fresh so the cached client is null
-    const { getHumanReviewSupabase: getClient } = await import('./humanReviewAccess.js?t=1');
-    expect(() => getClient()).toThrow('Missing SUPABASE_HUMAN_REVIEW_KEY');
+  it('fails closed when missing HUMAN_REVIEW_DATABASE_URL, no fallback', async () => {
+    delete process.env.HUMAN_REVIEW_DATABASE_URL;
+    const { executeHumanReview } = await import('./humanReviewAccess.js?t=' + Date.now());
+    await expect(executeHumanReview({
+      uid: 'u', matterId: 'm', objectType: 'ENTITY', objectId: 'o', state: 'CONFIRMED', expectedUpdatedAt: 'd'
+    })).rejects.toThrow('Missing HUMAN_REVIEW_DATABASE_URL');
   });
 
-  it('uses SUPABASE_HUMAN_REVIEW_KEY to create a dedicated client', async () => {
-    process.env.SUPABASE_URL = 'http://localhost';
-    process.env.SUPABASE_HUMAN_REVIEW_KEY = 'fake-human-review-key';
+  it('uses HUMAN_REVIEW_DATABASE_URL to create a dedicated pool', async () => {
+    process.env.HUMAN_REVIEW_DATABASE_URL = 'postgres://fake-human-reviewer:pass@localhost:5432/db';
     
-    const { getHumanReviewSupabase: getClient } = await import('./humanReviewAccess.js?t=2');
+    vi.mock('pg', () => {
+      const connect = vi.fn().mockResolvedValue({
+        query: vi.fn().mockResolvedValue({ rows: [{ data: { result: 'ok' } }] }),
+        release: vi.fn()
+      });
+      return {
+        default: {
+          Pool: vi.fn().mockImplementation(() => ({ connect }))
+        }
+      };
+    });
+
+    const { executeHumanReview } = await import('./humanReviewAccess.js?t=' + Date.now());
+    const res = await executeHumanReview({
+      uid: 'u', matterId: 'm', objectType: 'ENTITY', objectId: 'o', state: 'CONFIRMED', expectedUpdatedAt: 'd'
+    });
     
-    const client = getClient();
-    expect(client).toBeDefined();
+    expect(res.data).toEqual({ result: 'ok' });
+    expect(res.error).toBeNull();
+    
+    vi.unmock('pg');
   });
 });

@@ -366,7 +366,7 @@ begin
  do $$
  begin
      if not exists (select from pg_roles where rolname = 'navigator_human_reviewer') then
-         create role navigator_human_reviewer nologin;
+         create role navigator_human_reviewer login;
      end if;
  end $$;
  grant usage on schema public to navigator_human_reviewer;

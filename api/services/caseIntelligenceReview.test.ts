@@ -7,7 +7,7 @@ import * as firebaseAdmin from './firebaseAdmin.js';
 
 describe('Case Intelligence Review API & Service Boundary', () => {
   let app: express.Express;
-  let mockRpc: any;
+  let mockExecute: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -15,8 +15,8 @@ describe('Case Intelligence Review API & Service Boundary', () => {
     app.use(express.json());
     registerCaseIntelligenceReviewRoutes(app);
 
-    mockRpc = vi.fn().mockResolvedValue({ data: { id: 'obj-123', review_state: 'CONFIRMED', changed: true } });
-    vi.spyOn(humanReviewAccess, 'getHumanReviewSupabase').mockReturnValue({ rpc: mockRpc } as any);
+    mockExecute = vi.fn().mockResolvedValue({ data: { id: 'obj-123', review_state: 'CONFIRMED', changed: true } });
+    vi.spyOn(humanReviewAccess, 'executeHumanReview').mockImplementation(mockExecute);
   });
 
   describe('Authentication & Capability Boundary', () => {
@@ -50,7 +50,7 @@ describe('Case Intelligence Review API & Service Boundary', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockExecute).not.toHaveBeenCalled();
     });
 
     it('derives UID strictly from verified token', async () => {
@@ -66,8 +66,8 @@ describe('Case Intelligence Review API & Service Boundary', () => {
           expectedUpdatedAt: '2025-01-01T12:00:00Z'
         });
 
-      expect(mockRpc).toHaveBeenCalledWith('navigator_intelligence_review_update', expect.objectContaining({
-        p_uid: 'real-user-123'
+      expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
+        uid: 'real-user-123'
       }));
     });
   });
@@ -107,7 +107,7 @@ describe('Case Intelligence Review API & Service Boundary', () => {
     });
 
     it('translates P0002 to 404 (cross-matter fails or not found)', async () => {
-      mockRpc.mockResolvedValue({ error: { code: 'P0002' } });
+      mockExecute.mockResolvedValue({ error: { code: 'P0002' } });
       const res = await request(app)
         .patch('/api/matters/52c502fb-bd1c-43a4-b9b5-4122d2ee015a/intelligence/review')
         .set('Authorization', 'Bearer valid-token')
@@ -121,7 +121,7 @@ describe('Case Intelligence Review API & Service Boundary', () => {
     });
 
     it('translates 40001 to 409 (concurrency token conflict)', async () => {
-      mockRpc.mockResolvedValue({ error: { code: '40001' } });
+      mockExecute.mockResolvedValue({ error: { code: '40001' } });
       const res = await request(app)
         .patch('/api/matters/52c502fb-bd1c-43a4-b9b5-4122d2ee015a/intelligence/review')
         .set('Authorization', 'Bearer valid-token')

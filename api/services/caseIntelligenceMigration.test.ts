@@ -108,7 +108,7 @@ describe("Stage 5 M2-A pending migration structural contracts", () => {
     });
 
     it("grants least privilege to service_role and dedicated role", () => {
-      expect(sql).toContain("create role navigator_human_reviewer nologin;");
+      expect(sql).toContain("create role navigator_human_reviewer login;");
       expect(sql).toContain("grant usage on schema public to navigator_human_reviewer;");
       expect(sql).toContain("revoke all on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) from public,anon,authenticated,service_role,navigator_human_reviewer;");
       expect(sql).toContain("grant execute on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) to navigator_human_reviewer;");
