@@ -3,13 +3,15 @@ import { describe, it, expect } from "vitest";
 
 // Offline declaration/contract checks only. Never loads credentials, connects to a database,
 // or executes SQL. PostgreSQL enforcement is a separate, explicitly-authorized gate.
-const sql = readFileSync(
-  new URL("../../supabase/migrations_pending_approval/create_navigator_legal_corpus_versioning.sql", import.meta.url),
-  "utf8",
+// Line endings are normalized to LF immediately after reading: this file's assertions test SQL
+// structure/content, never literal line-ending bytes, so a CRLF checkout (e.g. Windows git
+// autocrlf) must not break a multiline substring match that would pass identically on LF.
+const normalizeLineEndings = (text: string) => text.replace(/\r\n/g, "\n");
+const sql = normalizeLineEndings(
+  readFileSync(new URL("../../supabase/migrations_pending_approval/create_navigator_legal_corpus_versioning.sql", import.meta.url), "utf8"),
 );
-const m1Sql = readFileSync(
-  new URL("../../supabase/migrations_pending_approval/create_navigator_legal_authority_foundation.sql", import.meta.url),
-  "utf8",
+const m1Sql = normalizeLineEndings(
+  readFileSync(new URL("../../supabase/migrations_pending_approval/create_navigator_legal_authority_foundation.sql", import.meta.url), "utf8"),
 );
 
 describe("Stage 6 M2-A pending migration — structural contracts", () => {
