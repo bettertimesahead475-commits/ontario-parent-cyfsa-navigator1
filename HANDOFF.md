@@ -59,13 +59,14 @@ Historical security documents also identify session-error handling, code-claim/s
 
 **MATTER-SCOPED EVIDENCE REVIEW AND CASE INTELLIGENCE**
 Planned capabilities: evidence review workspace; matter-wide chronology; contradiction/inconsistency detection; corroboration linking; allegation evolution tracking; evidence-gap detection; unanswered-question generation; case-wide summary; direct source jump-back to document/page/quote; review-state propagation.
-Begin with the review workspace. These are roadmap objectives, not claims of existing implementation or blanket permission to implement all of Stage 5.
+
+*Update:* Stage 5 M2-A (Case Intelligence Foundation) has been implemented and merged as a pending migration. It establishes the deterministic database structures and pure functions for Entities, Events, Dates, Provenance, and Review tracking, but does not deploy them or build the AI pipelines yet.
 
 ## 9. Future Roadmap
 
 | Stage | Objective |
 |---|---|
-| 5 | Matter Intelligence |
+| 5 | Matter Intelligence (M2-A Foundation complete, M2-B/C/D/E pending) |
 | 6 | CYFSA Legal Intelligence and Authority Mapping |
 | 7 | Professional Lawyer Review Workspace |
 | 8 | Litigation Work Product |
@@ -75,7 +76,7 @@ Begin with the review workspace. These are roadmap objectives, not claims of exi
 
 ## 10. Current Technical Debt / Known Limitations
 
-Firebase HTTP integration is not fully validated. Dependency advisories remain. Account-wide serialization favors correctness over throughput. Evidence aggregation is unpaginated. Stale evidence-run maintenance is outstanding. OCR metadata records configured fallback models rather than observed provider revisions. Duplicate evidence analysis requests can create separate runs. Completed immutable disposable fixtures remain intentionally retained (inventory in the closeout). No full contradiction engine, persisted matter-wide chronology engine or legal mapper exists. Existing legacy timeline/RAG features do not constitute those future engines.
+Firebase HTTP integration is not fully validated. Dependency advisories remain. Account-wide serialization favors correctness over throughput. Evidence aggregation is unpaginated. Stale evidence-run maintenance is outstanding. OCR metadata records configured fallback models rather than observed provider revisions. Duplicate evidence analysis requests can create separate runs. Completed immutable disposable fixtures remain intentionally retained (inventory in the closeout). No full contradiction engine, persisted matter-wide chronology engine or legal mapper exists yet (only foundational tables). Existing legacy timeline/RAG features do not constitute those future engines.
 
 Pages over 30,000 characters cannot enter evidence extraction until bounded chunking is designed. Binary retention, deletion, queue execution, OCR cost accounting and large-volume behavior need review. The build retains its large-chunk warning.
 
@@ -96,8 +97,8 @@ Any AI coding agent must:
 ## 12. Next Task
 
 NEXT STAGE: **Stage 5**.
-NEXT TASK: **Design and implement the matter-scoped Evidence Review workspace as the first Stage 5 feature.**
-Do not begin Stage 5 automatically. Inspect existing endpoints first; additional database capabilities require separate review and execution authorization.
+NEXT TASK: **Design and implement Stage 5 M2-B (Chronology) using the M2-A foundation.**
+Do not begin Stage 5 M2-B automatically. Await execution authorization for the M2-A migration before building features on top of it.
 
 ## Cross-Agent Handoff Protocol
 
