@@ -96,10 +96,23 @@ export function validateStructuredDate(date: StructuredDate): void {
   }
 }
 
+// Helper for deep stable serialization
+function stableStringify(obj: any): string {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(stableStringify).join(',') + ']';
+  }
+  const keys = Object.keys(obj).sort();
+  const parts = keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k]));
+  return '{' + parts.join(',') + '}';
+}
+
 export function computeFingerprint(dependencies: { id: string; version: number | string }[], data: object): string {
   // Sort dependencies for deterministic order
   const sortedDeps = [...dependencies].sort((a, b) => a.id.localeCompare(b.id));
-  const payload = JSON.stringify({ dependencies: sortedDeps, data });
+  const payload = stableStringify({ dependencies: sortedDeps, data });
   return createHash('sha256').update(payload).digest('hex');
 }
 

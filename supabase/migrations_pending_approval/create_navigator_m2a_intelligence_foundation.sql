@@ -88,13 +88,11 @@ create table public.navigator_intelligence_provenance (
     id uuid primary key default gen_random_uuid(),
     matter_id uuid not null references public.navigator_matters(id) on delete cascade,
     evidence_id uuid not null references public.navigator_evidence_items(id) on delete cascade,
-    -- Polymorphic reference to object, enforcing referential integrity with constraints/triggers
     object_id uuid not null,
     object_type text not null check(object_type in ('ENTITY','MENTION','RESOLUTION','EVENT','PARTICIPANT')),
     provenance_type text not null check(provenance_type in ('ASSERTS','SUPPORTS','DISPUTES','MENTIONS','DATES','IDENTIFIES','ATTRIBUTES','DERIVED_FROM')),
     created_at timestamptz not null default clock_timestamp()
 );
--- Enforce single matter boundary for provenance
 create unique index navigator_intelligence_provenance_matter_idx on public.navigator_intelligence_provenance(id, matter_id);
 
 -- 7. Audit History
@@ -113,7 +111,11 @@ create table public.navigator_intelligence_review_actions (
     check(from_state <> to_state or from_freshness <> to_freshness)
 );
 
--- Security: Append-only audit history
+-- ==========================================
+-- Security & Validation Triggers
+-- ==========================================
+
+-- A. Append-only audit history
 create function public.navigator_intelligence_review_action_guard() returns trigger
 language plpgsql security invoker set search_path=pg_catalog,public,pg_temp as $$
 begin raise exception 'Review history is append only'; end $$;
@@ -122,7 +124,7 @@ create trigger navigator_intelligence_review_action_immutable before update or d
 for each row execute function public.navigator_intelligence_review_action_guard();
 revoke all on function public.navigator_intelligence_review_action_guard() from public,anon,authenticated,service_role;
 
--- Security: Immutability of provenance
+-- B. Immutability of provenance
 create function public.navigator_provenance_immutable_guard() returns trigger
 language plpgsql security invoker set search_path=pg_catalog,public,pg_temp as $$
 begin raise exception 'Provenance is immutable'; end $$;
@@ -131,7 +133,52 @@ create trigger navigator_provenance_immutable before update on public.navigator_
 for each row execute function public.navigator_provenance_immutable_guard();
 revoke all on function public.navigator_provenance_immutable_guard() from public,anon,authenticated,service_role;
 
--- Matter-scoped referential integrity cross-checks
+-- C. Polymorphic target validation
+create function public.navigator_m2a_polymorphic_target_guard() returns trigger
+language plpgsql security invoker set search_path=pg_catalog,public,pg_temp as $$
+declare
+    target_matter_id uuid;
+begin
+    -- 1. Validate the polymorphic object reference
+    if NEW.object_type = 'ENTITY' then
+        select matter_id into target_matter_id from public.navigator_entities where id = NEW.object_id;
+    elsif NEW.object_type = 'MENTION' then
+        select matter_id into target_matter_id from public.navigator_entity_mentions where id = NEW.object_id;
+    elsif NEW.object_type = 'RESOLUTION' then
+        select matter_id into target_matter_id from public.navigator_identity_resolutions where id = NEW.object_id;
+    elsif NEW.object_type = 'EVENT' then
+        select matter_id into target_matter_id from public.navigator_events where id = NEW.object_id;
+    elsif NEW.object_type = 'PARTICIPANT' then
+        select matter_id into target_matter_id from public.navigator_event_participants where id = NEW.object_id;
+    else
+        raise exception 'Invalid object_type';
+    end if;
+
+    if target_matter_id is null then raise exception 'Target object does not exist'; end if;
+    if target_matter_id <> NEW.matter_id then raise exception 'Cross-matter target linkage denied'; end if;
+
+    -- 2. Validate evidence (if it is the provenance table)
+    if TG_TABLE_NAME = 'navigator_intelligence_provenance' then
+        declare ev_matter_id uuid;
+        begin
+            select matter_id into ev_matter_id from public.navigator_evidence_items where id = NEW.evidence_id;
+            if ev_matter_id is null then raise exception 'Evidence item does not exist'; end if;
+            if ev_matter_id <> NEW.matter_id then raise exception 'Cross-matter evidence linkage denied'; end if;
+        end;
+    end if;
+
+    return NEW;
+end $$;
+
+create trigger navigator_provenance_target_boundary before insert on public.navigator_intelligence_provenance
+for each row execute function public.navigator_m2a_polymorphic_target_guard();
+
+create trigger navigator_review_actions_target_boundary before insert on public.navigator_intelligence_review_actions
+for each row execute function public.navigator_m2a_polymorphic_target_guard();
+
+revoke all on function public.navigator_m2a_polymorphic_target_guard() from public,anon,authenticated,service_role;
+
+-- D. Direct Matter-scoped referential integrity cross-checks (FK logic for non-polymorphic)
 create function public.navigator_m2a_matter_boundary_guard() returns trigger
 language plpgsql security invoker set search_path=pg_catalog,public,pg_temp as $$
 declare
@@ -150,9 +197,6 @@ begin
         if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter event linkage denied'; end if;
         select matter_id into parent_matter_id from public.navigator_entities where id = NEW.entity_id;
         if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter entity linkage denied'; end if;
-    elsif TG_TABLE_NAME = 'navigator_intelligence_provenance' then
-        select matter_id into parent_matter_id from public.navigator_evidence_items where id = NEW.evidence_id;
-        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter evidence linkage denied'; end if;
     end if;
     return NEW;
 end $$;
@@ -166,9 +210,153 @@ for each row execute function public.navigator_m2a_matter_boundary_guard();
 create trigger navigator_participants_matter_boundary before insert or update on public.navigator_event_participants
 for each row execute function public.navigator_m2a_matter_boundary_guard();
 
-create trigger navigator_provenance_matter_boundary before insert on public.navigator_intelligence_provenance
-for each row execute function public.navigator_m2a_matter_boundary_guard();
 revoke all on function public.navigator_m2a_matter_boundary_guard() from public,anon,authenticated,service_role;
+
+-- E. Orphan Semantics (Hard-delete prevention if audit/provenance exists)
+create function public.navigator_m2a_orphan_guard() returns trigger
+language plpgsql security invoker set search_path=pg_catalog,public,pg_temp as $$
+declare
+    has_history boolean;
+    has_provenance boolean;
+begin
+    select exists(select 1 from public.navigator_intelligence_review_actions where object_id = OLD.id) into has_history;
+    if has_history then raise exception 'Cannot delete intelligence object with review history'; end if;
+
+    select exists(select 1 from public.navigator_intelligence_provenance where object_id = OLD.id) into has_provenance;
+    if has_provenance then raise exception 'Cannot delete intelligence object with provenance associations'; end if;
+
+    return OLD;
+end $$;
+
+create trigger navigator_entities_orphan_guard before delete on public.navigator_entities for each row execute function public.navigator_m2a_orphan_guard();
+create trigger navigator_mentions_orphan_guard before delete on public.navigator_entity_mentions for each row execute function public.navigator_m2a_orphan_guard();
+create trigger navigator_resolutions_orphan_guard before delete on public.navigator_identity_resolutions for each row execute function public.navigator_m2a_orphan_guard();
+create trigger navigator_events_orphan_guard before delete on public.navigator_events for each row execute function public.navigator_m2a_orphan_guard();
+create trigger navigator_participants_orphan_guard before delete on public.navigator_event_participants for each row execute function public.navigator_m2a_orphan_guard();
+revoke all on function public.navigator_m2a_orphan_guard() from public,anon,authenticated,service_role;
+
+-- F. AI vs Human Confirmation Enforcer
+create function public.navigator_m2a_review_state_guard() returns trigger
+language plpgsql security invoker set search_path=pg_catalog,public,pg_temp as $$
+begin
+    if TG_OP = 'INSERT' then
+        if NEW.review_state = 'CONFIRMED' then
+            raise exception 'New candidates must start as PROPOSED and cannot be CONFIRMED directly';
+        end if;
+    elsif TG_OP = 'UPDATE' then
+        -- valid transitions:
+        -- PROPOSED -> CONFIRMED, REJECTED, DISPUTED
+        -- CONFIRMED -> REJECTED, DISPUTED
+        -- REJECTED -> CONFIRMED, DISPUTED
+        -- DISPUTED -> CONFIRMED, REJECTED
+        -- Basically, anything to anything, as long as it's not arbitrary.
+        if NEW.review_state <> OLD.review_state then
+            if NEW.review_state = 'CONFIRMED' and coalesce(current_setting('navigator.human_review', true), '') <> '1' then
+                raise exception 'CONFIRMED state requires authenticated human review RPC pathway';
+            end if;
+        end if;
+    end if;
+    return NEW;
+end $$;
+
+create trigger navigator_entities_review_guard before insert or update on public.navigator_entities for each row execute function public.navigator_m2a_review_state_guard();
+create trigger navigator_mentions_review_guard before insert or update on public.navigator_entity_mentions for each row execute function public.navigator_m2a_review_state_guard();
+create trigger navigator_resolutions_review_guard before insert or update on public.navigator_identity_resolutions for each row execute function public.navigator_m2a_review_state_guard();
+create trigger navigator_events_review_guard before insert or update on public.navigator_events for each row execute function public.navigator_m2a_review_state_guard();
+create trigger navigator_participants_review_guard before insert or update on public.navigator_event_participants for each row execute function public.navigator_m2a_review_state_guard();
+revoke all on function public.navigator_m2a_review_state_guard() from public,anon,authenticated,service_role;
+
+-- G. Controlled Human Review Pathway RPC
+create function public.navigator_intelligence_review_update(
+    p_uid text,
+    p_matter_id uuid,
+    p_object_type text,
+    p_object_id uuid,
+    p_state text,
+    p_expected_updated_at timestamptz
+) returns jsonb
+language plpgsql volatile security invoker set search_path=pg_catalog,public,pg_temp set lock_timeout='5s' set timezone='UTC' as $$
+declare
+    actor uuid;
+    previous_state text;
+    previous_freshness text;
+    new_updated_at timestamptz;
+    action public.navigator_intelligence_review_actions%rowtype;
+begin
+    select id into actor from public.accounts where firebase_uid=p_uid for update;
+    perform 1 from public.read_navigator_owned_matter(p_uid,p_matter_id);
+    if not found then raise exception using errcode='P0002',message='Not found'; end if;
+    
+    if p_state is null or p_expected_updated_at is null or p_state not in ('PROPOSED','CONFIRMED','REJECTED','DISPUTED') then
+        raise exception using errcode='22023',message='Invalid review';
+    end if;
+
+    if p_object_type not in ('ENTITY','MENTION','RESOLUTION','EVENT','PARTICIPANT') then
+        raise exception using errcode='22023',message='Invalid object_type';
+    end if;
+
+    -- Set context for human review so trigger allows CONFIRMED
+    perform set_config('navigator.human_review', '1', true);
+
+    -- Switch based on polymorphic type
+    if p_object_type = 'ENTITY' then
+        declare tgt public.navigator_entities%rowtype; begin
+        select * into tgt from public.navigator_entities where id = p_object_id and matter_id = p_matter_id for update;
+        if not found then raise exception using errcode='P0002',message='Not found'; end if;
+        if tgt.updated_at is distinct from p_expected_updated_at then raise exception using errcode='40001',message='Review conflict'; end if;
+        if tgt.review_state = p_state then return jsonb_build_object('id',tgt.id,'review_state',tgt.review_state,'updated_at',tgt.updated_at,'changed',false); end if;
+        previous_state := tgt.review_state; previous_freshness := tgt.freshness_state;
+        update public.navigator_entities set review_state = p_state, updated_at = clock_timestamp() where id = tgt.id returning updated_at into new_updated_at;
+        end;
+    elsif p_object_type = 'MENTION' then
+        declare tgt public.navigator_entity_mentions%rowtype; begin
+        select * into tgt from public.navigator_entity_mentions where id = p_object_id and matter_id = p_matter_id for update;
+        if not found then raise exception using errcode='P0002',message='Not found'; end if;
+        if tgt.updated_at is distinct from p_expected_updated_at then raise exception using errcode='40001',message='Review conflict'; end if;
+        if tgt.review_state = p_state then return jsonb_build_object('id',tgt.id,'review_state',tgt.review_state,'updated_at',tgt.updated_at,'changed',false); end if;
+        previous_state := tgt.review_state; previous_freshness := tgt.freshness_state;
+        update public.navigator_entity_mentions set review_state = p_state, updated_at = clock_timestamp() where id = tgt.id returning updated_at into new_updated_at;
+        end;
+    elsif p_object_type = 'RESOLUTION' then
+        declare tgt public.navigator_identity_resolutions%rowtype; begin
+        select * into tgt from public.navigator_identity_resolutions where id = p_object_id and matter_id = p_matter_id for update;
+        if not found then raise exception using errcode='P0002',message='Not found'; end if;
+        if tgt.updated_at is distinct from p_expected_updated_at then raise exception using errcode='40001',message='Review conflict'; end if;
+        if tgt.review_state = p_state then return jsonb_build_object('id',tgt.id,'review_state',tgt.review_state,'updated_at',tgt.updated_at,'changed',false); end if;
+        previous_state := tgt.review_state; previous_freshness := tgt.freshness_state;
+        update public.navigator_identity_resolutions set review_state = p_state, updated_at = clock_timestamp() where id = tgt.id returning updated_at into new_updated_at;
+        end;
+    elsif p_object_type = 'EVENT' then
+        declare tgt public.navigator_events%rowtype; begin
+        select * into tgt from public.navigator_events where id = p_object_id and matter_id = p_matter_id for update;
+        if not found then raise exception using errcode='P0002',message='Not found'; end if;
+        if tgt.updated_at is distinct from p_expected_updated_at then raise exception using errcode='40001',message='Review conflict'; end if;
+        if tgt.review_state = p_state then return jsonb_build_object('id',tgt.id,'review_state',tgt.review_state,'updated_at',tgt.updated_at,'changed',false); end if;
+        previous_state := tgt.review_state; previous_freshness := tgt.freshness_state;
+        update public.navigator_events set review_state = p_state, updated_at = clock_timestamp() where id = tgt.id returning updated_at into new_updated_at;
+        end;
+    elsif p_object_type = 'PARTICIPANT' then
+        declare tgt public.navigator_event_participants%rowtype; begin
+        select * into tgt from public.navigator_event_participants where id = p_object_id and matter_id = p_matter_id for update;
+        if not found then raise exception using errcode='P0002',message='Not found'; end if;
+        if tgt.updated_at is distinct from p_expected_updated_at then raise exception using errcode='40001',message='Review conflict'; end if;
+        if tgt.review_state = p_state then return jsonb_build_object('id',tgt.id,'review_state',tgt.review_state,'updated_at',tgt.updated_at,'changed',false); end if;
+        previous_state := tgt.review_state; previous_freshness := tgt.freshness_state;
+        update public.navigator_event_participants set review_state = p_state, updated_at = clock_timestamp() where id = tgt.id returning updated_at into new_updated_at;
+        end;
+    end if;
+
+    -- Create audit record
+    insert into public.navigator_intelligence_review_actions(
+        matter_id, object_id, object_type, actor_account_id, from_state, to_state, from_freshness, to_freshness, object_updated_at
+    ) values (
+        p_matter_id, p_object_id, p_object_type, actor, previous_state, p_state, previous_freshness, previous_freshness, new_updated_at
+    ) returning * into action;
+
+    return jsonb_build_object('id',p_object_id,'review_state',p_state,'updated_at',new_updated_at,'changed',true,'review_action',to_jsonb(action));
+end $$;
+revoke all on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) from public,anon,authenticated,service_role;
+grant execute on function public.navigator_intelligence_review_update(text,uuid,text,uuid,text,timestamptz) to service_role;
 
 -- RLS Enablement
 alter table public.navigator_entities enable row level security;

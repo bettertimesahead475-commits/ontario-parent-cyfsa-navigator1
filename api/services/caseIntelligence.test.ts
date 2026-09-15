@@ -90,6 +90,13 @@ describe('m2a-deterministic case intelligence logic', () => {
       const deps2 = [{id: 'a', version: 2}];
       expect(computeFingerprint(deps1, {})).not.toEqual(computeFingerprint(deps2, {}));
     });
+
+    it('is deterministic regardless of object key order', () => {
+      const deps = [{id: 'a', version: 1}];
+      const data1 = { a: 1, b: 2, c: { d: 3, e: 4 } };
+      const data2 = { b: 2, a: 1, c: { e: 4, d: 3 } };
+      expect(computeFingerprint(deps, data1)).toEqual(computeFingerprint(deps, data2));
+    });
   });
 
   describe('Provenance Types', () => {
