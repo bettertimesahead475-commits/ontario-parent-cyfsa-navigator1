@@ -6,8 +6,9 @@ export interface EventTiming {
     date_precision: DatePrecision;
     date_lower_bound: string | null;
     date_upper_bound: string | null;
-    created_at?: string; // Should be ignored for sorting
-    updated_at?: string; // Should be ignored for sorting
+    provenance_id?: string;
+    created_at?: string;
+    updated_at?: string;
 }
 
 export interface ExplicitRelationship {
@@ -16,6 +17,7 @@ export interface ExplicitRelationship {
     source_event_id: string;
     target_event_id: string;
     relationship_type: TemporalComparison;
+    provenance_id?: string;
 }
 
 export interface ChronologyConflict {
@@ -29,6 +31,7 @@ export interface ChronologyEdge {
     targetId: string;
     relationship: TemporalComparison;
     isExplicit: boolean;
+    dependencies: string[];
 }
 
 export interface ChronologyProjection {
@@ -37,6 +40,11 @@ export interface ChronologyProjection {
     conflicts: ChronologyConflict[];
     fingerprint: string;
 }
+function validateIso(value: string | null): void {
+    if (!value) return;
+    const t = Date.parse(value);
+    if (isNaN(t)) throw new Error(`Invalid date string: ${value}`);
+}
 
 export function compareChronologyEvents(a: EventTiming, b: EventTiming): TemporalComparison {
     if (a.matter_id !== b.matter_id) {
@@ -44,58 +52,57 @@ export function compareChronologyEvents(a: EventTiming, b: EventTiming): Tempora
     }
 
     if (a.id === b.id) {
-        if (a.date_precision === 'UNKNOWN') return 'INDETERMINATE_ORDER';
-        if (a.date_precision === 'DATE_RANGE') return 'OVERLAPS';
-        if (a.date_precision === 'EXACT_DATETIME' || a.date_precision === 'EXACT_DATE') return 'SAME_KNOWN_DATE';
         return 'INDETERMINATE_ORDER';
     }
-
-    if (a.date_precision === 'UNKNOWN' && b.date_precision === 'UNKNOWN') {
-        return 'INDETERMINATE_ORDER';
-    }
-
-    const aLower = a.date_lower_bound ? new Date(a.date_lower_bound).getTime() : -Infinity;
-    const aUpper = a.date_upper_bound ? new Date(a.date_upper_bound).getTime() : Infinity;
-    const bLower = b.date_lower_bound ? new Date(b.date_lower_bound).getTime() : -Infinity;
-    const bUpper = b.date_upper_bound ? new Date(b.date_upper_bound).getTime() : Infinity;
-
-    if (aLower !== -Infinity && aUpper !== Infinity && aLower > aUpper) throw new Error('Malformed date bounds: reversed range');
-    if (bLower !== -Infinity && bUpper !== Infinity && bLower > bUpper) throw new Error('Malformed date bounds: reversed range');
 
     if (a.date_precision === 'UNKNOWN' || b.date_precision === 'UNKNOWN') {
         return 'INDETERMINATE_ORDER';
     }
 
-    if (aUpper < bLower) return 'BEFORE';
-    if (aLower > bUpper) return 'AFTER';
+    validateIso(a.date_lower_bound);
+    validateIso(a.date_upper_bound);
+    validateIso(b.date_lower_bound);
+    validateIso(b.date_upper_bound);
 
-    if (a.date_precision === 'EXACT_DATETIME' && b.date_precision === 'EXACT_DATETIME') {
-        if (aLower === bLower && aUpper === bUpper && aLower !== -Infinity) return 'SAME_KNOWN_DATE'; 
+    let aLower = a.date_lower_bound ? Date.parse(a.date_lower_bound) : -Infinity;
+    let aUpper = a.date_upper_bound ? Date.parse(a.date_upper_bound) : Infinity;
+    let bLower = b.date_lower_bound ? Date.parse(b.date_lower_bound) : -Infinity;
+    let bUpper = b.date_upper_bound ? Date.parse(b.date_upper_bound) : Infinity;
+
+    if (isNaN(aLower) || isNaN(aUpper) || isNaN(bLower) || isNaN(bUpper)) {
+        throw new Error('NaN timestamp resulted from date parsing');
     }
 
+    if (aLower !== -Infinity && aUpper !== Infinity && aLower > aUpper) throw new Error('Malformed date bounds: reversed range');
+    if (bLower !== -Infinity && bUpper !== Infinity && bLower > bUpper) throw new Error('Malformed date bounds: reversed range');
+
+    // EXACT_DATE midnight fix: expand calendar day uncertainty to span the 24h day if both bounds are the same midnight
+    if (a.date_precision === 'EXACT_DATE' && aLower !== -Infinity && aLower === aUpper) {
+        aUpper += 24 * 60 * 60 * 1000 - 1;
+    }
+    if (b.date_precision === 'EXACT_DATE' && bLower !== -Infinity && bLower === bUpper) {
+        bUpper += 24 * 60 * 60 * 1000 - 1;
+    }
+
+    // Identical exact instants -> OVERLAPS
+    if (a.date_precision === 'EXACT_DATETIME' && b.date_precision === 'EXACT_DATETIME') {
+        if (aLower === bLower && aUpper === bUpper && aLower !== -Infinity) return 'OVERLAPS';
+    }
+
+    // SAME_KNOWN_DATE for calendar day match
     if (a.date_precision === 'EXACT_DATE' && b.date_precision === 'EXACT_DATE') {
         if (aLower === bLower && aUpper === bUpper && aLower !== -Infinity) return 'SAME_KNOWN_DATE';
     }
 
-    const isRange = (p: DatePrecision) => p === 'DATE_RANGE';
-    const isPoint = (p: DatePrecision) => p === 'EXACT_DATETIME'; 
-    const hasKnownDuration = (p: DatePrecision) => isRange(p) || isPoint(p);
+    // Directional bounds checks
+    if (aUpper < bLower) return 'BEFORE';
+    if (aLower > bUpper) return 'AFTER';
 
-    if (hasKnownDuration(a.date_precision) && hasKnownDuration(b.date_precision)) {
-        if (aLower <= bUpper && aUpper >= bLower) {
-            if (a.date_precision === 'EXACT_DATETIME' && b.date_precision === 'EXACT_DATETIME') return 'SAME_KNOWN_DATE';
-            return 'OVERLAPS';
-        }
-    }
-
-    if (isRange(a.date_precision) && !hasKnownDuration(b.date_precision)) {
-        if (bLower >= aLower && bUpper <= aUpper && bLower !== -Infinity && bUpper !== Infinity) return 'OVERLAPS';
-    }
-
-    if (isRange(b.date_precision) && !hasKnownDuration(a.date_precision)) {
-        if (aLower >= bLower && aUpper <= bUpper && aLower !== -Infinity && aUpper !== Infinity) return 'OVERLAPS';
-    }
-
+    // DATE_RANGE represents established occurrence interval in M2-A?
+    // The audit requires us to define DATE_RANGE conservatively as "occurrence uncertainty" if M2-A does not establish continuous occurrence.
+    // Given the ambiguity in M2-A, we treat DATE_RANGE as occurrence uncertainty. 
+    // Therefore, containment inside DATE_RANGE does NOT establish OVERLAPS.
+    
     return 'INDETERMINATE_ORDER';
 }
 
@@ -104,36 +111,55 @@ export function buildChronologyProjection(
     events: EventTiming[], 
     explicitRelationships: ExplicitRelationship[] = []
 ): ChronologyProjection {
+    if (events.length > 1000) {
+        throw new Error('Chronology event limit exceeded (max 1000)');
+    }
+
     const edges: ChronologyEdge[] = [];
     const conflicts: ChronologyConflict[] = [];
 
-    // Ensure all events belong to the matter
     for (const event of events) {
         if (event.matter_id !== matterId) throw new Error('Cross-matter event rejected');
     }
     for (const rel of explicitRelationships) {
         if (rel.matter_id !== matterId) throw new Error('Cross-matter relationship rejected');
+        if (rel.source_event_id === rel.target_event_id) throw new Error('Self-directional constraint rejected');
+        
+        const aExists = events.some(e => e.id === rel.source_event_id);
+        const bExists = events.some(e => e.id === rel.target_event_id);
+        if (!aExists || !bExists) throw new Error('Constraint references missing event');
     }
 
-    // 1. Compute bounds-based edges for all safely orderable pairs
-    // We only compute A -> B to avoid duplicates.
+    // 1. Compute bounds-based edges
     for (let i = 0; i < events.length; i++) {
         for (let j = i + 1; j < events.length; j++) {
             const a = events[i];
             const b = events[j];
             const comp = compareChronologyEvents(a, b);
             if (comp !== 'INDETERMINATE_ORDER') {
+                const dependencies = [a.id, b.id];
+                if (a.provenance_id) dependencies.push(a.provenance_id);
+                if (b.provenance_id) dependencies.push(b.provenance_id);
                 edges.push({
                     sourceId: a.id,
                     targetId: b.id,
                     relationship: comp,
-                    isExplicit: false
+                    isExplicit: false,
+                    dependencies
                 });
             }
         }
     }
 
-    // 2. Add explicit relationships and check for direct contradictions
+    // 2. Explicit Constraints and Direct Conflicts
+    const explicitMap = new Map<string, ExplicitRelationship[]>();
+    for (const rel of explicitRelationships) {
+        if (rel.relationship_type === 'INDETERMINATE_ORDER') continue;
+        const key = `${rel.source_event_id}|${rel.target_event_id}`;
+        if (!explicitMap.has(key)) explicitMap.set(key, []);
+        explicitMap.get(key)!.push(rel);
+    }
+
     for (const rel of explicitRelationships) {
         if (rel.relationship_type === 'INDETERMINATE_ORDER') continue;
         
@@ -141,41 +167,69 @@ export function buildChronologyProjection(
         const b = events.find(e => e.id === rel.target_event_id);
         if (!a || !b) continue;
 
-        const boundsComp = compareChronologyEvents(a, b);
-        let contradiction = false;
-
-        if (boundsComp !== 'INDETERMINATE_ORDER') {
-            if (boundsComp === 'BEFORE' && (rel.relationship_type === 'AFTER' || rel.relationship_type === 'SAME_KNOWN_DATE' || rel.relationship_type === 'OVERLAPS')) contradiction = true;
-            if (boundsComp === 'AFTER' && (rel.relationship_type === 'BEFORE' || rel.relationship_type === 'SAME_KNOWN_DATE' || rel.relationship_type === 'OVERLAPS')) contradiction = true;
-            // Overlaps and SAME_KNOWN_DATE conflicts
-            if (boundsComp === 'SAME_KNOWN_DATE' && (rel.relationship_type === 'BEFORE' || rel.relationship_type === 'AFTER')) contradiction = true;
+        let directConflict = false;
+        
+        // Same direction explicit conflicts
+        const sameRels = explicitMap.get(`${rel.source_event_id}|${rel.target_event_id}`) || [];
+        for (const sr of sameRels) {
+            if (rel.relationship_type === 'BEFORE' && (sr.relationship_type === 'AFTER' || sr.relationship_type === 'SAME_KNOWN_DATE' || sr.relationship_type === 'OVERLAPS')) directConflict = true;
+            if (rel.relationship_type === 'AFTER' && (sr.relationship_type === 'BEFORE' || sr.relationship_type === 'SAME_KNOWN_DATE' || sr.relationship_type === 'OVERLAPS')) directConflict = true;
+            if (rel.relationship_type === 'SAME_KNOWN_DATE' && (sr.relationship_type === 'BEFORE' || sr.relationship_type === 'AFTER')) directConflict = true;
+            if (rel.relationship_type === 'OVERLAPS' && (sr.relationship_type === 'BEFORE' || sr.relationship_type === 'AFTER')) directConflict = true;
         }
 
-        if (contradiction) {
-            conflicts.push({
-                type: 'CONFLICTING_CONSTRAINTS',
-                eventIds: [a.id, b.id],
-                description: `Temporal inconsistency requiring review: Available source dates do not establish a deterministic ordering consistent with the explicit constraint.`
-            });
+        // Reverse direction explicit conflicts
+        const revRels = explicitMap.get(`${rel.target_event_id}|${rel.source_event_id}`) || [];
+        for (const rr of revRels) {
+            if (rel.relationship_type === 'BEFORE' && (rr.relationship_type === 'BEFORE' || rr.relationship_type === 'SAME_KNOWN_DATE' || rr.relationship_type === 'OVERLAPS')) directConflict = true;
+            if (rel.relationship_type === 'AFTER' && (rr.relationship_type === 'AFTER' || rr.relationship_type === 'SAME_KNOWN_DATE' || rr.relationship_type === 'OVERLAPS')) directConflict = true;
+            if (rel.relationship_type === 'SAME_KNOWN_DATE' && (rr.relationship_type === 'BEFORE' || rr.relationship_type === 'AFTER')) directConflict = true;
+            if (rel.relationship_type === 'OVERLAPS' && (rr.relationship_type === 'BEFORE' || rr.relationship_type === 'AFTER')) directConflict = true;
+        }
+
+        // Check against deterministic bounds
+        const boundsComp = compareChronologyEvents(a, b);
+        if (boundsComp !== 'INDETERMINATE_ORDER') {
+            if (boundsComp === 'BEFORE' && (rel.relationship_type === 'AFTER' || rel.relationship_type === 'SAME_KNOWN_DATE' || rel.relationship_type === 'OVERLAPS')) directConflict = true;
+            if (boundsComp === 'AFTER' && (rel.relationship_type === 'BEFORE' || rel.relationship_type === 'SAME_KNOWN_DATE' || rel.relationship_type === 'OVERLAPS')) directConflict = true;
+            if (boundsComp === 'SAME_KNOWN_DATE' && (rel.relationship_type === 'BEFORE' || rel.relationship_type === 'AFTER')) directConflict = true;
+            if (boundsComp === 'OVERLAPS' && (rel.relationship_type === 'BEFORE' || rel.relationship_type === 'AFTER')) directConflict = true;
+        }
+
+        if (directConflict) {
+            // Avoid pushing duplicate conflict for the same pair
+            const existingConflict = conflicts.find(c => c.type === 'CONFLICTING_CONSTRAINTS' && c.eventIds.includes(a.id) && c.eventIds.includes(b.id));
+            if (!existingConflict) {
+                conflicts.push({
+                    type: 'CONFLICTING_CONSTRAINTS',
+                    eventIds: [a.id, b.id],
+                    description: `Temporal inconsistency requiring review: Available source dates do not establish a deterministic ordering consistent with the explicit constraint.`
+                });
+            }
         } else {
-            // Check if we need to add it or if it's already represented (e.g. they align)
             const existingEdge = edges.find(e => 
                 (e.sourceId === a.id && e.targetId === b.id) ||
                 (e.sourceId === b.id && e.targetId === a.id)
             );
             if (!existingEdge) {
+                const dependencies = [rel.id];
+                if (rel.provenance_id) dependencies.push(rel.provenance_id);
                 edges.push({
                     sourceId: a.id,
                     targetId: b.id,
                     relationship: rel.relationship_type,
-                    isExplicit: true
+                    isExplicit: true,
+                    dependencies
                 });
+            } else if (existingEdge.isExplicit) {
+                // Combine dependencies if multiple constraints yield same edge
+                if (!existingEdge.dependencies.includes(rel.id)) existingEdge.dependencies.push(rel.id);
+                if (rel.provenance_id && !existingEdge.dependencies.includes(rel.provenance_id)) existingEdge.dependencies.push(rel.provenance_id);
             }
         }
     }
 
-    // 3. Detect Cycles (A BEFORE B, B BEFORE C, C BEFORE A)
-    // Build a directed graph for BEFORE/AFTER
+    // 3. DFS Cycle Detection (only directional edges)
     const adj = new Map<string, string[]>();
     for (const edge of edges) {
         if (!adj.has(edge.sourceId)) adj.set(edge.sourceId, []);
@@ -185,15 +239,9 @@ export function buildChronologyProjection(
             adj.get(edge.sourceId)!.push(edge.targetId);
         } else if (edge.relationship === 'AFTER') {
             adj.get(edge.targetId)!.push(edge.sourceId);
-        } else if (edge.relationship === 'SAME_KNOWN_DATE' || edge.relationship === 'OVERLAPS') {
-            // Technically they share temporal space, so if A BEFORE B, and B SAME C, A BEFORE C.
-            // We can model SAME_KNOWN_DATE as bidirectional BEFORE for cycle detection to force a cycle if ordered.
-            adj.get(edge.sourceId)!.push(edge.targetId);
-            adj.get(edge.targetId)!.push(edge.sourceId);
         }
     }
 
-    // Standard DFS cycle detection
     const visited = new Set<string>();
     const recStack = new Set<string>();
     const cycleNodes: string[] = [];
@@ -227,13 +275,12 @@ export function buildChronologyProjection(
                     eventIds: Array.from(new Set(cycleNodes)),
                     description: 'Candidate events have conflicting temporal constraints forming an impossible cycle.'
                 });
-                break; // Just report one cycle for simplicity
+                break;
             }
         }
     }
 
     // 4. Compute fingerprint
-    // Sort events purely by ID and deterministic properties, explicitly excluding created_at, updated_at, db order
     const orderedEvents = [...events].sort((a, b) => a.id.localeCompare(b.id)).map(e => ({
         id: e.id,
         precision: e.date_precision,
