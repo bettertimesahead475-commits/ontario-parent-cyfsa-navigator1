@@ -33,7 +33,7 @@ describe('Human Review Database Capability Boundary', () => {
     })).rejects.toThrow('Missing HUMAN_REVIEW_DATABASE_URL');
   });
 
-  it('uses HUMAN_REVIEW_DATABASE_URL to create a dedicated pool', async () => {
+  it('uses HUMAN_REVIEW_DATABASE_URL to create a dedicated pool with safe TLS and max: 1 pooling', async () => {
     process.env.HUMAN_REVIEW_DATABASE_URL = 'postgres://fake-human-reviewer:pass@127.0.0.1:5432/db';
     
     const { executeHumanReview } = await import('./humanReviewAccess.js');
@@ -43,5 +43,29 @@ describe('Human Review Database Capability Boundary', () => {
     
     expect(res.data).toEqual({ result: 'ok' });
     expect(res.error).toBeNull();
+
+    // Verify Pool was called correctly
+    const pg = await import('pg');
+    expect(pg.default.Pool).toHaveBeenCalledTimes(1);
+    
+    const poolArgs = vi.mocked(pg.default.Pool).mock.calls[0][0];
+    
+    // Pooling preservation
+    expect(poolArgs?.max).toBe(1);
+    
+    // TLS preservation / proof of insecure removal
+    if (poolArgs?.ssl) {
+      if (typeof poolArgs.ssl === 'object') {
+        expect(poolArgs.ssl.rejectUnauthorized).not.toBe(false);
+      }
+    }
+    
+    // Verify parameterized RPC
+    const poolMock = vi.mocked(pg.default.Pool).mock.results[0].value;
+    const clientMock = await poolMock.connect();
+    expect(clientMock.query).toHaveBeenCalledTimes(1);
+    const queryArgs = clientMock.query.mock.calls[0];
+    expect(queryArgs[0]).toContain('SELECT public.navigator_intelligence_review_update($1, $2, $3, $4, $5, $6)');
+    expect(queryArgs[1]).toEqual(['u', 'm', 'ENTITY', 'o', 'CONFIRMED', 'd']);
   });
 });

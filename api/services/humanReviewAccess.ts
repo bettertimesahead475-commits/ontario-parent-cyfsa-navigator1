@@ -18,8 +18,7 @@ export async function executeHumanReview(params: {
   if (!pool) {
     pool = new pg.Pool({
       connectionString: url,
-      max: 1,
-      ssl: { rejectUnauthorized: false }
+      max: 1
     });
   }
 
