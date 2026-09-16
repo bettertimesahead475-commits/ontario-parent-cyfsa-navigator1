@@ -33,8 +33,27 @@ describe('Human Review Database Capability Boundary', () => {
     })).rejects.toThrow('Missing HUMAN_REVIEW_DATABASE_URL');
   });
 
+  it('rejects missing or insecure TLS configurations', async () => {
+    const { executeHumanReview } = await import('./humanReviewAccess.js');
+    const cases = [
+      'postgres://user:pass@host/db',
+      'postgres://user:pass@host/db?sslmode=disable',
+      'postgres://user:pass@host/db?sslmode=allow',
+      'postgres://user:pass@host/db?sslmode=prefer',
+      'postgres://user:pass@host/db?sslmode=require',
+      'postgres://user:pass@host/db?sslmode=verify-full&sslmode=disable',
+      'not-a-url'
+    ];
+    for (const url of cases) {
+      process.env.HUMAN_REVIEW_DATABASE_URL = url;
+      await expect(executeHumanReview({
+        uid: 'u', matterId: 'm', objectType: 'ENTITY', objectId: 'o', state: 'CONFIRMED', expectedUpdatedAt: 'd'
+      })).rejects.toThrow('HUMAN_REVIEW_DATABASE_URL connection string requires exactly sslmode=verify-full for verified TLS.');
+    }
+  });
+
   it('uses HUMAN_REVIEW_DATABASE_URL to create a dedicated pool with safe TLS and max: 1 pooling', async () => {
-    process.env.HUMAN_REVIEW_DATABASE_URL = 'postgres://fake-human-reviewer:pass@127.0.0.1:5432/db';
+    process.env.HUMAN_REVIEW_DATABASE_URL = 'postgres://fake-human-reviewer:pass@127.0.0.1:5432/db?sslmode=verify-full';
     
     const { executeHumanReview } = await import('./humanReviewAccess.js');
     const res = await executeHumanReview({
@@ -52,13 +71,6 @@ describe('Human Review Database Capability Boundary', () => {
     
     // Pooling preservation
     expect(poolArgs?.max).toBe(1);
-    
-    // TLS preservation / proof of insecure removal
-    if (poolArgs?.ssl) {
-      if (typeof poolArgs.ssl === 'object') {
-        expect(poolArgs.ssl.rejectUnauthorized).not.toBe(false);
-      }
-    }
     
     // Verify parameterized RPC
     const poolMock = vi.mocked(pg.default.Pool).mock.results[0].value;

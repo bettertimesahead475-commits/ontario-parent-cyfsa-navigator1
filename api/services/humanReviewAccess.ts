@@ -15,6 +15,16 @@ export async function executeHumanReview(params: {
     throw new Error('Missing HUMAN_REVIEW_DATABASE_URL. Human review DB capability is unconfigured.');
   }
 
+  try {
+    const parsedUrl = new URL(url);
+    const sslmodes = parsedUrl.searchParams.getAll('sslmode');
+    if (sslmodes.length !== 1 || sslmodes[0] !== 'verify-full') {
+      throw new Error('insecure');
+    }
+  } catch {
+    throw new Error('HUMAN_REVIEW_DATABASE_URL connection string requires exactly sslmode=verify-full for verified TLS.');
+  }
+
   if (!pool) {
     pool = new pg.Pool({
       connectionString: url,
