@@ -229,6 +229,34 @@ export function generateEvidenceGaps(matterId: string, ctx: M2EContext): M2EFind
     }
 
     // Check claim evolution
+    const isMateriallyConnected = ctx.relationships.some(r => r.claimAId === claim.id || r.claimBId === claim.id);
+    
+    if (isMateriallyConnected) {
+        if (claim.reviewState === 'PROPOSED' || claim.reviewState === 'DISPUTED') {
+            findings.push(createFinding(
+              matterId,
+              'EVIDENCE_QUALITY_REVIEW',
+              'HIGH',
+              'Quality review required for claim ' + claim.id,
+              'Material evidence requires human quality review before it can be relied upon.',
+              { claimIds: [claim.id], semanticFingerprints: { ...semanticFingerprints } }
+            ));
+        }
+
+        for (const attr of claimAttributions) {
+            if (attr.attributionType === 'UNKNOWN') {
+                findings.push(createFinding(
+                  matterId,
+                  'EVIDENCE_QUALITY_REVIEW',
+                  'HIGH',
+                  'Provenance quality review required for claim ' + claim.id,
+                  'Material evidence has incomplete structured provenance (UNKNOWN attribution).',
+                  { claimIds: [claim.id], attributionIds: [attr.id], semanticFingerprints: { ...semanticFingerprints } }
+                ));
+            }
+        }
+    }
+
     const evolutions = ctx.relationships.filter(r => 
         (r.claimAId === claim.id || r.claimBId === claim.id) && r.evolutionContext !== undefined
     );
@@ -298,6 +326,35 @@ export function generateEvidenceGaps(matterId: string, ctx: M2EContext): M2EFind
           'Location is material to the structured event/claim and remains unresolved or ambiguous.',
           { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(), semanticFingerprints }
         ));
+    }
+
+    const isSupport = rel.relationshipType === 'INDEPENDENT_SUPPORT' || rel.relationshipType === 'DEPENDENT_SUPPORT' || rel.relationshipType === 'CONSISTENT_WITH';
+    if (isSupport) {
+        let needsReview = false;
+        let reason = '';
+        
+        if (rel.independenceStatus === 'UNKNOWN_INDEPENDENCE') {
+            needsReview = true;
+            reason = 'Important support has unresolved source/attribution quality (UNKNOWN_INDEPENDENCE).';
+        } else if (rel.reviewState === 'PROPOSED' || rel.reviewState === 'DISPUTED') {
+            needsReview = true;
+            reason = 'Important support relationship explicitly requires human verification.';
+        }
+
+        if (needsReview) {
+            const semanticFingerprints: Record<string, string> = { [rel.id]: rel.fingerprint };
+            if (claimFingerprints.has(rel.claimAId)) semanticFingerprints[rel.claimAId] = claimFingerprints.get(rel.claimAId)!;
+            if (claimFingerprints.has(rel.claimBId)) semanticFingerprints[rel.claimBId] = claimFingerprints.get(rel.claimBId)!;
+            
+            findings.push(createFinding(
+                matterId,
+                'EVIDENCE_QUALITY_REVIEW',
+                'HIGH',
+                'Quality review required for support relationship ' + rel.id,
+                reason,
+                { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(), semanticFingerprints }
+            ));
+        }
     }
   }
 

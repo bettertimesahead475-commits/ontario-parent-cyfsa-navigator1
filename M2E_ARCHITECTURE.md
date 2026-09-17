@@ -1,4 +1,4 @@
-﻿# M2-E Architecture: Evidence Gaps, Unanswered Questions & Integrated Case Intelligence
+# M2-E Architecture: Evidence Gaps, Unanswered Questions & Integrated Case Intelligence
 
 ## Scope
 M2-E is the final major Stage-5 case-intelligence component. It deterministically identifies where the CASE RECORD appears incomplete, unresolved, weakly supported, internally uncertain, or in need of human review. It does not generate legal conclusions or determine truthfulness.
@@ -20,7 +20,7 @@ M2-E is the final major Stage-5 case-intelligence component. It deterministicall
 - \UNRESOLVED_CONFLICT\: Open contradiction/inconsistency from M2-D.
 - \UNRESOLVED_CLAIM_EVOLUTION\: Claim evolution with uncertain state.
 - \ATTRIBUTION_GAP\: Original speaker/source unresolved.
-- \EVIDENCE_QUALITY_REVIEW\: Deterministic quality/reliability issue.
+- \EVIDENCE_QUALITY_REVIEW\: Material structured quality uncertainty requiring human review or source verification (e.g., unresolved attribution quality or explicit PROPOSED/DISPUTED review state).
 - \UNANSWERED_QUESTION\: Deterministic question from unresolved case-record conditions.
 - \HUMAN_REVIEW_REQUIRED\: Safety fallback for unclassifiable unresolved material issues.
 

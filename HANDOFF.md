@@ -97,8 +97,8 @@ Any AI coding agent must:
 ## 12. Next Task
 
 NEXT STAGE: **Stage 5**.
-NEXT TASK: **REMEDIATED — AWAITING FINAL INDEPENDENT M2-E CLOSURE AUDIT.**
-M2-E is remediated and awaits closure execution authorization. Do not begin Stage 5/6 integration.
+NEXT TASK: **REMEDIATED — AWAITING FINAL INDEPENDENT MICRO-GATE.**
+The single closure blocker (EVIDENCE_QUALITY_REVIEW) was remediated. M2-E requires one final independent micro-gate. Do not begin Stage 5/6 integration.
 
 ## Cross-Agent Handoff Protocol
 

@@ -319,4 +319,114 @@ describe('M2-E Test Matrix', () => {
     const findings = generateEvidenceGaps(matterId, ctx);
     expect(findings.some(f => f.category === 'HUMAN_REVIEW_REQUIRED')).toBe(true);
   });
+  test('V. MATERIAL QUALITY UNCERTAINTY -> EVIDENCE_QUALITY_REVIEW generated.', () => {
+    const ctx: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'FACT', proposition: 'x', reviewState: 'PROPOSED', dateContext: { precision: 'EXACT', date: '2020-01-01' }, fingerprint: 'c1f', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [{ id: 'r1', matterId, claimAId: 'c1', claimBId: 'c2', relationshipType: 'CONSISTENT_WITH', reviewState: 'CONFIRMED', independenceStatus: 'INDEPENDENT', fingerprint: 'r1f' } as any],
+      events: []
+    };
+    const findings = generateEvidenceGaps(matterId, ctx);
+    expect(findings.some(f => f.category === 'EVIDENCE_QUALITY_REVIEW')).toBe(true);
+  });
+
+  test('W. RESOLVED/VERIFIED QUALITY STATE -> no false EVIDENCE_QUALITY_REVIEW.', () => {
+    const ctx: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'FACT', proposition: 'x', reviewState: 'CONFIRMED', dateContext: { precision: 'EXACT', date: '2020-01-01' }, fingerprint: 'c1f', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [{ id: 'r1', matterId, claimAId: 'c1', claimBId: 'c2', relationshipType: 'CONSISTENT_WITH', reviewState: 'CONFIRMED', independenceStatus: 'INDEPENDENT', fingerprint: 'r1f' } as any],
+      events: []
+    };
+    const findings = generateEvidenceGaps(matterId, ctx);
+    expect(findings.some(f => f.category === 'EVIDENCE_QUALITY_REVIEW')).toBe(false);
+  });
+
+  test('X. ALLEGATION ALONE -> no EVIDENCE_QUALITY_REVIEW solely because it is an allegation.', () => {
+    const ctx: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'ALLEGATION', proposition: 'x', reviewState: 'CONFIRMED', dateContext: { precision: 'EXACT', date: '2020-01-01' }, fingerprint: 'c1f', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [{ id: 'r1', matterId, claimAId: 'c1', claimBId: 'c2', relationshipType: 'CONSISTENT_WITH', reviewState: 'CONFIRMED', independenceStatus: 'INDEPENDENT', fingerprint: 'r1f' } as any],
+      events: []
+    };
+    const findings = generateEvidenceGaps(matterId, ctx);
+    expect(findings.some(f => f.category === 'EVIDENCE_QUALITY_REVIEW')).toBe(false);
+  });
+
+  test('Y. CONTRADICTION ALONE -> no EVIDENCE_QUALITY_REVIEW solely because it conflicts.', () => {
+    const ctx: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'FACT', proposition: 'x', reviewState: 'CONFIRMED', dateContext: { precision: 'EXACT', date: '2020-01-01' }, fingerprint: 'c1f', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [{ id: 'r1', matterId, claimAId: 'c1', claimBId: 'c2', relationshipType: 'DIRECT_CONTRADICTION', reviewState: 'CONFIRMED', independenceStatus: 'INDEPENDENT', fingerprint: 'r1f' } as any],
+      events: []
+    };
+    const findings = generateEvidenceGaps(matterId, ctx);
+    expect(findings.some(f => f.category === 'EVIDENCE_QUALITY_REVIEW')).toBe(false);
+  });
+
+  test('Z. UNKNOWN DATE ALONE -> no EVIDENCE_QUALITY_REVIEW solely because date is unknown.', () => {
+    const ctx: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'FACT', proposition: 'x', reviewState: 'CONFIRMED', dateContext: { precision: 'UNKNOWN' }, fingerprint: 'c1f', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [{ id: 'r1', matterId, claimAId: 'c1', claimBId: 'c2', relationshipType: 'CONSISTENT_WITH', reviewState: 'CONFIRMED', independenceStatus: 'INDEPENDENT', fingerprint: 'r1f' } as any],
+      events: []
+    };
+    const findings = generateEvidenceGaps(matterId, ctx);
+    expect(findings.some(f => f.category === 'EVIDENCE_QUALITY_REVIEW')).toBe(false);
+  });
+
+  test('AA. SAME-LINEAGE SUPPORT ALONE -> no EVIDENCE_QUALITY_REVIEW solely because independence is absent.', () => {
+    const ctx: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'FACT', proposition: 'x', reviewState: 'CONFIRMED', dateContext: { precision: 'EXACT', date: '2020-01-01' }, fingerprint: 'c1f', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [{ id: 'r1', matterId, claimAId: 'c1', claimBId: 'c2', relationshipType: 'INDEPENDENT_SUPPORT', reviewState: 'CONFIRMED', independenceStatus: 'SAME_ORIGIN', fingerprint: 'r1f' } as any],
+      events: []
+    };
+    const findings = generateEvidenceGaps(matterId, ctx);
+    expect(findings.some(f => f.category === 'EVIDENCE_QUALITY_REVIEW')).toBe(false);
+  });
+
+  test('AB. TRIVIAL QUALITY UNCERTAINTY -> does not produce inappropriate material finding.', () => {
+    const ctx: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'FACT', proposition: 'x', reviewState: 'PROPOSED', dateContext: { precision: 'EXACT', date: '2020-01-01' }, fingerprint: 'c1f', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [],
+      events: []
+    };
+    const findings = generateEvidenceGaps(matterId, ctx);
+    expect(findings.some(f => f.category === 'EVIDENCE_QUALITY_REVIEW')).toBe(false);
+  });
+
+  test('AC. SEMANTIC QUALITY STATE CHANGE -> fingerprint changes.', () => {
+    const ctx1: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'FACT', proposition: 'x', reviewState: 'PROPOSED', dateContext: { precision: 'EXACT', date: '2020-01-01' }, fingerprint: 'c1f1', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [{ id: 'r1', matterId, claimAId: 'c1', claimBId: 'c2', relationshipType: 'CONSISTENT_WITH', reviewState: 'CONFIRMED', independenceStatus: 'INDEPENDENT', fingerprint: 'r1f' } as any],
+      events: []
+    };
+    const f1 = generateEvidenceGaps(matterId, ctx1).find(f => f.category === 'EVIDENCE_QUALITY_REVIEW')!;
+    
+    const ctx2: M2EContext = {
+      claims: [{ id: 'c1', matterId, classification: 'FACT', proposition: 'x', reviewState: 'PROPOSED', dateContext: { precision: 'EXACT', date: '2020-01-01' }, fingerprint: 'c1f2', freshnessState: 'FRESH' } as any],
+      attributions: [{ id: 'a1', matterId, claimId: 'c1', attributionType: 'DIRECT_STATEMENT', speakerEntityId: 'e1' } as any],
+      relationships: [{ id: 'r1', matterId, claimAId: 'c1', claimBId: 'c2', relationshipType: 'CONSISTENT_WITH', reviewState: 'CONFIRMED', independenceStatus: 'INDEPENDENT', fingerprint: 'r1f' } as any],
+      events: []
+    };
+    const f2 = generateEvidenceGaps(matterId, ctx2).find(f => f.category === 'EVIDENCE_QUALITY_REVIEW')!;
+    
+    expect(f1).toBeDefined();
+    expect(f2).toBeDefined();
+    expect(f1.fingerprint).not.toBe(f2.fingerprint);
+  });
+
+  test('AD. QUALITY UNCERTAINTY RESOLVED -> lifecycle handles prior finding.', () => {
+    const priorFindings = [{
+      id: 'f1', matterId, category: 'EVIDENCE_QUALITY_REVIEW', materiality: 'HIGH', state: 'OPEN', 
+      title: 't', description: 'd', provenance: { claimIds: ['c1'] }, fingerprint: 'hash1',
+      isStale: false, createdAt: '2020', updatedAt: '2020'
+    } as any];
+    const newFindings: any[] = [];
+    const refreshed = refreshFindingsState(priorFindings, newFindings);
+    expect(refreshed[0].state).toBe('SUPERSEDED');
+    expect(refreshed[0].category).toBe('EVIDENCE_QUALITY_REVIEW');
+  });
 });
