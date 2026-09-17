@@ -60,13 +60,13 @@ Historical security documents also identify session-error handling, code-claim/s
 **MATTER-SCOPED EVIDENCE REVIEW AND CASE INTELLIGENCE**
 Planned capabilities: evidence review workspace; matter-wide chronology; contradiction/inconsistency detection; corroboration linking; allegation evolution tracking; evidence-gap detection; unanswered-question generation; case-wide summary; direct source jump-back to document/page/quote; review-state propagation.
 
-*Update:* Stage 5 M2-A (Case Intelligence Foundation) has been implemented and merged as a pending migration. It establishes the deterministic database structures and pure functions for Entities, Events, Dates, Provenance, and Review tracking, but does not deploy them or build the AI pipelines yet.
+*Update:* Stage 5 M2-A (Case Intelligence Foundation), M2-B (Deterministic Chronology), and M2-C (Claims, Attribution, Evolution) have been implemented as pending migrations. They establish the deterministic database structures and pure functions for Entities, Events, Dates, Claims, Attributions, Evolution, Provenance, and Review tracking, but do not deploy them or build the AI pipelines yet.
 
 ## 9. Future Roadmap
 
 | Stage | Objective |
 |---|---|
-| 5 | Matter Intelligence (M2-A Foundation complete, M2-B/C/D/E pending) |
+| 5 | Matter Intelligence (M2-A, M2-B, M2-C Foundations complete, M2-D/E pending) |
 | 6 | CYFSA Legal Intelligence and Authority Mapping |
 | 7 | Professional Lawyer Review Workspace |
 | 8 | Litigation Work Product |
@@ -97,8 +97,8 @@ Any AI coding agent must:
 ## 12. Next Task
 
 NEXT STAGE: **Stage 5**.
-NEXT TASK: **Design and implement Stage 5 M2-B (Chronology) using the M2-A foundation.**
-Do not begin Stage 5 M2-B automatically. Await execution authorization for the M2-A migration before building features on top of it.
+NEXT TASK: **Design and implement Stage 5 M2-D (Contradiction/Corroboration) using the M2-C foundation.**
+Do not begin Stage 5 M2-D automatically. Await execution authorization for the M2-C migration before building features on top of it.
 
 ## Cross-Agent Handoff Protocol
 
