@@ -97,8 +97,8 @@ Any AI coding agent must:
 ## 12. Next Task
 
 NEXT STAGE: **Stage 5**.
-NEXT TASK: **Design and implement Stage 5 M2-D (Contradiction/Corroboration) using the M2-C foundation.**
-Do not begin Stage 5 M2-D automatically. Await execution authorization for the M2-C migration before building features on top of it.
+NEXT TASK: **AWAITING INDEPENDENT CLOSURE AUDIT for M2-C.**
+Do not begin Stage 5 M2-D automatically. M2-C remains AWAITING INDEPENDENT CLOSURE AUDIT. Await execution authorization and formal closure of M2-C before building M2-D features on top of it.
 
 ## Cross-Agent Handoff Protocol
 

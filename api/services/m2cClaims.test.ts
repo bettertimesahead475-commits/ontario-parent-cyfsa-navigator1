@@ -6,6 +6,7 @@ import {
   validateClaimClassification,
   validateAttributionType,
   validateEvolutionType,
+  resolveRootLineages,
   M2CClaim,
   M2CAttribution,
   M2CEvolution
@@ -100,9 +101,20 @@ describe('Stage 5 M2-C deterministic engine', () => {
   });
 
   it('19. input ordering does not change semantic fingerprint', () => {
-    const fp1 = computeEvolutionFingerprint({ sourceClaimId: 'c1', targetClaimId: 'c2', evolutionType: 'REPEATS' });
-    const fp2 = computeEvolutionFingerprint({ targetClaimId: 'c2', sourceClaimId: 'c1', evolutionType: 'REPEATS' } as any);
+    const fp1 = computeEvolutionFingerprint('REPEATS', 'fp_a', 'fp_b');
+    const fp2 = computeEvolutionFingerprint('REPEATS', 'fp_b', 'fp_a');
     expect(fp1).toBe(fp2);
+  });
+
+  it('19b. source or target semantic change changes fingerprint', () => {
+    const base = computeEvolutionFingerprint('EXPANDS', 'fp_a', 'fp_b');
+    const sourceChanged = computeEvolutionFingerprint('EXPANDS', 'fp_c', 'fp_b');
+    const targetChanged = computeEvolutionFingerprint('EXPANDS', 'fp_a', 'fp_d');
+    const typeChanged = computeEvolutionFingerprint('NARROWS', 'fp_a', 'fp_b');
+    
+    expect(base).not.toBe(sourceChanged);
+    expect(base).not.toBe(targetChanged);
+    expect(base).not.toBe(typeChanged);
   });
 
   it('20. semantic change changes fingerprint', () => {
@@ -143,6 +155,60 @@ describe('Stage 5 M2-C deterministic engine', () => {
   it('27. stale dependency fingerprint is detectable', () => {
     const evolution: M2CEvolution = { id: 'e1', sourceClaimId: 'c1', targetClaimId: 'c2', evolutionType: 'REPEATS', reviewState: 'PROPOSED', freshnessState: 'STALE', fingerprint: '' };
     expect(evolution.freshnessState).toBe('STALE');
+  });
+
+  it('29. Amy -> worker -> manager -> affidavit resolves ONE origin', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a4', claimId: 'c1', speakerEntityId: 'affidavit', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' },
+      { id: 'a3', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a1', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+    ];
+
+    const roots = resolveRootLineages(attributions);
+    expect(roots.length).toBe(1);
+    expect(roots[0].id).toBe('a1');
+  });
+
+  it('30. two genuinely independent origins resolve TWO origins', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a1', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a2', claimId: 'c1', speakerEntityId: 'bob', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null },
+    ];
+
+    const roots = resolveRootLineages(attributions);
+    expect(roots.length).toBe(2);
+    expect(roots.map(r => r.id).sort()).toEqual(['a1', 'a2']);
+  });
+
+  it('31. input ordering does not change resolved roots', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a4', claimId: 'c1', speakerEntityId: 'affidavit', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' },
+      { id: 'a1', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a3', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+    ];
+
+    const roots = resolveRootLineages(attributions);
+    expect(roots.length).toBe(1);
+    expect(roots[0].id).toBe('a1');
+  });
+
+  it('32. malformed lineage fails closed', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a2', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+    ]; // a1 is missing
+
+    expect(() => resolveRootLineages(attributions)).toThrow('Dangling reference in lineage');
+  });
+
+  it('33. lineage cycle fails closed', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a1', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+    ];
+
+    expect(() => resolveRootLineages(attributions)).toThrow('Cycle detected in lineage');
   });
 
   it('28. no M2-D credibility/contradiction conclusion is generated', () => {

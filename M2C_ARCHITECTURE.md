@@ -24,3 +24,18 @@ Uses M2-A's robust date bounds, precision models (e.g., `EXACT_DATETIME`, `APPRO
 
 ### 6. Deterministic Validation
 A provider-independent deterministic layer (in TypeScript) validates classifications, attribution types, and evolution types. It produces stable cryptographic semantic fingerprints for claims and evolutions to ensure non-destructive monitoring and lineage tracking.
+
+### 7. Strict Matter Isolation
+Attributions and claim evolutions strictly adhere to M2-A matter boundary architecture. Database-level constraints explicitly forbid cross-matter entity references, cross-matter claim evolutions, and cross-matter nested attributions.
+
+### 8. Attribution Cycle Prevention & Deletion Restriction
+The nested attribution graph guarantees deterministic integrity:
+- **Cycle Prevention**: Database triggers aggressively detect and reject self-reference and multi-node nested attribution cycles (failing closed). Traversal depth is firmly bounded.
+- **Lineage Deletion Integrity**: The `nested_source_attribution_id` strictly utilizes `ON DELETE RESTRICT`, preventing silent lineage collapse that would make a reported statement falsely appear independent.
+
+### 9. Root-Lineage Resolution & Corroboration Separation
+M2-C provides deterministic infrastructure for resolving the originating root(s) of any given attribution graph (`resolveRootLineages`). 
+- **Explicit Distinction**: Identifying independent originating lineages does *not* establish corroboration. Lineage independence evaluates origin, while corroboration involves assessing credibility and contradictions (reserved for M2-D).
+
+### 10. Dependency-Aware Evolution Fingerprints
+Evolution fingerprints explicitly incorporate the deterministic semantic fingerprints of both the source and target claims, alongside the evolution relationship type. A change to the semantic inputs of either dependent claim transparently changes the evolution fingerprint, failing closed if dependencies are missing.

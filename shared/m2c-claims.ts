@@ -103,10 +103,28 @@ export function computeClaimFingerprint(claim: Pick<M2CClaim, 'proposition' | 'c
   });
 }
 
-export function computeEvolutionFingerprint(evolution: Pick<M2CEvolution, 'sourceClaimId' | 'targetClaimId' | 'evolutionType'>): string {
+export function computeEvolutionFingerprint(
+  evolutionType: EvolutionType,
+  sourceSemanticFingerprint: string,
+  targetSemanticFingerprint: string
+): string {
+  if (!sourceSemanticFingerprint || !targetSemanticFingerprint || sourceSemanticFingerprint === 'current' || targetSemanticFingerprint === 'current') {
+    throw new Error('Missing or invalid semantic dependencies');
+  }
+
+  // Ensure order independence for symmetric relationships like REPEATS or INDETERMINATE
+  const isSymmetric = evolutionType === 'REPEATS' || evolutionType === 'INDETERMINATE';
+  let dep1 = sourceSemanticFingerprint;
+  let dep2 = targetSemanticFingerprint;
+
+  if (isSymmetric && dep1 > dep2) {
+    dep1 = targetSemanticFingerprint;
+    dep2 = sourceSemanticFingerprint;
+  }
+
   return computeFingerprint(
-    [{id: evolution.sourceClaimId, version: 'current'}, {id: evolution.targetClaimId, version: 'current'}], 
-    { evolutionType: evolution.evolutionType }
+    [], 
+    { evolutionType, source: dep1, target: dep2 }
   );
 }
 
@@ -125,4 +143,46 @@ export function determineEvolutionRelationship(sourceProposition: string, target
   // is just a baseline for exact matches or explicitly requested logic from the prompt.
   // We'll leave heuristics simple and return INDETERMINATE if we can't safely tell.
   return 'INDETERMINATE';
+}
+
+export function resolveRootLineages(attributions: M2CAttribution[]): M2CAttribution[] {
+  const attrMap = new Map<string, M2CAttribution>();
+  for (const a of attributions) {
+    attrMap.set(a.id, a);
+  }
+
+  const roots = new Set<string>();
+
+  for (const a of attributions) {
+    let currentId = a.id;
+    const seen = new Set<string>();
+    let depth = 0;
+
+    while (true) {
+      if (depth > 100) {
+        throw new Error('Lineage traversal bound exceeded');
+      }
+      if (seen.has(currentId)) {
+        throw new Error('Cycle detected in lineage');
+      }
+      seen.add(currentId);
+
+      const currentAttr = attrMap.get(currentId);
+      if (!currentAttr) {
+        throw new Error('Dangling reference in lineage');
+      }
+
+      if (!currentAttr.nestedSourceAttributionId) {
+        roots.add(currentId);
+        break;
+      }
+
+      currentId = currentAttr.nestedSourceAttributionId;
+      depth++;
+    }
+  }
+
+  const result = Array.from(roots).map(id => attrMap.get(id)!);
+  result.sort((a, b) => a.id.localeCompare(b.id));
+  return result;
 }

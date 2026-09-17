@@ -169,7 +169,7 @@ create table public.navigator_attributions (
     claim_id uuid not null references public.navigator_claims(id) on delete cascade,
     speaker_entity_id uuid references public.navigator_entities(id) on delete set null,
     attribution_type text not null check(attribution_type in ('DIRECT_STATEMENT','DIRECT_OBSERVATION','REPORTED_STATEMENT','DOCUMENT_RECORD','PROFESSIONAL_ASSESSMENT','AUTHOR_INFERENCE','SYSTEM_INFERENCE','UNKNOWN')),
-    nested_source_attribution_id uuid references public.navigator_attributions(id) on delete set null,
+    nested_source_attribution_id uuid references public.navigator_attributions(id) on delete restrict,
     created_at timestamptz not null default clock_timestamp()
     -- attributions do not have separate review state; they are reviewed implicitly with the claim or provenance
 );
@@ -212,5 +212,89 @@ create trigger navigator_claim_evolutions_orphan_guard before delete on public.n
 -- Attach review state guard
 create trigger navigator_claims_review_state_guard before insert or update on public.navigator_claims for each row execute function public.navigator_m2a_review_state_guard();
 create trigger navigator_claim_evolutions_review_state_guard before insert or update on public.navigator_claim_evolutions for each row execute function public.navigator_m2a_review_state_guard();
+
+-- Extend matter boundary guard for M2C
+create or replace function public.navigator_m2a_matter_boundary_guard() returns trigger
+language plpgsql security invoker set search_path=pg_catalog,public,pg_temp as $$
+declare
+    parent_matter_id uuid;
+begin
+    if TG_TABLE_NAME = 'navigator_entity_mentions' then
+        select matter_id into parent_matter_id from public.navigator_evidence_items where id = NEW.evidence_id;
+        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter evidence linkage denied'; end if;
+    elsif TG_TABLE_NAME = 'navigator_identity_resolutions' then
+        select matter_id into parent_matter_id from public.navigator_entity_mentions where id = NEW.mention_id;
+        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter mention linkage denied'; end if;
+        select matter_id into parent_matter_id from public.navigator_entities where id = NEW.entity_id;
+        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter entity linkage denied'; end if;
+    elsif TG_TABLE_NAME = 'navigator_event_participants' then
+        select matter_id into parent_matter_id from public.navigator_events where id = NEW.event_id;
+        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter event linkage denied'; end if;
+        select matter_id into parent_matter_id from public.navigator_entities where id = NEW.entity_id;
+        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter entity linkage denied'; end if;
+    elsif TG_TABLE_NAME = 'navigator_attributions' then
+        select matter_id into parent_matter_id from public.navigator_claims where id = NEW.claim_id;
+        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter claim linkage denied'; end if;
+        if NEW.speaker_entity_id is not null then
+            select matter_id into parent_matter_id from public.navigator_entities where id = NEW.speaker_entity_id;
+            if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter entity linkage denied'; end if;
+        end if;
+        if NEW.nested_source_attribution_id is not null then
+            select matter_id into parent_matter_id from public.navigator_attributions where id = NEW.nested_source_attribution_id;
+            if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter attribution linkage denied'; end if;
+        end if;
+    elsif TG_TABLE_NAME = 'navigator_claim_evolutions' then
+        select matter_id into parent_matter_id from public.navigator_claims where id = NEW.source_claim_id;
+        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter source claim linkage denied'; end if;
+        select matter_id into parent_matter_id from public.navigator_claims where id = NEW.target_claim_id;
+        if parent_matter_id <> NEW.matter_id then raise exception 'Cross-matter target claim linkage denied'; end if;
+    end if;
+    return NEW;
+end $$;
+
+-- Attribution cycle prevention
+create or replace function public.navigator_m2c_attribution_cycle_guard() returns trigger
+language plpgsql security invoker set search_path=pg_catalog,public,pg_temp as $$
+declare
+    current_id uuid;
+    depth integer := 0;
+begin
+    if NEW.nested_source_attribution_id is null then
+        return NEW;
+    end if;
+
+    if NEW.nested_source_attribution_id = NEW.id then
+        raise exception 'Attribution self-cycle detected';
+    end if;
+
+    current_id := NEW.nested_source_attribution_id;
+
+    while current_id is not null loop
+        if depth > 100 then
+            raise exception 'Attribution traversal bound exceeded';
+        end if;
+        if current_id = NEW.id then
+            raise exception 'Attribution cycle detected';
+        end if;
+        
+        select nested_source_attribution_id into current_id
+        from public.navigator_attributions
+        where id = current_id and matter_id = NEW.matter_id;
+        
+        depth := depth + 1;
+    end loop;
+    return NEW;
+end $$;
+
+-- Triggers for matter boundary guard
+create trigger navigator_attributions_matter_boundary before insert or update on public.navigator_attributions
+for each row execute function public.navigator_m2a_matter_boundary_guard();
+
+create trigger navigator_claim_evolutions_matter_boundary before insert or update on public.navigator_claim_evolutions
+for each row execute function public.navigator_m2a_matter_boundary_guard();
+
+-- Triggers for attribution cycle prevention
+create trigger navigator_attributions_cycle_guard before insert or update on public.navigator_attributions
+for each row execute function public.navigator_m2c_attribution_cycle_guard();
 
 commit;
