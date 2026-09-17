@@ -97,8 +97,8 @@ Any AI coding agent must:
 ## 12. Next Task
 
 NEXT STAGE: **Stage 5**.
-NEXT TASK: **REMEDIATED — AWAITING FINAL INDEPENDENT M2-D CLOSURE AUDIT.**
-Do not begin Stage 5 M2-E automatically. M2-D is remediated and awaits closure execution authorization.
+NEXT TASK: **REMEDIATED — AWAITING FINAL INDEPENDENT M2-E CLOSURE AUDIT.**
+M2-E is remediated and awaits closure execution authorization. Do not begin Stage 5/6 integration.
 
 ## Cross-Agent Handoff Protocol
 
@@ -119,3 +119,11 @@ The previous security-split/historical audit handoff is preserved in Git at `223
 - **J/K/L/M/N/T behavioral coverage**: Filled missing stubs with strict verification that M2-D doesn't generate fact mutations, truth judgements, or lie labels.
 - **retraction semantics**: Integrated \evolutionContext\ to explicitly track retraction origin even when mapped to contradictions.
 
+
+
+## Stage 5 M2-E Blocker Remediation
+- **Test Integrity**: Replaced all 36 A-AJ placeholders with real behavioral assertions ensuring proper classification and matter isolation.
+- **Matter Isolation**: Implemented strict matter isolation failing closed on cross-matter inputs for generateEvidenceGaps and generateSnapshot. Added matter_id to database schema constraints.
+- **Source Gap & Independence**: Replaced hardcoded checks with graph-aware source lineage independence enforcement (SAME_ORIGIN, INDEPENDENT).
+- **Materiality & Freshness**: Shifted materiality from static constants to dependency-count evaluation. Introduced semantic-fingerprint hashing for precise freshness detection.
+- **Migration & RLS**: Created create_navigator_m2e_intelligence_foundation.sql matching standard service_role privileges and table definitions. Added structural migration tests.

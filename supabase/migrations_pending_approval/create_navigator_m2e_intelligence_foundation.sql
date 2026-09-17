@@ -1,8 +1,8 @@
-﻿-- Migration for M2-E Intelligence Foundation
+-- Migration for M2-E Intelligence Foundation
 
-CREATE TABLE navigator_evidence_gap_findings (
+CREATE TABLE public.navigator_evidence_gap_findings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  matter_id UUID NOT NULL REFERENCES navigator_matters(id),
+  matter_id UUID NOT NULL REFERENCES public.navigator_matters(id) ON DELETE CASCADE,
   category TEXT NOT NULL CHECK (category IN (
     'SUPPORT_GAP', 'INDEPENDENCE_GAP', 'SOURCE_GAP', 'DATE_GAP', 
     'ACTOR_GAP', 'LOCATION_GAP', 'UNRESOLVED_CONFLICT', 
@@ -20,27 +20,48 @@ CREATE TABLE navigator_evidence_gap_findings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE navigator_evidence_gap_dependencies (
-  finding_id UUID NOT NULL REFERENCES navigator_evidence_gap_findings(id) ON DELETE CASCADE,
+CREATE TABLE public.navigator_evidence_gap_dependencies (
+  finding_id UUID NOT NULL REFERENCES public.navigator_evidence_gap_findings(id) ON DELETE CASCADE,
+  matter_id UUID NOT NULL REFERENCES public.navigator_matters(id) ON DELETE CASCADE,
   dependency_type TEXT NOT NULL CHECK (dependency_type IN ('CLAIM', 'EVENT', 'RELATIONSHIP', 'ATTRIBUTION', 'SOURCE', 'ACTOR', 'LOCATION')),
   dependency_id TEXT NOT NULL,
   PRIMARY KEY (finding_id, dependency_type, dependency_id)
 );
 
-CREATE TABLE navigator_unanswered_questions (
-  finding_id UUID PRIMARY KEY REFERENCES navigator_evidence_gap_findings(id) ON DELETE CASCADE,
+CREATE TABLE public.navigator_unanswered_questions (
+  finding_id UUID PRIMARY KEY REFERENCES public.navigator_evidence_gap_findings(id) ON DELETE CASCADE,
+  matter_id UUID NOT NULL REFERENCES public.navigator_matters(id) ON DELETE CASCADE,
   question TEXT NOT NULL
 );
 
-CREATE TABLE navigator_case_intelligence_snapshots (
+CREATE TABLE public.navigator_case_intelligence_snapshots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  matter_id UUID NOT NULL REFERENCES navigator_matters(id),
+  matter_id UUID NOT NULL REFERENCES public.navigator_matters(id) ON DELETE CASCADE,
   snapshot_data JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Indexes
+CREATE INDEX navigator_evidence_gap_findings_matter_idx ON public.navigator_evidence_gap_findings(matter_id);
+CREATE INDEX navigator_evidence_gap_findings_state_idx ON public.navigator_evidence_gap_findings(state);
+CREATE INDEX navigator_evidence_gap_findings_fingerprint_idx ON public.navigator_evidence_gap_findings(fingerprint);
+CREATE INDEX navigator_evidence_gap_dependencies_matter_idx ON public.navigator_evidence_gap_dependencies(matter_id);
+CREATE INDEX navigator_unanswered_questions_matter_idx ON public.navigator_unanswered_questions(matter_id);
+CREATE INDEX navigator_case_intelligence_snapshots_matter_idx ON public.navigator_case_intelligence_snapshots(matter_id);
+
 -- RLS
-ALTER TABLE navigator_evidence_gap_findings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE navigator_evidence_gap_dependencies ENABLE ROW LEVEL SECURITY;
-ALTER TABLE navigator_unanswered_questions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE navigator_case_intelligence_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.navigator_evidence_gap_findings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.navigator_evidence_gap_dependencies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.navigator_unanswered_questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.navigator_case_intelligence_snapshots ENABLE ROW LEVEL SECURITY;
+
+-- Explicit privilege restriction (consistent with Navigator matter access model)
+REVOKE ALL ON public.navigator_evidence_gap_findings FROM public, anon, authenticated;
+REVOKE ALL ON public.navigator_evidence_gap_dependencies FROM public, anon, authenticated;
+REVOKE ALL ON public.navigator_unanswered_questions FROM public, anon, authenticated;
+REVOKE ALL ON public.navigator_case_intelligence_snapshots FROM public, anon, authenticated;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.navigator_evidence_gap_findings TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.navigator_evidence_gap_dependencies TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.navigator_unanswered_questions TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.navigator_case_intelligence_snapshots TO service_role;
