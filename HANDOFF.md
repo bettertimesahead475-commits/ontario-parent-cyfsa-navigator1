@@ -66,7 +66,7 @@ Planned capabilities: evidence review workspace; matter-wide chronology; contrad
 
 | Stage | Objective |
 |---|---|
-| 5 | Matter Intelligence (M2-A, M2-B, M2-C Foundations complete, M2-D/E pending) |
+| 5 | Matter Intelligence (M2-A, M2-B, M2-C, M2-D Foundations complete, M2-E pending) |
 | 6 | CYFSA Legal Intelligence and Authority Mapping |
 | 7 | Professional Lawyer Review Workspace |
 | 8 | Litigation Work Product |
@@ -97,8 +97,8 @@ Any AI coding agent must:
 ## 12. Next Task
 
 NEXT STAGE: **Stage 5**.
-NEXT TASK: **REMEDIATED — AWAITING FINAL INDEPENDENT CLOSURE AUDIT for M2-C.**
-Do not begin Stage 5 M2-D automatically. M2-C remains REMEDIATED — AWAITING FINAL INDEPENDENT CLOSURE AUDIT. Await execution authorization and formal closure of M2-C before building M2-D features on top of it.
+NEXT TASK: **IMPLEMENTED — AWAITING INDEPENDENT M2-D CLOSURE AUDIT.**
+Do not begin Stage 5 M2-E automatically. M2-D remains IMPLEMENTED — AWAITING INDEPENDENT M2-D CLOSURE AUDIT. Await execution authorization and formal closure of M2-D before building M2-E features on top of it.
 
 ## Cross-Agent Handoff Protocol
 
