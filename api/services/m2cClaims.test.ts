@@ -32,14 +32,14 @@ describe('Stage 5 M2-C deterministic engine', () => {
   });
 
   it('5. nested attribution preserves each speaker', () => {
-    const attr1: M2CAttribution = { id: 'a1', claimId: 'c1', speakerEntityId: 'warren', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' };
-    const attr2: M2CAttribution = { id: 'a2', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null };
+    const attr1: M2CAttribution = { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'warren', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' };
+    const attr2: M2CAttribution = { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null };
     expect(attr1.speakerEntityId).toBe('warren');
     expect(attr2.speakerEntityId).toBe('amy');
   });
 
   it('6. affidavit reporting another person\'s allegation does not become direct observation', () => {
-    const attr1: M2CAttribution = { id: 'a1', claimId: 'c1', speakerEntityId: 'warren', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' };
+    const attr1: M2CAttribution = { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'warren', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' };
     expect(attr1.attributionType).toBe('REPORTED_STATEMENT');
   });
 
@@ -52,14 +52,14 @@ describe('Stage 5 M2-C deterministic engine', () => {
 
   it('8. same-origin repetitions preserve common source lineage', () => {
     // Both point to the same nested attribution
-    const attr1: M2CAttribution = { id: 'a1', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' };
-    const attr2: M2CAttribution = { id: 'a2', claimId: 'c2', speakerEntityId: 'manager2', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' };
+    const attr1: M2CAttribution = { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' };
+    const attr2: M2CAttribution = { id: 'a2', matterId: 'matter-a', claimId: 'c2', speakerEntityId: 'manager2', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' };
     expect(attr1.nestedSourceAttributionId).toBe(attr2.nestedSourceAttributionId);
   });
 
   it('9. independent origin can be represented separately', () => {
-    const attr1: M2CAttribution = { id: 'a1', claimId: 'c1', speakerEntityId: 'independent1', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null };
-    const attr2: M2CAttribution = { id: 'a2', claimId: 'c2', speakerEntityId: 'independent2', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null };
+    const attr1: M2CAttribution = { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'independent1', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null };
+    const attr2: M2CAttribution = { id: 'a2', matterId: 'matter-a', claimId: 'c2', speakerEntityId: 'independent2', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null };
     expect(attr1.nestedSourceAttributionId).not.toBe(attr2.id); // independent
   });
 
@@ -159,10 +159,10 @@ describe('Stage 5 M2-C deterministic engine', () => {
 
   it('29. Amy -> worker -> manager -> affidavit resolves ONE origin', () => {
     const attributions: M2CAttribution[] = [
-      { id: 'a4', claimId: 'c1', speakerEntityId: 'affidavit', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' },
-      { id: 'a3', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
-      { id: 'a2', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
-      { id: 'a1', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a4', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'affidavit', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' },
+      { id: 'a3', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
     ];
 
     const roots = resolveRootLineages(attributions);
@@ -172,8 +172,8 @@ describe('Stage 5 M2-C deterministic engine', () => {
 
   it('30. two genuinely independent origins resolve TWO origins', () => {
     const attributions: M2CAttribution[] = [
-      { id: 'a1', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
-      { id: 'a2', claimId: 'c1', speakerEntityId: 'bob', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null },
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'bob', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null },
     ];
 
     const roots = resolveRootLineages(attributions);
@@ -183,10 +183,10 @@ describe('Stage 5 M2-C deterministic engine', () => {
 
   it('31. input ordering does not change resolved roots', () => {
     const attributions: M2CAttribution[] = [
-      { id: 'a4', claimId: 'c1', speakerEntityId: 'affidavit', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' },
-      { id: 'a1', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
-      { id: 'a3', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
-      { id: 'a2', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a4', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'affidavit', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' },
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a3', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
     ];
 
     const roots = resolveRootLineages(attributions);
@@ -196,7 +196,7 @@ describe('Stage 5 M2-C deterministic engine', () => {
 
   it('32. malformed lineage fails closed', () => {
     const attributions: M2CAttribution[] = [
-      { id: 'a2', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
     ]; // a1 is missing
 
     expect(() => resolveRootLineages(attributions)).toThrow('Dangling reference in lineage');
@@ -204,8 +204,8 @@ describe('Stage 5 M2-C deterministic engine', () => {
 
   it('33. lineage cycle fails closed', () => {
     const attributions: M2CAttribution[] = [
-      { id: 'a1', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
-      { id: 'a2', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
     ];
 
     expect(() => resolveRootLineages(attributions)).toThrow('Cycle detected in lineage');
@@ -214,5 +214,118 @@ describe('Stage 5 M2-C deterministic engine', () => {
   it('28. no M2-D credibility/contradiction conclusion is generated', () => {
     expect(() => validateEvolutionType('CONTRADICTS' as any)).toThrow();
     expect(() => validateEvolutionType('LIES' as any)).toThrow();
+  });
+  it('A. valid one-matter root resolves', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null }
+    ];
+    const roots = resolveRootLineages(attributions);
+    expect(roots.length).toBe(1);
+    expect(roots[0].id).toBe('a1');
+  });
+
+  it('B. valid deep same-matter chain resolves', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a3', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'c', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'b', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'a', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null }
+    ];
+    const roots = resolveRootLineages(attributions);
+    expect(roots.length).toBe(1);
+    expect(roots[0].id).toBe('a1');
+  });
+
+  it('C. two independent roots in the SAME matter resolve as two roots', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'bob', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null }
+    ];
+    const roots = resolveRootLineages(attributions);
+    expect(roots.length).toBe(2);
+    expect(roots.map(r => r.id).sort()).toEqual(['a1', 'a2']);
+  });
+
+  it('D. cross-matter nested lineage throws', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a1', matterId: 'matter-b', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+    ];
+    expect(() => resolveRootLineages(attributions)).toThrow('Heterogeneous matter IDs detected');
+  });
+
+  it('E. heterogeneous matter array throws even if the records are not directly connected', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a2', matterId: 'matter-b', claimId: 'c2', speakerEntityId: 'bob', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null },
+    ];
+    expect(() => resolveRootLineages(attributions)).toThrow('Heterogeneous matter IDs detected');
+  });
+
+  it('F. missing/empty matterId fails closed', () => {
+    const attributions: any[] = [
+      { id: 'a1', matterId: '', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null }
+    ];
+    expect(() => resolveRootLineages(attributions)).toThrow('Missing or empty matterId');
+  });
+
+  it('G. dangling parent still fails closed', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+    ];
+    expect(() => resolveRootLineages(attributions)).toThrow('Dangling reference in lineage');
+  });
+
+  it('H. self-cycle still fails closed', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' }
+    ];
+    expect(() => resolveRootLineages(attributions)).toThrow('Cycle detected in lineage');
+  });
+
+  it('I. multi-node cycle still fails closed', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'bob', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' },
+      { id: 'a3', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'charlie', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' }
+    ];
+    expect(() => resolveRootLineages(attributions)).toThrow('Cycle detected in lineage');
+  });
+
+  it('J. reordered valid input produces identical roots', () => {
+    const attributions1: M2CAttribution[] = [
+      { id: 'a3', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+    ];
+    const attributions2: M2CAttribution[] = [
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a3', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+    ];
+    const roots1 = resolveRootLineages(attributions1);
+    const roots2 = resolveRootLineages(attributions2);
+    expect(roots1).toEqual(roots2);
+  });
+
+  it('K. Amy -> worker -> manager -> affidavit, all same matter, resolves ONE origin', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a4', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'affidavit', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a3' },
+      { id: 'a3', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'manager', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a2' },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'worker', attributionType: 'REPORTED_STATEMENT', nestedSourceAttributionId: 'a1' },
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+    ];
+    const roots = resolveRootLineages(attributions);
+    expect(roots.length).toBe(1);
+    expect(roots[0].id).toBe('a1');
+  });
+
+  it('L. independent witness plus original allegation, both same matter but separate roots, resolves TWO origins', () => {
+    const attributions: M2CAttribution[] = [
+      { id: 'a1', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'amy', attributionType: 'DIRECT_STATEMENT', nestedSourceAttributionId: null },
+      { id: 'a2', matterId: 'matter-a', claimId: 'c1', speakerEntityId: 'bob', attributionType: 'DIRECT_OBSERVATION', nestedSourceAttributionId: null },
+    ];
+    const roots = resolveRootLineages(attributions);
+    expect(roots.length).toBe(2);
+    expect(roots.map(r => r.id).sort()).toEqual(['a1', 'a2']);
   });
 });

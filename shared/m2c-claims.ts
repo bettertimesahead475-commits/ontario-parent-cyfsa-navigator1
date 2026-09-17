@@ -58,6 +58,7 @@ export interface M2CClaim {
 
 export interface M2CAttribution {
   id: string;
+  matterId: string;
   claimId: string;
   speakerEntityId: string | null;
   attributionType: AttributionType;
@@ -146,8 +147,21 @@ export function determineEvolutionRelationship(sourceProposition: string, target
 }
 
 export function resolveRootLineages(attributions: M2CAttribution[]): M2CAttribution[] {
+  if (attributions.length === 0) return [];
+  
+  const expectedMatterId = attributions[0].matterId;
+  if (!expectedMatterId || expectedMatterId.trim() === '') {
+    throw new Error('Missing or empty matterId');
+  }
+
   const attrMap = new Map<string, M2CAttribution>();
   for (const a of attributions) {
+    if (!a.matterId || a.matterId.trim() === '') {
+      throw new Error('Missing or empty matterId');
+    }
+    if (a.matterId !== expectedMatterId) {
+      throw new Error('Heterogeneous matter IDs detected');
+    }
     attrMap.set(a.id, a);
   }
 
@@ -170,6 +184,10 @@ export function resolveRootLineages(attributions: M2CAttribution[]): M2CAttribut
       const currentAttr = attrMap.get(currentId);
       if (!currentAttr) {
         throw new Error('Dangling reference in lineage');
+      }
+
+      if (currentAttr.matterId !== expectedMatterId) {
+        throw new Error('Heterogeneous matter IDs detected');
       }
 
       if (!currentAttr.nestedSourceAttributionId) {
