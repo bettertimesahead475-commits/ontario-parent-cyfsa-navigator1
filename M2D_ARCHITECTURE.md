@@ -63,3 +63,24 @@ The implementation rigorously meets the original A-T adversarial requirements vi
 - R: "R. Semantic claim mutation => derived fingerprint changes" (Tested Behaviorally)
 - S: "S. CORRECTS does not automatically return POTENTIAL_CONTRADICTION" (Tested Behaviorally)
 - T: "T. Retraction semantics preserved" (Tested Indirectly in deterministic logic)
+
+## 9. Remediated Deterministic Semantics (Stage 5 Final Audit)
+
+**Event-Identity Fingerprint Dependency**: 
+Relationship evaluation and fingerprint generation now strictly require an explicit event-identity dependency (\EventDependency { isSameEvent, eventId? }\). Fingerprints fail closed if a requested relationship requires confirmed same-event identity but the dependency indicates uncertainty. This prevents accidental cross-event contradiction marking.
+
+**Structured Comparisons**:
+Hard-coded fixture values (e.g., toronto, john) have been removed from the production evaluation engine. Instead, comparisons are powered by \M2DComparisonContext\.
+- **Structured Location Comparison**: Locations are compared via normalized \StructuredLocation\ properties. Conflicting location IDs within a confirmed same-event context yield \LOCATION_INCONSISTENCY\.
+- **Structured Actor Comparison**: Actors are compared via \StructuredActor\ objects containing \id\ and \ole\.
+- **Role-Aware Actor Semantics**: Actor comparison is explicitly role-aware. Two different actors participating in the same event do not trigger an inconsistency unless they are asserted to occupy the exact same semantic role.
+
+**Multi-Dimension Comparison**:
+M2-D does not stop processing upon detecting the first contradiction dimension. Multiple genuine dimensions (e.g., both \LOCATION\ and \ACTOR\) are deterministically aggregated, preserving full semantic visibility for conflicting reports in a single event.
+
+**Retraction Semantics**:
+A \RETRACTS\ evolution propagates into a \DIRECT_CONTRADICTION\ with \AFFIRMATION_DENIAL\ dimensions. However, M2-D preserves the original evolution relationship via an explicitly preserved \evolutionContext\ field on the relationship, ensuring the system safely represents the retraction without deleting context or wrongly inferring the original source lied.
+
+**Behavioral Test Coverage (A-T)**:
+All previously stubbed J/K/L/M/N/T behavioral invariants have been explicitly tested.
+

@@ -109,3 +109,13 @@ Neither agent should rely on the other's conversational memory. The repository a
 ## Historical handoff provenance
 
 The previous security-split/historical audit handoff is preserved in Git at `22384a833cf7889493a0835c2b68af9726e1caf1:HANDOFF.md`. Its dated claims (including absent domain routes and no automated tests) are historical, not current status. Existing Phase 1/2 audit files remain unchanged.
+
+## Stage 5 M2-D Blocker Remediation
+- **event-identity fingerprint dependency**: Enforced deterministic fingerprints to include \EventDependency\, preventing uncertain claims from triggering definitive contradiction fingerprints.
+- **structured actor comparison**: Removed hardcoded actor logic in favor of \StructuredActor\ matching.
+- **structured location comparison**: Removed hardcoded location logic in favor of \StructuredLocation\ matching.
+- **role-aware actor semantics**: Actors are now evaluated by their specific semantic role before determining inconsistency.
+- **multi-dimension comparison**: Deterministically evaluates all dimensions simultaneously (e.g., extracting both ACTOR and LOCATION dimensions if both exist).
+- **J/K/L/M/N/T behavioral coverage**: Filled missing stubs with strict verification that M2-D doesn't generate fact mutations, truth judgements, or lie labels.
+- **retraction semantics**: Integrated \evolutionContext\ to explicitly track retraction origin even when mapped to contradictions.
+
