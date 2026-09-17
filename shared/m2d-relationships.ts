@@ -276,8 +276,6 @@ export function evaluateDeterministicRelationship(
   let evolutionContext: EvolutionType | undefined = undefined;
 
   if (knownEvolutionType === 'RETRACTS') {
-    dims.push('AFFIRMATION_DENIAL');
-    if (!type) type = 'DIRECT_CONTRADICTION';
     evolutionContext = knownEvolutionType;
   }
   
@@ -319,8 +317,8 @@ export function evaluateDeterministicRelationship(
   }
 
   if (propA === propB) {
-     return { type: 'CONSISTENT_WITH', dims: [] };
+     return { type: 'CONSISTENT_WITH', dims: [], evolutionContext };
   }
 
-  return { type: 'UNKNOWN_RELATIONSHIP', dims: [] };
+  return { type: 'UNKNOWN_RELATIONSHIP', dims: [], evolutionContext };
 }

@@ -183,12 +183,28 @@ describe('Stage 5 M2-D deterministic intelligence', () => {
   });
 
   it('T. Retraction semantics preserved', () => {
-    const c1 = { proposition: 'p1', classification: 'FACT', dateContext: null } as any;
-    const c2 = { proposition: 'p2', classification: 'FACT', dateContext: null } as any;
-    const res = evaluateDeterministicRelationship(c1, c2, 'RETRACTS', { eventDependency: { isSameEvent: true } });
-    expect(res.type).toBe('DIRECT_CONTRADICTION');
-    expect(res.dims).toContain('AFFIRMATION_DENIAL');
-    expect(res.evolutionContext).toBe('RETRACTS');
+    // 1 & 2: Identical propositions + RETRACTS
+    const c1 = { proposition: 'The visit occurred.', classification: 'FACT', dateContext: null } as any;
+    const c2 = { proposition: 'The visit occurred.', classification: 'FACT', dateContext: null } as any;
+    const res1 = evaluateDeterministicRelationship(c1, c2, 'RETRACTS', { eventDependency: { isSameEvent: true } });
+    expect(res1.type).toBe('CONSISTENT_WITH');
+    expect(res1.dims).not.toContain('AFFIRMATION_DENIAL');
+    expect(res1.evolutionContext).toBe('RETRACTS');
+
+    // 3: Genuine contradiction + RETRACTS
+    const c3 = { proposition: 'The visit occurred.', classification: 'FACT', dateContext: null } as any;
+    const c4 = { proposition: 'The visit did not occur.', classification: 'FACT', dateContext: null } as any;
+    const res2 = evaluateDeterministicRelationship(c3, c4, 'RETRACTS', { eventDependency: { isSameEvent: true } });
+    expect(res2.type).toBe('DIRECT_CONTRADICTION');
+    expect(res2.dims).toContain('AFFIRMATION_DENIAL');
+    expect(res2.evolutionContext).toBe('RETRACTS');
+
+    // Extra: Non-contradictory different propositions + RETRACTS
+    const c5 = { proposition: 'p1', classification: 'FACT', dateContext: null } as any;
+    const c6 = { proposition: 'p2', classification: 'FACT', dateContext: null } as any;
+    const res3 = evaluateDeterministicRelationship(c5, c6, 'RETRACTS', { eventDependency: { isSameEvent: true } });
+    expect(res3.type).not.toBe('DIRECT_CONTRADICTION');
+    expect(res3.evolutionContext).toBe('RETRACTS');
   });
 
   it('F-M2D-004: same claim fingerprints, same relationship, same dimensions, same independence, same event identity => identical fingerprint', () => {
