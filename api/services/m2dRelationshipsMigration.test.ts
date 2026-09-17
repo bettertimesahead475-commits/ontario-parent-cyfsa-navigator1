@@ -13,6 +13,11 @@ describe("Stage 5 M2-D pending migration structural contracts", () => {
     expect(sql).toContain("'SAME_ORIGIN', 'DEPENDENT', 'INDEPENDENT', 'UNKNOWN_INDEPENDENCE'");
   });
 
+  it("includes default review and freshness states", () => {
+    expect(sql).toMatch(/review_state\s+text\s+not\s+null\s+default\s+'PROPOSED'\s+check/i);
+    expect(sql).toMatch(/freshness_state\s+text\s+not\s+null\s+default\s+'FRESH'\s+check/i);
+  });
+
   it("extends provenance constraint", () => {
     expect(sql).toContain("alter table public.navigator_intelligence_provenance drop constraint navigator_intelligence_provenance_object_type_check;");
     expect(sql).toContain("('ENTITY','MENTION','RESOLUTION','EVENT','PARTICIPANT','CLAIM','ATTRIBUTION','EVOLUTION','RELATIONSHIP')");

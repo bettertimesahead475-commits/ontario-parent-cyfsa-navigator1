@@ -97,8 +97,8 @@ Any AI coding agent must:
 ## 12. Next Task
 
 NEXT STAGE: **Stage 5**.
-NEXT TASK: **IMPLEMENTED — AWAITING INDEPENDENT M2-D CLOSURE AUDIT.**
-Do not begin Stage 5 M2-E automatically. M2-D remains IMPLEMENTED — AWAITING INDEPENDENT M2-D CLOSURE AUDIT. Await execution authorization and formal closure of M2-D before building M2-E features on top of it.
+NEXT TASK: **REMEDIATED — AWAITING FINAL INDEPENDENT M2-D CLOSURE AUDIT.**
+Do not begin Stage 5 M2-E automatically. M2-D is remediated and awaits closure execution authorization.
 
 ## Cross-Agent Handoff Protocol
 

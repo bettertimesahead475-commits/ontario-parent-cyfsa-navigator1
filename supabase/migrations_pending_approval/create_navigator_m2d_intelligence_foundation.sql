@@ -66,8 +66,8 @@ create table public.navigator_claim_relationships (
         'SAME_ORIGIN', 'DEPENDENT', 'INDEPENDENT', 'UNKNOWN_INDEPENDENCE'
     )),
     comparison_dimensions text[] not null default '{}',
-    review_state text not null check(review_state in ('PROPOSED','CONFIRMED','REJECTED','DISPUTED')),
-    freshness_state text not null check(freshness_state in ('FRESH','STALE')),
+    review_state text not null default 'PROPOSED' check(review_state in ('PROPOSED','CONFIRMED','REJECTED','DISPUTED')),
+    freshness_state text not null default 'FRESH' check(freshness_state in ('FRESH','STALE')),
     fingerprint text not null,
     created_at timestamptz not null default clock_timestamp(),
     updated_at timestamptz not null default clock_timestamp()

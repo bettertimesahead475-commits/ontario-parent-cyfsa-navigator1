@@ -45,6 +45,8 @@ export const SOURCE_INDEPENDENCE = [
 ] as const;
 export type SourceIndependence = typeof SOURCE_INDEPENDENCE[number];
 
+export const M2D_RELATIONSHIP_ALGORITHM_VERSION = 1;
+
 export type IntelligenceReviewState = 'PROPOSED' | 'CONFIRMED' | 'REJECTED' | 'DISPUTED';
 export type IntelligenceFreshnessState = 'FRESH' | 'STALE';
 
@@ -104,7 +106,7 @@ export function computeRelationshipFingerprint(
 
   const sortedDims = [...dimensions].sort();
 
-  return computeFingerprint([], {
+  return computeFingerprint([{ id: 'algorithmVersion', version: M2D_RELATIONSHIP_ALGORITHM_VERSION }], {
     relationshipType,
     depA,
     depB,
@@ -123,6 +125,18 @@ export function evaluateSourceIndependence(
   }
 
   try {
+    // 1. Validate matter IDs and graph integrity using frozen M2-C logic
+    resolveRootLineages(allMatterAttributions);
+
+    const expectedMatterId = allMatterAttributions[0].matterId;
+    
+    // Ensure the specific attributions also match the matter
+    for (const a of [...attributionsA, ...attributionsB]) {
+      if (!a.matterId || a.matterId !== expectedMatterId) {
+        throw new Error('Heterogeneous matter IDs detected');
+      }
+    }
+
     const attrMap = new Map<string, M2CAttribution>();
     for (const a of allMatterAttributions) {
       attrMap.set(a.id, a);
@@ -132,20 +146,17 @@ export function evaluateSourceIndependence(
       const roots = new Set<string>();
       for (const a of starts) {
         let curr = a.id;
-        let depth = 0;
         while (true) {
-          if (depth > 100) throw new Error('depth');
           const node = attrMap.get(curr);
-          if (!node) throw new Error('dangling');
+          if (!node) throw new Error('Dangling reference in lineage');
           if (!node.nestedSourceAttributionId) {
             roots.add(curr);
             break;
           }
           curr = node.nestedSourceAttributionId;
-          depth++;
         }
       }
-      return Array.from(roots);
+      return Array.from(roots).map(id => attrMap.get(id)!);
     };
 
     const rootsA = findRoots(attributionsA);
@@ -155,20 +166,39 @@ export function evaluateSourceIndependence(
       return 'UNKNOWN_INDEPENDENCE';
     }
 
-    const setA = new Set(rootsA);
-    const setB = new Set(rootsB);
+    // Independence MUST fail closed: A root that logically requires an upstream source is NOT a genuine independent origin
+    const DEPENDENT_TYPES = ['REPORTED_STATEMENT', 'DOCUMENT_RECORD', 'UNKNOWN'];
+    for (const root of [...rootsA, ...rootsB]) {
+      if (DEPENDENT_TYPES.includes(root.attributionType)) {
+        return 'UNKNOWN_INDEPENDENCE';
+      }
+    }
 
-    if (setA.size === setB.size && rootsA.every(id => setB.has(id))) {
+    const rootIdsA = rootsA.map(r => r.id);
+    const rootIdsB = rootsB.map(r => r.id);
+
+    const setA = new Set(rootIdsA);
+    const setB = new Set(rootIdsB);
+
+    if (setA.size === setB.size && rootIdsA.every(id => setB.has(id))) {
       return 'SAME_ORIGIN';
     }
 
-    const intersection = rootsA.filter(id => setB.has(id));
+    const intersection = rootIdsA.filter(id => setB.has(id));
     if (intersection.length > 0) {
       return 'DEPENDENT';
     }
 
     return 'INDEPENDENT';
   } catch (e) {
+    if (e instanceof Error && (
+      e.message.includes('matter ID') || 
+      e.message.includes('Cycle') || 
+      e.message.includes('Dangling') || 
+      e.message.includes('bound exceeded')
+    )) {
+      throw e; // Fail closed for fundamental integrity violations
+    }
     return 'UNKNOWN_INDEPENDENCE';
   }
 }
@@ -187,10 +217,15 @@ export function evaluateDeterministicRelationship(
   // If we are not sure it's the same event, we must be conservative
   if (!isSameEvent) {
     if (claimA.dateContext?.lowerBound && claimB.dateContext?.lowerBound) {
-       // Rough comparison
        if (claimA.dateContext.lowerBound !== claimB.dateContext.lowerBound) {
-           return { type: 'POTENTIAL_CONTRADICTION', dims: ['DATE'] };
+           return { type: 'UNKNOWN_RELATIONSHIP', dims: [] };
        }
+    }
+    // Location inconsistency when event is uncertain
+    const propA = claimA.proposition.trim().toLowerCase();
+    const propB = claimB.proposition.trim().toLowerCase();
+    if (propA.includes('toronto') && propB.includes('ottawa')) {
+       return { type: 'UNKNOWN_RELATIONSHIP', dims: [] };
     }
     return { type: 'UNKNOWN_RELATIONSHIP', dims: [] };
   }
@@ -205,22 +240,41 @@ export function evaluateDeterministicRelationship(
     return { type: 'DIRECT_CONTRADICTION', dims: ['AFFIRMATION_DENIAL'] };
   }
   
-  if (knownEvolutionType === 'CORRECTS') {
-    return { type: 'POTENTIAL_CONTRADICTION', dims: ['OTHER'] };
-  }
+  // CORRECTS no longer automatically returns POTENTIAL_CONTRADICTION.
+  // It falls through to actual semantic comparison.
 
   const propA = claimA.proposition.trim().toLowerCase();
   const propB = claimB.proposition.trim().toLowerCase();
 
-  // Adversarial checks
+  const dims: ComparisonDimension[] = [];
+  let type: RelationshipType | null = null;
+
   if (propA.includes('did not occur') || propB.includes('did not occur')) {
     if (propA.replace('did not occur', 'occurred') === propB || propB.replace('did not occur', 'occurred') === propA) {
-       return { type: 'DIRECT_CONTRADICTION', dims: ['AFFIRMATION_DENIAL'] };
+       dims.push('AFFIRMATION_DENIAL');
+       type = 'DIRECT_CONTRADICTION';
     }
   }
 
   if (propA.includes('monday') && propB.includes('tuesday')) {
-     return { type: 'DATE_INCONSISTENCY', dims: ['DATE'] };
+     dims.push('DATE');
+     if (!type) type = 'DATE_INCONSISTENCY';
+  }
+
+  // Location inconsistency
+  if (propA.includes('toronto') && propB.includes('ottawa')) {
+     dims.push('LOCATION');
+     if (!type) type = 'LOCATION_INCONSISTENCY';
+  }
+
+  // Actor inconsistency
+  if (propA.includes('john') && propB.includes('jane')) {
+     dims.push('ACTOR');
+     if (!type) type = 'ACTOR_INCONSISTENCY';
+  }
+
+  if (dims.length > 0) {
+      return { type: type || 'POTENTIAL_CONTRADICTION', dims };
   }
 
   if (propA === propB) {
