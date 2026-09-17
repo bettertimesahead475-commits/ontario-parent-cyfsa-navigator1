@@ -312,6 +312,74 @@ describe("POST /api/analyze", () => {
     expect(res.body.isRateLimit).toBe(true);
   });
 
+  it("Anthropic 400 errors retain safe diagnostic metadata server-side without leaking to client", async () => {
+    const errorLogSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const providerError = new Error("Invalid model: not-a-real-model");
+    (providerError as any).status = 400;
+    (providerError as any).error = {
+      type: "error",
+      error: { type: "invalid_request_error", message: "Invalid model: not-a-real-model" }
+    };
+    (providerError as any).request_id = "req_12345";
+    (providerError as any).name = "BadRequestError";
+
+    mockCreateMessage.mockRejectedValueOnce(providerError);
+
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "some text", model: "claude-sonnet-5" });
+    
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Something went wrong during");
+    expect(res.body.correlationId).toBe("req_12345");
+    expect(res.body.error).not.toContain("not-a-real-model");
+    expect(res.body.error).not.toContain("invalid_request_error");
+
+    // Verify server-side logging
+    expect(errorLogSpy).toHaveBeenCalled();
+    const loggedStr = errorLogSpy.mock.calls.find(call => typeof call[0] === 'string' && call[0].includes('"provider":"anthropic"'))?.[0];
+    expect(loggedStr).toBeDefined();
+    
+    const parsedLog = JSON.parse(loggedStr!);
+    expect(parsedLog.provider).toBe("anthropic");
+    expect(parsedLog.status).toBe(400);
+    expect(parsedLog.errorType).toBe("invalid_request_error");
+    expect(parsedLog.errorMessage).toBe("Invalid model: not-a-real-model");
+    expect(parsedLog.requestId).toBe("req_12345");
+    expect(parsedLog.modelId).toBe("claude-sonnet-5");
+    expect(parsedLog.route).toBe("/api/analyze");
+    expect(parsedLog.timestamp).toBeDefined();
+    
+    // Ensure the raw error object (with stack trace, request/response bodies) was NOT logged
+    const loggedRawError = errorLogSpy.mock.calls.some(call => call.some(arg => arg === providerError));
+    expect(loggedRawError).toBe(false);
+
+    errorLogSpy.mockRestore();
+  });
+
+  it("handles malformed provider error structures safely", async () => {
+    const errorLogSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const weirdError = new Error("Weird error");
+    (weirdError as any).name = "AnthropicError";
+    // missing status, missing request_id, missing error body
+
+    mockCreateMessage.mockRejectedValueOnce(weirdError);
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "some text" });
+    
+    expect(res.status).toBe(500); // Because status is missing, falls back to 500
+    expect(res.body.error).toContain("Something went wrong during");
+    expect(res.body.correlationId).toBe("unknown");
+
+    const loggedStr = errorLogSpy.mock.calls.find(call => typeof call[0] === 'string' && call[0].includes('"provider":"anthropic"'))?.[0];
+    expect(loggedStr).toBeDefined();
+    
+    const parsedLog = JSON.parse(loggedStr!);
+    expect(parsedLog.status).toBe(500);
+    expect(parsedLog.errorType).toBe("AnthropicError");
+    expect(parsedLog.errorMessage).toBe("Weird error");
+    expect(parsedLog.requestId).toBe("unknown");
+    
+    errorLogSpy.mockRestore();
+  });
+
   it("rejects an unauthenticated, unpaid request with SIGN_IN_REQUIRED", async () => {
     const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
     expect(res.status).toBe(401);

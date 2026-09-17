@@ -232,38 +232,50 @@ async function generateContentWithFallback(
   }));
 
   console.log(`[AI Engine] Claude routing. Model: ${model}`);
-  const response = await client.messages.create({
-    model,
-    // Raised again - Sonnet 5's actual ceiling is 128,000, confirmed against Anthropic's own
-    // docs (AWS Bedrock model card, platform "what's new" page). The prior defaults of 8000/
-    // 16000 were conservative guesses nowhere near the real limit, and combined with adaptive
-    // thinking eating into the same budget (see enableThinking above), were truncating real
-    // documents in production.
-    max_tokens: params.max_tokens || 16000,
-    thinking: params.enableThinking ? undefined : { type: "disabled" as const },
-    system: params.system,
-    messages,
-  });
-  const textOut = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("");
+  try {
+    const response = await client.messages.create({
+      model,
+      // Raised again - Sonnet 5's actual ceiling is 128,000, confirmed against Anthropic's own
+      // docs (AWS Bedrock model card, platform "what's new" page). The prior defaults of 8000/
+      // 16000 were conservative guesses nowhere near the real limit, and combined with adaptive
+      // thinking eating into the same budget (see enableThinking above), were truncating real
+      // documents in production.
+      max_tokens: params.max_tokens || 16000,
+      thinking: params.enableThinking ? undefined : { type: "disabled" as const },
+      system: params.system,
+      messages,
+    });
+    const textOut = response.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("");
 
-  // BUG FIX: an empty result here was previously silent and unexplained — the caller just saw
-  // "Empty response received from the analysis service," with no way to tell why. The most
-  // common real cause is the response being cut off by max_tokens before any usable text block
-  // was completed (large analysis schemas, like /api/analyze's, need more headroom than the old
-  // 4000-token default gave them). Logging stop_reason here makes that diagnosable immediately
-  // instead of requiring a runtime-log archaeology session every time it happens.
-  if (!textOut) {
-    console.error(
-      `[AI Engine] Empty text output. stop_reason=${(response as any).stop_reason}, ` +
-      `usage=${JSON.stringify((response as any).usage)}. ` +
-      `If stop_reason is "max_tokens", raise the max_tokens parameter for this call.`
-    );
+    // BUG FIX: an empty result here was previously silent and unexplained - the caller just saw
+    // "Empty response received from the analysis service," with no way to tell why. The most
+    // common real cause is the response being cut off by max_tokens before any usable text block
+    // was completed (large analysis schemas, like /api/analyze's, need more headroom than the old
+    // 4000-token default gave them). Logging stop_reason here makes that diagnosable immediately
+    // instead of requiring a runtime-log archaeology session every time it happens.
+    if (!textOut) {
+      console.error(
+        `[AI Engine] Empty text output. stop_reason=${(response as any).stop_reason}, ` +
+        `usage=${JSON.stringify((response as any).usage)}. ` +
+        `If stop_reason is "max_tokens", raise the max_tokens parameter for this call.`
+      );
+    }
+
+    return { text: textOut };
+  } catch (err: any) {
+    if (typeof err === "object" && err !== null) {
+      err._provider = "anthropic";
+      err._model = model;
+      err._requestId = err.request_id || (err.response?.headers && typeof err.response.headers.get === "function" ? err.response.headers.get('x-request-id') : null) || err.error?.error?.request_id || err.error?.request_id || "unknown";
+      err._anthropicErrorType = err.error?.error?.type || err.error?.type || err.type || err.name || "unknown";
+      err._sanitizedMessage = err.error?.error?.message || err.error?.message || err.message || "No error message provided";
+      err._status = err.status || 500;
+    }
+    throw err;
   }
-
-  return { text: textOut };
 }
 
 // Helper to extract JSON from any block resiliently.
@@ -310,8 +322,23 @@ function extractJson(text: string): any {
 }
 
 // Unified AI error handling and user-friendly formatting with HTTP status codes
-function handleAIError(error: any, contextDescription: string, res: Response) {
-  console.error(`[AI Error] during ${contextDescription}:`, error);
+// (if Request is not imported already, but it probably is)
+function handleAIError(error: any, contextDescription: string, res: Response, req?: Request) {
+  if (error && error._provider === "anthropic") {
+    const diagnosticLog = {
+      provider: "anthropic",
+      status: error._status,
+      errorType: error._anthropicErrorType,
+      errorMessage: error._sanitizedMessage,
+      requestId: error._requestId,
+      modelId: error._model,
+      route: req ? req.path : "unknown",
+      timestamp: new Date().toISOString()
+    };
+    console.error(JSON.stringify(diagnosticLog));
+  } else {
+    console.error(`[AI Error] during ${contextDescription}:`, error?.message || String(error));
+  }
   const errMsg = (error?.message || "").toLowerCase();
   const status = (error as any)?.status;
 
@@ -349,9 +376,13 @@ function handleAIError(error: any, contextDescription: string, res: Response) {
 
   // Final fallback - never pass a raw provider error message straight through to the user,
   // since it can be an unformatted JSON blob (see above) rather than a readable sentence.
-  res.status(status || 500).json({
+  const payload: any = {
     error: `Something went wrong during ${contextDescription}. Please try again in a moment.`
-  });
+  };
+  if (error?._requestId) {
+    payload.correlationId = error._requestId;
+  }
+  res.status(status || 500).json(payload);
 }
 
 const app = express();
@@ -586,8 +617,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
       res.json({ extractedText, characters: extractedText.length });
     } catch (err: any) {
-      console.error("[/api/extract-text]", err);
-      handleAIError(err, "text extraction", res);
+      handleAIError(err, "text extraction", res, req);
     }
   });
 
@@ -978,8 +1008,7 @@ ${analysisRules}`;
     } catch (error: any) {
       // Do NOT fabricate a fake analysis on failure — a parent could mistake
       // invented names/dates for a real reading of their own document.
-      console.error("[document analysis] API error, returning honest failure (no fabricated fallback):", error);
-      handleAIError(error, "document analysis", res);
+      handleAIError(error, "document analysis", res, req);
     }
   });
 
@@ -1100,8 +1129,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       res.json(report);
 
     } catch (error: any) {
-      console.error("[case timeline] API error, returning honest failure (no fabricated fallback):", error);
-      handleAIError(error, "case timeline", res);
+      handleAIError(error, "case timeline", res, req);
     }
   });
 
@@ -1254,8 +1282,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       });
 
     } catch (err: any) {
-      console.error("[RAG synthesis] API error, returning honest failure (no fabricated fallback):", err);
-      handleAIError(err, "RAG Synthesis", res);
+      handleAIError(err, "RAG Synthesis", res, req);
     }
   });
 
@@ -1313,8 +1340,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       res.json(extractedData);
 
     } catch (error: any) {
-      console.error("[evidence extraction] API error, returning honest failure (no fabricated fallback):", error);
-      handleAIError(error, "evidence extraction", res);
+      handleAIError(error, "evidence extraction", res, req);
     }
   });
 
@@ -1418,8 +1444,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       const report = extractJson(responseText);
       res.json(report);
     } catch (error: any) {
-      console.error("[deep scan] API error, returning honest failure (no fabricated fallback):", error);
-      handleAIError(error, "deep scan", res);
+      handleAIError(error, "deep scan", res, req);
     }
   });
 
@@ -1490,8 +1515,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       });
 
     } catch (error: any) {
-      console.error("[transcribe] API error, returning honest failure (no fabricated fallback):", error);
-      handleAIError(error, "transcription/journal formatting", res);
+      handleAIError(error, "transcription/journal formatting", res, req);
     }
   });
 
