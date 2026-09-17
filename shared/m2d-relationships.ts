@@ -1,5 +1,5 @@
 import { computeFingerprint } from './m2a-deterministic.js';
-import { M2CClaim, M2CAttribution, M2CEvolution, resolveRootLineages } from './m2c-claims.js';
+import { M2CClaim, M2CAttribution, M2CEvolution, resolveRootLineages, EvolutionType } from './m2c-claims.js';
 
 export const RELATIONSHIP_TYPES = [
   'DIRECT_CONTRADICTION',
@@ -50,12 +50,35 @@ export const M2D_RELATIONSHIP_ALGORITHM_VERSION = 1;
 export type IntelligenceReviewState = 'PROPOSED' | 'CONFIRMED' | 'REJECTED' | 'DISPUTED';
 export type IntelligenceFreshnessState = 'FRESH' | 'STALE';
 
+export interface StructuredActor {
+  id: string;
+  role: string;
+}
+
+export interface StructuredLocation {
+  id: string;
+}
+
+export interface EventDependency {
+  isSameEvent: boolean;
+  eventId?: string;
+}
+
+export interface M2DComparisonContext {
+  eventDependency: EventDependency;
+  actorA?: StructuredActor[];
+  actorB?: StructuredActor[];
+  locationA?: StructuredLocation;
+  locationB?: StructuredLocation;
+}
+
 export interface M2DRelationship {
   id: string;
   matterId: string;
   claimAId: string;
   claimBId: string;
   relationshipType: RelationshipType;
+  evolutionContext?: EvolutionType;
   independenceStatus: SourceIndependence;
   comparisonDimensions: ComparisonDimension[];
   reviewState: IntelligenceReviewState;
@@ -90,10 +113,23 @@ export function computeRelationshipFingerprint(
   claimASemanticFingerprint: string,
   claimBSemanticFingerprint: string,
   dimensions: ComparisonDimension[],
-  independenceStatus: SourceIndependence
+  independenceStatus: SourceIndependence,
+  eventDependency: EventDependency,
+  evolutionContext?: EvolutionType
 ): string {
   if (!claimASemanticFingerprint || !claimBSemanticFingerprint || claimASemanticFingerprint === 'current' || claimBSemanticFingerprint === 'current') {
     throw new Error('Missing or invalid semantic dependencies');
+  }
+
+  const REQUIRES_SAME_EVENT = [
+    'LOCATION_INCONSISTENCY', 'DATE_INCONSISTENCY', 'TIME_INCONSISTENCY',
+    'ACTOR_INCONSISTENCY', 'ACTION_INCONSISTENCY', 'SEVERITY_INCONSISTENCY',
+    'QUANTITY_INCONSISTENCY', 'SEQUENCE_INCONSISTENCY', 'DIRECT_CONTRADICTION',
+    'POTENTIAL_CONTRADICTION'
+  ];
+
+  if (REQUIRES_SAME_EVENT.includes(relationshipType) && !eventDependency.isSameEvent) {
+      throw new Error(`Relationship type ${relationshipType} requires confirmed same-event identity.`);
   }
 
   // Ensure deterministic ordering since claims can be passed in any order
@@ -111,7 +147,9 @@ export function computeRelationshipFingerprint(
     depA,
     depB,
     dimensions: sortedDims,
-    independenceStatus
+    independenceStatus,
+    eventDependency,
+    evolutionContext
   });
 }
 
@@ -208,24 +246,21 @@ export function evaluateSourceIndependence(
 export function evaluateDeterministicRelationship(
   claimA: Pick<M2CClaim, 'proposition' | 'classification' | 'dateContext'>,
   claimB: Pick<M2CClaim, 'proposition' | 'classification' | 'dateContext'>,
-  knownEvolutionType?: string,
-  isSameEvent: boolean = false
+  knownEvolutionType?: EvolutionType,
+  context?: M2DComparisonContext
 ): {
   type: RelationshipType;
   dims: ComparisonDimension[];
+  evolutionContext?: EvolutionType;
 } {
+  const isSameEvent = context?.eventDependency?.isSameEvent ?? false;
+
   // If we are not sure it's the same event, we must be conservative
   if (!isSameEvent) {
     if (claimA.dateContext?.lowerBound && claimB.dateContext?.lowerBound) {
        if (claimA.dateContext.lowerBound !== claimB.dateContext.lowerBound) {
            return { type: 'UNKNOWN_RELATIONSHIP', dims: [] };
        }
-    }
-    // Location inconsistency when event is uncertain
-    const propA = claimA.proposition.trim().toLowerCase();
-    const propB = claimB.proposition.trim().toLowerCase();
-    if (propA.includes('toronto') && propB.includes('ottawa')) {
-       return { type: 'UNKNOWN_RELATIONSHIP', dims: [] };
     }
     return { type: 'UNKNOWN_RELATIONSHIP', dims: [] };
   }
@@ -236,23 +271,23 @@ export function evaluateDeterministicRelationship(
     }
   }
 
+  let type: RelationshipType | null = null;
+  const dims: ComparisonDimension[] = [];
+  let evolutionContext: EvolutionType | undefined = undefined;
+
   if (knownEvolutionType === 'RETRACTS') {
-    return { type: 'DIRECT_CONTRADICTION', dims: ['AFFIRMATION_DENIAL'] };
+    dims.push('AFFIRMATION_DENIAL');
+    if (!type) type = 'DIRECT_CONTRADICTION';
+    evolutionContext = knownEvolutionType;
   }
   
-  // CORRECTS no longer automatically returns POTENTIAL_CONTRADICTION.
-  // It falls through to actual semantic comparison.
-
   const propA = claimA.proposition.trim().toLowerCase();
   const propB = claimB.proposition.trim().toLowerCase();
-
-  const dims: ComparisonDimension[] = [];
-  let type: RelationshipType | null = null;
 
   if (propA.includes('did not occur') || propB.includes('did not occur')) {
     if (propA.replace('did not occur', 'occurred') === propB || propB.replace('did not occur', 'occurred') === propA) {
        dims.push('AFFIRMATION_DENIAL');
-       type = 'DIRECT_CONTRADICTION';
+       if (!type) type = 'DIRECT_CONTRADICTION';
     }
   }
 
@@ -262,19 +297,25 @@ export function evaluateDeterministicRelationship(
   }
 
   // Location inconsistency
-  if (propA.includes('toronto') && propB.includes('ottawa')) {
+  if (context?.locationA && context?.locationB && context.locationA.id !== context.locationB.id) {
      dims.push('LOCATION');
      if (!type) type = 'LOCATION_INCONSISTENCY';
   }
 
   // Actor inconsistency
-  if (propA.includes('john') && propB.includes('jane')) {
-     dims.push('ACTOR');
-     if (!type) type = 'ACTOR_INCONSISTENCY';
+  if (context?.actorA && context?.actorB) {
+      for (const a of context.actorA) {
+         for (const b of context.actorB) {
+            if (a.role === b.role && a.id !== b.id) {
+                dims.push('ACTOR');
+                if (!type) type = 'ACTOR_INCONSISTENCY';
+            }
+         }
+      }
   }
 
   if (dims.length > 0) {
-      return { type: type || 'POTENTIAL_CONTRADICTION', dims };
+      return { type: type || 'POTENTIAL_CONTRADICTION', dims, evolutionContext };
   }
 
   if (propA === propB) {
