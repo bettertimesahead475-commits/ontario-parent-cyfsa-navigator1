@@ -114,7 +114,8 @@ Any AI coding agent must:
 ## 12. Next Task
 
 NEXT STAGE: **Stage 7**.
-NEXT TASK: **Lawyer / Professional Workspace and Directory Foundations**.
+NEXT STAGE MICRO-GATE: **Stage 7B**.
+NEXT TASK: **Stage 7B Parent-Authorized Matter Access Foundation**.
 Stage 5↔6 integration is formally closed.
 
 ## Cross-Agent Handoff Protocol
@@ -144,3 +145,16 @@ The previous security-split/historical audit handoff is preserved in Git at `223
 - **Source Gap & Independence**: Replaced hardcoded checks with graph-aware source lineage independence enforcement (SAME_ORIGIN, INDEPENDENT).
 - **Materiality & Freshness**: Shifted materiality from static constants to dependency-count evaluation. Introduced semantic-fingerprint hashing for precise freshness detection.
 - **Migration & RLS**: Created create_navigator_m2e_intelligence_foundation.sql matching standard service_role privileges and table definitions. Added structural migration tests.
+
+## Stage 7A Professional Identity & Profile Foundation
+- Stage 7 architecture gate passed
+- Parent closure SHA: d0fcb46a64512bbad3aea7b8b4fd63f1685bbdb2
+- Created professional_profiles schema linking securely to the existing accounts model.
+- Designed distinct verification states (identity, licence, practice, participation) rather than a single boolean.
+- Implemented pi/services/professionalProfiles.ts establishing the service contract and strictly enforcing self-escalation protection and authorization.
+- Added comprehensive unit tests in professionalProfiles.test.ts verifying cross-account isolation, verification immutability from client updates, and non-escalation of matter access.
+- MIGRATION NOT EXECUTED.
+- PRODUCTION NOT CHANGED.
+- Remaining Stage 7B dependency: The architecture currently supports profile creation and distinct verification lifecycle states, but a VERIFIED_LAWYER currently possesses NO matter access. Stage 7B must implement explicit parent-authorized grants (
+avigator_matter_access_grants) and map them to 
+avigator_matter_members.
