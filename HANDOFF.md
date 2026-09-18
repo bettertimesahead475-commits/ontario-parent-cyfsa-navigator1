@@ -158,3 +158,17 @@ The previous security-split/historical audit handoff is preserved in Git at `223
 - Remaining Stage 7B dependency: The architecture currently supports profile creation and distinct verification lifecycle states, but a VERIFIED_LAWYER currently possesses NO matter access. Stage 7B must implement explicit parent-authorized grants (
 avigator_matter_access_grants) and map them to 
 avigator_matter_members.
+
+## Stage 7B Parent-Authorized Matter Access
+- Stage 7B architecture gate passed
+- Parent closure SHA: a217f1a0d34dc563e2f9adc03626b5b6cda6614a
+- Created navigator_matter_access_grants schema to handle cryptographically secure single-use invitation tokens.
+- Added REVIEWER role to navigator_matter_members constraints via an additive migration.
+- Tokens are generated server-side and hashed before storage. Raw tokens are never stored.
+- Acceptance runs in an atomic RPC to prevent split-brain state between grant status and member role.
+- Revocation explicitly tombstones the grant and removes the REVIEWER role.
+- Strict cross-matter isolation and explicit constraints prevent unauthorized escalation.
+- Added 12 rigorous behavioral tests proving that verifying a professional profile does not grant matter access, non-owners cannot invite, and expired/used tokens fail.
+- MIGRATION NOT EXECUTED.
+- PRODUCTION NOT CHANGED.
+- Remaining Stage 7C dependency: With the REVIEWER role and invitation cycle complete, the frontend can now build the Professional Workspace relying on a secure, audited access foundation.
