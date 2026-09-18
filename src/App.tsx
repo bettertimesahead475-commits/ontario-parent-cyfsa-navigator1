@@ -21,6 +21,7 @@ const DocumentAnalyzerTab = lazy(() => import("./components/DocumentAnalyzerTab"
 const TemplatesTab = lazy(() => import("./components/TemplatesTab"));
 const VoiceAssistantTab = lazy(() => import("./components/VoiceAssistantTab"));
 const LawyerDirectoryTab = lazy(() => import("./components/LawyerDirectoryTab"));
+const PublicProfileTab = lazy(() => import("./components/PublicProfileTab"));
 const SignUpTab = lazy(() => import("./components/SignUpTab"));
 const StatutoryBookmarkSidebar = lazy(() => import("./components/StatutoryBookmarkSidebar"));
 const FloatingTTS = lazy(() => import("./components/FloatingTTS"));
@@ -314,6 +315,10 @@ export default function App() {
 
           <Route path="/lawyers">
             <LawyerDirectoryTab />
+          </Route>
+
+          <Route path="/lawyers/:id">
+            <PublicProfileTab />
           </Route>
 
           <Route path="/signup">
