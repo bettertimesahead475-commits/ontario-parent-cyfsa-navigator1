@@ -28,6 +28,7 @@ const ParentChatBot = lazy(() => import("./components/ParentChatBot"));
 const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyDrawer"));
 const PricingTab = lazy(() => import("./components/PricingTab"));
 const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWorkspace"));
+const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorkspace"));
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
 import { getUserKey } from "./utils/storage";
@@ -324,6 +325,12 @@ export default function App() {
           <Route path="/review">
             <RequireAuth>
               <EvidenceReviewWorkspace />
+            </RequireAuth>
+          </Route>
+
+          <Route path="/professional-workspace">
+            <RequireAuth>
+              <ProfessionalWorkspace />
             </RequireAuth>
           </Route>
 
