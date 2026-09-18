@@ -191,12 +191,12 @@ avigator_matter_members.
 - Parent closure SHA: b55e7dbf6e6dc1f4b4311507ff5a331c2c57c69b
 - Created comprehensive lawyer directory schema (create_lawyer_directory_foundation.sql) with normalized child tables: professional_office_locations, professional_service_areas, professional_practice_areas, and professional_profile_sources.
 - Successfully reused canonical professional_profiles identity without creating parallel truth models.
-- Implemented pi/services/lawyerDirectory.ts providing deterministic backend search semantics supporting locality matching, Ontario-wide fallback, virtual office capabilities, and CYFSA practice filtering.
+- Implemented api/services/lawyerDirectory.ts providing deterministic backend search semantics supporting locality matching, Ontario-wide fallback, virtual office capabilities, and CYFSA practice filtering. REGIONAL service areas are represented by the Stage 7D schema, but REGIONAL search/matching is not implemented in Stage 7D and is explicitly deferred to Stage 7E.
 - Guaranteed a safe public directory projection explicitly excluding internal UUIDs, Firebase identities, private emails, review data, and security metadata.
 - Implemented comprehensive match-reason deterministic labeling (e.g. OFFICE_NEARBY, ONTARIO_WIDE, CHILD_PROTECTION_PRACTICE) devoid of quality or win-rate ranking.
-- Included robust tests ensuring an unclaimed PUBLIC_LISTING cannot authenticate or gain capabilities, claim collisions fail safely, and profile ownership guarantees Stage 7B matter access separation natively.
+- Included robust tests ensuring an unclaimed PUBLIC_LISTING cannot authenticate or gain capabilities, and profile ownership guarantees Stage 7B matter access separation natively. Profile ownership claiming is deferred until a verified claim workflow is implemented. Stage 7D does not permit an authenticated lawyer-role account to claim an unclaimed public listing. The Stage 7D claimProfile path fails closed and performs no ownership mutation.
 - No new AI endpoints, scraping, or real lawyer data was introduced. 
 - MIGRATION NOT EXECUTED.
 - PRODUCTION NOT CHANGED.
-- Next Task: Stage 7E — Lawyer Discovery & Profile Interface.
+- Next Task: Stage 7E ï¿½ Lawyer Discovery & Profile Interface.
 
