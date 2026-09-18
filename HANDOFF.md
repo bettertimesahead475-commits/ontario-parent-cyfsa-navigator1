@@ -94,11 +94,28 @@ Any AI coding agent must:
 9. Update HANDOFF.md if architecture, milestone state or next task changes.
 10. End every work session with an exact summary of files changed, tests, branch, HEAD, working-tree state, database/deployment actions and next recommended task.
 
+## Stage 5↔6 Integration Closure
+
+- Stage 5 M2-E formally closed
+- frozen M2-E SHA: 5543f05a56f82c1527df23c9206913616995b36c
+- Stage 5↔6 integration gates A-K passed
+- integration adapter verified
+- dependency blocker was local incomplete node_modules only
+- npm ci restored pg/@types/pg
+- no integration source remediation was required
+- typecheck passed after dependency restoration
+- build passed
+- relevant Stage 5/6 tests passed
+- npm audit remains 11 total / 10 moderate / 1 high unchanged baseline
+- no production changes
+- no migrations executed
+- Stage 5↔6 integration formally closed
+
 ## 12. Next Task
 
-NEXT STAGE: **Stage 5**.
-NEXT TASK: **REMEDIATED — AWAITING FINAL INDEPENDENT MICRO-GATE.**
-The single closure blocker (EVIDENCE_QUALITY_REVIEW) was remediated. M2-E requires one final independent micro-gate. Do not begin Stage 5/6 integration.
+NEXT STAGE: **Stage 7**.
+NEXT TASK: **Lawyer / Professional Workspace and Directory Foundations**.
+Stage 5↔6 integration is formally closed.
 
 ## Cross-Agent Handoff Protocol
 
