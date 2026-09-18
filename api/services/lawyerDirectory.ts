@@ -1,5 +1,4 @@
 import { getSupabase } from "./access.js";
-import { findAccount } from "./accounts.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 
 export interface PublicDirectoryProfile {
@@ -22,6 +21,13 @@ export interface PublicDirectoryProfile {
   matchReasons?: string[];
 }
 
+const PUBLIC_DIRECTORY_STATES = [
+  'PUBLIC_LISTING',
+  'CLAIMED_PROFILE',
+  'VERIFIED_LAWYER',
+  'PARTICIPATING_PROFESSIONAL'
+];
+
 export async function searchDirectory(filters: {
   locality?: string;
   isVirtual?: boolean;
@@ -30,7 +36,8 @@ export async function searchDirectory(filters: {
 }): Promise<PublicDirectoryProfile[]> {
   const db = getSupabase();
 
-  let query = db.from('professional_profiles').select("id, account_id, display_name, professional_type, public_phone, public_email, lifecycle_state, identity_verified, licence_verified, practice_verified, platform_participating, professional_office_locations ( id, address, locality, province, postal_code, lat, lng ), professional_service_areas ( id, coverage_type, locality_name, region_name ), professional_practice_areas ( id, practice_area, provenance_type )");
+  let query = db.from('professional_profiles').select("id, account_id, display_name, professional_type, public_phone, public_email, lifecycle_state, identity_verified, licence_verified, practice_verified, platform_participating, professional_office_locations ( id, address, locality, province, postal_code, lat, lng ), professional_service_areas ( id, coverage_type, locality_name, region_name ), professional_practice_areas ( id, practice_area, provenance_type )")
+    .in('lifecycle_state', PUBLIC_DIRECTORY_STATES);
 
   const { data, error } = await query;
   if (error) throw new Error("Search failed: " + error.message);
@@ -69,6 +76,9 @@ export async function searchDirectory(filters: {
         }
       }
     }
+
+    // REGIONAL matching is explicitly deferred to Stage 7E.
+    // It is supported in schema but not yet exposed in the search logic.
 
     const isOW = row.professional_service_areas?.some((s: any) => s.coverage_type === 'ONTARIO_WIDE');
     if (isOW) {
@@ -118,7 +128,10 @@ export async function searchDirectory(filters: {
 
 export async function getPublicProfile(profileId: string): Promise<PublicDirectoryProfile | null> {
   const db = getSupabase();
-  const { data, error } = await db.from('professional_profiles').select("id, account_id, display_name, professional_type, public_phone, public_email, lifecycle_state, identity_verified, licence_verified, practice_verified, platform_participating, professional_office_locations ( id, address, locality, province, postal_code, lat, lng ), professional_service_areas ( id, coverage_type, locality_name, region_name ), professional_practice_areas ( id, practice_area, provenance_type )").eq('id', profileId).maybeSingle();
+  const { data, error } = await db.from('professional_profiles').select("id, account_id, display_name, professional_type, public_phone, public_email, lifecycle_state, identity_verified, licence_verified, practice_verified, platform_participating, professional_office_locations ( id, address, locality, province, postal_code, lat, lng ), professional_service_areas ( id, coverage_type, locality_name, region_name ), professional_practice_areas ( id, practice_area, provenance_type )")
+    .eq('id', profileId)
+    .in('lifecycle_state', PUBLIC_DIRECTORY_STATES)
+    .maybeSingle();
 
   if (error || !data) return null;
 
@@ -141,40 +154,7 @@ export async function getPublicProfile(profileId: string): Promise<PublicDirecto
 }
 
 export async function claimProfile(firebaseUid: string, profileId: string) {
-  const account = await findAccount(firebaseUid);
-  if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
-
-  if (account.primaryRole !== 'lawyer') {
-    throw new LifecycleError(403, 'FORBIDDEN', 'Only lawyers can claim profiles');
-  }
-
-  const db = getSupabase();
-
-  const { data: profile, error } = await db.from('professional_profiles')
-    .select('account_id, lifecycle_state')
-    .eq('id', profileId)
-    .single();
-
-  if (error || !profile) throw new LifecycleError(404, 'NOT_FOUND', 'Profile not found');
-  if (profile.account_id) throw new LifecycleError(409, 'CONFLICT', 'Profile already claimed');
-
-  const { data: existingProf } = await db.from('professional_profiles')
-    .select('id')
-    .eq('account_id', account.id)
-    .maybeSingle();
-
-  if (existingProf) throw new LifecycleError(409, 'CONFLICT', 'Account already has a profile');
-
-  const { error: updateErr } = await db.from('professional_profiles')
-    .update({ 
-      account_id: account.id,
-      lifecycle_state: 'CLAIMED_PROFILE',
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', profileId)
-    .is('account_id', null);
-
-  if (updateErr) throw new LifecycleError(500, 'DB_ERROR', 'Failed to claim profile: ' + updateErr.message);
-
-  return { success: true };
+  // NARROW REMEDIATION: Profile claiming is deferred until a verified claim workflow is implemented.
+  // Fails closed to prevent unsafe ownership acquisition.
+  throw new LifecycleError(403, 'FORBIDDEN', 'Profile claiming is deferred until a verified claim workflow is implemented.');
 }

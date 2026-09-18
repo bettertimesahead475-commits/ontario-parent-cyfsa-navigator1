@@ -4,7 +4,6 @@ import { requireProfessionalAccess } from "./professionalWorkspace.js";
 
 const __current = { db: null as any };
 
-// Mock access globally for tests
 vi.mock('./access.js', () => {
   return {
     getSupabase: () => __current.db
@@ -33,6 +32,14 @@ function fakeDatabase() {
         id: "prof-3", account_id: "acc-3", display_name: "CYFSA Pro", professional_type: "LAWYER",
         lifecycle_state: "PARTICIPATING_PROFESSIONAL", identity_verified: true, licence_verified: true,
         practice_verified: true, platform_participating: true
+      },
+      {
+        id: "prof-draft", account_id: null, display_name: "Draft", professional_type: "LAWYER",
+        lifecycle_state: "DRAFT_INTERNAL"
+      },
+      {
+        id: "prof-claimed", account_id: "acc-4", display_name: "Claimed Pro", professional_type: "LAWYER",
+        lifecycle_state: "CLAIMED_PROFILE"
       }
     ],
     professional_office_locations: [
@@ -43,7 +50,8 @@ function fakeDatabase() {
     professional_service_areas: [
       { id: "sa-1", profile_id: "prof-1", coverage_type: "LOCALITY", locality_name: "Brampton" },
       { id: "sa-2", profile_id: "prof-3", coverage_type: "ONTARIO_WIDE" },
-      { id: "sa-3", profile_id: "prof-3", coverage_type: "VIRTUAL" }
+      { id: "sa-3", profile_id: "prof-3", coverage_type: "VIRTUAL" },
+      { id: "sa-reg", profile_id: "prof-1", coverage_type: "REGIONAL", region_name: "Eastern Ontario" }
     ],
     professional_practice_areas: [
       { id: "pa-1", profile_id: "prof-3", practice_area: "CYFSA", provenance_type: "SELF_REPORTED" },
@@ -58,6 +66,7 @@ function fakeDatabase() {
     from(table: string) {
       if (!tables[table]) throw new Error("Table " + table + " not found");
       let query = tables[table];
+      let inFilters: any = {};
 
       const chain = {
         select: (fields: string) => {
@@ -79,6 +88,11 @@ function fakeDatabase() {
           query = query.filter(r => r[col] === val);
           return chain;
         },
+        in: (col: string, vals: any[]) => {
+          inFilters[col] = vals;
+          query = query.filter(r => vals.includes(r[col]));
+          return chain;
+        },
         single: async () => {
           if (query.length === 0) return { data: null, error: { message: "No rows" } };
           if (query.length > 1) return { data: null, error: { message: "Multiple rows" } };
@@ -90,24 +104,12 @@ function fakeDatabase() {
           return { data: query[0], error: null };
         },
         update: (updates: any) => {
-          const snapshot = [...query];
           return {
-            eq: (col: string, val: any) => {
-              const matched = snapshot.filter(r => r[col] === val);
-              return {
-                is: (col2: string, val2: any) => {
-                  const finalMatch = matched.filter(r => r[col2] === val2);
-                  if (finalMatch.length === 0) return { error: { message: "No rows" } };
-                  Object.assign(finalMatch[0], updates);
-                  return { error: null };
-                },
-                then: (resolve: any) => {
-                   if (matched.length === 0) return resolve({ error: { message: "No rows" } });
-                   Object.assign(matched[0], updates);
-                   resolve({ error: null });
-                }
-              };
-            }
+            eq: (col: string, val: any) => ({
+              is: (col2: string, val2: any) => ({
+                then: (resolve: any) => resolve({ error: null })
+              })
+            })
           };
         },
         then: (resolve: any) => {
@@ -124,12 +126,63 @@ beforeEach(() => {
   __current.db = fakeDatabase();
 });
 
-describe("Lawyer Directory Data Foundation", () => {
-  it("public listing can exist without account and has no authenticated capability", async () => {
-    const prof = await getPublicProfile("prof-2");
+describe("Lawyer Directory Data Foundation - Remediation", () => {
+  it("arbitrary lawyer-role account cannot claim unclaimed listing (fails closed)", async () => {
+    await expect(claimProfile("LAWYER_1", "prof-2")).rejects.toThrow(/Profile claiming is deferred/);
+  });
+
+  it("no claim race can report false ownership success (endpoint disabled)", async () => {
+    await expect(claimProfile("LAWYER_2", "prof-2")).rejects.toThrow(/deferred until a verified claim workflow/);
+  });
+
+  it("only directory-visible lifecycle states appear publicly", async () => {
+    const results = await searchDirectory({});
+    const states = results.map(r => r.lifecycleState);
+    expect(states).toContain("PUBLIC_LISTING");
+    expect(states).toContain("VERIFIED_LAWYER");
+    expect(states).toContain("PARTICIPATING_PROFESSIONAL");
+    expect(states).toContain("CLAIMED_PROFILE");
+    expect(states).not.toContain("DRAFT_INTERNAL");
+  });
+
+  it("non-public profile cannot be fetched through public profile endpoint", async () => {
+    const prof = await getPublicProfile("prof-draft");
+    expect(prof).toBeNull();
+  });
+
+  it("public DTO excludes private and internal metadata", async () => {
+    const prof = await getPublicProfile("prof-1");
     expect(prof).not.toBeNull();
-    expect(prof?.lifecycleState).toBe("PUBLIC_LISTING");
-    await expect(requireProfessionalAccess(__current.db, "fake-account", "matter-1")).rejects.toThrow();
+    // Prove it excludes internal IDs
+    expect((prof as any).accountId).toBeUndefined();
+    expect((prof as any).firebaseUid).toBeUndefined();
+    expect((prof as any).verificationNotes).toBeUndefined();
+    
+    // Prove it excludes Stage 7B access data & 7C review data natively
+    expect((prof as any).matterMemberships).toBeUndefined();
+    expect((prof as any).professionalReviews).toBeUndefined();
+    expect((prof as any).matterIntelligence).toBeUndefined();
+  });
+
+  it("PUBLIC_LISTING alone gives no matter access", async () => {
+    await expect(requireProfessionalAccess(__current.db, "fake-acc", "matter-1")).rejects.toThrow();
+  });
+
+  it("CLAIMED_PROFILE alone gives no matter access", async () => {
+    await expect(requireProfessionalAccess(__current.db, "acc-4", "matter-1")).rejects.toThrow();
+  });
+
+  it("VERIFIED_LAWYER alone gives no matter access", async () => {
+    await expect(requireProfessionalAccess(__current.db, "acc-1", "matter-1")).rejects.toThrow();
+  });
+
+  it("PARTICIPATING_PROFESSIONAL alone gives no matter access", async () => {
+    await expect(requireProfessionalAccess(__current.db, "acc-3", "matter-1")).rejects.toThrow();
+  });
+
+  it("REGIONAL behavior is explicitly deferred (does not match locality)", async () => {
+    const results = await searchDirectory({ locality: "Eastern Ontario" });
+    expect(results.find(r => r.id === "prof-1")).toBeUndefined(); // Explicitly deferred to Stage 7E
   });
 
   it("professional_profiles remains canonical", async () => {
@@ -141,7 +194,7 @@ describe("Lawyer Directory Data Foundation", () => {
   it("office and service area are separate, same professional supports multiple offices", async () => {
     const prof = await getPublicProfile("prof-1");
     expect(prof?.officeLocations).toHaveLength(2);
-    expect(prof?.serviceAreas).toHaveLength(1);
+    expect(prof?.serviceAreas).toHaveLength(2); // LOCALITY and REGIONAL
   });
 
   it("locality service-area matching works (Brampton) and match reason is accurate", async () => {
@@ -177,34 +230,6 @@ describe("Lawyer Directory Data Foundation", () => {
     expect(results[0].matchReasons).toContain("CHILD_PROTECTION_PRACTICE");
   });
 
-  it("public DTO contains intended public fields and EXCLUDES private data", async () => {
-    const prof = await getPublicProfile("prof-1");
-    expect((prof as any).firebaseUid).toBeUndefined();
-    expect((prof as any).verificationNotes).toBeUndefined();
-    expect((prof as any).accountId).toBeUndefined();
-    expect(prof?.publicPhone).toBe("555-0100");
-    expect(prof?.identityVerified).toBe(true);
-  });
-
-  it("PUBLIC_LISTING, CLAIMED_PROFILE, VERIFIED_LAWYER give NO matter access natively", async () => {
-    await expect(requireProfessionalAccess(__current.db, "acc-1", "matter-1")).rejects.toThrow();
-  });
-
-  it("claim collision fails closed (duplicate safety)", async () => {
-    await expect(claimProfile("LAWYER_2", "prof-1")).rejects.toThrow(/already claimed/);
-  });
-
-  it("duplicate profile protection: account cannot claim a second profile", async () => {
-    await expect(claimProfile("LAWYER_1", "prof-2")).rejects.toThrow(/already has a profile/);
-  });
-  
-  it("unclaimed profile can be claimed successfully", async () => {
-    await claimProfile("LAWYER_2", "prof-2");
-    const prof = __current.db.tables.professional_profiles.find((p: any) => p.id === "prof-2");
-    expect(prof.account_id).toBe("acc-2");
-    expect(prof.lifecycle_state).toBe("CLAIMED_PROFILE");
-  });
-
   it("match reasons are deterministic and no quality/win-rate ranking exists", async () => {
     const results = await searchDirectory({ locality: "Ottawa", requiresCyfsa: true });
     expect(results).toHaveLength(1);
@@ -215,3 +240,4 @@ describe("Lawyer Directory Data Foundation", () => {
     expect((results[0] as any).winRate).toBeUndefined();
   });
 });
+
