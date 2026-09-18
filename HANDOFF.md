@@ -185,3 +185,17 @@ avigator_matter_members.
 - MIGRATION NOT EXECUTED.
 - PRODUCTION NOT CHANGED.
 - Next Task: Stage 8 (Litigation Work Product) or Stage 7D (Frontend Integration/Styling refinements if required).
+
+## Stage 7D Ontario Lawyer Directory Data Foundation
+- Stage 7D architecture gate passed
+- Parent closure SHA: b55e7dbf6e6dc1f4b4311507ff5a331c2c57c69b
+- Created comprehensive lawyer directory schema (create_lawyer_directory_foundation.sql) with normalized child tables: professional_office_locations, professional_service_areas, professional_practice_areas, and professional_profile_sources.
+- Successfully reused canonical professional_profiles identity without creating parallel truth models.
+- Implemented pi/services/lawyerDirectory.ts providing deterministic backend search semantics supporting locality matching, Ontario-wide fallback, virtual office capabilities, and CYFSA practice filtering.
+- Guaranteed a safe public directory projection explicitly excluding internal UUIDs, Firebase identities, private emails, review data, and security metadata.
+- Implemented comprehensive match-reason deterministic labeling (e.g. OFFICE_NEARBY, ONTARIO_WIDE, CHILD_PROTECTION_PRACTICE) devoid of quality or win-rate ranking.
+- Included robust tests ensuring an unclaimed PUBLIC_LISTING cannot authenticate or gain capabilities, claim collisions fail safely, and profile ownership guarantees Stage 7B matter access separation natively.
+- No new AI endpoints, scraping, or real lawyer data was introduced. 
+- MIGRATION NOT EXECUTED.
+- PRODUCTION NOT CHANGED.
+- Next Task: Stage 7E — Lawyer Discovery & Profile Interface.

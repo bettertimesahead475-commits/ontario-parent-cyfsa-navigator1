@@ -21,6 +21,7 @@ import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
 import { registerDocumentRoutes } from "./documentRoutes.js";
 import { registerEvidenceReviewRoutes } from "./evidenceReviewRoutes.js";
 import { registerCaseIntelligenceReviewRoutes } from "./caseIntelligenceReviewRoutes.js";
+import { registerLawyerDirectoryRoutes } from "./lawyerDirectoryRoutes.js";
 import { registerProfessionalWorkspaceRoutes } from "./professionalWorkspaceRoutes.js";
 import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
@@ -787,6 +788,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   });
   registerEvidenceReviewRoutes(app);
   registerCaseIntelligenceReviewRoutes(app);
+    registerLawyerDirectoryRoutes(app);
   registerProfessionalWorkspaceRoutes(app);
 
   // API 2: Analyze Document Endpoint (Educational advice based on CYFSA of Ontario)
@@ -2008,3 +2010,4 @@ if (!process.env.VERCEL) {
 
 export default app;
 // redeploy trigger: force a fresh build from current main after a stale manual redeploy overrode it
+
