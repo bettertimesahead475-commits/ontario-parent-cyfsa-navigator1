@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useRoute, Link } from "wouter";
 import { ArrowLeft, MapPin, Phone, Mail, Globe, Shield, Video, Users, Building, Briefcase } from "lucide-react";
 import { PublicDirectoryProfile } from "../../api/services/lawyerDirectory";
+import { isSafeWebsiteUrl } from "../utils/urlValidator";
 
 export default function PublicProfileTab() {
   const [, params] = useRoute<{ id: string }>("/lawyers/:id");
@@ -113,8 +114,8 @@ export default function PublicProfileTab() {
                     <span>{profile.publicEmail}</span>
                   </a>
                 ) : null}
-                {profile.publicWebsite ? (
-                  <a href={profile.publicWebsite} target="_blank" rel="noreferrer" className="flex items-center gap-3 text-slate-700 hover:text-brand-600">
+                {profile.publicWebsite && isSafeWebsiteUrl(profile.publicWebsite) ? (
+                  <a href={profile.publicWebsite} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-slate-700 hover:text-brand-600">
                     <Globe className="w-5 h-5 text-slate-400" />
                     <span>{profile.publicWebsite}</span>
                   </a>

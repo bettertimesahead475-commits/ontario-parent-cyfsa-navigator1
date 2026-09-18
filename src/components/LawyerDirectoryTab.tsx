@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { MapPin, Phone, Search, Globe, Shield, Video, Users, ExternalLink } from "lucide-react";
 import { PublicDirectoryProfile } from "../../api/services/lawyerDirectory";
+import { isSafeWebsiteUrl } from "../utils/urlValidator";
 
 const MATCH_REASON_LABELS: Record<string, string> = {
   OFFICE_NEARBY: "Office in this location",
@@ -185,8 +186,8 @@ export default function LawyerDirectoryTab() {
                         {profile.publicPhone}
                       </a>
                     )}
-                    {profile.publicWebsite && (
-                      <a href={profile.publicWebsite} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-brand-700 hover:underline">
+                    {profile.publicWebsite && isSafeWebsiteUrl(profile.publicWebsite) && (
+                      <a href={profile.publicWebsite} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-brand-700 hover:underline">
                         <Globe className="w-4 h-4" />
                         Website
                       </a>

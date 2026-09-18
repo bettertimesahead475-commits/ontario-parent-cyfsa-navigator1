@@ -209,10 +209,13 @@ avigator_matter_members.
 - Added `/api/directory/search` and `/api/directory/profiles/:id` API routes bridging to the Stage 7D foundation.
 - Translated Stage 7D match-reasons to user-facing readable labels without score, ranking, or win-rate metrics.
 - Profile claiming explicitly deferred and omitted from the UI to prevent unverified account ownership escalation.
-- Added API tests `api/lawyerDirectoryRoutes.test.ts` and React DOM UI tests `src/components/LawyerDirectoryTab.test.tsx` checking layout, match behaviors, and disclaimer inclusions.
-- Parent product integration preserved (App.tsx layout handles `/lawyers` seamlessly).
+- Added API tests `api/lawyerDirectoryRoutes.test.ts`.
+- **REMEDIATION**: Added genuine behavioral UI tests using `@testing-library/react` and `jsdom` (`src/components/LawyerDirectoryTab.test.tsx`), covering interactive behaviors, error state, and profile-not-found state.
+- **REMEDIATION**: Added App routing integration test (`src/App.test.tsx`) proving Stage 7C Gap #4 (parent product integration regression test) is genuinely resolved in Stage 7E.
+- **REMEDIATION**: Secured `publicWebsite` links using URL parsing to enforce `http/https`, blocking `javascript:` execution, and added `rel="noopener noreferrer"`.
+- Stage 7C Gaps #1-#3 remain explicitly carried to Stage 7F.
 - REGIONAL filtering behavior remained deliberately excluded from the UI/search pipeline.
 - `npm run test`, `npx tsc --noEmit`, and `npm run build` completed successfully.
 - Baseline `npm audit` 11 vulnerabilities (10 moderate, 1 high) unchanged; no `npm audit fix` executed.
 - NO PRODUCTION CHANGES. NO MIGRATIONS. NO MERGE.
-- Next Task: Stage 7F (or Stage 7E Independent Closure Audit).
+- Next Task: Stage 7E Re-closure Audit.
