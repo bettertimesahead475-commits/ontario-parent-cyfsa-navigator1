@@ -524,3 +524,19 @@ Build passed.
 NPM Audit: 11 vulnerabilities (10 moderate, 1 high) (matches baseline).
 Production unchanged.
 Migrations unexecuted.
+
+### Stage 8B Implementation
+
+Branch: stage-8b-professional-case-brief-export
+Parent SHA: dc464ea055d22feaef2350101389484ff5c4c656
+
+Stage 8B added professional rendering and export capability for the CASE_BRIEF work product.
+A new `CaseBriefViewer` React component replaces the raw JSON view in the Professional Workspace, rendering 11 formal sections: Overview, People, Chronology, Evidence, Claims, Relationships, Inconsistencies, Gaps, Legal Relevance, Professional Review, and Source Index.
+
+The rendering enforces reviewer privacy: Reviewer A sees only their own notes and review states, preventing cross-reviewer data leaks. Classifications, uncertain chronologies, exact quotes, and provenance links are preserved. A browser-native print stylesheet enables clean PDF export without new backend dependencies or extra database queries. The UI tests use DOM matching to ensure structural correctness and reviewer isolation.
+
+Tests passed: 1177 in full suite.
+Build passed.
+NPM Audit: 11 vulnerabilities (10 moderate, 1 high) (matches baseline).
+Production unchanged.
+Migrations unexecuted.

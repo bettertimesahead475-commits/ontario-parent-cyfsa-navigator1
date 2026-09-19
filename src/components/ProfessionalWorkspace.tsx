@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
+import CaseBriefViewer from './CaseBriefViewer';
 
 export default function ProfessionalWorkspace() {
   const [matters, setMatters] = useState<{id: string; title: string}[]>([]);
@@ -186,25 +187,10 @@ export default function ProfessionalWorkspace() {
               </div>
             )}
             {!loading && activeTab === 'CASE_BRIEF' && caseBrief && (
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold">{caseBrief.title}</h2>
-                  <button className="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700" onClick={() => loadIntelligence('CASE_BRIEF')}>
-                    Refresh Brief
-                  </button>
-                </div>
-                <p className="text-sm text-slate-500 mb-6">Generated from canonical intelligence snapshot at {new Date(caseBrief.createdAt).toLocaleString()}. <strong>Not an autonomous legal decision-maker.</strong></p>
-                <div className="space-y-8">
-                  {Object.entries(caseBrief.sections).map(([sectionKey, sectionData]) => (
-                    <div key={sectionKey} className="border p-4 rounded bg-slate-50">
-                      <h3 className="text-lg font-semibold mb-2 capitalize">{sectionKey.replace(/([A-Z])/g, ' $1').trim()}</h3>
-                      <pre className="text-sm whitespace-pre-wrap font-sans bg-white p-3 border rounded overflow-x-auto">
-                        {JSON.stringify(sectionData, null, 2)}
-                      </pre>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <CaseBriefViewer 
+                caseBrief={caseBrief} 
+                onRefresh={() => loadIntelligence('CASE_BRIEF')} 
+              />
             )}
           </div>
         </div>
