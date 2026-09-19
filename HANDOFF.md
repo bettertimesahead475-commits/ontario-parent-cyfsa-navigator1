@@ -219,3 +219,291 @@ avigator_matter_members.
 - Baseline `npm audit` 11 vulnerabilities (10 moderate, 1 high) unchanged; no `npm audit fix` executed.
 - NO PRODUCTION CHANGES. NO MIGRATIONS. NO MERGE.
 - Next Task: Stage 7E Re-closure Audit.
+
+## Stage 7F Professional Platform Integration & Security Closure
+
+- Stage 7F branch: `stage-7f-professional-platform-closure`
+- Frozen Stage 7E parent SHA: `ba1872fabc80e8b84c0f0e1b94928c64b92bf29b`
+- No production code was modified. All Stage 7F work is additive behavioral test coverage.
+
+### Implementation Summary
+
+Stage 7F is not a new feature stage. It closes integration, security, and testing gaps across the professional platform (Stages 7A–7E) by adding genuine behavioral coverage of all six blockers and auxiliary requirements. No production code was rewritten because the existing architecture was structurally correct on all blockers.
+
+**1 file added:** `api/services/stage7f.test.ts` — 114 behavioral tests.
+
+---
+
+### B1 — Professional Status ≠ Matter Authorization
+
+**Result: DENIED / FAIL (blocked correctly)**
+
+- `VERIFIED_LAWYER` without active matter grant → DENIED (`getMatterOverview`, `getIntelligenceCategory`, `saveProfessionalReview`)
+- `PARTICIPATING_PROFESSIONAL` without active matter grant → DENIED (same routes)
+- `requireProfessionalAccess()` checks `navigator_matter_members` for `role=REVIEWER` only — lifecycle state is irrelevant.
+- Removing a member row between two calls denies the second call without any re-authentication.
+- Tests exercise the real production authorization path.
+
+---
+
+### B2 — Reviewer ID Spoofing
+
+**Result: BLOCKED / FAIL (blocked correctly)**
+
+- `saveProfessionalReview()` derives `reviewer_account_id` from `findAccount(firebaseUid)` — a server-side lookup from the verified Firebase UID. No client-supplied identity field (`reviewerAccountId`, `account_id`, `userId`, `user_id`, etc.) affects the result.
+- Reviewer A cannot create a review as Reviewer B — the stored row is always keyed to ACC_REVIEWER_A.
+- Reviewer A cannot overwrite Reviewer B's review — the upsert key is `(finding_type, finding_id, reviewer_account_id)`, so Reviewer B's row is untouched.
+- No production vulnerability was found; regression coverage was added.
+
+---
+
+### B3 — Six Intelligence Categories
+
+**Result: ALL SIX PASS**
+
+For each of `EVIDENCE` (navigator_evidence_items), `CHRONOLOGY` (navigator_events), `CLAIMS` (navigator_claims), `RELATIONSHIPS` (navigator_claim_relationships), `GAPS` (navigator_evidence_gap_findings), and `LEGAL` (navigator_case_intelligence_snapshots):
+
+- Authorized access returns data from the canonical source table (not a duplicate engine).
+- Cross-matter isolation enforced: Matter B records do not appear in Matter A result.
+- Unauthorized access (no REVIEWER membership) is denied.
+- Professional reviews are stored in `professional_reviews`, not in the canonical table.
+- The canonical source records are not modified by professional review writes.
+- `getIntelligenceCategory` returns separate `items` (canonical) and `reviews` (professional annotation) arrays.
+
+---
+
+### Authorization Matrix
+
+**Result: PASS — FAIL CLOSED**
+
+| Principal | Expected | Actual |
+|---|---|---|
+| Anonymous (no account) | DENIED | DENIED |
+| Authenticated non-professional (parent) | DENIED | DENIED |
+| PUBLIC_LISTING lifecycle alone | DENIED | DENIED |
+| CLAIMED_PROFILE lifecycle alone | DENIED | DENIED |
+| VERIFIED_LAWYER lifecycle alone | DENIED | DENIED |
+| PARTICIPATING_PROFESSIONAL lifecycle alone | DENIED | DENIED |
+| PENDING grant (no member row) | DENIED | DENIED |
+| EXPIRED grant (no member row) | DENIED | DENIED |
+| REVOKED grant (member row removed) | DENIED | DENIED |
+| ACCEPTED grant without REVIEWER membership | DENIED | DENIED |
+| Active REVIEWER membership | ALLOWED | ALLOWED |
+| OWNER (role ≠ REVIEWER) | DENIED | DENIED |
+
+Authorization is enforced by `requireProfessionalAccess()` checking `navigator_matter_members` for `role=REVIEWER`. All states without an active member row fail closed.
+
+---
+
+### B5 — Same-Session Revocation
+
+**Result: PASS**
+
+- Reviewer receives legitimate access → successfully accesses workspace.
+- Parent/grantor revokes access by removing the member row (canonical revocation path).
+- Reviewer remains logged in — no sign-out, no token refresh, no new login.
+- Next request is immediately denied.
+- This proves authorization is re-evaluated server-side on every request. No bearer token grants matter access between requests.
+
+---
+
+### B6 — Cross-Matter Isolation
+
+**Result: PASS — NO DATA LEAK**
+
+Reviewer A (authorized for Matter A only) was denied access to all Matter B workspace endpoints:
+- Workspace overview
+- EVIDENCE, CHRONOLOGY, CLAIMS, RELATIONSHIPS, GAPS, LEGAL INTELLIGENCE
+- Professional review create
+- Professional review update
+
+Client-supplied Matter B identifiers (passed directly to the service layer, as a malicious client would) do not override authorization.
+
+---
+
+### Multi-Reviewer Isolation
+
+**Result: PASS**
+
+- Reviewer A and B can both legitimately access the same matter.
+- A's review and B's review are separate, keyed by `reviewer_account_id`.
+- A cannot overwrite B's review; B cannot overwrite A's review.
+- Each reviewer may update their own review (upsert by `(finding_type, finding_id, reviewer_account_id)`).
+- Canonical machine findings remain unchanged after both reviewers submit.
+
+---
+
+### Machine/Human Separation
+
+**Result: PASS**
+
+`saveProfessionalReview()` writes only to `professional_reviews`. None of the six canonical source tables (`navigator_evidence_items`, `navigator_events`, `navigator_claims`, `navigator_claim_relationships`, `navigator_evidence_gap_findings`, `navigator_case_intelligence_snapshots`) are modified.
+
+---
+
+### Public/Private Boundary
+
+**Result: PASS**
+
+`getPublicProfile()` and `searchDirectory()` exclude from their DTOs:
+- `accountId` / `account_id`
+- `firebaseUid` / `firebase_uid`
+- `verificationNotes` / `verification_notes`
+- Matter memberships and grants
+- Grant tokens/digests
+- Professional reviews and review notes
+- Matter IDs, matter names, matter intelligence
+- Parent/client identity
+
+---
+
+### URL Security
+
+**Result: PASS**
+
+`isSafeWebsiteUrl()` in `src/utils/urlValidator.ts` correctly:
+- Allows `http:` and `https:` only
+- Rejects `javascript:`, `JAVASCRIPT:` (mixed case), `data:`, `vbscript:`, `file:`, `blob:`, `about:`, relative URLs, protocol-relative URLs, malformed URLs, null, undefined, empty string
+
+Production code was not modified.
+
+---
+
+### Profile Claiming
+
+**Result: DISABLED (correctly fail-closed)**
+
+`claimProfile()` unconditionally throws `LifecycleError(403, 'FORBIDDEN', 'Profile claiming is deferred until a verified claim workflow is implemented.')` for any input.
+
+---
+
+### Directory Neutrality
+
+**Result: NONE (no ranking or AI endorsement)**
+
+Search results contain no `score`, `winRate`, `successRate`, `aiEndorsement`, `starRating`, or similar fields. `matchReasons` contains only neutral factual labels (`OFFICE_NEARBY`, `SERVES_AREA`, `ONTARIO_WIDE`, `VIRTUAL`, `CHILD_PROTECTION_PRACTICE`, `VERIFIED_LAWYER`, `PARTICIPATING_PROFESSIONAL`).
+
+---
+
+### Parent Product Regression
+
+**Result: PASS**
+
+- Parent workflow (document analyzer, extract evidence, case timeline, RAG) remains unaffected.
+- Directory is optional — `searchDirectory({})` returns an empty array when no profiles exist; no error.
+- Lawyer selection is not required; `requireProfessionalAccess()` is a per-route opt-in guard.
+- Stage 7C App routing integration test confirms parent paths remain available alongside professional platform.
+
+---
+
+### Stage 7 API Surface Inventory
+
+| Route | Method | Classification | Auth Implementation |
+|---|---|---|---|
+| `POST /api/directory/search` | POST | PUBLIC | No auth required; public DTO only |
+| `GET /api/directory/profiles/:id` | GET | PUBLIC | No auth required; public DTO only |
+| `POST /api/directory/profiles/:id/claim` | POST | AUTHENTICATED | `verifyFirebaseToken` → fails closed (FORBIDDEN) |
+| `GET /api/professional-workspace/matters` | GET | MATTER-AUTHORIZED | `verifyFirebaseToken` + `findAccount` + `role=REVIEWER` check |
+| `GET /api/professional-workspace/matters/:id/overview` | GET | MATTER-AUTHORIZED | `verifyFirebaseToken` + `findAccount` + `requireProfessionalAccess` |
+| `GET /api/professional-workspace/matters/:id/intelligence/:cat` | GET | MATTER-AUTHORIZED | `verifyFirebaseToken` + `findAccount` + `requireProfessionalAccess` |
+| `POST /api/professional-workspace/matters/:id/review` | POST | MATTER-AUTHORIZED | `verifyFirebaseToken` + `findAccount` + `requireProfessionalAccess`; reviewer_account_id always server-derived |
+| `PATCH /api/matters/:id/intelligence/review` | PATCH | AUTHENTICATED | `verifyFirebaseToken`; identity from token only |
+| `GET /api/health` | GET | PUBLIC | No auth |
+| `GET /api/access-pricing` | GET | PUBLIC | No auth |
+| `POST /api/request-access` | POST | PUBLIC | No auth; creates payment record |
+| `POST /api/activate-code` | POST | AUTHENTICATED | `verifyFirebaseToken` required |
+| `POST /api/cases` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/analyze` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/extract-evidence` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/extract-text` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/case-timeline` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/rag-query` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/deep-scan` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/transcribe` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/transcribe-audio` | POST | AUTHENTICATED | `verifyFirebaseToken` + paid session |
+| `POST /api/lawyer-intake` | POST | PUBLIC (informational) | No auth |
+| `POST /api/admin/approve-payment` | POST | SERVER/INTERNAL | `x-admin-secret` header |
+| `POST /api/admin/revoke-session` | POST | SERVER/INTERNAL | `x-admin-secret` header |
+| `POST /api/admin/revoke-sessions-for-uid` | POST | SERVER/INTERNAL | `x-admin-secret` header |
+| `GET /api/admin/gmail-auth-url` | GET | SERVER/INTERNAL | `x-admin-secret` header |
+| `GET /api/admin/gmail-callback` | GET | SERVER/INTERNAL | `x-admin-secret` header |
+| `GET /api/admin/check-payments` | GET | SERVER/INTERNAL | `x-admin-secret` header |
+| Lifecycle routes (`/api/account`, `/api/clients`, `/api/matters`, etc.) | VARIOUS | AUTHENTICATED | `verifyFirebaseToken` |
+
+No route was found to be weaker than its intended classification. The professional workspace routes correctly enforce MATTER-AUTHORIZED access.
+
+---
+
+### Stage 7 Migration Dependency Order
+
+The following migrations are in `supabase/migrations_pending_approval/`. They are NOT executed. The Stage 7 subset listed in dependency order:
+
+1. **`create_professional_profiles.sql`** — Stage 7A: professional_profiles table, lifecycle states, RLS zero-policy. Requires accounts table.
+
+2. **`create_navigator_matter_access_grants.sql`** — Stage 7B: navigator_matter_access_grants table, REVIEWER role extension to navigator_matter_members, `accept_matter_grant` atomic RPC. Requires accounts, navigator_matters, navigator_matter_members.
+
+3. **`create_professional_reviews.sql`** — Stage 7C: professional_reviews table with `(finding_type, finding_id, reviewer_account_id)` uniqueness constraint. Requires accounts, navigator_matters.
+
+4. **`create_lawyer_directory_foundation.sql`** — Stage 7D: professional_office_locations, professional_service_areas, professional_practice_areas, professional_profile_sources child tables. Requires professional_profiles.
+
+5. Stage 7E: No migration (UI/frontend only).
+
+6. Stage 7F: No migration (behavioral test coverage only).
+
+---
+
+### Stage 7 RLS / Database Review
+
+Reviewed all four Stage 7 migrations:
+
+- `professional_profiles`: RLS enabled, zero policies; only `service_role` has DML. ✓
+- `navigator_matter_access_grants`: RLS enabled, zero policies; only `service_role` has DML; `accept_matter_grant` RPC is `security definer` and explicitly revokes `public`/`anon`/`authenticated`. ✓
+- `professional_reviews`: RLS enabled, zero policies; only `service_role` has DML; uniqueness constraint enforces multi-reviewer separation. ✓
+- `create_lawyer_directory_foundation.sql`: Extends professional_profiles with normalized child tables; RLS and grant structure consistent with pattern. ✓
+- Multi-reviewer uniqueness constraint: `(finding_type, finding_id, reviewer_account_id)` in professional_reviews. ✓
+- Foreign keys preserve ownership: all reference `accounts(id)` and `navigator_matters(id)` with appropriate ON DELETE semantics. ✓
+- No direct-table authorization bypass introduced. ✓
+
+---
+
+### Verification Results
+
+**TypeScript typecheck:** PASS (0 errors)
+
+**Stage 7F targeted tests:** 114 passed / 0 failed
+
+**Stage 7E:** 5 passed
+
+**Stage 7D:** 17 passed
+
+**Stage 7C:** 17 passed (professionalWorkspace.test.ts: 9, caseIntelligenceReview.test.ts: 8)
+
+**Stage 7B:** 12 passed
+
+**Stage 7A:** 9 passed
+
+**Auth/access/security:** 39 passed (access.test.ts: 29, humanReviewAccess.test.ts: 3, firebaseAdmin.test.ts: 7)
+
+**Stage 5 M2:** 181 passed (6 files)
+
+**Stage 6:** 331 passed (6 files)
+
+**Stage 5↔6 integration:** 39 passed
+
+**Full test suite:** 37 test files, **1155 tests passed / 0 failed**
+
+**Build:** PASS (vite + esbuild, exit 0)
+
+**npm audit:** 11 total (10 moderate, 1 high) — matches known baseline exactly. No npm audit fix executed.
+
+**Migrations executed:** NONE
+
+**Production changes:** NONE
+
+**Merged:** NO
+
+---
+
+### Important Note
+
+Stage 7 is NOT formally closed by this implementation. Only the subsequent independent closure audit may formally close Stage 7.
