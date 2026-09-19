@@ -3,9 +3,13 @@ import React from 'react';
 interface CaseBriefViewerProps {
   caseBrief: any;
   onRefresh: () => void;
+  isFinalized?: boolean;
+  versionNumber?: number;
+  finalizedAt?: string;
+  onFinalize?: () => void;
 }
 
-export default function CaseBriefViewer({ caseBrief, onRefresh }: CaseBriefViewerProps) {
+export default function CaseBriefViewer({ caseBrief, onRefresh, isFinalized, versionNumber, finalizedAt, onFinalize }: CaseBriefViewerProps) {
   if (!caseBrief) return null;
 
   const sections = caseBrief.sections;
@@ -31,32 +35,53 @@ export default function CaseBriefViewer({ caseBrief, onRefresh }: CaseBriefViewe
     <div className="case-brief-viewer bg-white text-slate-900 print:bg-white print:text-black">
       {/* Header Controls - Hidden in Print */}
       <div className="flex justify-between items-center mb-6 print:hidden">
-        <h2 className="text-2xl font-bold">{caseBrief.title}</h2>
+        <h2 className="text-2xl font-bold">
+          {isFinalized ? `FINALIZED CASE BRIEF (Version ${versionNumber})` : 'CURRENT CASE BRIEF'}
+        </h2>
         <div className="flex gap-2">
+          {!isFinalized && onFinalize && (
+            <button 
+              className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-green-700" 
+              onClick={() => {
+                if(window.confirm('Are you sure you want to finalize this case brief? This will create a preserved immutable work-product version.')) {
+                  onFinalize();
+                }
+              }}
+            >
+              Finalize Case Brief
+            </button>
+          )}
           <button 
             className="bg-slate-200 text-slate-800 px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-300" 
             onClick={handlePrint}
           >
             Export to PDF / Print
           </button>
-          <button 
-            className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-indigo-700" 
-            onClick={onRefresh}
-          >
-            Refresh Brief
-          </button>
+          {!isFinalized && (
+            <button 
+              className="bg-indigo-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-indigo-700" 
+              onClick={onRefresh}
+            >
+              Refresh Brief
+            </button>
+          )}
         </div>
       </div>
 
       {/* Print Header */}
       <div className="mb-8 pb-4 border-b-2 border-slate-800">
-        <h1 className="text-3xl font-bold mb-2">CYFSA Navigator: Case Brief</h1>
+        <h1 className="text-3xl font-bold mb-2">
+          {isFinalized ? `FINALIZED CASE BRIEF - Version ${versionNumber}` : 'CYFSA Navigator: Case Brief'}
+        </h1>
         <p className="text-lg mb-1">{caseBrief.title}</p>
         <p className="text-sm text-slate-500 mb-4">
-          Generated: {new Date(caseBrief.createdAt).toLocaleString()}
+          {isFinalized ? `Finalized: ${new Date(finalizedAt || caseBrief.createdAt).toLocaleString()}` : `Generated: ${new Date(caseBrief.createdAt).toLocaleString()}`}
         </p>
         <div className="p-4 bg-slate-100 border-l-4 border-slate-500 text-sm italic">
-          Decision-support work product generated from the records available to CYFSA Navigator. Potential issues and legal relevance require professional verification against the source record and current law. Not an official court document.
+          {isFinalized ? 
+            'Preserved work-product version. This document represents the case intelligence and professional review exactly as it was at the time of finalization.' :
+            'Decision-support work product generated from the records available to CYFSA Navigator. Potential issues and legal relevance require professional verification against the source record and current law. Not an official court document.'
+          }
         </div>
       </div>
 

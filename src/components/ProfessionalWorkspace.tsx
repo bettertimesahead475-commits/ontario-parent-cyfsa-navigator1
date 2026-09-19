@@ -12,6 +12,9 @@ export default function ProfessionalWorkspace() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
+  const [versions, setVersions] = useState<any[]>([]);
+  const [selectedVersionData, setSelectedVersionData] = useState<any>(null);
+
   useEffect(() => {
     loadMatters();
   }, []);
@@ -68,7 +71,41 @@ export default function ProfessionalWorkspace() {
         const res = await apiFetch(`/api/professional-workspace/matters/${selectedMatter}/work-product/case-brief`);
         if (!res.ok) throw new Error("Failed to generate case brief");
         setCaseBrief(await res.json());
+      } else if (tab === 'VERSIONS') {
+        setSelectedVersionData(null);
+        const res = await apiFetch(`/api/professional-workspace/matters/${selectedMatter}/work-product/case-brief/versions`);
+        if (!res.ok) throw new Error("Failed to fetch versions");
+        setVersions(await res.json());
       }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadVersion(versionId: string) {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/api/professional-workspace/matters/${selectedMatter}/work-product/case-brief/versions/${versionId}`);
+      if (!res.ok) throw new Error("Failed to fetch version data");
+      setSelectedVersionData(await res.json());
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFinalize() {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/api/professional-workspace/matters/${selectedMatter}/work-product/case-brief/finalize`, {
+        method: 'POST'
+      });
+      if (!res.ok) throw new Error("Failed to finalize case brief");
+      // Go to VERSIONS tab to show the new version
+      setActiveTab('VERSIONS');
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -114,7 +151,7 @@ export default function ProfessionalWorkspace() {
       {selectedMatter && (
         <div className="border rounded-lg bg-white overflow-hidden">
           <div className="flex border-b bg-slate-50 overflow-x-auto">
-            {['OVERVIEW', 'EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL', 'CASE_BRIEF'].map(tab => (
+            {['OVERVIEW', 'EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL', 'CASE_BRIEF', 'VERSIONS'].map(tab => (
               <button
                 key={tab}
                 className={`px-4 py-3 text-sm font-semibold whitespace-nowrap ${activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}
@@ -143,7 +180,7 @@ export default function ProfessionalWorkspace() {
               </div>
             )}
 
-            {!loading && activeTab !== 'OVERVIEW' && activeTab !== 'CASE_BRIEF' && intelligence && (
+            {!loading && activeTab !== 'OVERVIEW' && activeTab !== 'CASE_BRIEF' && activeTab !== 'VERSIONS' && intelligence && (
               <div>
                 <h2 className="text-xl font-bold mb-4">{activeTab} Intelligence</h2>
                 <p className="text-sm text-amber-700 bg-amber-50 p-2 rounded mb-4">
@@ -189,8 +226,49 @@ export default function ProfessionalWorkspace() {
             {!loading && activeTab === 'CASE_BRIEF' && caseBrief && (
               <CaseBriefViewer 
                 caseBrief={caseBrief} 
-                onRefresh={() => loadIntelligence('CASE_BRIEF')} 
+                onRefresh={() => loadIntelligence('CASE_BRIEF')}
+                onFinalize={handleFinalize}
               />
+            )}
+            {!loading && activeTab === 'VERSIONS' && (
+              <div>
+                {selectedVersionData ? (
+                  <div>
+                    <button onClick={() => setSelectedVersionData(null)} className="mb-4 text-indigo-600 hover:underline">← Back to Versions</button>
+                    <CaseBriefViewer 
+                      caseBrief={selectedVersionData.snapshot} 
+                      onRefresh={() => {}}
+                      isFinalized={true}
+                      versionNumber={selectedVersionData.version_number}
+                      finalizedAt={selectedVersionData.finalized_at}
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <h2 className="text-xl font-bold mb-4">Finalized Versions</h2>
+                    {versions.length === 0 ? (
+                      <p className="text-slate-500 italic">No finalized versions found.</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {versions.map(v => (
+                          <li key={v.id} className="p-4 border rounded bg-slate-50 flex justify-between items-center">
+                            <div>
+                              <p className="font-semibold text-lg">Version {v.version_number}</p>
+                              <p className="text-sm text-slate-500">Finalized at: {new Date(v.finalized_at).toLocaleString()}</p>
+                            </div>
+                            <button 
+                              className="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded font-medium hover:bg-indigo-200"
+                              onClick={() => loadVersion(v.id)}
+                            >
+                              View Snapshot
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

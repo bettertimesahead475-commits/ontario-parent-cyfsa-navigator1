@@ -540,3 +540,19 @@ Build passed.
 NPM Audit: 11 vulnerabilities (10 moderate, 1 high) (matches baseline).
 Production unchanged.
 Migrations unexecuted.
+
+### Stage 8C Implementation
+
+Branch: stage-8c-work-product-finalization-versioning
+Parent SHA: c34533a42c7cd367f208b67a56b2254d9695efba
+
+Stage 8C adds professional review lifecycle finalization, immutable snapshots, and version history.
+A new persistence table professional_work_product_versions has been defined via migration (create_professional_work_product_versions.sql) to store JSONB snapshots of finalized work products securely. The snapshots are strictly scoped per reviewer (eviewer_account_id constraint) and enforce version integrity natively.
+
+Endpoints were added to finalize the brief, retrieve all versions, and fetch a specific version. Server-side identity resolution guarantees that reviewers cannot see or modify other reviewers' versions. The UI was updated with a "Finalize Case Brief" feature and a "VERSIONS" tab for retrieving and viewing historical snapshots identically to the current view but explicitly marked as finalized.
+
+Tests passed: 1186 in full suite.
+Build passed.
+NPM Audit: 11 vulnerabilities (10 moderate, 1 high) (matches baseline).
+Production unchanged.
+Migrations created but unexecuted.

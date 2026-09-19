@@ -139,3 +139,94 @@ export async function generateCaseBrief(firebaseUid: string, matterId: string) {
 
   return caseBrief;
 }
+
+export async function finalizeCaseBrief(firebaseUid: string, matterId: string) {
+  matterId = requireUuid(matterId, 'matterId');
+  const account = await findAccount(firebaseUid);
+  if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
+
+  const db = getSupabase();
+  await requireProfessionalAccess(db, account.id, matterId);
+
+  const caseBrief = await generateCaseBrief(firebaseUid, matterId);
+
+  // Implement deterministic versioning with a retry loop for uniqueness conflicts
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: maxVerData } = await db
+      .from('professional_work_product_versions')
+      .select('version_number')
+      .eq('matter_id', matterId)
+      .eq('reviewer_account_id', account.id)
+      .eq('work_product_type', 'CASE_BRIEF')
+      .order('version_number', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextVersionNumber = (maxVerData?.version_number || 0) + 1;
+
+    caseBrief.status = 'FINALIZED';
+    caseBrief.versionNumber = nextVersionNumber;
+
+    const { data, error } = await db.from('professional_work_product_versions').insert({
+      matter_id: matterId,
+      reviewer_account_id: account.id,
+      work_product_type: 'CASE_BRIEF',
+      version_number: nextVersionNumber,
+      status: 'FINALIZED',
+      snapshot: caseBrief
+    }).select('*').single();
+
+    if (!error && data) {
+      return data;
+    }
+
+    if (error && error.code !== '23505') { // If it's not a unique violation, throw
+      throw new LifecycleError(500, 'FINALIZATION_FAILED', 'Failed to finalize work product version');
+    }
+  }
+
+  throw new LifecycleError(409, 'CONCURRENT_FINALIZATION', 'Could not finalize due to concurrent requests');
+}
+
+export async function getWorkProductVersions(firebaseUid: string, matterId: string, workProductType: string = 'CASE_BRIEF') {
+  matterId = requireUuid(matterId, 'matterId');
+  const account = await findAccount(firebaseUid);
+  if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
+
+  const db = getSupabase();
+  await requireProfessionalAccess(db, account.id, matterId);
+
+  const { data, error } = await db
+    .from('professional_work_product_versions')
+    .select('id, matter_id, work_product_type, version_number, status, created_at, finalized_at')
+    .eq('matter_id', matterId)
+    .eq('reviewer_account_id', account.id)
+    .eq('work_product_type', workProductType)
+    .order('version_number', { ascending: false });
+
+  if (error) throw new LifecycleError(500, 'FETCH_FAILED', 'Failed to fetch work product versions');
+  return data || [];
+}
+
+export async function getWorkProductVersion(firebaseUid: string, matterId: string, versionId: string) {
+  matterId = requireUuid(matterId, 'matterId');
+  versionId = requireUuid(versionId, 'versionId');
+  const account = await findAccount(firebaseUid);
+  if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
+
+  const db = getSupabase();
+  await requireProfessionalAccess(db, account.id, matterId);
+
+  const { data, error } = await db
+    .from('professional_work_product_versions')
+    .select('*')
+    .eq('id', versionId)
+    .eq('matter_id', matterId)
+    .eq('reviewer_account_id', account.id)
+    .single();
+
+  if (error || !data) throw new LifecycleError(404, 'NOT_FOUND', 'Work product version not found');
+  
+  return data;
+}
+
