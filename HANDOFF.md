@@ -556,3 +556,13 @@ Build passed.
 NPM Audit: 11 vulnerabilities (10 moderate, 1 high) (matches baseline).
 Production unchanged.
 Migrations created but unexecuted.
+
+### Stage 8C Remediation
+
+Blocked SHA: c058440293bef33f1436208c95589dbb8b55451a
+Audit Blocker: TypeScript TS2339 errors during tsc --noEmit.
+Remediation performed: Resolved 'versionNumber' by creating a separated finalizedSnapshot object. Resolved 'reviewer_account_id' by adding it to the Supabase select query.
+Typecheck result: 0 errors.
+Test result: 1186 tests passed.
+Migration still unexecuted.
+Production unchanged.

@@ -164,8 +164,11 @@ export async function finalizeCaseBrief(firebaseUid: string, matterId: string) {
 
     const nextVersionNumber = (maxVerData?.version_number || 0) + 1;
 
-    caseBrief.status = 'FINALIZED';
-    caseBrief.versionNumber = nextVersionNumber;
+    const finalizedSnapshot = {
+      ...caseBrief,
+      status: 'FINALIZED',
+      versionNumber: nextVersionNumber
+    };
 
     const { data, error } = await db.from('professional_work_product_versions').insert({
       matter_id: matterId,
@@ -173,7 +176,7 @@ export async function finalizeCaseBrief(firebaseUid: string, matterId: string) {
       work_product_type: 'CASE_BRIEF',
       version_number: nextVersionNumber,
       status: 'FINALIZED',
-      snapshot: caseBrief
+      snapshot: finalizedSnapshot
     }).select('*').single();
 
     if (!error && data) {
@@ -198,7 +201,7 @@ export async function getWorkProductVersions(firebaseUid: string, matterId: stri
 
   const { data, error } = await db
     .from('professional_work_product_versions')
-    .select('id, matter_id, work_product_type, version_number, status, created_at, finalized_at')
+    .select('id, matter_id, reviewer_account_id, work_product_type, version_number, status, created_at, finalized_at')
     .eq('matter_id', matterId)
     .eq('reviewer_account_id', account.id)
     .eq('work_product_type', workProductType)
