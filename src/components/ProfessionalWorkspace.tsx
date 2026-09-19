@@ -7,6 +7,7 @@ export default function ProfessionalWorkspace() {
   const [overview, setOverview] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<string>('OVERVIEW');
   const [intelligence, setIntelligence] = useState<any>(null);
+  const [caseBrief, setCaseBrief] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
@@ -62,6 +63,10 @@ export default function ProfessionalWorkspace() {
         const res = await apiFetch(`/api/professional-workspace/matters/${selectedMatter}/intelligence/${tab}`);
         if (!res.ok) throw new Error("Failed to load intelligence");
         setIntelligence(await res.json());
+      } else if (tab === 'CASE_BRIEF') {
+        const res = await apiFetch(`/api/professional-workspace/matters/${selectedMatter}/work-product/case-brief`);
+        if (!res.ok) throw new Error("Failed to generate case brief");
+        setCaseBrief(await res.json());
       }
     } catch (e: any) {
       setError(e.message);
@@ -108,7 +113,7 @@ export default function ProfessionalWorkspace() {
       {selectedMatter && (
         <div className="border rounded-lg bg-white overflow-hidden">
           <div className="flex border-b bg-slate-50 overflow-x-auto">
-            {['OVERVIEW', 'EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL'].map(tab => (
+            {['OVERVIEW', 'EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL', 'CASE_BRIEF'].map(tab => (
               <button
                 key={tab}
                 className={`px-4 py-3 text-sm font-semibold whitespace-nowrap ${activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}
@@ -137,7 +142,7 @@ export default function ProfessionalWorkspace() {
               </div>
             )}
 
-            {!loading && activeTab !== 'OVERVIEW' && intelligence && (
+            {!loading && activeTab !== 'OVERVIEW' && activeTab !== 'CASE_BRIEF' && intelligence && (
               <div>
                 <h2 className="text-xl font-bold mb-4">{activeTab} Intelligence</h2>
                 <p className="text-sm text-amber-700 bg-amber-50 p-2 rounded mb-4">
@@ -178,6 +183,27 @@ export default function ProfessionalWorkspace() {
                     })}
                   </ul>
                 )}
+              </div>
+            )}
+            {!loading && activeTab === 'CASE_BRIEF' && caseBrief && (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">{caseBrief.title}</h2>
+                  <button className="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700" onClick={() => loadIntelligence('CASE_BRIEF')}>
+                    Refresh Brief
+                  </button>
+                </div>
+                <p className="text-sm text-slate-500 mb-6">Generated from canonical intelligence snapshot at {new Date(caseBrief.createdAt).toLocaleString()}. <strong>Not an autonomous legal decision-maker.</strong></p>
+                <div className="space-y-8">
+                  {Object.entries(caseBrief.sections).map(([sectionKey, sectionData]) => (
+                    <div key={sectionKey} className="border p-4 rounded bg-slate-50">
+                      <h3 className="text-lg font-semibold mb-2 capitalize">{sectionKey.replace(/([A-Z])/g, ' $1').trim()}</h3>
+                      <pre className="text-sm whitespace-pre-wrap font-sans bg-white p-3 border rounded overflow-x-auto">
+                        {JSON.stringify(sectionData, null, 2)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

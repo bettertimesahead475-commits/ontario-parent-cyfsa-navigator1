@@ -7,6 +7,7 @@ import {
   getIntelligenceCategory,
   saveProfessionalReview
 } from './services/professionalWorkspace.js';
+import { generateCaseBrief } from './services/litigationWorkProduct.js';
 
 export function registerProfessionalWorkspaceRoutes(app: Express) {
   const authenticated = (action: (req: Request, uid: string) => Promise<unknown>) => async (req: Request, res: Response) => {
@@ -35,4 +36,5 @@ export function registerProfessionalWorkspaceRoutes(app: Express) {
     const { findingType, findingId, reviewState, reviewNote } = r.body;
     return saveProfessionalReview(u, r.params.matterId, findingType, findingId, reviewState, reviewNote || null);
   }));
+  app.get('/api/professional-workspace/matters/:matterId/work-product/case-brief', authenticated((r, u) => generateCaseBrief(u, r.params.matterId)));
 }
