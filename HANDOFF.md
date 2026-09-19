@@ -506,4 +506,21 @@ Reviewed all four Stage 7 migrations:
 
 ### Important Note
 
-Stage 7 was formally closed by independent audit.\n\n### Stage 8A Implementation\n\nBranch: stage-8a-litigation-work-product-foundation\nParent SHA: 8f01041db41b1bba40a67acb7d4a6c888248339\n\nStage 8A added on-demand generation of deterministic CASE_BRIEF work product. Persistence was avoided because deterministic on-demand assembly is sufficient for the current requirements, simplifying architecture and avoiding unnecessary data duplication. A new endpoint /api/professional-workspace/matters/:matterId/work-product/case-brief is exposed under MATTER-AUTHORIZED scope.\n\nTests passed: 1162 in full suite.\nBuild passed.\nNPM Audit: 11 vulnerabilities (matches baseline).
+Stage 7 was formally closed by independent audit.
+
+### Stage 8A Implementation
+
+Branch: stage-8a-litigation-work-product-foundation
+Parent SHA: a8f01041db41b1bba40a67acb7d4a6c888248339
+
+Stage 8A added on-demand generation of deterministic CASE_BRIEF work product. Persistence was avoided because deterministic on-demand assembly is sufficient for the current requirements, simplifying architecture and avoiding unnecessary data duplication. A new endpoint `/api/professional-workspace/matters/:matterId/work-product/case-brief` is exposed under MATTER-AUTHORIZED scope.
+
+Reviewer-private professional annotations have been successfully isolated from canonical machine intelligence, establishing machine/human separation.
+
+Provenance behavior and reproducibility behavior have been preserved.
+
+Tests passed: 1162 in full suite.
+Build passed.
+NPM Audit: 11 vulnerabilities (10 moderate, 1 high) (matches baseline).
+Production unchanged.
+Migrations unexecuted.

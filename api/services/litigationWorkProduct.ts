@@ -31,7 +31,7 @@ export async function generateCaseBrief(firebaseUid: string, matterId: string) {
     db.from('navigator_claim_relationships').select('*').eq('matter_id', matterId),
     db.from('navigator_evidence_gap_findings').select('*').eq('matter_id', matterId),
     db.from('navigator_case_intelligence_snapshots').select('*').eq('matter_id', matterId),
-    db.from('professional_reviews').select('*').eq('matter_id', matterId)
+    db.from('professional_reviews').select('*').eq('matter_id', matterId).eq('reviewer_account_id', account.id)
   ]);
 
   const timestamp = new Date().toISOString();
