@@ -17,18 +17,9 @@ CREATE TABLE IF NOT EXISTS navigator_matter_legal_research_candidates (
     source_provenance TEXT,
     confidence NUMERIC,
     content_integrity_status TEXT NOT NULL DEFAULT 'NOT_CHECKED',
+    idempotence_key TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     retrieved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Ensure idempotence
-CREATE UNIQUE INDEX navigator_matter_legal_research_idempotence_idx ON navigator_matter_legal_research_candidates (
-    matter_id,
-    COALESCE(evidence_item_id, '00000000-0000-0000-0000-000000000000'),
-    COALESCE(event_id, '00000000-0000-0000-0000-000000000000'),
-    legal_source_id,
-    COALESCE(provision_id, '00000000-0000-0000-0000-000000000000'),
-    retrieval_basis
 );
 
 -- Enforce authorization exclusively via server-side service architecture

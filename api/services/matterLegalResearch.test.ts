@@ -18,7 +18,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
       navigator_legal_provision_versions: [],
       navigator_events: [],
       navigator_matters: [],
-      navigator_matter_members: [],
+      navigator_matter_members: [{ matter_id: matterId, account_id: 'test-account-id', role: 'OWNER' }],
       navigator_matter_legal_research_candidates: []
     };
 
@@ -124,7 +124,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
   });
 
   it('fact -> potentially relevant provision (preserves FACT classification)', async () => {
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId,
       evidenceClassification: 'FACT',
@@ -139,7 +139,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
   });
 
   it('allegation -> candidate while preserving ALLEGATION', async () => {
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId,
       evidenceClassification: 'ALLEGATION',
@@ -173,7 +173,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
       date_lower_bound: '2022-06-01'
     });
 
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId: historicalEventId,
       legalSourceId: sourceId,
@@ -185,7 +185,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
   });
 
   it('future version excluded (or unknown date unresolved)', async () => {
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       legalSourceId: sourceId,
       provisionId,
@@ -217,7 +217,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
       date_lower_bound: '2022-06-01'
     });
     
-    await expect(buildMatterLegalResearchCandidate({
+    await expect(buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId: historicalEventId,
       legalSourceId: sourceId,
@@ -230,7 +230,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
   it('content-integrity verified state (authoritative DB hash)', async () => {
     const content = 'This is the law.';
     
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId,
       legalSourceId: sourceId,
@@ -244,7 +244,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
   });
   
   it('content-integrity mismatch fail closed (caller supplied altered content)', async () => {
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId,
       legalSourceId: sourceId,
@@ -270,12 +270,12 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
       expectedContentHash: 'fake-hash-that-matches-altered-text' // Will be ignored
     };
     
-    const res = await buildMatterLegalResearchCandidate(input);
+    const res = await buildMatterLegalResearchCandidate('mock-uid', input);
     expect(res.contentIntegrityStatus).toBe('FAILED');
   });
 
   it('missing hash / unavailable state', async () => {
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId,
       legalSourceId: sourceId,
@@ -288,7 +288,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
   });
 
   it('deterministic retrieval basis exposed', async () => {
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId,
       legalSourceId: sourceId,
@@ -301,7 +301,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
   });
   
   it('legal source provenance preserved', async () => {
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       eventId,
       legalSourceId: sourceId,
@@ -329,7 +329,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
       decision_date: '2024-05-01'
     });
 
-    const res = await buildMatterLegalResearchCandidate({
+    const res = await buildMatterLegalResearchCandidate('mock-uid', {
       matterId,
       legalSourceId: caseSourceId,
       reasonForRelevance: 'Potentially relevant case.',
@@ -369,6 +369,7 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
 
   // Security Tests
   it('requires authorized matter access (inactive membership mutation proof)', async () => {
+    mockTables.navigator_matter_members = []; // CLEAR it here
     // Inactive membership (member list is EMPTY for this matter)
     await expect(listMatterLegalResearchCandidates('fake-uid', matterId))
       .rejects.toThrow('Access denied to this matter.');
@@ -409,5 +410,95 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
     // The mock DB handles this via the `eq` chain. If `.eq` was omitted, it would return both.
     const allRowsInMock = mockTables.navigator_matter_legal_research_candidates;
     expect(allRowsInMock.length).toBe(2);
+    });
+  // --- NEW TESTS FOR STAGE 9B FINAL REMEDIATION ---
+
+  it('rejects foreign event from another matter (Matter B event using Matter A context)', async () => {
+    const foreignEventId = randomUUID();
+    mockTables.navigator_events.push({
+      id: foreignEventId,
+      matter_id: randomUUID(), // DIFFERENT MATTER
+      date_precision: 'EXACT_DATE',
+      date_lower_bound: '2024-06-01'
+    });
+
+    await expect(buildMatterLegalResearchCandidate('test-uid', {
+      matterId,
+      eventId: foreignEventId,
+      legalSourceId: sourceId,
+      reasonForRelevance: 'Testing cross matter event',
+      retrievalBasis: 'Search'
+    })).rejects.toThrow('Event not found or access denied');
+  });
+
+  it('rejects event date range crossing legal version boundaries', async () => {
+    const rangeEventId = randomUUID();
+    mockTables.navigator_events.push({
+      id: rangeEventId,
+      matter_id: matterId,
+      date_precision: 'DATE_RANGE',
+      date_lower_bound: '2023-06-01',
+      date_upper_bound: '2024-06-01'
+    });
+    
+    // Make sure historical version is there
+    mockTables.navigator_legal_source_versions.push({
+      id: randomUUID(),
+      legal_source_id: sourceId,
+      version_label: '2020-01-01 to 2023-12-31',
+      effective_from: '2020-01-01',
+      effective_to: '2023-12-31',
+      verification_state: 'VERIFIED',
+      status: 'SUPERSEDED',
+      retrieved_at: '2024-01-01T00:00:00Z'
+    });
+
+    await expect(buildMatterLegalResearchCandidate('test-uid', {
+      matterId,
+      eventId: rangeEventId,
+      legalSourceId: sourceId,
+      reasonForRelevance: 'Testing cross version event',
+      retrievalBasis: 'Search'
+    })).rejects.toThrow('Event date range crosses legal version boundaries');
+  });
+
+  it('rejects unknown event dates', async () => {
+    const unknownEventId = randomUUID();
+    mockTables.navigator_events.push({
+      id: unknownEventId,
+      matter_id: matterId,
+      date_precision: 'UNKNOWN',
+      date_lower_bound: null,
+      date_upper_bound: null
+    });
+
+    await expect(buildMatterLegalResearchCandidate('test-uid', {
+      matterId,
+      eventId: unknownEventId,
+      legalSourceId: sourceId,
+      reasonForRelevance: 'Testing unknown date',
+      retrievalBasis: 'Search'
+    })).rejects.toThrow('Event date is unknown');
+  });
+
+  it('allows same-version date range', async () => {
+    const rangeEventId = randomUUID();
+    mockTables.navigator_events.push({
+      id: rangeEventId,
+      matter_id: matterId,
+      date_precision: 'DATE_RANGE',
+      date_lower_bound: '2024-02-01',
+      date_upper_bound: '2024-05-01'
+    });
+
+    const res = await buildMatterLegalResearchCandidate('test-uid', {
+      matterId,
+      eventId: rangeEventId,
+      legalSourceId: sourceId,
+      reasonForRelevance: 'Testing same version event',
+      retrievalBasis: 'Search'
+    });
+    
+    expect(res.legalSourceVersionId).toBe(versionId);
   });
 });

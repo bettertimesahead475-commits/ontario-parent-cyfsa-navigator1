@@ -50,10 +50,18 @@ export interface ResearchCandidateInput {
 }
 
 export async function buildMatterLegalResearchCandidate(
+  firebaseUid: string,
   input: ResearchCandidateInput
 ): Promise<Omit<MatterLegalResearchCandidate, 'id' | 'createdAt'>> {
   if (!input || typeof input !== 'object') throw invalid("Input must be an object.");
+  
+  const account = await findAccount(firebaseUid);
+  if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
+
   const matterId = requireUuid(input.matterId, "matterId");
+  const db = getSupabase();
+  await requireMatterAccess(db, account.id, matterId);
+
   const evidenceItemId = input.evidenceItemId ? requireUuid(input.evidenceItemId, "evidenceItemId") : null;
   const eventId = input.eventId ? requireUuid(input.eventId, "eventId") : null;
   const legalSourceId = requireUuid(input.legalSourceId, "legalSourceId");
@@ -76,28 +84,53 @@ export async function buildMatterLegalResearchCandidate(
     throw invalid("Confidence must be a number between 0 and 1.");
   }
 
-  const db = getSupabase();
-  
   // 1. Resolve Authoritative Version
   let resolvedVersionId: string | null = null;
   
   if (eventId) {
     const { data: event, error: eventError } = await db
       .from('navigator_events')
-      .select('date_lower_bound, date_precision')
+      .select('date_lower_bound, date_upper_bound, date_precision')
       .eq('id', eventId)
+      .eq('matter_id', matterId)
       .single();
       
-    if (!eventError && event && event.date_lower_bound) {
-      const isExact = ['EXACT_DATETIME', 'EXACT_DATE'].includes(event.date_precision);
-      const caseDate: CaseDate = { 
-        kind: isExact ? 'EXACT' : 'APPROXIMATE', 
-        date: event.date_lower_bound 
-      };
-      
+    if (eventError || !event) {
+      throw new LifecycleError(404, 'NOT_FOUND', 'Event not found or access denied');
+    }
+    
+    if (event.date_precision === 'UNKNOWN' || (!event.date_lower_bound && !event.date_upper_bound)) {
+      throw new LifecycleError(400, 'REQUIRES_RESEARCH', 'Event date is unknown. Cannot resolve legal version.');
+    }
+
+    const isExact = ['EXACT_DATETIME', 'EXACT_DATE'].includes(event.date_precision);
+    
+    if (isExact && event.date_lower_bound) {
+      const caseDate: CaseDate = { kind: 'EXACT', date: event.date_lower_bound };
       const res = await resolveVersionForDate(legalSourceId, caseDate);
       if (res.outcome.startsWith('RESOLVED') && res.version) {
         resolvedVersionId = res.version.id;
+      } else {
+        throw new LifecycleError(400, 'REQUIRES_RESEARCH', 'Event date does not unambiguously resolve to a legal version.');
+      }
+    } else {
+      const lowerDate = event.date_lower_bound;
+      const upperDate = event.date_upper_bound;
+
+      if (!lowerDate || !upperDate) {
+        throw new LifecycleError(400, 'REQUIRES_RESEARCH', 'Unbounded date ranges cannot unambiguously resolve to a legal version.');
+      }
+
+      const lowerRes = await resolveVersionForDate(legalSourceId, { kind: 'APPROXIMATE', date: lowerDate });
+      const upperRes = await resolveVersionForDate(legalSourceId, { kind: 'APPROXIMATE', date: upperDate });
+
+      const lowerVersionId = lowerRes.outcome.startsWith('RESOLVED') && lowerRes.version ? lowerRes.version.id : null;
+      const upperVersionId = upperRes.outcome.startsWith('RESOLVED') && upperRes.version ? upperRes.version.id : null;
+
+      if (lowerVersionId && upperVersionId && lowerVersionId === upperVersionId) {
+        resolvedVersionId = lowerVersionId;
+      } else {
+        throw new LifecycleError(400, 'REQUIRES_RESEARCH', 'Event date range crosses legal version boundaries or is ambiguous.');
       }
     }
   }
@@ -185,6 +218,15 @@ export async function saveMatterLegalResearchCandidate(
   const db = getSupabase();
   await requireMatterAccess(db, account.id, candidate.matterId);
 
+  const idempotenceKey = [
+    candidate.matterId,
+    candidate.evidenceItemId || '00000000-0000-0000-0000-000000000000',
+    candidate.eventId || '00000000-0000-0000-0000-000000000000',
+    candidate.legalSourceId,
+    candidate.provisionId || '00000000-0000-0000-0000-000000000000',
+    candidate.retrievalBasis
+  ].join('|');
+
   // Using upsert on the uniqueness constraint to ensure idempotence
   const { data, error } = await db.from('navigator_matter_legal_research_candidates').upsert({
     matter_id: candidate.matterId,
@@ -201,9 +243,10 @@ export async function saveMatterLegalResearchCandidate(
     source_provenance: candidate.sourceProvenance,
     confidence: candidate.confidence,
     content_integrity_status: candidate.contentIntegrityStatus,
+    idempotence_key: idempotenceKey,
     retrieved_at: candidate.retrievedAt
   }, { 
-    onConflict: 'matter_id, evidence_item_id, event_id, legal_source_id, provision_id, retrieval_basis'
+    onConflict: 'idempotence_key'
   }).select().single();
 
   if (error || !data) {
