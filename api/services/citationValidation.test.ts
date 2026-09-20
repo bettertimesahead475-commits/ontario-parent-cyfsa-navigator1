@@ -98,15 +98,19 @@ describe('Stage 9C Citation & Authority Validation', () => {
   });
 
   it('valid source, version, provision resolves to VALIDATED', async () => {
-    const res = await validateCandidateCitation('test-uid', { matterId, candidateId });
+    const { computeLegalContentHash } = await import('./legalSources.js');
+    const validHash = computeLegalContentHash('This is the authoritative law text.');
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId, callerExpectedHash: validHash });
     expect(res.authorityValidationStatus).toBe('VALIDATED');
     expect(res.exactQuoteStatus).toBe('NOT_CHECKED');
     expect(res.pinpointStatus).toBe('NOT_APPLICABLE');
   });
 
   it('validates exact quote correctly', async () => {
+    const { computeLegalContentHash } = await import('./legalSources.js');
+    const validHash = computeLegalContentHash('This is the authoritative law text.');
     const res = await validateCandidateCitation('test-uid', { 
-      matterId, candidateId, exactQuoteToVerify: 'authoritative law text' 
+      matterId, candidateId, exactQuoteToVerify: 'authoritative law text', callerExpectedHash: validHash 
     });
     expect(res.exactQuoteStatus).toBe('VERIFIED');
     expect(res.authorityValidationStatus).toBe('VALIDATED');
@@ -151,5 +155,59 @@ describe('Stage 9C Citation & Authority Validation', () => {
     mockTables.navigator_legal_source_versions[0].legal_source_id = randomUUID(); // Mismatch
     await expect(validateCandidateCitation('test-uid', { matterId, candidateId }))
       .rejects.toThrow('Version does not belong to the specified legal source');
+  });
+
+  it('downgrades to UNVERIFIED if candidate claims VERIFIED but provides no caller hash', async () => {
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId });
+    expect(res.authorityValidationStatus).toBe('PARTIALLY_VALIDATED');
+    expect(res.contentIntegrityStatus).toBe('UNVERIFIED');
+  });
+
+  it('rejects tampered or stale candidate (hash mismatch)', async () => {
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId, callerExpectedHash: 'badhash' });
+    expect(res.authorityValidationStatus).toBe('INVALID');
+    expect(res.contentIntegrityStatus).toBe('FAILED');
+    expect(res.validationFindings).toContain('Hash mismatch: Caller expected hash does not match authoritative text_sha256.');
+  });
+
+  it('supports historical versions properly if valid', async () => {
+    // Setup historical version
+    const histVersionId = randomUUID();
+    mockTables.navigator_legal_source_versions.push({
+      id: histVersionId,
+      legal_source_id: sourceId,
+      version_label: '2020-01-01 to 2023-12-31',
+      effective_from: '2020-01-01',
+      effective_to: '2023-12-31',
+      status: 'SUPERSEDED'
+    });
+    const histCandId = randomUUID();
+    mockTables.navigator_matter_legal_research_candidates.push({
+      id: histCandId, matter_id: matterId, legal_source_id: sourceId,
+      legal_source_version_id: histVersionId, provision_id: provisionId, content_integrity_status: 'VERIFIED'
+    });
+    const { computeLegalContentHash } = await import('./legalSources.js');
+    const oldHash = computeLegalContentHash('Old historical text');
+    mockTables.navigator_legal_provision_versions.push({
+      id: randomUUID(), provision_id: provisionId, legal_source_version_id: histVersionId, text_sha256: oldHash, exact_text: 'Old historical text'
+    });
+
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId: histCandId, callerExpectedHash: oldHash });
+    expect(res.authorityValidationStatus).toBe('VALIDATED');
+    expect(res.effectiveDateContext).toBe('Effective: 2020-01-01 to 2023-12-31');
+  });
+
+  it('fails if caller provides wrong-version hash or quote', async () => {
+    const { computeLegalContentHash } = await import('./legalSources.js');
+    const wrongHash = computeLegalContentHash('Wrong version text');
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId, callerExpectedHash: wrongHash, exactQuoteToVerify: 'Wrong version text' });
+    expect(res.authorityValidationStatus).toBe('INVALID');
+    expect(res.contentIntegrityStatus).toBe('FAILED');
+    expect(res.exactQuoteStatus).toBe('ALTERED');
+  });
+
+  it('preserves provenance (sourceUrl)', async () => {
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId });
+    expect(res.sourceProvenance).toBe('https://example.com/cyfsa');
   });
 });

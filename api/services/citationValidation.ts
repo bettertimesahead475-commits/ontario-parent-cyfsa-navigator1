@@ -52,6 +52,7 @@ export interface CitationValidationInput {
   candidateId: string;
   callerPinpoint?: string | null;
   exactQuoteToVerify?: string | null;
+  callerExpectedHash?: string | null;
 }
 
 export async function validateCandidateCitation(
@@ -206,12 +207,34 @@ export async function validateCandidateCitation(
 
   // 7. Content Integrity Status
   let contentIntegrityStatus = candidate.content_integrity_status || 'NOT_CHECKED';
-  if (contentIntegrityStatus === 'FAILED') {
-    findings.push('Prior content integrity check failed for this candidate.');
-    authorityValidationStatus = 'INVALID';
-  } else if (contentIntegrityStatus === 'UNVERIFIED') {
-    findings.push('Content integrity remains unverified.');
-    if (authorityValidationStatus === 'VALIDATED') authorityValidationStatus = 'PARTIALLY_VALIDATED';
+  
+  if (input.callerExpectedHash) {
+    if (!provVersionData || !provVersionData.text_sha256) {
+      findings.push('Caller expected hash provided but authoritative hash is unavailable.');
+      contentIntegrityStatus = 'UNVERIFIED';
+      authorityValidationStatus = 'UNVERIFIED';
+    } else if (input.callerExpectedHash !== provVersionData.text_sha256) {
+      findings.push('Hash mismatch: Caller expected hash does not match authoritative text_sha256.');
+      contentIntegrityStatus = 'FAILED';
+      authorityValidationStatus = 'INVALID';
+    } else {
+      findings.push('Caller expected hash matches authoritative text_sha256.');
+      if (contentIntegrityStatus !== 'FAILED') {
+        contentIntegrityStatus = 'VERIFIED';
+      }
+    }
+  } else {
+    if (contentIntegrityStatus === 'FAILED') {
+      findings.push('Prior content integrity check failed for this candidate.');
+      authorityValidationStatus = 'INVALID';
+    } else if (contentIntegrityStatus === 'UNVERIFIED') {
+      findings.push('Content integrity remains unverified.');
+      if (authorityValidationStatus === 'VALIDATED') authorityValidationStatus = 'PARTIALLY_VALIDATED';
+    } else if (contentIntegrityStatus === 'VERIFIED') {
+      findings.push('Candidate claims VERIFIED integrity but no caller hash provided to prove it. Downgrading to UNVERIFIED.');
+      contentIntegrityStatus = 'UNVERIFIED';
+      if (authorityValidationStatus === 'VALIDATED') authorityValidationStatus = 'PARTIALLY_VALIDATED';
+    }
   }
 
   // 8. Limitations & Provenance
