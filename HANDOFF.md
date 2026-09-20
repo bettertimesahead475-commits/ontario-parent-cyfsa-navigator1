@@ -1,4 +1,4 @@
-# CYFSA Navigator — Engineering Handoff
+﻿# CYFSA Navigator â€” Engineering Handoff
 
 ## 1. Project
 
@@ -12,7 +12,7 @@ React/Vite frontend; Express backend in `api/_server.ts` with lifecycle/document
 
 ## 2. Current Milestone
 
-**STAGE 4 — COMPLETE WITH RELEASE CONDITIONS**
+**STAGE 4 â€” COMPLETE WITH RELEASE CONDITIONS**
 
 The page-anchored document/evidence foundation is implemented. Its migration passed read-only audits and was installed only on the disposable validation project. Live isolated PostgreSQL validation returned PASS WITH CONDITIONS. No production migration has been authorized. Stage 5 may begin under a separate scoped task; it is not implemented by this closeout.
 
@@ -45,13 +45,13 @@ Credentials are not handoff material. Never expose environment files or certific
 
 ## 6. Stage 4 Validation Result
 
-**PASS WITH CONDITIONS** — isolated validation on 2026-09-13.
+**PASS WITH CONDITIONS** â€” isolated validation on 2026-09-13.
 Live concurrency, rollback, RLS/ACL, evidence-run attribution, quote enforcement, source provenance immutability and real Supabase client contracts passed. Actual five-second lock timeout: **5032 ms**, SQLSTATE **55P03**.
 Migration installed once as a single transaction with CA and hostname verification. No blocking defect was demonstrated. This closeout does not repeat database operations.
 
 ## 7. Remaining Release Conditions
 
-**RELEASE CONDITIONS — NOT STAGE 5 BLOCKERS:**
+**RELEASE CONDITIONS â€” NOT STAGE 5 BLOCKERS:**
 Dedicated Firebase-authenticated HTTP integration; dependency advisories; separately reviewed production migration/deployment readiness; volume/retention controls and production hardening.
 Historical security documents also identify session-error handling, code-claim/session-creation recovery, legacy-token rollout, and CORS/rate-limit verification without test bypass. Reassess these against current code before release; Stage 4 validation does not assert that historical issues are resolved. See `PHASE_1_SECURITY_VERIFICATION.md` and `PHASE_1_FINAL_SECURITY_GATE.md`.
 
@@ -94,11 +94,11 @@ Any AI coding agent must:
 9. Update HANDOFF.md if architecture, milestone state or next task changes.
 10. End every work session with an exact summary of files changed, tests, branch, HEAD, working-tree state, database/deployment actions and next recommended task.
 
-## Stage 5↔6 Integration Closure
+## Stage 5â†”6 Integration Closure
 
 - Stage 5 M2-E formally closed
 - frozen M2-E SHA: 5543f05a56f82c1527df23c9206913616995b36c
-- Stage 5↔6 integration gates A-K passed
+- Stage 5â†”6 integration gates A-K passed
 - integration adapter verified
 - dependency blocker was local incomplete node_modules only
 - npm ci restored pg/@types/pg
@@ -109,19 +109,19 @@ Any AI coding agent must:
 - npm audit remains 11 total / 10 moderate / 1 high unchanged baseline
 - no production changes
 - no migrations executed
-- Stage 5↔6 integration formally closed
+- Stage 5â†”6 integration formally closed
 
 ## 12. Next Task
 
 NEXT STAGE: **Stage 7**.
 NEXT STAGE MICRO-GATE: **Stage 7B**.
 NEXT TASK: **Stage 7B Parent-Authorized Matter Access Foundation**.
-Stage 5↔6 integration is formally closed.
+Stage 5â†”6 integration is formally closed.
 
 ## Cross-Agent Handoff Protocol
 
-Codex → Claude Code: commit when authorized or intentionally preserve current state; Claude reads HANDOFF.md first, inspects status/branch/HEAD, receives one scoped task, updates this handoff when milestone/architecture changes, and reports changed files, tests and final Git state.
-Claude Code → Codex: use the same process. Prefer independent read-only review before the next correction round. Only one agent edits the shared checkout at a time.
+Codex â†’ Claude Code: commit when authorized or intentionally preserve current state; Claude reads HANDOFF.md first, inspects status/branch/HEAD, receives one scoped task, updates this handoff when milestone/architecture changes, and reports changed files, tests and final Git state.
+Claude Code â†’ Codex: use the same process. Prefer independent read-only review before the next correction round. Only one agent edits the shared checkout at a time.
 Neither agent should rely on the other's conversational memory. The repository and HANDOFF.md are the source of truth. A handoff is not authorization to push, deploy or mutate a database.
 
 ## Historical handoff provenance
@@ -198,7 +198,7 @@ avigator_matter_members.
 - No new AI endpoints, scraping, or real lawyer data was introduced. 
 - MIGRATION NOT EXECUTED.
 - PRODUCTION NOT CHANGED.
-- Next Task: Stage 7E — Lawyer Discovery & Profile Interface.
+- Next Task: Stage 7E â€” Lawyer Discovery & Profile Interface.
 
 ## Stage 7E Lawyer Directory Discovery UI
 - Stage 7E architecture gate passed
@@ -228,36 +228,36 @@ avigator_matter_members.
 
 ### Implementation Summary
 
-Stage 7F is not a new feature stage. It closes integration, security, and testing gaps across the professional platform (Stages 7A–7E) by adding genuine behavioral coverage of all six blockers and auxiliary requirements. No production code was rewritten because the existing architecture was structurally correct on all blockers.
+Stage 7F is not a new feature stage. It closes integration, security, and testing gaps across the professional platform (Stages 7Aâ€“7E) by adding genuine behavioral coverage of all six blockers and auxiliary requirements. No production code was rewritten because the existing architecture was structurally correct on all blockers.
 
-**1 file added:** `api/services/stage7f.test.ts` — 114 behavioral tests.
+**1 file added:** `api/services/stage7f.test.ts` â€” 114 behavioral tests.
 
 ---
 
-### B1 — Professional Status ≠ Matter Authorization
+### B1 â€” Professional Status â‰  Matter Authorization
 
 **Result: DENIED / FAIL (blocked correctly)**
 
-- `VERIFIED_LAWYER` without active matter grant → DENIED (`getMatterOverview`, `getIntelligenceCategory`, `saveProfessionalReview`)
-- `PARTICIPATING_PROFESSIONAL` without active matter grant → DENIED (same routes)
-- `requireProfessionalAccess()` checks `navigator_matter_members` for `role=REVIEWER` only — lifecycle state is irrelevant.
+- `VERIFIED_LAWYER` without active matter grant â†’ DENIED (`getMatterOverview`, `getIntelligenceCategory`, `saveProfessionalReview`)
+- `PARTICIPATING_PROFESSIONAL` without active matter grant â†’ DENIED (same routes)
+- `requireProfessionalAccess()` checks `navigator_matter_members` for `role=REVIEWER` only â€” lifecycle state is irrelevant.
 - Removing a member row between two calls denies the second call without any re-authentication.
 - Tests exercise the real production authorization path.
 
 ---
 
-### B2 — Reviewer ID Spoofing
+### B2 â€” Reviewer ID Spoofing
 
 **Result: BLOCKED / FAIL (blocked correctly)**
 
-- `saveProfessionalReview()` derives `reviewer_account_id` from `findAccount(firebaseUid)` — a server-side lookup from the verified Firebase UID. No client-supplied identity field (`reviewerAccountId`, `account_id`, `userId`, `user_id`, etc.) affects the result.
-- Reviewer A cannot create a review as Reviewer B — the stored row is always keyed to ACC_REVIEWER_A.
-- Reviewer A cannot overwrite Reviewer B's review — the upsert key is `(finding_type, finding_id, reviewer_account_id)`, so Reviewer B's row is untouched.
+- `saveProfessionalReview()` derives `reviewer_account_id` from `findAccount(firebaseUid)` â€” a server-side lookup from the verified Firebase UID. No client-supplied identity field (`reviewerAccountId`, `account_id`, `userId`, `user_id`, etc.) affects the result.
+- Reviewer A cannot create a review as Reviewer B â€” the stored row is always keyed to ACC_REVIEWER_A.
+- Reviewer A cannot overwrite Reviewer B's review â€” the upsert key is `(finding_type, finding_id, reviewer_account_id)`, so Reviewer B's row is untouched.
 - No production vulnerability was found; regression coverage was added.
 
 ---
 
-### B3 — Six Intelligence Categories
+### B3 â€” Six Intelligence Categories
 
 **Result: ALL SIX PASS**
 
@@ -274,7 +274,7 @@ For each of `EVIDENCE` (navigator_evidence_items), `CHRONOLOGY` (navigator_event
 
 ### Authorization Matrix
 
-**Result: PASS — FAIL CLOSED**
+**Result: PASS â€” FAIL CLOSED**
 
 | Principal | Expected | Actual |
 |---|---|---|
@@ -289,27 +289,27 @@ For each of `EVIDENCE` (navigator_evidence_items), `CHRONOLOGY` (navigator_event
 | REVOKED grant (member row removed) | DENIED | DENIED |
 | ACCEPTED grant without REVIEWER membership | DENIED | DENIED |
 | Active REVIEWER membership | ALLOWED | ALLOWED |
-| OWNER (role ≠ REVIEWER) | DENIED | DENIED |
+| OWNER (role â‰  REVIEWER) | DENIED | DENIED |
 
 Authorization is enforced by `requireProfessionalAccess()` checking `navigator_matter_members` for `role=REVIEWER`. All states without an active member row fail closed.
 
 ---
 
-### B5 — Same-Session Revocation
+### B5 â€” Same-Session Revocation
 
 **Result: PASS**
 
-- Reviewer receives legitimate access → successfully accesses workspace.
+- Reviewer receives legitimate access â†’ successfully accesses workspace.
 - Parent/grantor revokes access by removing the member row (canonical revocation path).
-- Reviewer remains logged in — no sign-out, no token refresh, no new login.
+- Reviewer remains logged in â€” no sign-out, no token refresh, no new login.
 - Next request is immediately denied.
 - This proves authorization is re-evaluated server-side on every request. No bearer token grants matter access between requests.
 
 ---
 
-### B6 — Cross-Matter Isolation
+### B6 â€” Cross-Matter Isolation
 
-**Result: PASS — NO DATA LEAK**
+**Result: PASS â€” NO DATA LEAK**
 
 Reviewer A (authorized for Matter A only) was denied access to all Matter B workspace endpoints:
 - Workspace overview
@@ -390,7 +390,7 @@ Search results contain no `score`, `winRate`, `successRate`, `aiEndorsement`, `s
 **Result: PASS**
 
 - Parent workflow (document analyzer, extract evidence, case timeline, RAG) remains unaffected.
-- Directory is optional — `searchDirectory({})` returns an empty array when no profiles exist; no error.
+- Directory is optional â€” `searchDirectory({})` returns an empty array when no profiles exist; no error.
 - Lawyer selection is not required; `requireProfessionalAccess()` is a per-route opt-in guard.
 - Stage 7C App routing integration test confirms parent paths remain available alongside professional platform.
 
@@ -402,7 +402,7 @@ Search results contain no `score`, `winRate`, `successRate`, `aiEndorsement`, `s
 |---|---|---|---|
 | `POST /api/directory/search` | POST | PUBLIC | No auth required; public DTO only |
 | `GET /api/directory/profiles/:id` | GET | PUBLIC | No auth required; public DTO only |
-| `POST /api/directory/profiles/:id/claim` | POST | AUTHENTICATED | `verifyFirebaseToken` → fails closed (FORBIDDEN) |
+| `POST /api/directory/profiles/:id/claim` | POST | AUTHENTICATED | `verifyFirebaseToken` â†’ fails closed (FORBIDDEN) |
 | `GET /api/professional-workspace/matters` | GET | MATTER-AUTHORIZED | `verifyFirebaseToken` + `findAccount` + `role=REVIEWER` check |
 | `GET /api/professional-workspace/matters/:id/overview` | GET | MATTER-AUTHORIZED | `verifyFirebaseToken` + `findAccount` + `requireProfessionalAccess` |
 | `GET /api/professional-workspace/matters/:id/intelligence/:cat` | GET | MATTER-AUTHORIZED | `verifyFirebaseToken` + `findAccount` + `requireProfessionalAccess` |
@@ -438,13 +438,13 @@ No route was found to be weaker than its intended classification. The profession
 
 The following migrations are in `supabase/migrations_pending_approval/`. They are NOT executed. The Stage 7 subset listed in dependency order:
 
-1. **`create_professional_profiles.sql`** — Stage 7A: professional_profiles table, lifecycle states, RLS zero-policy. Requires accounts table.
+1. **`create_professional_profiles.sql`** â€” Stage 7A: professional_profiles table, lifecycle states, RLS zero-policy. Requires accounts table.
 
-2. **`create_navigator_matter_access_grants.sql`** — Stage 7B: navigator_matter_access_grants table, REVIEWER role extension to navigator_matter_members, `accept_matter_grant` atomic RPC. Requires accounts, navigator_matters, navigator_matter_members.
+2. **`create_navigator_matter_access_grants.sql`** â€” Stage 7B: navigator_matter_access_grants table, REVIEWER role extension to navigator_matter_members, `accept_matter_grant` atomic RPC. Requires accounts, navigator_matters, navigator_matter_members.
 
-3. **`create_professional_reviews.sql`** — Stage 7C: professional_reviews table with `(finding_type, finding_id, reviewer_account_id)` uniqueness constraint. Requires accounts, navigator_matters.
+3. **`create_professional_reviews.sql`** â€” Stage 7C: professional_reviews table with `(finding_type, finding_id, reviewer_account_id)` uniqueness constraint. Requires accounts, navigator_matters.
 
-4. **`create_lawyer_directory_foundation.sql`** — Stage 7D: professional_office_locations, professional_service_areas, professional_practice_areas, professional_profile_sources child tables. Requires professional_profiles.
+4. **`create_lawyer_directory_foundation.sql`** â€” Stage 7D: professional_office_locations, professional_service_areas, professional_practice_areas, professional_profile_sources child tables. Requires professional_profiles.
 
 5. Stage 7E: No migration (UI/frontend only).
 
@@ -456,13 +456,13 @@ The following migrations are in `supabase/migrations_pending_approval/`. They ar
 
 Reviewed all four Stage 7 migrations:
 
-- `professional_profiles`: RLS enabled, zero policies; only `service_role` has DML. ✓
-- `navigator_matter_access_grants`: RLS enabled, zero policies; only `service_role` has DML; `accept_matter_grant` RPC is `security definer` and explicitly revokes `public`/`anon`/`authenticated`. ✓
-- `professional_reviews`: RLS enabled, zero policies; only `service_role` has DML; uniqueness constraint enforces multi-reviewer separation. ✓
-- `create_lawyer_directory_foundation.sql`: Extends professional_profiles with normalized child tables; RLS and grant structure consistent with pattern. ✓
-- Multi-reviewer uniqueness constraint: `(finding_type, finding_id, reviewer_account_id)` in professional_reviews. ✓
-- Foreign keys preserve ownership: all reference `accounts(id)` and `navigator_matters(id)` with appropriate ON DELETE semantics. ✓
-- No direct-table authorization bypass introduced. ✓
+- `professional_profiles`: RLS enabled, zero policies; only `service_role` has DML. âœ“
+- `navigator_matter_access_grants`: RLS enabled, zero policies; only `service_role` has DML; `accept_matter_grant` RPC is `security definer` and explicitly revokes `public`/`anon`/`authenticated`. âœ“
+- `professional_reviews`: RLS enabled, zero policies; only `service_role` has DML; uniqueness constraint enforces multi-reviewer separation. âœ“
+- `create_lawyer_directory_foundation.sql`: Extends professional_profiles with normalized child tables; RLS and grant structure consistent with pattern. âœ“
+- Multi-reviewer uniqueness constraint: `(finding_type, finding_id, reviewer_account_id)` in professional_reviews. âœ“
+- Foreign keys preserve ownership: all reference `accounts(id)` and `navigator_matters(id)` with appropriate ON DELETE semantics. âœ“
+- No direct-table authorization bypass introduced. âœ“
 
 ---
 
@@ -488,13 +488,13 @@ Reviewed all four Stage 7 migrations:
 
 **Stage 6:** 331 passed (6 files)
 
-**Stage 5↔6 integration:** 39 passed
+**Stage 5â†”6 integration:** 39 passed
 
 **Full test suite:** 37 test files, **1155 tests passed / 0 failed**
 
 **Build:** PASS (vite + esbuild, exit 0)
 
-**npm audit:** 11 total (10 moderate, 1 high) — matches known baseline exactly. No npm audit fix executed.
+**npm audit:** 11 total (10 moderate, 1 high) â€” matches known baseline exactly. No npm audit fix executed.
 
 **Migrations executed:** NONE
 
@@ -596,3 +596,20 @@ Build passed.
 NPM Audit: 11 vulnerabilities (10 moderate, 1 high) (matches baseline).
 Production unchanged.
 Migrations created but unexecuted.
+
+## STAGE 9A NARROW REMEDIATION
+
+The independent audit blocked the initial Stage 9A candidate due to missing constraints:
+- **Provision-Version Integrity**: Was not proven; the system did not verify that a requested provision belonged to the requested source version.
+- **Content Integrity**: Was not implemented.
+- **Provenance**: `AuthorityCitation` dropped important provenance fields (`title`, `officialPublisher`).
+
+### Remediation
+- Implemented a database lookup in `getAuthorityCitation` to ensure the requested provision exists in the requested source version via the `navigator_legal_provision_versions` relationship.
+- Added `computeLegalContentHash` and `verifyLegalContentIntegrity` functions, leveraging the existing SHA-256 and normalization logic from Stage 6.
+- Retained `title` and `officialPublisher` in the `AuthorityCitation` return type.
+- Applied conservative pinpoint validation (`unverifiedCallerPinpoint`) to explicitly mark arbitrary pinpoint strings as caller-supplied.
+- Corrected the prior overstatement: The initial candidate's claim that provenance and integrity were completely tested was **not supported by the independent audit**. The test suite was heavily mock-dominant. Actual production-boundary verification tests have now been appended.
+
+**Status**: Stage 9A is NOT formally closed. Ready for independent re-audit.
+
