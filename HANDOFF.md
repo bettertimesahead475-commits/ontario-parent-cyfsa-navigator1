@@ -648,3 +648,36 @@ avigator_legal_provision_versions. Rejects caller verification trust.
 - **Mutations & Tests**: Added missing regression tests explicitly for cross-matter query filter protection, inactive membership blocking, historical versioning, caller hash trust rejection, and idempotence.
 
 **Status**: STAGE 9B REMEDIATED — READY FOR INDEPENDENT RE-AUDIT.
+
+==================================================
+STAGE 9C IMPLEMENTATION
+==================================================
+BRANCH: stage-9c-citation-authority-validation
+PARENT SHA: 24fff685c76ed1a44b399a2fb59c59f4ad0872f6
+ARCHITECTURE REUSED: legalSources.ts, legalCorpus.ts, access.ts, accounts.ts, Stage 9B matter research candidate architecture.
+NEW ARCHITECTURE: api/services/citationValidation.ts (validateCandidateCitation). 
+VALIDATION STATES: VALIDATED, PARTIALLY_VALIDATED, REQUIRES_RESEARCH, UNVERIFIED, INVALID.
+SOURCE EXISTENCE: Verified against authoritative navigator_legal_sources.
+SOURCE/VERSION RELATIONSHIP: Verified. Version must belong to specified source.
+EFFECTIVE-DATE CONSISTENCY: Authoritative effective context loaded; historic dates retained.
+PROVISION EXISTENCE & PROVISION-VERSION INTEGRITY: Provision existence verified, and provision-version mapping verified against navigator_legal_provision_versions.
+CONTENT-INTEGRITY TRUST MODEL: Checked prior candidate integrity. Hashes obtained server-side.
+EXPECTED HASH SOURCE: navigator_legal_provision_versions
+CALLER EXPECTED HASH TRUST: Untrusted.
+CITATION METADATA: Deterministic loading from authoritative records.
+CASE AUTHORITY: Metadata explicitly propagated. No holding/ratio inference.
+PINPOINT VALIDATION: Caller-supplied pinpoints remain UNVERIFIED and flag citation as REQUIRES_RESEARCH.
+EXACT QUOTE VALIDATION: Verified against exact_text from DB using established normalization. Altered quotes marked ALTERED and citation INVALID.
+PROVENANCE: Fully preserved via citation metadata.
+MATTER AUTHORIZATION: Uses Stage 9B server-authoritative checks (navigator_matter_members).
+CROSS-MATTER & DIRECT-ID SAFETY: Query scoped strictly by matter_id.
+REVOKED ACCESS: Gracefully fails closed if membership revoked.
+SERVER-ONLY PRIVATE ACCESS: Retained.
+REVIEWER PRIVACY: No reviewer-specific annotations exposed.
+DETERMINISM: Enforced.
+LEGAL-CORRECTNESS LIMITATION: Explicitly stated in 'limitations' output.
+UNTRUSTED CONTENT: Quote parsing handles input safely.
+PERSISTENCE: Computed deterministically; no new migrations required.
+LIVE AI, FABRICATED AUTHORITY, AUTOMATED CONCLUSIONS: Prohibited and successfully avoided.
+TESTS: Added comprehensive tests (citationValidation.test.ts) covering valid mappings, altered quotes, cross-matter safety, missing sources, and caller pinpoint behaviors.
+
