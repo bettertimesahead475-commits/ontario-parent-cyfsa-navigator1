@@ -1,15 +1,18 @@
 import { getSupabase } from './access.js';
 import { LifecycleError, requireUuid } from './lifecycleErrors.js';
 import { CaseDate, resolveApplicableVersion, LegalSource, LegalSourceVersion, LegalProvision } from './legalAuthority.js';
+import { normalizeProvisionText, sha256Hex } from './legalCorpus.js';
 
 export interface AuthorityCitation {
   legalSourceId: string;
   legalSourceVersionId?: string;
   provisionId?: string;
-  pinpoint?: string;
+  unverifiedCallerPinpoint?: string;
   sourceUrl: string;
   effectiveDateContext?: string;
   retrievedAt: string;
+  title: string;
+  officialPublisher: string;
 }
 
 const notFound = (msg: string) => new LifecycleError(404, 'NOT_FOUND', msg);
@@ -104,6 +107,25 @@ export async function resolveVersionForDate(sourceId: string, caseDate: CaseDate
   return resolveApplicableVersion(versions, caseDate);
 }
 
+export function computeLegalContentHash(content: string): string {
+  if (typeof content !== 'string' || !content.trim()) throw invalid('Content is required for hashing.');
+  const normalized = normalizeProvisionText(content);
+  return sha256Hex(normalized);
+}
+
+export function verifyLegalContentIntegrity(content: string, expectedHash: string): void {
+  if (!expectedHash) throw invalid('Expected hash is required.');
+  let actualHash: string;
+  try {
+    actualHash = computeLegalContentHash(content);
+  } catch (e) {
+    throw new LifecycleError(400, 'INTEGRITY_FAILURE', 'Content could not be hashed.');
+  }
+  if (actualHash !== expectedHash) {
+    throw new LifecycleError(409, 'INTEGRITY_FAILURE', 'Content integrity verification failed: hash mismatch.');
+  }
+}
+
 export async function getAuthorityCitation(
   sourceId: string,
   versionId?: string,
@@ -130,13 +152,37 @@ export async function getAuthorityCitation(
     }
   }
 
+  if (versionId && provisionId) {
+    const db = getSupabase();
+    const { data, error } = await db
+      .from('navigator_legal_provision_versions')
+      .select('id')
+      .eq('provision_id', requireUuid(provisionId, 'provisionId'))
+      .eq('legal_source_version_id', requireUuid(versionId, 'versionId'))
+      .maybeSingle();
+
+    if (error || !data) {
+      throw notFound('Requested provision does not exist in the requested source version.');
+    }
+  }
+
+  let unverifiedCallerPinpoint = undefined;
+  if (pinpoint) {
+    if (typeof pinpoint !== 'string' || pinpoint.length > 200) {
+      throw invalid('Invalid pinpoint format.');
+    }
+    unverifiedCallerPinpoint = pinpoint;
+  }
+
   return {
     legalSourceId: source.id,
     legalSourceVersionId: versionId,
     provisionId: provisionId,
-    pinpoint,
+    unverifiedCallerPinpoint,
     sourceUrl: source.sourceUrl,
     effectiveDateContext: effectiveContext,
-    retrievedAt
+    retrievedAt,
+    title: source.title,
+    officialPublisher: source.officialPublisher
   };
 }

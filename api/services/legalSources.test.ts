@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getSource, getSourceVersion, getProvision, resolveVersionForDate, getAuthorityCitation } from './legalSources.js';
+import { getSource, getSourceVersion, getProvision, resolveVersionForDate, getAuthorityCitation, computeLegalContentHash, verifyLegalContentIntegrity } from './legalSources.js';
 import * as access from './access.js';
 
 vi.mock('./access.js');
@@ -23,7 +23,8 @@ describe('Stage 9A Authoritative Legal Sources', () => {
             rows = rows.filter((r: any) => r[col] === val);
             return chain;
           },
-          single: async () => ({ data: rows[0], error: rows.length === 0 ? new Error('Not found') : null })
+          single: async () => ({ data: rows[0], error: rows.length === 0 ? new Error('Not found') : null }),
+          maybeSingle: async () => ({ data: rows.length > 0 ? rows[0] : null, error: null })
         };
         // Mock returning multiple rows when single is not called
         chain.then = (resolve: any) => resolve({ data: rows, error: null });
@@ -147,14 +148,21 @@ describe('Stage 9A Authoritative Legal Sources', () => {
       id: '55555555-5555-5555-5555-555555555555', legal_source_id: '11111111-1111-1111-1111-111111111111', citation: 's.74', label: 'Section 74',
       verification_state: 'VERIFIED'
     });
+    mockTables.navigator_legal_provision_versions = [{
+      id: '77777777-7777-7777-7777-777777777777',
+      provision_id: '55555555-5555-5555-5555-555555555555',
+      legal_source_version_id: '33333333-3333-3333-3333-333333333333'
+    }];
 
     const citation = await getAuthorityCitation('11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333', '55555555-5555-5555-5555-555555555555', '(1)(a)');
     expect(citation.legalSourceId).toBe('11111111-1111-1111-1111-111111111111');
     expect(citation.legalSourceVersionId).toBe('33333333-3333-3333-3333-333333333333');
     expect(citation.provisionId).toBe('55555555-5555-5555-5555-555555555555');
-    expect(citation.pinpoint).toBe('(1)(a)');
+    expect(citation.unverifiedCallerPinpoint).toBe('(1)(a)');
     expect(citation.effectiveDateContext).toContain('2020-01-01 to present');
     expect(citation.retrievedAt).toBe('2023-02-01T00:00:00Z'); // uses version's retrieved_at
+    expect(citation.title).toBe('CYFSA');
+    expect(citation.officialPublisher).toBe('Ontario');
   });
 
   it('11. statute vs case authority distinction: case source fields are preserved', async () => {
@@ -198,4 +206,104 @@ describe('Stage 9A Authoritative Legal Sources', () => {
     expect(source.retrievedAt).toBe('2023-01-01T00:00:00Z');
     expect(source.officialPublisher).toBe('Ontario');
   });
+  describe('Provision-Version Integrity', () => {
+    const src1 = '11111111-1111-1111-1111-111111111111';
+    const src2 = '22222222-2222-2222-2222-222222222222';
+    const v1 = '33333333-3333-3333-3333-333333333333';
+    const v2 = '44444444-4444-4444-4444-444444444444';
+    const p1 = '55555555-5555-5555-5555-555555555555';
+    const p2 = '66666666-6666-6666-6666-666666666666';
+
+    it('rejects wrong source', async () => {
+      mockTables.navigator_legal_sources.push({ id: src1, jurisdiction: 'ON', title: 'Test', verification_state: 'VERIFIED', retrieved_at: '2023' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, version_label: 'v1' });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src2, citation: 's.1', verification_state: 'VERIFIED' });
+      await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Provision does not belong to the specified source.');
+    });
+
+    it('rejects correct source + wrong version/provision combination', async () => {
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test', verification_state: 'VERIFIED', retrieved_at: '2023' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, version_label: 'v1' });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1', verification_state: 'VERIFIED' });
+      // Missing in navigator_legal_provision_versions table
+      await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Requested provision does not exist in the requested source version.');
+    });
+
+    it('rejects historical provision + current version', async () => {
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1 });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1' });
+      // Not in navigator_legal_provision_versions
+      await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Requested provision does not exist in the requested source version.');
+    });
+
+    it('rejects current provision + historical version', async () => {
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1 });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1' });
+      // Not in navigator_legal_provision_versions
+      await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Requested provision does not exist in the requested source version.');
+    });
+
+    it('rejects unknown provision-version link', async () => {
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1 });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1' });
+      mockTables.navigator_legal_provision_versions = []; // Empty
+      await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Requested provision does not exist in the requested source version.');
+    });
+
+    it('missing versionId behavior remains explicitly defined', async () => {
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1' });
+      const citation = await getAuthorityCitation(src1, undefined, p1);
+      expect(citation.provisionId).toBe(p1);
+      expect(citation.legalSourceVersionId).toBeUndefined();
+    });
+
+    it('missing provisionId behavior remains explicitly defined', async () => {
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1 });
+      const citation = await getAuthorityCitation(src1, v1, undefined);
+      expect(citation.legalSourceVersionId).toBe(v1);
+      expect(citation.provisionId).toBeUndefined();
+    });
+  });
+
+  describe('Content Integrity', () => {
+    it('same canonical content -> same hash', () => {
+      const h1 = computeLegalContentHash('test\r\ncontent  ');
+      const h2 = computeLegalContentHash('test\ncontent');
+      expect(h1).toBe(h2);
+    });
+    it('changed legal text -> different hash', () => {
+      const h1 = computeLegalContentHash('test content');
+      const h2 = computeLegalContentHash('test content changed');
+      expect(h1).not.toBe(h2);
+    });
+    it('expected hash + matching content -> verified', () => {
+      const h = computeLegalContentHash('test content');
+      expect(() => verifyLegalContentIntegrity('test content', h)).not.toThrow();
+    });
+    it('expected hash + modified content -> rejected/unverified', () => {
+      const h = computeLegalContentHash('test content');
+      expect(() => verifyLegalContentIntegrity('test content modified', h)).toThrow('Content integrity verification failed: hash mismatch.');
+    });
+    it('empty/malformed content handled safely', () => {
+      expect(() => computeLegalContentHash('')).toThrow('Content is required for hashing.');
+      expect(() => verifyLegalContentIntegrity('', 'hash')).toThrow('Content could not be hashed.');
+    });
+    it('hash comparison does not mutate expected hash', () => {
+      const h = computeLegalContentHash('test content');
+      const originalH = h.slice();
+      verifyLegalContentIntegrity('test content', h);
+      expect(h).toBe(originalH);
+    });
+    it('untrusted legal text remains data', () => {
+      // Just showing that hashing doesn't execute the text
+      const h = computeLegalContentHash('console.log("hello")');
+      expect(typeof h).toBe('string');
+    });
+  });
 });
+
