@@ -218,4 +218,27 @@ describe('Stage 9C Citation & Authority Validation', () => {
     const res = await validateCandidateCitation('test-uid', { matterId, candidateId });
     expect(res.sourceProvenance).toBe('https://example.com/cyfsa');
   });
+
+  it.each(['source', 'version', 'provision'])('audit: unverified %s cannot validate authority', async (kind) => {
+    const table = kind === 'source' ? 'navigator_legal_sources' : kind === 'version' ? 'navigator_legal_source_versions' : 'navigator_legal_provisions';
+    mockTables[table][0].verification_state = 'UNVERIFIED';
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId });
+    expect(res.authorityValidationStatus).not.toBe('VALIDATED');
+  });
+
+  it.each(['exact_text', 'text_sha256'])('audit: missing %s cannot validate authority', async (field) => {
+    mockTables.navigator_legal_provision_versions[0][field] = null;
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId });
+    expect(res.authorityValidationStatus).not.toBe('VALIDATED');
+  });
+
+  it('audit: malformed input is rejected', async () => {
+    await expect(validateCandidateCitation('test-uid', null as any)).rejects.toThrow('Input must be an object');
+  });
+
+  it('audit: repeat verification has the same substantive result', async () => {
+    const a = await validateCandidateCitation('test-uid', { matterId, candidateId });
+    const b = await validateCandidateCitation('test-uid', { matterId, candidateId });
+    expect({ ...a, validatedAt: null }).toEqual({ ...b, validatedAt: null });
+  });
 });

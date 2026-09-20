@@ -206,6 +206,16 @@ describe('Stage 9A Authoritative Legal Sources', () => {
     expect(source.retrievedAt).toBe('2023-01-01T00:00:00Z');
     expect(source.officialPublisher).toBe('Ontario');
   });
+  it('audit: unverified source cannot be issued as an authoritative citation', async () => {
+    const id = '11111111-1111-1111-1111-111111111111';
+    mockTables.navigator_legal_sources.push({
+      id, jurisdiction: 'ON', title: 'Unverified upload', source_type: 'STATUTE',
+      citation: 'Unknown', official_publisher: 'Claimed publisher', source_url: 'https://example.com',
+      verification_state: 'UNVERIFIED', retrieved_at: '2025-01-01T00:00:00Z'
+    });
+    await expect(getAuthorityCitation(id)).rejects.toThrow();
+  });
+
   describe('Provision-Version Integrity', () => {
     const src1 = '11111111-1111-1111-1111-111111111111';
     const src2 = '22222222-2222-2222-2222-222222222222';

@@ -501,4 +501,32 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
     
     expect(res.legalSourceVersionId).toBe(versionId);
   });
+
+  it('audit: evidence must belong to the authorized matter and classification must be canonical', async () => {
+    const foreignEvidenceId = randomUUID();
+    const result = buildMatterLegalResearchCandidate('test-uid', {
+      matterId, eventId, evidenceItemId: foreignEvidenceId, evidenceClassification: 'FACT',
+      legalSourceId: sourceId, provisionId, reasonForRelevance: 'Potentially relevant.', retrievalBasis: 'Search'
+    });
+    await expect(result).rejects.toThrow();
+  });
+
+  it('audit: unverified legal source cannot become a research candidate', async () => {
+    mockTables.navigator_legal_sources[0].verification_state = 'UNVERIFIED';
+    await expect(buildMatterLegalResearchCandidate('test-uid', {
+      matterId, eventId, legalSourceId: sourceId, provisionId,
+      reasonForRelevance: 'Potentially relevant.', retrievalBasis: 'Search'
+    })).rejects.toThrow();
+  });
+
+  it('audit: save must reject a fabricated candidate with caller asserted integrity', async () => {
+    const result = saveMatterLegalResearchCandidate('test-uid', {
+      matterId, evidenceItemId: randomUUID(), eventId: null, evidenceClassification: 'FACT',
+      legalSourceId: sourceId, legalSourceVersionId: null, provisionId: null,
+      authorityIdentifier: null, reasonForRelevance: 'Potentially relevant.', retrievalBasis: 'Search',
+      effectiveDateContext: null, sourceProvenance: 'https://example.com/fake',
+      confidence: null, contentIntegrityStatus: 'VERIFIED', retrievedAt: new Date().toISOString()
+    });
+    await expect(result).rejects.toThrow();
+  });
 });
