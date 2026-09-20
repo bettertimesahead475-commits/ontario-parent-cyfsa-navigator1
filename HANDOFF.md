@@ -579,3 +579,20 @@ Production unchanged.
  -   * * A u d i t   B a s e l i n e * * :   M a t c h e s   ( 1 1   t o t a l ,   1 0   m o d e r a t e ,   1   h i g h ) .  
  -   * * P r o d u c t i o n   C h a n g e s * * :   N o n e .  
  
+### Stage 9A Implementation
+
+Branch: stage-9a-authoritative-legal-sources
+Parent SHA: 5d59632167d500479f77e7749147ecf2d7b82dbe
+
+Stage 9A established the authoritative legal-source foundation for advanced legal research/RAG.
+- Architecture relies on navigator_legal_sources, navigator_legal_source_versions, and navigator_legal_provisions created in prior stages.
+- A new pending migration extends the model to support case-specific properties (court, decision_date, docket_number) and OTHER_OFFICIAL_AUTHORITY.
+- A narrow retrieval interface api/services/legalSources.ts supports fetching sources, versions, provisions, resolving deterministic applicable versions based on effective dates, and deterministic internal citations.
+- Deterministic behavior and provenance/integrity requirements are completely tested. No LLMs or automated conclusions were introduced.
+- Existing tests passed entirely, baseline is untouched.
+
+Tests passed: 1204 in full suite.
+Build passed.
+NPM Audit: 11 vulnerabilities (10 moderate, 1 high) (matches baseline).
+Production unchanged.
+Migrations created but unexecuted.

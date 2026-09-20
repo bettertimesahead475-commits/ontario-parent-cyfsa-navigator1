@@ -13,7 +13,7 @@ const invalid = (message: string) => new LifecycleError(400, "INVALID_LEGAL_AUTH
 export const JURISDICTIONS = ["ON", "CA"] as const;
 export type Jurisdiction = (typeof JURISDICTIONS)[number];
 
-export const SOURCE_TYPES = ["STATUTE", "REGULATION", "COURT_RULE", "CASE_LAW", "CHARTER"] as const;
+export const SOURCE_TYPES = ["STATUTE", "REGULATION", "COURT_RULE", "CASE_LAW", "CHARTER", "OTHER_OFFICIAL_AUTHORITY"] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
 
 // AI-proposed authority identification is UNVERIFIED until a human confirms it against the
@@ -34,6 +34,9 @@ export interface LegalSource {
   sourceUrl: string;
   verificationState: VerificationState;
   retrievedAt: string; // ISO timestamp of verification/retrieval
+  court?: string;
+  decisionDate?: string;
+  docketNumber?: string;
 }
 
 export interface LegalSourceVersion {
