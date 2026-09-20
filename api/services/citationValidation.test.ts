@@ -157,17 +157,25 @@ describe('Stage 9C Citation & Authority Validation', () => {
       .rejects.toThrow('Version does not belong to the specified legal source');
   });
 
-  it('downgrades to UNVERIFIED if candidate claims VERIFIED but provides no caller hash', async () => {
+  it('verifies stored text against its hash without relying on a caller hash', async () => {
     const res = await validateCandidateCitation('test-uid', { matterId, candidateId });
-    expect(res.authorityValidationStatus).toBe('PARTIALLY_VALIDATED');
-    expect(res.contentIntegrityStatus).toBe('UNVERIFIED');
+    expect(res.authorityValidationStatus).toBe('VALIDATED');
+    expect(res.contentIntegrityStatus).toBe('VERIFIED');
   });
 
   it('rejects tampered or stale candidate (hash mismatch)', async () => {
     const res = await validateCandidateCitation('test-uid', { matterId, candidateId, callerExpectedHash: 'badhash' });
     expect(res.authorityValidationStatus).toBe('INVALID');
+    expect(res.contentIntegrityStatus).toBe('VERIFIED');
+    expect(res.validationFindings).toContain('Caller expected hash does not match the authoritative stored hash.');
+  });
+
+  it('rejects changed authoritative text even when the caller repeats the stored hash', async () => {
+    const storedHash = mockTables.navigator_legal_provision_versions[0].text_sha256;
+    mockTables.navigator_legal_provision_versions[0].exact_text = 'Tampered authoritative text.';
+    const res = await validateCandidateCitation('test-uid', { matterId, candidateId, callerExpectedHash: storedHash });
     expect(res.contentIntegrityStatus).toBe('FAILED');
-    expect(res.validationFindings).toContain('Hash mismatch: Caller expected hash does not match authoritative text_sha256.');
+    expect(res.authorityValidationStatus).toBe('INVALID');
   });
 
   it('supports historical versions properly if valid', async () => {
@@ -202,7 +210,7 @@ describe('Stage 9C Citation & Authority Validation', () => {
     const wrongHash = computeLegalContentHash('Wrong version text');
     const res = await validateCandidateCitation('test-uid', { matterId, candidateId, callerExpectedHash: wrongHash, exactQuoteToVerify: 'Wrong version text' });
     expect(res.authorityValidationStatus).toBe('INVALID');
-    expect(res.contentIntegrityStatus).toBe('FAILED');
+    expect(res.contentIntegrityStatus).toBe('VERIFIED');
     expect(res.exactQuoteStatus).toBe('ALTERED');
   });
 

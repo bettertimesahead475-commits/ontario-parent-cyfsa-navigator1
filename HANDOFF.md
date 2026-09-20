@@ -681,3 +681,13 @@ PERSISTENCE: Computed deterministically; no new migrations required.
 LIVE AI, FABRICATED AUTHORITY, AUTOMATED CONCLUSIONS: Prohibited and successfully avoided.
 TESTS: Added comprehensive tests (citationValidation.test.ts) covering valid mappings, altered quotes, cross-matter safety, missing sources, and caller pinpoint behaviors.
 
+
+## 2026-09-20 Stage 9 recovery and citation integrity correction
+
+Recovery source: the local Stage 9C branch at 539988dbccaeaa2673a3a497881215a75124c228. No Stage 9D branch, commit, or uncommitted Stage 9D work was present in that checkout. The previous HANDOFF entries describe 9A and 9B as awaiting independent re-audit and 9C as implemented without formal closure. Stage 9D requirements have not been specified in repository documentation. Do not represent 9D as started or closed from this evidence.
+
+A Stage 9C integrity defect was demonstrated: matching a caller-supplied hash to the stored hash could mark content VERIFIED without hashing stored authoritative text. Citation validation now hashes the stored provision text against its stored hash and treats caller hashes only as assertions. A regression test changes the authoritative text while repeating the stored hash and requires INVALID/FAILED. Prior candidate FAILED state remains fail-closed.
+
+Validation: citationValidation.test.ts 14/14; Stage 9 legal tests 61/61; full suite 44 files and 1251/1251 with one worker; TypeScript no errors; production build passed; npm audit 11 advisories (10 moderate, 1 high), matching recorded baseline. Parallel full-suite runs had unrelated 5-second timeouts and worker startup failures; serial run passed. No migration, deployment, production change, or merge was performed.
+
+Next: conduct independent closure audit of Stages 9A-9C, resolve any demonstrated defects, then define Stage 9D from an explicit repository milestone contract before implementation. No 9D freeze is claimed.

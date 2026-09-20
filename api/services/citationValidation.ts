@@ -1,7 +1,7 @@
 import { getSupabase } from './access.js';
 import { findAccount } from './accounts.js';
 import { LifecycleError, requireUuid } from './lifecycleErrors.js';
-import { getSource, getSourceVersion, getProvision } from './legalSources.js';
+import { getSource, getSourceVersion, getProvision, verifyLegalContentIntegrity } from './legalSources.js';
 import { normalizeProvisionText } from './legalCorpus.js';
 
 export type CitationValidationStatus = 
@@ -206,35 +206,28 @@ export async function validateCandidateCitation(
   }
 
   // 7. Content Integrity Status
-  let contentIntegrityStatus = candidate.content_integrity_status || 'NOT_CHECKED';
-  
-  if (input.callerExpectedHash) {
-    if (!provVersionData || !provVersionData.text_sha256) {
-      findings.push('Caller expected hash provided but authoritative hash is unavailable.');
-      contentIntegrityStatus = 'UNVERIFIED';
-      authorityValidationStatus = 'UNVERIFIED';
-    } else if (input.callerExpectedHash !== provVersionData.text_sha256) {
-      findings.push('Hash mismatch: Caller expected hash does not match authoritative text_sha256.');
+  let contentIntegrityStatus = 'UNVERIFIED';
+  if (provVersionData?.exact_text && provVersionData.text_sha256) {
+    try {
+      verifyLegalContentIntegrity(provVersionData.exact_text, provVersionData.text_sha256);
+      contentIntegrityStatus = 'VERIFIED';
+    } catch {
       contentIntegrityStatus = 'FAILED';
+      findings.push('Authoritative provision text does not match its stored hash.');
       authorityValidationStatus = 'INVALID';
-    } else {
-      findings.push('Caller expected hash matches authoritative text_sha256.');
-      if (contentIntegrityStatus !== 'FAILED') {
-        contentIntegrityStatus = 'VERIFIED';
-      }
     }
   } else {
-    if (contentIntegrityStatus === 'FAILED') {
-      findings.push('Prior content integrity check failed for this candidate.');
-      authorityValidationStatus = 'INVALID';
-    } else if (contentIntegrityStatus === 'UNVERIFIED') {
-      findings.push('Content integrity remains unverified.');
-      if (authorityValidationStatus === 'VALIDATED') authorityValidationStatus = 'PARTIALLY_VALIDATED';
-    } else if (contentIntegrityStatus === 'VERIFIED') {
-      findings.push('Candidate claims VERIFIED integrity but no caller hash provided to prove it. Downgrading to UNVERIFIED.');
-      contentIntegrityStatus = 'UNVERIFIED';
-      if (authorityValidationStatus === 'VALIDATED') authorityValidationStatus = 'PARTIALLY_VALIDATED';
-    }
+    findings.push('Authoritative provision text or hash is unavailable.');
+    if (authorityValidationStatus === 'VALIDATED') authorityValidationStatus = 'PARTIALLY_VALIDATED';
+  }
+
+  if (candidate.content_integrity_status === 'FAILED') {
+    findings.push('Prior candidate content integrity check failed.');
+    authorityValidationStatus = 'INVALID';
+  }
+  if (input.callerExpectedHash && input.callerExpectedHash !== provVersionData?.text_sha256) {
+    findings.push('Caller expected hash does not match the authoritative stored hash.');
+    authorityValidationStatus = 'INVALID';
   }
 
   // 8. Limitations & Provenance
