@@ -613,3 +613,17 @@ The independent audit blocked the initial Stage 9A candidate due to missing cons
 
 **Status**: Stage 9A is NOT formally closed. Ready for independent re-audit.
 
+
+==================================================
+STAGE 9B IMPLEMENTATION
+==================================================
+BRANCH: stage-9b-matter-to-law-research
+PARENT SHA: 180276dfca62dd224c768d2ba2b0cc854acc769b
+ARCHITECTURE REUSED: legalAuthority.ts, legalSources.ts, legalCorpusRetrieval.ts, access.ts, accounts.ts. Reused Stage 9A's getAuthorityCitation and verifyLegalContentIntegrity safeguards. Reused Stage 5 classification enums and Stage 7/8 professionalMatterAccess.
+NEW ARCHITECTURE: api/services/matterLegalResearch.ts containing buildMatterLegalResearchCandidate, saveMatterLegalResearchCandidate, listMatterLegalResearchCandidates. Migration create_navigator_stage9b_matter_research.sql.
+MATTER PRIVACY MODEL: Explicit RLS check mapping via navigator_matter_members. Caller must be an active member of the matter (OWNER, REVIEWER, etc). Identity verified server-side.
+EFFECTIVE-DATE BEHAVIOR: Uses Stage 9A's getAuthorityCitation resolving exact applicable versions per event date. Automatically fails closed (REQUIRES_RESEARCH) if version resolution is ambiguous or unavailable.
+INTEGRITY BEHAVIOR: Checks expectedContentHash vs actualContent using verifyLegalContentIntegrity. Returns VERIFIED, UNVERIFIED, FAILED, or NOT_CHECKED. A mismatch fails closed.
+MIGRATION STATUS: Pending migration created in supabase/migrations_pending_approval/create_navigator_stage9b_matter_research.sql. Not executed.
+TESTS: Added matterLegalResearch.test.ts exercising pure function construction and RLS-like enforcement proofs at the service boundary.
+KNOWN LIMITATIONS: Hash persistence limitation handled gracefully by marking 'NOT_CHECKED' if not present. Live AI explicitly avoided; extraction and matching depend on deterministic outputs.
