@@ -627,3 +627,24 @@ INTEGRITY BEHAVIOR: Checks expectedContentHash vs actualContent using verifyLega
 MIGRATION STATUS: Pending migration created in supabase/migrations_pending_approval/create_navigator_stage9b_matter_research.sql. Not executed.
 TESTS: Added matterLegalResearch.test.ts exercising pure function construction and RLS-like enforcement proofs at the service boundary.
 KNOWN LIMITATIONS: Hash persistence limitation handled gracefully by marking 'NOT_CHECKED' if not present. Live AI explicitly avoided; extraction and matching depend on deterministic outputs.
+
+## STAGE 9B NARROW REMEDIATION
+
+The independent audit blocked the initial Stage 9B candidate due to missing constraints:
+- **Effective-Date Resolution**: Trusted caller-supplied legalSourceVersionId instead of dynamically resolving event dates.
+- **Content Integrity**: Trusted caller-supplied expected hashes.
+- **Database RLS**: Used auth.uid() which mismatched application account UUID mapping conventions.
+- **Idempotence**: Duplicated candidates on insert.
+- **Reviewer Privacy**: Shared matter-level review state violated reviewer isolation.
+
+### Remediation
+- **Effective-Date Resolution**: Dropped trust in caller-supplied legalSourceVersionId. Now accepts eventId and authoritatively fetches date_lower_bound from 
+avigator_events, resolving to the exact version via Stage 9A.
+- **Content Integrity**: Fetches the authoritative 	ext_sha256 from 
+avigator_legal_provision_versions. Rejects caller verification trust.
+- **Database RLS**: Removed invalid auth.uid() policies. Restored the verified Stage 4 service-role application pattern.
+- **Idempotence**: Added a compound UNIQUE constraint on (matter_id, evidence_item_id, event_id, legal_source_id, provision_id, retrieval_basis) and implemented an upsert strategy.
+- **Reviewer Privacy**: Removed eview_state completely from candidate rows to enforce isolation via the existing professional_reviews model from Stage 7.
+- **Mutations & Tests**: Added missing regression tests explicitly for cross-matter query filter protection, inactive membership blocking, historical versioning, caller hash trust rejection, and idempotence.
+
+**Status**: STAGE 9B REMEDIATED — READY FOR INDEPENDENT RE-AUDIT.

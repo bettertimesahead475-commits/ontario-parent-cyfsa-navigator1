@@ -4,7 +4,7 @@ import {
   type ReviewState,
   assertSafeLegalLanguage
 } from './legalAuthority.js';
-import { getAuthorityCitation, verifyLegalContentIntegrity } from './legalSources.js';
+import { getAuthorityCitation, resolveVersionForDate, computeLegalContentHash, verifyLegalContentIntegrity } from './legalSources.js';
 import { EVIDENCE_CLASSIFICATIONS } from '../../shared/evidenceReview.js';
 import { getSupabase } from './access.js';
 import { findAccount } from './accounts.js';
@@ -18,6 +18,7 @@ export interface MatterLegalResearchCandidate {
   id: string;
   matterId: string;
   evidenceItemId: string | null;
+  eventId: string | null;
   evidenceClassification: string | null;
   legalSourceId: string;
   legalSourceVersionId: string | null;
@@ -28,7 +29,6 @@ export interface MatterLegalResearchCandidate {
   effectiveDateContext: string | null;
   sourceProvenance: string;
   confidence: number | null;
-  reviewState: ReviewState;
   contentIntegrityStatus: IntegrityStatus;
   createdAt: string;
   retrievedAt: string;
@@ -37,16 +37,16 @@ export interface MatterLegalResearchCandidate {
 export interface ResearchCandidateInput {
   matterId: string;
   evidenceItemId?: string | null;
+  eventId?: string | null;
   evidenceClassification?: string | null;
   legalSourceId: string;
-  legalSourceVersionId?: string | null;
   provisionId?: string | null;
   authorityIdentifier?: string | null;
   reasonForRelevance: string;
   retrievalBasis: string;
   confidence?: number | null;
-  expectedContentHash?: string | null;
   actualContent?: string | null;
+  legalSourceVersionId?: string | null; // retained for compatibility, used as assertion hint
 }
 
 export async function buildMatterLegalResearchCandidate(
@@ -55,8 +55,8 @@ export async function buildMatterLegalResearchCandidate(
   if (!input || typeof input !== 'object') throw invalid("Input must be an object.");
   const matterId = requireUuid(input.matterId, "matterId");
   const evidenceItemId = input.evidenceItemId ? requireUuid(input.evidenceItemId, "evidenceItemId") : null;
+  const eventId = input.eventId ? requireUuid(input.eventId, "eventId") : null;
   const legalSourceId = requireUuid(input.legalSourceId, "legalSourceId");
-  const legalSourceVersionId = input.legalSourceVersionId ? requireUuid(input.legalSourceVersionId, "legalSourceVersionId") : null;
   const provisionId = input.provisionId ? requireUuid(input.provisionId, "provisionId") : null;
   
   if (input.evidenceClassification && !EVIDENCE_CLASSIFICATIONS.includes(input.evidenceClassification as never)) {
@@ -76,42 +76,81 @@ export async function buildMatterLegalResearchCandidate(
     throw invalid("Confidence must be a number between 0 and 1.");
   }
 
+  const db = getSupabase();
+  
+  // 1. Resolve Authoritative Version
+  let resolvedVersionId: string | null = null;
+  
+  if (eventId) {
+    const { data: event, error: eventError } = await db
+      .from('navigator_events')
+      .select('date_lower_bound, date_precision')
+      .eq('id', eventId)
+      .single();
+      
+    if (!eventError && event && event.date_lower_bound) {
+      const isExact = ['EXACT_DATETIME', 'EXACT_DATE'].includes(event.date_precision);
+      const caseDate: CaseDate = { 
+        kind: isExact ? 'EXACT' : 'APPROXIMATE', 
+        date: event.date_lower_bound 
+      };
+      
+      const res = await resolveVersionForDate(legalSourceId, caseDate);
+      if (res.outcome.startsWith('RESOLVED') && res.version) {
+        resolvedVersionId = res.version.id;
+      }
+    }
+  }
+  
+  // Caller-supplied version is strictly a hint/assertion
+  if (input.legalSourceVersionId && resolvedVersionId && input.legalSourceVersionId !== resolvedVersionId) {
+    throw invalid('Caller-supplied version ID does not match authoritative resolution.');
+  }
+
+  const finalVersionId = resolvedVersionId;
+
+  // 2. Fetch Citation and verify provision-version integrity
+  // Stage 9A's getAuthorityCitation validates the provision belongs to the version
   const citation = await getAuthorityCitation(
     legalSourceId,
-    legalSourceVersionId || undefined,
+    finalVersionId || undefined,
     provisionId || undefined,
     input.authorityIdentifier || undefined
   );
 
+  // 3. Verify Content Integrity
   let integrityStatus: IntegrityStatus = "NOT_CHECKED";
-  let reviewState: ReviewState = "UNREVIEWED";
-
-  if (input.expectedContentHash && input.actualContent) {
-    try {
-      verifyLegalContentIntegrity(input.actualContent, input.expectedContentHash);
-      integrityStatus = "VERIFIED";
-    } catch (e: any) {
-      integrityStatus = "FAILED";
-      reviewState = "REQUIRES_RESEARCH";
+  
+  if (input.actualContent) {
+    integrityStatus = "UNVERIFIED";
+    
+    // Fetch authoritative expected hash
+    if (finalVersionId && provisionId) {
+      const { data: provVersion, error: provError } = await db
+        .from('navigator_legal_provision_versions')
+        .select('text_sha256')
+        .eq('provision_id', provisionId)
+        .eq('legal_source_version_id', finalVersionId)
+        .maybeSingle();
+        
+      if (!provError && provVersion && provVersion.text_sha256) {
+        try {
+          verifyLegalContentIntegrity(input.actualContent, provVersion.text_sha256);
+          integrityStatus = "VERIFIED";
+        } catch (e: any) {
+          integrityStatus = "FAILED";
+        }
+      }
     }
-  } else if (input.expectedContentHash && !input.actualContent) {
-     integrityStatus = "UNVERIFIED";
-     reviewState = "REQUIRES_RESEARCH";
-  } else if (input.actualContent && !input.expectedContentHash) {
-     integrityStatus = "UNVERIFIED";
-     reviewState = "REQUIRES_RESEARCH";
-  }
-
-  if (!legalSourceVersionId) {
-     reviewState = "REQUIRES_RESEARCH";
   }
 
   return {
     matterId,
     evidenceItemId,
+    eventId,
     evidenceClassification: input.evidenceClassification || null,
     legalSourceId,
-    legalSourceVersionId,
+    legalSourceVersionId: finalVersionId,
     provisionId,
     authorityIdentifier: input.authorityIdentifier || null,
     reasonForRelevance: input.reasonForRelevance.trim(),
@@ -119,16 +158,11 @@ export async function buildMatterLegalResearchCandidate(
     effectiveDateContext: citation.effectiveDateContext || null,
     sourceProvenance: citation.sourceUrl,
     confidence: input.confidence ?? null,
-    reviewState,
     contentIntegrityStatus: integrityStatus,
     retrievedAt: citation.retrievedAt
   };
 }
 
-/** 
- * Verify caller is a member (Owner/Viewer/Reviewer) of this matter.
- * This explicitly rejects unauthorized callers across unrelated matters.
- */
 async function requireMatterAccess(db: any, accountId: string, matterId: string) {
   const { data: member, error } = await db
     .from('navigator_matter_members')
@@ -151,9 +185,11 @@ export async function saveMatterLegalResearchCandidate(
   const db = getSupabase();
   await requireMatterAccess(db, account.id, candidate.matterId);
 
-  const { data, error } = await db.from('navigator_matter_legal_research_candidates').insert({
+  // Using upsert on the uniqueness constraint to ensure idempotence
+  const { data, error } = await db.from('navigator_matter_legal_research_candidates').upsert({
     matter_id: candidate.matterId,
     evidence_item_id: candidate.evidenceItemId,
+    event_id: candidate.eventId,
     evidence_classification: candidate.evidenceClassification,
     legal_source_id: candidate.legalSourceId,
     legal_source_version_id: candidate.legalSourceVersionId,
@@ -164,17 +200,21 @@ export async function saveMatterLegalResearchCandidate(
     effective_date_context: candidate.effectiveDateContext,
     source_provenance: candidate.sourceProvenance,
     confidence: candidate.confidence,
-    review_state: candidate.reviewState,
     content_integrity_status: candidate.contentIntegrityStatus,
     retrieved_at: candidate.retrievedAt
+  }, { 
+    onConflict: 'matter_id, evidence_item_id, event_id, legal_source_id, provision_id, retrieval_basis'
   }).select().single();
 
-  if (error || !data) throw new LifecycleError(500, 'DB_ERROR', 'Failed to save candidate');
+  if (error || !data) {
+     throw new LifecycleError(500, 'DB_ERROR', 'Failed to save candidate (Idempotence/Write check failed)');
+  }
 
   return {
     id: data.id,
     matterId: data.matter_id,
     evidenceItemId: data.evidence_item_id,
+    eventId: data.event_id,
     evidenceClassification: data.evidence_classification,
     legalSourceId: data.legal_source_id,
     legalSourceVersionId: data.legal_source_version_id,
@@ -185,7 +225,6 @@ export async function saveMatterLegalResearchCandidate(
     effectiveDateContext: data.effective_date_context,
     sourceProvenance: data.source_provenance,
     confidence: data.confidence,
-    reviewState: data.review_state,
     contentIntegrityStatus: data.content_integrity_status,
     createdAt: data.created_at,
     retrievedAt: data.retrieved_at
@@ -213,6 +252,7 @@ export async function listMatterLegalResearchCandidates(
     id: row.id,
     matterId: row.matter_id,
     evidenceItemId: row.evidence_item_id,
+    eventId: row.event_id,
     evidenceClassification: row.evidence_classification,
     legalSourceId: row.legal_source_id,
     legalSourceVersionId: row.legal_source_version_id,
@@ -223,7 +263,6 @@ export async function listMatterLegalResearchCandidates(
     effectiveDateContext: row.effective_date_context,
     sourceProvenance: row.source_provenance,
     confidence: row.confidence,
-    reviewState: row.review_state,
     contentIntegrityStatus: row.content_integrity_status,
     createdAt: row.created_at,
     retrievedAt: row.retrieved_at

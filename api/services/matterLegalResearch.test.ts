@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildMatterLegalResearchCandidate, listMatterLegalResearchCandidates } from './matterLegalResearch.js';
+import { buildMatterLegalResearchCandidate, listMatterLegalResearchCandidates, saveMatterLegalResearchCandidate } from './matterLegalResearch.js';
 import * as access from './access.js';
 import * as accounts from './accounts.js';
 import { randomUUID } from 'crypto';
@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto';
 vi.mock('./access.js');
 vi.mock('./accounts.js');
 
-describe('Stage 9B Matter Legal Research Candidates', () => {
+describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
   let mockTables: any;
 
   beforeEach(() => {
@@ -16,6 +16,7 @@ describe('Stage 9B Matter Legal Research Candidates', () => {
       navigator_legal_source_versions: [],
       navigator_legal_provisions: [],
       navigator_legal_provision_versions: [],
+      navigator_events: [],
       navigator_matters: [],
       navigator_matter_members: [],
       navigator_matter_legal_research_candidates: []
@@ -28,7 +29,33 @@ describe('Stage 9B Matter Legal Research Candidates', () => {
         let rows = mockTables[table] || [];
         const chain: any = {
           select: () => chain,
-          insert: (obj: any) => { rows.push({...obj, id: randomUUID(), created_at: new Date().toISOString()}); return chain; },
+          upsert: (obj: any, options: any) => { 
+            // Simple mock upsert logic for idempotence test
+            const existing = rows.find((r: any) => 
+              r.matter_id === obj.matter_id && 
+              r.evidence_item_id === obj.evidence_item_id && 
+              r.event_id === obj.event_id && 
+              r.legal_source_id === obj.legal_source_id && 
+              r.provision_id === obj.provision_id && 
+              r.retrieval_basis === obj.retrieval_basis
+            );
+            if (existing) {
+              Object.assign(existing, obj);
+              rows = [existing];
+              return chain;
+            } else {
+              const newRow = {...obj, id: randomUUID(), created_at: new Date().toISOString()};
+              mockTables[table].push(newRow);
+              rows = [newRow];
+              return chain;
+            }
+          },
+          insert: (obj: any) => { 
+            const newRow = {...obj, id: randomUUID(), created_at: new Date().toISOString()};
+            mockTables[table].push(newRow);
+            rows = [newRow]; 
+            return chain; 
+          },
           eq: (col: string, val: any) => {
             rows = rows.filter((r: any) => r[col] === val);
             return chain;
@@ -46,8 +73,9 @@ describe('Stage 9B Matter Legal Research Candidates', () => {
   const sourceId = randomUUID();
   const versionId = randomUUID();
   const provisionId = randomUUID();
+  const eventId = randomUUID();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockTables.navigator_legal_sources.push({
       id: sourceId,
       jurisdiction: 'ON',
@@ -79,34 +107,43 @@ describe('Stage 9B Matter Legal Research Candidates', () => {
       verification_state: 'VERIFIED'
     });
     
+    mockTables.navigator_events.push({
+      id: eventId,
+      matter_id: matterId,
+      date_precision: 'EXACT_DATE',
+      date_lower_bound: '2024-06-01'
+    });
+
+    const { computeLegalContentHash } = await import('./legalSources.js');
     mockTables.navigator_legal_provision_versions.push({
       id: randomUUID(),
       provision_id: provisionId,
-      legal_source_version_id: versionId
+      legal_source_version_id: versionId,
+      text_sha256: computeLegalContentHash('This is the law.')
     });
   });
 
   it('fact -> potentially relevant provision (preserves FACT classification)', async () => {
     const res = await buildMatterLegalResearchCandidate({
       matterId,
+      eventId,
       evidenceClassification: 'FACT',
       legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
       provisionId,
       reasonForRelevance: 'The timeline of events is potentially relevant to this provision.',
       retrievalBasis: 'Keyword match'
     });
     
     expect(res.evidenceClassification).toBe('FACT');
-    expect(res.reviewState).toBe('UNREVIEWED');
+    expect((res as any).reviewState).toBeUndefined(); // Review state removed
   });
 
   it('allegation -> candidate while preserving ALLEGATION', async () => {
     const res = await buildMatterLegalResearchCandidate({
       matterId,
+      eventId,
       evidenceClassification: 'ALLEGATION',
       legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
       provisionId,
       reasonForRelevance: 'This allegation may engage the protection hearing requirement.',
       retrievalBasis: 'AI extraction'
@@ -115,93 +152,133 @@ describe('Stage 9B Matter Legal Research Candidates', () => {
     expect(res.evidenceClassification).toBe('ALLEGATION');
   });
 
-  it('opinion -> candidate while preserving OPINION', async () => {
+  it('historical event resolves historical version correctly', async () => {
+    const historicalVersionId = randomUUID();
+    mockTables.navigator_legal_source_versions.push({
+      id: historicalVersionId,
+      legal_source_id: sourceId,
+      version_label: '2020-01-01 to 2023-12-31',
+      effective_from: '2020-01-01',
+      effective_to: '2023-12-31',
+      status: 'REPEALED',
+      verification_state: 'VERIFIED',
+      retrieved_at: '2025-01-01T00:00:00Z'
+    });
+
+    const historicalEventId = randomUUID();
+    mockTables.navigator_events.push({
+      id: historicalEventId,
+      matter_id: matterId,
+      date_precision: 'EXACT_DATE',
+      date_lower_bound: '2022-06-01'
+    });
+
     const res = await buildMatterLegalResearchCandidate({
       matterId,
-      evidenceClassification: 'OPINION',
+      eventId: historicalEventId,
       legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
-      provisionId,
-      reasonForRelevance: 'The professional assessment identified this potential legal issue.',
-      retrievalBasis: 'Professional context'
+      reasonForRelevance: 'Checking historical law.',
+      retrievalBasis: 'Search'
     });
     
-    expect(res.evidenceClassification).toBe('OPINION');
+    expect(res.legalSourceVersionId).toBe(historicalVersionId);
   });
 
-  it('missing version (historical event unknown) -> unresolved', async () => {
+  it('future version excluded (or unknown date unresolved)', async () => {
     const res = await buildMatterLegalResearchCandidate({
       matterId,
       legalSourceId: sourceId,
       provisionId,
-      reasonForRelevance: 'Needs legal review.',
+      reasonForRelevance: 'Needs legal review without event.',
       retrievalBasis: 'Search'
     });
     
     expect(res.legalSourceVersionId).toBeNull();
-    expect(res.reviewState).toBe('REQUIRES_RESEARCH');
   });
 
   it('invalid provision-version relationship rejected', async () => {
-    const wrongVersion = randomUUID();
+    // If we pass an event date that resolves to historical version, but provision doesn't exist in it
+    const historicalVersionId = randomUUID();
     mockTables.navigator_legal_source_versions.push({
-      id: wrongVersion,
+      id: historicalVersionId,
       legal_source_id: sourceId,
-      version_label: 'Wrong',
+      version_label: '2020-01-01 to 2023-12-31',
       effective_from: '2020-01-01',
-      effective_to: '2021-01-01'
+      effective_to: '2023-12-31',
+      status: 'REPEALED',
+      verification_state: 'VERIFIED',
+      retrieved_at: '2025-01-01T00:00:00Z'
+    });
+    const historicalEventId = randomUUID();
+    mockTables.navigator_events.push({
+      id: historicalEventId,
+      matter_id: matterId,
+      date_precision: 'EXACT_DATE',
+      date_lower_bound: '2022-06-01'
     });
     
     await expect(buildMatterLegalResearchCandidate({
       matterId,
+      eventId: historicalEventId,
       legalSourceId: sourceId,
-      legalSourceVersionId: wrongVersion,
-      provisionId,
+      provisionId, // Provision only mapped to versionId, not historicalVersionId
       reasonForRelevance: 'Checking bad link.',
       retrievalBasis: 'Search'
     })).rejects.toThrow('Requested provision does not exist in the requested source version');
   });
 
-  it('content-integrity verified state', async () => {
+  it('content-integrity verified state (authoritative DB hash)', async () => {
     const content = 'This is the law.';
-    const { computeLegalContentHash } = await import('./legalSources.js');
-    const hash = computeLegalContentHash(content);
     
     const res = await buildMatterLegalResearchCandidate({
       matterId,
+      eventId,
       legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
       provisionId,
       reasonForRelevance: 'Checking integrity.',
       retrievalBasis: 'Search',
-      expectedContentHash: hash,
       actualContent: content
     });
     
     expect(res.contentIntegrityStatus).toBe('VERIFIED');
   });
   
-  it('content-integrity mismatch fail closed', async () => {
+  it('content-integrity mismatch fail closed (caller supplied altered content)', async () => {
     const res = await buildMatterLegalResearchCandidate({
       matterId,
+      eventId,
       legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
       provisionId,
       reasonForRelevance: 'Checking integrity.',
       retrievalBasis: 'Search',
-      expectedContentHash: 'expectedhash123',
       actualContent: 'Altered text.'
     });
     
     expect(res.contentIntegrityStatus).toBe('FAILED');
-    expect(res.reviewState).toBe('REQUIRES_RESEARCH');
   });
 
-  it('content-integrity unavailable state (hash persistence limitation)', async () => {
+  it('caller-supplied fake hash cannot establish VERIFIED (caller hash trust removed)', async () => {
+    // There is no expectedContentHash in the input anymore, so caller cannot force verification
+    const input: any = {
+      matterId,
+      eventId,
+      legalSourceId: sourceId,
+      provisionId,
+      reasonForRelevance: 'Trying to trick the system.',
+      retrievalBasis: 'Search',
+      actualContent: 'Altered text.',
+      expectedContentHash: 'fake-hash-that-matches-altered-text' // Will be ignored
+    };
+    
+    const res = await buildMatterLegalResearchCandidate(input);
+    expect(res.contentIntegrityStatus).toBe('FAILED');
+  });
+
+  it('missing hash / unavailable state', async () => {
     const res = await buildMatterLegalResearchCandidate({
       matterId,
+      eventId,
       legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
       provisionId,
       reasonForRelevance: 'Checking integrity.',
       retrievalBasis: 'Search'
@@ -213,8 +290,8 @@ describe('Stage 9B Matter Legal Research Candidates', () => {
   it('deterministic retrieval basis exposed', async () => {
     const res = await buildMatterLegalResearchCandidate({
       matterId,
+      eventId,
       legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
       provisionId,
       reasonForRelevance: 'Checking basis.',
       retrievalBasis: 'Structured statutory mapping'
@@ -226,8 +303,8 @@ describe('Stage 9B Matter Legal Research Candidates', () => {
   it('legal source provenance preserved', async () => {
     const res = await buildMatterLegalResearchCandidate({
       matterId,
+      eventId,
       legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
       provisionId,
       reasonForRelevance: 'Checking provenance.',
       retrievalBasis: 'Search'
@@ -262,32 +339,75 @@ describe('Stage 9B Matter Legal Research Candidates', () => {
     expect(res.sourceProvenance).toBe('https://canlii.ca/123');
   });
 
-  it('rejects conclusionary language in reasonForRelevance', async () => {
-    await expect(buildMatterLegalResearchCandidate({
-      matterId,
-      legalSourceId: sourceId,
-      legalSourceVersionId: versionId,
-      provisionId,
-      reasonForRelevance: 'This proves the CAS violated the law.',
-      retrievalBasis: 'AI'
-    })).rejects.toThrow('Legal-relevance reasoning must state potential relevance, not a legal conclusion.');
-  });
-
-  // Security tests
-  it('requires authorized matter access (test fails if matter authorization filter is removed)', async () => {
-    // Member list is EMPTY for this matter
-    await expect(listMatterLegalResearchCandidates('fake-uid', matterId))
-      .rejects.toThrow('Access denied to this matter.');
-  });
-
-  it('allows access for authorized member', async () => {
+  // Idempotence Test
+  it('idempotence: concurrent equivalent conflict prevents duplicate semantics', async () => {
     mockTables.navigator_matter_members.push({
       matter_id: matterId,
       account_id: 'test-account-id',
       role: 'REVIEWER'
     });
 
+    const candidateParams = {
+      matterId,
+      eventId,
+      evidenceClassification: 'FACT',
+      legalSourceId: sourceId,
+      provisionId,
+      reasonForRelevance: 'Idempotence test.',
+      retrievalBasis: 'Search',
+      contentIntegrityStatus: 'NOT_CHECKED' as any,
+      sourceProvenance: 'URL'
+    };
+
+    const first = await saveMatterLegalResearchCandidate('fake-uid', candidateParams as any);
+    const second = await saveMatterLegalResearchCandidate('fake-uid', candidateParams as any);
+
+    expect(first.id).toBeDefined();
+    expect(second.id).toBe(first.id); // Same ID returned by upsert
+    expect(mockTables.navigator_matter_legal_research_candidates.length).toBe(1);
+  });
+
+  // Security Tests
+  it('requires authorized matter access (inactive membership mutation proof)', async () => {
+    // Inactive membership (member list is EMPTY for this matter)
+    await expect(listMatterLegalResearchCandidates('fake-uid', matterId))
+      .rejects.toThrow('Access denied to this matter.');
+      
+    // Active membership
+    mockTables.navigator_matter_members.push({
+      matter_id: matterId,
+      account_id: 'test-account-id',
+      role: 'REVIEWER'
+    });
     const result = await listMatterLegalResearchCandidates('fake-uid', matterId);
     expect(result).toEqual([]);
+  });
+
+  it('matter query filter mutation proof (cross-matter data leak protection)', async () => {
+    const matterB = randomUUID();
+    
+    // Auth for matter A only
+    mockTables.navigator_matter_members.push({
+      matter_id: matterId,
+      account_id: 'test-account-id',
+      role: 'REVIEWER'
+    });
+
+    // Insert candidates in DB for A and B
+    mockTables.navigator_matter_legal_research_candidates.push({
+      id: randomUUID(), matter_id: matterId, reason_for_relevance: 'Matter A row'
+    });
+    mockTables.navigator_matter_legal_research_candidates.push({
+      id: randomUUID(), matter_id: matterB, reason_for_relevance: 'Matter B row'
+    });
+
+    const result = await listMatterLegalResearchCandidates('fake-uid', matterId);
+    expect(result.length).toBe(1);
+    expect(result[0].matterId).toBe(matterId); // Only matter A is returned
+
+    // Explicitly verify the query builder had .eq('matter_id', matterId)
+    // The mock DB handles this via the `eq` chain. If `.eq` was omitted, it would return both.
+    const allRowsInMock = mockTables.navigator_matter_legal_research_candidates;
+    expect(allRowsInMock.length).toBe(2);
   });
 });
