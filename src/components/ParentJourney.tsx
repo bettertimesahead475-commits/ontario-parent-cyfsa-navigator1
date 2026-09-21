@@ -1,10 +1,9 @@
 import React, { useEffect } from "react";
 import { Link } from "wouter";
-import { ArrowRight, BookOpen, CalendarDays, FileSearch, Heart, Scale, ShieldCheck, Users, Search, Shield } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarDays, FileSearch, Heart, Lock, Phone, Scale, ShieldCheck, Users, Search, Shield } from "lucide-react";
 import { CYFSA_TOPICS } from "../data";
 import { ROADMAP_STAGES } from "../data-transferred";
 import { printBrandedDocument } from "../utils/printExport";
-import { EvidenceStrengthDemo } from "./EvidenceStrengthDemo";
 
 // Same key CYFSAGuideTab.tsx reads on mount — set it right before navigating there so the
 // parent lands on the exact topic they clicked, not the guide's unrelated default.
@@ -274,174 +273,149 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     return () => window.removeEventListener("trigger-print-pdf", handler);
   }, [page]);
 
-// NEW HOMEPAGE CONVERSION FUNNEL — Analyzer-first with social proof
-// Replace the entire `if (page === "home")` section with this
-
   if (page === "home") return <div className="space-y-0">
     <JourneyNav />
-    
-    {/* HERO: Problem-focused, curiosity-driven */}
+
+    {/* HERO */}
     <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-brand-950 to-brand-800 px-6 py-12 text-white shadow-xl sm:px-10 md:py-20">
       <div className="mx-auto max-w-5xl">
-        <p className="text-xs font-bold uppercase tracking-widest text-brand-200">REAL ANALYSIS • REAL RESULTS</p>
-        <h1 className="mt-4 font-display text-4xl font-black leading-tight md:text-5xl">What your CAS affidavits really say — and what they don't.</h1>
+        <p className="text-xs font-bold uppercase tracking-widest text-brand-200">For Ontario parents in child protection proceedings</p>
+        <h1 className="mt-4 font-display text-4xl font-black leading-tight md:text-5xl">Understand your CAS paperwork before your next court date.</h1>
         <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-200">
-          Upload the court documents from your case and see what a professional document audit finds: contradictions, unsupported claims, missing evidence, and the questions worth discussing with your lawyer.
+          CYFSA Navigator explains your rights in plain language and reads your court documents with you, so you can spot what is missing, what is unclear, and what to ask your lawyer.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/document-analyzer">
+          <Link href="/rights">
             <span className="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-base font-bold text-brand-900 transition hover:bg-slate-100">
-              ANALYZE A DOCUMENT <ArrowRight className="h-5 w-5" />
+              START WITH YOUR RIGHTS <ArrowRight className="h-5 w-5" />
             </span>
           </Link>
-          <button className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-6 py-3 text-base font-bold text-white transition hover:bg-white/10">
-            See what we found
-          </button>
+          <Link href="/document-analyzer">
+            <span className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-6 py-3 text-base font-bold text-white transition hover:bg-white/10">
+              Analyze a document
+            </span>
+          </Link>
         </div>
+        <p className="mt-6 text-xs text-slate-300">Educational tool. Not legal advice. Not affiliated with any Children's Aid Society, court, or the Law Society of Ontario.</p>
       </div>
     </section>
 
-    {/* DEMO: Evidence Strength Analysis Methodology */}
-    <EvidenceStrengthDemo />
-
-    {/* PROOF POINTS: Why parents trust this */}
+    {/* WHAT THIS IS / ISN'T */}
     <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-slate-50">
       <div className="mx-auto max-w-5xl">
-        <h2 className="text-center font-display text-3xl font-bold text-slate-900">Why this matters</h2>
-        <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <BookOpen className="h-6 w-6 text-brand-600" />
-            <p className="mt-3 font-bold text-slate-900">Educational</p>
-            <p className="mt-1 text-xs text-slate-600">Teaches you what to look for in legal documents — hearsay, corroboration, contradictions.</p>
+        <h2 className="text-center font-display text-3xl font-bold text-slate-900">Straight answers about what this is</h2>
+        <div className="mt-10 grid gap-6 md:grid-cols-2">
+          <div className="rounded-xl border border-emerald-200 bg-white p-6">
+            <p className="font-display text-lg font-bold text-emerald-900">What it does</p>
+            <ul className="mt-3 space-y-2 text-sm text-slate-700">
+              <li>Explains the CYFSA and your rights in plain language.</li>
+              <li>Reads a document you upload and points out what it says, what it relies on, and what it leaves out.</li>
+              <li>Gives you a list of questions to bring to your lawyer or duty counsel.</li>
+            </ul>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <FileSearch className="h-6 w-6 text-brand-600" />
-            <p className="mt-3 font-bold text-slate-900">Evidence-focused</p>
-            <p className="mt-1 text-xs text-slate-600">Analyzes what's actually in your documents, not assumptions.</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <Scale className="h-6 w-6 text-brand-600" />
-            <p className="mt-3 font-bold text-slate-900">Not legal advice</p>
-            <p className="mt-1 text-xs text-slate-600">Doesn't predict outcomes — gives you better questions for counsel.</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <Heart className="h-6 w-6 text-brand-600" />
-            <p className="mt-3 font-bold text-slate-900">Your documents</p>
-            <p className="mt-1 text-xs text-slate-600">Stay private to your account. You control who sees them.</p>
+          <div className="rounded-xl border border-amber-200 bg-white p-6">
+            <p className="font-display text-lg font-bold text-amber-900">What it does not do</p>
+            <ul className="mt-3 space-y-2 text-sm text-slate-700">
+              <li>It does not give legal advice or tell you what to do in your case.</li>
+              <li>It does not predict how a judge will decide, and it does not score your case.</li>
+              <li>It can make mistakes. Always check its findings against the original document and with a lawyer.</li>
+            </ul>
           </div>
         </div>
       </div>
     </section>
 
-    {/* PROCESS: Three simple steps */}
+    {/* PRIVACY */}
     <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-white">
+      <div className="mx-auto max-w-5xl">
+        <div className="flex items-center justify-center gap-3">
+          <Lock className="h-6 w-6 text-brand-600" />
+          <h2 className="font-display text-3xl font-bold text-slate-900">How your documents are handled</h2>
+        </div>
+        <div className="mt-10 grid gap-6 md:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <p className="font-bold text-slate-900">Your progress saves on your device</p>
+            <p className="mt-2 text-sm text-slate-600">Your analyzer progress and saved reports are kept in your own browser.</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <p className="font-bold text-slate-900">AI analysis uses an outside service</p>
+            <p className="mt-2 text-sm text-slate-600">To read a document, its text is sent to Google's Gemini AI. Do not upload anything you are not comfortable sending to an AI service.</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <p className="font-bold text-slate-900">Protect names before you upload</p>
+            <p className="mt-2 text-sm text-slate-600">Remove or cover names of children and other people where you can. Child protection files are confidential under the CYFSA.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* PROCESS */}
+    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-slate-50">
       <div className="mx-auto max-w-5xl">
         <h2 className="text-center font-display text-3xl font-bold text-slate-900">How it works</h2>
         <div className="mt-12 grid gap-8 md:grid-cols-3">
-          <div className="text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-brand-700 font-display font-bold text-lg">1</div>
-            <p className="mt-4 font-display text-lg font-bold text-slate-900">Upload your document</p>
-            <p className="mt-2 text-sm text-slate-600">Court documents, CAS correspondence, affidavits, reports — any evidence from your case.</p>
-          </div>
-          <div className="text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-brand-700 font-display font-bold text-lg">2</div>
-            <p className="mt-4 font-display text-lg font-bold text-slate-900">We analyze it</p>
-            <p className="mt-2 text-sm text-slate-600">Evidence strength audit, citation check, corroboration assessment, contradiction detection.</p>
-          </div>
-          <div className="text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-brand-700 font-display font-bold text-lg">3</div>
-            <p className="mt-4 font-display text-lg font-bold text-slate-900">Review findings</p>
-            <p className="mt-2 text-sm text-slate-600">Understand what's strong, what's weak, and what questions to ask your lawyer.</p>
-          </div>
-        </div>
-        <div className="mt-10 text-center">
-          <Link href="/document-analyzer">
-            <span className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-brand-700">
-              ANALYZE YOUR CASE <ArrowRight className="h-4 w-4" />
-            </span>
-          </Link>
+          {[
+            ["1", "Learn your rights first", "Short guides on the CYFSA, the court process, and what CAS must show, so the paperwork makes sense."],
+            ["2", "Upload a document", "Affidavits, CAS letters, notices, reports. The analyzer reads it and lists what it finds."],
+            ["3", "Take questions to your lawyer", "Use the findings to prepare. Your lawyer decides what matters in your case."],
+          ].map(([n, t, d]) => (
+            <div key={n} className="text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-brand-700 font-display font-bold text-lg">{n}</div>
+              <p className="mt-4 font-display text-lg font-bold text-slate-900">{t}</p>
+              <p className="mt-2 text-sm text-slate-600">{d}</p>
+            </div>
+          ))}
         </div>
       </div>
     </section>
 
     {/* WHAT WE CHECK FOR */}
-    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-slate-50">
+    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-white">
       <div className="mx-auto max-w-5xl">
-        <h2 className="text-center font-display text-3xl font-bold text-slate-900">What the analyzer checks</h2>
+        <h2 className="text-center font-display text-3xl font-bold text-slate-900">What the analyzer looks at</h2>
         <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[
-            ["📊 Evidence strength", "Overall quality and weight of the evidence presented"],
-            ["🔗 Corroboration", "Which claims are backed by attached documents vs. hearsay"],
-            ["⚖️ Contradictions", "Conflicts between different parts of the same document"],
-            ["📄 Source attribution", "Whether claims are directly witnessed or secondhand"],
-            ["❓ Unsupported claims", "Assertions made without documentary evidence"],
-            ["🔍 Procedural issues", "Questions about how evidence was gathered"],
+            ["🔗 Supporting documents", "Which statements have an attached document behind them, and which do not"],
+            ["📄 Where information came from", "Whether the writer saw it directly or heard it from someone else"],
+            ["⚖️ Inconsistencies", "Places where different parts of the same document do not line up"],
+            ["❓ Unsupported statements", "Claims made without any document or detail to back them"],
+            ["🔍 Procedure", "Questions about timing, notice, and how steps were taken"],
+            ["📋 Legal references", "Whether a CYFSA section is cited for an action, so you can check it"],
           ].map(([title, desc]) => (
-            <div key={title} className="rounded-lg border border-slate-200 bg-white p-4">
+            <div key={title} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="font-bold text-slate-900">{title}</p>
               <p className="mt-1 text-sm text-slate-600">{desc}</p>
             </div>
           ))}
         </div>
+        <p className="mt-6 text-center text-sm text-slate-600">A gap in a document is a question to ask, not proof that anyone did something wrong.</p>
       </div>
     </section>
 
-    {/* WHAT YOU CAN UPLOAD */}
-    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-white">
-      <div className="mx-auto max-w-5xl">
-        <h2 className="text-center font-display text-3xl font-bold text-slate-900">Documents we analyze</h2>
-        <div className="mt-8 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          {[
-            "📄 Affidavits",
-            "📄 CAS correspondence",
-            "📄 Court documents",
-            "📄 Case notes",
-            "📄 Police reports",
-            "📄 Assessment documents",
-            "📄 Letters & notices",
-            "📄 All court records",
-          ].map(doc => (
-            <div key={doc} className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-700 text-center">
-              {doc}
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-
-    {/* EDUCATION: Learning resources */}
-    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-brand-50">
-      <div className="mx-auto max-w-5xl text-center">
-        <h2 className="font-display text-3xl font-bold text-slate-900">Want to understand the law?</h2>
-        <p className="mt-4 text-base text-slate-700">After you've analyzed your documents, dive deeper into the legal framework with these educational resources.</p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <Link href="/rights">
-            <span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">
-              Family Rights <ArrowRight className="h-4 w-4" />
-            </span>
-          </Link>
-          <Link href="/cyfsa-guide">
-            <span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">
-              CYFSA Guide <ArrowRight className="h-4 w-4" />
-            </span>
-          </Link>
-          <Link href="/45-day-roadmap">
-            <span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">
-              Case Roadmap <ArrowRight className="h-4 w-4" />
-            </span>
-          </Link>
+    {/* REAL HELP */}
+    <section className="space-y-6 px-6 py-16 sm:px-10 md:py-20 bg-brand-50">
+      <div className="mx-auto max-w-3xl text-center">
+        <h2 className="font-display text-3xl font-bold text-slate-900">Need a lawyer?</h2>
+        <p className="mt-4 text-base text-slate-700">If CAS has contacted you or there is a court date, speak to a lawyer as soon as you can. Legal Aid Ontario can tell you if you qualify for a certificate, and duty counsel is available at family court.</p>
+        <a href="tel:18006688258" className="mt-6 inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-3 text-sm font-bold text-brand-800 transition hover:bg-brand-100">
+          <Phone className="h-4 w-4" /> Legal Aid Ontario: 1-800-668-8258
+        </a>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link href="/cyfsa-guide"><span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">CYFSA Guide <ArrowRight className="h-4 w-4" /></span></Link>
+          <Link href="/45-day-roadmap"><span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">Case Roadmap <ArrowRight className="h-4 w-4" /></span></Link>
+          <Link href="/lawyers"><span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">Find a lawyer <ArrowRight className="h-4 w-4" /></span></Link>
         </div>
       </div>
     </section>
 
     {/* FINAL CTA */}
-    <section className="space-y-6 px-6 py-16 text-center sm:px-10 md:py-24 bg-gradient-to-br from-brand-600 to-brand-700">
+    <section className="space-y-6 px-6 py-16 text-center sm:px-10 md:py-20 bg-gradient-to-br from-brand-600 to-brand-700">
       <div className="mx-auto max-w-3xl text-white">
         <h2 className="font-display text-3xl font-black md:text-4xl">Don't read your paperwork alone.</h2>
-        <p className="mt-4 text-lg text-brand-100">Upload your documents and get a professional evidence audit. Better preparation. Better questions for your lawyer. Better outcome.</p>
+        <p className="mt-4 text-lg text-brand-100">Go into your next meeting with your lawyer knowing what your documents say and what to ask.</p>
         <Link href="/document-analyzer">
           <span className="mt-8 inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 text-lg font-bold text-brand-700 transition hover:bg-slate-100">
-            ANALYZE MY DOCUMENTS <ArrowRight className="h-6 w-6" />
+            ANALYZE A DOCUMENT <ArrowRight className="h-6 w-6" />
           </span>
         </Link>
       </div>
@@ -451,7 +425,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     <section className="border-t border-slate-200 px-6 py-8 sm:px-10 bg-amber-50">
       <div className="mx-auto max-w-5xl rounded-lg border border-amber-200 bg-white p-4 text-sm leading-relaxed text-amber-950">
         <ShieldCheck className="mb-2 h-5 w-5 text-amber-700" />
-        <strong>Use this as a preparation tool, not a replacement for legal advice.</strong> If there is an urgent removal, court date, or safety concern, contact a lawyer or Legal Aid Ontario promptly.
+        <strong>This is a preparation tool, not legal advice.</strong> It does not create a lawyer-client relationship. If there is an urgent removal, court date, or safety concern, contact a lawyer or Legal Aid Ontario right away.
       </div>
     </section>
   </div>;
