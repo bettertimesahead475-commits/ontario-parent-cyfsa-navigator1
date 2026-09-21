@@ -1,5 +1,19 @@
 ﻿# CYFSA Navigator â€” Engineering Handoff
 
+## Current authoritative status — 2026-09-21 (prompt 62518)
+
+**Stage 9A — FORMALLY CLOSED/FROZEN. Stage 9B — FORMALLY CLOSED/FROZEN. Stage 9C — FORMALLY CLOSED/FROZEN.** Frozen code SHA: `836f21469dd6a3d2248517c1fd0acf44cd9d545a`, on the published `remediate/stage-9abc-trust-boundaries` branch. Do not reopen these milestones absent a concrete regression.
+
+The user supplied the subsequent independent closure result: Stage 9 91/91 pass; full one-worker suite 1,281 passed / 0 failed / 0 skipped; TypeScript and production build pass; npm audit baseline 11 (10 moderate, 1 high). All seven original trust-boundary regressions remain intact and pass; the 13 additional tests were independently reviewed as meaningful; the stored-text/replayed-digest repair remains intact. This documentation task records that evidence, not a new audit or test run. Older BLOCKED/awaiting-audit statements below are historical and superseded by this notice.
+
+**LIVE POSTGRES/RLS/FK/CONCURRENCY VALIDATION: DEFERRED TO RELEASE GATE.** Actual foreign keys, RLS, database constraints, concurrent/revocation races and other DB integration behavior represented by mocked Supabase tests remain unvalidated. The 1,281 passing tests do not prove live-database behavior. This is release-gate work, not a Stage 9A–9C code-closure blocker. Do not access production to resolve it here.
+
+**Next-roadmap decision: C. ROADMAP AMBIGUOUS — DOCUMENTATION DECISION REQUIRED.** [STAGE_9_ROADMAP_DECISION.md](STAGE_9_ROADMAP_DECISION.md) records the evidence, capability classifications, concrete scope choices and next documentation-decision contract. Stage 9's broad objective is Advanced Case-Wide Retrieval / RAG, but no authoritative completion boundary or 9D scope exists. The closed services are not wired to a persisted case-wide discovery workflow or the professional research/work-product surfaces. That observation does not by itself make any particular missing feature a required 9D milestone.
+
+Next action: decide retrieval audience, saved-candidate lookup versus new-authority discovery, required output/integration surface, and overall Stage 9 completion boundary; then adopt an implementation-ready next-milestone contract. No 9D or Stage 10 implementation is authorized or started. Stage 10 remains Firm Collaboration / Permissions / Audit; Stage 11 remains Benchmarking / QA / Release Hardening. Do not move those programmes into Stage 9. Documentation branch: `docs/stage9-roadmap-decision`; code baseline remains frozen. No production, database, migration, secret/environment, deployment or main-merge action was performed.
+
+The sections below preserve prior chronological project/handoff records; their old active-branch and milestone labels are not the current status.
+
 ## 1. Project
 
 Product: CYFSA Navigator (historically ParentShield / Ontario Parent Assist).

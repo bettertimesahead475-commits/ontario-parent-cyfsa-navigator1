@@ -1,6 +1,14 @@
 # Stage 9A–9C independent closure audit — 2026-09-20
 
-## Decision
+## Superseding closure record — 2026-09-21
+
+User prompt 62518 supplies the subsequent independent audit determination: **Stage 9A, Stage 9B and Stage 9C FORMALLY CLOSED/FROZEN** at `836f21469dd6a3d2248517c1fd0acf44cd9d545a`. The independent audit reproduced Stage 9 91/91 and full one-worker 1,281/1,281 (0 failed, 0 skipped), passing TypeScript/build, and the existing npm audit counts (11: 10 moderate, 1 high). It confirmed the seven original regressions, the 13 meaningful additional tests and the stored-text/replayed-digest repair. This notice records the supplied independent result; this documentation pass did not itself repeat that audit.
+
+**LIVE POSTGRES/RLS/FK/CONCURRENCY VALIDATION: DEFERRED TO RELEASE GATE.** Actual database constraints, policies and concurrent/revocation behavior are not established by mocked service tests. This limitation is not a 9A–9C code-closure blocker. Do not reopen frozen milestones without a concrete regression.
+
+The earlier decisions below are retained as historical audit evidence and superseded in status by this notice. The next roadmap determination is **C. ROADMAP AMBIGUOUS — DOCUMENTATION DECISION REQUIRED**; see [STAGE_9_ROADMAP_DECISION.md](STAGE_9_ROADMAP_DECISION.md). No Stage 9D requirement is inferred merely from its label.
+
+## Original decision (historical)
 
 **9A BLOCKED. 9B BLOCKED. 9C BLOCKED.** No frozen SHA is assigned. Stage 9D contract definition is deferred by the requested closure rule; there is no Stage 9D branch or documented contract. This audit did not change production services or schema.
 
