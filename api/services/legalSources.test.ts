@@ -216,6 +216,21 @@ describe('Stage 9A Authoritative Legal Sources', () => {
     await expect(getAuthorityCitation(id)).rejects.toThrow();
   });
 
+  it.each([undefined, 'UNKNOWN_STATE'])('missing or malformed source state %s cannot issue a citation', async (state) => {
+    const id = '11111111-1111-1111-1111-111111111111';
+    mockTables.navigator_legal_sources.push({ id, title: 'Unverified', verification_state: state });
+    await expect(getAuthorityCitation(id)).rejects.toThrow('Legal source is not verified');
+  });
+
+  it('a verified source can issue a citation after verification state changes', async () => {
+    const id = '11111111-1111-1111-1111-111111111111';
+    const row = { id, title: 'Verified law', verification_state: 'UNVERIFIED' };
+    mockTables.navigator_legal_sources.push(row);
+    await expect(getAuthorityCitation(id)).rejects.toThrow('Legal source is not verified');
+    row.verification_state = 'VERIFIED';
+    expect((await getAuthorityCitation(id)).legalSourceId).toBe(id);
+  });
+
   describe('Provision-Version Integrity', () => {
     const src1 = '11111111-1111-1111-1111-111111111111';
     const src2 = '22222222-2222-2222-2222-222222222222';
@@ -226,54 +241,54 @@ describe('Stage 9A Authoritative Legal Sources', () => {
 
     it('rejects wrong source', async () => {
       mockTables.navigator_legal_sources.push({ id: src1, jurisdiction: 'ON', title: 'Test', verification_state: 'VERIFIED', retrieved_at: '2023' });
-      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, version_label: 'v1' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, version_label: 'v1', verification_state: 'VERIFIED' });
       mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src2, citation: 's.1', verification_state: 'VERIFIED' });
       await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Provision does not belong to the specified source.');
     });
 
     it('rejects correct source + wrong version/provision combination', async () => {
       mockTables.navigator_legal_sources.push({ id: src1, title: 'Test', verification_state: 'VERIFIED', retrieved_at: '2023' });
-      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, version_label: 'v1' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, version_label: 'v1', verification_state: 'VERIFIED' });
       mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1', verification_state: 'VERIFIED' });
       // Missing in navigator_legal_provision_versions table
       await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Requested provision does not exist in the requested source version.');
     });
 
     it('rejects historical provision + current version', async () => {
-      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
-      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1 });
-      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1' });
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test', verification_state: 'VERIFIED' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, verification_state: 'VERIFIED' });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1', verification_state: 'VERIFIED' });
       // Not in navigator_legal_provision_versions
       await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Requested provision does not exist in the requested source version.');
     });
 
     it('rejects current provision + historical version', async () => {
-      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
-      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1 });
-      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1' });
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test', verification_state: 'VERIFIED' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, verification_state: 'VERIFIED' });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1', verification_state: 'VERIFIED' });
       // Not in navigator_legal_provision_versions
       await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Requested provision does not exist in the requested source version.');
     });
 
     it('rejects unknown provision-version link', async () => {
-      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
-      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1 });
-      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1' });
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test', verification_state: 'VERIFIED' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, verification_state: 'VERIFIED' });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1', verification_state: 'VERIFIED' });
       mockTables.navigator_legal_provision_versions = []; // Empty
       await expect(getAuthorityCitation(src1, v1, p1)).rejects.toThrow('Requested provision does not exist in the requested source version.');
     });
 
     it('missing versionId behavior remains explicitly defined', async () => {
-      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
-      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1' });
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test', verification_state: 'VERIFIED' });
+      mockTables.navigator_legal_provisions.push({ id: p1, legal_source_id: src1, citation: 's.1', verification_state: 'VERIFIED' });
       const citation = await getAuthorityCitation(src1, undefined, p1);
       expect(citation.provisionId).toBe(p1);
       expect(citation.legalSourceVersionId).toBeUndefined();
     });
 
     it('missing provisionId behavior remains explicitly defined', async () => {
-      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test' });
-      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1 });
+      mockTables.navigator_legal_sources.push({ id: src1, title: 'Test', verification_state: 'VERIFIED' });
+      mockTables.navigator_legal_source_versions.push({ id: v1, legal_source_id: src1, verification_state: 'VERIFIED' });
       const citation = await getAuthorityCitation(src1, v1, undefined);
       expect(citation.legalSourceVersionId).toBe(v1);
       expect(citation.provisionId).toBeUndefined();
@@ -316,4 +331,3 @@ describe('Stage 9A Authoritative Legal Sources', () => {
     });
   });
 });
-

@@ -83,3 +83,41 @@ The 408bf8c regression test closes the specific replayed-digest flaw. It does **
 ## Roadmap position and next work
 
 HANDOFF's latest unambiguous formal closure statement is Stage 7; Stage 8D is implemented at `5d59632` but its entry does not explicitly declare an independent formal freeze. Stage 9A–9C remain candidates. The next work is narrow remediation of the seven demonstrated Stage 9 defects, followed by behavioral and isolated database re-audit. The Stage 9D contract must be derived only after 9A–9C resolve, as required by this audit request. Do not start 9D from this state.
+
+## Narrow remediation after audit — 2026-09-20
+
+This section records a remediation candidate, **not independent closure**. The seven audit regressions remain intact and pass. Stage 9A, 9B and 9C are **REMEDIATED — AWAITING INDEPENDENT CLOSURE AUDIT**.
+
+| Audit defect | Root cause | Narrow correction | Regression result |
+|---|---|---|---|
+| 9A unverified source receives authoritative citation | `getAuthorityCitation` loaded trust state but did not enforce it. | Citation issuance now requires `VERIFIED` source, and when supplied, `VERIFIED` version and provision. Raw `getSource` remains available for inspection of unverified material. | Preserved 9A audit test passes; new missing, malformed and transition tests pass. |
+| 9B foreign/caller-classified evidence | Builder accepted evidence UUID and classification without reading the evidence row. | Builder fetches the evidence row by both ID and matter ID, derives canonical classification, and rejects mismatched or classification-only assertions. | Preserved foreign-evidence audit test passes; valid FACT/ALLEGATION tests now use persisted fixtures; additional cross-matter test passes. |
+| 9B unverified authority research | Builder called 9A citation without a trust gate. | The 9A verified-chain gate now applies to builder and save reconstruction. | Preserved unverified-authority audit test and uploaded-instruction test pass. |
+| 9B forged save fields | Save wrote a caller-provided candidate directly after membership check. | Save rebuilds against persisted evidence, event, source, version and provision records, compares trusted fields, verifies stored legal text/hash when available, rejects inconsistency, and writes only reconstructed values. | Preserved forged-save audit test and added valid/forged integrity, provenance, version, classification and retrieval-time tests pass. |
+| 9C unverified source/version/provision yields `VALIDATED` | Citation validator checked identity and hash but ignored each trust state. | It now marks the authority `UNVERIFIED` and records a finding for every unverified/missing state. The 408bf8c stored-text hash check remains unchanged. | Three preserved authority-chain audit cases pass; replayed-digest regression remains green. |
+
+The older provision-version and historic-version test fixtures omitted verification states while expecting a verified-authority path. The FACT and ALLEGATION tests supplied classifications without evidence rows. Those fixtures were made representative of the verified persisted records the tests intended to exercise; their assertions and all seven audit regressions were preserved. No timeout or assertion was weakened.
+
+### Cross-milestone checks
+
+A. Unverified source is rejected by 9A citation, 9B research, and is `UNVERIFIED` in 9C.
+B–D. Save reconstructs verification-sensitive fields, rejects forged provenance/integrity/version/classification; 9C hashes stored text independently of caller digest.
+E. Verified authority and valid save still pass.
+F. Evidence query is matter-scoped; foreign evidence is rejected; prior membership/cross-matter tests remain green.
+G. Replayed-digest test introduced in 408bf8c remains green.
+H. Uploaded instruction text cannot change the persisted legal source verification state.
+
+### Sequential gates
+
+- Seven preserved regressions: **7 passed / 0 failed** (71 other tests skipped by the focused filter only).
+- Stage 9A: **32 passed / 0 failed**.
+- Stage 9B: **25 passed / 0 failed**.
+- Stage 9C: **21 passed / 0 failed**.
+- Complete Stage 9: **78 passed / 0 failed**, 3 files.
+- Related security/integration: **215 passed / 0 failed**, 6 files.
+- Full project, one worker: **1,268 passed / 0 failed / 0 skipped**, 44 files.
+- TypeScript: PASS, zero errors.
+- Production build: PASS, existing large-chunk warning.
+- npm audit: **11 advisories** (10 moderate, 1 high), unchanged baseline; no automatic fix.
+
+All tests above are mocked or local behavioral gates. Pending Stage 9A/9B migrations were not executed in this task, and no live database transaction or production boundary is claimed as validated. An independent closure audit must inspect these limits and the final diff. No Stage 9D contract or implementation was started.

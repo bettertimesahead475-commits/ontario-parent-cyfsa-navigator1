@@ -133,6 +133,9 @@ export async function getAuthorityCitation(
   pinpoint?: string
 ): Promise<AuthorityCitation> {
   const source = await getSource(sourceId);
+  if (source.verificationState !== 'VERIFIED') {
+    throw invalid('Legal source is not verified authoritative material.');
+  }
   let retrievedAt = source.retrievedAt;
   let effectiveContext = undefined;
 
@@ -140,6 +143,9 @@ export async function getAuthorityCitation(
     const version = await getSourceVersion(versionId);
     if (version.legalSourceId !== sourceId) {
       throw invalid('Version does not belong to the specified source.');
+    }
+    if (version.verificationState !== 'VERIFIED') {
+      throw invalid('Legal source version is not verified.');
     }
     retrievedAt = version.retrievedAt;
     effectiveContext = `Effective: ${version.effectiveFrom} to ${version.effectiveTo || 'present'}`;
@@ -149,6 +155,9 @@ export async function getAuthorityCitation(
     const provision = await getProvision(provisionId);
     if (provision.legalSourceId !== sourceId) {
       throw invalid('Provision does not belong to the specified source.');
+    }
+    if (provision.verificationState !== 'VERIFIED') {
+      throw invalid('Legal provision is not verified.');
     }
   }
 

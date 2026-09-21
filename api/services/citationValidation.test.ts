@@ -187,7 +187,8 @@ describe('Stage 9C Citation & Authority Validation', () => {
       version_label: '2020-01-01 to 2023-12-31',
       effective_from: '2020-01-01',
       effective_to: '2023-12-31',
-      status: 'SUPERSEDED'
+      status: 'SUPERSEDED',
+      verification_state: 'VERIFIED'
     });
     const histCandId = randomUUID();
     mockTables.navigator_matter_legal_research_candidates.push({

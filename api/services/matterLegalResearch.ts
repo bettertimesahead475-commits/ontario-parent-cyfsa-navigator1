@@ -70,6 +70,24 @@ export async function buildMatterLegalResearchCandidate(
   if (input.evidenceClassification && !EVIDENCE_CLASSIFICATIONS.includes(input.evidenceClassification as never)) {
     throw invalid("Invalid evidence classification. Must be a valid Stage 5 classification.");
   }
+  let evidenceClassification: string | null = null;
+  if (evidenceItemId) {
+    const { data: evidence, error: evidenceError } = await db
+      .from('navigator_evidence_items')
+      .select('classification')
+      .eq('id', evidenceItemId)
+      .eq('matter_id', matterId)
+      .single();
+    if (evidenceError || !evidence || !EVIDENCE_CLASSIFICATIONS.includes(evidence.classification as never)) {
+      throw notFound('Evidence item not found in this matter.');
+    }
+    evidenceClassification = evidence.classification;
+    if (input.evidenceClassification && input.evidenceClassification !== evidenceClassification) {
+      throw invalid('Caller evidence classification does not match the persisted evidence item.');
+    }
+  } else if (input.evidenceClassification) {
+    throw invalid('Evidence classification requires a persisted evidence item.');
+  }
   
   if (typeof input.reasonForRelevance !== 'string' || !input.reasonForRelevance.trim()) {
     throw invalid("Reason for relevance is required.");
@@ -153,35 +171,42 @@ export async function buildMatterLegalResearchCandidate(
 
   // 3. Verify Content Integrity
   let integrityStatus: IntegrityStatus = "NOT_CHECKED";
-  
-  if (input.actualContent) {
-    integrityStatus = "UNVERIFIED";
-    
-    // Fetch authoritative expected hash
-    if (finalVersionId && provisionId) {
-      const { data: provVersion, error: provError } = await db
-        .from('navigator_legal_provision_versions')
-        .select('text_sha256')
-        .eq('provision_id', provisionId)
-        .eq('legal_source_version_id', finalVersionId)
-        .maybeSingle();
-        
-      if (!provError && provVersion && provVersion.text_sha256) {
+  if (finalVersionId && provisionId) {
+    const { data: provVersion, error: provError } = await db
+      .from('navigator_legal_provision_versions')
+      .select('text_sha256, exact_text')
+      .eq('provision_id', provisionId)
+      .eq('legal_source_version_id', finalVersionId)
+      .maybeSingle();
+    if (provError) throw new LifecycleError(500, 'DB_ERROR', 'Could not verify legal content.');
+    if (provVersion?.text_sha256 && provVersion.exact_text) {
+      try {
+        verifyLegalContentIntegrity(provVersion.exact_text, provVersion.text_sha256);
+        integrityStatus = 'VERIFIED';
+      } catch {
+        integrityStatus = 'FAILED';
+      }
+    }
+    if (input.actualContent) {
+      if (!provVersion?.text_sha256) integrityStatus = 'UNVERIFIED';
+      else {
         try {
           verifyLegalContentIntegrity(input.actualContent, provVersion.text_sha256);
-          integrityStatus = "VERIFIED";
-        } catch (e: any) {
-          integrityStatus = "FAILED";
+          if (integrityStatus === 'NOT_CHECKED') integrityStatus = 'VERIFIED';
+        } catch {
+          integrityStatus = 'FAILED';
         }
       }
     }
+  } else if (input.actualContent) {
+    integrityStatus = 'UNVERIFIED';
   }
 
   return {
     matterId,
     evidenceItemId,
     eventId,
-    evidenceClassification: input.evidenceClassification || null,
+    evidenceClassification,
     legalSourceId,
     legalSourceVersionId: finalVersionId,
     provisionId,
@@ -212,39 +237,64 @@ export async function saveMatterLegalResearchCandidate(
   firebaseUid: string,
   candidate: Omit<MatterLegalResearchCandidate, 'id' | 'createdAt'>
 ): Promise<MatterLegalResearchCandidate> {
+  if (!candidate || typeof candidate !== 'object') throw invalid('Candidate is required.');
   const account = await findAccount(firebaseUid);
   if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
 
   const db = getSupabase();
   await requireMatterAccess(db, account.id, candidate.matterId);
 
+  // Rebuild from persisted evidence, event and authority records. A caller-provided
+  // candidate is only an assertion; it cannot attest to its own provenance or integrity.
+  const canonical = await buildMatterLegalResearchCandidate(firebaseUid, {
+    matterId: candidate.matterId,
+    evidenceItemId: candidate.evidenceItemId,
+    eventId: candidate.eventId,
+    evidenceClassification: candidate.evidenceClassification,
+    legalSourceId: candidate.legalSourceId,
+    legalSourceVersionId: candidate.legalSourceVersionId,
+    provisionId: candidate.provisionId,
+    authorityIdentifier: candidate.authorityIdentifier,
+    reasonForRelevance: candidate.reasonForRelevance,
+    retrievalBasis: candidate.retrievalBasis,
+    confidence: candidate.confidence
+  });
+  if (canonical.contentIntegrityStatus === 'FAILED' || candidate.contentIntegrityStatus !== canonical.contentIntegrityStatus ||
+      candidate.evidenceClassification !== canonical.evidenceClassification ||
+      candidate.legalSourceVersionId !== canonical.legalSourceVersionId ||
+      candidate.sourceProvenance !== canonical.sourceProvenance ||
+      candidate.effectiveDateContext !== canonical.effectiveDateContext ||
+      candidate.retrievedAt !== canonical.retrievedAt) {
+    throw invalid('Candidate does not match server-verified evidence or legal authority.');
+  }
+
   const idempotenceKey = [
-    candidate.matterId,
-    candidate.evidenceItemId || '00000000-0000-0000-0000-000000000000',
-    candidate.eventId || '00000000-0000-0000-0000-000000000000',
-    candidate.legalSourceId,
-    candidate.provisionId || '00000000-0000-0000-0000-000000000000',
-    candidate.retrievalBasis
+    canonical.matterId,
+    canonical.evidenceItemId || '00000000-0000-0000-0000-000000000000',
+    canonical.eventId || '00000000-0000-0000-0000-000000000000',
+    canonical.legalSourceId,
+    canonical.provisionId || '00000000-0000-0000-0000-000000000000',
+    canonical.retrievalBasis
   ].join('|');
 
   // Using upsert on the uniqueness constraint to ensure idempotence
   const { data, error } = await db.from('navigator_matter_legal_research_candidates').upsert({
-    matter_id: candidate.matterId,
-    evidence_item_id: candidate.evidenceItemId,
-    event_id: candidate.eventId,
-    evidence_classification: candidate.evidenceClassification,
-    legal_source_id: candidate.legalSourceId,
-    legal_source_version_id: candidate.legalSourceVersionId,
-    provision_id: candidate.provisionId,
-    authority_identifier: candidate.authorityIdentifier,
-    reason_for_relevance: candidate.reasonForRelevance,
-    retrieval_basis: candidate.retrievalBasis,
-    effective_date_context: candidate.effectiveDateContext,
-    source_provenance: candidate.sourceProvenance,
-    confidence: candidate.confidence,
-    content_integrity_status: candidate.contentIntegrityStatus,
+    matter_id: canonical.matterId,
+    evidence_item_id: canonical.evidenceItemId,
+    event_id: canonical.eventId,
+    evidence_classification: canonical.evidenceClassification,
+    legal_source_id: canonical.legalSourceId,
+    legal_source_version_id: canonical.legalSourceVersionId,
+    provision_id: canonical.provisionId,
+    authority_identifier: canonical.authorityIdentifier,
+    reason_for_relevance: canonical.reasonForRelevance,
+    retrieval_basis: canonical.retrievalBasis,
+    effective_date_context: canonical.effectiveDateContext,
+    source_provenance: canonical.sourceProvenance,
+    confidence: canonical.confidence,
+    content_integrity_status: canonical.contentIntegrityStatus,
     idempotence_key: idempotenceKey,
-    retrieved_at: candidate.retrievedAt
+    retrieved_at: canonical.retrievedAt
   }, { 
     onConflict: 'idempotence_key'
   }).select().single();

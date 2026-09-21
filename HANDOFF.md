@@ -695,3 +695,11 @@ Next: conduct independent closure audit of Stages 9A-9C, resolve any demonstrate
 ## 2026-09-20 Independent Stage 9A–9C closure audit
 
 The independent audit is recorded in `STAGE_9ABC_CLOSURE_AUDIT.md` on branch `audit/stage-9abc-closure`, based on repaired Stage 9C candidate `408bf8c78accc6af228d750c4592b0c623495a5f`. **Stage 9A, 9B and 9C are BLOCKED, not formally closed/frozen.** Seven new behavioral regression tests demonstrate: 9A issues a citation for an unverified source; 9B accepts foreign/unverified/caller-asserted candidate fields; 9C marks unverified sources, versions and provisions `VALIDATED`. The 408bf8c stored-text hash repair itself passes its regression test. Full serial suite: 1,255 pass / 7 fail (the audit cases); typecheck and build pass; npm audit remains 11 advisories (10 moderate, 1 high). No production or migration action occurred. Stage 9D contract is deferred until 9A–9C pass closure; do not implement 9D yet.
+
+## 2026-09-20 Stage 9A–9C narrow trust-boundary remediation
+
+Branch: `remediate/stage-9abc-trust-boundaries`, based on audit commit `0e9bc76ae94a68148f3fcd19e4cf2f6d341cc88d`. The seven preserved closure regressions now pass without changing them. Stage 9A citation issuance requires verified source/version/provision; Stage 9B derives evidence classification from a matter-scoped persisted row and reconstructs trusted candidate fields before save; Stage 9C requires authority-chain verification separately from stored-text integrity. The 408bf8c replayed-digest fix remains intact. See `STAGE_9ABC_CLOSURE_AUDIT.md` for defect mapping, test evidence, and limits.
+
+Gates: 9A 32/32; 9B 25/25; 9C 21/21; Stage 9 78/78; related security/integration 215/215; full one-worker suite 1,268/1,268 across 44 files; TypeScript and production build passed; npm audit remains 11 advisories (10 moderate, 1 high). Stage 9A/9B migrations remain pending and were not executed. No production, deployment, main-merge, or Stage 9D action occurred.
+
+**Milestone status: Stage 9A, 9B and 9C REMEDIATED — AWAITING INDEPENDENT CLOSURE AUDIT.** No frozen SHA is assigned here. Stage 9D remains deferred.

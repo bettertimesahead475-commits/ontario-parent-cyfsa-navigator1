@@ -102,6 +102,10 @@ export async function validateCandidateCitation(
   } catch (e: any) {
     throw new LifecycleError(404, 'NOT_FOUND', 'Authoritative legal source record not found');
   }
+  if (source.verificationState !== 'VERIFIED') {
+    findings.push('Legal source has not been verified against authoritative material.');
+    authorityValidationStatus = 'UNVERIFIED';
+  }
 
   // 2. Version Existence & Effective-Date Consistency
   let version = null;
@@ -115,6 +119,10 @@ export async function validateCandidateCitation(
     
     if (version.legalSourceId !== source.id) {
       throw new LifecycleError(400, 'INVALID_INPUT', 'Version does not belong to the specified legal source.');
+    }
+    if (version.verificationState !== 'VERIFIED') {
+      findings.push('Legal source version is not verified.');
+      authorityValidationStatus = 'UNVERIFIED';
     }
     effectiveContext = `Effective: ${version.effectiveFrom} to ${version.effectiveTo || 'present'}`;
   } else {
@@ -134,6 +142,10 @@ export async function validateCandidateCitation(
     
     if (provision.legalSourceId !== source.id) {
       throw new LifecycleError(400, 'INVALID_INPUT', 'Provision does not belong to the specified legal source.');
+    }
+    if (provision.verificationState !== 'VERIFIED') {
+      findings.push('Legal provision is not verified.');
+      authorityValidationStatus = 'UNVERIFIED';
     }
 
     if (version) {
