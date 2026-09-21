@@ -1,0 +1,121 @@
+-- ============================================================================
+-- BLOCKED — PRODUCTION DATABASE CHANGE REQUIRES HUMAN APPROVAL
+-- ============================================================================
+-- This migration is NOT applied. It is prepared and reviewed, ready to run,
+-- but withheld per the remediation task's Rule 4: no staging/development
+-- Supabase project exists for this application (the only other two Supabase
+-- projects on this account — "olaios-production" and "ontario-parent-defense"
+-- — are unrelated products, not staging copies of this one), so this change
+-- cannot be tested in a non-production environment first. Per Rule 4, that
+-- means STOP and report BLOCKED rather than apply it unilaterally.
+--
+-- WHAT THIS FIXES (AUDIT.md Finding C-1, CRITICAL):
+--   public.free_usage, public.gmail_processed_messages, and
+--   public.stale_payment_alerts currently have Row-Level Security DISABLED,
+--   with full SELECT/INSERT/UPDATE/DELETE/TRUNCATE grants to both the `anon`
+--   and `authenticated` Postgres roles.
+--
+-- EMPIRICAL PROOF THIS IS LIVE, GATHERED DURING THIS REMEDIATION PASS
+-- (2026-09-09, via Supabase's own SQL execution against the live project,
+-- each wrapped in a transaction that was rolled back so no data was left
+-- behind):
+--   BEGIN; SET LOCAL ROLE anon;
+--     INSERT INTO public.free_usage (uid, email, analyses_used)
+--       VALUES ('audit-test-anon-uid', 'audit-test-anon@example.invalid', 999)
+--       RETURNING ...;
+--   ROLLBACK;
+--   -- Result: INSERT SUCCEEDED as `anon`.
+--   -- Same result, separately, as `authenticated`.
+-- free_usage contains 0 rows in production today (confirmed via a
+-- service-role COUNT immediately before this test), so no existing parent
+-- data was read or exposed by this proof — but the write path is real and
+-- was proven, not assumed.
+--
+-- WHY THIS FIX IS BELIEVED SAFE TO APPLY (for the human reviewing this):
+--   - The application's ENTIRE Supabase access path uses the service_role
+--     key exclusively (api/services/access.ts, usage.ts, gmailAgent.ts) —
+--     confirmed by `grep -rl "supabase" src/` returning zero matches, i.e.
+--     the frontend never talks to Supabase directly and no anon/publishable
+--     key is ever used by this app's own code.
+--   - service_role bypasses Row-Level Security entirely, by Postgres/
+--     Supabase design — enabling RLS here does not change anything the
+--     running application actually does.
+--   - No new policies are added for anon/authenticated below (see rationale
+--     inline) — the desired outcome is "deny all access to these three
+--     tables for every role except service_role," which is exactly what
+--     `ENABLE ROW LEVEL SECURITY` with zero policies produces.
+--   - This is trivially reversible: `ALTER TABLE ... DISABLE ROW LEVEL
+--     SECURITY;` restores the exact prior state in one statement.
+--
+-- TO APPLY (after human approval), run via the Supabase MCP `apply_migration`
+-- tool or the Supabase SQL editor, against project qboidsfpjuxeqtfotryj:
+-- ============================================================================
+
+alter table public.free_usage enable row level security;
+alter table public.gmail_processed_messages enable row level security;
+alter table public.stale_payment_alerts enable row level security;
+
+-- No policies are added intentionally: the only role that should ever touch
+-- these three tables is service_role, which bypasses RLS regardless of
+-- policy count. Leaving zero policies means anon/authenticated are denied by
+-- default, which is the correct outcome. If a future feature ever needs
+-- authenticated end users to read their own free_usage row directly (e.g. a
+-- future client-side Supabase integration), add a scoped policy such as:
+--   create policy "free_usage_own_read" on public.free_usage
+--     for select using (auth.uid()::text = uid);
+-- at that time — do not add it speculatively now.
+
+-- ============================================================================
+-- POST-APPLY VERIFICATION (run these after applying, expect the results shown):
+-- ============================================================================
+-- begin;
+--   set local role anon;
+--   insert into public.free_usage (uid, email, analyses_used)
+--     values ('post-fix-test', 'post-fix-test@example.invalid', 1);
+--   -- EXPECTED: ERROR - new row violates row-level security policy
+-- rollback;
+--
+-- -- Confirm the app's real access path still works (service_role bypasses
+-- -- RLS unconditionally, so this should need no code change at all, but
+-- -- worth re-running the app's own test suite against a real Supabase call
+-- -- once this is live, not just trusting that bypass exists):
+-- -- `npm test` (api/services/access.test.ts, api/services/gmailAgent.test.ts)
+--
+-- ROLLBACK IF NEEDED:
+--   alter table public.free_usage disable row level security;
+--   alter table public.gmail_processed_messages disable row level security;
+--   alter table public.stale_payment_alerts disable row level security;
+
+
+-- ============================================================================
+-- SECOND, SEPARATE FIX BUNDLED HERE (AUDIT.md Finding M-6, same BLOCKED
+-- reason as above): public.submissions has RLS enabled but its one policy
+-- ("Allow all operations") is `USING (true) WITH CHECK (true)` for every
+-- command and every role - fully open by explicit policy, not by an
+-- RLS-disabled oversight. Confirmed via the live pg_policies query during
+-- this remediation pass. The table currently holds 0 rows and is not
+-- referenced anywhere in api/ or src/ (confirmed by grep), so nothing is
+-- exposed today - but this is a landmine if the table is ever reused without
+-- fixing the policy first. Also BLOCKED pending human approval for the same
+-- reason: no staging Supabase project exists to test against first.
+-- ============================================================================
+
+drop policy if exists "Allow all operations" on public.submissions;
+
+-- No replacement policy is added intentionally, for the same reason as
+-- free_usage/gmail_processed_messages/stale_payment_alerts above: this table
+-- is not used by any current application code, so the correct default is
+-- deny-all for anon/authenticated until a real feature needs it, at which
+-- point a properly-scoped policy should be written for that specific need.
+
+-- POST-APPLY VERIFICATION:
+-- begin;
+--   set local role anon;
+--   select count(*) from public.submissions;
+--   -- EXPECTED: 0 rows (or an RLS-denial-shaped empty result), never an error
+--   -- and never any row anon shouldn't see - there are 0 rows today either way.
+-- rollback;
+--
+-- ROLLBACK IF NEEDED (restores the exact prior, insecure policy):
+--   create policy "Allow all operations" on public.submissions
+--     for all using (true) with check (true);

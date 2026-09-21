@@ -129,10 +129,41 @@ describe("scanForPayments - unmatched message alerting", () => {
     expect(inserted[0].alerted_at).not.toBeNull();
   });
 
-  it("alerts with partial matched fragments when approvePayment throws", async () => {
+  // SECURITY REGRESSION TEST (Phase 1.5 remediation, AUDIT.md Finding H-4):
+  // a matched reference + amount must NEVER, by itself, call approvePayment()
+  // or otherwise grant access - it must only alert Chris so he can make the
+  // real approval call himself. This is the core assertion of the fix: if
+  // this test ever fails because approvePayment was called, the vulnerability
+  // has been reintroduced.
+  it("never calls approvePayment on a match - only alerts for manual confirmation", async () => {
+    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-6" }] } });
+    mockGmailApi.users.messages.get.mockResolvedValue({ data: gmailMessage("msg-6", "Re: PS-GOOD1, transfer of $19.00 deposited.") });
+
+    const inserted: any[] = [];
+    mockAccess.getSupabase.mockReturnValue(
+      fakeSupabase({
+        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
+        payments: { list: () => ({ data: [], error: null }) },
+      })
+    );
+
+    const result = await scanForPayments();
+
+    expect(mockAccess.approvePayment).not.toHaveBeenCalled();
+    expect(result.matchedPendingApproval).toHaveLength(1);
+    expect(result.matchedPendingApproval[0]).toEqual({ referenceNumber: "PS-GOOD1", amount: 19, messageId: "msg-6" });
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
+    expect(mockSendMail.mock.calls[0][0].subject).toContain("PS-GOOD1");
+    expect(mockSendMail.mock.calls[0][0].subject).toContain("confirm to approve");
+    expect(mockSendMail.mock.calls[0][0].text).toContain("POST /api/admin/approve-payment");
+    expect(mockSendMail.mock.calls[0][0].text).toContain("PS-GOOD1");
+    expect(inserted[0].outcome).toBe("matched_pending_manual_approval");
+    expect(inserted[0].alerted_at).not.toBeNull();
+  });
+
+  it("still records and reports a genuine processing error (e.g. Gmail API failure) without approving anything", async () => {
     mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-3" }] } });
-    mockGmailApi.users.messages.get.mockResolvedValue({ data: gmailMessage("msg-3", "Re: PS-XYZ12, transfer of $49.00 deposited.") });
-    mockAccess.approvePayment.mockRejectedValueOnce(new Error("No pending payment found for that reference number."));
+    mockGmailApi.users.messages.get.mockRejectedValueOnce(new Error("Gmail API rate limit exceeded"));
 
     const inserted: any[] = [];
     mockAccess.getSupabase.mockReturnValue(
@@ -145,64 +176,10 @@ describe("scanForPayments - unmatched message alerting", () => {
     const result = await scanForPayments();
 
     expect(result.errors).toHaveLength(1);
-    expect(mockSendMail.mock.calls[0][0].subject).toContain("PS-XYZ12");
-    expect(mockSendMail.mock.calls[0][0].text).toContain("reference PS-XYZ12, amount $49.00");
-    expect(inserted[0].outcome).toContain("No pending payment found");
-    expect(inserted[0].alerted_at).not.toBeNull();
-  });
-
-  it("does not send an admin alert when a matched payment is approved and its code email sends fine", async () => {
-    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-6" }] } });
-    mockGmailApi.users.messages.get.mockResolvedValue({ data: gmailMessage("msg-6", "Re: PS-GOOD1, transfer of $19.00 deposited.") });
-    mockAccess.approvePayment.mockResolvedValueOnce({
-      email: "parent@example.com",
-      tier: "Pro",
-      code: "AAAA-BBBB",
-      referenceNumber: "PS-GOOD1",
-      emailSent: true,
-    });
-
-    const inserted: any[] = [];
-    mockAccess.getSupabase.mockReturnValue(
-      fakeSupabase({
-        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
-        payments: { list: () => ({ data: [], error: null }) },
-      })
-    );
-
-    const result = await scanForPayments();
-
-    expect(result.approved).toHaveLength(1);
-    expect(mockSendMail).not.toHaveBeenCalled();
-    expect(inserted[0].outcome).toBe("approved");
-  });
-
-  it("alerts Chris when a matched payment is approved but its code email fails to send", async () => {
-    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-7" }] } });
-    mockGmailApi.users.messages.get.mockResolvedValue({ data: gmailMessage("msg-7", "Re: PS-FAIL1, transfer of $19.00 deposited.") });
-    mockAccess.approvePayment.mockResolvedValueOnce({
-      email: "parent@example.com",
-      tier: "Pro",
-      code: "CCCC-DDDD",
-      referenceNumber: "PS-FAIL1",
-      emailSent: false,
-    });
-
-    const inserted: any[] = [];
-    mockAccess.getSupabase.mockReturnValue(
-      fakeSupabase({
-        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
-        payments: { list: () => ({ data: [], error: null }) },
-      })
-    );
-
-    const result = await scanForPayments();
-
-    expect(result.approved).toHaveLength(1);
-    expect(mockSendMail).toHaveBeenCalledTimes(1);
-    expect(mockSendMail.mock.calls[0][0].subject).toContain("PS-FAIL1");
-    expect(mockSendMail.mock.calls[0][0].text).toContain("parent@example.com");
-    expect(inserted[0].outcome).toBe("approved");
+    expect(result.matchedPendingApproval).toHaveLength(0);
+    expect(mockAccess.approvePayment).not.toHaveBeenCalled();
+    expect(mockSendMail.mock.calls[0][0].text).toContain("Gmail API rate limit exceeded");
+    expect(inserted[0].outcome).toContain("Gmail API rate limit exceeded");
   });
 
   it("does not alert or reprocess a message already recorded in gmail_processed_messages", async () => {

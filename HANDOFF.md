@@ -1,5 +1,8 @@
 # ParentShield (ontario-parent-cyfsa-navigator1) — Audit Handoff
 
+> **Historical snapshot — superseded for current status.** See [current closeout status](PHASE_1_SECURITY_VERIFICATION.md#current-closeout-status--2026-09-10) for the verified 139-test suite, applied migrations, actual PR scope and remaining blockers. Older counts, pending-approval claims, stateless-session descriptions and next-phase instructions below are historical, not current authorization. PR #21 remains draft. The obsolete eslint/Firebase configuration references in older handoff material do not describe the current tree.
+
+
 Repo: bettertimesahead475-commits/ontario-parent-cyfsa-navigator1
 Live: ontario-parent-cyfsa-navigator1-ror.vercel.app (Vercel, team ontarioparentassist-7616s-projects)
 
