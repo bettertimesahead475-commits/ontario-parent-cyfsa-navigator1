@@ -121,3 +121,40 @@ H. Uploaded instruction text cannot change the persisted legal source verificati
 - npm audit: **11 advisories** (10 moderate, 1 high), unchanged baseline; no automatic fix.
 
 All tests above are mocked or local behavioral gates. Pending Stage 9A/9B migrations were not executed in this task, and no live database transaction or production boundary is claimed as validated. An independent closure audit must inspect these limits and the final diff. No Stage 9D contract or implementation was started.
+
+## Remediation continuation — 2026-09-21
+
+The checkout was already clean at remediation commit `289f02f0a14a1a2b20512ebe3c940165239ea173`; the GitHub remediation branch also contained that commit. Both the original audit `0e9bc76` and stored-text repair `408bf8c` remain ancestors. This continuation retains the production fixes and all seven audit regression bodies unchanged, and adds 13 behavioral tests.
+
+### Preserved regression / boundary mapping
+
+| Stage / preserved test | Violated invariant and production path | Boundary and corrected behavior |
+|---|---|---|
+| 9A: unverified source cannot be issued as an authoritative citation | `legalSources.getAuthorityCitation` previously omitted source trust enforcement. | Persisted source to authoritative presentation: reject any state other than VERIFIED; raw retrieval remains available. |
+| 9B: evidence must belong to the authorized matter and classification must be canonical | `buildMatterLegalResearchCandidate` previously accepted caller evidence/classification. | Caller to matter evidence: resolve by evidence ID and matter ID, derive classification, reject inconsistent assertions. |
+| 9B: unverified legal source cannot become a research candidate | Builder previously inherited 9A's missing trust gate. | Legal corpus to research: require persisted verified authority via 9A citation issuance. |
+| 9B: save must reject a fabricated candidate with caller asserted integrity | `saveMatterLegalResearchCandidate` previously persisted asserted provenance/integrity. | Request to persistence: reconstruct from persisted records, compare sensitive fields, reject unverifiable assertions. |
+| 9C: unverified source cannot validate authority | `validateCandidateCitation` previously checked integrity without source trust. | Persisted source to VALIDATED: return UNVERIFIED even when integrity is VERIFIED. |
+| 9C: unverified version cannot validate authority | Validator previously omitted version trust. | Source version to VALIDATED: require VERIFIED version independently of hash. |
+| 9C: unverified provision cannot validate authority | Validator previously omitted provision trust. | Provision to VALIDATED: require VERIFIED provision independently of hash. |
+
+Additional tests exercise real service composition over mocked persisted tables: 9A citation → 9B research → save → 9C validation, followed by source trust downgrade. Save tests independently remove the source, downgrade version/provision trust, mismatch source or provision/version, move evidence to another matter, and tamper with stored text. Caller verification fields cannot override persisted authority. Missing/unknown trust states and a mismatched provision-version link are explicitly covered in 9C. These extend coverage without changing production code or weakening existing assertions.
+
+### Replayed gates (sequential, 2026-09-21)
+
+| Gate | Result |
+|---|---|
+| Seven preserved regressions, filter `audit: (unverified\|evidence\|save)` | 7 passed, 0 failed; 71 unrelated cases excluded by the focused filter before additions |
+| Stage 9A | 32 passed, 0 failed |
+| Stage 9B | 34 passed, 0 failed |
+| Stage 9C | 25 passed, 0 failed |
+| Complete Stage 9 | 91 passed, 0 failed, 0 skipped, 3 files |
+| Related security/integration (same six files as original audit) | 215 passed, 0 failed, 0 skipped |
+| Full project, `vitest run --maxWorkers=1` | 1,281 passed, 0 failed, 0 skipped, 44 files |
+| `tsc --noEmit` | PASS, zero errors |
+| `npm run build` | PASS; existing large-chunk warning |
+| `npm audit --json` | Completed, exit 1: 11 vulnerable packages (10 moderate, 1 high), matching baseline counts; not a clean vulnerability audit |
+
+Initial sandboxed Node startup attempts failed with EPERM resolving the existing dependency junction. Authorized execution outside that sandbox completed the gates above. No timeout changes or dependency changes were made. The focused regression gate passed before the added coverage, and all seven also passed in the final complete suites.
+
+Stage 9A, 9B and 9C remain **REMEDIATED — AWAITING INDEPENDENT CLOSURE AUDIT**, not formally closed. Live database constraints, transaction/revocation races, and pending migration integration remain unverified by these mocked service tests. Production, deployments, migrations, secrets, main, and Stage 9D were untouched. Next action: independent Stage 9A–9C closure audit.

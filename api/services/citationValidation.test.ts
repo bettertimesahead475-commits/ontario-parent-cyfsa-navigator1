@@ -233,6 +233,20 @@ describe('Stage 9C Citation & Authority Validation', () => {
     expect(res.authorityValidationStatus).not.toBe('VALIDATED');
   });
 
+  it.each(['navigator_legal_sources', 'navigator_legal_source_versions', 'navigator_legal_provisions'])('missing and unknown trust states fail closed in %s', async (table) => {
+    for (const state of [undefined, 'UNKNOWN_STATE']) {
+      mockTables[table][0].verification_state = state;
+      const result = await validateCandidateCitation('test-uid', { matterId, candidateId });
+      expect(result.authorityValidationStatus).toBe('UNVERIFIED');
+      expect(result.contentIntegrityStatus).toBe('VERIFIED');
+    }
+  });
+
+  it('rejects a provision linked only to another source version', async () => {
+    mockTables.navigator_legal_provision_versions[0].legal_source_version_id = randomUUID();
+    await expect(validateCandidateCitation('test-uid', { matterId, candidateId })).rejects.toThrow('Provision is not linked');
+  });
+
   it('audit: malformed input is rejected', async () => {
     await expect(validateCandidateCitation('test-uid', null as any)).rejects.toThrow('Input must be an object');
   });

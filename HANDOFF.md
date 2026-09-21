@@ -703,3 +703,11 @@ Branch: `remediate/stage-9abc-trust-boundaries`, based on audit commit `0e9bc76a
 Gates: 9A 32/32; 9B 25/25; 9C 21/21; Stage 9 78/78; related security/integration 215/215; full one-worker suite 1,268/1,268 across 44 files; TypeScript and production build passed; npm audit remains 11 advisories (10 moderate, 1 high). Stage 9A/9B migrations remain pending and were not executed. No production, deployment, main-merge, or Stage 9D action occurred.
 
 **Milestone status: Stage 9A, 9B and 9C REMEDIATED — AWAITING INDEPENDENT CLOSURE AUDIT.** No frozen SHA is assigned here. Stage 9D remains deferred.
+
+## 2026-09-21 Stage 9 remediation verification continuation
+
+The existing remediation at 289f02f0a14a1a2b20512ebe3c940165239ea173 was retained on remediate/stage-9abc-trust-boundaries. The original audit and 408bf8c stored-text hash repair remain in history. Added 13 tests for composed citation/research/save/validation behavior, trust downgrade, save-time persisted-record mutations, caller verification assertions, missing/unknown trust states, and mismatched provision-version links. All seven original audit regression bodies remain unchanged. No further production-code changes were needed.
+
+Sequential gates: preserved regressions 7/7; Stage 9A 32/32; 9B 34/34; 9C 25/25; complete Stage 9 91/91; related security/integration 215/215; full one-worker suite 1,281 passed, 0 failed, 0 skipped across 44 files. TypeScript and production build passed (existing chunk warning). npm audit completed with exit 1 and baseline counts of 11 vulnerable packages: 10 moderate, 1 high. Dependencies unchanged.
+
+See STAGE_9ABC_CLOSURE_AUDIT.md for the seven-test trust-boundary mapping and verification limits. Live database transactions and pending migrations were not exercised. Stage 9A, 9B and 9C remain REMEDIATED — AWAITING INDEPENDENT CLOSURE AUDIT. Production, migrations, deployments, secrets and main were untouched; Stage 9D remains deferred. Next: independent Stage 9A–9C closure audit. Resolve the continuation commit with git log -1 --format=%H -- STAGE_9ABC_CLOSURE_AUDIT.md.

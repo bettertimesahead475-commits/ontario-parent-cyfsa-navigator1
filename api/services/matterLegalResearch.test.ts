@@ -3,6 +3,8 @@ import { buildMatterLegalResearchCandidate, listMatterLegalResearchCandidates, s
 import * as access from './access.js';
 import * as accounts from './accounts.js';
 import { randomUUID } from 'crypto';
+import { getAuthorityCitation } from './legalSources.js';
+import { validateCandidateCitation } from './citationValidation.js';
 
 vi.mock('./access.js');
 vi.mock('./accounts.js');
@@ -562,6 +564,53 @@ describe('Stage 9B Matter Legal Research Candidates - Remediated', () => {
       matterId, eventId, evidenceItemId, evidenceClassification: 'FACT', legalSourceId: sourceId,
       reasonForRelevance: 'Potential legal issue for review.', retrievalBasis: 'Search'
     })).rejects.toThrow('Evidence item not found in this matter');
+  });
+
+  it('verified authority survives citation, research, save and validation', async () => {
+    mockTables.navigator_legal_provision_versions[0].exact_text = 'This is the law.';
+    const citation = await getAuthorityCitation(sourceId, versionId, provisionId);
+    const candidate = await buildMatterLegalResearchCandidate('test-uid', {
+      matterId, eventId, legalSourceId: citation.legalSourceId, provisionId,
+      reasonForRelevance: 'Potentially relevant.', retrievalBasis: 'Search'
+    });
+    expect(candidate.contentIntegrityStatus).toBe('VERIFIED');
+    const saved = await saveMatterLegalResearchCandidate('test-uid', candidate);
+    const result = await validateCandidateCitation('test-uid', { matterId, candidateId: saved.id });
+    expect(result.authorityValidationStatus).toBe('VALIDATED');
+    mockTables.navigator_legal_sources[0].verification_state = 'UNVERIFIED';
+    await expect(getAuthorityCitation(sourceId, versionId, provisionId)).rejects.toThrow();
+    await expect(saveMatterLegalResearchCandidate('test-uid', candidate)).rejects.toThrow();
+    const downgraded = await validateCandidateCitation('test-uid', { matterId, candidateId: saved.id });
+    expect(downgraded.authorityValidationStatus).toBe('UNVERIFIED');
+    expect(downgraded.contentIntegrityStatus).toBe('VERIFIED');
+  });
+
+  it.each(['missing source', 'unverified version', 'unverified provision', 'wrong source', 'wrong provision version', 'foreign evidence', 'modified text'])('save revalidates persisted records: %s', async (mutation) => {
+    mockTables.navigator_legal_provision_versions[0].exact_text = 'This is the law.';
+    const evidenceItemId = randomUUID();
+    mockTables.navigator_evidence_items.push({ id: evidenceItemId, matter_id: matterId, classification: 'FACT' });
+    const candidate = await buildMatterLegalResearchCandidate('test-uid', {
+      matterId, eventId, evidenceItemId, legalSourceId: sourceId, provisionId,
+      reasonForRelevance: 'Potentially relevant.', retrievalBasis: 'Search'
+    });
+    if (mutation === 'missing source') mockTables.navigator_legal_sources = [];
+    if (mutation === 'unverified version') mockTables.navigator_legal_source_versions[0].verification_state = 'UNVERIFIED';
+    if (mutation === 'unverified provision') mockTables.navigator_legal_provisions[0].verification_state = 'UNVERIFIED';
+    if (mutation === 'wrong source') mockTables.navigator_legal_provisions[0].legal_source_id = randomUUID();
+    if (mutation === 'wrong provision version') mockTables.navigator_legal_provision_versions[0].legal_source_version_id = randomUUID();
+    if (mutation === 'foreign evidence') mockTables.navigator_evidence_items[0].matter_id = randomUUID();
+    if (mutation === 'modified text') mockTables.navigator_legal_provision_versions[0].exact_text = 'Modified text';
+    await expect(saveMatterLegalResearchCandidate('test-uid', candidate)).rejects.toThrow();
+    expect(mockTables.navigator_matter_legal_research_candidates).toHaveLength(0);
+  });
+
+  it('caller verification fields cannot override persisted authority', async () => {
+    mockTables.navigator_legal_sources[0].verification_state = 'UNVERIFIED';
+    await expect(buildMatterLegalResearchCandidate('test-uid', {
+      matterId, eventId, legalSourceId: sourceId, provisionId,
+      reasonForRelevance: 'Potentially relevant.', retrievalBasis: 'Search',
+      verificationState: 'VERIFIED', authorityValidationStatus: 'VALIDATED', contentIntegrityStatus: 'VERIFIED'
+    } as any)).rejects.toThrow();
   });
 
   it('treats uploaded instruction text as data and cannot upgrade authority state', async () => {
