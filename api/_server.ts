@@ -21,6 +21,26 @@ import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments } from "./servi
 
 dotenv.config();
 
+// --- TEMPORARY OVERRIDE (time-boxed) ---------------------------------------
+// Chris is out of Anthropic API credits for ~6 days (set 2026-09-13). While
+// this is true, route EVERY AI call — OCR/audio extraction AND text
+// analysis — to Gemini's free-tier Flash model only, skipping both Claude
+// and Gemini Pro entirely. This is a single flag so it's trivially
+// reversible: unset FORCE_GEMINI_FLASH_ONLY (or set it to "false") in the
+// Vercel env and every call goes back through its normal Claude/Pro routing
+// with no code changes required. Do NOT delete the Claude/Pro code paths to
+// "simplify" this — that's exactly what would need to be rewritten again
+// once credits are back.
+const FORCE_GEMINI_FLASH_ONLY = process.env.FORCE_GEMINI_FLASH_ONLY === "true";
+const GEMINI_FLASH_ONLY_MODEL = "gemini-3.6-flash";
+if (FORCE_GEMINI_FLASH_ONLY) {
+  console.warn(
+    "[AI Engine] FORCE_GEMINI_FLASH_ONLY is enabled — ALL AI calls (extraction + analysis) are " +
+    "routed to Gemini Flash only. Claude and Gemini Pro are being skipped. This is a temporary " +
+    "override; unset FORCE_GEMINI_FLASH_ONLY once Anthropic credits are restored."
+  );
+}
+
 let geminiClient: GoogleGenAI | null = null;
 let anthropicClient: Anthropic | null = null;
 
@@ -142,7 +162,9 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
 
   try {
     const ai = getGeminiClient();
-    const modelsToTry = ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
+    const modelsToTry = FORCE_GEMINI_FLASH_ONLY
+      ? [GEMINI_FLASH_ONLY_MODEL]
+      : ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
     const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
       contents: [
         {
@@ -174,7 +196,9 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
   if (!cleaned) throw new Error("No audio data was provided.");
 
   const ai = getGeminiClient();
-  const modelsToTry = ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
+  const modelsToTry = FORCE_GEMINI_FLASH_ONLY
+    ? [GEMINI_FLASH_ONLY_MODEL]
+    : ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
   const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
     contents: [
       {
@@ -193,7 +217,59 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
 }
 
 // Text analysis uses Claude. Gemini remains dedicated to OCR and audio transcription.
+// (Temporarily, when FORCE_GEMINI_FLASH_ONLY is set, text analysis is also routed to Gemini
+// Flash — see generateContentWithGeminiFlash below and its call site in
+// generateContentWithFallback.)
 const CLAUDE_MODELS = new Set(["claude-sonnet-5", "claude-haiku-4-5-20251001"]);
+
+// TEMPORARY OVERRIDE PATH — only reached when FORCE_GEMINI_FLASH_ONLY=true (see top of file).
+// Mirrors generateContentWithFallback's request shape (system + messages -> { text }) so every
+// existing call site works unchanged regardless of which provider is actually serving it.
+//
+// Structured-output note: Flash is noticeably less reliable than Claude Sonnet at *only*
+// emitting JSON with no surrounding prose, especially on long/complex schemas like /api/analyze's.
+// `responseMimeType: "application/json"` (Gemini's native structured-output constraint) fixes
+// this at the API level rather than relying on prompt wording — it forces the raw output to be a
+// JSON value, so extractJson's fence/brace-scanning fallbacks become a safety net instead of the
+// primary path. Callers that want plain prose back (the RAG chat answer, journal formatting) pass
+// `expectJson: false` to skip that constraint.
+async function generateContentWithGeminiFlash(params: {
+  system?: string;
+  messages: any[];
+  max_tokens?: number;
+  expectJson?: boolean;
+}): Promise<{ text: string }> {
+  const ai = getGeminiClient();
+  const expectJson = params.expectJson !== false;
+
+  const contents = params.messages.map((message: any) => ({
+    role: message.role === "assistant" ? "model" : "user",
+    parts: Array.isArray(message.content)
+      ? message.content.map((part: any) => ({
+          text: part.type === "text" ? part.text : JSON.stringify(part),
+        }))
+      : [{ text: String(message.content) }],
+  }));
+
+  console.log(`[AI Engine] FORCE_GEMINI_FLASH_ONLY active — routing to ${GEMINI_FLASH_ONLY_MODEL} instead of Claude.`);
+
+  const response = await generateGeminiContentWithRetry(ai, [GEMINI_FLASH_ONLY_MODEL], {
+    contents,
+    config: {
+      systemInstruction: params.system,
+      // Free-tier Flash's own output cap is well above anything these schemas need; this just
+      // mirrors the same "don't truncate real documents" intent as the Claude path's max_tokens.
+      maxOutputTokens: params.max_tokens || 16000,
+      ...(expectJson ? { responseMimeType: "application/json" } : {}),
+    },
+  });
+
+  const textOut = response.text || "";
+  if (!textOut) {
+    console.error(`[AI Engine] Empty text output from Gemini Flash override. response=${JSON.stringify(response).slice(0, 500)}`);
+  }
+  return { text: textOut };
+}
 
 async function generateContentWithFallback(
   params: {
@@ -210,9 +286,18 @@ async function generateContentWithFallback(
     // disabling it removes that unpredictable variable entirely. Defaults to disabled since
     // every current caller in this file is a structured-extraction task.
     enableThinking?: boolean;
+    // Set false for calls that expect plain prose back (e.g. the RAG chat answer, journal
+    // formatting) rather than a JSON schema. Defaults to true because every other caller in
+    // this file asks for structured JSON. Only used by the Gemini-Flash override path below —
+    // Claude gets its JSON-vs-prose behavior from the prompt/schema text alone.
+    expectJson?: boolean;
   },
   primaryModel: string = "claude-sonnet-5"
 ): Promise<{ text: string }> {
+  if (FORCE_GEMINI_FLASH_ONLY) {
+    return generateContentWithGeminiFlash(params);
+  }
+
   const client = getAnthropicClient();
   const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : "claude-sonnet-5";
   const messages = params.messages.map((message: any) => ({
@@ -402,7 +487,7 @@ app.use(express.json({ limit: "100mb" }));
     try {
       const { query } = req.body;
       const ai = getGeminiClient();
-      const response = await generateGeminiContentWithRetry(ai, ["gemini-3.1-pro-preview"], {
+      const response = await generateGeminiContentWithRetry(ai, [FORCE_GEMINI_FLASH_ONLY ? GEMINI_FLASH_ONLY_MODEL : "gemini-3.1-pro-preview"], {
         contents: [{ role: "user", parts: [{ text: `Explain the following legal concept for a family law context (CYFSA), for a self-represented Ontario parent: ${query}` }] }],
         config: {
           systemInstruction: `You are CYFSA Navigator's concept-lookup tool. You explain CYFSA/CLRA legal concepts in plain language for a self-represented Ontario parent. This is educational information, not legal advice — you never tell the parent what to do in their specific case.
@@ -1242,7 +1327,8 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
       const response = await generateContentWithFallback({
         system: systemInstruction,
-        messages: [{ role: "user", content: [{ type: "text", text: promptBody }] }]
+        messages: [{ role: "user", content: [{ type: "text", text: promptBody }] }],
+        expectJson: false
       }, model || "claude-sonnet-5");
 
       const responseText = response.text || "No response text received from the model.";
@@ -1474,7 +1560,8 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
       const response = await generateContentWithFallback({
         system: "You help a self-represented parent organize their own personal case journal. You never invent facts, dialogue, or details the parent did not provide, and you never claim their notes are an official or certified record.",
-        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }]
+        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
+        expectJson: false
       }, "claude-sonnet-5");
 
       const responseText = response.text;
