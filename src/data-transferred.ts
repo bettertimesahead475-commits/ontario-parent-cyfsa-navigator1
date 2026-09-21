@@ -2,12 +2,12 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Content transferred from the separate cyfsa-parents-know-your-rights app into ParentShield,
+ * Content transferred from the separate cyfsa-parents-know-your-rights app into CYFSA Navigator,
  * at Chris's request, as free informational content (no new paywall — the source app's
  * separate Gmail-OAuth/license-key unlock system was NOT carried over).
  *
  * IMPORTANT — verification status: the source app's content had not been through
- * ParentShield's citation-verification process (checking claims against the actual saved
+ * CYFSA Navigator's citation-verification process (checking claims against the actual saved
  * statute text in legal-reference/). Every specific statutory citation below was re-checked
  * against legal-reference/CYFSA_full_text_2026-06-24_consolidation.txt before being ported:
  *   - CYFSA s.81 (5-day rule), s.74/s.101 (protection grounds/interim care), s.122

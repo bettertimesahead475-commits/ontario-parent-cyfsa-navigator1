@@ -122,7 +122,7 @@ export default function App() {
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
                 <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
-                  <img src="/logo.png" alt="ParentShield logo" className="w-full h-full object-cover" />
+                  <img src="/logo.png" alt="CYFSA Navigator logo" className="w-full h-full object-cover" />
                 </div>
               </div>
               <div className="text-left">
@@ -354,7 +354,7 @@ export default function App() {
                   ? "Export the order-hierarchy and lawyer-discussion points as a formatted PDF."
                   : ["/rights", "/cyfsa-procedure", "/five-day-rule", "/45-day-roadmap"].includes(location)
                   ? "Export this step of the guided journey as a formatted PDF."
-                  : "Save a clean, formatted educational draft copy of the active ParentShield views."}
+                  : "Save a clean, formatted educational draft copy of the active CYFSA Navigator views."}
               </p>
             </div>
             <div className="shrink-0">
@@ -436,7 +436,7 @@ export default function App() {
 
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs text-slate-500 gap-4 pt-4 border-t border-slate-100 pb-2">
             <div className="space-y-1">
-              <span className="font-semibold text-slate-900 block">Ontario Parent CYFSA Navigator • Assistance & Document Analysis System</span>
+              <span className="font-semibold text-slate-900 block">CYFSA Navigator • Assistance & Document Analysis System</span>
               <span className="block text-slate-500">Educational Portal only. Designed strictly for parental confidence and information sharing. S.O. 2017 Chapter 14 compliant.</span>
             </div>
 

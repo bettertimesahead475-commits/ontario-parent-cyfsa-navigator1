@@ -51,7 +51,7 @@ export default function ParentChatBot() {
       {
         id: "coach-welcome",
         sender: "ai",
-        text: "Hello! I am your **CYFSA ParentShield Advisor**. I'm here to support you with expert, educational advice from a parent's perspective.\n\n" +
+        text: "Hello! I am your **CYFSA Navigator Advisor**. I'm here to support you with expert, educational advice from a parent's perspective.\n\n" +
               "Whenever you upload documents (like CAS letters, reports, or logs) to the **Document Analyzer Tab**, I will automatically synchronize and read them as context to answer your questions with extreme relevance! 📂\n\n" +
               "How can I help you understand your rights or analyze your case files today?",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -293,7 +293,7 @@ export default function ParentChatBot() {
                   </div>
                   <div>
                     <h3 className="text-xs font-display font-extrabold tracking-wide uppercase flex items-center gap-1.5 text-slate-100">
-                      ParentShield Advisor
+                      CYFSA Navigator Advisor
                     </h3>
                     <p className="text-[10px] text-brand-300 font-medium">Empathetic CYFSA Educational Coach</p>
                   </div>

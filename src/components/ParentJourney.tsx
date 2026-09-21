@@ -231,7 +231,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     const handler = (e: Event) => {
       const ce = e as CustomEvent;
       if (ce.detail?.type !== "journey") return;
-      let title = "Ontario Parent Assist — Preparation Guide";
+      let title = "CYFSA Navigator — Preparation Guide";
       let body = "";
       const renderTopicFull = (t: NonNullable<ReturnType<typeof CYFSA_TOPICS.find>>) => `
         <div class="section-card">

@@ -1,5 +1,5 @@
 /**
- * ParentShield Offline Portal Service Worker
+ * CYFSA Navigator Offline Portal Service Worker
  * Durable static/bundle caching tailored for fast loads in areas with poor cellular reception (courtrooms).
  */
 

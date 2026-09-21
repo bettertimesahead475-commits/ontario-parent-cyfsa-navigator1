@@ -152,7 +152,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
         </div>
         <div className="relative z-10 max-w-3xl text-left">
           <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 rounded-full font-mono font-bold tracking-wider text-[10px] uppercase border border-indigo-400/25">
-            ParentShield Funding & Subscriptions
+            CYFSA Navigator Funding & Subscriptions
           </span>
           <h1 className="font-display font-black text-2xl md:text-3.5xl tracking-tight mt-3">
             Secure Full Advocacy Tools and Unlimited AI Support

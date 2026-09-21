@@ -2204,7 +2204,7 @@ export default function DocumentAnalyzerTab() {
       title = "CYFSA RAG Agent - Case Consultation Transcript";
       bodyContent = `
         <div class="header-container">
-          <span class="platform-label">ParentShield • Case Education Library</span>
+          <span class="platform-label">CYFSA Navigator • Case Education Library</span>
           <h1 class="title-main">RAG Multi-File Case Consultation Transcript</h1>
           <div class="meta-bar">
             System Agent: <strong>Claude 3.5 Sonnet RAG</strong>
@@ -2281,7 +2281,7 @@ export default function DocumentAnalyzerTab() {
 
       bodyContent = `
         <div class="header-container">
-          <span class="platform-label">ParentShield • Evidence strength audit</span>
+          <span class="platform-label">CYFSA Navigator • Evidence strength audit</span>
           <h1 class="title-main">File Analysis & Evidence Strength Report</h1>
 
           <div class="meta-bar">
@@ -2515,7 +2515,7 @@ export default function DocumentAnalyzerTab() {
       title = "Case File Index & Organized Cabinet Repository";
       bodyContent = `
         <div class="header-container">
-          <span class="platform-label">ParentShield • digital vault</span>
+          <span class="platform-label">CYFSA Navigator • digital vault</span>
           <h1 class="title-main">Organized Case Files Cabinet Directory</h1>
           <div class="meta-bar">
             Jurisdiction: Ontario Court of Justice, Canada
@@ -2562,7 +2562,7 @@ export default function DocumentAnalyzerTab() {
     const htmlContent = `
       <html>
         <head>
-          <title>${escapeHtml(title)} - ParentShield PDF Suite</title>
+          <title>${escapeHtml(title)} - CYFSA Navigator PDF Suite</title>
           ${sharedStyle}
         </head>
         <body>

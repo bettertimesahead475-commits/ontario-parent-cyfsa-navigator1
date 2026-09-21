@@ -253,7 +253,7 @@ async function sendAccessCodeEmail(email: string, tier: Tier, code: string, refe
     await transporter.sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to: email,
-      subject: `Your Ontario Parent Assist access code (${tier})`,
+      subject: `Your CYFSA Navigator access code (${tier})`,
       text:
         `Your Interac e-transfer (reference ${referenceNumber}) has been confirmed. Here is your ${tier} access code:\n\n` +
         `${code}\n\n` +

@@ -292,7 +292,7 @@ export default function SignUpTab() {
       doc.line(15, y + 5, 195, y + 5);
       doc.setFont("courier", "italic");
       doc.setFontSize(8);
-      doc.text("PREPARED AND CERTIFIED BY PARENTSHIELD ONTARIO CASE COMPLIANCE ENGINE", 105, y + 12, { align: "center" });
+      doc.text("PREPARED WITH CYFSA NAVIGATOR - EDUCATIONAL DRAFT, NOT LEGAL ADVICE", 105, y + 12, { align: "center" });
       doc.text("RESTRICTED DIRECT EVIDENCE RECORD - SUBJECT TO SECTION 94(2) BURDEN STANDARDS", 105, y + 17, { align: "center" });
       
       doc.save(`${note.title.toLowerCase().replace(/[^a-z0-9]+/g, "_")}.pdf`);
@@ -441,13 +441,13 @@ export default function SignUpTab() {
       <div className="text-left space-y-2 border-b border-gray-100 pb-5">
         <div className="flex items-center gap-2 text-brand-900 font-bold tracking-wider uppercase text-[10px] md:text-xs">
           <Shield className="w-4 h-4 text-brand-600" />
-          <span>ParentShield Security Portal</span>
+          <span>CYFSA Navigator Security Portal</span>
         </div>
         <h2 className="font-display font-bold text-gray-900 text-2xl md:text-3xl tracking-tight">
           Parent Advocate Passport
         </h2>
         <p className="text-slate-600 text-xs md:text-sm max-w-3xl leading-relaxed">
-          Create your free private local advocate identity to secure your statutory worksheets, unlock personalized court timelines, and generate your printable ParentShield self-advocacy credentials.
+          Create your free private local advocate identity to secure your statutory worksheets, unlock personalized court timelines, and generate your printable CYFSA Navigator self-advocacy credentials.
         </p>
       </div>
 
@@ -985,7 +985,7 @@ export default function SignUpTab() {
                 </div>
                 <div>
                   <h4 className="font-display font-black text-[11px] tracking-widest text-slate-100 uppercase">
-                    ParentShield
+                    CYFSA Navigator
                   </h4>
                   <p className="text-[8px] text-brand-300 font-mono tracking-wider font-bold">ONTARIO CYFSA ADVOCACY PASS</p>
                 </div>

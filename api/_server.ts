@@ -405,7 +405,7 @@ app.use(express.json({ limit: "100mb" }));
       const response = await generateGeminiContentWithRetry(ai, ["gemini-3.1-pro-preview"], {
         contents: [{ role: "user", parts: [{ text: `Explain the following legal concept for a family law context (CYFSA), for a self-represented Ontario parent: ${query}` }] }],
         config: {
-          systemInstruction: `You are ParentShield's concept-lookup tool. You explain CYFSA/CLRA legal concepts in plain language for a self-represented Ontario parent. This is educational information, not legal advice — you never tell the parent what to do in their specific case.
+          systemInstruction: `You are CYFSA Navigator's concept-lookup tool. You explain CYFSA/CLRA legal concepts in plain language for a self-represented Ontario parent. This is educational information, not legal advice — you never tell the parent what to do in their specific case.
 
 CORE RULES (non-negotiable)
 1. Only cite a specific CYFSA/CLRA section number if it is one of these confirmed, verified references:
@@ -786,11 +786,11 @@ THINGS TO NEVER DO
 - Never generate content that could be read as legal advice ("you should file a motion to strike") — reframe as questions for counsel ("ask your lawyer whether a motion to strike is appropriate here").
 - Never fabricate a case name, citation, or quote. If asked to support a point with case law and you cannot verify one via search, say so directly.`;
 
-      const coreSystemInstruction = `You are ParentShield's Evidence Strength Audit tool. You analyze legal documents (affidavits, motion records, CAS correspondence) submitted by self-represented parents in Ontario child protection proceedings under the CYFSA. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
+      const coreSystemInstruction = `You are CYFSA Navigator's Evidence Strength Audit tool. You analyze legal documents (affidavits, motion records, CAS correspondence) submitted by self-represented parents in Ontario child protection proceedings under the CYFSA. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
 
 ${analysisRules}`;
 
-      const deepDiveSystemInstruction = `You are ParentShield's Evidence Strength Audit tool, running the statutory-threshold and timeline half of a two-part review of one document already reviewed once by a parallel pass. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
+      const deepDiveSystemInstruction = `You are CYFSA Navigator's Evidence Strength Audit tool, running the statutory-threshold and timeline half of a two-part review of one document already reviewed once by a parallel pass. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
 
 ${analysisRules}`;
 
@@ -1022,7 +1022,7 @@ ${analysisRules}`;
         .map((d, i) => `--- DOCUMENT ${i + 1}: "${d.name}" ${d.sourceDate ? `(dated/received: ${d.sourceDate})` : ""} ---\n${d.text}`)
         .join("\n\n");
 
-      const systemInstruction = `You are ParentShield's Cross-Document Timeline tool. You are given multiple documents from a single CYFSA case — affidavits, emails, call/meeting transcripts, prior court orders. Your only job is to merge them into one chronological, sourced timeline and flag where they conflict or where something is missing.
+      const systemInstruction = `You are CYFSA Navigator's Cross-Document Timeline tool. You are given multiple documents from a single CYFSA case — affidavits, emails, call/meeting transcripts, prior court orders. Your only job is to merge them into one chronological, sourced timeline and flag where they conflict or where something is missing.
 
 NON-NEGOTIABLE RULES
 1. Every timeline row must cite which supplied document(s) it came from, by the exact document name/number given. Never invent a citation.
@@ -1367,7 +1367,7 @@ ALREADY-NOTED MISSING ELEMENTS:
 ${priorMissing ? "- " + priorMissing : "(none noted)"}`;
       }
 
-      const systemInstruction = `You are ParentShield's Deep Scan tool — a genuine SECOND pass over ONE document already reviewed once by a parallel first-pass analysis, specifically hunting for statutory omissions, missing corroborating evidence, and rebuttal material that the first pass did not already surface.
+      const systemInstruction = `You are CYFSA Navigator's Deep Scan tool — a genuine SECOND pass over ONE document already reviewed once by a parallel first-pass analysis, specifically hunting for statutory omissions, missing corroborating evidence, and rebuttal material that the first pass did not already surface.
 
 NON-NEGOTIABLE RULES
 1. Every "claim" in a retort must be a real assertion actually present in the supplied document text — quote or closely paraphrase it. Never invent a claim the document doesn't make.

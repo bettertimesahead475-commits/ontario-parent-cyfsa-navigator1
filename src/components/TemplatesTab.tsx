@@ -1023,7 +1023,7 @@ export default function TemplatesTab() {
             <strong>CRITICAL EDUCATIONAL FOOTNOTE NOTICE:</strong> This court-ready document represents a self-prepared draft workbook created strictly for child-protection education and parent legal counsel consultations. S.O. 2017, c. 14 compliant workspace. Do not execute or serve without professional screening by a licensed member of the Law Society of Ontario.
           </div>
           <div style="text-align:center; font-size:9.5px; color:#cbd5e1; margin-top:10px;">
-            Generated via ParentShield PDF Export Suite. Primary statutes refreshed 2026.
+            Generated via CYFSA Navigator PDF Export Suite. Primary statutes refreshed 2026.
           </div>
 
           <script>
