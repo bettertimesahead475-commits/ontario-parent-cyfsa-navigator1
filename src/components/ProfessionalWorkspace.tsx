@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import CaseBriefViewer from './CaseBriefViewer';
+import LegalDiscoveryTab from './LegalDiscoveryTab';
 
 export default function ProfessionalWorkspace() {
   const [matters, setMatters] = useState<{id: string; title: string}[]>([]);
@@ -151,7 +152,7 @@ export default function ProfessionalWorkspace() {
       {selectedMatter && (
         <div className="border rounded-lg bg-white overflow-hidden">
           <div className="flex border-b bg-slate-50 overflow-x-auto">
-            {['OVERVIEW', 'EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL', 'CASE_BRIEF', 'VERSIONS'].map(tab => (
+            {['OVERVIEW', 'EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL', 'LEGAL_DISCOVERY', 'CASE_BRIEF', 'VERSIONS'].map(tab => (
               <button
                 key={tab}
                 className={`px-4 py-3 text-sm font-semibold whitespace-nowrap ${activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}
@@ -222,6 +223,9 @@ export default function ProfessionalWorkspace() {
                   </ul>
                 )}
               </div>
+            )}
+            {activeTab === 'LEGAL_DISCOVERY' && (
+              <LegalDiscoveryTab matterId={selectedMatter} />
             )}
             {!loading && activeTab === 'CASE_BRIEF' && caseBrief && (
               <CaseBriefViewer 

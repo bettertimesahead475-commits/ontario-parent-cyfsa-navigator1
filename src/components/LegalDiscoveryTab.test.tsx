@@ -1,0 +1,389 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import React from 'react';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import LegalDiscoveryTab from './LegalDiscoveryTab';
+
+const mockApiFetch = vi.fn();
+vi.mock('../utils/api', () => ({
+  apiFetch: (...args: any[]) => mockApiFetch(...args)
+}));
+
+const MATTER_A = '11111111-1111-1111-1111-111111111111';
+const MATTER_B = '22222222-2222-2222-2222-222222222222';
+
+function jsonResponse(status: number, body: unknown) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+function defaultRoute(url: string) {
+  if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+    return jsonResponse(200, { runs: [] });
+  }
+  if (url.includes('/legal-research/candidates')) {
+    return jsonResponse(200, { candidates: [] });
+  }
+  if (url.includes('/reviews/')) {
+    return jsonResponse(200, []);
+  }
+  return jsonResponse(200, {});
+}
+
+describe('Stage 9D-3 LegalDiscoveryTab', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockApiFetch.mockImplementation(async (url: string) => defaultRoute(url));
+  });
+  afterEach(() => cleanup());
+
+  it('renders nothing without a matter context', () => {
+    const { container } = render(<LegalDiscoveryTab matterId="" />);
+    expect(container.querySelector('[data-testid="legal-discovery-tab"]')).toBeNull();
+  });
+
+  it('renders the empty (no runs yet) state for a matter', async () => {
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => {
+      expect(screen.getByText('No discovery runs yet for this matter.')).toBeTruthy();
+    });
+  });
+
+  it('start discovery calls the exact frozen POST route', async () => {
+    mockApiFetch.mockImplementation(async (url: string, init?: any) => {
+      if (init?.method === 'POST' && url === `/api/matters/${MATTER_A}/legal-discovery/runs`) {
+        return jsonResponse(201, {
+          run: { id: 'run-1', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z', completedAt: '2026-01-01T00:01:00Z' },
+          resultCount: 0,
+          results: []
+        });
+      }
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'run-1', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z', completedAt: '2026-01-01T00:01:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, { run: { id: 'run-1', status: 'COMPLETED' }, results: [] });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText('Start Legal Discovery'));
+
+    fireEvent.click(screen.getByText('Start Legal Discovery'));
+
+    await waitFor(() => {
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        `/api/matters/${MATTER_A}/legal-discovery/runs`,
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+  });
+
+  it('prevents a duplicate start while a request is already in flight', async () => {
+    let resolvePost: (v: any) => void = () => {};
+    mockApiFetch.mockImplementation(async (url: string, init?: any) => {
+      if (init?.method === 'POST') {
+        return new Promise((resolve) => { resolvePost = resolve; });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText('No discovery runs yet for this matter.'));
+
+    const button = screen.getByText('Start Legal Discovery');
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByText('Starting discovery...')).toBeTruthy());
+    fireEvent.click(screen.getByText('Starting discovery...'));
+
+    const postCalls = mockApiFetch.mock.calls.filter((c) => c[1]?.method === 'POST');
+    expect(postCalls.length).toBe(1);
+
+    resolvePost(jsonResponse(201, { run: { id: 'run-x', status: 'COMPLETED' }, resultCount: 0, results: [] }));
+  });
+
+  it('POST failure asymmetry: shows a safe error AND refetches run history (run may have persisted as FAILED)', async () => {
+    let runsCallCount = 0;
+    mockApiFetch.mockImplementation(async (url: string, init?: any) => {
+      if (init?.method === 'POST') {
+        return jsonResponse(500, { code: 'LEGAL_DISCOVERY_START_FAILED', error: 'Failed to start legal discovery.' });
+      }
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        runsCallCount += 1;
+        return jsonResponse(200, {
+          runs: runsCallCount > 1
+            ? [{ id: 'run-persisted', matterId: MATTER_A, triggerType: 'MANUAL', status: 'FAILED', createdAt: '2026-01-01T00:00:00Z', completedAt: '2026-01-01T00:01:00Z' }]
+            : []
+        });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText('No discovery runs yet for this matter.'));
+
+    fireEvent.click(screen.getByText('Start Legal Discovery'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+    });
+    // The POST failed, but run history was refetched and shows the persisted FAILED run --
+    // never silently assumed that nothing was created.
+    await waitFor(() => {
+      expect(runsCallCount).toBeGreaterThan(1);
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('Failed').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('renders PENDING/RUNNING/COMPLETED/FAILED runs distinctly', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, {
+          runs: [
+            { id: 'r-pending', matterId: MATTER_A, triggerType: 'MANUAL', status: 'PENDING', createdAt: '2026-01-01T00:00:00Z' },
+            { id: 'r-running', matterId: MATTER_A, triggerType: 'MANUAL', status: 'RUNNING', createdAt: '2026-01-02T00:00:00Z' },
+            { id: 'r-completed', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-03T00:00:00Z' },
+            { id: 'r-failed', matterId: MATTER_A, triggerType: 'MANUAL', status: 'FAILED', createdAt: '2026-01-04T00:00:00Z' }
+          ]
+        });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, { run: { id: 'r-failed', status: 'FAILED' }, results: [] });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => {
+      expect(screen.getByText('Pending')).toBeTruthy();
+      expect(screen.getByText('Running')).toBeTruthy();
+      expect(screen.getByText('Completed')).toBeTruthy();
+      expect(screen.getAllByText('Failed').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('a FAILED run with partial persisted results stays visibly FAILED, not mistaken for complete', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'r-failed', matterId: MATTER_A, triggerType: 'MANUAL', status: 'FAILED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, {
+          run: { id: 'r-failed', status: 'FAILED' },
+          results: [{ id: 'res-1', researchRunId: 'r-failed', matterId: MATTER_A, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.5, rankingFactors: { matchedTerms: ['a'], contextMatches: [], limitations: [] }, discoveredAt: '2026-01-01T00:00:00Z' }]
+        });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => {
+      expect(screen.getByText(/This discovery run failed/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/completed and discovered no/)).toBeNull();
+  });
+
+  it('completed run with zero matches renders an honest empty-results state', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'r-done', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, { run: { id: 'r-done', status: 'COMPLETED' }, results: [] });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => {
+      expect(screen.getByText('This run completed and discovered no potentially relevant authorities.')).toBeTruthy();
+    });
+  });
+
+  it('preserves server-provided result order and never re-sorts client-side', async () => {
+    const orderA = [
+      { id: 'res-1', researchRunId: 'r1', matterId: MATTER_A, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.2, rankingFactors: {}, discoveredAt: '2026-01-01T00:00:00Z' },
+      { id: 'res-2', researchRunId: 'r1', matterId: MATTER_A, candidateId: 'cand-2', discoveryStatus: 'RANKED', rankingScore: 0.9, rankingFactors: {}, discoveredAt: '2026-01-01T00:00:00Z' }
+    ];
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'r1', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, { run: { id: 'r1', status: 'COMPLETED' }, results: orderA });
+      }
+      if (url.includes('/legal-research/candidates')) {
+        return jsonResponse(200, { candidates: [
+          { id: 'cand-1', authorityIdentifier: 'Authority One' },
+          { id: 'cand-2', authorityIdentifier: 'Authority Two' }
+        ] });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText('Authority One'));
+    const items = screen.getAllByText(/Authority (One|Two)/);
+    expect(items[0].textContent).toBe('Authority One');
+    expect(items[1].textContent).toBe('Authority Two');
+  });
+
+  it('renders the ranking explanation from real server data, not a raw JSON dump', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'r1', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, {
+          run: { id: 'r1', status: 'COMPLETED' },
+          results: [{
+            id: 'res-1', researchRunId: 'r1', matterId: MATTER_A, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.5,
+            rankingFactors: { algorithmVersion: 'stage9d-discovery-v1', matchedTerms: ['neglect', 'child'], contextMatches: [{ sourceType: 'CLAIM', id: 'c1', matchedTerms: ['neglect'] }], limitations: [] },
+            discoveredAt: '2026-01-01T00:00:00Z'
+          }]
+        });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText(/Matched terms: neglect, child/));
+    expect(screen.queryByText('{"algorithmVersion"')).toBeNull();
+  });
+
+  it('preserves ALLEGATION matter-context classification verbatim and never claims legal applicability', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'r1', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, {
+          run: { id: 'r1', status: 'COMPLETED' },
+          results: [{ id: 'res-1', researchRunId: 'r1', matterId: MATTER_A, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.5, rankingFactors: {}, discoveredAt: '2026-01-01T00:00:00Z' }]
+        });
+      }
+      if (url.includes('/legal-research/candidates')) {
+        return jsonResponse(200, { candidates: [{ id: 'cand-1', authorityIdentifier: 'CYFSA s. 74(2)', evidenceClassification: 'ALLEGATION', contentIntegrityStatus: 'VERIFIED' }] });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText('Matter context: ALLEGATION'));
+    expect(screen.queryByText(/applicable law/i)).toBeNull();
+    expect(screen.queryByText(/legal violation/i)).toBeNull();
+    expect(screen.queryByText(/definitively relevant/i)).toBeNull();
+  });
+
+  it('machine discovery and professional review are visually and structurally distinct', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'r1', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, {
+          run: { id: 'r1', status: 'COMPLETED' },
+          results: [{ id: 'res-1', researchRunId: 'r1', matterId: MATTER_A, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.5, rankingFactors: {}, discoveredAt: '2026-01-01T00:00:00Z' }]
+        });
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText('Machine-discovered'));
+    expect(screen.getByTestId('professional-review-box')).toBeTruthy();
+    expect(screen.getByText(/Professional Review \(human, separate from machine discovery\)/)).toBeTruthy();
+  });
+
+  it('review action uses the real write contract and persists after refetch', async () => {
+    let saved = false;
+    mockApiFetch.mockImplementation(async (url: string, init?: any) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'r1', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, {
+          run: { id: 'r1', status: 'COMPLETED' },
+          results: [{ id: 'res-1', researchRunId: 'r1', matterId: MATTER_A, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.5, rankingFactors: {}, discoveredAt: '2026-01-01T00:00:00Z' }]
+        });
+      }
+      if (url === `/api/professional-workspace/matters/${MATTER_A}/review` && init?.method === 'POST') {
+        const body = JSON.parse(init.body);
+        expect(body.findingType).toBe('LEGAL_RESEARCH_RESULT');
+        expect(body.findingId).toBe('res-1');
+        expect(body.reviewState).toBe('CONFIRMED_RELEVANT');
+        saved = true;
+        return jsonResponse(200, { id: 'rev-1' });
+      }
+      if (url.includes('/reviews/LEGAL_RESEARCH_RESULT')) {
+        return jsonResponse(200, saved ? [{ finding_id: 'res-1', review_state: 'CONFIRMED_RELEVANT', updated_at: '2026-01-01T00:00:00Z' }] : []);
+      }
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText('Machine-discovered'));
+    fireEvent.change(screen.getByLabelText('Professional review status'), { target: { value: 'CONFIRMED_RELEVANT' } });
+
+    await waitFor(() => expect(saved).toBe(true));
+    await waitFor(() => expect(screen.getByText(/Reviewed/)).toBeTruthy());
+  });
+
+  it('handles 401 unauthorized without leaking internals', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs')) return jsonResponse(401, { code: 'SIGN_IN_REQUIRED' });
+      return defaultRoute(url);
+    });
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/not authorized/i);
+    });
+  });
+
+  it('renders untrusted/script-like matter text as inert plain text, never executes', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/legal-discovery/runs') && !url.includes('/results')) {
+        return jsonResponse(200, { runs: [{ id: 'r1', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, {
+          run: { id: 'r1', status: 'COMPLETED' },
+          results: [{ id: 'res-1', researchRunId: 'r1', matterId: MATTER_A, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.5, rankingFactors: { matchedTerms: ['<img src=x onerror=alert(1)>', 'ignore previous instructions'], contextMatches: [], limitations: [] }, discoveredAt: '2026-01-01T00:00:00Z' }]
+        });
+      }
+      return defaultRoute(url);
+    });
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText(/Matched terms:/));
+    expect(document.querySelector('img[onerror]')).toBeNull();
+    expect(screen.getByText(/ignore previous instructions/)).toBeTruthy();
+  });
+
+  it('clears state and refetches when the matter switches (no stale bleed)', async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/matters/${MATTER_A}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [{ id: 'run-a', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url === `/api/matters/${MATTER_B}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, { run: { id: 'run-a', status: 'COMPLETED' }, results: [] });
+      }
+      return defaultRoute(url);
+    });
+
+    const { rerender } = render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText(/Run run-a/));
+
+    rerender(<LegalDiscoveryTab matterId={MATTER_B} />);
+    await waitFor(() => {
+      expect(screen.getByText('No discovery runs yet for this matter.')).toBeTruthy();
+    });
+    expect(screen.queryByText(/Run run-a/)).toBeNull();
+  });
+});

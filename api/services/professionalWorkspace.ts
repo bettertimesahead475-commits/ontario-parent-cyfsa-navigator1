@@ -99,6 +99,34 @@ export async function getIntelligenceCategory(firebaseUid: string, matterId: str
   };
 }
 
+// Stage 9D-3: read-only counterpart to saveProfessionalReview, scoped to one finding_type,
+// so the legal-discovery workspace can show the caller's own prior review state for a
+// LEGAL_RESEARCH_RESULT finding without piggybacking on getIntelligenceCategory (which is
+// hard-restricted to the six canonical intelligence categories and does not accept this
+// finding_type). Reuses the exact same table, reviewer-scoping and access check as the
+// existing write path -- no new review-state vocabulary, no new authorization path.
+export async function listProfessionalReviewsForFindingType(
+  firebaseUid: string,
+  matterId: string,
+  findingType: string
+) {
+  matterId = requireUuid(matterId, 'matterId');
+  const account = await findAccount(firebaseUid);
+  if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
+
+  const db = getSupabase();
+  await requireProfessionalAccess(db, account.id, matterId);
+
+  const { data, error } = await db.from('professional_reviews')
+    .select('*')
+    .eq('matter_id', matterId)
+    .eq('finding_type', findingType)
+    .eq('reviewer_account_id', account.id);
+
+  if (error) throw new LifecycleError(500, 'DB_ERROR', 'Failed to fetch reviews: ' + error.message);
+  return data || [];
+}
+
 export async function saveProfessionalReview(
   firebaseUid: string, 
   matterId: string, 

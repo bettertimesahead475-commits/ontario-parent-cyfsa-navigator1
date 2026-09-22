@@ -5,7 +5,8 @@ import {
   getProfessionalMatters,
   getMatterOverview,
   getIntelligenceCategory,
-  saveProfessionalReview
+  saveProfessionalReview,
+  listProfessionalReviewsForFindingType
 } from './services/professionalWorkspace.js';
 import { generateCaseBrief, finalizeCaseBrief, getWorkProductVersions, getWorkProductVersion } from './services/litigationWorkProduct.js';
 
@@ -36,6 +37,7 @@ export function registerProfessionalWorkspaceRoutes(app: Express) {
     const { findingType, findingId, reviewState, reviewNote } = r.body;
     return saveProfessionalReview(u, r.params.matterId, findingType, findingId, reviewState, reviewNote || null);
   }));
+  app.get('/api/professional-workspace/matters/:matterId/reviews/:findingType', authenticated((r, u) => listProfessionalReviewsForFindingType(u, r.params.matterId, r.params.findingType)));
   app.get('/api/professional-workspace/matters/:matterId/work-product/case-brief', authenticated((r, u) => generateCaseBrief(u, r.params.matterId)));
   app.post('/api/professional-workspace/matters/:matterId/work-product/case-brief/finalize', authenticated((r, u) => finalizeCaseBrief(u, r.params.matterId)));
   app.get('/api/professional-workspace/matters/:matterId/work-product/case-brief/versions', authenticated((r, u) => getWorkProductVersions(u, r.params.matterId)));
