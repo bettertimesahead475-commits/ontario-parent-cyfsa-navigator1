@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { isSafeWebsiteUrl } from '../utils/urlValidator';
 
@@ -57,10 +57,31 @@ export default function LegalDiscoveryTab({ matterId }: { matterId: string }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
 
+  // Stale-response guard: each resource type has its own monotonic generation token, incremented
+  // at the start of every fetch for that resource (whether triggered by a matter switch or by a
+  // same-matter re-trigger, e.g. re-clicking "Start Legal Discovery" before a prior refresh
+  // completes). A response is only allowed to mutate state if its captured token still matches the
+  // current generation when it resolves -- this covers both cross-matter races and same-matter
+  // overlapping-request races with a single mechanism, consistent with the generation-ref pattern
+  // already used in EvidenceReviewWorkspace.tsx. `mounted` guards against post-unmount state writes.
+  const mounted = useRef(true);
+  const runsGeneration = useRef(0);
+  const candidatesGeneration = useRef(0);
+  const reviewsGeneration = useRef(0);
+  const resultsGeneration = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   const loadRuns = useCallback(async () => {
-    setLoadingRuns(true);
+    const token = ++runsGeneration.current;
+    if (mounted.current) setLoadingRuns(true);
     try {
       const res = await apiFetch(`/api/matters/${matterId}/legal-discovery/runs`);
+      if (!mounted.current || token !== runsGeneration.current) return;
       if (res.status === 401 || res.status === 403) {
         setError('You are not authorized to view legal research for this matter.');
         setRuns([]);
@@ -68,19 +89,24 @@ export default function LegalDiscoveryTab({ matterId }: { matterId: string }) {
       }
       if (!res.ok) throw new Error('Failed to load discovery run history.');
       const data = await res.json();
+      if (!mounted.current || token !== runsGeneration.current) return;
       setRuns(data.runs || []);
     } catch (e: any) {
+      if (!mounted.current || token !== runsGeneration.current) return;
       setError(e.message || 'Failed to load discovery run history.');
     } finally {
-      setLoadingRuns(false);
+      if (mounted.current && token === runsGeneration.current) setLoadingRuns(false);
     }
   }, [matterId]);
 
   const loadCandidates = useCallback(async () => {
+    const token = ++candidatesGeneration.current;
     try {
       const res = await apiFetch(`/api/matters/${matterId}/legal-research/candidates`);
+      if (!mounted.current || token !== candidatesGeneration.current) return;
       if (!res.ok) return;
       const data = await res.json();
+      if (!mounted.current || token !== candidatesGeneration.current) return;
       const map: Record<string, any> = {};
       for (const c of data.candidates || []) map[c.id] = c;
       setCandidatesById(map);
@@ -90,10 +116,13 @@ export default function LegalDiscoveryTab({ matterId }: { matterId: string }) {
   }, [matterId]);
 
   const loadReviews = useCallback(async () => {
+    const token = ++reviewsGeneration.current;
     try {
       const res = await apiFetch(`/api/professional-workspace/matters/${matterId}/reviews/${FINDING_TYPE}`);
+      if (!mounted.current || token !== reviewsGeneration.current) return;
       if (!res.ok) return;
       const data = await res.json();
+      if (!mounted.current || token !== reviewsGeneration.current) return;
       const map: Record<string, any> = {};
       for (const r of data || []) map[r.finding_id] = r;
       setReviewsByFindingId(map);
@@ -103,14 +132,18 @@ export default function LegalDiscoveryTab({ matterId }: { matterId: string }) {
   }, [matterId]);
 
   const loadResults = useCallback(async (runId: string) => {
+    const token = ++resultsGeneration.current;
     if (!runId) {
-      setResults([]);
-      setSelectedRun(null);
+      if (mounted.current && token === resultsGeneration.current) {
+        setResults([]);
+        setSelectedRun(null);
+      }
       return;
     }
-    setLoadingResults(true);
+    if (mounted.current) setLoadingResults(true);
     try {
       const res = await apiFetch(`/api/matters/${matterId}/legal-discovery/runs/${runId}/results`);
+      if (!mounted.current || token !== resultsGeneration.current) return;
       if (res.status === 401 || res.status === 403) {
         setError('You are not authorized to view legal research for this matter.');
         return;
@@ -121,13 +154,15 @@ export default function LegalDiscoveryTab({ matterId }: { matterId: string }) {
       }
       if (!res.ok) throw new Error('Failed to load discovery results.');
       const data = await res.json();
+      if (!mounted.current || token !== resultsGeneration.current) return;
       setSelectedRun(data.run);
       // Server-provided order is preserved verbatim -- never re-sorted client-side.
       setResults(data.results || []);
     } catch (e: any) {
+      if (!mounted.current || token !== resultsGeneration.current) return;
       setError(e.message || 'Failed to load discovery results.');
     } finally {
-      setLoadingResults(false);
+      if (mounted.current && token === resultsGeneration.current) setLoadingResults(false);
     }
   }, [matterId]);
 

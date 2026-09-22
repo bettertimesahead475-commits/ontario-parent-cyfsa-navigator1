@@ -386,4 +386,191 @@ describe('Stage 9D-3 LegalDiscoveryTab', () => {
     });
     expect(screen.queryByText(/Run run-a/)).toBeNull();
   });
+
+  // --- Stage 9D-3 remediation: stale-response race regressions ---------------------------------
+
+  it('[AUDITOR] does not let a late Matter A response overwrite Matter B state after switching', async () => {
+    let resolveRunsA: (v: any) => void = () => {};
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/matters/${MATTER_A}/legal-discovery/runs`) {
+        return new Promise((resolve) => { resolveRunsA = () => resolve(jsonResponse(200, { runs: [{ id: 'run-a-stale', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] })); });
+      }
+      if (url === `/api/matters/${MATTER_B}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [] });
+      }
+      if (url.includes('/results')) return jsonResponse(200, { run: null, results: [] });
+      return defaultRoute(url);
+    });
+
+    const { rerender } = render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    // Matter A's runs fetch is still in flight (deliberately unresolved).
+
+    rerender(<LegalDiscoveryTab matterId={MATTER_B} />);
+    await waitFor(() => {
+      expect(screen.getByText('No discovery runs yet for this matter.')).toBeTruthy();
+    });
+
+    // Now let Matter A's stale response resolve, after the switch to Matter B.
+    resolveRunsA(undefined);
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(/run-a-stale/)).toBeNull();
+    expect(screen.getByText('No discovery runs yet for this matter.')).toBeTruthy();
+  });
+
+  it('stale candidate response from Matter A does not leak a Matter A candidate into Matter B view', async () => {
+    let resolveCandidatesA: (v: any) => void = () => {};
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/matters/${MATTER_A}/legal-research/candidates`) {
+        return new Promise((resolve) => { resolveCandidatesA = () => resolve(jsonResponse(200, { candidates: [{ id: 'cand-a-stale', authorityIdentifier: 'Matter A Stale Authority' }] })); });
+      }
+      return defaultRoute(url);
+    });
+
+    const { rerender } = render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    rerender(<LegalDiscoveryTab matterId={MATTER_B} />);
+    await waitFor(() => screen.getByText('No discovery runs yet for this matter.'));
+
+    resolveCandidatesA(undefined);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(/Matter A Stale Authority/)).toBeNull();
+  });
+
+  it('stale reviews response from Matter A does not leak into Matter B review state', async () => {
+    let resolveReviewsA: (v: any) => void = () => {};
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/professional-workspace/matters/${MATTER_A}/reviews/LEGAL_RESEARCH_RESULT`) {
+        return new Promise((resolve) => { resolveReviewsA = () => resolve(jsonResponse(200, [{ finding_id: 'res-1', review_state: 'CONFIRMED_RELEVANT', updated_at: '2026-01-01T00:00:00Z' }])); });
+      }
+      if (url === `/api/matters/${MATTER_B}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [{ id: 'run-b', matterId: MATTER_B, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) {
+        return jsonResponse(200, { run: { id: 'run-b', status: 'COMPLETED' }, results: [{ id: 'res-1', researchRunId: 'run-b', matterId: MATTER_B, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.5, rankingFactors: {}, discoveredAt: '2026-01-01T00:00:00Z' }] });
+      }
+      return defaultRoute(url);
+    });
+
+    const { rerender } = render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    rerender(<LegalDiscoveryTab matterId={MATTER_B} />);
+    await waitFor(() => screen.getByText('Machine-discovered'));
+
+    resolveReviewsA(undefined);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(/Reviewed/)).toBeNull();
+    expect(screen.getByText('No review record')).toBeTruthy();
+  });
+
+  it('stale results response from Matter A does not leak into Matter B results list', async () => {
+    let resolveResultsA: (v: any) => void = () => {};
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/matters/${MATTER_A}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [{ id: 'run-a', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }] });
+      }
+      if (url === `/api/matters/${MATTER_A}/legal-discovery/runs/run-a/results`) {
+        return new Promise((resolve) => { resolveResultsA = () => resolve(jsonResponse(200, { run: { id: 'run-a', status: 'COMPLETED' }, results: [{ id: 'res-a-stale', researchRunId: 'run-a', matterId: MATTER_A, candidateId: 'cand-1', discoveryStatus: 'RANKED', rankingScore: 0.5, rankingFactors: {}, discoveredAt: '2026-01-01T00:00:00Z' }] })); });
+      }
+      if (url === `/api/matters/${MATTER_B}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [] });
+      }
+      return defaultRoute(url);
+    });
+
+    const { rerender } = render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText(/Run run-a/));
+
+    rerender(<LegalDiscoveryTab matterId={MATTER_B} />);
+    await waitFor(() => screen.getByText('No discovery runs yet for this matter.'));
+
+    resolveResultsA(undefined);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(/res-a-stale/)).toBeNull();
+    expect(screen.getByText('No discovery runs yet for this matter.')).toBeTruthy();
+  });
+
+  it('a late-failing Matter A request does not flip Matter B into an error state', async () => {
+    let rejectRunsA: (e: any) => void = () => {};
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/matters/${MATTER_A}/legal-discovery/runs`) {
+        return new Promise((_resolve, reject) => { rejectRunsA = reject; });
+      }
+      if (url === `/api/matters/${MATTER_B}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [] });
+      }
+      return defaultRoute(url);
+    });
+
+    const { rerender } = render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    rerender(<LegalDiscoveryTab matterId={MATTER_B} />);
+    await waitFor(() => screen.getByText('No discovery runs yet for this matter.'));
+
+    rejectRunsA(new Error('Matter A network failure'));
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('a late Matter A response does not re-flip Matter B loading state back to loading', async () => {
+    let resolveRunsA: (v: any) => void = () => {};
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/matters/${MATTER_A}/legal-discovery/runs`) {
+        return new Promise((resolve) => { resolveRunsA = () => resolve(jsonResponse(200, { runs: [] })); });
+      }
+      if (url === `/api/matters/${MATTER_B}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [] });
+      }
+      return defaultRoute(url);
+    });
+
+    const { rerender } = render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    rerender(<LegalDiscoveryTab matterId={MATTER_B} />);
+    await waitFor(() => screen.getByText('No discovery runs yet for this matter.'));
+
+    resolveRunsA(undefined);
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Matter B's finished (non-loading) empty state must remain, not be reset to "Loading...".
+    expect(screen.queryByText('Loading run history...')).toBeNull();
+    expect(screen.getByText('No discovery runs yet for this matter.')).toBeTruthy();
+  });
+
+  it('same-matter overlapping runs requests: an older in-flight response does not clobber a newer refresh', async () => {
+    // Reachable in practice: startDiscovery() calls loadRuns() itself, then again after the POST
+    // resolves -- if the first (pre-POST) loadRuns() call is slow and resolves after the second
+    // (post-POST) loadRuns() call, the older response must not overwrite the fresher one.
+    let callIndex = 0;
+    let resolveFirst: (v: any) => void = () => {};
+    mockApiFetch.mockImplementation(async (url: string, init?: any) => {
+      if (init?.method === 'POST') {
+        return jsonResponse(201, { run: { id: 'run-new', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-02T00:00:00Z' }, resultCount: 0, results: [] });
+      }
+      if (url === `/api/matters/${MATTER_A}/legal-discovery/runs`) {
+        callIndex += 1;
+        if (callIndex === 1) {
+          return new Promise((resolve) => { resolveFirst = () => resolve(jsonResponse(200, { runs: [] })); });
+        }
+        return jsonResponse(200, { runs: [{ id: 'run-new', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-02T00:00:00Z' }] });
+      }
+      if (url.includes('/results')) return jsonResponse(200, { run: { id: 'run-new', status: 'COMPLETED' }, results: [] });
+      return defaultRoute(url);
+    });
+
+    render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText('Start Legal Discovery'));
+    // First loadRuns() (from mount) is now in flight and held open.
+
+    fireEvent.click(screen.getByText('Start Legal Discovery'));
+    await waitFor(() => screen.getByText(/Run run-new/));
+
+    // Now let the stale, older mount-time loadRuns() resolve with an empty list.
+    resolveFirst(undefined);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.getByText(/Run run-new/)).toBeTruthy();
+  });
 });

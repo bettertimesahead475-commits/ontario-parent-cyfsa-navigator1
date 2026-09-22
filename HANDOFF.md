@@ -911,3 +911,116 @@ Branch: `stage-9d-case-wide-legal-discovery`, parent `2f1c324234fba9a991f9255012
 **Deferred to 9D-4 (explicitly not started):** any wiring of `navigator_matter_research_work_product_links`, promotion of a reviewed research result into a case brief/work product, or any other work-product integration.
 
 **Milestone status: 9D-3 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** Stage 9A, 9B, 9C, 9D-1, 9D-2a and 9D-2b remain independently frozen/closed exactly as recorded above; neither `api/services/matterLegalDiscovery.ts` nor `api/matterLegalDiscoveryRoutes.ts` was modified. Stage 9D as a whole is **not** complete; 9D-4 (work-product integration) remains to be implemented.
+
+
+## STAGE 9D-3 REMEDIATION — Stale Cross-Matter Async Response Fix + New Read-Route Security Tests
+
+An independent auditor reproduced and confirmed a client-side data-integrity race in the 9D-3
+professional-facing legal research workspace UI: `src/components/LegalDiscoveryTab.tsx`'s async
+loaders (`loadRuns`, `loadCandidates`, `loadReviews`, `loadResults`) had no staleness guard. If a
+professional switched from Matter A to Matter B while Matter A's fetch was still in flight, and A's
+response resolved after the switch, it was written into state unconditionally -- showing Matter A's
+discovery data under Matter B's UI. This was a client rendering defect, not a server IDOR: the
+frozen backend APIs remained correctly matter-scoped throughout. The auditor also found that two new
+9D-3 read routes -- `GET /api/matters/:matterId/legal-research/candidates` and
+`GET /api/professional-workspace/matters/:matterId/reviews/:findingType` -- had authorization
+verified clean by code inspection but zero executed route-level security tests.
+
+**Root cause:** none of the four loaders captured which matter/request they belonged to before
+awaiting a fetch, so any in-flight promise (regardless of how stale) unconditionally called
+`setRuns`/`setCandidates`/`setReviewsByFindingId`/`setResults`/`setSelectedRun`, and also
+unconditionally flipped `error`/`loadingRuns`/`loadingResults`, on resolution or rejection.
+
+**Fix -- monotonic generation-token guard, one mechanism for all four loaders:** matches the
+existing pattern already used elsewhere in this codebase (`EvidenceReviewWorkspace.tsx`'s
+`generation`/`sourceGeneration`/`mounted` refs). Each resource type (`runsGeneration`,
+`candidatesGeneration`, `reviewsGeneration`, `resultsGeneration`) gets its own `useRef(0)` counter,
+incremented at the start of every fetch for that resource. Each loader captures its own token, and
+every subsequent `setState` call (success data, error, and loading-flag transitions) is guarded by
+`token === <resource>Generation.current`. A separate `mounted` ref (set `true` on mount, `false` on
+unmount cleanup) guards every state write against a post-unmount call. This single mechanism covers
+both failure modes required by the remediation brief: a late success write, and a late failure
+(error) or loading-flag write, are both suppressed once the generation has moved on.
+
+**Applied to all four loaders**, including their `finally`/`catch` branches (stale-error and
+stale-loading-state protection), not just the success path:
+- `loadRuns` -- guards `setRuns`, `setError`, `setLoadingRuns`.
+- `loadCandidates` -- guards `setCandidatesById`.
+- `loadReviews` -- guards `setReviewsByFindingId`.
+- `loadResults` -- guards `setSelectedRun`, `setResults`, `setError`, `setLoadingResults`.
+
+**Same-matter overlapping-request analysis:** reachable in practice. `startDiscovery()` calls
+`loadRuns()` once via the mount-time effect and again after the POST resolves; if the first
+(pre-POST) `loadRuns()` is slow and resolves after the second (post-POST) `loadRuns()`, the older
+response could otherwise overwrite the fresher one. Because the generation token is incremented on
+every call to a given loader (not just on a matter switch), this same mechanism protects against
+same-matter overlap too -- an older call's token no longer matches once a newer call for the same
+resource has started. A regression test (`same-matter overlapping runs requests...`) proves the
+older, still-in-flight mount-time `loadRuns()` response cannot clobber the newer post-POST run list.
+
+**Unmount safety:** the `mounted` ref (mirroring `EvidenceReviewWorkspace.tsx`'s convention) is
+checked before every state write; an in-flight request resolving after unmount is a no-op.
+
+**Auditor regression:** the disposable-worktree test named
+`[AUDITOR] does not let a late Matter A response overwrite Matter B state after switching` did NOT
+exist in this checked-out working tree (confirmed absent before starting). It was recreated in
+`src/components/LegalDiscoveryTab.test.tsx`, reproducing the auditor's exact scenario (slow Matter A
+runs-fetch held open with a manually-resolved promise, re-render with `matterId=B`, resolve Matter
+A's stale response after the switch). **Verified both ways, not just claimed:** the recreated test
+was run against a temporarily-set-aside pre-fix copy of `LegalDiscoveryTab.tsx` (via a tagged,
+immediately-dropped worktree-stash entry) and failed as expected (`run-a-stale` leaked into the
+Matter B view); it was then run against the fixed component and passed, alongside all 22 other tests
+in the file (23/23 total).
+
+**Expanded coverage** (`LegalDiscoveryTab.test.tsx`), all newly added and passing: stale candidate
+response from Matter A does not leak a candidate into Matter B; stale reviews response from Matter A
+does not leak a review into Matter B; stale results response from Matter A does not leak a result
+into Matter B; a late-failing Matter A request does not flip Matter B into an error state; a late
+Matter A response does not re-flip Matter B's finished loading state back to "loading"; same-matter
+overlapping `runs` requests -- an older in-flight response does not clobber a newer refresh.
+
+**New read-route security tests (Objective 2, test-only, no production behavior changed):** added
+using the same real-Express/supertest-style integration pattern as the existing, frozen
+`api/matterLegalDiscoveryRoutes.test.ts` -- only the Supabase client and Firebase token verification
+are doubled; the actual authorization decisions (`requireMatterAccess`/`requireProfessionalAccess`,
+membership lookups, `requireUuid` validation) execute unmocked, exactly as originally written.
+
+- `api/matterLegalResearchCandidatesRoutes.test.ts` (new) -- 11/11 pass. Covers: User A + Matter A
+  allowed; User A + Matter B denied; User B + Matter A denied; professional-profile-only account (no
+  membership) denied; verified-lawyer-only account (no membership) denied; nonexistent matter fails
+  safely (403, no stack-trace leak); malformed matter id fails safely (400, `INVALID_REQUEST`);
+  Matter A's response never contains a Matter B candidate; caller-supplied identity fields in the
+  query string cannot override the authenticated uid; knowing a Matter B candidate id does not
+  expand a Matter A caller's access; unauthenticated request denied (401).
+- `api/professionalWorkspaceReviewsByFindingType.test.ts` (new) -- 11/11 pass. Covers the same
+  10-point matrix for the review route, plus confirms the actual visibility model by reading
+  `listProfessionalReviewsForFindingType` in `api/services/professionalWorkspace.ts`: reviews are
+  filtered by `.eq('reviewer_account_id', account.id)`, i.e. **private to the requesting reviewer**,
+  not shared matter-wide. Point 10 was written to match this confirmed model (not assumed): two
+  distinct REVIEWER-authorized professionals on the *same* Matter A each see only their own private
+  review and never the other's. Point 8 (unsupported/arbitrary `findingType`) returns an empty array
+  (`[]`), not a raw DB error or cross-scope leak, since the underlying query is a plain equality
+  filter with no schema-level enum constraint.
+
+No genuine authorization/IDOR defect was found in either route by these new tests; both routes'
+existing authorization logic was left completely unmodified, matching the prior audit's code-
+inspection finding. `api/matterLegalDiscoveryRoutes.ts`, `api/services/matterLegalDiscovery.ts`, and
+all Stage 9D-2/9D-1/9A/9B/9C files remain untouched by this remediation.
+
+**Gates (sequential, all run this task):** 9D-3 UI tests including new stale-response regressions --
+`LegalDiscoveryTab.test.tsx` 23/23 (16 original + 1 recreated auditor regression + 6 new stale-
+response regressions); new candidate-route security tests 11/11; new review-route security tests
+11/11; 9D-2b API tests (`matterLegalDiscoveryRoutes.test.ts`) 24/24 unchanged; 9D-2a
+(`matterLegalDiscovery.test.ts`), 9D-1 (`matterResearchRuns.test.ts`), 9A (`legalSources.test.ts`),
+9B (`matterLegalResearch.test.ts`), 9C (`citationValidation.test.ts`) unchanged; professional
+workspace/review and auth/access/security tests unchanged; Stage-9 sweep unchanged; `tsc --noEmit`
+zero errors; `npm run build` passed (same pre-existing large-chunk warning, unrelated to this
+change); **full one-worker whole-project suite** (`vitest run --maxWorkers=1 --no-file-parallelism`):
+**1399/1399 passed across 50 test files** (up from 1370/48 -- the 7 new stale-response regressions in
+`LegalDiscoveryTab.test.tsx` plus the 22 new route-security tests across the 2 new files, 0
+regressions).
+
+**Milestone status: 9D-3 REMEDIATED — AWAITING INDEPENDENT CLOSURE RE-AUDIT.** Stage 9A, 9B, 9C,
+9D-1, 9D-2a and 9D-2b remain independently frozen/closed exactly as recorded above and were not
+touched by this remediation. Stage 9D as a whole is **not** complete; 9D-4 (work-product integration)
+remains to be implemented and was explicitly out of scope for this task.
