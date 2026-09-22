@@ -28,7 +28,8 @@ import {
 } from "./officialFormRetrieval.js";
 import {
   REAL_ONTARIO_FORM_CANDIDATES,
-  REAL_ARTIFACT_BYTE_VERIFICATIONS
+  REAL_ARTIFACT_BYTE_VERIFICATIONS,
+  UNIDENTIFIED_BYTE_VERIFIED_ARTIFACTS
 } from "./officialFormSourceManifest.js";
 
 const UPLOAD_DIR = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e";
@@ -87,7 +88,68 @@ const SUPPLIED_FILES: SuppliedFile[] = [
   }
 ];
 
+// -----------------------------------------------------------------------------------------
+// Stage 9D-4B-1R continuation (second batch, 2026-09-22): Form 8B (PDF+DOCX), Form 14A
+// (PDF+DOCX), Form 33B.1's missing PDF, and one filename-mismatched sixth file whose form
+// identity is NOT assumed here — it is inspected below and registered separately from 33B.1.
+// -----------------------------------------------------------------------------------------
+const SUPPLIED_FILES_BATCH_2: SuppliedFile[] = [
+  {
+    label: "33B.1 PDF",
+    formNumber: "33B.1",
+    format: "PDF",
+    path: `${UPLOAD_DIR}/90196879-form-33b-1-en-dec20.pdf`,
+    expectedByteLength: 456688,
+    expectedSha256: "a78a4b2e337b5a08c4645c6744a2c5b57e892bcdcb7fb410d3ab9fd82dbfe52b"
+  },
+  {
+    label: "14A DOCX",
+    formNumber: "14A",
+    format: "DOCX",
+    path: `${UPLOAD_DIR}/c01f056a-flr_14a_sept105_en_fil.docx`,
+    expectedByteLength: 29561,
+    expectedSha256: "bfc552bf54c5972700759e455e5782e5cdec7f8affaa5e822e89e07681801261"
+  },
+  {
+    label: "14A PDF",
+    formNumber: "14A",
+    format: "PDF",
+    path: `${UPLOAD_DIR}/df9e829b-flr-14a-sept105-en-fil.pdf`,
+    expectedByteLength: 150386,
+    expectedSha256: "84d443426575f4a0e94e70fac73cd02106172fc00aa1578ca40db7628ef907fd"
+  },
+  {
+    label: "8B DOCX",
+    formNumber: "8B",
+    format: "DOCX",
+    path: `${UPLOAD_DIR}/d39f83dd-form-8b-feb_1_2022-en.docx`,
+    expectedByteLength: 59408,
+    expectedSha256: "02a5c3fdc32b42ed1f2db20115c1ff8bb9cf0233aa510a48063af9a10c5e7799"
+  },
+  {
+    label: "8B PDF",
+    formNumber: "8B",
+    format: "PDF",
+    path: `${UPLOAD_DIR}/4dcaaa3e-form-8b-feb-2022-en.pdf`,
+    expectedByteLength: 549760,
+    expectedSha256: "da5ed87cdf454c77af04c255b9b7be44a2f08aa837a6bb3715ab0d0dcb8bdd6c"
+  }
+];
+
+// The sixth file — filename does NOT match the 33B.1 naming convention (no "-1", no "dec20").
+// It is deliberately kept out of SUPPLIED_FILES_BATCH_2's form-number-indexed list and is never
+// asserted to be Form 33B.1 anywhere in this file.
+const UNMATCHED_FILE = {
+  label: "unmatched file (filename claims form_33b_2018)",
+  format: "PDF" as DetectedFormat,
+  path: `${UPLOAD_DIR}/b43d35f7-form_33b_2018.pdf`,
+  expectedByteLength: 276848,
+  expectedSha256: "acb30d488447bc1e044b5575d2d4a7e0d0ad0c227e58b413c35233ef21561b65"
+};
+
 const filesAvailable = SUPPLIED_FILES.every(f => fs.existsSync(f.path));
+const batch2Available =
+  SUPPLIED_FILES_BATCH_2.every(f => fs.existsSync(f.path)) && fs.existsSync(UNMATCHED_FILE.path);
 
 // If the sandbox upload paths are unavailable in whatever environment runs this suite later,
 // skip rather than fail or fabricate — this keeps the frozen suite green for everyone while
@@ -211,6 +273,164 @@ describeReal("Stage 9D-4B-1R: real Ontario artifact trusted ingestion", () => {
   });
 });
 
+// ===============================================================================================
+// Stage 9D-4B-1R continuation (batch 2): Form 8B (PDF+DOCX), Form 14A (PDF+DOCX), 33B.1's
+// missing PDF, and the filename-mismatched sixth file. Same frozen pipeline, same pattern as
+// above — extended, not reinvented.
+// ===============================================================================================
+const describeBatch2 = batch2Available ? describe : describe.skip;
+
+describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestion", () => {
+  for (const f of SUPPLIED_FILES_BATCH_2) {
+    describe(f.label, () => {
+      it("matches the expected byte length and SHA-256 recorded for this ingestion run", () => {
+        const bytes = fs.readFileSync(f.path);
+        expect(bytes.length).toBe(f.expectedByteLength);
+        const hash = crypto.createHash("sha256").update(bytes).digest("hex");
+        expect(hash).toHaveLength(64);
+        expect(hash).toBe(f.expectedSha256);
+      });
+
+      it("is accepted by ingestTrustedDevelopmentArtifact (the real frozen pipeline function, no shortcuts)", () => {
+        const bytes = fs.readFileSync(f.path);
+        const result = ingestTrustedDevelopmentArtifact({
+          sourceUrlForProvenanceOnly: `sandbox-upload:${f.path}`,
+          expectedFormat: f.format,
+          bytes
+        });
+        expect(result.detectedFormat).toBe(f.format);
+        expect(result.byteLength).toBe(f.expectedByteLength);
+        expect(result.sha256Hex).toBe(f.expectedSha256);
+        expect(result.artifactBytesVerified).toBe(true);
+        expect(result.verificationOrigin).toBe("TRUSTED_DEVELOPMENT_INGESTION");
+        expect(result.isSynthetic).toBe(false);
+        const pub = toPublicRetrievalResult(result);
+        expect((pub as any).bytes).toBeUndefined();
+      });
+
+      it("produces a deterministic SHA-256 (hashed twice, identical)", () => {
+        const bytes = fs.readFileSync(f.path);
+        const h1 = sha256OfExactBytes(bytes);
+        const h2 = sha256OfExactBytes(bytes);
+        expect(h1).toBe(h2);
+        expect(h1).toBe(f.expectedSha256);
+      });
+
+      it("changes SHA-256 when a single byte is mutated (does not touch the original file on disk)", () => {
+        const original = fs.readFileSync(f.path);
+        const mutated = Buffer.from(original);
+        mutated[Math.floor(mutated.length / 2)] ^= 0xff;
+        const originalHash = sha256OfExactBytes(original);
+        const mutatedHash = sha256OfExactBytes(mutated);
+        expect(mutatedHash).not.toBe(originalHash);
+        const reread = fs.readFileSync(f.path);
+        expect(sha256OfExactBytes(reread)).toBe(f.expectedSha256);
+      });
+
+      it("rejects a truncated (corrupted) copy of these real bytes via content validation", () => {
+        const bytes = fs.readFileSync(f.path);
+        const tinyPrefix = bytes.subarray(0, 3);
+        expect(() => detectAndValidateFormat(tinyPrefix, f.format)).toThrow();
+        const empty = Buffer.alloc(0);
+        expect(() => detectAndValidateFormat(empty, f.format)).toThrow();
+      });
+
+      it("passive structural inspection does not alter the original bytes on disk (hash before/after)", () => {
+        const before = sha256OfExactBytes(fs.readFileSync(f.path));
+        const bytes = fs.readFileSync(f.path);
+        detectAndValidateFormat(bytes, f.format);
+        const after = sha256OfExactBytes(fs.readFileSync(f.path));
+        expect(after).toBe(before);
+      });
+    });
+  }
+
+  // The unmatched sixth file: byte-verified via the same pipeline, but NEVER asserted to be
+  // Form 33B.1 or any other specific form number here.
+  describe(UNMATCHED_FILE.label, () => {
+    it("matches the expected byte length and SHA-256 recorded for this ingestion run", () => {
+      const bytes = fs.readFileSync(UNMATCHED_FILE.path);
+      expect(bytes.length).toBe(UNMATCHED_FILE.expectedByteLength);
+      const hash = crypto.createHash("sha256").update(bytes).digest("hex");
+      expect(hash).toBe(UNMATCHED_FILE.expectedSha256);
+    });
+
+    it("is accepted by ingestTrustedDevelopmentArtifact as a structurally valid PDF (identity unconfirmed)", () => {
+      const bytes = fs.readFileSync(UNMATCHED_FILE.path);
+      const result = ingestTrustedDevelopmentArtifact({
+        sourceUrlForProvenanceOnly: `sandbox-upload:${UNMATCHED_FILE.path}`,
+        expectedFormat: "PDF",
+        bytes
+      });
+      expect(result.detectedFormat).toBe("PDF");
+      expect(result.sha256Hex).toBe(UNMATCHED_FILE.expectedSha256);
+      expect(result.artifactBytesVerified).toBe(true);
+    });
+
+    it("does NOT collide in hash with the verified 33B.1 PDF (distinct artifact, distinct identity)", () => {
+      const thirtyThreeB1Pdf = SUPPLIED_FILES_BATCH_2.find(f => f.label === "33B.1 PDF")!;
+      expect(UNMATCHED_FILE.expectedSha256).not.toBe(thirtyThreeB1Pdf.expectedSha256);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // STEP 4 — PDF and DOCX distinct-artifact checks for the new forms.
+  // -------------------------------------------------------------------------
+  it("8B PDF and 8B DOCX get distinct hashes and are never conflated", () => {
+    const pdf = SUPPLIED_FILES_BATCH_2.find(f => f.label === "8B PDF")!;
+    const docx = SUPPLIED_FILES_BATCH_2.find(f => f.label === "8B DOCX")!;
+    expect(pdf.expectedSha256).not.toBe(docx.expectedSha256);
+    const pdfResult = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "sandbox-upload:8b-pdf",
+      expectedFormat: "PDF",
+      bytes: fs.readFileSync(pdf.path)
+    });
+    const docxResult = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "sandbox-upload:8b-docx",
+      expectedFormat: "DOCX",
+      bytes: fs.readFileSync(docx.path)
+    });
+    expect(pdfResult.sha256Hex).not.toBe(docxResult.sha256Hex);
+    expect(pdfResult.detectedFormat).not.toBe(docxResult.detectedFormat);
+  });
+
+  it("14A PDF and 14A DOCX get distinct hashes and are never conflated", () => {
+    const pdf = SUPPLIED_FILES_BATCH_2.find(f => f.label === "14A PDF")!;
+    const docx = SUPPLIED_FILES_BATCH_2.find(f => f.label === "14A DOCX")!;
+    expect(pdf.expectedSha256).not.toBe(docx.expectedSha256);
+    const pdfResult = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "sandbox-upload:14a-pdf",
+      expectedFormat: "PDF",
+      bytes: fs.readFileSync(pdf.path)
+    });
+    const docxResult = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "sandbox-upload:14a-docx",
+      expectedFormat: "DOCX",
+      bytes: fs.readFileSync(docx.path)
+    });
+    expect(pdfResult.sha256Hex).not.toBe(docxResult.sha256Hex);
+    expect(pdfResult.detectedFormat).not.toBe(docxResult.detectedFormat);
+  });
+
+  it("33B.1 PDF (this batch) and 33B.1 DOCX (prior batch) get distinct hashes and are never conflated", () => {
+    const pdf = SUPPLIED_FILES_BATCH_2.find(f => f.label === "33B.1 PDF")!;
+    const docx = SUPPLIED_FILES.find(f => f.label === "33B.1 DOCX")!;
+    expect(pdf.expectedSha256).not.toBe(docx.expectedSha256);
+    const pdfResult = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "sandbox-upload:33b1-pdf",
+      expectedFormat: "PDF",
+      bytes: fs.readFileSync(pdf.path)
+    });
+    const docxResult = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "sandbox-upload:33b1-docx",
+      expectedFormat: "DOCX",
+      bytes: fs.readFileSync(docx.path)
+    });
+    expect(pdfResult.sha256Hex).not.toBe(docxResult.sha256Hex);
+    expect(pdfResult.detectedFormat).not.toBe(docxResult.detectedFormat);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // STEP 6/7 — Provenance boundary (A/B/C) modeled distinctly in the manifest, always run
 // (does not depend on the raw files being present, only on the manifest module itself).
@@ -228,28 +448,33 @@ describe("Stage 9D-4B-1R: provenance boundary is modeled distinctly in the manif
     }
   });
 
-  it("Form 8B and Form 14A have NO byte-verification entries (no bytes were supplied for them)", () => {
-    const formNumbers = REAL_ARTIFACT_BYTE_VERIFICATIONS.map(e => e.formNumber);
-    expect(formNumbers).not.toContain("8B");
-    expect(formNumbers).not.toContain("14A");
+  it("Form 8B and Form 14A now have both a PDF and a DOCX byte-verification entry (batch 2)", () => {
+    for (const formNumber of ["8B", "14A"]) {
+      const entries = REAL_ARTIFACT_BYTE_VERIFICATIONS.filter(e => e.formNumber === formNumber);
+      const formats = entries.map(e => e.format).sort();
+      expect(formats).toEqual(["DOCX", "PDF"]);
+    }
   });
 
-  it("Form 8B and Form 14A index entries remain fully untouched (still null/unverified)", () => {
+  it("Form 8B and Form 14A index entries (REAL_ONTARIO_FORM_CANDIDATES, the A layer) remain fully untouched", () => {
+    // Byte verification (B) is deliberately modeled as a separate structure from the official
+    // index (A) — adding B entries for 8B/14A must NOT mutate their A-layer index records.
     const form8b = REAL_ONTARIO_FORM_CANDIDATES.find(r => r.formNumber === "8B");
     const form14a = REAL_ONTARIO_FORM_CANDIDATES.find(r => r.formNumber === "14A");
     expect(form8b).toBeDefined();
     expect(form14a).toBeDefined();
     for (const r of [form8b!, form14a!]) {
+      expect(r.officialIndexVerified).toBe(true);
       expect(r.artifactBytesVerified).toBe(false);
       expect(r.sha256Hex).toBeNull();
       expect(r.artifactVerifiedAt).toBeNull();
     }
   });
 
-  it("33B.1 has only a DOCX byte-verification entry, no PDF entry (no PDF was supplied)", () => {
+  it("33B.1 now has both a PDF and a DOCX byte-verification entry (PDF gap filled in batch 2)", () => {
     const entries = REAL_ARTIFACT_BYTE_VERIFICATIONS.filter(e => e.formNumber === "33B.1");
-    expect(entries).toHaveLength(1);
-    expect(entries[0].format).toBe("DOCX");
+    const formats = entries.map(e => e.format).sort();
+    expect(formats).toEqual(["DOCX", "PDF"]);
   });
 
   it("35.1A and 33C each have both a PDF and a DOCX byte-verification entry", () => {
@@ -258,6 +483,18 @@ describe("Stage 9D-4B-1R: provenance boundary is modeled distinctly in the manif
       const formats = entries.map(e => e.format).sort();
       expect(formats).toEqual(["DOCX", "PDF"]);
     }
+  });
+
+  it("the unmatched sixth file (form_33b_2018) is registered separately, never as a 33B.1 entry", () => {
+    const thirtyThreeB1Hashes = new Set(
+      REAL_ARTIFACT_BYTE_VERIFICATIONS.filter(e => e.formNumber === "33B.1").map(e => e.sha256Hex)
+    );
+    expect(UNIDENTIFIED_BYTE_VERIFIED_ARTIFACTS).toHaveLength(1);
+    const unmatched = UNIDENTIFIED_BYTE_VERIFIED_ARTIFACTS[0];
+    expect(unmatched.formIdentityConfirmed).toBe(false);
+    expect(thirtyThreeB1Hashes.has(unmatched.sha256Hex)).toBe(false);
+    // Never appears in the confirmed-form byte-verification list under any form number.
+    expect(REAL_ARTIFACT_BYTE_VERIFICATIONS.some(e => e.sha256Hex === unmatched.sha256Hex)).toBe(false);
   });
 
   // -------------------------------------------------------------------------
@@ -274,6 +511,15 @@ describe("Stage 9D-4B-1R: provenance boundary is modeled distinctly in the manif
 
   it("every byte-verification entry has a real 64-hex-char SHA-256 and a positive byte length", () => {
     for (const entry of REAL_ARTIFACT_BYTE_VERIFICATIONS) {
+      expect(entry.sha256Hex).toMatch(/^[0-9a-f]{64}$/);
+      expect(entry.byteLength).toBeGreaterThan(0);
+    }
+  });
+
+  it("the unidentified artifact is also never marked CURRENT and has a real hash (byte verification only, no identity claim)", () => {
+    for (const entry of UNIDENTIFIED_BYTE_VERIFIED_ARTIFACTS) {
+      expect(entry.formIdentityConfirmed).toBe(false);
+      expect(entry.currentnessStatus).toBe("UNKNOWN");
       expect(entry.sha256Hex).toMatch(/^[0-9a-f]{64}$/);
       expect(entry.byteLength).toBeGreaterThan(0);
     }
