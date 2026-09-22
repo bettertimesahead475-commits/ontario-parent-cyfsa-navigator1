@@ -527,11 +527,15 @@ describe("Form 14A regression: remains frozen/stable alongside the new Form 35.1
 });
 
 describe("Other controlled forms remain unmapped (Stage 9D-4B-2A-ii-b2 adds ONLY Form 35.1A)", () => {
-  it("32/33/34. no real semantic-map module exists for Form 8B, 33B.1, or 33C", () => {
-    const otherFormFiles = ["./form8bSemanticFieldMap.ts", "./form33b1SemanticFieldMap.ts", "./form33cSemanticFieldMap.ts"];
+  // NOTE (Stage 9D-4B-2A-ii-b3): Form 33C now has its own real semantic-map module
+  // (form33cSemanticFieldMap.ts) — see that module's own test file for its coverage. Removed
+  // from this "not yet mapped" list accordingly; Form 35.1A's own map, binding and entries above
+  // are untouched by that stage. 8B, 33B.1 remain unmapped.
+  it("32/33. no real semantic-map module exists for Form 8B or 33B.1", () => {
+    const otherFormFiles = ["./form8bSemanticFieldMap.ts", "./form33b1SemanticFieldMap.ts"];
     for (const rel of otherFormFiles) {
       const abs = new URL(rel, import.meta.url).pathname;
-      expect(fs.existsSync(abs), `${rel} must not exist yet — other three forms remain future work`).toBe(false);
+      expect(fs.existsSync(abs), `${rel} must not exist yet — other two forms remain future work`).toBe(false);
     }
   });
 
