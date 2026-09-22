@@ -165,6 +165,26 @@ create table public.navigator_official_form_field_maps (
 );
 create index navigator_official_form_field_maps_template_idx on public.navigator_official_form_field_maps(template_id);
 
+-- A field map's binding to its exact template artifact, its version label and its creation
+-- timestamp are immutable forever; only mapping_status and field_count may ever be updated
+-- (mapping_status transitions DRAFT -> VALIDATED -> DEPRECATED as review progresses, and
+-- field_count may be recalculated against the same immutable template). This makes the
+-- "structural, not just service-layer checked" binding claim above actually true at the DB
+-- level: an existing field map row can never be repointed at a different template.
+create function public.navigator_official_form_field_map_guard() returns trigger
+language plpgsql security invoker set search_path = pg_catalog, public, pg_temp as $$
+begin
+  if new.template_id is distinct from old.template_id
+    or new.mapping_version_label is distinct from old.mapping_version_label
+    or new.created_at is distinct from old.created_at then
+    raise exception 'Official form field map binding is immutable; create a new field map row instead.';
+  end if;
+  return new;
+end $$;
+revoke all on function public.navigator_official_form_field_map_guard() from public, anon, authenticated, service_role;
+create trigger navigator_official_form_field_map_guard before update on public.navigator_official_form_field_maps
+  for each row execute function public.navigator_official_form_field_map_guard();
+
 -- ---------------------------------------------------------------------------
 -- RLS / ACL — same posture as Stage 6 M2A / Stage 9A: RLS on, no anon/authenticated
 -- policies. All access goes through the service-role-backed API layer (see

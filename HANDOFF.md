@@ -1137,10 +1137,109 @@ errors; `npm run build` passed (same pre-existing large-chunk warning, unrelated
 new tests, 0 regressions; the 24-vs-23 `LegalDiscoveryTab.test.tsx` count reflects the actually
 checked-out tree at `88ffbb6d`, not a change made in this task).
 
-**Milestone status: 9D-4A IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** Stage 9A, 9B, 9C, 9D-1, 9D-2A,
-9D-2B, 9D-2 and 9D-3 remain independently frozen/closed exactly as recorded above, at
-`88ffbb6d9337d1a5f96be8d6659ea42aebeeebcd`; none of their files were touched by this entry. Stage 9D
-as a whole is **not** complete, and 9D-4 as a whole is **not** complete: 9D-4B (AI-assisted template
-population/completion) and 9D-4C (reviewed-research-to-form workflow + export validation) remain
-entirely unimplemented and are explicitly deferred to future tasks. This entry adds only the
+**Milestone status (superseded below): 9D-4A IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** Stage 9A,
+9B, 9C, 9D-1, 9D-2A, 9D-2B, 9D-2 and 9D-3 remain independently frozen/closed exactly as recorded
+above, at `88ffbb6d9337d1a5f96be8d6659ea42aebeeebcd`; none of their files were touched by this entry.
+Stage 9D as a whole is **not** complete, and 9D-4 as a whole is **not** complete: 9D-4B (AI-assisted
+template population/completion) and 9D-4C (reviewed-research-to-form workflow + export validation)
+remain entirely unimplemented and are explicitly deferred to future tasks. This entry adds only the
 registry/versioning/verification data model, service layer and read-only API described above.
+
+### INDEPENDENT AUDIT — BLOCKED (candidate SHA `f22b2e46660820ef929e64dc5930beca168a3b8c`)
+
+An independent audit of the above 9D-4A submission **BLOCKED** it. Finding: the migration gives
+`navigator_official_form_versions` and `navigator_official_form_templates` each a `BEFORE UPDATE`
+guard trigger that freezes identity/provenance columns once created, but
+`navigator_official_form_field_maps` had **no equivalent trigger** — despite the migration's own
+design comment claiming the field-map/template binding is "structural, not just service-layer
+checked." In fact `template_id` on an existing field_map row could be UPDATEd directly, bypassing the
+service-layer `assertFieldMapAppliesToTemplate()` check (which only guards new writes going through
+that function, never raw UPDATEs), repointing an existing field map at a different template and
+defeating exact-template-binding provenance that 9D-4B/9D-4C will depend on. The auditor added a
+static regression test, `api/services/AUDIT_fieldMapImmutabilityGap.test.ts`, which reproduced the
+gap by regex-matching the migration SQL: guard triggers present on versions/templates, absent on
+field_maps. Preserved at commit `a01947c178d5a688990a982ec372d949eeda322f` on top of the candidate.
+
+### REMEDIATION — 9D-4A field-map DB-level immutability guard (this entry)
+
+**Root cause:** `navigator_official_form_field_maps` was the only one of the three
+identity/provenance tables in this migration without a `BEFORE UPDATE` guard trigger, so its
+`template_id` binding was enforced only at the application layer, not the database layer.
+
+**Fix:** added `navigator_official_form_field_map_guard()` + trigger
+`navigator_official_form_field_map_guard before update on
+public.navigator_official_form_field_maps`, in
+`supabase/migrations_pending_approval/create_navigator_official_form_registry.sql`, matching the
+exact style of `navigator_official_form_version_guard` / `navigator_official_form_template_guard`
+(`raise exception` when `NEW.<col> IS DISTINCT FROM OLD.<col>` for protected columns).
+
+**Fields frozen (immutable once created):**
+- `template_id` — the core defect column; the exact-binding column that must never be repointed
+  at a different template (Template A -> B, same-form/different-template, and same-form/
+  different-version repoints are all rejected, since the check has no carve-out for any of those
+  cases).
+- `mapping_version_label` — an identity label, same treatment as `version_label` on the version
+  guard and the identity columns on the template guard; changing it would rewrite historical
+  version identity.
+- `created_at` — matches the existing guards' treatment of `created_at`.
+
+**Fields intentionally left mutable (and why):**
+- `mapping_status` (`DRAFT`/`VALIDATED`/`DEPRECATED`) — genuine lifecycle state; a mapping must be
+  able to move from DRAFT to VALIDATED (and potentially DEPRECATED) after creation. This mirrors
+  the template guard leaving `trust_status` mutable and the version guard leaving
+  `currentness_status`/`first_verified_at`/`last_verified_at` mutable.
+- `field_count` — may legitimately be recalculated against the same immutable template without
+  representing an identity change.
+
+**Auditor regression:** `api/services/AUDIT_fieldMapImmutabilityGap.test.ts` was preserved, not
+deleted or renamed away. It is now repurposed (with its original defect-proving history documented
+in a comment) to statically confirm the corrected state: guard triggers present on all three
+tables, the field-map guard's protected-column set is exactly `template_id` /
+`mapping_version_label` / `created_at`, `mapping_status` and `field_count` remain outside the
+guard's protected set AND remain declared as normal updatable table columns (positive contract
+check), and the existing version/template guards' protected-column sets are unregressed. 16/16
+pass post-fix (up from 3/3 pre-fix, which demonstrated the gap).
+
+**Migration:** `supabase/migrations_pending_approval/create_navigator_official_form_registry.sql`
+— modified in place (confirmed not executed anywhere before editing; this task did not execute it
+either).
+
+**LIVE DB LIMITATION:** this trigger's actual runtime behavior against live Postgres is unproven by
+these mocked/static tests — they parse and assert against the migration's raw SQL text, which is
+the same class of static structural check the existing version/template guards already relied on
+(no live-DB trigger tests existed for those either before this remediation). Verifying the trigger
+actually fires and rejects an UPDATE against a real Postgres instance remains a release-gate item,
+not something this remediation claims to have verified end-to-end.
+
+**Gates (sequential, all run this task):** preserved auditor regression pre-fix 3/3 (proved the
+gap) and post-fix 16/16 (proves the fix); `officialFormRegistry.test.ts` 18/18 +
+`officialFormRoutes.test.ts` 10/10 unchanged; `LegalDiscoveryTab.test.tsx` 24/24 unchanged;
+`matterLegalResearchCandidatesRoutes.test.ts` + `professionalWorkspaceReviewsByFindingType.test.ts`
++ `matterLegalDiscoveryRoutes.test.ts` 46/46 unchanged; `matterLegalDiscovery.test.ts` +
+`matterResearchRuns.test.ts` + `legalSources.test.ts` + `matterLegalResearch.test.ts` +
+`citationValidation.test.ts` 140/140 unchanged; `access.test.ts` +
+`professionalMatterAccess.test.ts` + `humanReviewAccess.test.ts` + `legalAuthority.test.ts` 116/116
+unchanged; `tsc --noEmit` zero errors; `npm run build` passed (same pre-existing large-chunk
+warning, unrelated); **full one-worker whole-project suite**
+(`vitest run --maxWorkers=1 --no-file-parallelism`): **1444/1444 passed across 53 test files** (up
+from 1428/52 at the 9D-4A candidate SHA — 16 new tests, 0 regressions).
+
+**Files changed this remediation:**
+`supabase/migrations_pending_approval/create_navigator_official_form_registry.sql`,
+`api/services/AUDIT_fieldMapImmutabilityGap.test.ts`, `HANDOFF.md`. No other file was touched;
+Stage 9D-2/9D-2a/9D-2b/9D-3 production files remain byte-identical to their known-good state.
+
+**Scope discipline:** no redesign beyond the single trigger; 9D-4B/9D-4C were not started; no real
+Ontario form data, URLs, dates or hashes were added; no new API endpoint was added (the existing
+surface stays read-only, no POST/PUT/PATCH/DELETE for official-form mutation); form identity,
+source authority, currentness states, version architecture, template hashing, the read-only route
+surface, blank-form access, provenance vocabulary and the parent/professional access model were
+not touched.
+
+**Milestone status: 9D-4A REMEDIATED — AWAITING INDEPENDENT CLOSURE RE-AUDIT.** Stage 9A, 9B, 9C,
+9D-1, 9D-2A, 9D-2B, 9D-2 and 9D-3 remain independently frozen/closed exactly as recorded above, at
+`88ffbb6d9337d1a5f96be8d6659ea42aebeeebcd`; none of their files were touched by this entry. Stage 9D
+as a whole is **not** complete, and 9D-4 as a whole is **not** complete: 9D-4B and 9D-4C remain
+entirely unimplemented and are explicitly deferred to future tasks. This entry resolves only the
+specific audit-blocked field-map DB immutability gap above; it does not itself constitute the
+independent closure re-audit this entry's status name refers to.
