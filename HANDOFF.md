@@ -1243,3 +1243,109 @@ as a whole is **not** complete, and 9D-4 as a whole is **not** complete: 9D-4B a
 entirely unimplemented and are explicitly deferred to future tasks. This entry resolves only the
 specific audit-blocked field-map DB immutability gap above; it does not itself constitute the
 independent closure re-audit this entry's status name refers to.
+
+### 9D-4A CLOSURE
+
+The 9D-4A remediation above was independently audited and CLOSED/FROZEN at commit
+`855abe933eac3feb0d38cc59a774b2919000a92d`. Everything in the 9D-4A registry schema/services/
+routes, and everything from 9A through 9D-3, is frozen and must not be modified without a genuine
+blocking defect (reported separately if found). 9D-4B was split into two sub-stages:
+**9D-4B-1** (this entry) — SSRF-safe retrieval/integrity subsystem only — and **9D-4B-2**
+(field-mapping/population, not started, must not begin before 9D-4B-1 independently closes).
+9D-4C also remains entirely unimplemented.
+
+### 9D-4B-1 — SSRF-safe official-form retrieval/integrity subsystem
+
+**Claude-sandbox egress limitation and how it was handled:** this Claude sandbox's outbound
+network is proxy-blocked from reaching Ontario government hosts (independently confirmed: the
+proxy's own diagnostic log shows `connect_rejected`/403 for both `www.ontariocourtforms.on.ca`
+and `www.ontario.ca`). This was treated as an accepted development constraint, not a stop
+condition. It was handled by designing the retrieval subsystem around an **injectable
+transport** (`Transport`) and an **injectable DNS resolver** (`DnsResolver`) interface, with all
+trust/security logic (URL/allowlist validation, SSRF/private-IP checks, per-hop redirect
+validation, download bounds, content validation, exact-byte SHA-256 hashing) implemented ABOVE
+those interfaces in `api/services/officialFormRetrieval.ts`. Tests
+(`api/services/officialFormRetrieval.test.ts`) inject a deterministic `MockTransport` /
+`MockDnsResolver` and exercise that exact same production logic — there is no parallel
+test-only security implementation. `createTrustedHttpsTransport()` / `createDnsResolver()` are
+real production implementations (Node `fetch` with manual redirect handling; `dns.promises.
+lookup`) that have never been exercised against a live Ontario host in this sandbox — that live
+behavior remains unverified here, by design, not by omission.
+
+**Verified external index metadata (recorded faithfully, not embellished):** the project lead
+observed the following INDEX metadata independently, OUTSIDE this sandbox, on 2026-09-22, by
+reading `https://ontariocourtforms.on.ca/en/family-law-rules-forms/`: Form 8B ("Application
+(child protection and status review)", version date Feb. 1, 2022, effective May 1, 2022,
+`form-8b-feb-2022-en.pdf` / `form-8b-feb_1_2022-en.docx`); Form 33B.1 ("Answer and plan of care
+(parties other than Children's Aid Society)", Dec. 1, 2020 / March 1, 2021,
+`form-33b-1-en-dec20.pdf` / `.docx`); Form 33C ("Statement of agreed facts (child protection)",
+March 1, 2018 / April 30, 2018, `form_33c_2018.pdf` / `.docx`); Form 35.1A ("Affidavit (child
+protection information)", Dec. 1, 2020 / March 1, 2021, `form-35-1a-en-dec20.pdf` / `.docx`);
+Form 14A ("Affidavit (General)", Sept. 1, 2005 / May 1, 2006, `flr-14a-sept105-en-fil.pdf` /
+`flr_14a_sept105_en_fil.docx`). Recorded verbatim in
+`api/services/officialFormSourceManifest.ts` (`REAL_ONTARIO_FORM_CANDIDATES`) as
+`OfficialIndexMetadataRecord`s. This metadata establishes at most `officialIndexVerified: true`
+— it never establishes `artifactBytesVerified`, which is hard-coded `false`/null for all five
+candidates: no SHA-256, byte length, final redirected artifact URL, detected MIME/format, or
+artifact-verification timestamp has been observed for any of them in this sandbox, and none was
+guessed or filled with a plausible-looking placeholder.
+
+**Approved source policy:** an explicit allowlist only — `ontariocourtforms.on.ca` and
+`www.ontariocourtforms.on.ca`, treated as the same approved host (leading `www.` stripped before
+comparison), never a wildcard `*.on.ca`/`*.ontario.ca` pattern. No generic arbitrary-URL fetcher
+exists anywhere in this subsystem.
+
+**SSRF/redirect/download/content-validation/integrity design** is documented in file-header and
+inline comments in `api/services/officialFormRetrieval.ts`: localhost, 127.0.0.0/8, RFC1918,
+::1, IPv6 link-local (fe80::/10) and unique-local (fc00::/7), 169.254.169.254, non-HTTPS
+schemes, and embedded-credential URLs are all rejected before connecting; every redirect hop
+(not just the first request) is independently re-validated against the full allowlist+SSRF
+check, with loop detection and a bounded hop count (5); a 25 MB download bound is enforced
+against both a (possibly false) declared Content-Length and a chunked stream, stopping
+accumulation the instant the bound is exceeded rather than buffering the whole stream; PDF
+content is validated by the `%PDF-` magic-byte signature and DOCX by the `PK\x03\x04` ZIP local
+file header plus a basic structural check for the OOXML `[Content_Types].xml` manifest entry
+name, rejecting HTML/error pages and arbitrary ZIPs served with a misleading Content-Type; SHA-256
+is always recomputed server-side from the exact accepted bytes, never accepted from (or
+overridable by) a caller-supplied value.
+
+**Trusted development ingestion seam:** `ingestTrustedDevelopmentArtifact()` in the same file
+runs bytes obtained outside this sandbox through the identical content-validation and SHA-256
+path as automatic retrieval. It is explicitly NOT a public HTTP route: no route file in `api/`
+references it, and `api/officialFormRoutes.ts` (the only official-form route surface, unchanged
+by this entry) still exposes only read-only GET routes. An ordinary parent/professional/browser
+caller has no code path that reaches it.
+
+**No database change was needed.** The existing 9D-4A schema (`navigator_official_form_
+templates`'s hash/byte_size/storage columns, `navigator_official_form_versions`'s currentness
+model) already has enough surface to receive this subsystem's `RetrievalResult` output in a
+future registration step; no new migration was created, and the frozen 9D-4A migration was not
+touched.
+
+**Files added:** `api/services/officialFormRetrieval.ts`,
+`api/services/officialFormRetrieval.test.ts`, `api/services/officialFormSourceManifest.ts`. No
+existing file was modified except this HANDOFF.md entry.
+
+**Gates:** new 9D-4B-1 tests 42/42; 9D-4A (`AUDIT_fieldMapImmutabilityGap.test.ts` +
+`officialFormRegistry.test.ts` + `officialFormRoutes.test.ts`) 44/44 unregressed; 9D-3
+(`LegalDiscoveryTab.test.tsx`, `matterLegalDiscoveryRoutes.test.ts`, `legalSources.test.ts`,
+`matterResearchRuns.test.ts`, `matterLegalDiscovery.test.ts`, `matterLegalResearch.test.ts`,
+`citationValidation.test.ts`) 188/188 unregressed; candidate/review route-security
+(`matterLegalResearchCandidatesRoutes.test.ts`, `professionalWorkspaceReviewsByFindingType.
+test.ts`) 35/35 unregressed; auth/access/security (`access.test.ts`,
+`professionalMatterAccess.test.ts`, `humanReviewAccess.test.ts`, `legalAuthority.test.ts`)
+116/116 unregressed; `tsc --noEmit` zero errors; `npm run build` passed (same pre-existing
+large-chunk warning, unrelated); no new dependency was added, so no dependency audit was run;
+**full one-worker whole-project suite** (`vitest run --maxWorkers=1 --no-file-parallelism`):
+**1486/1486 passed across 54 test files** (up from 1444/53 at the 9D-4A closure SHA — 42 new
+tests, 0 regressions).
+
+**Real byte verification status: PENDING.** No real Ontario form bytes have been retrieved or
+processed through this pipeline in this sandbox. Automatic retrieval (via
+`retrieveOfficialFormArtifact` + `createTrustedHttpsTransport`/`createDnsResolver`) remains the
+intended production architecture; the trusted development ingestion seam is a fallback for a
+maintainer working outside this sandbox's egress block, never the design.
+
+**Milestone status: 9D-4B-1 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** 9D-4B-2 (field-mapping/
+population) and 9D-4C were not started and must not begin before this entry independently
+closes.
