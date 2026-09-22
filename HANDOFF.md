@@ -1495,3 +1495,21 @@ BLOCKED (no PDF field-map module exists; this binding's format is DOCX only).
 **Milestone status: 9D-4B-2A-ii-b2 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** Do not begin
 2A-iii, PDF work, or 9D-4C before this entry independently closes. Do not map the other three
 forms as part of this entry.
+
+## 9D-4B-2A-ii-b4B-ii — Form 8B requested-order semantic map (pass 2 of 3)
+
+**Status tracker:** b4A CLOSED/FROZEN @ c1de865; b4B-i CLOSED/FROZEN @ 7e86fe4; **b4B-ii = requested-order
+mapping (this pass) — IMPLEMENTED, AWAITING INDEPENDENT REVIEW**; b4B-iii (legal-ground/narrative/signature/other),
+Form 33B.1, 2A-iii = NOT STARTED; PDF = BLOCKED.
+
+- New: `api/services/form8bRequestedOrderSemanticFieldMap.ts` (+ `.test.ts`, 46 tests). Scope derived from frozen b4A
+  `structuralGroup === "REQUESTED_ORDER"`: 34 controls (ordinals 13, 69..100, 114). 34 MAPPED, 0 UNRESOLVED.
+- Keys describe the printed OPTION (`requestedOrder.<option>.<optionBox|detail>`), never an answer. Every record type
+  extends `Form8BRequestedOrderNoAnswerState` (answer-state keys typed `?: never`); adversarial `tsc --strict` fixtures
+  (checked/selected/default/recommended literal, autoSelect spread, shouldRequest on a statutory association) fail.
+- Provenance: `USER_ENTERED` only; `provenanceAuthorizesRequestedOrderSelection` is constant `false` for every class.
+- Statutory references kept as printed associations only (84, 86, 94, 96, 98). Legal requiredness UNKNOWN everywhere.
+  Paragraph-2 group exclusivity NOT_ESTABLISHED_BY_FORM (no "check one" instruction printed).
+- Global accounting: b4B-i 56 + b4B-ii 34 mapped + 0 unresolved + b4B-iii deferred 25 = 115.
+- b4A, b4B-i, 14A/35.1A/33C maps and `semanticFieldMap.ts` byte-identical (SHA-asserted). No DOCX population.
+- Form 8B mapping is NOT complete until b4B-iii.
