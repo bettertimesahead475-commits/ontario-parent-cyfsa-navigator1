@@ -224,6 +224,53 @@ export async function listMatterResearchRunResults(
   return (data || []).map(mapResult);
 }
 
+export interface UpdateResearchRunStatusInput {
+  matterId: string;
+  researchRunId: string;
+  status: 'RUNNING' | 'COMPLETED' | 'FAILED';
+}
+
+/**
+ * Marks a run's terminal (or running) outcome honestly, using only status values this frozen
+ * 9D-1 schema already supports. COMPLETED/FAILED always stamp completed_at, matching the
+ * migration's own check constraint. This never widens the schema -- it only ever sets a column
+ * the migration already defines.
+ */
+export async function updateMatterResearchRunStatus(
+  firebaseUid: string,
+  input: UpdateResearchRunStatusInput
+): Promise<MatterResearchRun> {
+  if (!input || typeof input !== 'object') throw invalid('Input must be an object.');
+
+  const account = await findAccount(firebaseUid);
+  if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
+
+  const matterId = requireUuid(input.matterId, 'matterId');
+  const db = getSupabase();
+  await requireMatterAccess(db, account.id, matterId);
+
+  const researchRunId = requireUuid(input.researchRunId, 'researchRunId');
+  if (!input.status || !['RUNNING', 'COMPLETED', 'FAILED'].includes(input.status)) {
+    throw invalid('status must be one of RUNNING, COMPLETED, FAILED.');
+  }
+
+  const updatePayload: Record<string, unknown> = { status: input.status };
+  if (input.status === 'COMPLETED' || input.status === 'FAILED') {
+    updatePayload.completed_at = new Date().toISOString();
+  }
+
+  const { data, error } = await db
+    .from('navigator_matter_research_runs')
+    .update(updatePayload)
+    .eq('id', researchRunId)
+    .eq('matter_id', matterId)
+    .select()
+    .single();
+
+  if (error || !data) throw notFound('Research run not found in this matter.');
+  return mapRun(data);
+}
+
 function mapRun(row: any): MatterResearchRun {
   return {
     id: row.id,

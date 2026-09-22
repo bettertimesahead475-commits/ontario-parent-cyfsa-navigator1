@@ -4,7 +4,7 @@ import {
   type ReviewState,
   assertSafeLegalLanguage
 } from './legalAuthority.js';
-import { getAuthorityCitation, resolveVersionForDate, computeLegalContentHash, verifyLegalContentIntegrity } from './legalSources.js';
+import { getAuthorityCitation, getSourceVersion, resolveVersionForDate, computeLegalContentHash, verifyLegalContentIntegrity } from './legalSources.js';
 import { EVIDENCE_CLASSIFICATIONS } from '../../shared/evidenceReview.js';
 import { getSupabase } from './access.js';
 import { findAccount } from './accounts.js';
@@ -47,6 +47,16 @@ export interface ResearchCandidateInput {
   confidence?: number | null;
   actualContent?: string | null;
   legalSourceVersionId?: string | null; // retained for compatibility, used as assertion hint
+  /**
+   * A legal_source_version id independently pre-resolved and verified by a TRUSTED server-side
+   * caller only (e.g. Stage 9D-2a discovery, which resolves it directly from the canonical
+   * navigator_legal_source_versions / navigator_legal_provision_versions chain before ever
+   * calling this function). Never sourced from an HTTP request body, ranking metadata, or any
+   * other caller-controlled input. This function NEVER trusts it blindly: it is only used when
+   * no eventId-based date resolution already produced a version, and it is independently
+   * re-verified here (existence, source match, VERIFIED state) exactly as the eventId path is.
+   */
+  serverResolvedVersionId?: string | null;
 }
 
 export async function buildMatterLegalResearchCandidate(
@@ -158,6 +168,21 @@ export async function buildMatterLegalResearchCandidate(
     throw invalid('Caller-supplied version ID does not match authoritative resolution.');
   }
 
+  // No event date was available to resolve a version (discovery has no single event to date
+  // against). Only a trusted server-side caller's already-verified version identity is accepted
+  // here -- and even then it is independently re-verified against Stage 9A, never trusted as-is.
+  if (!resolvedVersionId && input.serverResolvedVersionId) {
+    const serverResolvedVersionId = requireUuid(input.serverResolvedVersionId, 'serverResolvedVersionId');
+    const version = await getSourceVersion(serverResolvedVersionId);
+    if (version.legalSourceId !== legalSourceId) {
+      throw invalid('Server-resolved version does not belong to the specified legal source.');
+    }
+    if (version.verificationState !== 'VERIFIED') {
+      throw invalid('Server-resolved version is not verified.');
+    }
+    resolvedVersionId = version.id;
+  }
+
   const finalVersionId = resolvedVersionId;
 
   // 2. Fetch Citation and verify provision-version integrity
@@ -257,7 +282,12 @@ export async function saveMatterLegalResearchCandidate(
     authorityIdentifier: candidate.authorityIdentifier,
     reasonForRelevance: candidate.reasonForRelevance,
     retrievalBasis: candidate.retrievalBasis,
-    confidence: candidate.confidence
+    confidence: candidate.confidence,
+    // Re-derivation must be able to reproduce a version resolved via the trusted
+    // server-resolved path (e.g. Stage 9D-2a discovery), not only via eventId date resolution.
+    // This is independently re-verified inside buildMatterLegalResearchCandidate again -- never
+    // taken on faith from the candidate object itself.
+    serverResolvedVersionId: candidate.legalSourceVersionId
   });
   if (canonical.contentIntegrityStatus === 'FAILED' || candidate.contentIntegrityStatus !== canonical.contentIntegrityStatus ||
       candidate.evidenceClassification !== canonical.evidenceClassification ||

@@ -11,6 +11,7 @@ import {
 } from './matterLegalDiscovery.js';
 import * as access from './access.js';
 import * as accounts from './accounts.js';
+import { computeLegalContentHash } from './legalSources.js';
 
 vi.mock('./access.js');
 vi.mock('./accounts.js');
@@ -24,6 +25,20 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
   const unverifiedSourceId = randomUUID();
   const provisionId = randomUUID();
   const unverifiedProvisionId = randomUUID();
+  const verifiedVersionId = randomUUID();
+
+  const VALID_TEXT = 'This is the verified canonical text of the provision.';
+  const validProvisionVersionRow = (overrides: Partial<Record<string, any>> = {}) => ({
+    id: randomUUID(),
+    provision_id: provisionId,
+    legal_source_id: sourceId,
+    legal_source_version_id: verifiedVersionId,
+    effective_from: '2020-01-01',
+    effective_to: null,
+    exact_text: VALID_TEXT,
+    text_sha256: computeLegalContentHash(VALID_TEXT),
+    ...overrides
+  });
 
   beforeEach(() => {
     mockTables = {
@@ -58,7 +73,18 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
           retrieved_at: '2025-01-01T00:00:00Z'
         }
       ],
-      navigator_legal_source_versions: [],
+      navigator_legal_source_versions: [
+        {
+          id: verifiedVersionId,
+          legal_source_id: sourceId,
+          version_label: '2020-01-01 to Present',
+          effective_from: '2020-01-01',
+          effective_to: null,
+          status: 'IN_FORCE',
+          verification_state: 'VERIFIED',
+          retrieved_at: '2025-01-01T00:00:00Z'
+        }
+      ],
       navigator_legal_provisions: [
         {
           id: provisionId,
@@ -75,7 +101,11 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
           verification_state: 'VERIFIED' // provision itself verified, but its SOURCE is not
         }
       ],
-      navigator_legal_provision_versions: [],
+      // Real discovery eligibility (loadVerifiedCanonicalProvisions) requires a verified
+      // canonical provision-version/text, not just identity-level VERIFIED rows -- this default
+      // fixture supplies one for `provisionId` so the pre-existing "positive path" tests below
+      // keep passing under the stricter rule.
+      navigator_legal_provision_versions: [validProvisionVersionRow()],
       navigator_matter_legal_research_candidates: [],
       navigator_matter_research_runs: [],
       navigator_matter_research_run_results: []
@@ -86,8 +116,13 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
     vi.spyOn(access, 'getSupabase').mockReturnValue({
       from: (table: string) => {
         let rows = mockTables[table] || [];
+        let pendingUpdate: any = null;
         const chain: any = {
           select: () => chain,
+          update: (obj: any) => {
+            pendingUpdate = obj;
+            return chain;
+          },
           upsert: (obj: any) => {
             const existing = rows.find(
               (r: any) =>
@@ -123,7 +158,10 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
             rows = rows.filter((r: any) => r[col] === val);
             return chain;
           },
-          single: async () => ({ data: rows[0], error: rows.length === 0 ? new Error('Not found') : null }),
+          single: async () => {
+            if (pendingUpdate && rows.length > 0) Object.assign(rows[0], pendingUpdate);
+            return { data: rows[0], error: rows.length === 0 ? new Error('Not found') : null };
+          },
           maybeSingle: async () => ({ data: rows.length > 0 ? rows[0] : null, error: null })
         };
         chain.then = (resolve: any) => resolve({ data: rows, error: null });
@@ -286,7 +324,7 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
   // ---------------------------------------------------------------------
   describe('Candidate reuse-or-creation', () => {
     const match = () => ({
-      provision: { id: provisionId, legalSourceId: sourceId, citation: 's. 74', label: 'Protection hearings custody apprehension', verificationState: 'VERIFIED', sourceVerificationState: 'VERIFIED', sourceJurisdiction: 'ON', sourceTitle: 'CYFSA' },
+      provision: { id: provisionId, legalSourceId: sourceId, citation: 's. 74', label: 'Protection hearings custody apprehension', verificationState: 'VERIFIED', sourceVerificationState: 'VERIFIED', sourceJurisdiction: 'ON', sourceTitle: 'CYFSA', verifiedLegalSourceVersionId: verifiedVersionId },
       matchedTerms: ['protection', 'hearing'],
       matchCount: 2,
       score: 0.5,
@@ -306,6 +344,38 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
       const second = await resolveCandidateForMatch('uid', matterId, match() as any);
       expect(second.id).toBe(first.id);
       expect(mockTables.navigator_matter_legal_research_candidates.length).toBe(1);
+    });
+
+    // --- Required regression 8: a candidate created/reused from valid discovery carries the
+    // correct server-derived version identity and integrity info. ---
+    it('binds the server-resolved verified version and reports VERIFIED content integrity', async () => {
+      const candidate = await resolveCandidateForMatch('uid', matterId, match() as any);
+      expect(candidate.legalSourceVersionId).toBe(verifiedVersionId);
+      expect(candidate.contentIntegrityStatus).toBe('VERIFIED');
+    });
+
+    // --- Required regression 7: caller/ranking metadata cannot supply a fake version identity. ---
+    it('never trusts a caller-asserted version identity that does not independently re-verify', async () => {
+      const spoofedMatch: any = {
+        provision: {
+          id: provisionId,
+          legalSourceId: sourceId,
+          citation: 's. 74',
+          label: 'Protection hearings custody apprehension',
+          verificationState: 'VERIFIED',
+          sourceVerificationState: 'VERIFIED',
+          sourceJurisdiction: 'ON',
+          sourceTitle: 'CYFSA',
+          // A ranking-metadata-style attempt to assert an unrelated/unverified version id.
+          verifiedLegalSourceVersionId: randomUUID()
+        },
+        matchedTerms: ['protection', 'hearing'],
+        matchCount: 2,
+        score: 0.5,
+        contextMatches: [],
+        limitations: []
+      };
+      await expect(resolveCandidateForMatch('uid', matterId, spoofedMatch)).rejects.toMatchObject({ statusCode: 404 });
     });
   });
 
@@ -351,11 +421,14 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
       await expect(runMatterLegalDiscovery('uid', otherMatterId)).rejects.toMatchObject({ statusCode: 403 });
     });
 
-    it('fails safely (empty result) when no canonical authority matches', async () => {
+    it('fails safely (empty result) when no canonical authority matches, and the run still honestly completes', async () => {
       mockTables.navigator_legal_provisions.length = 0;
       const outcome = await runMatterLegalDiscovery('uid', matterId);
       expect(outcome.results).toEqual([]);
-      expect(outcome.run.status).toBe('PENDING');
+      // A run that ran to completion (even with zero matches) must be marked COMPLETED, not left
+      // indefinitely PENDING -- see the partial-failure run-status regressions below for the
+      // FAILED side of this same honesty requirement.
+      expect(outcome.run.status).toBe('COMPLETED');
     });
 
     it('ranking metadata never changes authority trust state', async () => {
@@ -363,6 +436,300 @@ describe('Stage 9D-2a Matter Legal Discovery — service only', () => {
       const sourceRow = mockTables.navigator_legal_sources.find((s: any) => s.id === sourceId);
       expect(sourceRow.verification_state).toBe('VERIFIED'); // untouched by ranking/discovery
       expect(outcome.results.length).toBeGreaterThan(0);
+    });
+
+    it('marks a successfully completed run COMPLETED with a completed_at timestamp', async () => {
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.run.status).toBe('COMPLETED');
+      expect(outcome.run.completedAt).toBeTruthy();
+    });
+
+    // --- Required Step 4 regressions: a failed/incomplete run must not silently read as fully
+    // successful. ---
+    describe('partial-failure run status honesty', () => {
+      it('A: run created, then candidate creation fails -> run status is FAILED, not left looking successful', async () => {
+        vi.spyOn(access, 'getSupabase').mockReturnValue({
+          from: (table: string) => {
+            let rows = mockTables[table] || [];
+            let pendingUpdate: any = null;
+            const chain: any = {
+              select: () => chain,
+              update: (obj: any) => {
+                pendingUpdate = obj;
+                return chain;
+              },
+              upsert: (obj: any) => {
+                if (table === 'navigator_matter_legal_research_candidates') {
+                  throw new Error('Simulated candidate-persistence failure');
+                }
+                const existing = rows.find(
+                  (r: any) =>
+                    r.matter_id === obj.matter_id &&
+                    r.evidence_item_id === obj.evidence_item_id &&
+                    r.event_id === obj.event_id &&
+                    r.legal_source_id === obj.legal_source_id &&
+                    r.provision_id === obj.provision_id &&
+                    r.retrieval_basis === obj.retrieval_basis
+                );
+                if (existing) {
+                  Object.assign(existing, obj);
+                  rows = [existing];
+                  return chain;
+                }
+                const newRow = { ...obj, id: randomUUID(), created_at: new Date().toISOString() };
+                mockTables[table].push(newRow);
+                rows = [newRow];
+                return chain;
+              },
+              insert: (obj: any) => {
+                const newRow = {
+                  ...obj,
+                  id: randomUUID(),
+                  created_at: new Date().toISOString(),
+                  discovered_at: new Date().toISOString()
+                };
+                mockTables[table].push(newRow);
+                rows = [newRow];
+                return chain;
+              },
+              eq: (col: string, val: any) => {
+                rows = rows.filter((r: any) => r[col] === val);
+                return chain;
+              },
+              single: async () => {
+                if (pendingUpdate && rows.length > 0) Object.assign(rows[0], pendingUpdate);
+                return { data: rows[0], error: rows.length === 0 ? new Error('Not found') : null };
+              },
+              maybeSingle: async () => ({ data: rows.length > 0 ? rows[0] : null, error: null })
+            };
+            chain.then = (resolve: any) => resolve({ data: rows, error: null });
+            return chain;
+          }
+        } as any);
+
+        await expect(runMatterLegalDiscovery('uid', matterId)).rejects.toBeTruthy();
+
+        const run = mockTables.navigator_matter_research_runs[mockTables.navigator_matter_research_runs.length - 1];
+        expect(run.status).toBe('FAILED');
+        expect(run.completed_at).toBeTruthy();
+      });
+
+      it('B: candidate succeeds, then result persistence fails -> run status is FAILED', async () => {
+        vi.spyOn(access, 'getSupabase').mockReturnValue({
+          from: (table: string) => {
+            let rows = mockTables[table] || [];
+            let pendingUpdate: any = null;
+            const chain: any = {
+              select: () => chain,
+              update: (obj: any) => {
+                pendingUpdate = obj;
+                return chain;
+              },
+              upsert: (obj: any) => {
+                const newRow = { ...obj, id: randomUUID(), created_at: new Date().toISOString() };
+                mockTables[table].push(newRow);
+                rows = [newRow];
+                return chain;
+              },
+              insert: (obj: any) => {
+                if (table === 'navigator_matter_research_run_results') {
+                  throw new Error('Simulated result-persistence failure');
+                }
+                const newRow = {
+                  ...obj,
+                  id: randomUUID(),
+                  created_at: new Date().toISOString(),
+                  discovered_at: new Date().toISOString()
+                };
+                mockTables[table].push(newRow);
+                rows = [newRow];
+                return chain;
+              },
+              eq: (col: string, val: any) => {
+                rows = rows.filter((r: any) => r[col] === val);
+                return chain;
+              },
+              single: async () => {
+                if (pendingUpdate && rows.length > 0) Object.assign(rows[0], pendingUpdate);
+                return { data: rows[0], error: rows.length === 0 ? new Error('Not found') : null };
+              },
+              maybeSingle: async () => ({ data: rows.length > 0 ? rows[0] : null, error: null })
+            };
+            chain.then = (resolve: any) => resolve({ data: rows, error: null });
+            return chain;
+          }
+        } as any);
+
+        await expect(runMatterLegalDiscovery('uid', matterId)).rejects.toBeTruthy();
+
+        const run = mockTables.navigator_matter_research_runs[mockTables.navigator_matter_research_runs.length - 1];
+        expect(run.status).toBe('FAILED');
+        expect(run.completed_at).toBeTruthy();
+      });
+
+      it('C: earlier successful results remain correctly persisted, and the run is honestly FAILED, not COMPLETED', async () => {
+        // Two matching provisions: the first result write succeeds, the second (simulated) fails.
+        const secondProvisionId = randomUUID();
+        mockTables.navigator_legal_provisions.push({
+          id: secondProvisionId,
+          legal_source_id: sourceId,
+          citation: 's. 75',
+          label: 'Protection hearings custody apprehension review',
+          verification_state: 'VERIFIED'
+        });
+        mockTables.navigator_legal_provision_versions.push(validProvisionVersionRow({ id: randomUUID(), provision_id: secondProvisionId }));
+
+        let resultInsertCount = 0;
+        vi.spyOn(access, 'getSupabase').mockReturnValue({
+          from: (table: string) => {
+            let rows = mockTables[table] || [];
+            let pendingUpdate: any = null;
+            const chain: any = {
+              select: () => chain,
+              update: (obj: any) => {
+                pendingUpdate = obj;
+                return chain;
+              },
+              upsert: (obj: any) => {
+                const existing = rows.find(
+                  (r: any) =>
+                    r.matter_id === obj.matter_id &&
+                    r.evidence_item_id === obj.evidence_item_id &&
+                    r.event_id === obj.event_id &&
+                    r.legal_source_id === obj.legal_source_id &&
+                    r.provision_id === obj.provision_id &&
+                    r.retrieval_basis === obj.retrieval_basis
+                );
+                if (existing) {
+                  Object.assign(existing, obj);
+                  rows = [existing];
+                  return chain;
+                }
+                const newRow = { ...obj, id: randomUUID(), created_at: new Date().toISOString() };
+                mockTables[table].push(newRow);
+                rows = [newRow];
+                return chain;
+              },
+              insert: (obj: any) => {
+                if (table === 'navigator_matter_research_run_results') {
+                  resultInsertCount += 1;
+                  if (resultInsertCount === 2) {
+                    throw new Error('Simulated result-persistence failure on second result');
+                  }
+                }
+                const newRow = {
+                  ...obj,
+                  id: randomUUID(),
+                  created_at: new Date().toISOString(),
+                  discovered_at: new Date().toISOString()
+                };
+                mockTables[table].push(newRow);
+                rows = [newRow];
+                return chain;
+              },
+              eq: (col: string, val: any) => {
+                rows = rows.filter((r: any) => r[col] === val);
+                return chain;
+              },
+              single: async () => {
+                if (pendingUpdate && rows.length > 0) Object.assign(rows[0], pendingUpdate);
+                return { data: rows[0], error: rows.length === 0 ? new Error('Not found') : null };
+              },
+              maybeSingle: async () => ({ data: rows.length > 0 ? rows[0] : null, error: null })
+            };
+            chain.then = (resolve: any) => resolve({ data: rows, error: null });
+            return chain;
+          }
+        } as any);
+
+        await expect(runMatterLegalDiscovery('uid', matterId)).rejects.toBeTruthy();
+
+        // The first result write that succeeded before the failure is still correctly persisted.
+        expect(mockTables.navigator_matter_research_run_results.length).toBe(1);
+        const run = mockTables.navigator_matter_research_runs[mockTables.navigator_matter_research_runs.length - 1];
+        expect(run.status).toBe('FAILED');
+        expect(run.status).not.toBe('COMPLETED');
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Required Steps 3.1-3.6: strict discovery eligibility (the canonical chain).
+  // ---------------------------------------------------------------------
+  describe('Discovery eligibility requires the full verified canonical chain', () => {
+    beforeEach(() => {
+      mockTables.navigator_claims.push({
+        id: randomUUID(),
+        matter_id: matterId,
+        proposition: 'Protection hearing custody apprehension took place.',
+        classification: 'ALLEGATION'
+      });
+    });
+
+    it('1: VERIFIED source + VERIFIED provision + NO canonical version record -> not eligible', async () => {
+      mockTables.navigator_legal_provision_versions.length = 0;
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.results).toEqual([]);
+      expect(outcome.candidates).toEqual([]);
+    });
+
+    it('2: VERIFIED source + VERIFIED provision + UNVERIFIED source-version -> not eligible', async () => {
+      const sv = mockTables.navigator_legal_source_versions.find((v: any) => v.id === verifiedVersionId);
+      sv.verification_state = 'UNVERIFIED';
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.results).toEqual([]);
+    });
+
+    it('3: VERIFIED source + VERIFIED provision + valid VERIFIED version/text -> eligible', async () => {
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.results.length).toBeGreaterThan(0);
+      expect(outcome.candidates[0].contentIntegrityStatus).toBe('VERIFIED');
+      expect(outcome.candidates[0].legalSourceVersionId).toBe(verifiedVersionId);
+    });
+
+    it('4: tampered/mismatched stored text (hash does not match) -> not eligible', async () => {
+      mockTables.navigator_legal_provision_versions.length = 0;
+      mockTables.navigator_legal_provision_versions.push(
+        validProvisionVersionRow({ exact_text: 'This text was altered after hashing.' })
+      );
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.results).toEqual([]);
+    });
+
+    it('5: version belonging to the wrong provision -> not eligible for the intended provision', async () => {
+      mockTables.navigator_legal_provision_versions.length = 0;
+      mockTables.navigator_legal_provision_versions.push(
+        validProvisionVersionRow({ provision_id: randomUUID() }) // some other, unrelated provision
+      );
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.results).toEqual([]);
+    });
+
+    it('6: source/version/provision chain mismatch (version claims a different source) -> not eligible', async () => {
+      mockTables.navigator_legal_provision_versions.length = 0;
+      mockTables.navigator_legal_provision_versions.push(
+        validProvisionVersionRow({ legal_source_id: unverifiedSourceId })
+      );
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.results).toEqual([]);
+    });
+
+    it('superseded/expired version (effective_to in the past) -> not eligible', async () => {
+      mockTables.navigator_legal_provision_versions.length = 0;
+      mockTables.navigator_legal_provision_versions.push(
+        validProvisionVersionRow({ effective_to: '2021-01-01' })
+      );
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.results).toEqual([]);
+    });
+
+    it('not-yet-effective version (effective_from in the future) -> not eligible', async () => {
+      mockTables.navigator_legal_provision_versions.length = 0;
+      mockTables.navigator_legal_provision_versions.push(
+        validProvisionVersionRow({ effective_from: '2999-01-01' })
+      );
+      const outcome = await runMatterLegalDiscovery('uid', matterId);
+      expect(outcome.results).toEqual([]);
     });
   });
 });

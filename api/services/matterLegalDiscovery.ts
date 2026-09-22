@@ -41,6 +41,7 @@ import { LifecycleError, requireUuid } from './lifecycleErrors.js';
 import { getSupabase } from './access.js';
 import { findAccount } from './accounts.js';
 import { assertSafeLegalLanguage } from './legalAuthority.js';
+import { verifyLegalContentIntegrity } from './legalSources.js';
 import {
   buildMatterLegalResearchCandidate,
   saveMatterLegalResearchCandidate,
@@ -49,6 +50,7 @@ import {
 import {
   createMatterResearchRun,
   recordMatterResearchRunResult,
+  updateMatterResearchRunStatus,
   type MatterResearchRun,
   type MatterResearchRunResult,
   type TriggerType
@@ -215,8 +217,29 @@ export interface CanonicalProvision {
   sourceVerificationState: string;
   sourceJurisdiction: string;
   sourceTitle: string;
+  /**
+   * The legal_source_version id whose canonical provision-text was independently confirmed
+   * VERIFIED end-to-end (source VERIFIED, source-version VERIFIED, provision VERIFIED, stored
+   * exact_text genuinely hashes to its text_sha256, and currently in effect). This is the exact
+   * chain that lets citationValidation.ts/getAuthorityCitation report contentIntegrityStatus:
+   * 'VERIFIED' rather than NOT_CHECKED -- a provision without one is not discovery-eligible.
+   * Always populated by loadVerifiedCanonicalProvisions (the only real discovery path);
+   * optional here only so pure rankDiscoveredAuthority unit tests can construct a
+   * CanonicalProvision by hand without needing DB-backed version resolution.
+   */
+  verifiedLegalSourceVersionId?: string;
 }
 
+/**
+ * Trusted discovery eligibility requires the COMPLETE canonical chain Stage 9A/9C actually
+ * enforce: a VERIFIED source, a VERIFIED provision belonging to it, a VERIFIED source-version
+ * belonging to the same source, and a provision-version row for that exact
+ * (provision, source-version) pair whose stored exact_text genuinely hashes to its text_sha256
+ * and is currently in effect. Identity verification (source/provision VERIFIED) alone is never
+ * sufficient -- a provision can be VERIFIED at the identity level with zero verified canonical
+ * text, and such a provision must never enter discovery. This mirrors, rather than invents,
+ * citationValidation.ts's own hash-based integrity check (step 7 of validateCandidateCitation).
+ */
 async function loadVerifiedCanonicalProvisions(db: any): Promise<CanonicalProvision[]> {
   const { data: sources, error: sourcesError } = await db
     .from('navigator_legal_sources')
@@ -234,11 +257,61 @@ async function loadVerifiedCanonicalProvisions(db: any): Promise<CanonicalProvis
     .select('*')
     .eq('verification_state', 'VERIFIED');
   if (provisionsError) throw new LifecycleError(500, 'DB_ERROR', 'Failed to load canonical legal provisions.');
+  if (!provisions || provisions.length === 0) return [];
+
+  const { data: sourceVersions, error: sourceVersionsError } = await db
+    .from('navigator_legal_source_versions')
+    .select('*')
+    .eq('verification_state', 'VERIFIED');
+  if (sourceVersionsError) throw new LifecycleError(500, 'DB_ERROR', 'Failed to load canonical legal source versions.');
+  const verifiedSourceVersionById = new Map<string, any>();
+  for (const v of sourceVersions || []) verifiedSourceVersionById.set(v.id, v);
+
+  const { data: provisionVersions, error: provisionVersionsError } = await db
+    .from('navigator_legal_provision_versions')
+    .select('*');
+  if (provisionVersionsError) throw new LifecycleError(500, 'DB_ERROR', 'Failed to load canonical provision text versions.');
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Per provision, resolve the currently-effective, fully verified canonical text version. All
+  // chain data is re-read live from Stage 9A here -- never accepted from caller/ranking input.
+  const resolvedByProvision = new Map<string, { versionId: string; effectiveFrom: string }>();
+  for (const pv of provisionVersions || []) {
+    const sourceVersion = verifiedSourceVersionById.get(pv.legal_source_version_id);
+    if (!sourceVersion) continue; // source version missing or not VERIFIED
+    // Chain-mismatch guard: this row's own source coordinate must agree with the source-version
+    // it claims to belong to. The frozen 9A schema's composite FKs already prevent this in a
+    // real database; this defensive check keeps the same guarantee at the service layer.
+    if (sourceVersion.legal_source_id !== pv.legal_source_id) continue;
+    const source = sourceById.get(pv.legal_source_id);
+    if (!source) continue; // source not VERIFIED
+
+    // Must be currently in effect, not stale/superseded.
+    if (typeof pv.effective_from !== 'string' || pv.effective_from > today) continue;
+    if (pv.effective_to && pv.effective_to <= today) continue;
+
+    // Content integrity: stored exact_text must genuinely hash to its stored text_sha256 --
+    // tampered/mismatched stored text is never trusted, exactly as citationValidation.ts enforces.
+    if (!pv.exact_text || !pv.text_sha256) continue;
+    try {
+      verifyLegalContentIntegrity(pv.exact_text, pv.text_sha256);
+    } catch {
+      continue;
+    }
+
+    const existing = resolvedByProvision.get(pv.provision_id);
+    if (!existing || pv.effective_from > existing.effectiveFrom) {
+      resolvedByProvision.set(pv.provision_id, { versionId: pv.legal_source_version_id, effectiveFrom: pv.effective_from });
+    }
+  }
 
   const out: CanonicalProvision[] = [];
   for (const p of provisions || []) {
     const source = sourceById.get(p.legal_source_id);
     if (!source) continue; // provision's source is not VERIFIED -- never trusted by default discovery
+    const resolved = resolvedByProvision.get(p.id);
+    if (!resolved) continue; // no currently-effective VERIFIED canonical text -- not discovery-eligible
     out.push({
       id: p.id,
       legalSourceId: p.legal_source_id,
@@ -247,7 +320,8 @@ async function loadVerifiedCanonicalProvisions(db: any): Promise<CanonicalProvis
       verificationState: p.verification_state,
       sourceVerificationState: source.verification_state,
       sourceJurisdiction: source.jurisdiction,
-      sourceTitle: source.title
+      sourceTitle: source.title,
+      verifiedLegalSourceVersionId: resolved.versionId
     });
   }
   return out;
@@ -361,7 +435,10 @@ export async function resolveCandidateForMatch(
     provisionId: match.provision.id,
     reasonForRelevance,
     retrievalBasis: DISCOVERY_RETRIEVAL_BASIS,
-    confidence: match.score
+    confidence: match.score,
+    // Server-derived only (see loadVerifiedCanonicalProvisions) -- independently re-verified
+    // again inside buildMatterLegalResearchCandidate, never trusted as-is.
+    serverResolvedVersionId: match.provision.verifiedLegalSourceVersionId
   });
 
   return saveMatterLegalResearchCandidate(firebaseUid, built);
@@ -418,36 +495,60 @@ export async function runMatterLegalDiscovery(
   const results: MatterResearchRunResult[] = [];
   const candidates: MatterLegalResearchCandidate[] = [];
 
-  for (const match of matches) {
-    const candidate = await resolveCandidateForMatch(firebaseUid, scopedMatterId, match);
-    if (candidate.matterId !== scopedMatterId) {
-      // Defensive -- Stage 9B's own access checks already guarantee this, but discovery never
-      // trusts a candidate it did not itself verify belongs to this matter.
-      throw new LifecycleError(500, 'CROSS_MATTER_CANDIDATE', 'Resolved candidate does not belong to the requested matter.');
+  // A run's persisted status must honestly reflect whether it actually finished. A mid-loop
+  // failure (candidate creation or result persistence) must leave the run FAILED, never silently
+  // readable as complete -- earlier successful results/candidates in `results`/`candidates`
+  // remain correctly persisted and returned on the thrown error is not swallowed, but the run's
+  // own status field tells the truth about the run as a whole.
+  try {
+    for (const match of matches) {
+      const candidate = await resolveCandidateForMatch(firebaseUid, scopedMatterId, match);
+      if (candidate.matterId !== scopedMatterId) {
+        // Defensive -- Stage 9B's own access checks already guarantee this, but discovery never
+        // trusts a candidate it did not itself verify belongs to this matter.
+        throw new LifecycleError(500, 'CROSS_MATTER_CANDIDATE', 'Resolved candidate does not belong to the requested matter.');
+      }
+      candidates.push(candidate);
+
+      const rankingFactors: Record<string, unknown> = {
+        algorithmVersion: DISCOVERY_ALGORITHM_VERSION,
+        matchedTerms: match.matchedTerms,
+        matchCount: match.matchCount,
+        provisionId: match.provision.id,
+        legalSourceId: match.provision.legalSourceId,
+        legalSourceVerificationState: match.provision.sourceVerificationState,
+        contextMatches: match.contextMatches,
+        limitations: match.limitations
+      };
+
+      const result = await recordMatterResearchRunResult(firebaseUid, {
+        matterId: scopedMatterId,
+        researchRunId: run.id,
+        candidateId: candidate.id,
+        rankingMethod: DISCOVERY_ALGORITHM_VERSION,
+        rankingScore: match.score,
+        rankingFactors
+      });
+      results.push(result);
     }
-    candidates.push(candidate);
-
-    const rankingFactors: Record<string, unknown> = {
-      algorithmVersion: DISCOVERY_ALGORITHM_VERSION,
-      matchedTerms: match.matchedTerms,
-      matchCount: match.matchCount,
-      provisionId: match.provision.id,
-      legalSourceId: match.provision.legalSourceId,
-      legalSourceVerificationState: match.provision.sourceVerificationState,
-      contextMatches: match.contextMatches,
-      limitations: match.limitations
-    };
-
-    const result = await recordMatterResearchRunResult(firebaseUid, {
-      matterId: scopedMatterId,
-      researchRunId: run.id,
-      candidateId: candidate.id,
-      rankingMethod: DISCOVERY_ALGORITHM_VERSION,
-      rankingScore: match.score,
-      rankingFactors
-    });
-    results.push(result);
+  } catch (e) {
+    try {
+      await updateMatterResearchRunStatus(firebaseUid, {
+        matterId: scopedMatterId,
+        researchRunId: run.id,
+        status: 'FAILED'
+      });
+    } catch {
+      // Never let a secondary failure to mark the run FAILED mask the original error below.
+    }
+    throw e;
   }
 
-  return { run, context, matches, results, candidates };
+  const completedRun = await updateMatterResearchRunStatus(firebaseUid, {
+    matterId: scopedMatterId,
+    researchRunId: run.id,
+    status: 'COMPLETED'
+  });
+
+  return { run: completedRun, context, matches, results, candidates };
 }
