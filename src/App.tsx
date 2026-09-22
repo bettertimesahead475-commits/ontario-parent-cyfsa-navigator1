@@ -29,6 +29,7 @@ const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyD
 const PricingTab = lazy(() => import("./components/PricingTab"));
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
+import SeoMetadata from "./components/SeoMetadata";
 import { getUserKey } from "./utils/storage";
 
 // Core icons represent core section identity
@@ -111,7 +112,9 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between font-sans selection:bg-brand-100 selection:text-brand-900" id="root-viewport">
+    <>
+      <SeoMetadata />
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between font-sans selection:bg-brand-100 selection:text-brand-900" id="root-viewport">
       
       {/* Top Professional Header Bar */}
       <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
@@ -491,6 +494,7 @@ export default function App() {
 
       <Analytics />
       <SpeedInsights />
-    </div>
+      </div>
+    </>
   );
 }
