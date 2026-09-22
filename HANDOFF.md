@@ -1513,3 +1513,29 @@ Form 33B.1, 2A-iii = NOT STARTED; PDF = BLOCKED.
 - Global accounting: b4B-i 56 + b4B-ii 34 mapped + 0 unresolved + b4B-iii deferred 25 = 115.
 - b4A, b4B-i, 14A/35.1A/33C maps and `semanticFieldMap.ts` byte-identical (SHA-asserted). No DOCX population.
 - Form 8B mapping is NOT complete until b4B-iii.
+
+
+## Stage 9D-4B-2A-ii-b4B-iii — Form 8B legal-ground / signature-block / narrative / other semantic map (pass 3 of 3)
+
+**Status tracker:** b4A CLOSED/FROZEN @ c1de865; b4B-i CLOSED/FROZEN @ 7e86fe4; b4B-ii CLOSED/FROZEN @ 0cd1ee5;
+**b4B-iii = final Form 8B semantic slice (this pass) — IMPLEMENTED, AWAITING INDEPENDENT REVIEW**; Form 33B.1, 2A-iii =
+NOT STARTED; PDF = BLOCKED. This completes the Form 8B SEMANTIC MAPPING layer only — there is NO DOCX population support.
+
+- New: `api/services/form8bFinalSemanticFieldMap.ts` (+ `.test.ts`, 53 tests). (Name chosen because the frozen b4B-ii
+  test asserts `form8bLegalGroundSemanticFieldMap.ts` / `form8bSemanticFieldMap.ts` do not exist.)
+- Scope derived programmatically (115 - pass-1 56 - pass-2 34 = 25; module refuses to load otherwise): ordinals 47..67
+  (21 LEGAL_GROUND, CYFSA s. 74(2)(a)..(o) incl. sub-boxes (a)(i)/(ii), (b)(i)/(ii)), 110 (FACTUAL_NARRATIVE), 111 (OTHER),
+  112/113 (SIGNATURE_OR_ATTESTATION). 25 MAPPED, 0 UNRESOLVED.
+- Legal-ground keys `legalGround.cyfsaS74_2_<clause>.<identity>` = ground IDENTITY only. Record types extend `?: never`
+  mapped types (no established/proven/applicable/selected/recommended/shouldAssert/confidence...); adversarial
+  `tsc --strict` literal + spread fixtures fail, clean fixtures compile. Provenance USER_ENTERED only;
+  `provenanceEstablishesLegalGround` constant false. Citations association-only; legal requiredness UNKNOWN.
+- Signature block (raw borders: captions sit BELOW ruled cells): 111 = date of signature, 112 = office/position of person
+  signing (if applicant is a society), 113 = printed name (STRUCTURAL_INFERENCE for signer link). The signature line
+  itself has NO form field. No signed/executed/attested state exists in any type.
+- FLAG FOR REVIEW: b4A rationale text for 112 ("under 'Date of signature'") and 113 ("static signature line captured as a
+  legacy text field") diverges from this raw-XML finding. b4A NOT modified; its SIGNATURE_OR_ATTESTATION group stands;
+  divergence recorded per-control in `frozenB4aRationaleDivergence`. 111 promoted from b4A REQUIRES_REVIEW with an
+  explicit promotion record.
+- Final accounting: b4B-i 56 + b4B-ii 34 + b4B-iii 25 = 115 mapped, 0 unresolved, 0 gaps, 0 overlaps.
+- b4A / b4B-i / b4B-ii (+ tests), `semanticFieldMap.ts`, 14A/35.1A/33C maps byte-identical (SHA-asserted).
