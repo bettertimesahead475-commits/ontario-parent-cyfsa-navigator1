@@ -208,6 +208,60 @@ describe("docxZipSafe: decompression bomb bounding", () => {
   });
 });
 
+describe("AUDIT: duplicate central-directory entry gap (independent audit finding, 9D-4B-2A-i)", () => {
+  // Reproduces the exact adversarial scenario the audit built: a ZIP whose central directory
+  // lists two entries sharing the same part name ("word/document.xml"), one containing "AAA fake"
+  // and one containing "BBB real". Before the fix, readCentralDirectory() resolved this silently
+  // to whichever entry was encountered LAST while iterating (a plain Map.set() overwrite) — no
+  // error, no anomaly, with allEntryNames listing the name twice. This proves the reader now fails
+  // closed instead, consistent with this module's "throw rather than best-effort-parse" philosophy
+  // for zip-slip, ratio-cap and entry-count-cap violations.
+  it("throws rather than silently resolving to the last-seen entry when a part name is duplicated", () => {
+    const zip = buildZip([
+      { name: "word/document.xml", data: Buffer.from("AAA fake") },
+      { name: "word/document.xml", data: Buffer.from("BBB real") }
+    ]);
+
+    expect(() => openDocxSafely(zip, ["word/document.xml"])).toThrow(DocxSafetyError);
+    try {
+      openDocxSafely(zip, ["word/document.xml"]);
+      expect.unreachable("expected openDocxSafely to throw on a duplicate central-directory entry");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DocxSafetyError);
+      expect((err as DocxSafetyError).code).toBe("DUPLICATE_CENTRAL_DIR_ENTRY");
+      expect((err as DocxSafetyError).message).toContain("word/document.xml");
+    }
+  });
+
+  it("applies to any duplicated part name, not just word/document.xml (e.g. [Content_Types].xml)", () => {
+    const zip = buildZip([
+      { name: "[Content_Types].xml", data: Buffer.from("<Types>first</Types>") },
+      { name: "word/document.xml", data: Buffer.from("<w:document/>") },
+      { name: "[Content_Types].xml", data: Buffer.from("<Types>second</Types>") }
+    ]);
+
+    expect(() => openDocxSafely(zip, ["word/document.xml"])).toThrow(DocxSafetyError);
+    try {
+      openDocxSafely(zip, ["word/document.xml"]);
+    } catch (err) {
+      expect((err as DocxSafetyError).code).toBe("DUPLICATE_CENTRAL_DIR_ENTRY");
+      expect((err as DocxSafetyError).message).toContain("[Content_Types].xml");
+    }
+  });
+
+  it("does not regress normal archives where every part name appears exactly once", () => {
+    const zip = buildZip([
+      { name: "[Content_Types].xml", data: Buffer.from("<Types/>") },
+      { name: "word/document.xml", data: Buffer.from("<w:document/>") },
+      { name: "word/settings.xml", data: Buffer.from("<w:settings/>") }
+    ]);
+    const pkg = openDocxSafely(zip, ["word/document.xml", "word/settings.xml"]);
+    expect(pkg.parts.get("word/document.xml")?.toString("utf8")).toBe("<w:document/>");
+    expect(pkg.parts.get("word/settings.xml")?.toString("utf8")).toBe("<w:settings/>");
+    expect(pkg.allEntryNames).toEqual(["[Content_Types].xml", "word/document.xml", "word/settings.xml"]);
+  });
+});
+
 describe("docxZipSafe: malformed archive rejection", () => {
   it("rejects a file too small to contain an EOCD", () => {
     expect(() => openDocxSafely(Buffer.from("hi"), ["word/document.xml"])).toThrow(DocxSafetyError);

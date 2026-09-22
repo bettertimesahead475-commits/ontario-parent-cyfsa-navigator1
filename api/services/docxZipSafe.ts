@@ -128,6 +128,7 @@ function readCentralDirectory(buf: Buffer): ZipEntryMeta[] {
   }
 
   const entries: ZipEntryMeta[] = [];
+  const seenNames = new Set<string>();
   let pos = centralDirOffset;
   const centralDirEnd = centralDirOffset + centralDirSize;
 
@@ -166,6 +167,14 @@ function readCentralDirectory(buf: Buffer): ZipEntryMeta[] {
         fail("SUSPICIOUS_COMPRESSION_RATIO", `Entry "${rawName}" has an implausible compression ratio (${ratio.toFixed(1)}x) — possible zip bomb.`);
       }
     }
+
+    if (seenNames.has(rawName)) {
+      fail(
+        "DUPLICATE_CENTRAL_DIR_ENTRY",
+        `Central directory contains more than one entry named "${rawName}" — ambiguous archive, refusing to resolve to either.`
+      );
+    }
+    seenNames.add(rawName);
 
     entries.push({ name: rawName, compressionMethod, compressedSize, uncompressedSize, localHeaderOffset });
     pos = nameEnd + extraLength + commentLen;
