@@ -573,4 +573,55 @@ describe('Stage 9D-3 LegalDiscoveryTab', () => {
 
     expect(screen.getByText(/Run run-new/)).toBeTruthy();
   });
+
+  it('[AUDITOR] rapid A->B->A: a stale first-visit-to-A response must not overwrite the second visit\'s fresher A data (matterId-only guard would wrongly accept it)', async () => {
+    // Visit A (1st time, request #1 held open) -> switch to B (request #2, resolves) -> switch back
+    // to A (request #3, resolves) -> request #1 (still in flight, SAME matterId as request #3)
+    // finally resolves. A matterId-equality-only guard would accept request #1's payload because
+    // its matterId also equals A -- only a monotonic per-resource generation counter distinguishes
+    // "old visit to A" from "current visit to A" and correctly rejects it.
+    let resolveFirstVisitA: (v: any) => void = () => {};
+    let firstVisitACalls = 0;
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/matters/${MATTER_A}/legal-discovery/runs`) {
+        firstVisitACalls += 1;
+        if (firstVisitACalls === 1) {
+          // First visit to A: held open indefinitely until we explicitly resolve it late.
+          return new Promise((resolve) => {
+            resolveFirstVisitA = () => resolve(jsonResponse(200, {
+              runs: [{ id: 'run-a-FIRST-VISIT-STALE', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-01T00:00:00Z' }]
+            }));
+          });
+        }
+        // Second visit to A: resolves promptly with the current/fresh data.
+        return jsonResponse(200, {
+          runs: [{ id: 'run-a-SECOND-VISIT-FRESH', matterId: MATTER_A, triggerType: 'MANUAL', status: 'COMPLETED', createdAt: '2026-01-05T00:00:00Z' }]
+        });
+      }
+      if (url === `/api/matters/${MATTER_B}/legal-discovery/runs`) {
+        return jsonResponse(200, { runs: [] });
+      }
+      if (url.includes('/results')) return jsonResponse(200, { run: null, results: [] });
+      return defaultRoute(url);
+    });
+
+    const { rerender } = render(<LegalDiscoveryTab matterId={MATTER_A} />);
+    // First visit to A's runs fetch is in flight and deliberately held open.
+
+    rerender(<LegalDiscoveryTab matterId={MATTER_B} />);
+    await waitFor(() => screen.getByText('No discovery runs yet for this matter.'));
+
+    rerender(<LegalDiscoveryTab matterId={MATTER_A} />);
+    await waitFor(() => screen.getByText(/Run run-a-SE/));
+
+    // Now let the stale first-visit-to-A response resolve late, after we're back on A with fresh
+    // data already displayed. Its matterId (A) matches the CURRENT matterId, so a matterId-only
+    // guard would incorrectly accept it and clobber the fresh second-visit data.
+    resolveFirstVisitA(undefined);
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(/Run run-a-FI/)).toBeNull();
+    expect(screen.getByText(/Run run-a-SE/)).toBeTruthy();
+  });
 });
