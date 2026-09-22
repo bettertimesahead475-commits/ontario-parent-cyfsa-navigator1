@@ -1349,3 +1349,79 @@ maintainer working outside this sandbox's egress block, never the design.
 **Milestone status: 9D-4B-1 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** 9D-4B-2 (field-mapping/
 population) and 9D-4C were not started and must not begin before this entry independently
 closes.
+
+---
+
+## Stage 9D-4B-2A-i — real DOCX technical field inventory: CLOSED/FROZEN
+
+Closed/frozen per the parent SHA this branch is built on (`3a4620f28826c29c06593c892e4c0b8b1b27cb41`).
+Do not re-edit `docxFieldInventory.ts` / `docxFieldInventoryData.ts` from later stages.
+
+## Stage 9D-4B-2A-ii-a — semantic type system, exact-template binding, fail-closed validator,
+## cardinality remediation: CLOSED/FROZEN
+
+Closed/frozen at the same parent SHA `3a4620f28826c29c06593c892e4c0b8b1b27cb41`
+(ancestry fcd061f → 351c99c → 7f5340f → 3a4620f, independently observed 1659/1659 full suite).
+Do not re-edit `semanticFieldMap.ts` from later stages.
+
+## Stage 9D-4B-2A-ii-b1 — real Form 14A semantic field map
+
+**Scope:** the FIRST real per-form semantic map, for Form 14A (Affidavit (General)) ONLY, built
+on the frozen 2A-i technical inventory and the frozen 2A-ii-a type system/validator without
+modifying either. Maps TECHNICAL CONTROL → WHAT IT REPRESENTS; does not populate anything, does
+not decide what a deponent should say, and does not mark anything as legally required.
+
+**Real template identity:** Form 14A, "Affidavit (General)", version date Sept. 1, 2005
+(effective May 1, 2006), DOCX format, source SHA-256
+`bfc552bf54c5972700759e455e5782e5cdec7f8affaa5e822e89e07681801261` (29,561 bytes) — cross-checked
+against both `officialFormSourceManifest.ts`'s `REAL_ARTIFACT_BYTE_VERIFICATIONS` entry and
+`docxFieldInventoryData.ts`'s Form 14A entry; both match exactly. Technical inventory schema
+version `docx-ffdata-inventory-v1` (2A-ii-a's `TECHNICAL_INVENTORY_SCHEMA_VERSION`).
+
+**Technical field count: 13** (per the frozen 2A-i inventory), including the frozen duplicate-name
+anomaly (`Text6` x4, `Text3` x4). All 13 were reviewed field-by-field against the real DOCX's
+actual visible text (labels/captions immediately adjacent to each field in `word/document.xml`,
+not generic affidavit knowledge) and mapped — 13 mapped, 0 left UNRESOLVED (evidence was
+sufficient for all 13; the four Text6 name-vs-lawyer pairings and the Text3 page-2 continuation
+field carry explicit `warnings`/`notes` flagging the structural-ordering inference involved, per
+the task's evidence rules).
+
+**Classification:** 8 NORMAL_ADMINISTRATIVE (court level, court file number, court office
+address, heading date, applicant/respondent name+address and lawyer fields), 4 SWORN_FACT
+(deponent's full legal name, deponent's municipality & province, the statement-of-facts body, and
+its page-2 continuation), 1 COMMISSIONING_OR_CERTIFICATION (the jurat's "province, state, or
+country" field — the ONLY technical field in the jurat block; the jurat's municipality, date,
+signature, and commissioner's printed name are all blank lines in the static template with no
+corresponding form field, so none of them was mapped or fabricated). 0
+SIGNATURE_OR_ATTESTATION — no technical control for a signature exists in this DOCX. Every entry's
+`legalRequiredness` is `UNKNOWN` (default, not guessed); every entry's `mappingResolution` is
+`HUMAN_MAPPED` (never `PROFESSIONALLY_REVIEWED`); SWORN_FACT entries' `permittedProvenance`
+deliberately excludes `MACHINE_SUGGESTED` and `MATTER_DERIVED`.
+
+**Files added:** `api/services/form14aSemanticFieldMap.ts` (the map),
+`api/services/form14aSemanticFieldMap.test.ts` (43 tests, including a lockstep-blind-spot matrix
+varying SHA/form/version/template/format/inventory-version/field-existence/field-type/cardinality/
+semantic-key/technical-field ONE DIMENSION AT A TIME). No frozen file was modified. No migration.
+No new HTTP route. No dependency changes.
+
+**Gates:** new Form 14A map tests 43/43; `semanticFieldMap.test.ts` (2A-ii-a regression) +
+`docxFieldInventory.test.ts` + `docxFieldInventoryRealArtifacts.test.ts` +
+`AUDIT_dnsRebindingToctouGap.test.ts` + `AUDIT_fieldMapImmutabilityGap.test.ts` +
+`docxZipSafe.test.ts` 112/112 unregressed; `tsc --noEmit` zero errors; `npm run build` passed
+(same pre-existing large-chunk warning, unrelated to this change); **full one-worker whole-project
+suite** (`vitest run --pool=forks --no-file-parallelism`): **1702/1702 passed across 61 test
+files** (up from the 1659/1659 baseline at the frozen parent SHA — 43 new tests, 0 regressions).
+
+**Real-artifact validation:** the real Form 14A DOCX bytes at
+`/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/c01f056a-flr_14a_sept105_en_fil.docx`
+were re-read and re-hashed in this stage; the SHA-256 matches the manifest exactly, and the map
+validates against a freshly re-parsed inventory of those exact bytes (not a cached/assumed
+inventory). A synthetic-substitute-bytes test confirms a wrong-SHA artifact cannot pass.
+
+**Other four forms (8B, 33B.1, 33C, 35.1A) and the quarantined Form 33B remain unmapped** — no
+real semantic-map module exists for any of them in this diff (asserted by test). PDF track
+remains BLOCKED (no PDF field-map module exists; this binding's format is DOCX only).
+
+**Milestone status: 9D-4B-2A-ii-b1 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** Do not begin
+2A-iii, PDF work, or 9D-4C before this entry independently closes. Do not map the other four
+forms as part of this entry.
