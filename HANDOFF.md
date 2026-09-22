@@ -1024,3 +1024,123 @@ regressions).
 9D-1, 9D-2a and 9D-2b remain independently frozen/closed exactly as recorded above and were not
 touched by this remediation. Stage 9D as a whole is **not** complete; 9D-4 (work-product integration)
 remains to be implemented and was explicitly out of scope for this task.
+
+## STAGE 9D-4A — Official Ontario Court Form Registry + Template/Version Foundation
+
+Branch: `stage-9d-case-wide-legal-discovery`, parent `88ffbb6d9337d1a5f96be8d6659ea42aebeeebcd` (the
+independently-closed Stage 9D-3 remediation plus its final auditor regression, recorded above). This
+is the FIRST of three planned 9D-4 sub-stages: 9D-4A (this entry, registry/versioning foundation),
+9D-4B (assisted template population — NOT implemented here) and 9D-4C (reviewed-research→form
+workflow + export validation — NOT implemented here). No line of any frozen Stage 9A/9B/9C/9D-1/
+9D-2A/9D-2B/9D-2/9D-3 file was modified.
+
+**Product contract (not previously documented — recorded here as part of this milestone, per the
+roadmap-reconciliation step of this task):** CYFSA Navigator must eventually support actual official
+Ontario court forms for both parents and professionals: official template -> Navigator-assisted
+completion -> review -> populated official template -> validation -> filing-ready export. This is a
+mandatory product requirement, not a Navigator-invented imitation form that would require the user to
+manually re-enter its content into the real court form. `STAGE_9_ROADMAP_DECISION.md` and the rest of
+`HANDOFF.md` did not previously state this; neither document is amended further here beyond this
+record, since the contract governs a new 9D-4 sub-track rather than redefining Stage 9's existing 9A–
+9D-3 retrieval scope.
+
+**Architecture** mirrors the existing Stage 9A `legalSources.ts` "canonical external authority +
+version + hash + verification state" pattern and the Stage 6 M2A provision-version-immutability
+pattern, rather than inventing a new one:
+
+- **Form identity** — `navigator_official_forms` / `OfficialForm` (`api/services/officialForms.ts`):
+  stable id, `jurisdiction`, `form_number` (unique per jurisdiction), `official_title`, `rule_family`,
+  `category`, `cyfsa_relevant` (a tag, not a filter — general Family Law Rules forms are first-class
+  registry members), `is_active`, `is_synthetic`.
+- **Official source** — `navigator_official_form_sources`: `source_url`, `source_authority`,
+  `verification_status` (`VERIFIED`/`UNVERIFIED`/`SOURCE_UNAVAILABLE`), `last_verified_at`, with a
+  check constraint that `VERIFIED` requires a real timestamp.
+- **Form version** — `navigator_official_form_versions`: immutable identity (form/label/revision
+  date, enforced immutable by an update trigger once created), `currentness_status`
+  (`CURRENT`/`SUPERSEDED`/`UNKNOWN`/`VERIFICATION_OVERDUE`/`SOURCE_UNAVAILABLE`), `supersedes_version_id`
+  edge (never a repoint of the old row), `first_verified_at`/`last_verified_at`. A partial unique
+  index enforces at most one `CURRENT` row per form, and a check constraint requires `last_verified_at`
+  for any row claiming `CURRENT` — "stored locally" can never silently read as "still current
+  official form."
+- **Template artifact** — `navigator_official_form_templates`: `file_format` (`PDF`/`DOCX`),
+  `mime_type`, opaque `storage_bucket`/`storage_path` (checked against path-traversal/absolute-path
+  patterns at both the DB check-constraint and `assertSafeStoragePath()` layers), `byte_size`,
+  `sha256_hex` (`^[0-9a-f]{64}$`), `is_synthetic`, `trust_status` (`UNTRUSTED`/`HASH_VERIFIED`). An
+  update trigger freezes bytes/hash/storage-location/version-binding permanently; only `trust_status`
+  may transition. There is no caller-supplied-hash code path anywhere — `sha256OfBytes()` in
+  `api/services/officialFormRegistry.ts` is the only place a hash is computed, always from real bytes.
+- **Field map version** — `navigator_official_form_field_maps`: bound to one exact `template_id`
+  (structural FK to one immutable template row, not to the form or version), `mapping_version_label`,
+  `field_count`, `mapping_status` (`DRAFT`/`VALIDATED`/`DEPRECATED`). `resolveFieldMapForTemplate()`
+  and `assertFieldMapAppliesToTemplate()` throw `FIELD_MAP_TEMPLATE_MISMATCH` rather than silently
+  applying a field map to a different template artifact.
+- **Provenance vocabulary for FUTURE field values** (9D-4B/9D-4C; not implemented here) — recorded as
+  a closed TypeScript union in `officialForms.ts`: `FIELD_VALUE_PROVENANCE = ["USER_ENTERED",
+  "MATTER_DERIVED", "MACHINE_SUGGESTED", "PROFESSIONALLY_REVIEWED", "OFFICIAL_STATIC_FORM_CONTENT"]`,
+  with `isValidFieldValueProvenance()` as the single validity check later stages must reuse.
+
+**Shared access:** parents and professionals call the exact same service functions
+(`getForm`/`listFormVersions`/etc.) and resolve to the exact same rows — there is one registry, never
+two. Blank official-form metadata reads (`api/officialFormRoutes.ts`, `GET /api/official-forms*`) take
+no matter id, account id, Firebase auth header or paid-session token at all; that access path is
+structurally decoupled from matter-bound and paid-feature gating, while remaining architecturally
+compatible with later matter-bound completed-form work (9D-4B/9D-4C), which this task does not build.
+
+**Security/trust boundaries:** DB grants are service-role-only (RLS enabled, no anon/authenticated
+policy), matching every other Stage 9 table; public HTTP read access is enforced at the API-route
+layer instead, matching the existing `lawyerDirectoryRoutes.ts` public-route convention. The public
+template shape (`getTemplatePublic`/`mapTemplatePublic`) never includes `storageBucket`/`storagePath`;
+only `getTemplateInternal` (unexported from any route) carries them. Route error handling never
+forwards raw error messages — unexpected errors return a fixed `INTERNAL_ERROR` body. Storage paths
+are validated against traversal/absolute-path patterns at both the migration check constraint and the
+service layer. No mutation/admin-ingestion HTTP route is exposed anywhere in `officialFormRoutes.ts`
+(verified by test: POST/PUT/DELETE on every registered path 404s).
+
+**Migration:** `supabase/migrations_pending_approval/create_navigator_official_form_registry.sql` —
+created, **NOT executed**, per this task's constraints.
+
+**Official template data:** no real Ontario government form content, URL, revision date or hash is
+present anywhere in this change. This task's environment access was not used to fetch/verify live
+ontario.ca / ontariocourtforms.on.ca content with confidence within this task's scope, so all test
+fixtures use a CLEARLY LABELED SYNTHETIC form (`SYNTHETIC_TEST_FORM_8B`, form number `SYNTHETIC-8B`,
+`is_synthetic: true` on every row) in `api/services/officialFormRegistry.test.ts`; nothing asserts a
+real form number, revision date or hash as authoritative.
+
+**Tests added** (28 new, all passing): `api/services/officialFormRegistry.test.ts` (18 cases) covers
+parent/professional resolving the same canonical form identity; multiple versions remaining distinct;
+a superseded version remaining retrievable for historical provenance; current-version resolution
+requiring an explicit, timestamped `CURRENT` state; `UNKNOWN` never resolving as current; a template
+hash mismatch failing integrity validation (and matching bytes passing); the public template shape
+never carrying a caller-influenced hash and never leaking storage fields; a field map for one template
+being rejected against a different template of the same form; two versions of one form not silently
+sharing an incompatible field map; historical template/hash linkage surviving supersession;
+CYFSA-tagging not excluding a general Family Law Rules form from the registry; blank-form access
+requiring no matter/paid-session argument; an untrusted/superseded template never resolving as
+current; path-traversal storage-path rejection; no leaked internal path/bucket fields in serialized
+output; the provenance vocabulary being exactly the five canonical values; and a not-found form
+failing safely. `api/officialFormRoutes.test.ts` (10 cases) covers unauthenticated public reads;
+filter pass-through; 404 without leaking detail on not-found; a generic `INTERNAL_ERROR` body (no
+stack/internal string) on an unexpected error; a distinct 404 code when no version is verified-
+current; a 409 `FIELD_MAP_TEMPLATE_MISMATCH` surfaced through the route; and confirmation that every
+non-GET verb 404s on every registered path (no mutation/admin route exists to secure).
+
+**Gates (sequential, all run this task):** new 9D-4A tests — `officialFormRegistry.test.ts` 18/18,
+`officialFormRoutes.test.ts` 10/10 (28/28 total); `LegalDiscoveryTab.test.tsx` 24/24 unchanged;
+`matterLegalResearchCandidatesRoutes.test.ts` + `professionalWorkspaceReviewsByFindingType.test.ts` +
+`matterLegalDiscoveryRoutes.test.ts` 46/46 unchanged; `matterLegalDiscovery.test.ts` +
+`matterResearchRuns.test.ts` + `legalSources.test.ts` + `matterLegalResearch.test.ts` +
+`citationValidation.test.ts` 140/140 unchanged; `access.test.ts` + `professionalMatterAccess.test.ts`
++ `humanReviewAccess.test.ts` + `legalAuthority.test.ts` 116/116 unchanged; `tsc --noEmit` zero
+errors; `npm run build` passed (same pre-existing large-chunk warning, unrelated to this change);
+**full one-worker whole-project suite** (`vitest run --maxWorkers=1 --no-file-parallelism`):
+**1428/1428 passed across 52 test files** (up from 1399/50 recorded at the 9D-3 remediation SHA — 28
+new tests, 0 regressions; the 24-vs-23 `LegalDiscoveryTab.test.tsx` count reflects the actually
+checked-out tree at `88ffbb6d`, not a change made in this task).
+
+**Milestone status: 9D-4A IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** Stage 9A, 9B, 9C, 9D-1, 9D-2A,
+9D-2B, 9D-2 and 9D-3 remain independently frozen/closed exactly as recorded above, at
+`88ffbb6d9337d1a5f96be8d6659ea42aebeeebcd`; none of their files were touched by this entry. Stage 9D
+as a whole is **not** complete, and 9D-4 as a whole is **not** complete: 9D-4B (AI-assisted template
+population/completion) and 9D-4C (reviewed-research-to-form workflow + export validation) remain
+entirely unimplemented and are explicitly deferred to future tasks. This entry adds only the
+registry/versioning/verification data model, service layer and read-only API described above.
