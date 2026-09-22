@@ -298,6 +298,55 @@ describe("cardinality / duplicate-target checks", () => {
     expect(() => validateSemanticFieldMap({ map, expectedBinding: baseBinding(), technicalInventory: inv })).not.toThrow();
   });
 
+  // Audit finding (9D-4B-2A-ii-a remediation): two DIFFERENT semanticKeys silently aliased onto
+  // the IDENTICAL technicalIdentity under SINGLE cardinality must be rejected, even though the
+  // semanticKey-keyed duplicate check above never fires (the keys differ).
+  it("rejects two different semantic keys targeting the identical technical field under SINGLE cardinality (audit repro)", () => {
+    const sharedTechnicalIdentity = { ordinal: 0, name: "Text1", type: "text" as const, tableDepth: 0, paragraphOrdinal: 0 };
+    const map = baseMap({
+      entries: [
+        baseEntry({ semanticKey: "childFirstName", technicalIdentity: sharedTechnicalIdentity }),
+        baseEntry({ semanticKey: "childLastName", technicalIdentity: sharedTechnicalIdentity })
+      ]
+    });
+    expect(() => validateSemanticFieldMap({ map, expectedBinding: baseBinding(), technicalInventory: inv1 })).toThrow(
+      /identical technical field/
+    );
+  });
+
+  it("allows two different semantic keys targeting the identical technical field when all declare REPEATED cardinality (no false positive)", () => {
+    const sharedTechnicalIdentity = { ordinal: 0, name: "Text1", type: "text" as const, tableDepth: 0, paragraphOrdinal: 0 };
+    const repeated = { valueType: "TEXT" as const, cardinality: "REPEATED" as const, allowedValues: null, maxLength: 20 };
+    const map = baseMap({
+      entries: [
+        baseEntry({ semanticKey: "childFirstNameAlt1", technicalIdentity: sharedTechnicalIdentity, semanticConstraints: repeated }),
+        baseEntry({ semanticKey: "childFirstNameAlt2", technicalIdentity: sharedTechnicalIdentity, semanticConstraints: repeated })
+      ]
+    });
+    expect(() => validateSemanticFieldMap({ map, expectedBinding: baseBinding(), technicalInventory: inv1 })).not.toThrow();
+  });
+
+  it("rejects mixed SINGLE/REPEATED entries on the identical technical field under different semantic keys", () => {
+    const sharedTechnicalIdentity = { ordinal: 0, name: "Text1", type: "text" as const, tableDepth: 0, paragraphOrdinal: 0 };
+    const map = baseMap({
+      entries: [
+        baseEntry({
+          semanticKey: "childFirstName",
+          technicalIdentity: sharedTechnicalIdentity,
+          semanticConstraints: { valueType: "TEXT", cardinality: "REPEATED", allowedValues: null, maxLength: 20 }
+        }),
+        baseEntry({
+          semanticKey: "childLastName",
+          technicalIdentity: sharedTechnicalIdentity,
+          semanticConstraints: { valueType: "TEXT", cardinality: "SINGLE", allowedValues: null, maxLength: 20 }
+        })
+      ]
+    });
+    expect(() => validateSemanticFieldMap({ map, expectedBinding: baseBinding(), technicalInventory: inv1 })).toThrow(
+      /identical technical field/
+    );
+  });
+
   it("rejects allowed values that conflict with technical dropdown options", () => {
     const inv = fixtureInventory([fixtureField({ order: 0, name: "Dd1", type: "dropdown", dropdown: { listEntries: ["Yes", "No"], resultIndex: 0 } })]);
     const map = baseMap({

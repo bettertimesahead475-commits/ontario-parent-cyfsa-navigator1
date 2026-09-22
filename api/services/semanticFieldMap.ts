@@ -355,6 +355,11 @@ export function validateSemanticFieldMap(params: ValidateSemanticFieldMapParams)
   }
 
   const semanticKeyCounts = new Map<string, number>();
+  // Duplicate-TECHNICAL-TARGET cardinality guard (audit finding, remediation): two DIFFERENT
+  // semanticKeys silently targeting the IDENTICAL technicalIdentity under SINGLE cardinality
+  // must be rejected just as much as the same semanticKey repeated. Keyed by the same
+  // identityKey() used above to match entries to the real inventory — no new comparison logic.
+  const technicalTargetEntries = new Map<string, SemanticFieldMapEntry[]>();
 
   for (const entry of map.entries) {
     if (!isValidSemanticFieldMapEntry(entry)) {
@@ -415,6 +420,25 @@ export function validateSemanticFieldMap(params: ValidateSemanticFieldMapParams)
         `Field map entry "${entry.semanticKey}" appears more than once but declares SINGLE cardinality (duplicate semantic target violates declared cardinality).`
       );
     }
+
+    // Duplicate-technical-target check: DIFFERENT semantic keys must not silently collide on the
+    // SAME technical field identity unless every entry sharing that target declares REPEATED
+    // cardinality. Reject as soon as a second entry on the same target is seen with any entry
+    // (existing or new) declaring SINGLE.
+    const existingOnTarget = technicalTargetEntries.get(key) ?? [];
+    if (existingOnTarget.length > 0) {
+      const conflictingSingle =
+        entry.semanticConstraints.cardinality === "SINGLE" ||
+        existingOnTarget.some(e => e.semanticConstraints.cardinality === "SINGLE");
+      if (conflictingSingle) {
+        const otherKeys = existingOnTarget.map(e => e.semanticKey).join(", ");
+        throw invalid(
+          `Field map entries "${otherKeys}" and "${entry.semanticKey}" target the identical technical field (ordinal ${entry.technicalIdentity.ordinal}, name ${entry.technicalIdentity.name ?? "<unnamed>"}) but at least one declares SINGLE cardinality (duplicate technical target violates declared cardinality).`
+        );
+      }
+    }
+    existingOnTarget.push(entry);
+    technicalTargetEntries.set(key, existingOnTarget);
   }
 }
 
