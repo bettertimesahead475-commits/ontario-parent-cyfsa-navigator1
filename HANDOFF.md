@@ -1422,6 +1422,76 @@ inventory). A synthetic-substitute-bytes test confirms a wrong-SHA artifact cann
 real semantic-map module exists for any of them in this diff (asserted by test). PDF track
 remains BLOCKED (no PDF field-map module exists; this binding's format is DOCX only).
 
-**Milestone status: 9D-4B-2A-ii-b1 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** Do not begin
-2A-iii, PDF work, or 9D-4C before this entry independently closes. Do not map the other four
+**Milestone status: 9D-4B-2A-ii-b1 CLOSED/FROZEN @ b8277986afae096ae6e35e0f7aa9898aa1eebe1b.** Do
+not modify Form 14A's real semantic map, its tests, or the frozen 2A-i/2A-ii-a architecture.
+
+---
+
+## 9D-4B-2A-ii-b2 — Form 35.1A real semantic field map (2026-09-22)
+
+**Scope:** the SECOND real per-form semantic map, for Form 35.1A (Affidavit (child protection
+information)) ONLY, built on the frozen 2A-i technical inventory and the frozen 2A-ii-a type
+system/validator without modifying either, and reusing (not copying the semantic assumptions of)
+the Form 14A map's shape. 35.1A was independently re-read from its own real `word/document.xml`.
+Maps TECHNICAL CONTROL → WHAT IT REPRESENTS only; does not populate anything, does not decide
+what a deponent should swear, and does not mark anything legally required.
+
+**Real template identity:** Form 35.1A, "Affidavit (child protection information)", version date
+Dec. 1, 2020 (effective March 1, 2021), DOCX format, source SHA-256
+`4efdb1baabe0e621caceb73b0b9924b414665d9872e5f280a29e3ff61b28fbcc` (39,464 bytes) — independently
+recomputed from the actual uploaded bytes in this stage and cross-checked against both
+`officialFormSourceManifest.ts`'s `REAL_ARTIFACT_BYTE_VERIFICATIONS` entry and
+`docxFieldInventoryData.ts`'s Form 35.1A entry; all three match exactly. Technical inventory
+schema version `docx-ffdata-inventory-v1` (2A-ii-a's `TECHNICAL_INVENTORY_SCHEMA_VERSION`).
+
+**Technical field count: 68** (per the frozen 2A-i inventory), including the frozen single
+duplicate-name anomaly (`Text1` reused 59 times — materially different from Form 14A's two
+separate duplicated names) and 8 empty-named fields. All 68 mapped — 0 left UNRESOLVED. Evidence:
+9 header/preamble entries (1 DIRECT_LABEL dropdown, 1 DIRECT_LABEL court-file-number, 1
+DIRECT_STRUCTURAL_CONTEXT court address, 4 STRUCTURAL_INFERENCE applicant/respondent name-vs-
+lawyer pairs, 2 DIRECT_LABEL deponent preamble fields), 56 repeated table cells across four
+column-headed tables (paragraphs 1-4; DIRECT_STRUCTURAL_CONTEXT for table/row membership,
+STRUCTURAL_INFERENCE for column-within-row, since every cell shares the identical name), and 3
+DIRECT_LABEL jurat fields (municipality, province/state/country, date of swearing — the ONLY 3
+technical fields in the jurat block; no signature/printed-name/commissioner-identity control
+exists in the real DOCX, confirmed by direct XML inspection, not fabricated).
+
+**Classification:** 7 NORMAL_ADMINISTRATIVE, 58 SWORN_FACT (deponent preamble + all 56 repeated
+table cells across paragraphs 1-4, since paragraphs 1-2 are the deponent's own sworn account and
+paragraphs 3-4 are still inside the sworn declaration, explicitly hedged "to the best of my
+knowledge"), 3 COMMISSIONING_OR_CERTIFICATION (jurat), 0 SIGNATURE_OR_ATTESTATION. Every entry's
+`legalRequiredness` is `UNKNOWN`; every entry's `mappingResolution` is `HUMAN_MAPPED`; SWORN_FACT
+entries' `permittedProvenance` excludes `MACHINE_SUGGESTED` and `MATTER_DERIVED`.
+
+**Files added:** `api/services/form351aSemanticFieldMap.ts` (the map, 68 entries + a local,
+non-frozen `EvidenceStrength` companion export since the frozen `SemanticFieldMapEntry` type
+carries no such field of its own — Form 14A recorded evidence strength as prose only, so this
+module reuses that convention and adds a derived companion table on top of it),
+`api/services/form351aSemanticFieldMap.test.ts` (49 tests, including an independent-dimension
+lockstep-blind-spot matrix). One line changed in the frozen-adjacent
+`form14aSemanticFieldMap.test.ts`: its closed-world "no other form is mapped yet" list had
+`form351aSemanticFieldMap.ts` removed (that module now legitimately exists) — Form 14A's own map,
+binding, entries and every other test are untouched. No other frozen file was modified. No
+migration. No new HTTP route. No dependency changes.
+
+**Gates:** new Form 35.1A map tests 49/49; Form 14A regression 43/43 unregressed (plus a new
+cross-check that both forms' bindings are mutually distinct); `semanticFieldMap.test.ts` (2A-ii-a
+regression) + `docxFieldInventory.test.ts` + `docxFieldInventoryRealArtifacts.test.ts` +
+`docxZipSafe.test.ts` unregressed; `tsc --noEmit` zero errors; `npm run build` passed (same
+pre-existing large-chunk warning, unrelated); **full one-worker whole-project suite**
+(`vitest run --no-file-parallelism`): **1751/1751 passed across 62 test files** (up from the
+1702/1702 baseline at the b1 parent SHA — 49 new tests, 0 regressions).
+
+**Real-artifact validation:** the real Form 35.1A DOCX bytes at
+`/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/48d81005-form-35-1a-en-dec20.docx`
+were re-read and re-hashed in this stage (`sha256sum`, independently of the test suite too); the
+SHA-256 matches the manifest exactly. The map validates against a freshly re-parsed inventory of
+those exact bytes. A synthetic-substitute-bytes test confirms a wrong-SHA artifact cannot pass.
+
+**Other three forms (8B, 33B.1, 33C) and the quarantined Form 33B remain unmapped** — no real
+semantic-map module exists for any of them in this diff (asserted by test). PDF track remains
+BLOCKED (no PDF field-map module exists; this binding's format is DOCX only).
+
+**Milestone status: 9D-4B-2A-ii-b2 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.** Do not begin
+2A-iii, PDF work, or 9D-4C before this entry independently closes. Do not map the other three
 forms as part of this entry.

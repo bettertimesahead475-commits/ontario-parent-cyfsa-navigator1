@@ -449,12 +449,15 @@ describe("Form 14A: real-artifact validation", () => {
 });
 
 describe("Other controlled forms remain unmapped in this diff (Stage 9D-4B-2A-ii-b1 is Form 14A only)", () => {
-  it("30. no real semantic-map module exists for Form 8B, 33B.1, 33C, or 35.1A", () => {
+  // NOTE (Stage 9D-4B-2A-ii-b2): Form 35.1A now has its own real semantic-map module
+  // (form351aSemanticFieldMap.ts), added by the follow-on stage — see that module's own test file
+  // for its coverage. Removed from this "not yet mapped" list accordingly; Form 14A's own map,
+  // binding and entries above are untouched by that stage. 8B, 33B.1, 33C remain unmapped.
+  it("30. no real semantic-map module exists for Form 8B, 33B.1, or 33C", () => {
     const otherFormFiles = [
       "./form8bSemanticFieldMap.ts",
       "./form33b1SemanticFieldMap.ts",
-      "./form33cSemanticFieldMap.ts",
-      "./form351aSemanticFieldMap.ts"
+      "./form33cSemanticFieldMap.ts"
     ];
     for (const rel of otherFormFiles) {
       const abs = new URL(rel, import.meta.url).pathname;
