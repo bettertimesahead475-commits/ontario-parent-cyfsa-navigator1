@@ -336,6 +336,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
         <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-600">See the depth of the analysis without crowding the homepage: chronology, allegations, source attribution, supporting records, gaps, inconsistencies, legal references, procedural questions and questions to discuss with counsel.</p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/document-analyzer"><span className="inline-flex items-center gap-2 rounded-xl bg-brand-700 px-6 py-3 text-sm font-bold text-white">TRY OUR ANALYZER &amp; EDUCATOR <ArrowRight className="h-4 w-4" /></span></Link>
+          <Link href="/analysis-example"><span className="inline-flex items-center gap-2 rounded-xl border border-brand-400 bg-white px-6 py-3 text-sm font-bold text-brand-900">SEE A COMPLETE ANALYSIS EXAMPLE <FileSearch className="h-4 w-4" /></span></Link>
           <Link href="/45-day-roadmap"><span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-6 py-3 text-sm font-bold text-brand-800">FOLLOW THE CASE ROADMAP <CalendarDays className="h-4 w-4" /></span></Link>
         </div>
       </div>
