@@ -1,6 +1,7 @@
 // Stage 9D-4B-2A-ii-b4B-iii — Form 8B pass-3 (legal-ground / signature-block / narrative / other) tests.
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -39,8 +40,8 @@ import { FORM_351A_SEMANTIC_FIELD_MAP, FORM_351A_EXACT_TEMPLATE_BINDING } from "
 import { FORM_33C_SEMANTIC_FIELD_MAP, FORM_33C_EXACT_TEMPLATE_BINDING } from "./form33cSemanticFieldMap.js";
 
 const REAL_PATH = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/d39f83dd-form-8b-feb_1_2022-en.docx";
-const here = (rel: string) => new URL(rel, import.meta.url).pathname;
-const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
+const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n")).digest("hex");
 
 function frozenInv(formNumber: string): DocxFieldInventoryResult {
   const rec = DOCX_FIELD_INVENTORIES.find(f => f.formNumber === formNumber)!;
@@ -210,7 +211,7 @@ describe("pass 3: type-level adversarial (tsc --noEmit --strict)", () => {
     expect([a, b, c].length).toBe(3);
   });
   it("literal AND spread injection of conclusion/recommendation/execution state fail; clean fixtures compile", () => {
-    const tsc = path.resolve(here("../../node_modules/.bin/tsc"));
+    const tsc = here("../../node_modules/typescript/bin/tsc");
     const mod = here("./form8bFinalSemanticFieldMap.js");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "f8b-p3-"));
     const head = `import { FORM_8B_PASS3_LEGAL_GROUND_EVIDENCE, FORM_8B_PASS3_SIGNATURE_EVIDENCE, FORM_8B_PASS3_NARRATIVE_EVIDENCE, type Form8BLegalGroundEvidenceRecord, type Form8BSignatureBlockEvidenceRecord, type Form8BNarrativeEvidenceRecord, type OfficialGroundCitation } from ${JSON.stringify(mod)};\nconst g = FORM_8B_PASS3_LEGAL_GROUND_EVIDENCE[0];\nconst s = FORM_8B_PASS3_SIGNATURE_EVIDENCE[0];\nconst n = FORM_8B_PASS3_NARRATIVE_EVIDENCE[0];\n`;
@@ -241,7 +242,7 @@ describe("pass 3: type-level adversarial (tsc --noEmit --strict)", () => {
       narrativeGeneratedSpread: head + spread("Form8BNarrativeEvidenceRecord", "n", `{ generatedText: "The mother ..." }`)
     };
     const files = Object.entries(fixtures).map(([k, src]) => { const p = path.join(dir, `${k}.ts`); fs.writeFileSync(p, src); return [k, p] as const; });
-    const r = spawnSync(tsc, ["--noEmit", "--strict", "--skipLibCheck", "--target", "ES2022", "--module", "ESNext", "--moduleResolution", "bundler", "--allowImportingTsExtensions", ...files.map(f => f[1])], { encoding: "utf8" });
+    const r = spawnSync(process.execPath, [tsc, "--noEmit", "--strict", "--skipLibCheck", "--target", "ES2022", "--module", "ESNext", "--moduleResolution", "bundler", "--allowImportingTsExtensions", ...files.map(f => f[1])], { encoding: "utf8" });
     fs.rmSync(dir, { recursive: true, force: true });
     expect(r.error, String(r.error)).toBeUndefined();
     const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
@@ -499,9 +500,9 @@ const FROZEN: Record<string, string> = {
   "./form8bStructuralManifest.ts": "41aa02586a1ccbb941e3851bf4f5d4e52e5f6f80c16f462628c6441fb60a87ce",
   "./form8bStructuralManifest.test.ts": "436413c2573c28cb2bd46df5525ecdf6ce84b961f9cebae8fc54d541ae8db7b8",
   "./form8bAdminChildPartySemanticFieldMap.ts": "1ad761ea6408db6dfef373e4208fd38f34941ba0b3103f4b08a08f646d131543",
-  "./form8bAdminChildPartySemanticFieldMap.test.ts": "6625a645764843dedc10a002e98a6d2e25a4cf0c6aee8cfcc0a15272405f10fd",
+  "./form8bAdminChildPartySemanticFieldMap.test.ts": "649716b6dbb48eed4d6dc2e88860490c84bb4d1ccdf430cc31235dff0a3d7509",
   "./form8bRequestedOrderSemanticFieldMap.ts": "84792d98e68c6413ef172176f0e09c6a06918d0634dce079ecf92dcc5907f637",
-  "./form8bRequestedOrderSemanticFieldMap.test.ts": "0217d052a5312b32a4f6a00e7763becd65da18273261b4accebb5e9bb42d425e",
+  "./form8bRequestedOrderSemanticFieldMap.test.ts": "e162d39b526d33dca26a737ebd82868e553604894ccf7bb307b7ff14cde8eedb",
   "./semanticFieldMap.ts": "738fe300916147b3701740250ca2184467780f9a1818097f12f63cad4ef1f762",
   "./form14aSemanticFieldMap.ts": "f506313519b01bfd62f7ca9f7cf608567009d1cc8c6205313af0984f9da12e08",
   "./form351aSemanticFieldMap.ts": "6bb898b5949f21b7efb753bdcb256873aa38960c61ea4d9fa7058e086e5b1c4f",

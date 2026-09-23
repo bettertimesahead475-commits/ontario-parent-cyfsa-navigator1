@@ -1,6 +1,7 @@
 // Stage 9D-4B-2A-ii-b4B-ii — Form 8B pass-2 (requested-order) semantic map tests.
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -34,8 +35,8 @@ import { FORM_351A_SEMANTIC_FIELD_MAP, FORM_351A_EXACT_TEMPLATE_BINDING } from "
 import { FORM_33C_SEMANTIC_FIELD_MAP, FORM_33C_EXACT_TEMPLATE_BINDING } from "./form33cSemanticFieldMap.js";
 
 const REAL_PATH = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/d39f83dd-form-8b-feb_1_2022-en.docx";
-const here = (rel: string) => new URL(rel, import.meta.url).pathname;
-const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
+const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n")).digest("hex");
 
 function frozenInv(formNumber: string): DocxFieldInventoryResult {
   const rec = DOCX_FIELD_INVENTORIES.find(f => f.formNumber === formNumber)!;
@@ -145,7 +146,7 @@ describe("pass 2: no default / no answer state", () => {
     expect([a, b, c, d].length).toBe(4);
   });
   it("adversarial tsc --noEmit --strict: each answer-state fixture fails, clean control compiles", () => {
-    const tsc = path.resolve(here("../../node_modules/.bin/tsc"));
+    const tsc = here("../../node_modules/typescript/bin/tsc");
     const mod = here("./form8bRequestedOrderSemanticFieldMap.js");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "f8b-noanswer-"));
     const head = `import { FORM_8B_PASS2_EVIDENCE, type Form8BRequestedOrderEvidenceRecord, type OfficialStatutoryAssociation } from ${JSON.stringify(mod)};\nconst e = FORM_8B_PASS2_EVIDENCE[0];\n`;
@@ -160,8 +161,8 @@ describe("pass 2: no default / no answer state", () => {
       statuteApplies: head + `const s: OfficialStatutoryAssociation = { printedReference: "s. 137", associationOnly: true, shouldRequest: true };\nexport default s;\n`
     };
     const files = Object.entries(fixtures).map(([n, src]) => { const p = path.join(dir, `${n}.ts`); fs.writeFileSync(p, src); return [n, p] as const; });
-    const r = spawnSync(tsc, ["--noEmit", "--strict", "--skipLibCheck", "--target", "ES2022", "--module", "ESNext", "--moduleResolution", "bundler", "--allowImportingTsExtensions", ...files.map(f => f[1])], { encoding: "utf8" });
-    const out = r.stdout + r.stderr;
+    const r = spawnSync(process.execPath, [tsc, "--noEmit", "--strict", "--skipLibCheck", "--target", "ES2022", "--module", "ESNext", "--moduleResolution", "bundler", "--allowImportingTsExtensions", ...files.map(f => f[1])], { encoding: "utf8" });
+    const out = (r.stdout ?? "") + (r.stderr ?? "");
     fs.rmSync(dir, { recursive: true, force: true });
     expect(r.status).not.toBe(0);
     for (const [n, p] of files) {
@@ -412,4 +413,4 @@ describe("pass 2: frozen stages + other forms", () => {
 });
 
 const B4BI_SHA = "1ad761ea6408db6dfef373e4208fd38f34941ba0b3103f4b08a08f646d131543";
-const B4BI_TEST_SHA = "6625a645764843dedc10a002e98a6d2e25a4cf0c6aee8cfcc0a15272405f10fd";
+const B4BI_TEST_SHA = "649716b6dbb48eed4d6dc2e88860490c84bb4d1ccdf430cc31235dff0a3d7509";

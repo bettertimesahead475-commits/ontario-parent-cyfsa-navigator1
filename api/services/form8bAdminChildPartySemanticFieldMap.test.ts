@@ -1,6 +1,7 @@
 // Stage 9D-4B-2A-ii-b4B-i — Form 8B pass-1 (administrative + child/party) semantic map tests.
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
@@ -56,7 +57,7 @@ const withBinding = (o: Partial<typeof FORM_8B_EXACT_TEMPLATE_BINDING>): Semanti
 const withEntries = (entries: SemanticFieldMapEntry[]): SemanticFieldMap => ({ ...FORM_8B_PASS1_SEMANTIC_FIELD_MAP, entries });
 const byOrd = (o: number) => FORM_8B_PASS1_SEMANTIC_ENTRIES.find(e => e.technicalIdentity.ordinal === o)!;
 const manifestByOrd = new Map(FORM_8B_STRUCTURAL_MANIFEST.map(m => [m.ordinal, m]));
-const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n")).digest("hex");
 
 describe("Form 8B pass 1: binding + identity", () => {
   it("binds to the real template and validates against the frozen 8B inventory", () => {
@@ -296,7 +297,7 @@ describe("Form 8B pass 1: real artifact", () => {
 });
 
 describe("Form 8B pass 1: frozen stages + other forms", () => {
-  const here = (rel: string) => new URL(rel, import.meta.url).pathname;
+  const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
   it("b4A manifest and prior maps byte-identical to their frozen versions", () => {
     expect(sha(here("./form8bStructuralManifest.ts"))).toBe("41aa02586a1ccbb941e3851bf4f5d4e52e5f6f80c16f462628c6441fb60a87ce");
     expect(sha(here("./form14aSemanticFieldMap.ts"))).toBe("f506313519b01bfd62f7ca9f7cf608567009d1cc8c6205313af0984f9da12e08");

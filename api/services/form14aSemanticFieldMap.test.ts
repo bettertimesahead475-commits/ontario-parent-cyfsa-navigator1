@@ -9,6 +9,7 @@
 // confirms the other four controlled forms + Form 33B remain unmapped in this diff.
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import {
   validateSemanticFieldMap,
@@ -463,13 +464,13 @@ describe("Other controlled forms remain unmapped in this diff (Stage 9D-4B-2A-ii
       "./form33b1SemanticFieldMap.ts"
     ];
     for (const rel of otherFormFiles) {
-      const abs = new URL(rel, import.meta.url).pathname;
+      const abs = fileURLToPath(new URL(rel, import.meta.url));
       expect(fs.existsSync(abs), `${rel} must not exist yet — other four forms are future work`).toBe(false);
     }
   });
 
   it("31. Form 33B remains quarantined: no semantic-map module exists for it, and it has no entry in the technical inventory data used here", () => {
-    const abs = new URL("./form33bSemanticFieldMap.ts", import.meta.url).pathname;
+    const abs = fileURLToPath(new URL("./form33bSemanticFieldMap.ts", import.meta.url));
     expect(fs.existsSync(abs)).toBe(false);
     // Form "33B" (bare, quarantined) must be absent even though "33B.1" legitimately exists.
     expect(DOCX_FIELD_INVENTORIES.some(f => f.formNumber === "33B")).toBe(false);
@@ -477,7 +478,7 @@ describe("Other controlled forms remain unmapped in this diff (Stage 9D-4B-2A-ii
 
   it("32. PDF track remains unavailable: this map's binding format is DOCX only, and no PDF field-map module exists", () => {
     expect(FORM_14A_EXACT_TEMPLATE_BINDING.format).toBe("DOCX");
-    const abs = new URL("./form14aSemanticFieldMapPdf.ts", import.meta.url).pathname;
+    const abs = fileURLToPath(new URL("./form14aSemanticFieldMapPdf.ts", import.meta.url));
     expect(fs.existsSync(abs)).toBe(false);
   });
 });
