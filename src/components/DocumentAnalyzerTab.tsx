@@ -87,6 +87,16 @@ interface OrganizedFile {
   analysisReport?: AnalysisReport;
 }
 
+// Uploaded PDFs/images start as raw base64, but after OCR we persist their extracted
+// plaintext back into OrganizedFile.content while keeping the original MIME type.
+// MIME type therefore cannot tell us whether content still needs OCR on a re-run.
+function contentLooksLikeRawBase64(content: string): boolean {
+  const value = String(content || "").trim();
+  if (value.length < 256) return false;
+  const sample = value.slice(0, 12000);
+  return !/\\s/.test(sample) && /^[A-Za-z0-9+/=]+$/.test(sample);
+}
+
 interface RAGChatMessage {
   id: string;
   sender: "user" | "ai";
@@ -1764,7 +1774,10 @@ export default function DocumentAnalyzerTab() {
 
     try {
       const payload: any = {};
-      if (file.mimeType === "text/plain") {
+      // A PDF/image may already contain extracted plaintext from a previous successful OCR pass.
+      // Only call /api/extract-text while content is still the original raw base64. This also
+      // repairs persisted files created by older builds without requiring the user to re-upload.
+      if (file.mimeType === "text/plain" || !contentLooksLikeRawBase64(file.content)) {
         payload.textContent = file.content;
       } else {
         // Two-pass pipeline: extract text in its own request first, then send
@@ -3275,7 +3288,7 @@ export default function DocumentAnalyzerTab() {
                       // substantial it actually was. Real text extraction for those
                       // files happens server-side (Gemini OCR) during analysis, so we
                       // can't judge word density client-side before that runs.
-                      if (activeSelectedFile.mimeType !== "text/plain") {
+                      if (activeSelectedFile.mimeType !== "text/plain" && contentLooksLikeRawBase64(activeSelectedFile.content)) {
                         return (
                           <div className="p-2 border rounded-lg text-[10px] leading-relaxed flex items-center gap-1 px-3 bg-slate-50 text-slate-600 border-slate-200 select-none text-left">
                             <span>📄 This document will be read via OCR text extraction when you run the audit — its content isn't previewable here beforehand.</span>
@@ -3322,8 +3335,8 @@ export default function DocumentAnalyzerTab() {
                       </div>
                     ) : (
                       <div className="max-h-56 overflow-y-auto p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs font-mono text-slate-700 whitespace-pre-wrap leading-relaxed text-left" id="file-plain-content-viewer">
-                        {activeSelectedFile.mimeType === "text/plain" 
-                          ? getHighlightedText(activeSelectedFile.content, searchQuery) 
+                        {activeSelectedFile.mimeType === "text/plain" || !contentLooksLikeRawBase64(activeSelectedFile.content)
+                          ? getHighlightedText(activeSelectedFile.content, searchQuery)
                           : `This is a ${activeSelectedFile.mimeType.startsWith("image/") ? "image" : "PDF"} file — its raw content isn't shown here as plain text. Run the audit above to have it read and analyzed.`}
                       </div>
                     )}
