@@ -1,8 +1,6 @@
 // Stage 10 slice 3: read-only access-history route over api/services/matterAccessHistory.ts.
 //
-// NOT YET MOUNTED, like the other Stage 10 routes: api/_server.ts is shared with in-flight
-// Stage 9 work. Integration point: add registerMatterAccessHistoryRoutes(app) next to the other
-// register*Routes(app) calls in api/_server.ts once Stage 9 has landed.
+// Mounted in api/_server.ts (Stage 10 slice 5).
 
 import type { Express, Request, Response } from 'express';
 import { verifyFirebaseToken } from './services/firebaseAdmin.js';

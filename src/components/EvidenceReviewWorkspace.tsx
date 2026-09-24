@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {apiFetch} from '../utils/api';
+import AccessHistoryPanel from './AccessHistoryPanel';
 import {EVIDENCE_CLASSIFICATIONS,EVIDENCE_REVIEW_STATES,availableReviewStates,evidenceQuery,sourcePath,
  type EvidenceFilters,type EvidencePage,type EvidenceRow,type EvidenceSource,type ReviewState} from '../../shared/evidenceReview';
 
@@ -33,7 +34,7 @@ export default function EvidenceReviewWorkspace(){
   const [data,setData]=useState<EvidencePage|null>(null),[cursor,setCursor]=useState<string|null>(null),[previous,setPrevious]=useState<(string|null)[]>([]);
   const [selected,setSelected]=useState<EvidenceRow|null>(null),[source,setSource]=useState<EvidenceSource|null>(null);
   const [state,setState]=useState<ReviewState>('UNREVIEWED'),[busy,setBusy]=useState(false),[saving,setSaving]=useState(false),[sourceBusy,setSourceBusy]=useState(false),[matterBusy,setMatterBusy]=useState(false);
-  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[refresh,setRefresh]=useState(0);
+  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[refresh,setRefresh]=useState(0),[showAccessHistory,setShowAccessHistory]=useState(false);
   const generation=useRef(0),sourceGeneration=useRef(0),mounted=useRef(true);
   useEffect(()=>()=>{mounted.current=false;},[]);
   async function loadMatters(after?:string){
@@ -74,7 +75,7 @@ export default function EvidenceReviewWorkspace(){
     {error&&<div role="alert" className="my-4 p-3 bg-red-50 text-red-900 rounded">{error} <button type="button" className="underline" onClick={()=>{if(matterId)setRefresh(x=>x+1);else void loadMatters();}}>Reload</button></div>}
     {notice&&<p role="status" className="my-4 text-emerald-800">{notice}</p>}
     <section className="my-6 rounded-xl border bg-white p-4" aria-label="Matter selection">
-      <label className="font-semibold">Open matter<select className={inputClass} value={matterId} disabled={saving||matterBusy} onChange={e=>{setMatterId(e.target.value);setCursor(null);setPrevious([]);setFilters({});setDraft({});setNotice('');}}>
+      <label className="font-semibold">Open matter<select className={inputClass} value={matterId} disabled={saving||matterBusy} onChange={e=>{setMatterId(e.target.value);setShowAccessHistory(false);setCursor(null);setPrevious([]);setFilters({});setDraft({});setNotice('');}}>
         <option value="">{matterBusy?'Loading matters…':'Select an owned matter'}</option>
         {matterId&&!matters.some(m=>m.id===matterId)&&<option value={matterId}>{data?.matter.title||'Current matter'}</option>}
         {matters.map(m=><option key={m.id} value={m.id}>{m.title}</option>)}
@@ -120,6 +121,12 @@ export default function EvidenceReviewWorkspace(){
           </div>}
         </aside>
       </div>
+      {/* Stage 10: past access events for this matter, loaded only on request. History is evidence of
+          what happened, not current access; the server decides what (if anything) this user may see. */}
+      <section className="my-6 rounded-xl border bg-white p-4" aria-label="Matter access history">
+        <button type="button" aria-expanded={showAccessHistory} aria-controls="matter-access-history" onClick={()=>setShowAccessHistory(v=>!v)} className="border px-3 py-2 rounded">{showAccessHistory?'Hide access history':'Show access history'}</button>
+        <div id="matter-access-history" className={showAccessHistory?'mt-4':undefined}>{showAccessHistory&&<AccessHistoryPanel matterId={matterId}/>}</div>
+      </section>
     </>}
   </main>;
 }

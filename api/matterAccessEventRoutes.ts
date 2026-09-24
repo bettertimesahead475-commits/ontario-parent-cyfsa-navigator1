@@ -1,9 +1,7 @@
 // Stage 10: read-only route over the append-only matter access event log
 // (api/services/matterAccessEvents.ts).
 //
-// NOT YET MOUNTED, for the same reason as api/matterAccessAuditRoutes.ts: api/_server.ts is a
-// shared registration file that in-flight Stage 9 work may also edit. The one-line
-// registerMatterAccessEventRoutes(app) call is deferred to post-Stage-9 integration.
+// Mounted in api/_server.ts (Stage 10 slice 5).
 //
 // There is deliberately NO write route: events are recorded only by trusted server paths.
 
