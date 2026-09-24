@@ -3,8 +3,8 @@ import { apiFetch } from '../utils/api';
 
 // Stage 10 slice 3: isolated, read-only ACCESS HISTORY panel.
 //
-// Not mounted anywhere yet: src/App.tsx is a shared integration surface, and the backing route
-// (GET /api/matters/:matterId/access-history) is itself not yet registered in api/_server.ts.
+// Placed in EvidenceReviewWorkspace (the owner's per-matter screen) behind a disclosure button
+// (Stage 10 slice 5). Backing route: GET /api/matters/:matterId/access-history.
 //
 // Security: the panel renders exactly what the server returned. Authorization happens on the
 // server/database before any record is sent; nothing here filters for security. Raw server
