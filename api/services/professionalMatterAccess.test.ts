@@ -22,7 +22,7 @@ vi.mock('./access', () => {
         const query = {
           select: () => query,
           insert: (data: any) => {
-            const row = { id: `id-${Math.random()}`, created_at: new Date().toISOString(), ...data };
+            const row = { id: globalThis.crypto.randomUUID(), created_at: new Date().toISOString(), ...data };
             tables[table].push(row);
             return { select: () => ({ single: () => Promise.resolve({ data: row, error: null }) }) };
           },
@@ -76,6 +76,24 @@ vi.mock('./access', () => {
         return query;
       },
       rpc: (fn: string, args: any) => {
+        if (fn === 'navigator_matter_access_lifecycle_contract_v3') {
+          return Promise.resolve({ data: 'navigator_matter_access_lifecycle_v3', error: null });
+        }
+        if (fn === 'create_matter_grant') {
+          // Minimal model of the v3 SQL contract (real SQL: professionalMatterAccessAudit.pg.test.ts).
+          const uidToAccount: Record<string, string> = { 'parent-1': 'parent-acct-1', 'parent-2': 'parent-acct-2', 'existing-reviewer-uid': 'existing-reviewer' };
+          const owner = tables['navigator_matter_members'].find(m =>
+            m.matter_id === args.p_matter_id && m.account_id === uidToAccount[args.p_firebase_uid] && m.role === 'OWNER');
+          if (!owner) return Promise.resolve({ data: null, error: new Error('NOT_OWNER') });
+          const row = {
+            id: globalThis.crypto.randomUUID(), matter_id: args.p_matter_id, grantor_account_id: owner.account_id,
+            token_digest: args.p_token_digest, capability: 'REVIEWER', status: 'PENDING',
+            expires_at: new Date(Date.now() + args.p_expires_in_days * 86400000).toISOString(), created_at: new Date().toISOString(),
+          };
+          tables['navigator_matter_access_grants'].push(row);
+          const { token_digest, ...safe } = row;
+          return Promise.resolve({ data: safe, error: null });
+        }
         if (fn === 'accept_matter_grant') {
           if (rpcErrors[args.p_token_digest]) {
             return Promise.resolve({ data: null, error: rpcErrors[args.p_token_digest] });
@@ -91,8 +109,22 @@ vi.mock('./access', () => {
           
           const member = { matter_id: grant.matter_id, account_id: 'professional-acct-id', role: grant.capability };
           tables['navigator_matter_members'].push(member);
-          
-          return Promise.resolve({ data: member, error: null });
+
+          return Promise.resolve({ data: { outcome: 'ACCEPTED', grant_id: grant.id, matter_id: grant.matter_id, role: 'REVIEWER' }, error: null });
+        }
+        if (fn === 'revoke_matter_grant') {
+          // Minimal model of the remediated SQL contract (real SQL: professionalMatterAccess.pg.test.ts).
+          const uidToAccount: Record<string, string> = { 'parent-1': 'parent-acct-1', 'parent-2': 'parent-acct-2' };
+          const grant = tables['navigator_matter_access_grants'].find(g => g.id === args.p_grant_id);
+          if (!grant) return Promise.resolve({ data: null, error: new Error('GRANT_NOT_FOUND') });
+          const owner = tables['navigator_matter_members'].find(m =>
+            m.matter_id === grant.matter_id && m.account_id === uidToAccount[args.p_firebase_uid] && m.role === 'OWNER');
+          if (!owner) return Promise.resolve({ data: null, error: new Error('NOT_OWNER') });
+          grant.status = 'REVOKED';
+          const idx = tables['navigator_matter_members'].findIndex(m =>
+            m.matter_id === grant.matter_id && m.account_id === grant.accepted_by_account_id && m.role === 'REVIEWER');
+          if (idx > -1) tables['navigator_matter_members'].splice(idx, 1);
+          return Promise.resolve({ data: { grant_id: grant.id, matter_id: grant.matter_id, status: 'REVOKED', membership_removed: idx > -1 }, error: null });
         }
         return Promise.resolve({ data: null, error: new Error('Unknown RPC') });
       }
@@ -169,7 +201,9 @@ describe('Stage 7B: Parent-Authorized Matter Access', () => {
   });
 
   it('11. expired token fails', async () => {
-    const { rawToken } = await createProfessionalGrant('parent-1', 'matter-1', { expiresInDays: -1 });
+    // Creation rejects a non-positive expiry, so age a valid invitation past its expiry instead.
+    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1');
+    tables.navigator_matter_access_grants.find(g => g.id === grant.id)!.expires_at = new Date(Date.now() - 60_000).toISOString();
     await expect(acceptProfessionalGrant('professional-1', rawToken))
       .rejects.toThrow(/Invitation has expired/);
   });
