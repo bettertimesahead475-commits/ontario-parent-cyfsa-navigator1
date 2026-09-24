@@ -11,7 +11,7 @@
 import {
   FORM_33B1_STRUCTURAL_MANIFEST,
   Form33B1StructuralSection
-} from "./form33b1StructuralManifest";
+} from "./form33b1StructuralManifest.js";
 
 export const FORM_33B1_DECISION_BOUNDARIES_SOURCE_SHA256 =
   "79d718a2de8be55001b47649a34366613b7050a69f98dfb6a4fd394870908a6e";
@@ -72,8 +72,12 @@ export type Form33B1Sensitivity = (typeof FORM_33B1_SENSITIVITY_LEVELS)[number];
 
 export const AUTHORIZED_BRAND_SYMBOL = Symbol("AUTHORIZED_PARTY_RESPONSE");
 
+/** Module-private memory registry storing genuine authorized response object references */
+const AUTHORIZED_OBJECT_REGISTRY = new WeakSet<object>();
+
 export interface AuthorizedPartyResponse<T = unknown> {
   readonly [AUTHORIZED_BRAND_SYMBOL]: "AUTHORIZED_PARTY_RESPONSE";
+  readonly stableTechnicalId: string;
   readonly value: T;
   readonly provenance: Form33B1DecisionAuthority;
   readonly authorizedBy: string;
@@ -100,43 +104,8 @@ export type DecisionFieldState<T = unknown> =
     }
   | AuthorizedPartyResponse<T>;
 
-/**
- * Creates an authorized party response object after explicit human authorization transition.
- * Plain objects, spread operations, booleans, or strings cannot fake this branded state.
- */
-export function authorizePartyResponse<T>(
-  candidateValue: T,
-  provenance: Form33B1DecisionAuthority,
-  authorizedBy: string
-): AuthorizedPartyResponse<T> {
-  if (!authorizedBy || typeof authorizedBy !== "string" || authorizedBy.trim() === "") {
-    throw new Error("Party response authorization requires an explicit non-empty authorizer identity");
-  }
-  if (provenance === "OFFICIAL_STATIC_FORM_CONTENT") {
-    throw new Error("Static form content cannot be authorized as a party response");
-  }
-  return Object.freeze({
-    [AUTHORIZED_BRAND_SYMBOL]: "AUTHORIZED_PARTY_RESPONSE",
-    value: candidateValue,
-    provenance,
-    authorizedBy: authorizedBy.trim(),
-    authorizedAtIso: new Date().toISOString()
-  }) as AuthorizedPartyResponse<T>;
-}
-
-export function isAuthorizedPartyResponse<T>(obj: unknown): obj is AuthorizedPartyResponse<T> {
-  if (!obj || typeof obj !== "object") return false;
-  return (
-    (obj as any)[AUTHORIZED_BRAND_SYMBOL] === "AUTHORIZED_PARTY_RESPONSE" &&
-    "value" in obj &&
-    "provenance" in obj &&
-    typeof (obj as any).authorizedBy === "string" &&
-    typeof (obj as any).authorizedAtIso === "string"
-  );
-}
-
 // ---------------------------------------------------------------------------
-// 5. DECISION BOUNDARY MANIFEST ENTRY INTERFACE
+// 5. DECISION BOUNDARY MANIFEST ENTRY INTERFACE & MANIFEST BUILD
 // ---------------------------------------------------------------------------
 export interface Form33B1DecisionBoundaryEntry {
   readonly ordinal: number;
@@ -230,11 +199,12 @@ for (let i = 0; i < FORM_33B1_STRUCTURAL_MANIFEST.length; i++) {
       requiresUnanswered = true;
       break;
 
-    case "SIGNATURE_OR_ATTESTATION":
-      if (item.stableTechnicalId.includes("date")) {
+    case "SIGNATURE_OR_ATTESTATION": {
+      const idLower = item.stableTechnicalId.toLowerCase();
+      if (idLower.includes("date")) {
         category = "DATE";
         sensitivity = "SIGNATURE_OR_ATTESTATION";
-      } else if (item.stableTechnicalId.includes("lawyer")) {
+      } else if (idLower.includes("lawyer")) {
         category = "ATTESTATION";
         sensitivity = "SIGNATURE_OR_ATTESTATION";
       } else {
@@ -245,6 +215,7 @@ for (let i = 0; i < FORM_33B1_STRUCTURAL_MANIFEST.length; i++) {
       requiresAuth = true;
       requiresUnanswered = true;
       break;
+    }
 
     default:
       category = "UNKNOWN";
@@ -272,3 +243,84 @@ for (let i = 0; i < FORM_33B1_STRUCTURAL_MANIFEST.length; i++) {
 
 export const FORM_33B1_DECISION_BOUNDARIES: readonly Form33B1DecisionBoundaryEntry[] =
   Object.freeze(boundaryEntries);
+
+/**
+ * Creates an authorized party response object after explicit human authorization transition,
+ * strictly verifying that the transition is permitted for the given Form 33B.1 control.
+ *
+ * Plain objects, spread operations, Object.assign copies, JSON round-trips, booleans, or
+ * unpermitted provenance cannot satisfy or fake this private registered state.
+ */
+export function authorizePartyResponse<T>(
+  stableTechnicalId: string,
+  candidateValue: T,
+  provenance: Form33B1DecisionAuthority,
+  authorizedBy: string
+): AuthorizedPartyResponse<T> {
+  const boundary = FORM_33B1_DECISION_BOUNDARIES.find(b => b.stableTechnicalId === stableTechnicalId);
+  if (!boundary) {
+    throw new Error(`Unknown Form 33B.1 control ID: ${stableTechnicalId}`);
+  }
+
+  if (provenance === "OFFICIAL_STATIC_FORM_CONTENT") {
+    throw new Error(`Static form content cannot be authorized as a party response for control '${stableTechnicalId}'`);
+  }
+
+  if (!boundary.permittedAuthorityClasses.includes(provenance)) {
+    throw new Error(
+      `Provenance '${provenance}' is not permitted for control '${stableTechnicalId}'. Permitted provenance classes: ${boundary.permittedAuthorityClasses.join(", ")}`
+    );
+  }
+
+  if (boundary.requiresExplicitAuthorization) {
+    if (!authorizedBy || typeof authorizedBy !== "string" || authorizedBy.trim() === "") {
+      throw new Error(`Party response authorization for control '${stableTechnicalId}' requires an explicit non-empty authorizer identity`);
+    }
+  }
+
+  if (candidateValue === undefined || candidateValue === null) {
+    throw new Error(`Cannot authorize undefined or null value for control '${stableTechnicalId}'`);
+  }
+
+  if (typeof candidateValue === "string" && candidateValue.trim() === "" && boundary.requiresExplicitAuthorization) {
+    throw new Error(`Cannot authorize empty string as an authorized response for control '${stableTechnicalId}'`);
+  }
+
+  const authObj = Object.freeze({
+    [AUTHORIZED_BRAND_SYMBOL]: "AUTHORIZED_PARTY_RESPONSE" as const,
+    stableTechnicalId: boundary.stableTechnicalId,
+    value: candidateValue,
+    provenance,
+    authorizedBy: authorizedBy.trim(),
+    authorizedAtIso: new Date().toISOString()
+  });
+
+  AUTHORIZED_OBJECT_REGISTRY.add(authObj);
+  return authObj as AuthorizedPartyResponse<T>;
+}
+
+/**
+ * Validates that an object is a genuine, privately registered AuthorizedPartyResponse created by authorizePartyResponse().
+ * If expectedTechnicalId is provided, also verifies that the response is bound to that exact control.
+ */
+export function isAuthorizedPartyResponse<T>(
+  obj: unknown,
+  expectedTechnicalId?: string
+): obj is AuthorizedPartyResponse<T> {
+  if (!obj || typeof obj !== "object") return false;
+  if (!AUTHORIZED_OBJECT_REGISTRY.has(obj as object)) return false;
+
+  const auth = obj as any;
+  if (auth[AUTHORIZED_BRAND_SYMBOL] !== "AUTHORIZED_PARTY_RESPONSE") return false;
+  if (!("value" in auth)) return false;
+  if (typeof auth.stableTechnicalId !== "string") return false;
+  if (typeof auth.provenance !== "string") return false;
+  if (typeof auth.authorizedBy !== "string" || auth.authorizedBy.trim() === "") return false;
+  if (typeof auth.authorizedAtIso !== "string") return false;
+
+  if (expectedTechnicalId !== undefined && auth.stableTechnicalId !== expectedTechnicalId) {
+    return false;
+  }
+
+  return true;
+}

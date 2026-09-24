@@ -7,9 +7,9 @@ import {
   FORM_33B1_DECISION_AUTHORITIES,
   FORM_33B1_SENSITIVITY_LEVELS,
   UNANSWERED_STATE,
+  AUTHORIZED_BRAND_SYMBOL,
   authorizePartyResponse,
   isAuthorizedPartyResponse,
-  AuthorizedPartyResponse,
   Form33B1DecisionAuthority
 } from "./form33b1DecisionBoundaries.js";
 import {
@@ -137,35 +137,117 @@ describe("Form 33B.1 b5A-iii Decision-Boundary Classification & Safety Suite", (
   });
 
   // -------------------------------------------------------------------------
-  // 4. Adversarial Protection & Type Safety Tests
+  // 4. Defect A — Runtime Authorization Integrity & Object Mutation Protection
   // -------------------------------------------------------------------------
-  it("10. matter-derived allegation cannot become admission without explicit authorization", () => {
-    const matterAllegation = { source: "MATTER_EVIDENCE", text: "Child missed school" };
-    expect(isAuthorizedPartyResponse(matterAllegation)).toBe(false);
-    expect(() => authorizePartyResponse(matterAllegation, "OFFICIAL_STATIC_FORM_CONTENT", "")).toThrow();
+  it("10. genuine authorized object passes validation and is frozen", () => {
+    const real = authorizePartyResponse("form33b1.response.paragraphSlot1", "Agreed in part", "USER_ENTERED", "parent_123");
+    expect(isAuthorizedPartyResponse(real)).toBe(true);
+    expect(isAuthorizedPartyResponse(real, "form33b1.response.paragraphSlot1")).toBe(true);
+    expect(Object.isFrozen(real)).toBe(true);
   });
 
-  it("11. matter-derived allegation cannot become denial without explicit authorization", () => {
-    const matterDenial = { source: "CAS_RECORD", statement: "Denies allegation 3" };
-    expect(isAuthorizedPartyResponse(matterDenial)).toBe(false);
+  it("11. object spread with value mutation fails runtime authorization validation", () => {
+    const real = authorizePartyResponse("form33b1.response.paragraphSlot1", "Agreed in part", "USER_ENTERED", "parent_123");
+    const tampered = { ...real, value: "Disagreed in full" };
+    expect(isAuthorizedPartyResponse(tampered)).toBe(false);
   });
 
-  it("12. evidence cannot become agreement or disagreement automatically", () => {
-    const evidence = { type: "AFFIDAVIT_EXHIBIT", content: "Parent agreed to supervision" };
-    expect(isAuthorizedPartyResponse(evidence)).toBe(false);
+  it("12. object spread without mutation fails runtime authorization validation", () => {
+    const real = authorizePartyResponse("form33b1.response.paragraphSlot1", "Agreed in part", "USER_ENTERED", "parent_123");
+    const copied = { ...real };
+    expect(isAuthorizedPartyResponse(copied)).toBe(false);
   });
 
-  it("13. machine suggestion cannot become authorized response without authorization transition", () => {
-    const machineSuggestion = { suggestedChoice: "agree", confidence: 0.95 };
-    expect(isAuthorizedPartyResponse(machineSuggestion)).toBe(false);
+  it("13. Object.assign fails runtime authorization validation", () => {
+    const real = authorizePartyResponse("form33b1.response.paragraphSlot1", "Agreed in part", "USER_ENTERED", "parent_123");
+    const assigned = Object.assign({}, real);
+    expect(isAuthorizedPartyResponse(assigned)).toBe(false);
+    const assignedMutated = Object.assign({}, real, { value: "Mutated value" });
+    expect(isAuthorizedPartyResponse(assignedMutated)).toBe(false);
   });
 
-  it("14. professional review alone cannot become authorized response without explicit authorization", () => {
-    const profFinding = { reviewer: "Lawyer A", notes: "Likely agree" };
-    expect(isAuthorizedPartyResponse(profFinding)).toBe(false);
+  it("14. JSON round trip fails runtime authorization validation", () => {
+    const real = authorizePartyResponse("form33b1.response.paragraphSlot1", "Agreed in part", "USER_ENTERED", "parent_123");
+    const jsonRoundTrip = JSON.parse(JSON.stringify(real));
+    expect(isAuthorizedPartyResponse(jsonRoundTrip)).toBe(false);
   });
 
-  it("15. UNANSWERED state is explicit and distinct from false, empty string, or unchecked", () => {
+  it("15. direct forgery object fails runtime authorization validation", () => {
+    const forged = {
+      [AUTHORIZED_BRAND_SYMBOL]: "AUTHORIZED_PARTY_RESPONSE",
+      stableTechnicalId: "form33b1.response.paragraphSlot1",
+      value: "Agreed in part",
+      provenance: "USER_ENTERED",
+      authorizedBy: "parent_123",
+      authorizedAtIso: new Date().toISOString()
+    };
+    expect(isAuthorizedPartyResponse(forged)).toBe(false);
+  });
+
+  it("16. genuine authorized object property mutation fails", () => {
+    const real = authorizePartyResponse("form33b1.response.paragraphSlot1", "Agreed in part", "USER_ENTERED", "parent_123");
+    expect(() => {
+      (real as any).value = "Unauthorized modification";
+    }).toThrow();
+    expect(real.value).toBe("Agreed in part");
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. Defect B — Control-Aware Provenance & Transition Enforcement
+  // -------------------------------------------------------------------------
+  it("17. authorization transition rejects unknown technical IDs", () => {
+    expect(() => authorizePartyResponse("nonexistent.control.id", "val", "USER_ENTERED", "user1")).toThrow(
+      /Unknown Form 33B.1 control ID/
+    );
+  });
+
+  it("18. high-stakes controls reject MATTER_DERIVED provenance transition", () => {
+    expect(() =>
+      authorizePartyResponse("form33b1.response.paragraphSlot1", "Admit all", "MATTER_DERIVED", "user1")
+    ).toThrow(/Provenance 'MATTER_DERIVED' is not permitted/);
+
+    expect(() =>
+      authorizePartyResponse("form33b1.requestedOrders.dismissApplication", true, "MATTER_DERIVED", "user1")
+    ).toThrow(/Provenance 'MATTER_DERIVED' is not permitted/);
+  });
+
+  it("19. high-stakes controls reject MACHINE_SUGGESTED provenance transition", () => {
+    expect(() =>
+      authorizePartyResponse("form33b1.planOfCare.placementParent", true, "MACHINE_SUGGESTED", "user1")
+    ).toThrow(/Provenance 'MACHINE_SUGGESTED' is not permitted/);
+  });
+
+  it("20. controls permit PROFESSIONALLY_REVIEWED provenance transition only when configured", () => {
+    const profAuth = authorizePartyResponse("form33b1.response.paragraphSlot1", "Agree", "PROFESSIONALLY_REVIEWED", "lawyer_1");
+    expect(isAuthorizedPartyResponse(profAuth)).toBe(true);
+
+    expect(() =>
+      authorizePartyResponse("form33b1.signature.answeringPartyPrintedName", "Jane Doe", "PROFESSIONALLY_REVIEWED", "lawyer_1")
+    ).toThrow(/Provenance 'PROFESSIONALLY_REVIEWED' is not permitted/);
+  });
+
+  it("21. static form content cannot be authorized as a party response", () => {
+    expect(() =>
+      authorizePartyResponse("form33b1.court.courtName", "Toronto Court", "OFFICIAL_STATIC_FORM_CONTENT", "user1")
+    ).toThrow(/Static form content cannot be authorized/);
+  });
+
+  it("22. valid USER_ENTERED explicit human authorization succeeds for valid control", () => {
+    const validSig = authorizePartyResponse("form33b1.signature.answeringPartyPrintedName", "Jane Doe", "USER_ENTERED", "parent_1");
+    expect(isAuthorizedPartyResponse(validSig)).toBe(true);
+    expect(isAuthorizedPartyResponse(validSig, "form33b1.signature.answeringPartyPrintedName")).toBe(true);
+  });
+
+  it("23. cross-control reuse of authorization object is rejected by control-aware validator", () => {
+    const slot1Auth = authorizePartyResponse("form33b1.response.paragraphSlot1", "Agree", "USER_ENTERED", "user1");
+    expect(isAuthorizedPartyResponse(slot1Auth, "form33b1.response.paragraphSlot1")).toBe(true);
+    expect(isAuthorizedPartyResponse(slot1Auth, "form33b1.response.paragraphSlot2")).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. Unanswered & Signature Safety Tests
+  // -------------------------------------------------------------------------
+  it("24. UNANSWERED state is distinct from false, empty string, or unchecked", () => {
     expect(UNANSWERED_STATE.status).toBe("UNANSWERED");
     expect(isAuthorizedPartyResponse(UNANSWERED_STATE)).toBe(false);
     expect(isAuthorizedPartyResponse(false)).toBe(false);
@@ -174,43 +256,36 @@ describe("Form 33B.1 b5A-iii Decision-Boundary Classification & Safety Suite", (
     expect(isAuthorizedPartyResponse(null)).toBe(false);
   });
 
-  it("16. object spread injection defense: spread payloads cannot fake AuthorizedPartyResponse", () => {
-    const matterDerivedData = {
-      value: "agree",
-      provenance: "MATTER_DERIVED" as Form33B1DecisionAuthority,
-      authorizedBy: "AI_AUTOMATION",
-      authorizedAtIso: new Date().toISOString()
-    };
-    const injected = { ...matterDerivedData };
-    expect(isAuthorizedPartyResponse(injected)).toBe(false);
-
-    const payload = { value: "dismissApplication", checked: true };
-    const injectedOrder = { ...payload, authorizedBy: "User" };
-    expect(isAuthorizedPartyResponse(injectedOrder)).toBe(false);
+  it("25. authorization requires non-empty and non-whitespace authorizer identity", () => {
+    expect(() => authorizePartyResponse("form33b1.signature.answeringPartyPrintedName", "Jane Doe", "USER_ENTERED", "")).toThrow(
+      /explicit non-empty authorizer identity/
+    );
+    expect(() => authorizePartyResponse("form33b1.signature.answeringPartyPrintedName", "Jane Doe", "USER_ENTERED", "   ")).toThrow(
+      /explicit non-empty authorizer identity/
+    );
   });
 
-  it("17. generic boolean or string cannot satisfy authorized decision type", () => {
-    expect(isAuthorizedPartyResponse(true)).toBe(false);
-    expect(isAuthorizedPartyResponse(false)).toBe(false);
-    expect(isAuthorizedPartyResponse("REQUESTED")).toBe(false);
-    expect(isAuthorizedPartyResponse("AGREE")).toBe(false);
+  it("26. empty string response is rejected for explicit authorization controls", () => {
+    expect(() => authorizePartyResponse("form33b1.response.paragraphSlot1", "", "USER_ENTERED", "user1")).toThrow(
+      /Cannot authorize empty string/
+    );
   });
 
-  it("18. requested order cannot be machine-selected or authorized with static form content", () => {
-    expect(() => authorizePartyResponse("dismissApplication", "OFFICIAL_STATIC_FORM_CONTENT", "parent_user")).toThrow();
-  });
+  // -------------------------------------------------------------------------
+  // 7. Defect C — Ordinal 168 lawyerDate Explicit Classification Regression Test
+  // -------------------------------------------------------------------------
+  it("27. Ordinal 168 (form33b1.signature.lawyerDate) is classified as DATE category", () => {
+    const item168 = FORM_33B1_DECISION_BOUNDARIES.find(b => b.ordinal === 168);
+    expect(item168).toBeDefined();
+    expect(item168?.stableTechnicalId).toBe("form33b1.signature.lawyerDate");
+    expect(item168?.decisionCategory).toBe("DATE");
+    expect(item168?.sensitivity).toBe("SIGNATURE_OR_ATTESTATION");
+    expect(item168?.requiresExplicitAuthorization).toBe(true);
+    expect(item168?.requiresUnansweredState).toBe(true);
 
-  it("19. signature and attestation cannot be authorized with empty or whitespace authorizer identity", () => {
-    expect(() => authorizePartyResponse("John Doe", "USER_ENTERED", "")).toThrow();
-    expect(() => authorizePartyResponse("John Doe", "USER_ENTERED", "   ")).toThrow();
-  });
-
-  it("20. valid authorizePartyResponse creates a frozen, branded authorized object", () => {
-    const auth = authorizePartyResponse("Agree to placement", "USER_ENTERED", "parent_123");
-    expect(isAuthorizedPartyResponse(auth)).toBe(true);
-    expect(auth.value).toBe("Agree to placement");
-    expect(auth.provenance).toBe("USER_ENTERED");
-    expect(auth.authorizedBy).toBe("parent_123");
-    expect(Object.isFrozen(auth)).toBe(true);
+    const dateCount = FORM_33B1_DECISION_BOUNDARIES.filter(b => b.decisionCategory === "DATE").length;
+    const attestationCount = FORM_33B1_DECISION_BOUNDARIES.filter(b => b.decisionCategory === "ATTESTATION").length;
+    expect(dateCount).toBe(3);
+    expect(attestationCount).toBe(1);
   });
 });
