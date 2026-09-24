@@ -59,7 +59,7 @@ explicitly labelled states (`expiryDerived`, `timeBasis: 'EXPIRES_AT'`). It cann
 | Owner access-audit UI | Show report to parent | YELLOW | Needs mounted route; `src/App.tsx` shared shell (edited by 9D-3) | NO (now) | Build after mount; UX copy needs owner review. |
 | Consolidated permission matrix across all routes | Stage 10 "Permissions" inventory | YELLOW | Stage 9 route/work-product surface not final | NO | Inventory would be stale until Stage 9 freezes. |
 | Stage 7B grant-lifecycle remediation (D1–D4) | Fix defects below | GREEN-eligible, **not started** | None | YES | Reopens frozen Stage 7B code and a pending migration; needs explicit authorization. |
-| Append-only access/audit event log | True audit trail | RED | Indirect | NO | New table + migration + writes in frozen paths; retention/privacy decisions undocumented. |
+| Append-only access/audit event log | True audit trail | Foundation GREEN, done (see `STAGE_10_ACCESS_EVENT_LOG.md`); emitters YELLOW | Emitters wait for the PR #27 freeze | Foundation: YES | Table, guards, recorder and reader are additive; wiring into invite/accept/revoke waits for the Stage 7B remediation. |
 | Reviewer data-access (read) logging | Who viewed what | RED | Must cover Stage 9D research and form/work-product routes | NO | Route set not final until Stage 9 freeze; schema needed. |
 | Firm/team tenant model and firm-level delegation | "Firm Collaboration" | RED | Owner contract required | NO | Roadmap decision says this introduces product decisions not yet made. |
 | Firm-shared permissions on work product / form drafts | Collaboration on drafts | RED | Form 33B.1 draft-review and population engine unfrozen | NO | Directly depends on unfinished Form 33B.1 work. |
