@@ -15,7 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import pg from 'pg';
-import { acceptProfessionalGrant, revokeProfessionalGrant } from './professionalMatterAccess';
+import { acceptProfessionalGrant, createProfessionalGrant, revokeProfessionalGrant } from './professionalMatterAccess';
 
 // The service is driven against real PostgreSQL through a thin PostgREST-style RPC adapter
 // (named arguments, {data, error} result). The adapter records every RPC the service issues so
@@ -48,6 +48,15 @@ vi.mock('./accounts', () => ({
 const ADMIN_URL = process.env.NAVIGATOR_PG_TEST_ADMIN_URL;
 const MIGRATIONS = path.resolve(__dirname, '../../supabase/migrations_pending_approval');
 const REMEDIATION = path.join(MIGRATIONS, 'remediate_navigator_matter_access_grants_lifecycle.sql');
+// Stage 10 slice 4: the audited (v3) replacements of accept/revoke must preserve every Stage 7B
+// guarantee, so the whole SQL suite below runs against BOTH the frozen v2 functions and the v3
+// functions (which additionally require the slice 2 event log).
+const EVENT_LOG = path.join(MIGRATIONS, 'create_navigator_matter_access_event_log.sql');
+const AUDIT_V3 = path.join(MIGRATIONS, 'create_navigator_matter_access_lifecycle_audit_v3.sql');
+const LIFECYCLE_VARIANTS: { name: string; extra: string[] }[] = [
+  { name: 'v2 frozen Stage 7B functions', extra: [] },
+  { name: 'v3 audited Stage 10 functions', extra: [EVENT_LOG, AUDIT_V3] },
+];
 
 function assertLocal(url: string) {
   const host = new URL(url).hostname;
@@ -70,7 +79,7 @@ const digest = (raw: string) => crypto.createHash('sha256').update(raw).digest('
 
 const d = ADMIN_URL ? describe : describe.skip;
 
-d('Stage 7B access lifecycle -- real PostgreSQL', () => {
+for (const variant of LIFECYCLE_VARIANTS) d(`Stage 7B access lifecycle -- real PostgreSQL [${variant.name}]`, () => {
   const dbName = `navigator_stage7b_test_${crypto.randomBytes(6).toString('hex')}`;
   let admin: pg.Client;
   let db: pg.Client;
@@ -96,6 +105,7 @@ d('Stage 7B access lifecycle -- real PostgreSQL', () => {
     await db.query(mattersFoundationPrefix());
     await db.query(fs.readFileSync(path.join(MIGRATIONS, 'create_navigator_matter_access_grants.sql'), 'utf8'));
     if (fs.existsSync(REMEDIATION)) await db.query(fs.readFileSync(REMEDIATION, 'utf8'));
+    for (const file of variant.extra) await db.query(fs.readFileSync(file, 'utf8'));
   }, 60_000);
 
   afterAll(async () => {
@@ -417,14 +427,17 @@ d('Stage 7B access lifecycle -- real PostgreSQL', () => {
 // ---------------------------------------------------------------------------------------------
 d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => {
   const suffix = crypto.randomBytes(6).toString('hex');
-  const dbs = { legacy: `navigator_stage7b_legacy_${suffix}`, remediated: `navigator_stage7b_remed_${suffix}` };
+  // legacy: Stage 7B grants only. v2only: + Stage 7B remediation (frozen contract v2, no audit
+  // wiring). remediated: + slice 2 event log + slice 4 v3 audited lifecycle (what new code needs).
+  const dbs = { legacy: `navigator_stage7b_legacy_${suffix}`, v2only: `navigator_stage7b_v2only_${suffix}`, remediated: `navigator_stage7b_remed_${suffix}` };
+  type Kind = keyof typeof dbs;
   let admin: pg.Client;
-  const clients: Record<'legacy' | 'remediated', pg.Client> = {} as any;
+  const clients: Record<Kind, pg.Client> = {} as any;
   const OWNER = '00000000-0000-4000-8000-000000000001';
   const LAWYER = '00000000-0000-4000-8000-000000000002';
   const MATTER = '00000000-0000-4000-8000-0000000000a1';
 
-  async function build(kind: 'legacy' | 'remediated') {
+  async function build(kind: Kind) {
     await admin.query(`create database ${dbs[kind]}`);
     const url = new URL(ADMIN_URL!);
     url.pathname = `/${dbs[kind]}`;
@@ -439,7 +452,11 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     await c.query(fs.readFileSync(path.join(MIGRATIONS, 'create_accounts_foundation.sql'), 'utf8'));
     await c.query(mattersFoundationPrefix());
     await c.query(fs.readFileSync(path.join(MIGRATIONS, 'create_navigator_matter_access_grants.sql'), 'utf8'));
-    if (kind === 'remediated') await c.query(fs.readFileSync(REMEDIATION, 'utf8'));
+    if (kind !== 'legacy') await c.query(fs.readFileSync(REMEDIATION, 'utf8'));
+    if (kind === 'remediated') {
+      await c.query(fs.readFileSync(EVENT_LOG, 'utf8'));
+      await c.query(fs.readFileSync(AUDIT_V3, 'utf8'));
+    }
     clients[kind] = c;
   }
 
@@ -448,6 +465,7 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     admin = new pg.Client({ connectionString: ADMIN_URL });
     await admin.connect();
     await build('legacy');
+    await build('v2only');
     await build('remediated');
   }, 60_000);
 
@@ -459,7 +477,7 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     }
   });
 
-  async function use(kind: 'legacy' | 'remediated') {
+  async function use(kind: Kind) {
     const c = clients[kind];
     await c.query('truncate public.navigator_matter_access_grants, public.navigator_matter_members, public.navigator_matters, public.clients, public.accounts cascade');
     await c.query(`insert into public.accounts (id, firebase_uid, primary_role) values ($1, 'uid-owner', 'parent'), ($2, 'uid-lawyer', 'lawyer')`, [OWNER, LAWYER]);
@@ -518,6 +536,22 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     await expect(revokeProfessionalGrant('uid-owner', g.id)).rejects.toThrow(/access lifecycle contract/i);
     expect(svc.calls).not.toContain('revoke_matter_grant');
     expect(await state(c, g.id)).toEqual(before);
+  });
+
+  it.each(['accept', 'revoke', 'create'] as const)('SLICE 4: a v2-only DB (no audit wiring) + new code refuses %s before any lifecycle call', async (op) => {
+    const c = await use('v2only');
+    const g = await invite(c);
+    await c.query(`update public.navigator_matter_access_grants set status = 'ACCEPTED', accepted_at = now(), accepted_by_account_id = $2 where id = $1`, [g.id, LAWYER]);
+    await c.query(`insert into public.navigator_matter_members (matter_id, account_id, role) values ($1, $2, 'REVIEWER')`, [MATTER, LAWYER]);
+    const before = await state(c, g.id);
+    const grantsBefore = (await c.query('select count(*)::int as n from public.navigator_matter_access_grants')).rows[0].n;
+    const run = op === 'accept' ? acceptProfessionalGrant('uid-lawyer', g.raw)
+      : op === 'revoke' ? revokeProfessionalGrant('uid-owner', g.id)
+      : createProfessionalGrant('uid-owner', MATTER);
+    await expect(run).rejects.toThrow(/access lifecycle contract/i);
+    expect(svc.calls).toEqual(['navigator_matter_access_lifecycle_contract_v3']);
+    expect(await state(c, g.id)).toEqual(before);
+    expect((await c.query('select count(*)::int as n from public.navigator_matter_access_grants')).rows[0].n).toBe(grantsBefore);
   });
 
   it('REMEDIATED DB + new code: acceptance and owner protection work end to end', async () => {

@@ -97,9 +97,9 @@ vi.mock('./access', () => ({
       rpcCalls.push({ fn, args });
       const override = rpcOverride?.(fn, args);
       if (override) return Promise.resolve(override);
-      if (fn === 'navigator_matter_access_lifecycle_contract') {
+      if (fn === 'navigator_matter_access_lifecycle_contract_v3') {
         return Promise.resolve(contractVersion === null
-          ? { data: null, error: { message: 'function public.navigator_matter_access_lifecycle_contract() does not exist' } }
+          ? { data: null, error: { message: 'function public.navigator_matter_access_lifecycle_contract_v3() does not exist' } }
           : { data: contractVersion, error: null });
       }
       if (fn === 'revoke_matter_grant') return Promise.resolve(referenceRevoke(args.p_firebase_uid, args.p_grant_id));
@@ -116,7 +116,7 @@ beforeEach(() => {
   rpcCalls = [];
   directMemberDeletes = 0;
   rpcOverride = null;
-  contractVersion = 'navigator_matter_access_lifecycle_v2';
+  contractVersion = 'navigator_matter_access_lifecycle_v3';
   tables = {
     navigator_matter_members: [
       { matter_id: 'matter-1', account_id: 'acct-owner', role: 'OWNER' },
@@ -179,7 +179,7 @@ describe('BUG 4 -- stale grant revocation must not remove independently authoriz
     await revokeProfessionalGrant('uid-owner', GA);
     expect(directMemberDeletes).toBe(0);
     expect(rpcCalls).toEqual([
-      { fn: 'navigator_matter_access_lifecycle_contract', args: undefined },
+      { fn: 'navigator_matter_access_lifecycle_contract_v3', args: undefined },
       { fn: 'revoke_matter_grant', args: { p_firebase_uid: 'uid-owner', p_grant_id: GA } },
     ]);
   });
@@ -228,7 +228,7 @@ describe('BUG 2 / BUG 3 -- acceptance outcomes surfaced by the service', () => {
     rpcOverride = fn => (fn === 'accept_matter_grant'
       ? { data: null, error: { message: 'OWNER_CANNOT_ACCEPT: An OWNER of this matter cannot accept a professional invitation to it.' } } : undefined);
     await expect(acceptProfessionalGrant('uid-owner', token)).rejects.toThrow(/matter owner cannot accept/i);
-    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract', 'accept_matter_grant']);
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v3', 'accept_matter_grant']);
     expect(rpcCalls[1].args).toEqual({ p_firebase_uid: 'uid-owner', p_token_digest: expectedDigest });
   });
 
@@ -262,20 +262,22 @@ describe('B-1 -- the remediated database contract is required before any lifecyc
   it.each([
     ['absent (legacy database)', null],
     ['a different version', 'navigator_matter_access_lifecycle_v1'],
+    ['v2 only (safe functions but no audit wiring)', 'navigator_matter_access_lifecycle_v2'],
     ['an empty value', ''],
   ])('acceptance is refused when the contract is %s, and accept_matter_grant is never called', async (_label, version) => {
     contractVersion = version as string | null;
     await expect(acceptProfessionalGrant('uid-lawyer', 'raw-token')).rejects.toThrow(/access lifecycle contract/i);
-    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract']);
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v3']);
   });
 
   it.each([
     ['absent (legacy database)', null],
     ['a different version', 'navigator_matter_access_lifecycle_v1'],
+    ['v2 only (safe functions but no audit wiring)', 'navigator_matter_access_lifecycle_v2'],
   ])('revocation is refused when the contract is %s; no revoke RPC and no direct table write', async (_label, version) => {
     contractVersion = version as string | null;
     await expect(revokeProfessionalGrant('uid-owner', GA)).rejects.toThrow(/access lifecycle contract/i);
-    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract']);
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v3']);
     expect(directMemberDeletes).toBe(0);
     expect(tables.navigator_matter_access_grants[0].status).toBe('ACCEPTED');
     expect(reviewerMembership()).toBeDefined();

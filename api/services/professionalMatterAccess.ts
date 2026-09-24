@@ -3,14 +3,17 @@ import { findAccount } from './accounts';
 import { requireUuid } from './lifecycleErrors';
 import crypto from 'crypto';
 
-// The remediated database contract (remediate_navigator_matter_access_grants_lifecycle.sql).
-// Acceptance and revocation depend on its semantics, so both refuse to run unless the database
-// reports exactly this version. This check happens BEFORE any lifecycle RPC: the legacy
-// accept_matter_grant can commit an OWNER downgrade before its result could be inspected.
-export const ACCESS_LIFECYCLE_CONTRACT = 'navigator_matter_access_lifecycle_v2';
+// Required database contract. v2 (Stage 7B remediation, frozen at a452c6c) made the lifecycle
+// functions safe; v3 (Stage 10 slice 4, create_navigator_matter_access_lifecycle_audit_v3.sql)
+// additionally records every access transition in the append-only event log inside the SAME
+// transaction. Creation, acceptance and revocation all refuse to run unless the database
+// reports exactly v3. The check happens BEFORE any lifecycle RPC: a v2-only database would
+// change access without an audit record, and the pre-v2 accept_matter_grant can commit an OWNER
+// downgrade before its result could be inspected. The frozen v2 function is left untouched.
+export const ACCESS_LIFECYCLE_CONTRACT = 'navigator_matter_access_lifecycle_v3';
 
 async function requireAccessLifecycleContract(supabase: any): Promise<void> {
-  const { data, error } = await supabase.rpc('navigator_matter_access_lifecycle_contract');
+  const { data, error } = await supabase.rpc('navigator_matter_access_lifecycle_contract_v3');
   if (error || data !== ACCESS_LIFECYCLE_CONTRACT) {
     throw new Error('Professional access is unavailable: the required access lifecycle contract is not installed.');
   }
@@ -34,7 +37,10 @@ export interface ProfessionalGrant {
 
 /**
  * Creates a new invitation for a professional to access a matter.
- * The raw token is returned exactly once and is never stored in plaintext.
+ * The raw token is returned exactly once and is never stored in plaintext; only its SHA-256
+ * digest reaches the database. Ownership is checked, the grant is inserted and its
+ * GRANT_CREATED audit event is recorded by one owner-checked database function, in one
+ * transaction (create_matter_grant, contract v3).
  */
 export async function createProfessionalGrant(
   firebaseUid: string,
@@ -44,50 +50,37 @@ export async function createProfessionalGrant(
   const account = await findAccount(firebaseUid);
   if (!account) throw new Error('Account not found');
 
-  const supabase = getSupabase();
-
-  // 1. Verify the caller is an OWNER of the matter
-  const { data: member, error: memberErr } = await supabase
-    .from('navigator_matter_members')
-    .select('role')
-    .eq('matter_id', matterId)
-    .eq('account_id', account.id)
-    .single();
-
-  if (memberErr || !member) {
-    throw new Error('UNAUTHORIZED: You must be an owner of this matter to grant access.');
-  }
-  if (member.role !== 'OWNER') {
-    throw new Error('UNAUTHORIZED: Only OWNER can grant access.');
+  const days = options?.expiresInDays ?? 7;
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    throw new Error('Invitation expiry must be 1 to 365 days.');
   }
 
-  // 2. Generate secure token and digest
   const rawToken = crypto.randomBytes(32).toString('base64url');
   const tokenDigest = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-  // 3. Insert grant
-  const days = options?.expiresInDays || 7;
-  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  const supabase = getSupabase();
+  await requireAccessLifecycleContract(supabase);
+  const { data, error } = await supabase.rpc('create_matter_grant', {
+    p_firebase_uid: firebaseUid,
+    p_matter_id: matterId,
+    p_token_digest: tokenDigest,
+    p_expires_in_days: days
+  });
 
-  const { data: grant, error: insertErr } = await supabase
-    .from('navigator_matter_access_grants')
-    .insert({
-      matter_id: matterId,
-      grantor_account_id: account.id,
-      token_digest: tokenDigest,
-      capability: 'REVIEWER',
-      status: 'PENDING',
-      expires_at: expiresAt
-    })
-    .select()
-    .single();
-
-  if (insertErr || !grant) {
-    throw new Error('Failed to create grant: ' + (insertErr?.message || 'unknown'));
+  if (error) {
+    const message = String(error.message || '');
+    if (message.includes('NOT_OWNER')) throw new Error('UNAUTHORIZED: Only OWNER can grant access.');
+    if (message.includes('ACCOUNT_UNAVAILABLE')) throw new Error('Account not found');
+    // Raw database text is never returned to the caller.
+    throw new Error('Failed to create grant.');
+  }
+  if (!data || typeof data.id !== 'string' || data.status !== 'PENDING'
+      || String(data.matter_id).toLowerCase() !== String(matterId).toLowerCase()) {
+    throw new Error('Failed to create grant.');
   }
 
   return {
-    grant: mapToGrant(grant),
+    grant: mapToGrant(data),
     rawToken
   };
 }
