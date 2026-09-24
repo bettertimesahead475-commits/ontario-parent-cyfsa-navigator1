@@ -22,7 +22,7 @@ vi.mock('./access', () => {
         const query = {
           select: () => query,
           insert: (data: any) => {
-            const row = { id: `id-${Math.random()}`, created_at: new Date().toISOString(), ...data };
+            const row = { id: globalThis.crypto.randomUUID(), created_at: new Date().toISOString(), ...data };
             tables[table].push(row);
             return { select: () => ({ single: () => Promise.resolve({ data: row, error: null }) }) };
           },
@@ -76,6 +76,9 @@ vi.mock('./access', () => {
         return query;
       },
       rpc: (fn: string, args: any) => {
+        if (fn === 'navigator_matter_access_lifecycle_contract') {
+          return Promise.resolve({ data: 'navigator_matter_access_lifecycle_v2', error: null });
+        }
         if (fn === 'accept_matter_grant') {
           if (rpcErrors[args.p_token_digest]) {
             return Promise.resolve({ data: null, error: rpcErrors[args.p_token_digest] });

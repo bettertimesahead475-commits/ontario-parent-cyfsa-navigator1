@@ -32,7 +32,9 @@
 -- recreated inside this transaction with identical name, arguments and privileges.
 --
 -- DEPLOY ORDER: apply this migration before deploying the matching
--- api/services/professionalMatterAccess.ts. Code deployed first fails closed.
+-- api/services/professionalMatterAccess.ts. If the order is accidentally reversed, the code
+-- still fails closed: it checks navigator_matter_access_lifecycle_contract() (defined at the end
+-- of this file) and refuses acceptance/revocation BEFORE calling any legacy function.
 -- ============================================================================
 
 begin;
@@ -213,5 +215,24 @@ comment on function public.revoke_matter_grant(text, uuid) is
 
 revoke all on function public.revoke_matter_grant(text, uuid) from public, anon, authenticated;
 grant execute on function public.revoke_matter_grant(text, uuid) to service_role;
+
+-- Contract capability (audit finding B-1). Created in the same transaction as the two
+-- functions above, so it exists if and only if the remediated semantics are installed. The
+-- application calls it before every acceptance/revocation and refuses the operation unless it
+-- returns exactly 'navigator_matter_access_lifecycle_v2'. That keeps new code from ever invoking
+-- the legacy accept_matter_grant, which could commit an OWNER downgrade before its return value
+-- could be inspected. It takes no arguments, reads no table and returns a constant.
+create function public.navigator_matter_access_lifecycle_contract()
+returns text
+language sql
+immutable
+set search_path = pg_catalog, pg_temp
+as $$ select 'navigator_matter_access_lifecycle_v2'::text $$;
+
+comment on function public.navigator_matter_access_lifecycle_contract() is
+  'Stage 7B access-lifecycle contract version. Returns the constant navigator_matter_access_lifecycle_v2 when the remediated accept_matter_grant / revoke_matter_grant are installed. Reads no data.';
+
+revoke all on function public.navigator_matter_access_lifecycle_contract() from public, anon, authenticated;
+grant execute on function public.navigator_matter_access_lifecycle_contract() to service_role;
 
 commit;

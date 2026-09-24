@@ -10,11 +10,40 @@
 // Each run creates a uniquely named database and drops it afterwards. Non-local hosts are refused
 // so this can never be pointed at a hosted/production project.
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import pg from 'pg';
+import { acceptProfessionalGrant, revokeProfessionalGrant } from './professionalMatterAccess';
+
+// The service is driven against real PostgreSQL through a thin PostgREST-style RPC adapter
+// (named arguments, {data, error} result). The adapter records every RPC the service issues so
+// tests can prove which database functions were -- and were not -- invoked.
+const svc = vi.hoisted(() => ({ client: null as any, calls: [] as string[] }));
+vi.mock('./access', () => ({
+  getSupabase: () => ({
+    rpc: async (fn: string, args: Record<string, unknown> = {}) => {
+      svc.calls.push(fn);
+      const names = Object.keys(args);
+      try {
+        const r = await svc.client.query(
+          `select public.${fn}(${names.map((n, i) => `${n} => $${i + 1}`).join(', ')}) as r`,
+          names.map(n => args[n]));
+        return { data: r.rows[0].r, error: null };
+      } catch (e: any) {
+        return { data: null, error: { message: e.message } };
+      }
+    },
+  }),
+}));
+vi.mock('./accounts', () => ({
+  findAccount: async (uid: string) => {
+    const r = await svc.client.query('select id, primary_role, status from public.accounts where firebase_uid = $1', [uid]);
+    const row = r.rows[0];
+    return row ? { id: row.id, primaryRole: row.primary_role, status: row.status } : null;
+  },
+}));
 
 const ADMIN_URL = process.env.NAVIGATOR_PG_TEST_ADMIN_URL;
 const MIGRATIONS = path.resolve(__dirname, '../../supabase/migrations_pending_approval');
@@ -292,7 +321,7 @@ d('Stage 7B access lifecycle -- real PostgreSQL', () => {
   it('keeps RLS enabled with no client grants on the grants table and both RPCs service_role-only', async () => {
     const rls = await db.query(`select relrowsecurity from pg_class where oid = 'public.navigator_matter_access_grants'::regclass`);
     expect(rls.rows[0].relrowsecurity).toBe(true);
-    for (const fn of ['public.accept_matter_grant(text, text)', 'public.revoke_matter_grant(text, uuid)']) {
+    for (const fn of ['public.accept_matter_grant(text, text)', 'public.revoke_matter_grant(text, uuid)', 'public.navigator_matter_access_lifecycle_contract()']) {
       for (const role of ['anon', 'authenticated', 'public']) {
         const r = await db.query(`select has_function_privilege($1, $2, 'execute') as ok`, [role === 'public' ? 'anon' : role, fn]);
         expect(r.rows[0].ok).toBe(false);
@@ -303,6 +332,31 @@ d('Stage 7B access lifecycle -- real PostgreSQL', () => {
     for (const role of ['anon', 'authenticated']) {
       const t = await db.query(`select has_table_privilege($1, 'public.navigator_matter_access_grants', 'select') as ok`, [role]);
       expect(t.rows[0].ok).toBe(false);
+    }
+  });
+
+  it('the contract capability returns exactly the v2 identifier, reads no data and is not SECURITY DEFINER', async () => {
+    const r = await db.query('select public.navigator_matter_access_lifecycle_contract() as v');
+    expect(r.rows[0].v).toBe('navigator_matter_access_lifecycle_v2');
+    const f = await db.query(`select prosecdef, provolatile, pronargs, prosrc from pg_proc where proname = 'navigator_matter_access_lifecycle_contract'`);
+    expect(f.rows).toHaveLength(1);
+    expect(f.rows[0]).toMatchObject({ prosecdef: false, provolatile: 'i', pronargs: 0 });
+    expect(f.rows[0].prosrc).not.toMatch(/\b(from|insert|update|delete|execute)\b/i);
+  });
+
+  it('the owner-less matter diagnostic finds a destroyed-owner matter and runs in a read-only transaction', async () => {
+    const g = await invite();
+    // Recreate the pre-remediation damage directly: the owner's membership became REVIEWER.
+    await db.query(`update public.navigator_matter_access_grants set status = 'ACCEPTED', accepted_at = now(), accepted_by_account_id = $2 where id = $1`, [g.id, ids.owner]);
+    await db.query(`update public.navigator_matter_members set role = 'REVIEWER' where matter_id = $1 and account_id = $2`, [ids.matterA, ids.owner]);
+    const sql = fs.readFileSync(path.resolve(__dirname, '../../supabase/diagnostics/stage7b_ownerless_matters.sql'), 'utf8');
+    await db.query('begin transaction read only');
+    try {
+      const r = await db.query(sql);
+      expect(r.rows).toHaveLength(1);
+      expect(r.rows[0]).toMatchObject({ matter_id: ids.matterA, creator_account_id: ids.owner, creator_current_role: 'REVIEWER', grants_accepted_by_creator: [g.id] });
+    } finally {
+      await db.query('rollback');
     }
   });
 
@@ -353,5 +407,148 @@ d('Stage 7B access lifecycle -- real PostgreSQL', () => {
     } finally {
       await c1.end(); await c2.end();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Service-level deployment compatibility (B-1) and grant-id canonicalization (B-2), exercising
+// the REAL service code against a LEGACY database (Stage 7B grants migration only) and a
+// REMEDIATED database (plus remediate_navigator_matter_access_grants_lifecycle.sql).
+// ---------------------------------------------------------------------------------------------
+d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => {
+  const suffix = crypto.randomBytes(6).toString('hex');
+  const dbs = { legacy: `navigator_stage7b_legacy_${suffix}`, remediated: `navigator_stage7b_remed_${suffix}` };
+  let admin: pg.Client;
+  const clients: Record<'legacy' | 'remediated', pg.Client> = {} as any;
+  const OWNER = '00000000-0000-4000-8000-000000000001';
+  const LAWYER = '00000000-0000-4000-8000-000000000002';
+  const MATTER = '00000000-0000-4000-8000-0000000000a1';
+
+  async function build(kind: 'legacy' | 'remediated') {
+    await admin.query(`create database ${dbs[kind]}`);
+    const url = new URL(ADMIN_URL!);
+    url.pathname = `/${dbs[kind]}`;
+    const c = new pg.Client({ connectionString: url.toString() });
+    await c.connect();
+    await c.query(`
+      do $$ begin
+        if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
+        if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
+        if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
+      end $$;`);
+    await c.query(fs.readFileSync(path.join(MIGRATIONS, 'create_accounts_foundation.sql'), 'utf8'));
+    await c.query(mattersFoundationPrefix());
+    await c.query(fs.readFileSync(path.join(MIGRATIONS, 'create_navigator_matter_access_grants.sql'), 'utf8'));
+    if (kind === 'remediated') await c.query(fs.readFileSync(REMEDIATION, 'utf8'));
+    clients[kind] = c;
+  }
+
+  beforeAll(async () => {
+    assertLocal(ADMIN_URL!);
+    admin = new pg.Client({ connectionString: ADMIN_URL });
+    await admin.connect();
+    await build('legacy');
+    await build('remediated');
+  }, 60_000);
+
+  afterAll(async () => {
+    for (const c of Object.values(clients)) await c?.end();
+    if (admin) {
+      for (const name of Object.values(dbs)) await admin.query(`drop database if exists ${name} with (force)`);
+      await admin.end();
+    }
+  });
+
+  async function use(kind: 'legacy' | 'remediated') {
+    const c = clients[kind];
+    await c.query('truncate public.navigator_matter_access_grants, public.navigator_matter_members, public.navigator_matters, public.clients, public.accounts cascade');
+    await c.query(`insert into public.accounts (id, firebase_uid, primary_role) values ($1, 'uid-owner', 'parent'), ($2, 'uid-lawyer', 'lawyer')`, [OWNER, LAWYER]);
+    const cl = await c.query(`insert into public.clients (account_id, name) values ($1, 'c') returning id`, [OWNER]);
+    await c.query(`insert into public.navigator_matters (id, account_id, client_id, title) values ($1, $2, $3, 'm')`, [MATTER, OWNER, cl.rows[0].id]);
+    await c.query(`insert into public.navigator_matter_members (matter_id, account_id, role) values ($1, $2, 'OWNER')`, [MATTER, OWNER]);
+    svc.client = c;
+    svc.calls = [];
+    return c;
+  }
+
+  async function invite(c: pg.Client) {
+    const raw = crypto.randomBytes(16).toString('hex');
+    const r = await c.query(
+      `insert into public.navigator_matter_access_grants (matter_id, grantor_account_id, token_digest, expires_at)
+       values ($1, $2, $3, now() + interval '7 days') returning id`, [MATTER, OWNER, digest(raw)]);
+    return { id: r.rows[0].id as string, raw };
+  }
+
+  const state = async (c: pg.Client, grantId: string) => {
+    const g = await c.query('select status, accepted_by_account_id from public.navigator_matter_access_grants where id = $1', [grantId]);
+    const m = await c.query('select account_id, role from public.navigator_matter_members where matter_id = $1 order by account_id', [MATTER]);
+    return { grant: g.rows[0], members: m.rows };
+  };
+
+  // ------------------------------------------------------------------ B-1
+  it('B-1: LEGACY DB + new code refuses an owner self-acceptance BEFORE calling the legacy accept function', async () => {
+    const c = await use('legacy');
+    const g = await invite(c);
+    const before = await state(c, g.id);
+    const err = await acceptProfessionalGrant('uid-owner', g.raw).then(() => null, e => e);
+    // State first: the owner must still be OWNER and the invitation untouched.
+    const after = await state(c, g.id);
+    expect(after.members).toEqual([{ account_id: OWNER, role: 'OWNER' }]);
+    expect(after.grant).toEqual({ status: 'PENDING', accepted_by_account_id: null });
+    expect(after).toEqual(before);
+    expect(svc.calls).not.toContain('accept_matter_grant');
+    expect(err?.message).toMatch(/access lifecycle contract/i);
+  });
+
+  it('B-1: LEGACY DB + new code refuses an ordinary acceptance without mutating anything', async () => {
+    const c = await use('legacy');
+    const g = await invite(c);
+    const err = await acceptProfessionalGrant('uid-lawyer', g.raw).then(() => null, e => e);
+    expect(await state(c, g.id)).toEqual({ grant: { status: 'PENDING', accepted_by_account_id: null }, members: [{ account_id: OWNER, role: 'OWNER' }] });
+    expect(svc.calls).not.toContain('accept_matter_grant');
+    expect(err?.message).toMatch(/access lifecycle contract/i);
+  });
+
+  it('B-1: LEGACY DB + new code refuses revocation without touching grants or memberships', async () => {
+    const c = await use('legacy');
+    const g = await invite(c);
+    await c.query(`update public.navigator_matter_access_grants set status = 'ACCEPTED', accepted_at = now(), accepted_by_account_id = $2 where id = $1`, [g.id, LAWYER]);
+    await c.query(`insert into public.navigator_matter_members (matter_id, account_id, role) values ($1, $2, 'REVIEWER')`, [MATTER, LAWYER]);
+    const before = await state(c, g.id);
+    await expect(revokeProfessionalGrant('uid-owner', g.id)).rejects.toThrow(/access lifecycle contract/i);
+    expect(svc.calls).not.toContain('revoke_matter_grant');
+    expect(await state(c, g.id)).toEqual(before);
+  });
+
+  it('REMEDIATED DB + new code: acceptance and owner protection work end to end', async () => {
+    const c = await use('remediated');
+    const own = await invite(c);
+    await expect(acceptProfessionalGrant('uid-owner', own.raw)).rejects.toThrow(/matter owner cannot accept/i);
+    expect((await state(c, own.id)).members).toEqual([{ account_id: OWNER, role: 'OWNER' }]);
+    const g = await invite(c);
+    await expect(acceptProfessionalGrant('uid-lawyer', g.raw)).resolves.toEqual({ success: true, matterId: MATTER });
+    expect(svc.calls.filter(f => f === 'accept_matter_grant')).toHaveLength(2);
+  });
+
+  // ------------------------------------------------------------------ B-2
+  it.each([
+    ['uppercase', (id: string) => id.toUpperCase()],
+    ['mixed case', (id: string) => id.split('').map((ch, i) => (i % 2 ? ch.toUpperCase() : ch)).join('')],
+    ['lowercase', (id: string) => id],
+  ])('B-2: revoking with a %s grant id reports success and removes access', async (_label, variant) => {
+    const c = await use('remediated');
+    const g = await invite(c);
+    await acceptProfessionalGrant('uid-lawyer', g.raw);
+    const res = await revokeProfessionalGrant('uid-owner', variant(g.id));
+    expect(res).toEqual({ success: true, membershipRemoved: true });
+    const after = await state(c, g.id);
+    expect(after.grant.status).toBe('REVOKED');
+    expect(after.members).toEqual([{ account_id: OWNER, role: 'OWNER' }]);
+  });
+
+  it('B-2: a malformed grant id is rejected before any revocation RPC is issued', async () => {
+    await use('remediated');
+    await expect(revokeProfessionalGrant('uid-owner', 'not-a-uuid')).rejects.toThrow(/grantId must be a UUID/);
+    expect(svc.calls).not.toContain('revoke_matter_grant');
   });
 });

@@ -1,6 +1,20 @@
 import { getSupabase } from './access';
 import { findAccount } from './accounts';
+import { requireUuid } from './lifecycleErrors';
 import crypto from 'crypto';
+
+// The remediated database contract (remediate_navigator_matter_access_grants_lifecycle.sql).
+// Acceptance and revocation depend on its semantics, so both refuse to run unless the database
+// reports exactly this version. This check happens BEFORE any lifecycle RPC: the legacy
+// accept_matter_grant can commit an OWNER downgrade before its result could be inspected.
+export const ACCESS_LIFECYCLE_CONTRACT = 'navigator_matter_access_lifecycle_v2';
+
+async function requireAccessLifecycleContract(supabase: any): Promise<void> {
+  const { data, error } = await supabase.rpc('navigator_matter_access_lifecycle_contract');
+  if (error || data !== ACCESS_LIFECYCLE_CONTRACT) {
+    throw new Error('Professional access is unavailable: the required access lifecycle contract is not installed.');
+  }
+}
 
 export type GrantStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
 
@@ -91,6 +105,7 @@ export async function acceptProfessionalGrant(
 ): Promise<{ success: boolean; matterId?: string }> {
   const tokenDigest = crypto.createHash('sha256').update(rawToken).digest('hex');
   const supabase = getSupabase();
+  await requireAccessLifecycleContract(supabase);
 
   const { data, error } = await supabase.rpc('accept_matter_grant', {
     p_firebase_uid: firebaseUid,
@@ -131,13 +146,18 @@ export async function revokeProfessionalGrant(
   firebaseUid: string,
   grantId: string
 ): Promise<{ success: boolean; membershipRemoved: boolean }> {
+  // Validate and canonicalize once; PostgreSQL returns uuids in lowercase, so the request,
+  // the RPC argument and the response identity check all use the same canonical value.
+  const canonicalGrantId = requireUuid(grantId, 'grantId').toLowerCase();
+
   const account = await findAccount(firebaseUid);
   if (!account) throw new Error('Account not found');
 
   const supabase = getSupabase();
+  await requireAccessLifecycleContract(supabase);
   const { data, error } = await supabase.rpc('revoke_matter_grant', {
     p_firebase_uid: firebaseUid,
-    p_grant_id: grantId
+    p_grant_id: canonicalGrantId
   });
 
   if (error) {
@@ -149,7 +169,7 @@ export async function revokeProfessionalGrant(
     throw new Error('Revocation failed. Access may not have been removed.');
   }
 
-  if (!data || data.grant_id !== grantId || data.status !== 'REVOKED' || typeof data.membership_removed !== 'boolean') {
+  if (!data || data.grant_id !== canonicalGrantId || data.status !== 'REVOKED' || typeof data.membership_removed !== 'boolean') {
     throw new Error('Revocation failed. Access may not have been removed.');
   }
 

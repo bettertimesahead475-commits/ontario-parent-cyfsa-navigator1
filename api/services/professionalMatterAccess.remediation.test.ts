@@ -17,6 +17,14 @@ let failWrites: boolean;
 let rpcCalls: { fn: string; args: Row }[];
 let directMemberDeletes: number;
 let rpcOverride: ((fn: string, args: Row) => { data: any; error: any } | undefined) | null;
+// Contract version the fake database reports; null models a database without the remediation.
+let contractVersion: string | null;
+
+const GA = '0a0a0a0a-0000-4000-8000-00000000000a';
+const GB = '0b0b0b0b-0000-4000-8000-00000000000b';
+const GO = '0c0c0c0c-0000-4000-8000-00000000000c';
+const GM = '0d0d0d0d-0000-4000-8000-00000000000d';
+const G2 = '0e0e0e0e-0000-4000-8000-00000000000e';
 
 const uidToAccount: Record<string, string> = {
   'uid-owner': 'acct-owner',
@@ -89,6 +97,11 @@ vi.mock('./access', () => ({
       rpcCalls.push({ fn, args });
       const override = rpcOverride?.(fn, args);
       if (override) return Promise.resolve(override);
+      if (fn === 'navigator_matter_access_lifecycle_contract') {
+        return Promise.resolve(contractVersion === null
+          ? { data: null, error: { message: 'function public.navigator_matter_access_lifecycle_contract() does not exist' } }
+          : { data: contractVersion, error: null });
+      }
       if (fn === 'revoke_matter_grant') return Promise.resolve(referenceRevoke(args.p_firebase_uid, args.p_grant_id));
       return Promise.resolve({ data: null, error: { message: 'Unknown RPC' } });
     },
@@ -103,13 +116,14 @@ beforeEach(() => {
   rpcCalls = [];
   directMemberDeletes = 0;
   rpcOverride = null;
+  contractVersion = 'navigator_matter_access_lifecycle_v2';
   tables = {
     navigator_matter_members: [
       { matter_id: 'matter-1', account_id: 'acct-owner', role: 'OWNER' },
       { matter_id: 'matter-2', account_id: 'acct-owner2', role: 'OWNER' },
       { matter_id: 'matter-1', account_id: 'acct-lawyer', role: 'REVIEWER' },
     ],
-    navigator_matter_access_grants: [acceptedGrant('grant-a', 'acct-lawyer')],
+    navigator_matter_access_grants: [acceptedGrant(GA, 'acct-lawyer')],
   };
   vi.spyOn(accounts, 'findAccount').mockImplementation(async (uid: string) =>
     uidToAccount[uid] ? ({ id: uidToAccount[uid], primaryRole: 'parent', status: 'active' } as any) : null);
@@ -121,84 +135,87 @@ const reviewerMembership = (account = 'acct-lawyer', matter = 'matter-1') =>
 describe('BUG 1 -- revocation must fail closed', () => {
   it('rejects (never reports success) when the database write fails, and access is not reported removed', async () => {
     failWrites = true;
-    await expect(revokeProfessionalGrant('uid-owner', 'grant-a')).rejects.toThrow();
+    await expect(revokeProfessionalGrant('uid-owner', GA)).rejects.toThrow();
     expect(reviewerMembership()).toBeDefined();
   });
 
   it('rejects when the database returns no confirmation of the revocation', async () => {
     rpcOverride = fn => (fn === 'revoke_matter_grant' ? { data: null, error: null } : undefined);
-    await expect(revokeProfessionalGrant('uid-owner', 'grant-a')).rejects.toThrow(/Revocation failed/);
+    await expect(revokeProfessionalGrant('uid-owner', GA)).rejects.toThrow(/Revocation failed/);
   });
 
   it('rejects a confirmation that does not report REVOKED for the requested grant', async () => {
     rpcOverride = fn => (fn === 'revoke_matter_grant'
-      ? { data: { grant_id: 'grant-other', status: 'REVOKED', membership_removed: true }, error: null } : undefined);
-    await expect(revokeProfessionalGrant('uid-owner', 'grant-a')).rejects.toThrow(/Revocation failed/);
+      ? { data: { grant_id: GO, status: 'REVOKED', membership_removed: true }, error: null } : undefined);
+    await expect(revokeProfessionalGrant('uid-owner', GA)).rejects.toThrow(/Revocation failed/);
   });
 
   it('re-revoking an already-REVOKED grant still removes a lingering membership instead of short-circuiting to success', async () => {
     Object.assign(tables.navigator_matter_access_grants[0], { status: 'REVOKED', revoked_at: '2026-09-21T00:00:00Z' });
-    const res = await revokeProfessionalGrant('uid-owner', 'grant-a');
+    const res = await revokeProfessionalGrant('uid-owner', GA);
     expect(res.success).toBe(true);
     expect(reviewerMembership()).toBeUndefined();
   });
 
   it('does not leak raw database error text to the caller', async () => {
     failWrites = true;
-    const err = await revokeProfessionalGrant('uid-owner', 'grant-a').catch(e => e);
+    const err = await revokeProfessionalGrant('uid-owner', GA).catch(e => e);
     expect(String(err.message)).not.toMatch(/disk full/);
   });
 });
 
 describe('BUG 4 -- stale grant revocation must not remove independently authorized access', () => {
   it('revoking an older accepted grant keeps access backed by a newer accepted grant', async () => {
-    tables.navigator_matter_access_grants.push(acceptedGrant('grant-b', 'acct-lawyer'));
-    const res = await revokeProfessionalGrant('uid-owner', 'grant-a');
+    tables.navigator_matter_access_grants.push(acceptedGrant(GB, 'acct-lawyer'));
+    const res = await revokeProfessionalGrant('uid-owner', GA);
     expect(reviewerMembership()).toBeDefined();
     expect(res).toMatchObject({ success: true, membershipRemoved: false });
-    const res2 = await revokeProfessionalGrant('uid-owner', 'grant-b');
+    const res2 = await revokeProfessionalGrant('uid-owner', GB);
     expect(res2).toMatchObject({ success: true, membershipRemoved: true });
     expect(reviewerMembership()).toBeUndefined();
   });
 
   it('never deletes memberships directly from the service; removal happens only inside the atomic RPC', async () => {
-    await revokeProfessionalGrant('uid-owner', 'grant-a');
+    await revokeProfessionalGrant('uid-owner', GA);
     expect(directMemberDeletes).toBe(0);
-    expect(rpcCalls).toEqual([{ fn: 'revoke_matter_grant', args: { p_firebase_uid: 'uid-owner', p_grant_id: 'grant-a' } }]);
+    expect(rpcCalls).toEqual([
+      { fn: 'navigator_matter_access_lifecycle_contract', args: undefined },
+      { fn: 'revoke_matter_grant', args: { p_firebase_uid: 'uid-owner', p_grant_id: GA } },
+    ]);
   });
 });
 
 describe('Revocation authorization and edge cases', () => {
   it('unknown invitation is refused', async () => {
-    await expect(revokeProfessionalGrant('uid-owner', 'grant-missing')).rejects.toThrow(/Grant not found/);
+    await expect(revokeProfessionalGrant('uid-owner', GM)).rejects.toThrow(/Grant not found/);
   });
 
   it('a reviewer cannot revoke', async () => {
-    await expect(revokeProfessionalGrant('uid-lawyer', 'grant-a')).rejects.toThrow(/UNAUTHORIZED/);
+    await expect(revokeProfessionalGrant('uid-lawyer', GA)).rejects.toThrow(/UNAUTHORIZED/);
     expect(reviewerMembership()).toBeDefined();
   });
 
   it('the owner of a different matter cannot revoke', async () => {
-    await expect(revokeProfessionalGrant('uid-owner2', 'grant-a')).rejects.toThrow(/UNAUTHORIZED/);
+    await expect(revokeProfessionalGrant('uid-owner2', GA)).rejects.toThrow(/UNAUTHORIZED/);
     expect(tables.navigator_matter_access_grants[0].status).toBe('ACCEPTED');
   });
 
   it('an unknown account cannot revoke', async () => {
-    await expect(revokeProfessionalGrant('uid-unknown', 'grant-a')).rejects.toThrow(/Account not found/);
+    await expect(revokeProfessionalGrant('uid-unknown', GA)).rejects.toThrow(/Account not found/);
     expect(rpcCalls).toEqual([]);
   });
 
   it('double revoke is idempotent', async () => {
-    await revokeProfessionalGrant('uid-owner', 'grant-a');
-    const again = await revokeProfessionalGrant('uid-owner', 'grant-a');
+    await revokeProfessionalGrant('uid-owner', GA);
+    const again = await revokeProfessionalGrant('uid-owner', GA);
     expect(again).toMatchObject({ success: true, membershipRemoved: false });
     expect(reviewerMembership()).toBeUndefined();
   });
 
   it('revoking on matter 1 does not touch the same reviewer on matter 2', async () => {
     tables.navigator_matter_members.push({ matter_id: 'matter-2', account_id: 'acct-lawyer', role: 'REVIEWER' });
-    tables.navigator_matter_access_grants.push(acceptedGrant('grant-m2', 'acct-lawyer', 'matter-2', 'acct-owner2'));
-    await revokeProfessionalGrant('uid-owner', 'grant-a');
+    tables.navigator_matter_access_grants.push(acceptedGrant(G2, 'acct-lawyer', 'matter-2', 'acct-owner2'));
+    await revokeProfessionalGrant('uid-owner', GA);
     expect(reviewerMembership('acct-lawyer', 'matter-2')).toBeDefined();
   });
 });
@@ -211,7 +228,8 @@ describe('BUG 2 / BUG 3 -- acceptance outcomes surfaced by the service', () => {
     rpcOverride = fn => (fn === 'accept_matter_grant'
       ? { data: null, error: { message: 'OWNER_CANNOT_ACCEPT: An OWNER of this matter cannot accept a professional invitation to it.' } } : undefined);
     await expect(acceptProfessionalGrant('uid-owner', token)).rejects.toThrow(/matter owner cannot accept/i);
-    expect(rpcCalls[0].args).toEqual({ p_firebase_uid: 'uid-owner', p_token_digest: expectedDigest });
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract', 'accept_matter_grant']);
+    expect(rpcCalls[1].args).toEqual({ p_firebase_uid: 'uid-owner', p_token_digest: expectedDigest });
   });
 
   it('treats a persisted EXPIRED outcome as a refusal, never as acceptance', async () => {
@@ -237,5 +255,55 @@ describe('BUG 2 / BUG 3 -- acceptance outcomes surfaced by the service', () => {
     const err = await acceptProfessionalGrant('uid-lawyer', token).catch(e => e);
     expect(err.message).toMatch(/Acceptance failed/);
     expect(err.message).not.toMatch(/relation/);
+  });
+});
+
+describe('B-1 -- the remediated database contract is required before any lifecycle RPC', () => {
+  it.each([
+    ['absent (legacy database)', null],
+    ['a different version', 'navigator_matter_access_lifecycle_v1'],
+    ['an empty value', ''],
+  ])('acceptance is refused when the contract is %s, and accept_matter_grant is never called', async (_label, version) => {
+    contractVersion = version as string | null;
+    await expect(acceptProfessionalGrant('uid-lawyer', 'raw-token')).rejects.toThrow(/access lifecycle contract/i);
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract']);
+  });
+
+  it.each([
+    ['absent (legacy database)', null],
+    ['a different version', 'navigator_matter_access_lifecycle_v1'],
+  ])('revocation is refused when the contract is %s; no revoke RPC and no direct table write', async (_label, version) => {
+    contractVersion = version as string | null;
+    await expect(revokeProfessionalGrant('uid-owner', GA)).rejects.toThrow(/access lifecycle contract/i);
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract']);
+    expect(directMemberDeletes).toBe(0);
+    expect(tables.navigator_matter_access_grants[0].status).toBe('ACCEPTED');
+    expect(reviewerMembership()).toBeDefined();
+  });
+});
+
+describe('B-2 -- grant ids are validated and canonicalized before revocation', () => {
+  it.each([
+    ['uppercase', GA.toUpperCase()],
+    ['mixed case', GA.split('').map((ch, i) => (i % 2 ? ch.toUpperCase() : ch)).join('')],
+    ['surrounding whitespace', `  ${GA}  `],
+  ])('a %s form of a valid id revokes the same grant and reports success', async (_label, variant) => {
+    const res = await revokeProfessionalGrant('uid-owner', variant);
+    expect(res).toEqual({ success: true, membershipRemoved: true });
+    expect(rpcCalls.at(-1)).toEqual({ fn: 'revoke_matter_grant', args: { p_firebase_uid: 'uid-owner', p_grant_id: GA } });
+    expect(reviewerMembership()).toBeUndefined();
+  });
+
+  it.each([['not-a-uuid'], [''], ['0a0a0a0a-0000-4000-8000-00000000000'], [`${GA}; drop table x`]])(
+    'malformed id %j is rejected before any database call', async (bad) => {
+      await expect(revokeProfessionalGrant('uid-owner', bad)).rejects.toThrow(/grantId must be a UUID/);
+      expect(rpcCalls).toEqual([]);
+      expect(reviewerMembership()).toBeDefined();
+    });
+
+  it('a response for a different valid grant id still fails closed', async () => {
+    rpcOverride = fn => (fn === 'revoke_matter_grant'
+      ? { data: { grant_id: GB, matter_id: 'matter-1', status: 'REVOKED', membership_removed: true }, error: null } : undefined);
+    await expect(revokeProfessionalGrant('uid-owner', GA.toUpperCase())).rejects.toThrow(/Revocation failed/);
   });
 });
