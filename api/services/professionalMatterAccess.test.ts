@@ -91,8 +91,22 @@ vi.mock('./access', () => {
           
           const member = { matter_id: grant.matter_id, account_id: 'professional-acct-id', role: grant.capability };
           tables['navigator_matter_members'].push(member);
-          
-          return Promise.resolve({ data: member, error: null });
+
+          return Promise.resolve({ data: { outcome: 'ACCEPTED', grant_id: grant.id, matter_id: grant.matter_id, role: 'REVIEWER' }, error: null });
+        }
+        if (fn === 'revoke_matter_grant') {
+          // Minimal model of the remediated SQL contract (real SQL: professionalMatterAccess.pg.test.ts).
+          const uidToAccount: Record<string, string> = { 'parent-1': 'parent-acct-1', 'parent-2': 'parent-acct-2' };
+          const grant = tables['navigator_matter_access_grants'].find(g => g.id === args.p_grant_id);
+          if (!grant) return Promise.resolve({ data: null, error: new Error('GRANT_NOT_FOUND') });
+          const owner = tables['navigator_matter_members'].find(m =>
+            m.matter_id === grant.matter_id && m.account_id === uidToAccount[args.p_firebase_uid] && m.role === 'OWNER');
+          if (!owner) return Promise.resolve({ data: null, error: new Error('NOT_OWNER') });
+          grant.status = 'REVOKED';
+          const idx = tables['navigator_matter_members'].findIndex(m =>
+            m.matter_id === grant.matter_id && m.account_id === grant.accepted_by_account_id && m.role === 'REVIEWER');
+          if (idx > -1) tables['navigator_matter_members'].splice(idx, 1);
+          return Promise.resolve({ data: { grant_id: grant.id, matter_id: grant.matter_id, status: 'REVOKED', membership_removed: idx > -1 }, error: null });
         }
         return Promise.resolve({ data: null, error: new Error('Unknown RPC') });
       }
