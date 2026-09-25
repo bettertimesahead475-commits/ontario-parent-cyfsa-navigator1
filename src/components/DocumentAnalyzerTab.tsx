@@ -94,7 +94,7 @@ function contentLooksLikeRawBase64(content: string): boolean {
   const value = String(content || "").trim();
   if (value.length < 256) return false;
   const sample = value.slice(0, 12000);
-  return !/\\s/.test(sample) && /^[A-Za-z0-9+/=]+$/.test(sample);
+  return !/\s/.test(sample) && /^[A-Za-z0-9+/=]+$/.test(sample);
 }
 
 interface RAGChatMessage {
@@ -1653,7 +1653,8 @@ export default function DocumentAnalyzerTab() {
                     // never got that same fix, so every upload was going through the slow path.
                     // Splitting it here too: extract text first (its own fast request), then
                     // analyze just the text.
-                    const extractResponse = await apiFetch("/api/extract-text", {
+                    setBulkProgress(`Reading document: ${file.name}…`);
+        const extractResponse = await apiFetch("/api/extract-text", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
@@ -1668,8 +1669,10 @@ export default function DocumentAnalyzerTab() {
                       throw new Error("No readable text could be extracted from this document.");
                     }
                     payload.textContent = extractResult.extractedText;
+                    setOrganizedFiles(prev => prev.map(f => f.id === file.id ? { ...f, content: extractResult.extractedText } : f));
                   }
 
+                  setBulkProgress(`Analyzing evidence in ${file.name}…`);
                   const response = await apiFetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -1765,6 +1768,7 @@ export default function DocumentAnalyzerTab() {
   // Re-run single analysis on demand
   const triggerSingleAnalysis = async (file: OrganizedFile) => {
     setIsSingleAnalyzing(true);
+    setBulkProgress("Checking document…");
     setSingleAnalysisError("");
     setSelectedReport(null);
 
@@ -1786,6 +1790,7 @@ export default function DocumentAnalyzerTab() {
         // (OCR retries + a full Claude analysis in a single invocation), which
         // surfaced as FUNCTION_INVOCATION_TIMEOUT / 504.
         setSingleAnalysisError("");
+        setBulkProgress("Reading document…");
         const extractResponse = await apiFetch("/api/extract-text", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1806,8 +1811,10 @@ export default function DocumentAnalyzerTab() {
           throw new Error("No readable text could be extracted from this document.");
         }
         payload.textContent = extractResult.extractedText;
+        setOrganizedFiles(prev => prev.map(f => f.id === file.id ? { ...f, content: extractResult.extractedText } : f));
       }
 
+      setBulkProgress("Analyzing evidence and preparing report…");
       const response = await apiFetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1837,6 +1844,7 @@ export default function DocumentAnalyzerTab() {
       ));
     } finally {
       setIsSingleAnalyzing(false);
+      setBulkProgress("");
     }
   };
 
@@ -3175,9 +3183,9 @@ export default function DocumentAnalyzerTab() {
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Word and Character Count Counter */}
                         <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded text-[10px] font-mono text-slate-600">
-                          <span>Characters: <strong>{activeSelectedFile.content.length.toLocaleString()}</strong></span>
+                          <span>Characters: <strong>{(contentLooksLikeRawBase64(activeSelectedFile.content) ? 0 : activeSelectedFile.content.trim().length).toLocaleString()}</strong></span>
                           <span className="text-slate-300">|</span>
-                          <span>Words: <strong>{activeSelectedFile.content ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length.toLocaleString() : "0"}</strong></span>
+                          <span>Words: <strong>{activeSelectedFile.content && !contentLooksLikeRawBase64(activeSelectedFile.content) ? activeSelectedFile.content.trim().split(/\s+/).filter(Boolean).length.toLocaleString() : "0"}</strong></span>
                         </div>
 
                         {activeSelectedFile.name.toLowerCase().includes("transcript") && (

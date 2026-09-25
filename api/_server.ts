@@ -89,12 +89,10 @@ async function generateGeminiContentWithRetry(
         const isTransient =
           status === 429 ||
           status === 503 ||
-          status === 500 ||
-          status === 404 ||
+          status === 500 || status === 502 || status === 504 ||
           errMsg.includes("503") ||
           errMsg.includes("429") ||
-          errMsg.includes("404") ||
-          errMsg.includes("not found") ||
+          errMsg.includes("502") || errMsg.includes("504") ||
           errMsg.includes("quota") ||
           errMsg.includes("rate limit") ||
           errMsg.includes("unavailable") ||
@@ -122,7 +120,7 @@ const isLastModel = modelNames.indexOf(modelName) === modelNames.length - 1;
         attempts++;
         if (attempts < maxAttempts) {
           console.log(`[Gemini API] Retrying in ${delay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay + Math.floor(Math.random() * 250)));
           delay *= 2;
         }
       }
@@ -231,6 +229,11 @@ async function generateContentWithFallback(
       : String(message.content),
   }));
 
+  // Conservative input bound. Never send an unbounded case repository to a model.
+  const inputSize = (params.system || "").length + messages.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : JSON.stringify(m.content).length), 0);
+  if (inputSize > 320_000) {
+    throw Object.assign(new Error("The selected material exceeds the analysis context budget. Please narrow the documents or question."), { status: 413, code: "CONTEXT_TOO_LARGE" });
+  }
   console.log(`[AI Engine] Claude routing. Model: ${model}`);
   const response = await client.messages.create({
     model,
@@ -314,6 +317,9 @@ function handleAIError(error: any, contextDescription: string, res: Response) {
   console.error(`[AI Error] during ${contextDescription}:`, error);
   const errMsg = (error?.message || "").toLowerCase();
   const status = (error as any)?.status;
+  if (status === 413 && error?.code === "CONTEXT_TOO_LARGE") {
+    return res.status(413).json({ error: "Too much material for one reliable answer. Select fewer documents or a narrower question.", code: "CONTEXT_TOO_LARGE" });
+  }
 
   // BUG FOUND: this list didn't match "503"/"unavailable"/"high demand" - even though
   // generateGeminiContentWithRetry (above) already treats those exact words as transient and
@@ -647,7 +653,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         });
       }
 
-      res.json({ extractedText, characters: extractedText.length });
+      res.json({ extractedText: extractedText.trim(), characters: extractedText.trim().length, words: extractedText.trim().split(/\s+/u).filter(Boolean).length });
     } catch (err: any) {
       console.error("[/api/extract-text]", err);
       handleAIError(err, "text extraction", res);
@@ -741,11 +747,13 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             });
           }
         } catch (usageError) {
-          // The quota store must not make document analysis unavailable. The
-          // successful analysis path still attempts to record usage, and logs
-          // the failure for remediation; during this outage the quota is
-          // temporarily unenforced for authenticated users.
-          console.error("[document analysis] Failed to read free-tier usage; allowing authenticated analysis:", usageError);
+          const requestId = req.header("x-vercel-id") || crypto.randomUUID();
+          console.error(`[document analysis] Usage lookup failed requestId=${requestId}:`, usageError);
+          return res.status(503).json({
+            error: "We cannot check your remaining analyses right now. Please retry shortly. Your document remains on this device.",
+            code: "USAGE_UNAVAILABLE",
+            requestId
+          });
         }
       }
 
@@ -781,6 +789,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         targetText = extractedText + "\n\n" + targetText;
       }
 
+      if (!targetText.trim()) return res.status(422).json({ error: "No readable document text was available. Please retry extraction.", code: "EXTRACTION_EMPTY" });
+      if (targetText.length > 300_000) return res.status(413).json({ error: "This document is too large for one report. Please split it into smaller sections.", code: "DOCUMENT_TOO_LARGE" });
+      if (/^data:.*;base64,/i.test(targetText.trim()) || (targetText.length > 512 && /^[A-Za-z0-9+/=\s]+$/.test(targetText) && !/\s/.test(targetText.slice(0, 512)))) {
+        return res.status(422).json({ error: "Encoded document data cannot be analyzed as text. Please upload the original file for extraction.", code: "EXTRACTION_REQUIRED" });
+      }
       const documentContentBlock = targetText && targetText.trim()
         ? `DOCUMENT TEXT CONTENT:\n${targetText}`
         : "";
@@ -1038,9 +1051,13 @@ ${analysisRules}`;
         try {
           await recordFreeUse(uid, userEmail);
         } catch (usageErr) {
-          // A parent's completed analysis must never be withheld because our own
-          // usage bookkeeping failed - log it and let the real result through.
-          console.error("[document analysis] Failed to record free-tier usage (non-fatal):", usageErr);
+          const requestId = req.header("x-vercel-id") || crypto.randomUUID();
+          console.error(`[document analysis] Usage recording failed requestId=${requestId}:`, usageErr);
+          return res.status(503).json({
+            error: "The report was prepared, but we could not record your free use. Please retry shortly.",
+            code: "USAGE_UNAVAILABLE",
+            requestId
+          });
         }
       }
 
@@ -1225,8 +1242,27 @@ OUTPUT — return strictly this JSON schema, nothing else:
         .sort((a: any, b: any) => b.score - a.score)
         .slice(0, 6);
 
-      const contextPayload = topMatches.map((tabFile: any) => 
-        `--- START FILE CONTEXT: "${tabFile.name}" (Category: ${tabFile.category}) ---\
+      // Rank bounded, overlapping source passages instead of concatenating whole files.
+      // Keep source name and offset for citations; exact text is never silently rewritten.
+      const seenPassages = new Set<string>();
+      const retrievedPassages = topMatches.flatMap((file: any) => {
+        const content = String(file.content || "");
+        if (content.length > 512 && /^[A-Za-z0-9+/=\s]+$/.test(content.slice(0, 512)) && !/\s/.test(content.slice(0, 512))) return [];
+        const passages: any[] = [];
+        for (let offset = 0; offset < content.length; offset += 5500) {
+          const excerpt = content.slice(offset, offset + 6000);
+          const fingerprint = excerpt.trim().slice(0, 500);
+          if (!fingerprint || seenPassages.has(fingerprint)) continue;
+          seenPassages.add(fingerprint);
+          const lower = excerpt.toLowerCase();
+          const score = file.score + queryWords.reduce((n: number, term: string) => n + (lower.includes(term) ? 5 : 0), 0);
+          passages.push({ ...file, content: excerpt, sourceOffset: offset, score });
+        }
+        return passages;
+      }).sort((a: any, b: any) => b.score - a.score).slice(0, 20);
+
+      const contextPayload = retrievedPassages.map((tabFile: any) =>
+        `--- START FILE CONTEXT: "${tabFile.name}" (Category: ${tabFile.category}, character offset: ${tabFile.sourceOffset}) ---\
 - SCORE INTEGRITY: The Evidence Strength Index must be evidence-neutral. Never increase the score because a document supports the parent and never decrease it because a document supports the Society.
 - SCORE ONLY WHAT IS PRESENT: Evaluate the quality, corroboration, source reliability, consistency, legal verification, and completeness of the evidence actually contained in the reviewed document.
 - MISSING INFORMATION: Missing information may reduce Factual Completeness or Analytical Confidence, but it must not automatically create a finding of misconduct, procedural defect, statutory violation, unlawful conduct, or Charter infringement.
