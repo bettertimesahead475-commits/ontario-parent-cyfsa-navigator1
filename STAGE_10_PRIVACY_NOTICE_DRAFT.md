@@ -1,8 +1,11 @@
-# CYFSA Navigator — Professional Access Privacy Notice Section (DRAFT)
+# CYFSA Navigator — Professional Access Privacy Notice Section
 
 **Document Reference**: `STAGE_10_PRIVACY_NOTICE_DRAFT.md`  
-**Status**: DRAFT FOR PUBLIC PRIVACY POLICY INTEGRATION  
+**Status**: APPROVED INTERIM DRAFT FOR PUBLIC PRIVACY POLICY INTEGRATION  
 **Target Integration**: CYFSA Navigator Public Privacy Policy  
+**Governance Version**: `v1.0`  
+**Privacy Responsible Person**: Chris Pelkie  
+**Effective Date**: Effective upon controlled Stage 10 Production activation  
 
 ---
 
@@ -52,17 +55,18 @@ Professional access records are strictly isolated by matter boundaries:
 
 ### 6. Access Revocation vs. Data Retention
 * **Access Revocation**: A matter owner may revoke a professional's access at any time. Revocation immediately terminates the professional's permission to view or access the case matter.
-* **Data Retention**: Revoking access terminates active permissions, but **does not automatically erase** historical invitation records, recipient email entries, or security audit logs from our system. These historical records are retained in our database under established organizational retention schedules to preserve audit trails and demonstrate who was granted access in the past.
+* **Interim Data Retention Model**: Revoking access terminates active permissions, but **does not automatically erase** historical invitation records, recipient email entries, or security audit logs from our system. Under our interim launch retention model, historical access and security records are retained to preserve audit trails and demonstrate access history.
 
 ---
 
-### 7. Retention Schedules & Privacy Requests
-Professional access data and security audit logs are retained in accordance with our organizational data retention policy. Automated background deletion of historical access logs is not currently enabled.
+### 7. Retention Policy, Governance & Privacy Requests
+Professional-access records and security audit logs are retained under our current Stage 10 retention practices during initial platform operation. Automated background purge tools are not currently enabled. This retention model is subject to ongoing privacy governance and post-launch review.
 
-If you have questions regarding our data retention schedules or wish to submit a privacy inquiry regarding your professional access data, you may contact our Privacy Administrator:
+If you have questions regarding our retention practices or wish to submit a privacy inquiry or deletion request regarding your professional access data, you may contact our Privacy Administrator:
 
+* **Privacy Responsible Person**: Chris Pelkie
 * **Email**: `privacy@cyfsa-navigator.example.org` *(or designated project privacy contact)*
-* **Response Time**: Inquiries will be acknowledged within standard administrative timeframes.
+* **Handling Procedure**: Privacy requests are evaluated under our documented administrative request procedure, distinguishing active authorization from immutable security audit records.
 
 ---
 
