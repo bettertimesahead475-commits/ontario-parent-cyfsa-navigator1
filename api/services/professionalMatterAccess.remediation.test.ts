@@ -19,6 +19,8 @@ let directMemberDeletes: number;
 let rpcOverride: ((fn: string, args: Row) => { data: any; error: any } | undefined) | null;
 // Contract version the fake database reports; null models a database without the remediation.
 let contractVersion: string | null;
+// Stage 10 slice 7: acceptance needs the caller's verified email claims (from the verified token).
+const CLAIMS = { email: 'recipient@example.test', emailVerified: true };
 
 const GA = '0a0a0a0a-0000-4000-8000-00000000000a';
 const GB = '0b0b0b0b-0000-4000-8000-00000000000b';
@@ -97,9 +99,9 @@ vi.mock('./access', () => ({
       rpcCalls.push({ fn, args });
       const override = rpcOverride?.(fn, args);
       if (override) return Promise.resolve(override);
-      if (fn === 'navigator_matter_access_lifecycle_contract_v3') {
+      if (fn === 'navigator_matter_access_lifecycle_contract_v4') {
         return Promise.resolve(contractVersion === null
-          ? { data: null, error: { message: 'function public.navigator_matter_access_lifecycle_contract_v3() does not exist' } }
+          ? { data: null, error: { message: 'function public.navigator_matter_access_lifecycle_contract_v4() does not exist' } }
           : { data: contractVersion, error: null });
       }
       if (fn === 'revoke_matter_grant') return Promise.resolve(referenceRevoke(args.p_firebase_uid, args.p_grant_id));
@@ -116,7 +118,7 @@ beforeEach(() => {
   rpcCalls = [];
   directMemberDeletes = 0;
   rpcOverride = null;
-  contractVersion = 'navigator_matter_access_lifecycle_v3';
+  contractVersion = 'navigator_matter_access_lifecycle_v4';
   tables = {
     navigator_matter_members: [
       { matter_id: 'matter-1', account_id: 'acct-owner', role: 'OWNER' },
@@ -179,7 +181,7 @@ describe('BUG 4 -- stale grant revocation must not remove independently authoriz
     await revokeProfessionalGrant('uid-owner', GA);
     expect(directMemberDeletes).toBe(0);
     expect(rpcCalls).toEqual([
-      { fn: 'navigator_matter_access_lifecycle_contract_v3', args: undefined },
+      { fn: 'navigator_matter_access_lifecycle_contract_v4', args: undefined },
       { fn: 'revoke_matter_grant', args: { p_firebase_uid: 'uid-owner', p_grant_id: GA } },
     ]);
   });
@@ -225,34 +227,35 @@ describe('BUG 2 / BUG 3 -- acceptance outcomes surfaced by the service', () => {
   const expectedDigest = crypto.createHash('sha256').update(token).digest('hex');
 
   it('maps the owner-acceptance refusal to a clear error', async () => {
-    rpcOverride = fn => (fn === 'accept_matter_grant'
+    rpcOverride = fn => (fn === 'accept_recipient_bound_matter_grant'
       ? { data: null, error: { message: 'OWNER_CANNOT_ACCEPT: An OWNER of this matter cannot accept a professional invitation to it.' } } : undefined);
-    await expect(acceptProfessionalGrant('uid-owner', token)).rejects.toThrow(/matter owner cannot accept/i);
-    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v3', 'accept_matter_grant']);
-    expect(rpcCalls[1].args).toEqual({ p_firebase_uid: 'uid-owner', p_token_digest: expectedDigest });
+    await expect(acceptProfessionalGrant('uid-owner', token, CLAIMS)).rejects.toThrow(/matter owner cannot accept/i);
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v4', 'accept_recipient_bound_matter_grant']);
+    // The only identity arguments are the verified uid and the verified-token email claims.
+    expect(rpcCalls[1].args).toEqual({ p_firebase_uid: 'uid-owner', p_token_digest: expectedDigest, p_verified_email: CLAIMS.email, p_email_verified: true });
   });
 
   it('treats a persisted EXPIRED outcome as a refusal, never as acceptance', async () => {
-    rpcOverride = fn => (fn === 'accept_matter_grant' ? { data: { outcome: 'EXPIRED', grant_id: 'g' }, error: null } : undefined);
-    await expect(acceptProfessionalGrant('uid-lawyer', token)).rejects.toThrow(/Invitation has expired/);
+    rpcOverride = fn => (fn === 'accept_recipient_bound_matter_grant' ? { data: { outcome: 'EXPIRED', grant_id: 'g' }, error: null } : undefined);
+    await expect(acceptProfessionalGrant('uid-lawyer', token, CLAIMS)).rejects.toThrow(/Invitation has expired/);
   });
 
   it('rejects an acceptance response that does not confirm ACCEPTED with a matter id', async () => {
-    rpcOverride = fn => (fn === 'accept_matter_grant' ? { data: { outcome: 'SOMETHING_ELSE' }, error: null } : undefined);
-    await expect(acceptProfessionalGrant('uid-lawyer', token)).rejects.toThrow(/Acceptance failed/);
-    rpcOverride = fn => (fn === 'accept_matter_grant' ? { data: null, error: null } : undefined);
-    await expect(acceptProfessionalGrant('uid-lawyer', token)).rejects.toThrow(/Acceptance failed/);
+    rpcOverride = fn => (fn === 'accept_recipient_bound_matter_grant' ? { data: { outcome: 'SOMETHING_ELSE' }, error: null } : undefined);
+    await expect(acceptProfessionalGrant('uid-lawyer', token, CLAIMS)).rejects.toThrow(/Acceptance failed/);
+    rpcOverride = fn => (fn === 'accept_recipient_bound_matter_grant' ? { data: null, error: null } : undefined);
+    await expect(acceptProfessionalGrant('uid-lawyer', token, CLAIMS)).rejects.toThrow(/Acceptance failed/);
   });
 
   it('returns the matter only on a confirmed ACCEPTED outcome', async () => {
-    rpcOverride = fn => (fn === 'accept_matter_grant'
+    rpcOverride = fn => (fn === 'accept_recipient_bound_matter_grant'
       ? { data: { outcome: 'ACCEPTED', grant_id: 'g', matter_id: 'matter-1', role: 'REVIEWER' }, error: null } : undefined);
-    await expect(acceptProfessionalGrant('uid-lawyer', token)).resolves.toEqual({ success: true, matterId: 'matter-1' });
+    await expect(acceptProfessionalGrant('uid-lawyer', token, CLAIMS)).resolves.toEqual({ success: true, matterId: 'matter-1' });
   });
 
   it('does not leak raw database error text on unexpected acceptance failures', async () => {
-    rpcOverride = fn => (fn === 'accept_matter_grant' ? { data: null, error: { message: 'relation "x" does not exist' } } : undefined);
-    const err = await acceptProfessionalGrant('uid-lawyer', token).catch(e => e);
+    rpcOverride = fn => (fn === 'accept_recipient_bound_matter_grant' ? { data: null, error: { message: 'relation "x" does not exist' } } : undefined);
+    const err = await acceptProfessionalGrant('uid-lawyer', token, CLAIMS).catch(e => e);
     expect(err.message).toMatch(/Acceptance failed/);
     expect(err.message).not.toMatch(/relation/);
   });
@@ -264,10 +267,10 @@ describe('B-1 -- the remediated database contract is required before any lifecyc
     ['a different version', 'navigator_matter_access_lifecycle_v1'],
     ['v2 only (safe functions but no audit wiring)', 'navigator_matter_access_lifecycle_v2'],
     ['an empty value', ''],
-  ])('acceptance is refused when the contract is %s, and accept_matter_grant is never called', async (_label, version) => {
+  ])('acceptance is refused when the contract is %s, and the accept RPC is never called', async (_label, version) => {
     contractVersion = version as string | null;
-    await expect(acceptProfessionalGrant('uid-lawyer', 'raw-token')).rejects.toThrow(/access lifecycle contract/i);
-    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v3']);
+    await expect(acceptProfessionalGrant('uid-lawyer', 'raw-token', CLAIMS)).rejects.toThrow(/access lifecycle contract/i);
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v4']);
   });
 
   it.each([
@@ -277,7 +280,7 @@ describe('B-1 -- the remediated database contract is required before any lifecyc
   ])('revocation is refused when the contract is %s; no revoke RPC and no direct table write', async (_label, version) => {
     contractVersion = version as string | null;
     await expect(revokeProfessionalGrant('uid-owner', GA)).rejects.toThrow(/access lifecycle contract/i);
-    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v3']);
+    expect(rpcCalls.map(c => c.fn)).toEqual(['navigator_matter_access_lifecycle_contract_v4']);
     expect(directMemberDeletes).toBe(0);
     expect(tables.navigator_matter_access_grants[0].status).toBe('ACCEPTED');
     expect(reviewerMembership()).toBeDefined();

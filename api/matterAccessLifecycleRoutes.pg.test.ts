@@ -54,9 +54,10 @@ function adapter() {
 }
 vi.mock('./services/access.js', async (importOriginal) => ({ ...(await importOriginal<any>()), getSupabase: () => adapter() }));
 vi.mock('./services/firebaseAdmin.js', () => ({
-  verifyFirebaseToken: async (header?: string) => {
+  verifyFirebaseIdentity: async (header?: string) => {
+    // Stage 10 slice 7: the verified token carries <name>@example.test, verified.
     const m = /^Bearer tok:(uid-[a-z0-9-]+)$/.exec(header ?? '');
-    return m ? { uid: m[1], email: null } : null;
+    return m ? { uid: m[1], email: `${m[1].slice(4)}@example.test`, emailVerified: true } : null;
   },
 }));
 
@@ -85,8 +86,10 @@ app.use(express.json());
 registerMatterAccessLifecycleRoutes(app);
 
 const auth = (r: request.Test, uid: string | null) => (uid ? r.set('Authorization', `Bearer tok:${uid}`) : r);
-const create = (uid: string | null, matter = M.a, body: unknown = {}) =>
-  auth(request(app).post(`/api/matters/${matter}/access-grants`), uid).send(body as any);
+const emailOf = (uid: string) => `${uid.slice(4)}@example.test`;
+// Default recipient: uid-lawyer. An explicit body is merged over { recipientEmail }.
+const create = (uid: string | null, matter = M.a, body: Record<string, unknown> = {}, recipient = 'uid-lawyer') =>
+  auth(request(app).post(`/api/matters/${matter}/access-grants`), uid).send({ recipientEmail: emailOf(recipient), ...body } as any);
 const accept = (uid: string | null, token: string) =>
   auth(request(app).post('/api/access-invitations/accept'), uid).send({ token });
 const revoke = (uid: string | null, grantId: string) =>
@@ -116,7 +119,8 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
     await db.query(matters.slice(0, matters.indexOf('alter table public.navigator_documents')));
     // Deployment order: grants -> 7B remediation (v2) -> event log -> v3.
     for (const f of ['create_navigator_matter_access_grants.sql', 'remediate_navigator_matter_access_grants_lifecycle.sql',
-      'create_navigator_matter_access_event_log.sql', 'create_navigator_matter_access_lifecycle_audit_v3.sql']) {
+      'create_navigator_matter_access_event_log.sql', 'create_navigator_matter_access_lifecycle_audit_v3.sql',
+      'create_navigator_matter_access_lifecycle_recipient_v4.sql']) {
       await db.query(sql(f));
     }
     svc.pool = db;
@@ -164,8 +168,8 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
     members: (await db.query('select matter_id, account_id, role from public.navigator_matter_members order by matter_id, account_id')).rows,
     events: await allEventCount(),
   });
-  const invite = async (matter = M.a, uid = 'uid-owner') => {
-    const res = await create(uid, matter);
+  const invite = async (matter = M.a, uid = 'uid-owner', recipient = 'uid-lawyer') => {
+    const res = await create(uid, matter, {}, recipient);
     expect(res.status).toBe(201);
     return { id: res.body.grant.id as string, token: res.body.invitationToken as string };
   };
@@ -271,8 +275,10 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
       const unknown = crypto.randomBytes(32).toString('base64url');
       const before = await types();
       const bodies = new Set<string>();
-      for (const [uid, token] of [['uid-lawyer', used.token], ['uid-lawyer2', used.token], ['uid-lawyer2', revoked.token],
-        ['uid-lawyer2', expired.token], ['uid-lawyer2', unknown]] as const) {
+      // v4: the recipient (uid-lawyer) sees used/revoked/expired as one 410; a non-recipient (uid-lawyer2)
+      // sees exactly the same 410 for a used token and for an unknown one.
+      for (const [uid, token] of [['uid-lawyer', used.token], ['uid-lawyer2', used.token], ['uid-lawyer', revoked.token],
+        ['uid-lawyer', expired.token], ['uid-lawyer2', unknown]] as const) {
         const res = await accept(uid, token);
         expect(res.status).toBe(410);
         bodies.add(res.text);
@@ -285,9 +291,11 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
     });
 
     it('owner preservation: the grantor and a co-owner are refused (409); roles unchanged; nothing recorded', async () => {
-      const g = await invite();
+      // v4: each invitation is addressed to that owner, so the recipient check passes and the owner rule refuses.
+      const own = await invite(M.a, 'uid-owner', 'uid-owner');
+      const co = await invite(M.a, 'uid-owner', 'uid-coowner');
       const before = await snapshot();
-      for (const uid of ['uid-owner', 'uid-coowner']) {
+      for (const [uid, g] of [['uid-owner', own], ['uid-coowner', co]] as const) {
         const res = await accept(uid, g.token);
         expect(res.status).toBe(409);
         expect(res.body.code).toBe('OWNER_CANNOT_ACCEPT');
@@ -295,8 +303,9 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
       expect(await role(A.owner)).toBe('OWNER');
       expect(await role(A.coOwner)).toBe('OWNER');
       expect(await snapshot()).toEqual(before);
-      // The invitation is still usable by someone else.
-      expect((await accept('uid-lawyer', g.token)).status).toBe(200);
+      // Both invitations are untouched.
+      expect((await grantRow(own.id)).status).toBe('PENDING');
+      expect((await grantRow(co.id)).status).toBe('PENDING');
     });
 
     it('a suspended account or a verified identity without an account is refused (403) and nothing changes', async () => {
@@ -446,11 +455,11 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
       expect(await snapshot()).toEqual(before);
     });
 
-    it('a missing v3 contract refuses all three operations before any lifecycle call', async () => {
+    it('a missing current (v4) contract refuses all three operations before any lifecycle call', async () => {
       const g = await invite();
       const before = await snapshot();
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      await db.query('alter function public.navigator_matter_access_lifecycle_contract_v3() rename to s6_hidden_contract');
+      await db.query('alter function public.navigator_matter_access_lifecycle_contract_v4() rename to s6_hidden_contract');
       try {
         svc.calls = [];
         expect((await create('uid-owner')).status).toBe(503);
@@ -458,7 +467,7 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
         expect((await revoke('uid-owner', g.id)).status).toBe(503);
         expect(svc.calls.filter(c => /matter_grant/.test(c))).toEqual([]);
       } finally {
-        await db.query('alter function public.s6_hidden_contract() rename to navigator_matter_access_lifecycle_contract_v3');
+        await db.query('alter function public.s6_hidden_contract() rename to navigator_matter_access_lifecycle_contract_v4');
         spy.mockRestore();
       }
       expect(await snapshot()).toEqual(before);
@@ -494,7 +503,8 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
       }
       expect(others).not.toContain(token);
       expect(Object.keys(c.body).sort()).toEqual(['grant', 'invitationToken', 'matterId']);
-      expect(Object.keys(c.body.grant).sort()).toEqual(['createdAt', 'expiresAt', 'id', 'status']);
+      // v4: the creating owner also gets the canonical recipient the invitation is bound to.
+      expect(Object.keys(c.body.grant).sort()).toEqual(['createdAt', 'expiresAt', 'id', 'recipientEmail', 'status']);
     });
   });
 });

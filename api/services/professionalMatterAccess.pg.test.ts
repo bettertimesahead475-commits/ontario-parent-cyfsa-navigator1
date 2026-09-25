@@ -53,6 +53,7 @@ const REMEDIATION = path.join(MIGRATIONS, 'remediate_navigator_matter_access_gra
 // functions (which additionally require the slice 2 event log).
 const EVENT_LOG = path.join(MIGRATIONS, 'create_navigator_matter_access_event_log.sql');
 const AUDIT_V3 = path.join(MIGRATIONS, 'create_navigator_matter_access_lifecycle_audit_v3.sql');
+const RECIPIENT_V4 = path.join(MIGRATIONS, 'create_navigator_matter_access_lifecycle_recipient_v4.sql');
 const LIFECYCLE_VARIANTS: { name: string; extra: string[] }[] = [
   { name: 'v2 frozen Stage 7B functions', extra: [] },
   { name: 'v3 audited Stage 10 functions', extra: [EVENT_LOG, AUDIT_V3] },
@@ -428,14 +429,20 @@ for (const variant of LIFECYCLE_VARIANTS) d(`Stage 7B access lifecycle -- real P
 d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => {
   const suffix = crypto.randomBytes(6).toString('hex');
   // legacy: Stage 7B grants only. v2only: + Stage 7B remediation (frozen contract v2, no audit
-  // wiring). remediated: + slice 2 event log + slice 4 v3 audited lifecycle (what new code needs).
-  const dbs = { legacy: `navigator_stage7b_legacy_${suffix}`, v2only: `navigator_stage7b_v2only_${suffix}`, remediated: `navigator_stage7b_remed_${suffix}` };
+  // wiring). v3only: + slice 2 event log + slice 4 v3 audited lifecycle (no recipient binding).
+  // remediated: + slice 7 v4 recipient-bound lifecycle (what new code needs).
+  const dbs = { legacy: `navigator_stage7b_legacy_${suffix}`, v2only: `navigator_stage7b_v2only_${suffix}`,
+    v3only: `navigator_stage7b_v3only_${suffix}`, remediated: `navigator_stage7b_remed_${suffix}` };
   type Kind = keyof typeof dbs;
   let admin: pg.Client;
   const clients: Record<Kind, pg.Client> = {} as any;
   const OWNER = '00000000-0000-4000-8000-000000000001';
   const LAWYER = '00000000-0000-4000-8000-000000000002';
   const MATTER = '00000000-0000-4000-8000-0000000000a1';
+  // Stage 10 slice 7: verified-email claims as the verified Firebase token would carry them.
+  const OWNER_EMAIL = 'owner@example.test';
+  const LAWYER_EMAIL = 'lawyer@example.test';
+  const claims = (email: string) => ({ email, emailVerified: true });
 
   async function build(kind: Kind) {
     await admin.query(`create database ${dbs[kind]}`);
@@ -453,10 +460,11 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     await c.query(mattersFoundationPrefix());
     await c.query(fs.readFileSync(path.join(MIGRATIONS, 'create_navigator_matter_access_grants.sql'), 'utf8'));
     if (kind !== 'legacy') await c.query(fs.readFileSync(REMEDIATION, 'utf8'));
-    if (kind === 'remediated') {
+    if (kind === 'v3only' || kind === 'remediated') {
       await c.query(fs.readFileSync(EVENT_LOG, 'utf8'));
       await c.query(fs.readFileSync(AUDIT_V3, 'utf8'));
     }
+    if (kind === 'remediated') await c.query(fs.readFileSync(RECIPIENT_V4, 'utf8'));
     clients[kind] = c;
   }
 
@@ -466,6 +474,7 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     await admin.connect();
     await build('legacy');
     await build('v2only');
+    await build('v3only');
     await build('remediated');
   }, 60_000);
 
@@ -489,11 +498,16 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     return c;
   }
 
-  async function invite(c: pg.Client) {
+  // recipient: only on a v4 database (the column does not exist before v4).
+  async function invite(c: pg.Client, recipient?: string) {
     const raw = crypto.randomBytes(16).toString('hex');
-    const r = await c.query(
-      `insert into public.navigator_matter_access_grants (matter_id, grantor_account_id, token_digest, expires_at)
-       values ($1, $2, $3, now() + interval '7 days') returning id`, [MATTER, OWNER, digest(raw)]);
+    const r = recipient
+      ? await c.query(
+        `insert into public.navigator_matter_access_grants (matter_id, grantor_account_id, token_digest, expires_at, recipient_email)
+         values ($1, $2, $3, now() + interval '7 days', $4) returning id`, [MATTER, OWNER, digest(raw), recipient])
+      : await c.query(
+        `insert into public.navigator_matter_access_grants (matter_id, grantor_account_id, token_digest, expires_at)
+         values ($1, $2, $3, now() + interval '7 days') returning id`, [MATTER, OWNER, digest(raw)]);
     return { id: r.rows[0].id as string, raw };
   }
 
@@ -508,7 +522,7 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     const c = await use('legacy');
     const g = await invite(c);
     const before = await state(c, g.id);
-    const err = await acceptProfessionalGrant('uid-owner', g.raw).then(() => null, e => e);
+    const err = await acceptProfessionalGrant('uid-owner', g.raw, claims(OWNER_EMAIL)).then(() => null, e => e);
     // State first: the owner must still be OWNER and the invitation untouched.
     const after = await state(c, g.id);
     expect(after.members).toEqual([{ account_id: OWNER, role: 'OWNER' }]);
@@ -521,7 +535,7 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
   it('B-1: LEGACY DB + new code refuses an ordinary acceptance without mutating anything', async () => {
     const c = await use('legacy');
     const g = await invite(c);
-    const err = await acceptProfessionalGrant('uid-lawyer', g.raw).then(() => null, e => e);
+    const err = await acceptProfessionalGrant('uid-lawyer', g.raw, claims(LAWYER_EMAIL)).then(() => null, e => e);
     expect(await state(c, g.id)).toEqual({ grant: { status: 'PENDING', accepted_by_account_id: null }, members: [{ account_id: OWNER, role: 'OWNER' }] });
     expect(svc.calls).not.toContain('accept_matter_grant');
     expect(err?.message).toMatch(/access lifecycle contract/i);
@@ -538,30 +552,35 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     expect(await state(c, g.id)).toEqual(before);
   });
 
-  it.each(['accept', 'revoke', 'create'] as const)('SLICE 4: a v2-only DB (no audit wiring) + new code refuses %s before any lifecycle call', async (op) => {
-    const c = await use('v2only');
+  it.each([
+    ['v2only', 'accept'], ['v2only', 'revoke'], ['v2only', 'create'],
+    // Stage 10 slice 7: a v3 database (audited but no recipient binding) is refused too.
+    ['v3only', 'accept'], ['v3only', 'revoke'], ['v3only', 'create'],
+  ] as const)('SLICE 4/7: a %s DB + new code refuses %s before any lifecycle call', async (kind, op) => {
+    const c = await use(kind);
     const g = await invite(c);
     await c.query(`update public.navigator_matter_access_grants set status = 'ACCEPTED', accepted_at = now(), accepted_by_account_id = $2 where id = $1`, [g.id, LAWYER]);
     await c.query(`insert into public.navigator_matter_members (matter_id, account_id, role) values ($1, $2, 'REVIEWER')`, [MATTER, LAWYER]);
     const before = await state(c, g.id);
     const grantsBefore = (await c.query('select count(*)::int as n from public.navigator_matter_access_grants')).rows[0].n;
-    const run = op === 'accept' ? acceptProfessionalGrant('uid-lawyer', g.raw)
+    const run = op === 'accept' ? acceptProfessionalGrant('uid-lawyer', g.raw, claims(LAWYER_EMAIL))
       : op === 'revoke' ? revokeProfessionalGrant('uid-owner', g.id)
-      : createProfessionalGrant('uid-owner', MATTER);
+      : createProfessionalGrant('uid-owner', MATTER, { recipientEmail: LAWYER_EMAIL });
     await expect(run).rejects.toThrow(/access lifecycle contract/i);
-    expect(svc.calls).toEqual(['navigator_matter_access_lifecycle_contract_v3']);
+    expect(svc.calls).toEqual(['navigator_matter_access_lifecycle_contract_v4']);
     expect(await state(c, g.id)).toEqual(before);
     expect((await c.query('select count(*)::int as n from public.navigator_matter_access_grants')).rows[0].n).toBe(grantsBefore);
   });
 
   it('REMEDIATED DB + new code: acceptance and owner protection work end to end', async () => {
     const c = await use('remediated');
-    const own = await invite(c);
-    await expect(acceptProfessionalGrant('uid-owner', own.raw)).rejects.toThrow(/matter owner cannot accept/i);
+    // An invitation addressed to the owner's own email reaches the owner rule, which refuses.
+    const own = await invite(c, OWNER_EMAIL);
+    await expect(acceptProfessionalGrant('uid-owner', own.raw, claims(OWNER_EMAIL))).rejects.toThrow(/matter owner cannot accept/i);
     expect((await state(c, own.id)).members).toEqual([{ account_id: OWNER, role: 'OWNER' }]);
-    const g = await invite(c);
-    await expect(acceptProfessionalGrant('uid-lawyer', g.raw)).resolves.toEqual({ success: true, matterId: MATTER });
-    expect(svc.calls.filter(f => f === 'accept_matter_grant')).toHaveLength(2);
+    const g = await invite(c, LAWYER_EMAIL);
+    await expect(acceptProfessionalGrant('uid-lawyer', g.raw, claims(LAWYER_EMAIL))).resolves.toEqual({ success: true, matterId: MATTER });
+    expect(svc.calls.filter(f => f === 'accept_recipient_bound_matter_grant')).toHaveLength(2);
   });
 
   // ------------------------------------------------------------------ B-2
@@ -571,8 +590,8 @@ d('Stage 7B service against real PostgreSQL -- deployment compatibility', () => 
     ['lowercase', (id: string) => id],
   ])('B-2: revoking with a %s grant id reports success and removes access', async (_label, variant) => {
     const c = await use('remediated');
-    const g = await invite(c);
-    await acceptProfessionalGrant('uid-lawyer', g.raw);
+    const g = await invite(c, LAWYER_EMAIL);
+    await acceptProfessionalGrant('uid-lawyer', g.raw, claims(LAWYER_EMAIL));
     const res = await revokeProfessionalGrant('uid-owner', variant(g.id));
     expect(res).toEqual({ success: true, membershipRemoved: true });
     const after = await state(c, g.id);

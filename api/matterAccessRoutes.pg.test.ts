@@ -118,7 +118,8 @@ d('Stage 10 slice 5 -- mounted routes on real PostgreSQL', () => {
     await db.query(matters.slice(0, matters.indexOf('alter table public.navigator_documents')));
     // Deployment order from STAGE_10_LIFECYCLE_AUDIT.md: grants -> 7B remediation -> event log -> v3.
     for (const f of ['create_navigator_matter_access_grants.sql', 'remediate_navigator_matter_access_grants_lifecycle.sql',
-      'create_navigator_matter_access_event_log.sql', 'create_navigator_matter_access_lifecycle_audit_v3.sql']) {
+      'create_navigator_matter_access_event_log.sql', 'create_navigator_matter_access_lifecycle_audit_v3.sql',
+      'create_navigator_matter_access_lifecycle_recipient_v4.sql']) {
       await db.query(sql(f));
     }
     svc.client = db;
@@ -153,13 +154,16 @@ d('Stage 10 slice 5 -- mounted routes on real PostgreSQL', () => {
   const dbEvents = async (matter = M.a) => (await db.query(
     'select id, event_type from public.navigator_matter_access_events where matter_id = $1 order by event_sequence', [matter])).rows;
   const eventCount = async () => Number((await db.query('select count(*) from public.navigator_matter_access_events')).rows[0].count);
-  const invite = async (matter = M.a, uid = 'uid-owner') => {
-    const r = await createProfessionalGrant(uid, matter);
+  // Stage 10 slice 7 (contract v4): each invitation names its recipient; only that verified email accepts.
+  const emailOf = (uid: string) => `${uid.slice(4)}@example.test`;
+  const acceptAs = (uid: string, raw: string) => acceptProfessionalGrant(uid, raw, { email: emailOf(uid), emailVerified: true });
+  const invite = async (matter = M.a, uid = 'uid-owner', recipient = 'uid-lawyer') => {
+    const r = await createProfessionalGrant(uid, matter, { recipientEmail: emailOf(recipient) });
     return { id: r.grant.id, raw: r.rawToken };
   };
   const invitedAndAccepted = async (uid: string, matter = M.a) => {
-    const g = await invite(matter);
-    await acceptProfessionalGrant(uid, g.raw);
+    const g = await invite(matter, 'uid-owner', uid);
+    await acceptAs(uid, g.raw);
     return g;
   };
   const historyTypes = async (uid = 'uid-owner', matter = M.a) => {
@@ -302,9 +306,9 @@ d('Stage 10 slice 5 -- mounted routes on real PostgreSQL', () => {
 
     it('rejects tampered cursors, cursors from another matter, and grants nothing to a caller holding a valid cursor', async () => {
       await standardScenario();
-      const gB = await createProfessionalGrant('uid-other', M.b);
-      await acceptProfessionalGrant('uid-lawyer2', gB.rawToken);
-      await createProfessionalGrant('uid-other', M.b);
+      const gB = await createProfessionalGrant('uid-other', M.b, { recipientEmail: emailOf('uid-lawyer2') });
+      await acceptAs('uid-lawyer2', gB.rawToken);
+      await createProfessionalGrant('uid-other', M.b, { recipientEmail: emailOf('uid-lawyer2') });
       const pageA = await hist('uid-owner', M.a, '?pageSize=1');
       const pageB = await hist('uid-other', M.b, '?pageSize=1');
       const cursorA: string = pageA.body.nextCursor;
@@ -352,9 +356,10 @@ d('Stage 10 slice 5 -- mounted routes on real PostgreSQL', () => {
       const accepted = await invitedAndAccepted('uid-lawyer');
       const revoked = await invitedAndAccepted('uid-lawyer2');
       await revokeProfessionalGrant('uid-owner', revoked.id);
-      const expired = await invite();
+      // Addressed to uid-stranger, whose own acceptance attempt persists the expiry (only the recipient can).
+      const expired = await invite(M.a, 'uid-owner', 'uid-stranger');
       await db.query(`update public.navigator_matter_access_grants set expires_at = now() - interval '1 minute' where id = $1`, [expired.id]);
-      await expect(acceptProfessionalGrant('uid-stranger', expired.raw)).rejects.toThrow(/expired/i);
+      await expect(acceptAs('uid-stranger', expired.raw)).rejects.toThrow(/expired/i);
       const lapsed = await invite();
       await db.query(`update public.navigator_matter_access_grants set expires_at = now() - interval '1 minute' where id = $1`, [lapsed.id]);
 
@@ -397,12 +402,12 @@ d('Stage 10 slice 5 -- mounted routes on real PostgreSQL', () => {
       let g1: { id: string; raw: string } = { id: '', raw: '' };
       let g2: { id: string; raw: string } = { id: '', raw: '' };
       expect(await step(async () => { g1 = await invite(); })).toEqual(['GRANT_CREATED']);
-      expect(await step(() => acceptProfessionalGrant('uid-lawyer', g1.raw))).toEqual(['GRANT_ACCEPTED', 'REVIEWER_ACCESS_ADDED']);
+      expect(await step(() => acceptAs('uid-lawyer', g1.raw))).toEqual(['GRANT_ACCEPTED', 'REVIEWER_ACCESS_ADDED']);
       g2 = await invite();
-      expect(await step(() => acceptProfessionalGrant('uid-lawyer', g2.raw))).toEqual(['GRANT_ACCEPTED']);
-      const g3 = await invite();
+      expect(await step(() => acceptAs('uid-lawyer', g2.raw))).toEqual(['GRANT_ACCEPTED']);
+      const g3 = await invite(M.a, 'uid-owner', 'uid-lawyer2');
       await db.query(`update public.navigator_matter_access_grants set expires_at = now() - interval '1 minute' where id = $1`, [g3.id]);
-      expect(await step(() => acceptProfessionalGrant('uid-lawyer2', g3.raw).catch(() => {}))).toEqual(['GRANT_EXPIRED']);
+      expect(await step(() => acceptAs('uid-lawyer2', g3.raw).catch(() => {}))).toEqual(['GRANT_EXPIRED']);
       expect(await step(() => revokeProfessionalGrant('uid-owner', g1.id))).toEqual(['GRANT_REVOKED']);
       expect(await step(() => revokeProfessionalGrant('uid-owner', g2.id))).toEqual(['GRANT_REVOKED', 'REVIEWER_ACCESS_REMOVED']);
       expect(await step(() => revokeProfessionalGrant('uid-owner', g2.id))).toEqual([]);
@@ -428,7 +433,7 @@ d('Stage 10 slice 5 -- mounted routes on real PostgreSQL', () => {
         begin if new.event_type = 'GRANT_ACCEPTED' then raise exception 'S5_INJECTED'; end if; return new; end $$`);
       await db.query('create trigger s5_fail before insert on public.navigator_matter_access_events for each row execute function public.s5_fail()');
       try {
-        await expect(acceptProfessionalGrant('uid-lawyer', g.raw)).rejects.toThrow();
+        await expect(acceptAs('uid-lawyer', g.raw)).rejects.toThrow();
       } finally {
         await db.query('drop trigger s5_fail on public.navigator_matter_access_events');
         await db.query('drop function public.s5_fail()');
@@ -439,15 +444,15 @@ d('Stage 10 slice 5 -- mounted routes on real PostgreSQL', () => {
       expect(report.currentAccess.map((c: any) => c.accountId)).toEqual([A.owner]);
       expect((await hist('uid-lawyer')).status).toBe(403);
       // The invitation is still usable afterwards: nothing was half-applied.
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       expect(await historyTypes()).toEqual(['GRANT_CREATED', 'GRANT_ACCEPTED', 'REVIEWER_ACCESS_ADDED']);
     });
 
     it('an unauthorized lifecycle attempt changes nothing the routes can see', async () => {
       const g = await invitedAndAccepted('uid-lawyer');
       const before = await historyTypes();
-      await expect(createProfessionalGrant('uid-lawyer', M.a)).rejects.toThrow(/UNAUTHORIZED/);
-      await expect(createProfessionalGrant('uid-stranger', M.a)).rejects.toThrow();
+      await expect(createProfessionalGrant('uid-lawyer', M.a, { recipientEmail: emailOf('uid-lawyer2') })).rejects.toThrow(/UNAUTHORIZED/);
+      await expect(createProfessionalGrant('uid-stranger', M.a, { recipientEmail: emailOf('uid-lawyer2') })).rejects.toThrow();
       await expect(revokeProfessionalGrant('uid-lawyer', g.id)).rejects.toThrow();
       await expect(revokeProfessionalGrant('uid-other', g.id)).rejects.toThrow();
       expect(await historyTypes()).toEqual(before);
@@ -522,6 +527,110 @@ d('Stage 10 slice 5 -- mounted routes on real PostgreSQL', () => {
       expect(Object.keys(h).sort()).toEqual(['basis', 'entries', 'matterId', 'nextCursor', 'notice', 'pageSize', 'scope']);
       for (const e of h.entries) {
         expect(Object.keys(e).sort()).toEqual(['actor', 'eventType', 'grantId', 'id', 'occurredAt', 'outcome', 'reasonCode', 'sequence', 'subject', 'summary']);
+      }
+    });
+  });
+
+  // =============================================================== Stage 10 slice 7: Decision 3, live report privacy
+  describe('slice 7: the recipient email in the live OWNER-only report (Decision 3)', () => {
+    const FROZEN_GRANT_KEYS = ['acceptedAt', 'acceptedByAccountId', 'capability', 'createdAt', 'effectiveStatus', 'expiresAt',
+      'expiryDerived', 'grantId', 'grantorAccountId', 'recordedStatus', 'revokedAt', 'revokedByAccountId'];
+
+    it('the owner sees the canonical recipient email on pending, accepted, revoked and expired grants', async () => {
+      const pending = await invite(M.a, 'uid-owner', 'uid-stranger');
+      const accepted = await invitedAndAccepted('uid-lawyer');
+      const revoked = await invitedAndAccepted('uid-lawyer2');
+      await revokeProfessionalGrant('uid-owner', revoked.id);
+      const lapsed = await invite(M.a, 'uid-owner', 'uid-other');
+      await db.query(`update public.navigator_matter_access_grants set expires_at = now() - interval '1 minute' where id = $1`, [lapsed.id]);
+      const res = await audit('uid-owner');
+      expect(res.status).toBe(200);
+      const byId = Object.fromEntries(res.body.grants.map((g: any) => [g.grantId, g]));
+      expect(byId[pending.id].recipientEmail).toBe('stranger@example.test');
+      expect(byId[accepted.id].recipientEmail).toBe('lawyer@example.test');
+      expect(byId[revoked.id].recipientEmail).toBe('lawyer2@example.test');
+      expect(byId[lapsed.id]).toMatchObject({ recipientEmail: 'other@example.test', effectiveStatus: 'EXPIRED' });
+    });
+
+    it('report grant keys are exactly the frozen keys plus recipientEmail; currentAccess gains no email', async () => {
+      await invitedAndAccepted('uid-lawyer');
+      const res = await audit('uid-owner');
+      for (const g of res.body.grants) expect(Object.keys(g).sort()).toEqual([...FROZEN_GRANT_KEYS, 'recipientEmail'].sort());
+      expect(JSON.stringify(res.body.currentAccess)).not.toContain('@');
+      expect(JSON.stringify(res.body.integrityFindings)).not.toContain('@');
+    });
+
+    it('a grant created before contract v4 (no recipient) reports recipientEmail null', async () => {
+      const g = await invite();
+      await db.query('update public.navigator_matter_access_grants set recipient_email = null where id = $1', [g.id]);
+      const byId = Object.fromEntries((await audit('uid-owner')).body.grants.map((x: any) => [x.grantId, x]));
+      expect(byId[g.id].recipientEmail).toBeNull();
+    });
+
+    it('reviewer, stranger, suspended, unauthenticated and another matter\'s owner never see a recipient email on any route', async () => {
+      await standardScenario();
+      await invite(M.a, 'uid-owner', 'uid-stranger');
+      await invite(M.b, 'uid-other', 'uid-lawyer2'); // the other owner's own matter
+      const secretEmails = ['lawyer@example.test', 'lawyer2@example.test', 'stranger@example.test', 'suspended@example.test'];
+      for (const uid of ['uid-lawyer', 'uid-stranger', 'uid-suspended', null, 'uid-other']) {
+        for (const route of ALL) {
+          const res = await route(uid, M.a);
+          if (uid === 'uid-lawyer' && route !== audit) expect(res.status).toBe(200); // reviewer's own-event history
+          else expect(res.status).not.toBe(200);
+          for (const e of secretEmails) expect(res.text).not.toContain(e);
+          expect(res.text).not.toContain('@');
+        }
+      }
+      // On the report itself, every active non-owner (reviewer, revoked reviewer, stranger, cross-matter owner)
+      // gets one identical refusal: no identity, and no way to tell the refusal classes apart.
+      const refusals = new Set<string>();
+      for (const uid of ['uid-lawyer', 'uid-lawyer2', 'uid-stranger', 'uid-other']) {
+        const res = await audit(uid);
+        expect(res.status).toBe(403);
+        refusals.add(res.text);
+      }
+      expect(refusals.size).toBe(1);
+      // A suspended caller gets the frozen slice 5 account refusal, which describes only the caller's own account:
+      // it is identical for this matter, another owner's matter and a matter that does not exist, and carries no identity.
+      const suspended = new Set<string>();
+      for (const m of [M.a, M.b, crypto.randomUUID()]) {
+        const res = await audit('uid-suspended', m);
+        expect(res.status).toBe(403);
+        expect(res.text).not.toContain('@');
+        suspended.add(res.text);
+      }
+      expect(suspended.size).toBe(1);
+      // The other owner sees only its own matter's recipient, never matter A's.
+      const own = await audit('uid-other', M.b);
+      expect(own.status).toBe(200);
+      expect(own.body.grants.map((g: any) => g.recipientEmail)).toEqual(['lawyer2@example.test']);
+    });
+
+    it('the event and history routes never carry an email, even to the owner (the event log has no email)', async () => {
+      await standardScenario();
+      for (const route of [evts, hist]) {
+        const res = await route('uid-owner');
+        expect(res.status).toBe(200);
+        expect(res.text).not.toContain('@');
+      }
+      const cols = (await db.query(`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'navigator_matter_access_events'`)).rows.map(r => r.column_name);
+      expect(cols.some((c: string) => /email|recipient/.test(c))).toBe(false);
+    });
+
+    it('failure bodies carry no email, digest or raw token', async () => {
+      const g = await invite(M.a, 'uid-owner', 'uid-stranger');
+      const failures = [await audit('uid-stranger'), await audit(null), await audit('uid-owner', 'not-a-uuid'), await audit('uid-other')];
+      const realQuery = db.query.bind(db);
+      (db as any).query = async (q: any, ...rest: any[]) => {
+        if (typeof q === 'string' && q.includes('navigator_matter_access_grants')) throw new Error('boom stranger@example.test');
+        return realQuery(q, ...rest);
+      };
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try { failures.push(await audit('uid-owner')); } finally { (db as any).query = realQuery; spy.mockRestore(); }
+      expect(failures.at(-1)!.status).toBe(503);
+      for (const res of failures) {
+        expect(res.status).not.toBe(200);
+        for (const secret of ['@', g.raw, digest(g.raw)]) expect(res.text).not.toContain(secret);
       }
     });
   });

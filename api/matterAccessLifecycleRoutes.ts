@@ -1,25 +1,31 @@
-// Stage 10 slice 6: HTTP adapter for the frozen, audited access lifecycle
-// (api/services/professionalMatterAccess.ts -> create/accept/revoke_matter_grant, contract v3).
+// Stage 10 slice 6: HTTP adapter for the audited access lifecycle
+// (api/services/professionalMatterAccess.ts; since slice 7 the recipient-bound contract v4:
+// create_recipient_bound_matter_grant / accept_recipient_bound_matter_grant / revoke_matter_grant).
 //
 // DELIBERATELY NOT MOUNTED. registerMatterAccessLifecycleRoutes(app) is not called from
 // api/_server.ts, and matterAccessLifecycleRoutes.unmounted.test.ts fails if it ever is. Mounting
-// makes invitations usable, which waits on open product/legal decisions (recipient binding, who may
-// accept, what the owner sees about an acceptor, retention). See STAGE_10_LIFECYCLE_HTTP_ADAPTER.md.
+// makes invitations usable and is a separate, later decision (Stage 10 slice 8), even though the
+// recipient-binding decisions are now implemented. See STAGE_10_LIFECYCLE_HTTP_ADAPTER.md and
+// STAGE_10_RECIPIENT_BOUND_LIFECYCLE.md.
 //
 // The adapter only authenticates, validates transport input and translates. Every authorization
 // decision, state transition and audit event stays in the database functions; nothing here reads
 // the access event log, so history can never act as authority.
 //
-//   POST /api/matters/:matterId/access-grants  owner creates an invitation (path matter is authoritative)
-//   POST /api/access-invitations/accept        body { token }; the token is never accepted from the URL
+//   POST /api/matters/:matterId/access-grants  owner creates an invitation for one recipient email
+//                                              (path matter is authoritative); body { recipientEmail, expiresInDays? }
+//   POST /api/access-invitations/accept        body { token }; the token is never accepted from the URL, and the
+//                                              acceptor's email comes ONLY from the verified Firebase token
+//                                              (Stage 10 slice 7, contract v4)
 //   POST /api/access-grants/:grantId/revoke    grant-scoped: revoke_matter_grant does not take a matter id,
 //                                              so no matter id is put in the path to imply a check that
 //                                              the database does not make
 
 import type { Express, NextFunction, Request, Response } from 'express';
-import { verifyFirebaseToken } from './services/firebaseAdmin.js';
+import { verifyFirebaseIdentity } from './services/firebaseAdmin.js';
 import { LifecycleError, requireUuid } from './services/lifecycleErrors.js';
 import { acceptProfessionalGrant, createProfessionalGrant, revokeProfessionalGrant } from './services/professionalMatterAccess.js';
+import { canonicalRecipientEmail } from './services/recipientEmail.js';
 import {
   LIFECYCLE_HTTP_ERRORS, mapLifecycleError,
   type LifecycleHttpError, type LifecycleOperation,
@@ -56,17 +62,20 @@ function bodyFields(req: Request, allowed: readonly string[]): Record<string, un
   return body as Record<string, unknown>;
 }
 
+/** Everything here comes from a successfully verified Firebase ID token; nothing from the request. */
+type VerifiedIdentity = { uid: string; email: string | null; emailVerified: boolean };
+
 function lifecycleHandler(operation: LifecycleOperation,
-  action: (req: Request, res: Response, firebaseUid: string) => Promise<void>) {
+  action: (req: Request, res: Response, identity: VerifiedIdentity) => Promise<void>) {
   return async (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store');
     try {
-      const identity = await verifyFirebaseToken(req.header('authorization'));
+      const identity = await verifyFirebaseIdentity(req.header('authorization'));
       if (!identity) {
         send(res, LIFECYCLE_HTTP_ERRORS.SIGN_IN_REQUIRED);
         return;
       }
-      await action(req, res, identity.uid);
+      await action(req, res, identity);
     } catch (error: unknown) {
       const failure = mapLifecycleError(operation, error);
       // Fixed log line only: never the error, the body, the token or the uid.
@@ -95,10 +104,13 @@ function lifecycleBodyParseErrors(error: any, _req: Request, res: Response, next
 }
 
 export function registerMatterAccessLifecycleRoutes(app: Express): void {
-  app.post(LIFECYCLE_ROUTE_PATHS.create, lifecycleHandler('create', async (req, res, uid) => {
+  app.post(LIFECYCLE_ROUTE_PATHS.create, lifecycleHandler('create', async (req, res, { uid }) => {
     const matterId = requireUuid(req.params.matterId, 'matterId').toLowerCase();
     rejectQuery(req);
-    const body = bodyFields(req, ['expiresInDays']);
+    const body = bodyFields(req, ['recipientEmail', 'expiresInDays']);
+    // The database canonicalizes again; this only refuses bad input early. The message never echoes it.
+    const recipientEmail = canonicalRecipientEmail(body.recipientEmail);
+    if (!recipientEmail) throw invalid('recipientEmail must be a valid email address.');
     let expiresInDays: number | undefined;
     if (body.expiresInDays !== undefined) {
       if (typeof body.expiresInDays !== 'number' || !Number.isInteger(body.expiresInDays)
@@ -108,33 +120,39 @@ export function registerMatterAccessLifecycleRoutes(app: Express): void {
       expiresInDays = body.expiresInDays;
     }
     const { grant, rawToken } = await createProfessionalGrant(uid, matterId,
-      expiresInDays === undefined ? undefined : { expiresInDays });
+      expiresInDays === undefined ? { recipientEmail } : { recipientEmail, expiresInDays });
     // Response identity guard: the path matter is the only matter this request may produce.
     if (String(grant.matterId).toLowerCase() !== matterId || grant.status !== 'PENDING'
-      || typeof grant.id !== 'string' || !UUID.test(grant.id.toLowerCase()) || !INVITATION_TOKEN.test(rawToken)) {
+      || typeof grant.id !== 'string' || !UUID.test(grant.id.toLowerCase()) || !INVITATION_TOKEN.test(rawToken)
+      || grant.recipientEmail !== recipientEmail) {
       throw new Error('unexpected create result');
     }
     res.status(201).json({
       matterId,
-      grant: { id: grant.id.toLowerCase(), status: grant.status, expiresAt: grant.expiresAt, createdAt: grant.createdAt },
+      grant: {
+        id: grant.id.toLowerCase(), status: grant.status, expiresAt: grant.expiresAt, createdAt: grant.createdAt,
+        // The canonical form the invitation is bound to; the creating owner already knows the address.
+        recipientEmail: grant.recipientEmail,
+      },
       // Returned exactly once; only its digest is stored. How it reaches a professional is undecided.
       invitationToken: rawToken,
     });
   }));
 
-  app.post(LIFECYCLE_ROUTE_PATHS.accept, lifecycleHandler('accept', async (req, res, uid) => {
+  app.post(LIFECYCLE_ROUTE_PATHS.accept, lifecycleHandler('accept', async (req, res, { uid, email, emailVerified }) => {
     rejectQuery(req);
     const body = bodyFields(req, ['token']);
     if (typeof body.token !== 'string' || !INVITATION_TOKEN.test(body.token)) {
       throw invalid('token must be an invitation token.');
     }
-    const result = await acceptProfessionalGrant(uid, body.token);
+    // Identity claims come only from the verified token; the body may carry nothing but { token }.
+    const result = await acceptProfessionalGrant(uid, body.token, { email, emailVerified });
     const matterId = String(result?.matterId ?? '').toLowerCase();
     if (result?.success !== true || !UUID.test(matterId)) throw new Error('unexpected accept result');
     res.json({ matterId, role: 'REVIEWER' });
   }));
 
-  app.post(LIFECYCLE_ROUTE_PATHS.revoke, lifecycleHandler('revoke', async (req, res, uid) => {
+  app.post(LIFECYCLE_ROUTE_PATHS.revoke, lifecycleHandler('revoke', async (req, res, { uid }) => {
     const grantId = requireUuid(req.params.grantId, 'grantId').toLowerCase();
     rejectQuery(req);
     bodyFields(req, []);

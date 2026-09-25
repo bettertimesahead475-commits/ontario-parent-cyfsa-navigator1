@@ -9,11 +9,14 @@ import path from 'path';
 
 const mocks = vi.hoisted(() => ({
   verifyFirebaseToken: vi.fn(async () => ({ uid: 'uid-owner', email: null })),
+  // Slice 7: the adapter authenticates with verifyFirebaseIdentity; a verified identity is supplied so
+  // that, were the router ever mounted, requests would authenticate and reach a service (and fail here).
+  verifyFirebaseIdentity: vi.fn(async () => ({ uid: 'uid-owner', email: 'owner@example.test', emailVerified: true })),
   createProfessionalGrant: vi.fn(),
   acceptProfessionalGrant: vi.fn(),
   revokeProfessionalGrant: vi.fn(),
 }));
-vi.mock('./services/firebaseAdmin.js', () => ({ verifyFirebaseToken: mocks.verifyFirebaseToken }));
+vi.mock('./services/firebaseAdmin.js', () => ({ verifyFirebaseToken: mocks.verifyFirebaseToken, verifyFirebaseIdentity: mocks.verifyFirebaseIdentity }));
 vi.mock('./services/professionalMatterAccess.js', () => ({
   createProfessionalGrant: mocks.createProfessionalGrant,
   acceptProfessionalGrant: mocks.acceptProfessionalGrant,
@@ -56,7 +59,7 @@ describe('Stage 10 slice 6: the lifecycle mutation router is NOT mounted', () =>
   });
 
   it.each(URLS)('POST %s on the real server is unreachable (404) and reaches no lifecycle service', async url => {
-    const res = await request(app).post(url).set('Authorization', 'Bearer any').send({ token: TOKEN, expiresInDays: 7 });
+    const res = await request(app).post(url).set('Authorization', 'Bearer any').send({ token: TOKEN, expiresInDays: 7, recipientEmail: 'pro@example.test' });
     expect(res.status).toBe(404);
     expect(res.body?.invitationToken).toBeUndefined();
     expect(mocks.createProfessionalGrant).not.toHaveBeenCalled();

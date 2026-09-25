@@ -71,10 +71,17 @@ const F = {
   remediation: path.join(MIGRATIONS, 'remediate_navigator_matter_access_grants_lifecycle.sql'),
   eventLog: path.join(MIGRATIONS, 'create_navigator_matter_access_event_log.sql'),
   v3: path.join(MIGRATIONS, 'create_navigator_matter_access_lifecycle_audit_v3.sql'),
+  v4: path.join(MIGRATIONS, 'create_navigator_matter_access_lifecycle_recipient_v4.sql'),
 };
 const d = ADMIN_URL ? describe : describe.skip;
 const sql = (f: string) => fs.readFileSync(f, 'utf8');
 const digest = (raw: string) => crypto.createHash('sha256').update(raw).digest('hex');
+// Stage 10 slice 7 (contract v4): every invitation names one recipient email, and only that
+// verified recipient can accept. Test accounts use <name>@example.test as their verified email.
+const emailOf = (uid: string) => `${uid.replace(/^uid-/, '')}@example.test`;
+const verified = (uid: string) => ({ email: emailOf(uid), emailVerified: true });
+const acceptAs = (uid: string, raw: string) => acceptProfessionalGrant(uid, raw, verified(uid));
+const ACCEPT_SQL = 'select public.accept_recipient_bound_matter_grant($1,$2,$3,true)';
 function assertLocal(url: string) {
   const host = new URL(url).hostname;
   if (host !== '127.0.0.1' && host !== 'localhost') throw new Error(`Refusing non-local host ${host}.`);
@@ -120,7 +127,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     assertLocal(ADMIN_URL!);
     admin = new pg.Client({ connectionString: ADMIN_URL });
     await admin.connect();
-    const created = await newDb(dbName, [F.remediation, F.eventLog, F.v3]);
+    const created = await newDb(dbName, [F.remediation, F.eventLog, F.v3, F.v4]);
     db = created.c;
     url = created.url;
     svc.client = db;
@@ -160,13 +167,13 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
   const grant = async (id: string) => (await db.query('select * from public.navigator_matter_access_grants where id = $1', [id])).rows[0];
   const role = async (acc: string, matter = M.a) =>
     (await db.query('select role from public.navigator_matter_members where matter_id = $1 and account_id = $2', [matter, acc])).rows[0]?.role ?? null;
-  const create = async (matter = M.a, uid = 'uid-owner') => {
-    const r = await createProfessionalGrant(uid, matter);
+  const create = async (matter = M.a, uid = 'uid-owner', recipient = 'uid-lawyer') => {
+    const r = await createProfessionalGrant(uid, matter, { recipientEmail: emailOf(recipient) });
     return { id: r.grant.id, raw: r.rawToken };
   };
-  const sqlCreate = async (uid: string, matter: string) => {
+  const sqlCreate = async (uid: string, matter: string, recipient = 'uid-lawyer') => {
     const raw = crypto.randomBytes(16).toString('hex');
-    const r = await db.query('select public.create_matter_grant($1,$2,$3,7) as r', [uid, matter, digest(raw)]);
+    const r = await db.query('select public.create_recipient_bound_matter_grant($1,$2,$3,7,$4) as r', [uid, matter, digest(raw), emailOf(recipient)]);
     return { id: r.rows[0].r.id as string, raw };
   };
 
@@ -186,7 +193,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('accept: GRANT_ACCEPTED + REVIEWER_ACCESS_ADDED, actor and subject = the accepting reviewer', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       const ev = (await events()).slice(1);
       expect(ev.map(e => e.event_type)).toEqual(['GRANT_ACCEPTED', 'REVIEWER_ACCESS_ADDED']);
       for (const e of ev) expect(e).toMatchObject({ actor_account_id: A.lawyer, actor_matter_role: 'REVIEWER', subject_account_id: A.lawyer, grant_id: g.id });
@@ -195,14 +202,14 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     it('a second accepted grant for a reviewer who already has access records GRANT_ACCEPTED only', async () => {
       const g1 = await create();
       const g2 = await create();
-      await acceptProfessionalGrant('uid-lawyer', g1.raw);
-      await acceptProfessionalGrant('uid-lawyer', g2.raw);
+      await acceptAs('uid-lawyer', g1.raw);
+      await acceptAs('uid-lawyer', g2.raw);
       expect(await types()).toEqual(['GRANT_CREATED', 'GRANT_CREATED', 'GRANT_ACCEPTED', 'REVIEWER_ACCESS_ADDED', 'GRANT_ACCEPTED']);
     });
 
     it('revoke the only grant: GRANT_REVOKED + REVIEWER_ACCESS_REMOVED; subject derived from the grant row', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await revokeProfessionalGrant('uid-owner', g.id);
       const ev = (await events()).slice(3);
       expect(ev.map(e => e.event_type)).toEqual(['GRANT_REVOKED', 'REVIEWER_ACCESS_REMOVED']);
@@ -212,8 +219,8 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     it('revoke while another ACCEPTED grant backs access: GRANT_REVOKED only -- no false "access removed"', async () => {
       const g1 = await create();
       const g2 = await create();
-      await acceptProfessionalGrant('uid-lawyer', g1.raw);
-      await acceptProfessionalGrant('uid-lawyer', g2.raw);
+      await acceptAs('uid-lawyer', g1.raw);
+      await acceptAs('uid-lawyer', g2.raw);
       await revokeProfessionalGrant('uid-owner', g1.id);
       expect(await role(A.lawyer)).toBe('REVIEWER');
       expect((await types()).slice(5)).toEqual(['GRANT_REVOKED']);
@@ -232,7 +239,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('a co-owner who revokes is recorded as the actor (not the grantor)', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await revokeProfessionalGrant('uid-coowner', g.id);
       const ev = (await events()).slice(3);
       for (const e of ev) expect(e.actor_account_id).toBe(A.coOwner);
@@ -240,7 +247,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('uppercase / mixed-case grant id: one set of events with the canonical grant id', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await revokeProfessionalGrant('uid-owner', g.id.toUpperCase());
       await revokeProfessionalGrant('uid-owner', g.id.split('').map((c, i) => (i % 2 ? c.toUpperCase() : c)).join(''));
       expect((await events()).slice(3).map(e => [e.event_type, e.grant_id])).toEqual([['GRANT_REVOKED', g.id], ['REVIEWER_ACCESS_REMOVED', g.id]]);
@@ -249,12 +256,12 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     it('expiry: the persisted EXPIRED transition records exactly one SYSTEM GRANT_EXPIRED', async () => {
       const g = await create();
       await db.query(`update public.navigator_matter_access_grants set expires_at = now() - interval '1 minute' where id = $1`, [g.id]);
-      await expect(acceptProfessionalGrant('uid-lawyer', g.raw)).rejects.toThrow(/expired/);
+      await expect(acceptAs('uid-lawyer', g.raw)).rejects.toThrow(/expired/);
       expect((await grant(g.id)).status).toBe('EXPIRED');
       const ev = (await events()).slice(1);
       expect(ev).toHaveLength(1);
       expect(ev[0]).toMatchObject({ event_type: 'GRANT_EXPIRED', actor_kind: 'SYSTEM', actor_account_id: null, grant_id: g.id });
-      await expect(acceptProfessionalGrant('uid-lawyer', g.raw)).rejects.toThrow(/no longer pending/);
+      await expect(acceptAs('uid-lawyer', g.raw)).rejects.toThrow(/no longer pending/);
       expect(await events()).toHaveLength(2);
     });
 
@@ -267,7 +274,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('re-revoke that clears a pre-remediation lingering membership records only REVIEWER_ACCESS_REMOVED', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await db.query(`update public.navigator_matter_access_grants set status = 'REVOKED', revoked_at = now(), revoked_by_account_id = $2 where id = $1`, [g.id, A.owner]);
       await revokeProfessionalGrant('uid-owner', g.id);
       expect((await types()).slice(3)).toEqual(['REVIEWER_ACCESS_REMOVED']);
@@ -277,18 +284,20 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
   // =============================================================== refusals, retries, idempotency
   describe('failed or repeated operations record nothing', () => {
     it.each([
-      ['owner self-accept', async (g: any) => acceptProfessionalGrant('uid-owner', g.raw), /matter owner cannot accept/],
-      ['co-owner accept', async (g: any) => acceptProfessionalGrant('uid-coowner', g.raw), /matter owner cannot accept/],
-      ['malformed / unknown invitation token', async () => acceptProfessionalGrant('uid-lawyer', 'not-a-real-token'), /Invalid token/],
-      ['unknown accepting account', async (g: any) => acceptProfessionalGrant('uid-nobody', g.raw), /unavailable/],
+      ['owner self-accept', async (g: any) => acceptAs('uid-owner', g.raw), /matter owner cannot accept/],
+      ['co-owner accept', async (g: any) => acceptAs('uid-coowner', g.raw), /matter owner cannot accept/],
+      ['malformed / unknown invitation token', async () => acceptAs('uid-lawyer', 'not-a-real-token'), /Invalid token/],
+      ['unknown accepting account', async (g: any) => acceptAs('uid-nobody', g.raw), /unavailable/],
       ['unauthorized revoke (reviewer)', async (g: any) => revokeProfessionalGrant('uid-lawyer', g.id), /UNAUTHORIZED/],
       ['wrong-matter revoke (owner of another matter)', async (g: any) => revokeProfessionalGrant('uid-other', g.id), /UNAUTHORIZED/],
       ['unknown grant', async () => revokeProfessionalGrant('uid-owner', crypto.randomUUID()), /Grant not found/],
       ['malformed grant id', async () => revokeProfessionalGrant('uid-owner', 'nope'), /grantId must be a UUID/],
-      ['create by a non-owner', async () => createProfessionalGrant('uid-lawyer', M.a), /UNAUTHORIZED/],
-      ['create on another owner\'s matter', async () => createProfessionalGrant('uid-owner', M.b), /UNAUTHORIZED/],
+      ['create by a non-owner', async () => createProfessionalGrant('uid-lawyer', M.a, { recipientEmail: emailOf('uid-lawyer2') }), /UNAUTHORIZED/],
+      ['create on another owner\'s matter', async () => createProfessionalGrant('uid-owner', M.b, { recipientEmail: emailOf('uid-lawyer') }), /UNAUTHORIZED/],
     ])('%s', async (_l, op, err) => {
-      const g = await create();
+      // v4: the owner-preservation cases address the invitation to that owner, so the recipient check
+      // passes and the frozen owner rule is what refuses.
+      const g = await create(M.a, 'uid-owner', _l === 'owner self-accept' ? 'uid-owner' : _l === 'co-owner accept' ? 'uid-coowner' : 'uid-lawyer');
       const beforeA = await events(M.a);
       const beforeB = await events(M.b);
       const grantBefore = await grant(g.id);
@@ -301,15 +310,15 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('accept twice (e.g. a retry after an ambiguous network failure): the second is refused, events unchanged', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       const before = await events();
-      await expect(acceptProfessionalGrant('uid-lawyer', g.raw)).rejects.toThrow(/no longer pending/);
+      await expect(acceptAs('uid-lawyer', g.raw)).rejects.toThrow(/no longer pending/);
       expect(await events()).toEqual(before);
     });
 
     it('revoke twice: the retry succeeds idempotently and records nothing new', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await revokeProfessionalGrant('uid-owner', g.id);
       const before = await events();
       await expect(revokeProfessionalGrant('uid-owner', g.id)).resolves.toEqual({ success: true, membershipRemoved: false });
@@ -342,7 +351,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     it('audit insert fails during ACCEPT -> invitation stays PENDING, no membership, no events', async () => {
       const g = await create();
       await withTrigger('navigator_matter_access_events', 'insert', failEvent(), async () => {
-        await expect(db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)])).rejects.toThrow(/INJECTED_AUDIT_FAILURE/);
+        await expect(db.query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')])).rejects.toThrow(/INJECTED_AUDIT_FAILURE/);
       });
       expect((await grant(g.id)).status).toBe('PENDING');
       expect(await role(A.lawyer)).toBeNull();
@@ -352,7 +361,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     it('the SECOND event of an acceptance fails -> the first event AND the mutation roll back too', async () => {
       const g = await create();
       await withTrigger('navigator_matter_access_events', 'insert', failEvent('REVIEWER_ACCESS_ADDED'), async () => {
-        await expect(db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)])).rejects.toThrow(/INJECTED_AUDIT_FAILURE/);
+        await expect(db.query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')])).rejects.toThrow(/INJECTED_AUDIT_FAILURE/);
       });
       expect((await grant(g.id)).status).toBe('PENDING');
       expect(await role(A.lawyer)).toBeNull();
@@ -361,7 +370,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('audit insert fails during REVOKE -> grant stays ACCEPTED and access remains', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await withTrigger('navigator_matter_access_events', 'insert', failEvent('REVIEWER_ACCESS_REMOVED'), async () => {
         await expect(db.query('select public.revoke_matter_grant($1,$2)', ['uid-owner', g.id])).rejects.toThrow(/INJECTED_AUDIT_FAILURE/);
       });
@@ -374,7 +383,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
       const g = await create();
       await db.query(`update public.navigator_matter_access_grants set expires_at = now() - interval '1 minute' where id = $1`, [g.id]);
       await withTrigger('navigator_matter_access_events', 'insert', failEvent(), async () => {
-        await expect(db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)])).rejects.toThrow(/INJECTED_AUDIT_FAILURE/);
+        await expect(db.query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')])).rejects.toThrow(/INJECTED_AUDIT_FAILURE/);
       });
       expect((await grant(g.id)).status).toBe('PENDING');
       expect(await types()).toEqual(['GRANT_CREATED']);
@@ -393,8 +402,8 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     ])('only %s fails during %s -> nothing about that transition persists', async (eventType, op) => {
       const setup = op === 'create' ? null : await create();
       const second = op.startsWith('second') ? await create() : null;
-      if (op.startsWith('second')) await acceptProfessionalGrant('uid-lawyer', setup!.raw);
-      if (op === 'revoke') await acceptProfessionalGrant('uid-lawyer', setup!.raw);
+      if (op.startsWith('second')) await acceptAs('uid-lawyer', setup!.raw);
+      if (op === 'revoke') await acceptAs('uid-lawyer', setup!.raw);
       if (op === 'expiry') await db.query(`update public.navigator_matter_access_grants set expires_at = now() - interval '1 minute' where id = $1`, [setup!.id]);
       const grantsBefore = (await db.query('select id, status, accepted_by_account_id, revoked_at from public.navigator_matter_access_grants order by id')).rows;
       const membersBefore = (await db.query('select account_id, role from public.navigator_matter_members where matter_id = $1 order by account_id', [M.a])).rows;
@@ -402,7 +411,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
       await withTrigger('navigator_matter_access_events', 'insert', failEvent(eventType), async () => {
         const call = op === 'create' ? sqlCreate('uid-owner', M.a)
           : op === 'revoke' ? db.query('select public.revoke_matter_grant($1,$2)', ['uid-owner', setup!.id])
-          : db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest((second ?? setup)!.raw)]);
+          : db.query(ACCEPT_SQL, ['uid-lawyer', digest((second ?? setup)!.raw), emailOf('uid-lawyer')]);
         await expect(call).rejects.toThrow(/INJECTED_AUDIT_FAILURE/);
       });
       expect((await db.query('select id, status, accepted_by_account_id, revoked_at from public.navigator_matter_access_grants order by id')).rows).toEqual(grantsBefore);
@@ -413,9 +422,9 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     it('the service reports failure (and no success) when the audit write fails', async () => {
       const g = await create();
       await withTrigger('navigator_matter_access_events', 'insert', failEvent(), async () => {
-        await expect(acceptProfessionalGrant('uid-lawyer', g.raw)).rejects.toThrow(/Acceptance failed/);
+        await expect(acceptAs('uid-lawyer', g.raw)).rejects.toThrow(/Acceptance failed/);
         await expect(revokeProfessionalGrant('uid-owner', g.id)).rejects.toThrow(/Revocation failed/);
-        await expect(createProfessionalGrant('uid-owner', M.a)).rejects.toThrow(/Failed to create grant/);
+        await expect(createProfessionalGrant('uid-owner', M.a, { recipientEmail: emailOf('uid-lawyer') })).rejects.toThrow(/Failed to create grant/);
       });
       expect((await grant(g.id)).status).toBe('PENDING');
     });
@@ -423,7 +432,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     it('the membership mutation fails during ACCEPT -> no acceptance events exist', async () => {
       const g = await create();
       await withTrigger('navigator_matter_members', 'insert', `raise exception 'INJECTED_MUTATION_FAILURE';`, async () => {
-        await expect(db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)])).rejects.toThrow(/INJECTED_MUTATION_FAILURE/);
+        await expect(db.query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')])).rejects.toThrow(/INJECTED_MUTATION_FAILURE/);
       });
       expect((await grant(g.id)).status).toBe('PENDING');
       expect(await types()).toEqual(['GRANT_CREATED']);
@@ -431,7 +440,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('the grant update fails during REVOKE -> no revocation events exist', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await withTrigger('navigator_matter_access_grants', 'update', `raise exception 'INJECTED_MUTATION_FAILURE';`, async () => {
         await expect(db.query('select public.revoke_matter_grant($1,$2)', ['uid-owner', g.id])).rejects.toThrow(/INJECTED_MUTATION_FAILURE/);
       });
@@ -448,7 +457,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('a constraint violation on the event log rolls back the whole revocation', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await db.query(`alter table public.navigator_matter_access_events add constraint t_inject_no_revoke check (event_type <> 'GRANT_REVOKED') not valid`);
       try {
         await expect(db.query('select public.revoke_matter_grant($1,$2)', ['uid-owner', g.id])).rejects.toThrow(/t_inject_no_revoke/);
@@ -483,20 +492,20 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     const scenarios: Record<string, (c: pg.Client[]) => Promise<{ reviewer: string }>> = {
       'accept/accept (same grant, same reviewer)': async c => {
         const g = await sqlCreate('uid-owner', M.a);
-        await Promise.allSettled([0, 1].map(i => c[i].query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)])));
+        await Promise.allSettled([0, 1].map(i => c[i].query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')])));
         return { reviewer: A.lawyer };
       },
       'accept/accept (same grant, two reviewers)': async c => {
         const g = await sqlCreate('uid-owner', M.a);
-        await Promise.allSettled([c[0].query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)]),
-          c[1].query('select public.accept_matter_grant($1,$2)', ['uid-lawyer2', digest(g.raw)])]);
+        await Promise.allSettled([c[0].query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')]),
+          c[1].query(ACCEPT_SQL, ['uid-lawyer2', digest(g.raw), emailOf('uid-lawyer2')])]);
         const winners = (await events()).filter(e => e.event_type === 'GRANT_ACCEPTED');
         expect(winners).toHaveLength(1);
         return { reviewer: winners[0].subject_account_id };
       },
       'revoke/revoke (same grant)': async c => {
         const g = await sqlCreate('uid-owner', M.a);
-        await db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)]);
+        await db.query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')]);
         await Promise.allSettled([c[0].query('select public.revoke_matter_grant($1,$2)', ['uid-owner', g.id]),
           c[1].query('select public.revoke_matter_grant($1,$2)', ['uid-coowner', g.id])]);
         expect((await events()).filter(e => e.event_type === 'GRANT_REVOKED')).toHaveLength(1);
@@ -504,7 +513,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
       },
       'accept/revoke (same grant)': async c => {
         const g = await sqlCreate('uid-owner', M.a);
-        await Promise.allSettled([c[0].query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)]),
+        await Promise.allSettled([c[0].query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')]),
           c[1].query('select public.revoke_matter_grant($1,$2)', ['uid-owner', g.id])]);
         expect(await role(A.lawyer)).toBeNull();
         return { reviewer: A.lawyer };
@@ -512,8 +521,8 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
       'revoke A / revoke B (two grants, same reviewer)': async c => {
         const a = await sqlCreate('uid-owner', M.a);
         const b = await sqlCreate('uid-owner', M.a);
-        await db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(a.raw)]);
-        await db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(b.raw)]);
+        await db.query(ACCEPT_SQL, ['uid-lawyer', digest(a.raw), emailOf('uid-lawyer')]);
+        await db.query(ACCEPT_SQL, ['uid-lawyer', digest(b.raw), emailOf('uid-lawyer')]);
         await Promise.allSettled([c[0].query('select public.revoke_matter_grant($1,$2)', ['uid-owner', a.id]),
           c[1].query('select public.revoke_matter_grant($1,$2)', ['uid-owner', b.id])]);
         expect(await role(A.lawyer)).toBeNull();
@@ -523,9 +532,9 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
       'revoke A / accept B (same reviewer)': async c => {
         const a = await sqlCreate('uid-owner', M.a);
         const b = await sqlCreate('uid-owner', M.a);
-        await db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(a.raw)]);
+        await db.query(ACCEPT_SQL, ['uid-lawyer', digest(a.raw), emailOf('uid-lawyer')]);
         await Promise.allSettled([c[0].query('select public.revoke_matter_grant($1,$2)', ['uid-owner', a.id]),
-          c[1].query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(b.raw)])]);
+          c[1].query(ACCEPT_SQL, ['uid-lawyer', digest(b.raw), emailOf('uid-lawyer')])]);
         expect(await role(A.lawyer)).toBe('REVIEWER');
         return { reviewer: A.lawyer };
       },
@@ -559,34 +568,57 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
   // =============================================================== authority, contract, privileges
   describe('authority, contract and privileges', () => {
     it('no lifecycle function accepts an actor, role, subject, outcome or timestamp parameter', async () => {
-      const r = await db.query(`select proname, proargnames from pg_proc where proname in ('create_matter_grant','accept_matter_grant','revoke_matter_grant') order by proname`);
+      const r = await db.query(`select proname, proargnames from pg_proc where proname in ('create_matter_grant','accept_matter_grant','revoke_matter_grant','create_recipient_bound_matter_grant','accept_recipient_bound_matter_grant') order by proname`);
       expect(r.rows).toEqual([
         { proname: 'accept_matter_grant', proargnames: ['p_firebase_uid', 'p_token_digest'] },
+        // v4: the only additions are the recipient (create) and the SERVER-verified email claims (accept).
+        { proname: 'accept_recipient_bound_matter_grant', proargnames: ['p_firebase_uid', 'p_token_digest', 'p_verified_email', 'p_email_verified'] },
         { proname: 'create_matter_grant', proargnames: ['p_firebase_uid', 'p_matter_id', 'p_token_digest', 'p_expires_in_days'] },
+        { proname: 'create_recipient_bound_matter_grant', proargnames: ['p_firebase_uid', 'p_matter_id', 'p_token_digest', 'p_expires_in_days', 'p_recipient_email'] },
         { proname: 'revoke_matter_grant', proargnames: ['p_firebase_uid', 'p_grant_id'] },
       ]);
     });
 
-    it('frozen v2 contract is unchanged; v3 contract exists; both are constant, non-definer and service_role-only', async () => {
+    it('frozen v2 and v3 contracts are unchanged; v4 contract exists; all constant, non-definer and service_role-only', async () => {
       expect((await db.query('select public.navigator_matter_access_lifecycle_contract() as v')).rows[0].v).toBe('navigator_matter_access_lifecycle_v2');
       expect((await db.query('select public.navigator_matter_access_lifecycle_contract_v3() as v')).rows[0].v).toBe('navigator_matter_access_lifecycle_v3');
-      for (const fn of ['public.navigator_matter_access_lifecycle_contract_v3()', 'public.create_matter_grant(text, uuid, text, integer)',
-        'public.accept_matter_grant(text, text)', 'public.revoke_matter_grant(text, uuid)']) {
+      expect((await db.query('select public.navigator_matter_access_lifecycle_contract_v4() as v')).rows[0].v).toBe('navigator_matter_access_lifecycle_v4');
+      for (const fn of ['public.navigator_matter_access_lifecycle_contract_v3()', 'public.navigator_matter_access_lifecycle_contract_v4()',
+        'public.create_matter_grant(text, uuid, text, integer)', 'public.accept_matter_grant(text, text)',
+        'public.create_recipient_bound_matter_grant(text, uuid, text, integer, text)',
+        'public.accept_recipient_bound_matter_grant(text, text, text, boolean)',
+        'public.navigator_canonical_recipient_email(text)', 'public.revoke_matter_grant(text, uuid)']) {
         for (const role of ['public', 'anon', 'authenticated']) {
           expect((await db.query(`select has_function_privilege($1, $2, 'execute') as ok`, [role, fn])).rows[0].ok).toBe(false);
         }
         expect((await db.query(`select has_function_privilege('service_role', $1, 'execute') as ok`, [fn])).rows[0].ok).toBe(true);
       }
-      const v3 = (await db.query(`select prosecdef, provolatile from pg_proc where proname = 'navigator_matter_access_lifecycle_contract_v3'`)).rows[0];
-      expect(v3).toEqual({ prosecdef: false, provolatile: 'i' });
+      for (const name of ['navigator_matter_access_lifecycle_contract_v3', 'navigator_matter_access_lifecycle_contract_v4']) {
+        const c = (await db.query(`select prosecdef, provolatile from pg_proc where proname = $1`, [name])).rows[0];
+        expect(c).toEqual({ prosecdef: false, provolatile: 'i' });
+      }
     });
 
-    it('create validates the token digest and expiry inside the database', async () => {
-      await expect(db.query('select public.create_matter_grant($1,$2,$3,7)', ['uid-owner', M.a, 'not-hex'])).rejects.toThrow(/INVALID_REQUEST/);
+    it('create validates the token digest, expiry and recipient inside the database', async () => {
+      const CREATE = 'select public.create_recipient_bound_matter_grant($1,$2,$3,$4,$5)';
+      await expect(db.query(CREATE, ['uid-owner', M.a, 'not-hex', 7, emailOf('uid-lawyer')])).rejects.toThrow(/INVALID_REQUEST/);
       for (const days of [0, -1, 366]) {
-        await expect(db.query('select public.create_matter_grant($1,$2,$3,$4)', ['uid-owner', M.a, digest('x' + days), days])).rejects.toThrow(/INVALID_REQUEST/);
+        await expect(db.query(CREATE, ['uid-owner', M.a, digest('x' + days), days, emailOf('uid-lawyer')])).rejects.toThrow(/INVALID_REQUEST/);
+      }
+      for (const bad of [null, '', 'no-at-sign', 'a@b@c', 'ünïcode@example.test']) {
+        await expect(db.query(CREATE, ['uid-owner', M.a, digest('r' + bad), 7, bad])).rejects.toThrow(/INVALID_RECIPIENT/);
       }
       expect(await events()).toEqual([]);
+    });
+
+    it('v4 replaces the v3 create/accept entry points with refusals that write nothing', async () => {
+      const g = await sqlCreate('uid-owner', M.a);
+      const before = await types();
+      await expect(db.query('select public.create_matter_grant($1,$2,$3,7)', ['uid-owner', M.a, digest('legacy')])).rejects.toThrow(/CONTRACT_SUPERSEDED/);
+      await expect(db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)])).rejects.toThrow(/CONTRACT_SUPERSEDED/);
+      expect(await types()).toEqual(before);
+      expect((await grant(g.id)).status).toBe('PENDING');
+      expect(await role(A.lawyer)).toBeNull();
     });
 
     it('the v3 migration refuses to install without its prerequisites (deployment order is enforced)', async () => {
@@ -610,11 +642,14 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
       }
     });
 
-    it('rollback compatibility: the frozen Stage 7B (v2) application keeps working on a v3 database and its accept/revoke are audited', async () => {
+    it('rollback compatibility: an older (v2/v3) application on a v4 database fails closed on create/accept and still revokes with audit', async () => {
       const g = await sqlCreate('uid-owner', M.a);
-      // What the frozen a452c6c service does: v2 gate, then the same RPCs.
+      // What the frozen a452c6c / d94800c services call: their contract gates still pass...
       expect((await db.query('select public.navigator_matter_access_lifecycle_contract() as v')).rows[0].v).toBe('navigator_matter_access_lifecycle_v2');
-      await db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)]);
+      expect((await db.query('select public.navigator_matter_access_lifecycle_contract_v3() as v')).rows[0].v).toBe('navigator_matter_access_lifecycle_v3');
+      // ...but their unbound create and recipient-less accept are refused, so no access can bypass the recipient.
+      await expect(db.query('select public.accept_matter_grant($1,$2)', ['uid-lawyer', digest(g.raw)])).rejects.toThrow(/CONTRACT_SUPERSEDED/);
+      await db.query(ACCEPT_SQL, ['uid-lawyer', digest(g.raw), emailOf('uid-lawyer')]);
       await db.query('select public.revoke_matter_grant($1,$2)', ['uid-owner', g.id]);
       expect(await types()).toEqual(['GRANT_CREATED', 'GRANT_ACCEPTED', 'REVIEWER_ACCESS_ADDED', 'GRANT_REVOKED', 'REVIEWER_ACCESS_REMOVED']);
     });
@@ -625,8 +660,8 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
     it('history shows the real committed transitions; current-state report is computed independently from live rows', async () => {
       const g1 = await create();
       const g2 = await create();
-      await acceptProfessionalGrant('uid-lawyer', g1.raw);
-      await acceptProfessionalGrant('uid-lawyer', g2.raw);
+      await acceptAs('uid-lawyer', g1.raw);
+      await acceptAs('uid-lawyer', g2.raw);
       await revokeProfessionalGrant('uid-owner', g1.id);
 
       const history = await getMatterAccessHistory('uid-owner', M.a, { pageSize: 100 });
@@ -649,7 +684,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
     it('history is not authority: deleting the event-backed membership out-of-band is reported by the current-state report', async () => {
       const g = await create();
-      await acceptProfessionalGrant('uid-lawyer', g.raw);
+      await acceptAs('uid-lawyer', g.raw);
       await db.query(`delete from public.navigator_matter_members where matter_id = $1 and account_id = $2`, [M.a, A.lawyer]);
       const current = await getMatterAccessAudit('uid-owner', M.a);
       expect(current.currentAccess.find(a => a.accountId === A.lawyer)).toBeUndefined();
@@ -661,7 +696,7 @@ d('Stage 10 slice 4 -- lifecycle + audit atomicity on real PostgreSQL', () => {
 
   it('privacy: lifecycle events carry identifiers and fixed vocabulary only', async () => {
     const g = await create();
-    await acceptProfessionalGrant('uid-lawyer', g.raw);
+    await acceptAs('uid-lawyer', g.raw);
     const cols = (await db.query(`select column_name from information_schema.columns where table_name = 'navigator_matter_access_events' order by ordinal_position`)).rows.map(r => r.column_name);
     expect(cols).toEqual(['id', 'event_sequence', 'matter_id', 'event_type', 'actor_kind', 'actor_account_id', 'actor_matter_role',
       'subject_account_id', 'grant_id', 'outcome', 'reason_code', 'idempotency_key', 'occurred_at']);
