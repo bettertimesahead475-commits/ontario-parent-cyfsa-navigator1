@@ -62,6 +62,9 @@ vi.mock('./services/firebaseAdmin.js', () => ({
 }));
 
 const { registerMatterAccessLifecycleRoutes } = await import('./matterAccessLifecycleRoutes.js');
+// Stage 10 slice 8: the adapter now carries the per-account write limiter; this suite pins the
+// lifecycle contract, so each test starts with a fresh budget (the limiter has its own suites).
+const { lifecycleWriteLimiter } = await import('./services/lifecycleWriteLimiter.js');
 
 const ADMIN_URL = process.env.NAVIGATOR_PG_TEST_ADMIN_URL;
 const MIGRATIONS = path.resolve(__dirname, '../supabase/migrations_pending_approval');
@@ -135,6 +138,7 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
   });
 
   beforeEach(async () => {
+    lifecycleWriteLimiter.reset();
     svc.pool = db;
     svc.calls = [];
     await db.query('truncate public.navigator_matter_access_grants, public.navigator_matter_members, public.navigator_matters, public.clients, public.accounts cascade');

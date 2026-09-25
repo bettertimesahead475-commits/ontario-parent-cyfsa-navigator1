@@ -2,11 +2,11 @@
 // (api/services/professionalMatterAccess.ts; since slice 7 the recipient-bound contract v4:
 // create_recipient_bound_matter_grant / accept_recipient_bound_matter_grant / revoke_matter_grant).
 //
-// DELIBERATELY NOT MOUNTED. registerMatterAccessLifecycleRoutes(app) is not called from
-// api/_server.ts, and matterAccessLifecycleRoutes.unmounted.test.ts fails if it ever is. Mounting
-// makes invitations usable and is a separate, later decision (Stage 10 slice 8), even though the
-// recipient-binding decisions are now implemented. See STAGE_10_LIFECYCLE_HTTP_ADAPTER.md and
-// STAGE_10_RECIPIENT_BOUND_LIFECYCLE.md.
+// MOUNTED since Stage 10 slice 8 (activation): api/_server.ts registers exactly these three POST
+// routes, behind the per-IP /api limiter and a per-account write limiter
+// (services/lifecycleWriteLimiter.ts). matterAccessLifecycleRoutes.mounted.test.ts pins the exact
+// mounted surface. Every call still requires the v4 contract at runtime (the service refuses before
+// any lifecycle RPC otherwise). See STAGE_10_CLOSEOUT.md.
 //
 // The adapter only authenticates, validates transport input and translates. Every authorization
 // decision, state transition and audit event stays in the database functions; nothing here reads
@@ -26,6 +26,7 @@ import { verifyFirebaseIdentity } from './services/firebaseAdmin.js';
 import { LifecycleError, requireUuid } from './services/lifecycleErrors.js';
 import { acceptProfessionalGrant, createProfessionalGrant, revokeProfessionalGrant } from './services/professionalMatterAccess.js';
 import { canonicalRecipientEmail } from './services/recipientEmail.js';
+import { lifecycleWriteLimiter, type AccountWriteLimiter } from './services/lifecycleWriteLimiter.js';
 import {
   LIFECYCLE_HTTP_ERRORS, mapLifecycleError,
   type LifecycleHttpError, type LifecycleOperation,
@@ -65,7 +66,7 @@ function bodyFields(req: Request, allowed: readonly string[]): Record<string, un
 /** Everything here comes from a successfully verified Firebase ID token; nothing from the request. */
 type VerifiedIdentity = { uid: string; email: string | null; emailVerified: boolean };
 
-function lifecycleHandler(operation: LifecycleOperation,
+function lifecycleHandler(operation: LifecycleOperation, limiter: AccountWriteLimiter,
   action: (req: Request, res: Response, identity: VerifiedIdentity) => Promise<void>) {
   return async (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store');
@@ -73,6 +74,15 @@ function lifecycleHandler(operation: LifecycleOperation,
       const identity = await verifyFirebaseIdentity(req.header('authorization'));
       if (!identity) {
         send(res, LIFECYCLE_HTTP_ERRORS.SIGN_IN_REQUIRED);
+        return;
+      }
+      // Stage 10 slice 8: per-account write budget, spent only by an authenticated caller and keyed
+      // only by the verified uid -- never an email, a token or an IP. Every attempt counts, valid or
+      // not, so a caller cannot probe tokens for free. The per-IP /api limiter still runs first.
+      const decision = limiter.consume(identity.uid);
+      if (!decision.allowed) {
+        res.set('Retry-After', String(decision.retryAfterSeconds));
+        send(res, LIFECYCLE_HTTP_ERRORS.RATE_LIMITED);
         return;
       }
       await action(req, res, identity);
@@ -103,8 +113,10 @@ function lifecycleBodyParseErrors(error: any, _req: Request, res: Response, next
   res.status(status).json({ code: 'INVALID_REQUEST_BODY', error: 'Invalid request body.' });
 }
 
-export function registerMatterAccessLifecycleRoutes(app: Express): void {
-  app.post(LIFECYCLE_ROUTE_PATHS.create, lifecycleHandler('create', async (req, res, { uid }) => {
+export function registerMatterAccessLifecycleRoutes(app: Express,
+  options: { writeLimiter?: AccountWriteLimiter } = {}): void {
+  const limiter = options.writeLimiter ?? lifecycleWriteLimiter;
+  app.post(LIFECYCLE_ROUTE_PATHS.create, lifecycleHandler('create', limiter, async (req, res, { uid }) => {
     const matterId = requireUuid(req.params.matterId, 'matterId').toLowerCase();
     rejectQuery(req);
     const body = bodyFields(req, ['recipientEmail', 'expiresInDays']);
@@ -139,7 +151,7 @@ export function registerMatterAccessLifecycleRoutes(app: Express): void {
     });
   }));
 
-  app.post(LIFECYCLE_ROUTE_PATHS.accept, lifecycleHandler('accept', async (req, res, { uid, email, emailVerified }) => {
+  app.post(LIFECYCLE_ROUTE_PATHS.accept, lifecycleHandler('accept', limiter, async (req, res, { uid, email, emailVerified }) => {
     rejectQuery(req);
     const body = bodyFields(req, ['token']);
     if (typeof body.token !== 'string' || !INVITATION_TOKEN.test(body.token)) {
@@ -152,7 +164,7 @@ export function registerMatterAccessLifecycleRoutes(app: Express): void {
     res.json({ matterId, role: 'REVIEWER' });
   }));
 
-  app.post(LIFECYCLE_ROUTE_PATHS.revoke, lifecycleHandler('revoke', async (req, res, { uid }) => {
+  app.post(LIFECYCLE_ROUTE_PATHS.revoke, lifecycleHandler('revoke', limiter, async (req, res, { uid }) => {
     const grantId = requireUuid(req.params.grantId, 'grantId').toLowerCase();
     rejectQuery(req);
     bodyFields(req, []);

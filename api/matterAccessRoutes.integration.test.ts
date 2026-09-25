@@ -61,7 +61,14 @@ describe('Stage 10 slice 5: route registration in api/_server.ts', () => {
   it('registers after every global middleware (helmet, CORS, limiter, parser) and before nothing that could shadow it', () => {
     const stack: any[] = (app as any)._router.stack;
     const firstStage10 = stack.findIndex(l => l.route && STAGE10_PATHS.includes(l.route.path));
-    const lastMiddleware = stack.reduce((idx, l, i) => (!l.route && !['query', 'expressInit'].includes(l.name) ? i : idx), -1);
+    // Stage 10 slice 8: the mounted lifecycle adapter adds one PATH-SCOPED error handler after its own
+    // routes. It is not global middleware: it has the 4-argument error signature and only matches the
+    // three lifecycle POST paths, so it can neither run before nor shadow a read route.
+    const scoped = stack.filter(l => !l.route && l.name === 'lifecycleBodyParseErrors');
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0].handle.length).toBe(4);
+    for (const r of ROUTES) expect(scoped[0].match(r.path)).toBeFalsy();
+    const lastMiddleware = stack.reduce((idx, l, i) => (!l.route && !['query', 'expressInit', 'lifecycleBodyParseErrors'].includes(l.name) ? i : idx), -1);
     expect(firstStage10).toBeGreaterThan(lastMiddleware);
     // No earlier route can match a Stage 10 URL (e.g. GET /api/matters/:matterId is one segment shorter).
     for (const l of stack.slice(0, firstStage10)) {

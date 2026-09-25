@@ -1,3 +1,6 @@
+// Stage 10 slice 8: MUST stay the first import. It removes an invitation token (#t=...) from the URL
+// before App.tsx and its telemetry packages are even evaluated. See src/utils/invitationFragment.ts.
+import './utils/invitationFragment';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';

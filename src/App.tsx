@@ -30,8 +30,10 @@ const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyD
 const PricingTab = lazy(() => import("./components/PricingTab"));
 const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWorkspace"));
 const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorkspace"));
+const AcceptInvitation = lazy(() => import("./components/AcceptInvitation"));
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
+import { sanitizeTelemetryEvent } from "./utils/telemetrySanitizer";
 import { getUserKey } from "./utils/storage";
 
 // Core icons represent core section identity
@@ -339,6 +341,13 @@ export default function App() {
             </RequireAuth>
           </Route>
 
+          {/* Stage 10 slice 8: the token was already captured from #t= and scrubbed by main.tsx. */}
+          <Route path="/accept-invitation">
+            <RequireAuth>
+              <AcceptInvitation />
+            </RequireAuth>
+          </Route>
+
           {/* Fallback route */}
           <Route><Redirect to="/" /></Route>
 
@@ -496,8 +505,9 @@ export default function App() {
         </Suspense>
       )}
 
-      <Analytics />
-      <SpeedInsights />
+      {/* Stage 10 slice 8: backstop -- no event may carry an invitation token (see telemetrySanitizer.ts). */}
+      <Analytics beforeSend={sanitizeTelemetryEvent} />
+      <SpeedInsights beforeSend={sanitizeTelemetryEvent} />
     </div>
   );
 }

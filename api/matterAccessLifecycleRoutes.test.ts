@@ -22,6 +22,10 @@ vi.mock('./services/professionalMatterAccess.js', () => ({
 }));
 
 const { registerMatterAccessLifecycleRoutes, LIFECYCLE_ROUTE_PATHS } = await import('./matterAccessLifecycleRoutes.js');
+const { createAccountWriteLimiter } = await import('./services/lifecycleWriteLimiter.js');
+// Stage 10 slice 8: an isolated per-account limiter, reset before every test so that contract tests
+// never trip it; the limiter itself is pinned in lifecycleWriteLimiter.test.ts and the slice 8 suites.
+const limiter = createAccountWriteLimiter();
 const { LifecycleError } = await import('./services/lifecycleErrors.js');
 
 const MATTER = '24000000-0000-4000-8000-00000000000a';
@@ -36,7 +40,7 @@ const serviceCalls = () => SERVICES.reduce((n, s) => n + s.mock.calls.length, 0)
 function buildApp() {
   const app = express();
   app.use(express.json({ limit: '100mb' }));
-  registerMatterAccessLifecycleRoutes(app);
+  registerMatterAccessLifecycleRoutes(app, { writeLimiter: limiter });
   return app;
 }
 const app = buildApp();
@@ -56,6 +60,7 @@ const post = (url: string, body: unknown = {}, token: string | null = 'tok-owner
 };
 
 beforeEach(() => {
+  limiter.reset();
   mocks.verifyFirebaseIdentity.mockReset().mockImplementation(async (h?: string) => {
     const m = /^Bearer (\S+)$/.exec(h ?? '');
     // Stage 10 slice 7: the verified token also carries the email claims.
