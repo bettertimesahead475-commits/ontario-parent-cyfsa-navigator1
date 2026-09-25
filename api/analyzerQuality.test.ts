@@ -27,7 +27,8 @@ describe("analyzer report evidence guards", () => {
   it("recalculates the displayed sum and rejects invalid component totals", () => {
     const components = Object.fromEntries([20,15,15,15,10,10,10,5].map((max, i) => [i, {score: max - 1, max}]));
     const report = normalizeAnalyzerReport({evidenceStrengthIndex: {score: 100, components}}, "document");
-    expect(report.evidenceStrengthIndex.score).toBe(92);
+    expect(report.evidenceStrengthIndex.score).toBeUndefined();
+    expect(report.evidenceStrengthIndex.components[0].score).toBeUndefined();
     expect(report.evidenceStrengthIndex.scoreStatus).toBe("DESCRIPTIVE_ONLY");
     expect(normalizeAnalyzerReport({evidenceStrengthIndex: {components: {a: {score: 90, max: 20}}}}, "document").evidenceStrengthIndex).toBeUndefined();
   });
