@@ -49,7 +49,13 @@ export function normalizeAnalyzerReport(report: any, documentText: string): any 
     const valid = components.length === 8 && components.every(c => Number.isInteger(c?.score) && Number.isInteger(c?.max) && c.score! >= 0 && c.score! <= c.max!);
     if (valid && components.reduce((n, c) => n + c.max!, 0) === 100) {
       index.score = components.reduce((n, c) => n + c.score!, 0);
-      index.method = "Sum of eight disclosed component ratings. Components are model assessments, not deterministic measurements; the score is an educational heuristic and may vary on repeat analysis.";
+      index.scoreStatus = "DESCRIPTIVE_ONLY";
+      index.documentationCategory = (report.redFlags?.length || 0) === 0
+        ? "No source-checked findings identified"
+        : (report.redFlags?.length || 0) < 4
+          ? "Some source-checked findings"
+          : "Multiple source-checked findings";
+      index.method = "The eight component explanations are model assessments. Their numerical ratings are withheld because repeat analyses may differ. The displayed category counts findings with quotations checked against the uploaded text; it does not measure truth, admissibility or legal merit.";
     } else {
       delete report.evidenceStrengthIndex;
     }
