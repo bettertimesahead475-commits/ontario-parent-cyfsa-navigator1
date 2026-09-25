@@ -114,6 +114,9 @@ export interface AnalysisReport {
     verifyRequirement: string;
     legalReference: string; // Cites sections of CYFSA or Family Law Rules
     locationInDocument?: string; // Exact page or section location where violation is found
+    sourceType?: string; // A-E evidence provenance classification
+    qualifyingEvidence?: string; // Contrary/favourable/qualifying passage and locator
+    bestVerifyingRecord?: string; // Underlying record and why it matters
     parentActionStep?: string; // Step-by-step visual instruction for parents to debunk this violation
   }[];
   thresholdAnalysis: {
