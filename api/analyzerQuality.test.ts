@@ -28,6 +28,7 @@ describe("analyzer report evidence guards", () => {
     const components = Object.fromEntries([20,15,15,15,10,10,10,5].map((max, i) => [i, {score: max - 1, max}]));
     const report = normalizeAnalyzerReport({evidenceStrengthIndex: {score: 100, components}}, "document");
     expect(report.evidenceStrengthIndex.score).toBe(92);
+    expect(report.evidenceStrengthIndex.scoreStatus).toBe("DESCRIPTIVE_ONLY");
     expect(normalizeAnalyzerReport({evidenceStrengthIndex: {components: {a: {score: 90, max: 20}}}}, "document").evidenceStrengthIndex).toBeUndefined();
   });
 
