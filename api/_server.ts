@@ -18,6 +18,7 @@ import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, ch
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments } from "./services/gmailAgent.js";
+import { normalizeAnalyzerReport } from "./analyzerQuality.js";
 
 dotenv.config();
 
@@ -812,7 +813,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const analysisRules = `CORE RULES (non-negotiable)
 1. Every flag requires three things, all present or the flag is not shown:
 - Document quote: the exact phrase from the uploaded document, with page/paragraph locator.
-- Statute citation: the specific CYFSA section, ONLY if verified (see Rule 2).
+- Legal authority citation: a specific provision only when independently verified and factually engaged; otherwise explain that no verified provision applies to this finding.
 - Match explanation: one sentence connecting the specific document language to the specific statutory requirement — not a general summary of the section.
 
 2. Statute verification is mandatory before displaying any citation.
@@ -825,7 +826,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   hedge. The CONFIRMED STATUTE REFERENCE below is real, verified section text — this is the
   only list you may treat as confirmed.
 - CONFIRMED STATUTE REFERENCE (verified Aug 29 2026 — cite these freely, with this exact text):
-  * CYFSA s.74(2): defines "child in need of protection."
+  * CYFSA s.74(2): defines "child in need of protection." Cite an individual clause only when its text has been independently verified; never infer the clause from a keyword.
+  * CYFSA s.88: as soon as practicable, and in any event within five days after a child is brought to a place of safety under s.81, subclause 83(1)(a)(ii), or subsection 136(5), one of the alternatives in s.88 must occur, including bringing the matter before a court for a hearing under s.90(1). This is NOT s.94. Source: current Ontario e-Laws consolidation, https://www.ontario.ca/laws/statute/17c14 (consolidation from July 1, 2026). An affidavit describing a removal without a first-court-date does NOT establish noncompliance; obtain the court endorsement and proof of the date the child was brought to a place of safety. Do not substitute the removal date if the place-of-safety date differs.
+  * Family Law Rules, O. Reg. 114/99, rr.14(18)-(19): a motion affidavit should as much as possible contain personal knowledge; information learned from someone else is permitted if the source is identified by name and the affiant says they believe it true (with the additional restriction for contempt motions). Source: current Ontario e-Laws, https://www.ontario.ca/laws/regulation/990114. Hearsay is not automatically inadmissible.
   * CYFSA s.94(1): "The court shall not adjourn a hearing for more than 30 days, (a) unless all
     the parties present and the person who will be caring for the child during the adjournment
     consent; or (b) if the court is aware that a party who is not present at the hearing
@@ -850,6 +853,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   section with counsel before relying on this." Do not state a specific subsection number for
   them as if it were confirmed fact.
 - Never generate a plausible-sounding section number from pattern-matching. A wrong citation is worse than no citation — it undermines the parent's credibility if raised in court.
+- Give separate DOCUMENT CITATION (uploaded filename, page and paragraph if present, and bounded exact passage) and LEGAL AUTHORITY CITATION (official source URL and exact verified provision). Never imply the uploaded document cites a provision merely because this tool supplied it. If a page/paragraph is unavailable, say so rather than inventing one.
+- Classify each material claim as A direct affiant observation, B identifiable record review, C named third-party information, D multi-level hearsay with every known link, or E anonymous/unidentified source. State whether corroboration and a contrary or qualifying statement appear elsewhere in the same document. Neither a category nor silence proves falsity, inadmissibility, or a breach.
+- Trace every material finding: source passage → classified fact/allegation → verified authority where applicable → required elements → supported/unclear/unsupported for EACH element → what this document establishes and does not establish → best verifying record and why. Mark missing elements NOT DETERMINABLE, never as violated. Identify dates exactly as printed, flag impossible chronology without silently correcting it.
+- Include both favourable and adverse observations, subsequent outcomes, qualifications and corrections. If a document says an allegation may have been malicious, include that qualification adjacent to the allegation. Neutral title for any warrantless event: WARRANTLESS APPREHENSION — STATUTORY AUTHORITY REVIEW. No 'authority overreach' solely from the lack of a warrant.
+- Suppress legal checkpoints without a factual trigger or material relevance. Mention Charter s.15 only if the document describes differential treatment tied to a protected ground, and never infer it merely from mental-health history. Section title: POTENTIAL RIGHTS ISSUES FOR LEGAL REVIEW; one affidavit ordinarily cannot establish a Charter breach.
 
 3. Severity labels must be calibrated, not maximal.
 Replace absolute language with hedged, accurate framing:
@@ -883,7 +891,7 @@ ${analysisRules}`;
 
         DOCUMENT CONTENT TO ANALYZE:
         Please perform a granular educational review, assessing the document's identity, evidentiary strength, and headline concerns.
-        You MUST populate the response strictly matching this JSON schema and containing EVERY one of the checkpoints specified below:
+        Populate the response JSON schema. Include only checkpoints factually engaged by the uploaded document; do not generate not-applicable entries. Keep materially relevant issues detailed:
 
         {
           "documentTitle": "Identify title or default to 'Uploaded Document'",
@@ -921,12 +929,15 @@ ${analysisRules}`;
             {
                "id": "rf1",
                "severity": "Affects Evidentiary Weight", // Allowed: "Affects Evidentiary Weight", "Worth Raising With Counsel", or "CRITICAL". CRITICAL requires an explicit documented admission of a material procedural failure AND verified statutory authority; otherwise do not use CRITICAL.
-               "category": "Hearsay", // "Hearsay", "Unsupported Claim", "Procedural Defect", "Authority Overreach", "Rights Omission", etc.
+               "category": "Evidence provenance", // e.g. named hearsay, anonymous source, inconsistency, procedural verification; do not label warrantless removal as overreach on that fact alone.
                "phraseDetected": "The exact sentence in the text representing the red flag",
                "explanation": "One sentence connecting the specific document language to the specific statutory requirement — not a general summary of the section.",
                "verifyRequirement": "What the parent should seek to prove this wrong or check (eg logs, direct eyewitness statement).",
-               "legalReference": "The specific CYFSA section, ONLY if verified. If unverified: '⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.'",
-               "locationInDocument": "Page X, Paragraph Y",
+               "legalReference": "Separate legal authority and source URL; VERIFIED CURRENT AUTHORITY / VERIFIED BUT APPLICATION FACT-DEPENDENT / POTENTIALLY APPLICABLE / AUTHORITY NOT VERIFIED / SUPERSEDED / NOT FACTUALLY ENGAGED. No fabricated citations.",
+               "locationInDocument": "Exact source page/paragraph if available; otherwise explicitly unavailable",
+               "sourceType": "A direct observation / B identified record / C named third party / D multi-level with links / E anonymous",
+               "qualifyingEvidence": "Any contrary, favourable, corrected or qualifying passage with separate source location",
+               "bestVerifyingRecord": "Best underlying record for this claim and why it matters",
                "parentActionStep": "concrete next step — 'ask your lawyer about X' / 'request disclosure of Y' — not a legal conclusion"
             }
           ]
@@ -938,7 +949,7 @@ ${analysisRules}`;
 
         DOCUMENT CONTENT TO ANALYZE:
         Please perform a granular educational review, assessing CAS statutory thresholds, procedural timelines, and Charter/rights issues.
-        You MUST populate the response strictly matching this JSON schema and containing EVERY one of the checkpoints specified below:
+        Populate the response JSON schema. Include only checkpoints factually engaged by the uploaded document; do not generate not-applicable entries. Keep materially relevant issues detailed:
 
         {
           "thresholdAnalysis": [
@@ -977,12 +988,12 @@ ${analysisRules}`;
               "parentActionStep": "Parent action steps to track scheduled court dates and ensure their lawyer asserts s. 94(1) rights."
             },
             {
-              "timelineRule": "Court hearing timeline following apprehension without warrant",
+              "timelineRule": "CYFSA s.88 — time in place of safety (only when an actual place-of-safety event is documented)",
               "documentAssertion": "E.g. dates of removal or court schedules.",
-              "evaluation": "BUG FIX (flagged in audit): this checkpoint previously cited CYFSA s.94(5) for a '5-day post-apprehension hearing rule.' s.94(5) is confirmed to actually be a placement-with-relative consideration clause, not a hearing-timeline rule — that citation was wrong, not just unverified, and must never be used again. A statutory deadline for bringing an apprehended child before the court does exist under CYFSA, but its exact current section number is not in the confirmed reference and must be verified with counsel before being cited by number. Evaluate the document on its facts (was the child taken without a warrant, and how long before a court appearance) without asserting a specific section number.",
-              "citation": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.",
-              "locationInDocument": "Page X, Paragraph Y, or state 'Not applicable - child in home care'",
-              "parentActionStep": "Verify immediate court scheduling if a sudden take occurs. Ask your lawyer to confirm the exact CYFSA section governing the post-apprehension hearing deadline. Keep court liaison logs."
+              "evaluation": "CYFSA s.88 (current Ontario e-Laws) supplies the five-day requirement for a child brought to a place of safety under the listed provisions; permitted alternatives include a s.90(1) hearing, return, or applicable agreement. Separate the document-supported event and place-of-safety date from the FIRST court appearance date and the statutory alternatives. If the appearance or alternative date is absent, say LAW VERIFIED; DOCUMENT FACT VERIFIED; COMPLIANCE NOT DETERMINABLE FROM THIS DOCUMENT. Seek the court endorsement and placement/contact notes. Never use s.94 for this deadline. Do not claim breach from removal date alone.",
+              "citation": "CYFSA, s.88, https://www.ontario.ca/laws/statute/17c14 (current consolidation)",
+              "locationInDocument": "Actual sourced page/paragraph or unavailable; never Checked & Compliant without evidence",
+              "parentActionStep": "Obtain the first court endorsement, date the child was brought to a place of safety, and records showing return or agreement if any; compare these with s.88 with counsel."
             },
             {
               "timelineRule": "Child Ombudsman Access & Continuous Care Rights",
@@ -1002,9 +1013,9 @@ ${analysisRules}`;
             }
           ],
           "charterAndHumanRightsIssues": [
-            "Section 7 (Canadian Charter): Analyze and identify notable points where rights to life, liberty, and security of the person are engaged or infringed.",
-            "Section 15 (Canadian Charter): Analyze and identify notable points where equality and non-discrimination rights are active.",
-            "Mandatory Consideration of Indigenous, First Nations, Inuit, or Métis Heritage (CYFSA Section 2): Check and analyze whether culture and kinship options were respected."
+            "Potential rights issues for legal review: identify documented facts that might engage s.7; do not claim a breach without the necessary factual and legal analysis.",
+            "Only if the document describes differential treatment linked to a protected ground, flag potential s.15 review and missing context; mental-health information alone is insufficient.",
+            "Only if factually engaged, identify documented Indigenous or kinship considerations; document silence alone cannot establish failure."
           ],
           "whatToVerify": [
             "List specific items parent needs to double-check (e.g. text messages, calendars, doctor records, school attendance forms)"
@@ -1016,7 +1027,7 @@ ${analysisRules}`;
             "List elements that are missing from the analyzed text (e.g., direct worker observation, timeline of safe contact attempts, statement from child)"
           ],
           "lawyerCaseBrief": [
-            "A comprehensive, highly-professional, 5-bullet detailed Case Brief structured specifically for legal counsel/attorneys. Each bullet should be in-depth and trace legal grounds, evidentiary deficiencies (such as hearsay, gaps, statutory overreach, or s. 94 timeline failures), and action plans."
+            "Detailed counsel brief: source passage and location, favourable/contrary evidence, proven vs missing elements, verified law, underlying records, and precise questions. Never assert overreach or a violation without established predicates."
           ]
         }
       `;
@@ -1045,7 +1056,7 @@ ${analysisRules}`;
       const deepDiveReport = extractJson(deepDiveResponse.text);
 
       // Field-disjoint by construction (see the two schemas above), so a plain merge is safe.
-      const report = { ...coreReport, ...deepDiveReport };
+      const report = normalizeAnalyzerReport({ ...coreReport, ...deepDiveReport }, targetText);
 
       if (!paidSession && uid) {
         try {
@@ -1270,7 +1281,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
 - HEARSAY: Do not treat hearsay as automatically inadmissible. Identify the source, whether the affiant has personal knowledge, whether the source is identified, whether the statement is corroborated, and explain that the principal issue may be evidentiary weight.
 - APPREHENSION VS ACCESS: Never infer that an access restriction, recommendation, warning, advice, safety-plan condition, or parent-to-parent arrangement automatically constitutes an apprehension. Analyze the factual circumstances separately and identify what evidence would establish an actual apprehension.
 - CHARTER: Describe Charter rights as potentially engaged only where supported by the facts. Do not state or imply that an infringement has been established unless the document contains sufficient facts and verified law to support that conclusion.
-- POST-APPREHENSION HEARING TIMELINE: CYFSA s.94(5) is confirmed to be a placement-with-relative consideration clause tied to temporary care orders, NOT a post-apprehension hearing-deadline rule — never cite s.94(5) for this. A statutory deadline for bringing an apprehended child before the court does exist, but its exact current section number is unverified in this tool; when relevant, discuss the timeline on the facts (was there an apprehension without a warrant, how long before a court appearance) and flag the specific section number as "⚠️ unverified — confirm with counsel" rather than stating one. Never conclude that an informal access restriction alone amounts to an apprehension triggering any such deadline.
+- POST-APPREHENSION HEARING TIMELINE: CYFSA s.94(5) is confirmed to be a placement-with-relative consideration clause tied to temporary care orders, NOT a post-apprehension hearing-deadline rule — never cite s.94(5) for this. CYFSA s.88 is verified in the current Ontario e-Laws consolidation. When engaged, identify the date brought to a place of safety, any first hearing, return or agreement. If a required date is missing, mark statutory compliance not determinable from this document; do not claim a violation. Never conclude that an informal access restriction alone amounts to an apprehension triggering any such deadline.
 - ABSENCE OF EVIDENCE IS NOT EVIDENCE OF ABSENCE. If a document does not mention an action, do not conclude that the action did not occur. Classify it as "Missing Evidence" or "Not Determinable From This Document" and identify what record would establish the fact.
 - Never convert an allegation, omission, inference, police notation, hearsay statement, or unverified legal proposition into an established fact.
 - For every material finding distinguish: DOCUMENTED FACT, REPORTED INFORMATION, INFERENCE, ALLEGATION, and LEGAL CONCLUSION. Never present reported information, inference, or allegation as an established fact.

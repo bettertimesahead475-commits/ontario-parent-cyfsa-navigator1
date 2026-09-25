@@ -2321,25 +2321,24 @@ export default function DocumentAnalyzerTab() {
           <div style="display:flex; gap:40px; align-items:center; margin-top:10px; flex-wrap:wrap;">
             <div>
               <span style="font-size:13px; color:#475569; font-weight:bold; text-transform:uppercase;">
-                Evidence Strength Index
+                ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? "Evidence documentation profile" : "Evidence Strength Index (legacy report)"}
               </span>
 
               <div style="font-size:32px; font-weight:800; color:${evidenceScoreColor}; margin-top:5px;">
-                ${evidenceScore}
-                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
+                ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? escapeHtml(evidenceIndex.documentationCategory || "Not scored") : `${evidenceScore}<span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>`}
               </div>
             </div>
 
             <div style="flex:1; min-width:260px;">
-              <div class="score-bar-bg">
+              ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? "" : `<div class="score-bar-bg">
                 <div
                   class="score-bar-fill"
                   style="width:${Math.max(0, Math.min(100, evidenceScore))}%; background-color:${evidenceScoreColor};"
                 ></div>
-              </div>
+              </div>`}
 
               <p style="font-size:11px; color:#64748b; margin-top:8px; max-width:500px;">
-                Educational heuristic assessing the strength of evidence documented in this file.
+                ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? "Source-checked finding count; numeric model ratings are withheld because they can vary between runs." : "Legacy model-assessed heuristic; component ratings can vary between runs."}
                 It is not a legal admissibility ruling, does not determine the truth of allegations,
                 and does not determine the legal merits of the case.
               </p>
@@ -2361,7 +2360,7 @@ export default function DocumentAnalyzerTab() {
                     <div style="display:flex; justify-content:space-between; gap:10px;">
                       <strong style="font-size:12px; color:#334155;">${label}</strong>
                       <span style="font-size:12px; font-weight:800; color:#475569;">
-                        ${value}/${max}
+                        ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? "Descriptive" : `${value}/${max}`}
                       </span>
                     </div>
 
@@ -2395,13 +2394,14 @@ export default function DocumentAnalyzerTab() {
               <strong>Limitation:</strong> ${escapeHtml(evidenceIndex.limitations)}
             </div>
           ` : ""}
+          ${evidenceIndex.method ? `<p style="font-size:11px; color:#64748b;"><strong>Scoring method:</strong> ${escapeHtml(evidenceIndex.method)}</p>` : ""}
         </div>
 
         ${selectedReport.redFlags && selectedReport.redFlags.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">⚠️ Hearsay & Subjective Opinion Red Flags</h3>
+            <h3 class="section-title">Evidence provenance and issues for review</h3>
             <p style="font-size: 12.5px; color: #64748b; margin-bottom: 15px;">
-              The following assertions or opinions extracted from this file carry an inherent risk of being unsworn out-of-court narratives. Direct parental counters are compiled inline to assist your counsel.
+              Source classifications describe how a statement is attributed. They do not decide its truth, admissibility or weight.
             </p>
             <div style="margin-top: 10px;">
               ${selectedReport.redFlags.map(rf => {
@@ -2418,11 +2418,16 @@ export default function DocumentAnalyzerTab() {
                   <div class="threat-body">
                     <strong>Quote Detected in File:</strong><br/>
                     <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div><br/><br/>
+                    <strong>Document citation:</strong> ${escapeHtml(rf.locationInDocument || 'Page/paragraph unavailable')}<br/>
+                    <strong>Legal authority:</strong> ${escapeHtml(rf.legalReference || 'No verified authority identified')}<br/>
+                    ${rf.sourceType ? `<strong>Source classification:</strong> ${escapeHtml(rf.sourceType)}<br/>` : ''}
+                    ${rf.qualifyingEvidence ? `<strong>Qualifying or contrary information:</strong> ${escapeHtml(rf.qualifyingEvidence)}<br/>` : ''}
+                    ${rf.bestVerifyingRecord ? `<strong>Best verifying record:</strong> ${escapeHtml(rf.bestVerifyingRecord)}<br/>` : ''}<br/>
                     <strong>Educational Advisory:</strong> ${escapeHtml(rf.explanation)}<br/><br/>
                     <strong>Verification Requirement:</strong> ${escapeHtml(rf.verifyRequirement)}
                     ${rf.parentActionStep ? `
                       <div class="threat-action">
-                        <strong>🛡️ Self-Defense Counter-Action Step:</strong><br/>
+                        <strong>Verification step for counsel:</strong><br/>
                         ${escapeHtml(rf.parentActionStep)}
                       </div>
                     ` : ""}
@@ -3721,7 +3726,7 @@ export default function DocumentAnalyzerTab() {
                       <FoldableSection 
                         title={
                           <div className="flex items-center justify-between w-full">
-                            <span>Evidence Objections & Hearsay ({selectedReport.redFlags.length})</span>
+                            <span>Evidence Provenance & Questions ({selectedReport.redFlags.length})</span>
                             <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                <input type="checkbox" checked={factCheckEnabled} onChange={() => setFactCheckEnabled(!factCheckEnabled)} />
                                <span className="text-[9px]">Fact-Check</span>
@@ -3744,9 +3749,9 @@ export default function DocumentAnalyzerTab() {
                                 <span className="font-mono font-bold text-rose-800 text-[11px]">{flag.category}</span>
                                 {factCheckEnabled && (
                                   <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider ${
-                                    flag.legalReference && flag.legalReference !== "N/A" ? "bg-green-100 text-green-800" : "bg-rose-100 text-rose-800"
+                                    /ontario\.ca\/laws\/|laws-lois\.justice\.gc\.ca\//i.test(flag.legalReference || "") && !/unverified|not verified/i.test(flag.legalReference || "") ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
                                   }`}>
-                                    {flag.legalReference && flag.legalReference !== "N/A" ? "VERIFIED" : "UNVERIFIED"}
+                                    {/ontario\.ca\/laws\/|laws-lois\.justice\.gc\.ca\//i.test(flag.legalReference || "") && !/unverified|not verified/i.test(flag.legalReference || "") ? "AUTHORITY LINKED" : "AUTHORITY NOT VERIFIED"}
                                   </span>
                                 )}
                                 <button
@@ -3792,6 +3797,9 @@ export default function DocumentAnalyzerTab() {
                                   <span><strong>Verification Locator:</strong> <span className="underline font-bold">{flag.locationInDocument}</span></span>
                                 </div>
                               )}
+                              {flag.sourceType && <p className="text-slate-600 text-[11px]"><strong>Source classification:</strong> {flag.sourceType}</p>}
+                              {flag.qualifyingEvidence && <p className="text-slate-600 text-[11px]"><strong>Qualifying or contrary information:</strong> {flag.qualifyingEvidence}</p>}
+                              {flag.bestVerifyingRecord && <p className="text-slate-600 text-[11px]"><strong>Best verifying record:</strong> {flag.bestVerifyingRecord}</p>}
       
 
                               <div className="p-3 bg-brand-50/60 border border-brand-100 rounded-lg text-[11px] text-brand-950 font-medium space-y-1">
