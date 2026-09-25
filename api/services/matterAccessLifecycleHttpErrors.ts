@@ -39,6 +39,9 @@ export const LIFECYCLE_HTTP_ERRORS = Object.freeze({
   GRANT_NOT_FOUND: e(404, 'ACCESS_GRANT_NOT_FOUND', 'Access grant not found.'),
   // Fail closed and say so: the caller must not assume access was removed.
   REVOKE_UNCONFIRMED: e(503, 'ACCESS_REVOCATION_UNCONFIRMED', 'Revocation could not be confirmed. Access may not have been removed.'),
+  // Stage 10 slice 8: per-account lifecycle write limiter (instance-local). One constant body for
+  // every operation and account: no account, matter, grant or token detail.
+  RATE_LIMITED: e(429, 'RATE_LIMITED', 'Too many invitation actions. Please wait a few minutes and try again.'),
 });
 
 /** Exact messages thrown by the frozen service, classified per operation. */
