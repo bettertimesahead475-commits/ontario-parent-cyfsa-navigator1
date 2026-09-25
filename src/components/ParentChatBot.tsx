@@ -67,6 +67,7 @@ export default function ParentChatBot() {
   const [showFilesList, setShowFilesList] = useState<boolean>(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
 
   // Load files from localStorage and subscribe to updates
   const syncFilesFromCabinet = () => {
@@ -107,8 +108,12 @@ export default function ParentChatBot() {
     } catch (e) {
       console.warn("Failed to persist coach chat messages:", e);
     }
-    // Scroll to bottom
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Keep the newest answer visible inside the advisor itself. scrollIntoView() could
+    // scroll the page behind this fixed panel on mobile, leaving the response hidden.
+    requestAnimationFrame(() => {
+      const box = messagesScrollRef.current;
+      if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
+    });
   }, [messages]);
 
   const handleSendMessage = async (customQuery?: string) => {
@@ -281,11 +286,11 @@ export default function ParentChatBot() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.95 }}
             transition={{ duration: 0.25, ease: "easeOut" }}
-            className="fixed bottom-44 right-4 left-4 sm:left-auto sm:right-6 sm:w-[360px] md:w-[410px] h-[64vh] max-h-[520px] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[99] no-print"
+            className="fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] bottom-[calc(5.75rem+env(safe-area-inset-bottom))] sm:inset-x-auto sm:top-auto sm:bottom-44 sm:right-6 sm:w-[410px] sm:h-[min(72vh,620px)] bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col overflow-hidden z-[101] no-print"
             id="parent-coaching-sidebar"
           >
             {/* Header section with brand and educational badges */}
-            <div className="bg-brand-950 text-white p-4 shrink-0 space-y-2.5 relative">
+            <div className="bg-brand-950 text-white p-3 sm:p-4 shrink-0 space-y-2 relative">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-brand-900 rounded-lg text-amber-300 border border-brand-800">
@@ -365,13 +370,13 @@ export default function ParentChatBot() {
             </div>
 
             {/* Messages container */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
+            <div ref={messagesScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 space-y-4 bg-slate-50/50" style={{ WebkitOverflowScrolling: "touch" }}>
               {messages.map((msg) => (
                 <div 
                   key={msg.id} 
                   className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
                 >
-                  <div className={`max-w-[85%] rounded-2xl p-3 shadow-xs ${
+                  <div className={`max-w-[94%] sm:max-w-[85%] rounded-2xl p-3 shadow-xs ${
                     msg.sender === "user" 
                       ? "bg-brand-900 text-white rounded-tr-none" 
                       : "bg-white border border-slate-200 text-slate-800 rounded-tl-none"
@@ -412,7 +417,7 @@ export default function ParentChatBot() {
             </div>
 
             {/* Educational Prompt Chips & Helper Menu */}
-            <div className="px-3 py-2 bg-white border-t border-slate-100 shrink-0 space-y-1.5">
+            <div className="hidden sm:block px-3 py-2 bg-white border-t border-slate-100 shrink-0 space-y-1.5">
               <div className="flex items-center gap-1 text-[9px] text-brand-950 font-bold tracking-wider uppercase font-sans">
                 <HelpCircle className="w-3.5 h-3.5 text-brand-700" />
                 <span>Parent Case-Prep Quick Guide:</span>
@@ -456,7 +461,7 @@ export default function ParentChatBot() {
                   <Send className="w-4 h-4" />
                 </button>
               </form>
-              <p className="mt-1.5 text-[8px] text-slate-400 font-medium font-sans leading-snug">
+              <p className="hidden sm:block mt-1.5 text-[8px] text-slate-400 font-medium font-sans leading-snug">
                 <strong className="text-slate-500">MANDATORY LEGAL EDUCATIONAL STATEMENT:</strong> This chat is generated for informational/educational objectives only under secondary statutory guidelines of the Child, Youth and Family Services Act (CYFSA) S.O. 2017, Chapter 14. This does not represent formal counsel or legal aid representations. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this chat.
               </p>
             </div>

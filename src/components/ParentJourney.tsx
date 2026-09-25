@@ -156,8 +156,8 @@ const pageCopy: Record<Exclude<JourneyPage, "home">, { eyebrow: string; title: s
   },
   "five-day": {
     eyebrow: "Step 3 · Protect the deadline",
-    title: "The first five court days are a critical record-building window.",
-    lead: "Write down the removal date and time, every service date, and the date of the first court appearance. Confirm deadlines with the court, your lawyer, or Legal Aid Ontario because rules and facts vary.",
+    title: "The first five days are crucial. Be prepared for the first hearing — and what comes next.",
+    lead: "The first five days can move quickly. Use that time to understand what CAS is alleging, become educated about the process, and know which documents you need to prepare or have ready for court. CYFSA Navigator is designed to help you organize and understand the record from those first critical days through the rest of the case.",
     cards: [
       { title: "What to watch for", body: "Keep copies of the notice, application, affidavits, endorsements, and hearing information. Make a simple timeline of each contact with CAS, police, counsel, and the court." },
       { title: "Forms and filing preparation", body: "Use the form workspace to prepare factual notes, a chronology, evidence log, and draft response material. Do not file educational drafts without legal review." },
@@ -297,6 +297,48 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
           </Link>
         </div>
         <p className="mt-6 text-xs text-slate-300">Educational tool. Not legal advice. Not affiliated with any Children's Aid Society, court, or the Law Society of Ontario.</p>
+      </div>
+    </section>
+
+    {/* FIRST FIVE DAYS — urgency that opens into the whole journey */}
+    <section className="px-6 py-14 sm:px-10 md:py-20 bg-amber-50 border-y border-amber-200">
+      <div className="mx-auto max-w-5xl">
+        <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-800">The first five days are crucial. Your journey doesn't end there.</p>
+        <h2 className="mt-3 max-w-4xl font-display text-3xl font-black leading-tight text-slate-950 md:text-4xl">Be prepared for the first hearing — and for what comes next.</h2>
+        <p className="mt-5 max-w-3xl text-base leading-relaxed text-slate-700">
+          The first five days can move quickly. There may be very little time to find legal help, understand what CAS is alleging, become educated about the process, and know which documents you need to prepare or have ready for court.
+        </p>
+        <p className="mt-4 max-w-3xl text-base font-semibold leading-relaxed text-slate-900">
+          CYFSA Navigator is built to help you from those first critical days through the rest of your journey.
+        </p>
+        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-700">
+          Understand your documents. Follow allegations and supporting information as your case develops. Keep your record organized. Learn about the process and prepare focused questions for your lawyer or duty counsel.
+        </p>
+        <div className="mt-7 grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-amber-200 bg-white p-5"><p className="font-bold text-slate-900">Prepare for the first hearing</p><p className="mt-2 text-sm text-slate-600">Preserve the application, affidavits, notices and messages. Record important dates and start one clear chronology.</p></div>
+          <div className="rounded-xl border border-amber-200 bg-white p-5"><p className="font-bold text-slate-900">Understand the documents</p><p className="mt-2 text-sm text-slate-600">See what is alleged, where information came from, what records are referenced, and what questions the documents raise.</p></div>
+          <div className="rounded-xl border border-amber-200 bg-white p-5"><p className="font-bold text-slate-900">Stay prepared as the case develops</p><p className="mt-2 text-sm text-slate-600">Use the same organized record for new documents, later court dates and conversations with counsel instead of starting over each time.</p></div>
+        </div>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href="/document-analyzer"><span className="inline-flex items-center gap-2 rounded-xl bg-amber-800 px-6 py-3 text-sm font-bold text-white">TRY OUR CYFSA DOCUMENT ANALYZER &amp; PARENT EDUCATOR <FileSearch className="h-4 w-4" /></span></Link>
+          <Link href="/five-day-rule"><span className="inline-flex items-center gap-2 rounded-xl border border-amber-700 bg-white px-6 py-3 text-sm font-bold text-amber-900">UNDERSTAND THE FIRST 5 DAYS <ArrowRight className="h-4 w-4" /></span></Link>
+        </div>
+        <p className="mt-4 text-xs leading-relaxed text-slate-600">The statutory timing is fact-specific. Confirm how the CYFSA's timing requirements apply to your circumstances with a lawyer or duty counsel.</p>
+      </div>
+    </section>
+
+    {/* ANALYZER DEPTH TEASER */}
+    <section className="px-6 py-16 sm:px-10 md:py-20 bg-white">
+      <div className="mx-auto max-w-5xl rounded-2xl border border-brand-200 bg-brand-50 p-6 md:p-8">
+        <p className="text-xs font-bold uppercase tracking-widest text-brand-700">CYFSA Document Analyzer &amp; Parent Educator</p>
+        <h2 className="mt-3 font-display text-3xl font-black text-slate-950">Understand the documents. Understand the allegations. Understand the process. Be prepared.</h2>
+        <p className="mt-4 max-w-3xl text-base leading-relaxed text-slate-700">Whether you're facing your first hearing, responding to new documents, preparing for another court date, or trying to understand where your case stands, the tool is designed to help you understand and organize the record as it develops.</p>
+        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-600">See the depth of the analysis without crowding the homepage: chronology, allegations, source attribution, supporting records, gaps, inconsistencies, legal references, procedural questions and questions to discuss with counsel.</p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link href="/document-analyzer"><span className="inline-flex items-center gap-2 rounded-xl bg-brand-700 px-6 py-3 text-sm font-bold text-white">TRY OUR ANALYZER &amp; EDUCATOR <ArrowRight className="h-4 w-4" /></span></Link>
+          <Link href="/analysis-example"><span className="inline-flex items-center gap-2 rounded-xl border border-brand-400 bg-white px-6 py-3 text-sm font-bold text-brand-900">SEE A COMPLETE ANALYSIS EXAMPLE <FileSearch className="h-4 w-4" /></span></Link>
+          <Link href="/45-day-roadmap"><span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-6 py-3 text-sm font-bold text-brand-800">FOLLOW THE CASE ROADMAP <CalendarDays className="h-4 w-4" /></span></Link>
+        </div>
       </div>
     </section>
 

@@ -395,6 +395,69 @@ app.use(express.json({ limit: "100mb" }));
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   });
 
+  // Natural tap-to-read voice. Kept server-side so Google credentials are never exposed
+  // to the browser. The endpoint returns MP3 bytes as base64 for immediate playback.
+  // GOOGLE_TTS_API_KEY may be a dedicated restricted key; GEMINI_API_KEY is accepted as
+  // a fallback when the same Google Cloud project/key has Cloud Text-to-Speech enabled.
+  const ttsCache = new Map<string, string>();
+  app.post("/api/tts", async (req: Request, res: Response) => {
+    try {
+      const rawText = typeof req.body?.text === "string" ? req.body.text : "";
+      const text = rawText.replace(/\\s+/g, " ").trim();
+      if (!text) return res.status(400).json({ error: "Text is required." });
+      if (text.length > 4500) {
+        return res.status(400).json({ error: "That section is too long to read at once. Tap a paragraph or smaller section." });
+      }
+
+      const apiKey = (process.env.GOOGLE_TTS_API_KEY || process.env.GEMINI_API_KEY || "").trim();
+      if (!apiKey) {
+        return res.status(503).json({ error: "Natural voice is not configured on this deployment yet." });
+      }
+
+      // Charon is a current Chirp 3 HD voice intended to sound substantially more natural
+      // than browser speech synthesis. Voice can be changed without changing the frontend.
+      const voiceName = process.env.GOOGLE_TTS_VOICE || "en-US-Chirp3-HD-Charon";
+      const languageCode = process.env.GOOGLE_TTS_LANGUAGE || "en-US";
+      const cacheKey = `${voiceName}|${text}`;
+      const cached = ttsCache.get(cacheKey);
+      if (cached) return res.json({ audioContent: cached, mimeType: "audio/mpeg", cached: true });
+
+      const googleResponse = await fetch(
+        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({
+            input: { text },
+            voice: { languageCode, name: voiceName },
+            audioConfig: { audioEncoding: "MP3" },
+          }),
+        }
+      );
+
+      const payload: any = await googleResponse.json().catch(() => ({}));
+      if (!googleResponse.ok || !payload?.audioContent) {
+        console.error("[tts] Google Cloud Text-to-Speech failed", {
+          status: googleResponse.status,
+          message: payload?.error?.message || "No audio returned",
+        });
+        return res.status(502).json({
+          error: googleResponse.status === 403
+            ? "Natural voice needs Cloud Text-to-Speech enabled for this Google Cloud project."
+            : "Natural voice is temporarily unavailable. Please try again.",
+        });
+      }
+
+      // Small in-memory cache reduces repeat synthesis/cost during a warm server instance.
+      if (ttsCache.size >= 100) ttsCache.delete(ttsCache.keys().next().value as string);
+      ttsCache.set(cacheKey, payload.audioContent);
+      return res.json({ audioContent: payload.audioContent, mimeType: "audio/mpeg", cached: false });
+    } catch (error) {
+      console.error("[tts] synthesis error", error);
+      return res.status(500).json({ error: "Natural voice is temporarily unavailable. Please try again." });
+    }
+  });
+
   const SEARCH_CONNECTORS_DISCLAIMER =
     "This explanation is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on it.";
 
