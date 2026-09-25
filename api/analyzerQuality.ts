@@ -34,10 +34,9 @@ export function normalizeAnalyzerReport(report: any, documentText: string): any 
       if (/five.day|place of safety|post.apprehension/i.test(String(item.timelineRule))) {
         item.timelineRule = "CYFSA s.88 — time in place of safety";
         item.citation = "CYFSA, s.88 (Ontario e-Laws: https://www.ontario.ca/laws/statute/17c14)";
-        // We cannot use a reported removal date as proof of a hearing date or breach.
-        if (!/court|hearing|return|agreement/i.test(text)) {
-          item.evaluation = "Law verified: CYFSA s.88. Compliance not determinable from this document: obtain the date brought to a place of safety and the first court endorsement, return record or temporary agreement.";
-        }
+        // The model's free-form interpretation of a date cannot establish a breach.
+        // Even a mention of "court" elsewhere is not proof of the first appearance.
+        item.evaluation = "Law verified: CYFSA s.88. Compliance requires verification of the date brought to a place of safety and the first court endorsement, return record or applicable agreement. A removal date alone cannot establish a breach; if those dates are missing, compliance is not determinable from this document.";
       }
       return item;
     });
@@ -48,7 +47,10 @@ export function normalizeAnalyzerReport(report: any, documentText: string): any 
     const components = Object.values(index.components) as Array<{score?: number; max?: number}>;
     const valid = components.length === 8 && components.every(c => Number.isInteger(c?.score) && Number.isInteger(c?.max) && c.score! >= 0 && c.score! <= c.max!);
     if (valid && components.reduce((n, c) => n + c.max!, 0) === 100) {
-      index.score = components.reduce((n, c) => n + c.score!, 0);
+      // Keep historical component narratives but do not export a subjective
+      // 0-100 total as if it were a repeatable measurement.
+      delete index.score;
+      for (const component of components) delete component.score;
       index.scoreStatus = "DESCRIPTIVE_ONLY";
       index.documentationCategory = (report.redFlags?.length || 0) === 0
         ? "No source-checked findings identified"
