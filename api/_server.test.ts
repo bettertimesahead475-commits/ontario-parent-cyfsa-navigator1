@@ -319,6 +319,21 @@ describe("POST /api/analyze", () => {
     expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
+  it("allows an authenticated analysis when the usage store is temporarily unavailable", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "parent@example.com" });
+    mockUsage.getFreeUsage.mockRejectedValueOnce(new Error("fetch failed"));
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer valid-firebase-token")
+      .send({ textContent: "some text" });
+
+    expect(res.status).toBe(200);
+    expect(mockUsage.recordFreeUse).toHaveBeenCalledWith("uid-1", "parent@example.com");
+  });
+
   it("allows a signed-in parent's first free analysis, then blocks the second", async () => {
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "parent@example.com" });
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));

@@ -730,14 +730,22 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         }
         uid = identity.uid;
         userEmail = identity.email;
-        const used = await getFreeUsage(uid);
-        if (used >= FREE_ANALYSES_LIMIT) {
-          return res.status(402).json({
-            error: "You've used your free analysis. Upgrade to Pro or Premium for unlimited document analysis.",
-            code: "FREE_LIMIT_REACHED",
-            usedCount: used,
-            limit: FREE_ANALYSES_LIMIT
-          });
+        try {
+          const used = await getFreeUsage(uid);
+          if (used >= FREE_ANALYSES_LIMIT) {
+            return res.status(402).json({
+              error: "You've used your free analysis. Upgrade to Pro or Premium for unlimited document analysis.",
+              code: "FREE_LIMIT_REACHED",
+              usedCount: used,
+              limit: FREE_ANALYSES_LIMIT
+            });
+          }
+        } catch (usageError) {
+          // The quota store must not make document analysis unavailable. The
+          // successful analysis path still attempts to record usage, and logs
+          // the failure for remediation; during this outage the quota is
+          // temporarily unenforced for authenticated users.
+          console.error("[document analysis] Failed to read free-tier usage; allowing authenticated analysis:", usageError);
         }
       }
 
