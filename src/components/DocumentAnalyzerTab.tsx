@@ -2321,25 +2321,24 @@ export default function DocumentAnalyzerTab() {
           <div style="display:flex; gap:40px; align-items:center; margin-top:10px; flex-wrap:wrap;">
             <div>
               <span style="font-size:13px; color:#475569; font-weight:bold; text-transform:uppercase;">
-                Evidence Strength Index
+                ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? "Evidence documentation profile" : "Evidence Strength Index (legacy report)"}
               </span>
 
               <div style="font-size:32px; font-weight:800; color:${evidenceScoreColor}; margin-top:5px;">
-                ${evidenceScore}
-                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
+                ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? escapeHtml(evidenceIndex.documentationCategory || "Not scored") : `${evidenceScore}<span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>`}
               </div>
             </div>
 
             <div style="flex:1; min-width:260px;">
-              <div class="score-bar-bg">
+              ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? "" : `<div class="score-bar-bg">
                 <div
                   class="score-bar-fill"
                   style="width:${Math.max(0, Math.min(100, evidenceScore))}%; background-color:${evidenceScoreColor};"
                 ></div>
-              </div>
+              </div>`}
 
               <p style="font-size:11px; color:#64748b; margin-top:8px; max-width:500px;">
-                Model-assessed educational heuristic; component ratings can vary between runs.
+                ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? "Source-checked finding count; numeric model ratings are withheld because they can vary between runs." : "Legacy model-assessed heuristic; component ratings can vary between runs."}
                 It is not a legal admissibility ruling, does not determine the truth of allegations,
                 and does not determine the legal merits of the case.
               </p>
@@ -2361,7 +2360,7 @@ export default function DocumentAnalyzerTab() {
                     <div style="display:flex; justify-content:space-between; gap:10px;">
                       <strong style="font-size:12px; color:#334155;">${label}</strong>
                       <span style="font-size:12px; font-weight:800; color:#475569;">
-                        ${value}/${max}
+                        ${evidenceIndex.scoreStatus === "DESCRIPTIVE_ONLY" ? "Descriptive" : `${value}/${max}`}
                       </span>
                     </div>
 
