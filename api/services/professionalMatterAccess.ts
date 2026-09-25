@@ -2,18 +2,19 @@ import { getSupabase } from './access';
 import { findAccount } from './accounts';
 import { requireUuid } from './lifecycleErrors';
 import crypto from 'crypto';
+import { canonicalRecipientEmail } from './recipientEmail';
 
 // Required database contract. v2 (Stage 7B remediation, frozen at a452c6c) made the lifecycle
-// functions safe; v3 (Stage 10 slice 4, create_navigator_matter_access_lifecycle_audit_v3.sql)
-// additionally records every access transition in the append-only event log inside the SAME
-// transaction. Creation, acceptance and revocation all refuse to run unless the database
-// reports exactly v3. The check happens BEFORE any lifecycle RPC: a v2-only database would
-// change access without an audit record, and the pre-v2 accept_matter_grant can commit an OWNER
-// downgrade before its result could be inspected. The frozen v2 function is left untouched.
-export const ACCESS_LIFECYCLE_CONTRACT = 'navigator_matter_access_lifecycle_v3';
+// functions safe; v3 (Stage 10 slice 4) records every access transition in the append-only event
+// log inside the SAME transaction; v4 (Stage 10 slice 7,
+// create_navigator_matter_access_lifecycle_recipient_v4.sql) binds every invitation to one
+// canonical recipient email and lets only that verified recipient accept, checked before any
+// write. Creation, acceptance and revocation all refuse to run unless the database reports
+// exactly v4. The check happens BEFORE any lifecycle RPC. Older contract functions stay in place.
+export const ACCESS_LIFECYCLE_CONTRACT = 'navigator_matter_access_lifecycle_v4';
 
 async function requireAccessLifecycleContract(supabase: any): Promise<void> {
-  const { data, error } = await supabase.rpc('navigator_matter_access_lifecycle_contract_v3');
+  const { data, error } = await supabase.rpc('navigator_matter_access_lifecycle_contract_v4');
   if (error || data !== ACCESS_LIFECYCLE_CONTRACT) {
     throw new Error('Professional access is unavailable: the required access lifecycle contract is not installed.');
   }
@@ -33,19 +34,31 @@ export interface ProfessionalGrant {
   revokedAt?: string | null;
   revokedByAccountId?: string | null;
   createdAt: string;
+  /** Canonical recipient email the invitation is bound to (contract v4). */
+  recipientEmail: string;
 }
 
 /**
- * Creates a new invitation for a professional to access a matter.
+ * Identity claims taken ONLY from a successfully verified Firebase ID token
+ * (firebaseAdmin.verifyFirebaseIdentity). Never from a request body, query or route.
+ */
+export interface VerifiedEmailClaims {
+  email: string | null;
+  emailVerified: boolean;
+}
+
+/**
+ * Creates a new invitation for ONE intended professional, identified by email, to access a matter.
  * The raw token is returned exactly once and is never stored in plaintext; only its SHA-256
- * digest reaches the database. Ownership is checked, the grant is inserted and its
- * GRANT_CREATED audit event is recorded by one owner-checked database function, in one
- * transaction (create_matter_grant, contract v3).
+ * digest reaches the database. Ownership is checked, the grant is inserted with its canonical
+ * recipient email and its GRANT_CREATED audit event is recorded by one owner-checked database
+ * function, in one transaction (create_recipient_bound_matter_grant, contract v4). The database
+ * canonicalizes the recipient again; the JavaScript check only refuses bad input early.
  */
 export async function createProfessionalGrant(
   firebaseUid: string,
   matterId: string,
-  options?: { expiresInDays?: number }
+  options: { recipientEmail: string; expiresInDays?: number }
 ): Promise<{ grant: ProfessionalGrant; rawToken: string }> {
   const account = await findAccount(firebaseUid);
   if (!account) throw new Error('Account not found');
@@ -54,28 +67,33 @@ export async function createProfessionalGrant(
   if (!Number.isInteger(days) || days < 1 || days > 365) {
     throw new Error('Invitation expiry must be 1 to 365 days.');
   }
+  const recipient = canonicalRecipientEmail(options?.recipientEmail);
+  if (!recipient) throw new Error('Recipient email must be a valid address.');
 
   const rawToken = crypto.randomBytes(32).toString('base64url');
   const tokenDigest = crypto.createHash('sha256').update(rawToken).digest('hex');
 
   const supabase = getSupabase();
   await requireAccessLifecycleContract(supabase);
-  const { data, error } = await supabase.rpc('create_matter_grant', {
+  const { data, error } = await supabase.rpc('create_recipient_bound_matter_grant', {
     p_firebase_uid: firebaseUid,
     p_matter_id: matterId,
     p_token_digest: tokenDigest,
-    p_expires_in_days: days
+    p_expires_in_days: days,
+    p_recipient_email: recipient
   });
 
   if (error) {
     const message = String(error.message || '');
     if (message.includes('NOT_OWNER')) throw new Error('UNAUTHORIZED: Only OWNER can grant access.');
     if (message.includes('ACCOUNT_UNAVAILABLE')) throw new Error('Account not found');
+    if (message.includes('INVALID_RECIPIENT')) throw new Error('Recipient email must be a valid address.');
     // Raw database text is never returned to the caller.
     throw new Error('Failed to create grant.');
   }
   if (!data || typeof data.id !== 'string' || data.status !== 'PENDING'
-      || String(data.matter_id).toLowerCase() !== String(matterId).toLowerCase()) {
+      || String(data.matter_id).toLowerCase() !== String(matterId).toLowerCase()
+      || data.recipient_email !== recipient) {
     throw new Error('Failed to create grant.');
   }
 
@@ -86,23 +104,32 @@ export async function createProfessionalGrant(
 }
 
 /**
- * Accepts an invitation using a raw token.
- * This is an atomic RPC that validates the token and creates the REVIEWER membership.
- * Success is reported only when the RPC confirms an ACCEPTED outcome; an OWNER of the
- * matter (or the grantor) is refused and never downgraded, and an expired invitation is
- * persisted as EXPIRED and refused (remediate_navigator_matter_access_grants_lifecycle.sql).
+ * Accepts an invitation using a raw token, as its verified recipient only.
+ * `claims` must come from firebaseAdmin.verifyFirebaseIdentity(): the verified token's email and
+ * email_verified. A caller without a verified email is refused before any database call. The
+ * database compares the verified email with the invitation's recipient BEFORE any write
+ * (accept_recipient_bound_matter_grant, contract v4): a non-recipient is refused exactly like an
+ * unknown token and changes nothing. For the recipient the frozen rules apply unchanged: an OWNER
+ * of the matter (or the grantor) is refused and never downgraded, and an expired invitation is
+ * persisted as EXPIRED and refused.
  */
 export async function acceptProfessionalGrant(
   firebaseUid: string,
-  rawToken: string
+  rawToken: string,
+  claims: VerifiedEmailClaims
 ): Promise<{ success: boolean; matterId?: string }> {
+  if (!claims || claims.emailVerified !== true || !canonicalRecipientEmail(claims.email)) {
+    throw new Error('Verified email required.');
+  }
   const tokenDigest = crypto.createHash('sha256').update(rawToken).digest('hex');
   const supabase = getSupabase();
   await requireAccessLifecycleContract(supabase);
 
-  const { data, error } = await supabase.rpc('accept_matter_grant', {
+  const { data, error } = await supabase.rpc('accept_recipient_bound_matter_grant', {
     p_firebase_uid: firebaseUid,
-    p_token_digest: tokenDigest
+    p_token_digest: tokenDigest,
+    p_verified_email: claims.email,
+    p_email_verified: true
   });
 
   if (error) {
@@ -114,6 +141,7 @@ export async function acceptProfessionalGrant(
       throw new Error('A matter owner cannot accept a professional invitation to their own matter.');
     }
     if (message.includes('ACCOUNT_UNAVAILABLE')) throw new Error('Account is unavailable.');
+    if (message.includes('EMAIL_NOT_VERIFIED')) throw new Error('Verified email required.');
     // Raw database text is never returned to the caller.
     throw new Error('Acceptance failed.');
   }
@@ -181,6 +209,7 @@ function mapToGrant(row: any): ProfessionalGrant {
     acceptedByAccountId: row.accepted_by_account_id,
     revokedAt: row.revoked_at,
     revokedByAccountId: row.revoked_by_account_id,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    recipientEmail: row.recipient_email
   };
 }

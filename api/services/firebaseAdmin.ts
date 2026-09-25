@@ -55,13 +55,31 @@ function getFirebaseAdminApp(): App {
  * token's own natural expiry regardless of the revocation.
  */
 export async function verifyFirebaseToken(authHeader: string | undefined): Promise<{ uid: string; email: string | null } | null> {
+  const identity = await verifyFirebaseIdentity(authHeader);
+  return identity ? { uid: identity.uid, email: identity.email } : null;
+}
+
+/**
+ * Stage 10 slice 7: the same verification as verifyFirebaseToken() (same header rules, same
+ * checkRevoked: true), additionally exposing the token's email_verified claim. Used where an
+ * email is an authorization input -- professional invitation acceptance -- so that the email and
+ * its verification status come only from a successfully verified Firebase ID token, never from the
+ * request. emailVerified is true only when the claim is exactly boolean true.
+ */
+export async function verifyFirebaseIdentity(
+  authHeader: string | undefined,
+): Promise<{ uid: string; email: string | null; emailVerified: boolean } | null> {
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
   const idToken = authHeader.slice("Bearer ".length).trim();
   if (!idToken) return null;
 
   try {
     const decoded = await getAuth(getFirebaseAdminApp()).verifyIdToken(idToken, true);
-    return { uid: decoded.uid, email: decoded.email || null };
+    return {
+      uid: decoded.uid,
+      email: typeof decoded.email === "string" && decoded.email ? decoded.email : null,
+      emailVerified: decoded.email_verified === true,
+    };
   } catch (e) {
     console.error("Firebase ID token verification failed:", e);
     return null;

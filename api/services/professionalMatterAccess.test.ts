@@ -76,30 +76,31 @@ vi.mock('./access', () => {
         return query;
       },
       rpc: (fn: string, args: any) => {
-        if (fn === 'navigator_matter_access_lifecycle_contract_v3') {
-          return Promise.resolve({ data: 'navigator_matter_access_lifecycle_v3', error: null });
+        if (fn === 'navigator_matter_access_lifecycle_contract_v4') {
+          return Promise.resolve({ data: 'navigator_matter_access_lifecycle_v4', error: null });
         }
-        if (fn === 'create_matter_grant') {
-          // Minimal model of the v3 SQL contract (real SQL: professionalMatterAccessAudit.pg.test.ts).
+        if (fn === 'create_recipient_bound_matter_grant') {
+          // Minimal model of the v4 SQL contract (real SQL: professionalMatterAccessRecipient.pg.test.ts).
           const uidToAccount: Record<string, string> = { 'parent-1': 'parent-acct-1', 'parent-2': 'parent-acct-2', 'existing-reviewer-uid': 'existing-reviewer' };
           const owner = tables['navigator_matter_members'].find(m =>
             m.matter_id === args.p_matter_id && m.account_id === uidToAccount[args.p_firebase_uid] && m.role === 'OWNER');
           if (!owner) return Promise.resolve({ data: null, error: new Error('NOT_OWNER') });
           const row = {
             id: globalThis.crypto.randomUUID(), matter_id: args.p_matter_id, grantor_account_id: owner.account_id,
-            token_digest: args.p_token_digest, capability: 'REVIEWER', status: 'PENDING',
+            token_digest: args.p_token_digest, capability: 'REVIEWER', status: 'PENDING', recipient_email: args.p_recipient_email,
             expires_at: new Date(Date.now() + args.p_expires_in_days * 86400000).toISOString(), created_at: new Date().toISOString(),
           };
           tables['navigator_matter_access_grants'].push(row);
           const { token_digest, ...safe } = row;
           return Promise.resolve({ data: safe, error: null });
         }
-        if (fn === 'accept_matter_grant') {
+        if (fn === 'accept_recipient_bound_matter_grant') {
           if (rpcErrors[args.p_token_digest]) {
             return Promise.resolve({ data: null, error: rpcErrors[args.p_token_digest] });
           }
           const grant = tables['navigator_matter_access_grants'].find(g => g.token_digest === args.p_token_digest);
-          if (!grant) return Promise.resolve({ data: null, error: new Error('INVALID_TOKEN') });
+          // v4: recipient first; a non-recipient looks exactly like an unknown token.
+          if (!grant || grant.recipient_email !== String(args.p_verified_email).toLowerCase()) return Promise.resolve({ data: null, error: new Error('INVALID_TOKEN') });
           if (grant.status !== 'PENDING') return Promise.resolve({ data: null, error: new Error('INVALID_STATE') });
           if (new Date() > new Date(grant.expires_at)) return Promise.resolve({ data: null, error: new Error('EXPIRED_TOKEN') });
           
@@ -132,6 +133,10 @@ vi.mock('./access', () => {
   };
 });
 
+// Stage 10 slice 7 (contract v4): invitations name one recipient; only that verified email accepts.
+const PRO_EMAIL = 'professional@example.test';
+const PRO_CLAIMS = { email: PRO_EMAIL, emailVerified: true };
+
 describe('Stage 7B: Parent-Authorized Matter Access', () => {
   beforeEach(() => {
     tables.navigator_matters = [{ id: 'matter-1' }, { id: 'matter-2' }];
@@ -153,7 +158,7 @@ describe('Stage 7B: Parent-Authorized Matter Access', () => {
   });
 
   it('1. OWNER can create professional grant for own matter', async () => {
-    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1');
+    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1', { recipientEmail: PRO_EMAIL });
     expect(grant.matterId).toBe('matter-1');
     expect(grant.status).toBe('PENDING');
     expect(rawToken).toBeDefined();
@@ -166,18 +171,18 @@ describe('Stage 7B: Parent-Authorized Matter Access', () => {
   });
 
   it('2. non-owner cannot create grant', async () => {
-    await expect(createProfessionalGrant('parent-2', 'matter-1'))
+    await expect(createProfessionalGrant('parent-2', 'matter-1', { recipientEmail: PRO_EMAIL }))
       .rejects.toThrow(/UNAUTHORIZED/);
   });
 
   it('3. REVIEWER cannot create another grant', async () => {
-    await expect(createProfessionalGrant('existing-reviewer-uid', 'matter-1'))
+    await expect(createProfessionalGrant('existing-reviewer-uid', 'matter-1', { recipientEmail: PRO_EMAIL }))
       .rejects.toThrow(/Only OWNER can grant access/);
   });
 
   it('8. valid invitation can be accepted once', async () => {
-    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1');
-    const res = await acceptProfessionalGrant('professional-1', rawToken);
+    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1', { recipientEmail: PRO_EMAIL });
+    const res = await acceptProfessionalGrant('professional-1', rawToken, PRO_CLAIMS);
     expect(res.success).toBe(true);
     expect(res.matterId).toBe('matter-1');
     
@@ -188,36 +193,36 @@ describe('Stage 7B: Parent-Authorized Matter Access', () => {
   });
 
   it('9. invitation cannot be accepted twice (replay protection)', async () => {
-    const { rawToken } = await createProfessionalGrant('parent-1', 'matter-1');
-    await acceptProfessionalGrant('professional-1', rawToken);
-    await expect(acceptProfessionalGrant('professional-1', rawToken))
+    const { rawToken } = await createProfessionalGrant('parent-1', 'matter-1', { recipientEmail: PRO_EMAIL });
+    await acceptProfessionalGrant('professional-1', rawToken, PRO_CLAIMS);
+    await expect(acceptProfessionalGrant('professional-1', rawToken, PRO_CLAIMS))
       .rejects.toThrow(/Invitation is no longer pending/);
   });
 
   it('10. wrong token fails', async () => {
-    await createProfessionalGrant('parent-1', 'matter-1');
-    await expect(acceptProfessionalGrant('professional-1', 'wrong-token-abc'))
+    await createProfessionalGrant('parent-1', 'matter-1', { recipientEmail: PRO_EMAIL });
+    await expect(acceptProfessionalGrant('professional-1', 'wrong-token-abc', PRO_CLAIMS))
       .rejects.toThrow(/Invalid token/);
   });
 
   it('11. expired token fails', async () => {
     // Creation rejects a non-positive expiry, so age a valid invitation past its expiry instead.
-    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1');
+    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1', { recipientEmail: PRO_EMAIL });
     tables.navigator_matter_access_grants.find(g => g.id === grant.id)!.expires_at = new Date(Date.now() - 60_000).toISOString();
-    await expect(acceptProfessionalGrant('professional-1', rawToken))
+    await expect(acceptProfessionalGrant('professional-1', rawToken, PRO_CLAIMS))
       .rejects.toThrow(/Invitation has expired/);
   });
 
   it('12. revoked pending invitation fails', async () => {
-    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1');
+    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1', { recipientEmail: PRO_EMAIL });
     await revokeProfessionalGrant('parent-1', grant.id);
-    await expect(acceptProfessionalGrant('professional-1', rawToken))
+    await expect(acceptProfessionalGrant('professional-1', rawToken, PRO_CLAIMS))
       .rejects.toThrow(/Invitation is no longer pending/);
   });
 
   it('24. owner revocation removes effective access', async () => {
-    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1');
-    await acceptProfessionalGrant('professional-1', rawToken);
+    const { grant, rawToken } = await createProfessionalGrant('parent-1', 'matter-1', { recipientEmail: PRO_EMAIL });
+    await acceptProfessionalGrant('professional-1', rawToken, PRO_CLAIMS);
     
     // Validate they are in
     let member = tables.navigator_matter_members.find(m => m.account_id === 'professional-acct-id');
@@ -241,8 +246,8 @@ describe('Stage 7B: Parent-Authorized Matter Access', () => {
   });
   
   it('15. acceptance does not create OWNER membership', async () => {
-    const { rawToken } = await createProfessionalGrant('parent-1', 'matter-1');
-    await acceptProfessionalGrant('professional-1', rawToken);
+    const { rawToken } = await createProfessionalGrant('parent-1', 'matter-1', { recipientEmail: PRO_EMAIL });
+    await acceptProfessionalGrant('professional-1', rawToken, PRO_CLAIMS);
     const member = tables.navigator_matter_members.find(m => m.account_id === 'professional-acct-id');
     expect(member?.role).not.toBe('OWNER');
     expect(member?.role).toBe('REVIEWER');

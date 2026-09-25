@@ -27,9 +27,14 @@ export const LIFECYCLE_HTTP_ERRORS = Object.freeze({
   SIGN_IN_REQUIRED: e(401, 'SIGN_IN_REQUIRED', 'Authentication required.'),
   CREATE_FORBIDDEN: e(403, 'FORBIDDEN', 'You cannot invite a professional to this matter.'),
   CREATE_UNAVAILABLE: e(503, 'ACCESS_LIFECYCLE_UNAVAILABLE', 'Invitations are unavailable right now.'),
+  // Constant text: never echoes the submitted address.
+  RECIPIENT_INVALID: e(400, 'INVALID_REQUEST', 'recipientEmail must be a valid email address.'),
   INVITATION_UNAVAILABLE: e(410, 'INVITATION_UNAVAILABLE', 'This invitation cannot be used. Ask the matter owner for a new invitation.'),
   OWNER_CANNOT_ACCEPT: e(409, 'OWNER_CANNOT_ACCEPT', 'A matter owner cannot accept a professional invitation to their own matter.'),
   ACCEPT_FORBIDDEN: e(403, 'FORBIDDEN', 'Your account cannot accept invitations right now.'),
+  // Decided from the caller's own verified sign-in before any invitation is looked up, so it reveals
+  // nothing about any token (Stage 10 slice 7, contract v4).
+  EMAIL_NOT_VERIFIED: e(403, 'EMAIL_NOT_VERIFIED', 'Sign in with a verified email address to accept this invitation.'),
   ACCEPT_UNAVAILABLE: e(503, 'ACCESS_LIFECYCLE_UNAVAILABLE', 'Invitation acceptance is unavailable right now.'),
   GRANT_NOT_FOUND: e(404, 'ACCESS_GRANT_NOT_FOUND', 'Access grant not found.'),
   // Fail closed and say so: the caller must not assume access was removed.
@@ -43,15 +48,18 @@ export const SERVICE_MESSAGE_CLASSIFICATION: Readonly<Record<LifecycleOperation,
     'Account not found': LIFECYCLE_HTTP_ERRORS.CREATE_FORBIDDEN,
     'UNAUTHORIZED: Only OWNER can grant access.': LIFECYCLE_HTTP_ERRORS.CREATE_FORBIDDEN,
     'Failed to create grant.': LIFECYCLE_HTTP_ERRORS.CREATE_UNAVAILABLE,
+    'Recipient email must be a valid address.': LIFECYCLE_HTTP_ERRORS.RECIPIENT_INVALID,
   }),
   accept: Object.freeze({
-    // Unknown, used, revoked and expired tokens are one answer: nothing about the owner's
-    // actions or the grant's history is revealed to the token holder.
+    // Unknown, used, revoked and expired tokens -- and, since contract v4, a token held by anyone
+    // other than its verified recipient -- are one answer: nothing about the owner's actions, the
+    // grant's history or its existence is revealed to the token holder.
     'Invalid token.': LIFECYCLE_HTTP_ERRORS.INVITATION_UNAVAILABLE,
     'Invitation is no longer pending.': LIFECYCLE_HTTP_ERRORS.INVITATION_UNAVAILABLE,
     'Invitation has expired.': LIFECYCLE_HTTP_ERRORS.INVITATION_UNAVAILABLE,
     'A matter owner cannot accept a professional invitation to their own matter.': LIFECYCLE_HTTP_ERRORS.OWNER_CANNOT_ACCEPT,
     'Account is unavailable.': LIFECYCLE_HTTP_ERRORS.ACCEPT_FORBIDDEN,
+    'Verified email required.': LIFECYCLE_HTTP_ERRORS.EMAIL_NOT_VERIFIED,
     'Acceptance failed.': LIFECYCLE_HTTP_ERRORS.ACCEPT_UNAVAILABLE,
   }),
   revoke: Object.freeze({

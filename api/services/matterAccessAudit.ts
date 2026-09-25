@@ -58,6 +58,10 @@ export interface GrantAuditSummary {
   acceptedByAccountId: string | null;
   revokedAt: string | null;
   revokedByAccountId: string | null;
+  // Stage 10 slice 7 (Decision 3): the professional this invitation is bound to, canonical email.
+  // Under recipient binding it identifies both the invitee and, once accepted, the acceptor.
+  // null only for a grant created before contract v4. OWNER-only: this report is owner-only.
+  recipientEmail: string | null;
 }
 
 // MATTER_OWNER: an OWNER membership row.
@@ -124,7 +128,7 @@ const ROLE_ORDER: Record<string, number> = { OWNER: 0, REVIEWER: 1 };
 // Explicit column list: token_digest is never selected, so it can never be returned.
 const GRANT_COLUMNS =
   'id, matter_id, grantor_account_id, capability, status, expires_at, accepted_at, ' +
-  'accepted_by_account_id, revoked_at, revoked_by_account_id, created_at';
+  'accepted_by_account_id, revoked_at, revoked_by_account_id, created_at, recipient_email';
 
 export interface GrantRow {
   id: string;
@@ -138,6 +142,7 @@ export interface GrantRow {
   revoked_at: string | null;
   revoked_by_account_id: string | null;
   created_at: string;
+  recipient_email?: string | null;
 }
 
 export interface MemberRow {
@@ -248,6 +253,7 @@ export function buildMatterAccessAudit(input: {
       acceptedByAccountId: g.accepted_by_account_id ?? null,
       revokedAt: g.revoked_at ?? null,
       revokedByAccountId: g.revoked_by_account_id ?? null,
+      recipientEmail: typeof g.recipient_email === 'string' ? g.recipient_email : null,
     });
   }
 

@@ -9,12 +9,12 @@ import request from 'supertest';
 
 const TOKENS: Record<string, string> = { 'tok-owner': 'uid-owner', 'tok-pro': 'uid-pro' };
 const mocks = vi.hoisted(() => ({
-  verifyFirebaseToken: vi.fn(),
+  verifyFirebaseIdentity: vi.fn(),
   createProfessionalGrant: vi.fn(),
   acceptProfessionalGrant: vi.fn(),
   revokeProfessionalGrant: vi.fn(),
 }));
-vi.mock('./services/firebaseAdmin.js', () => ({ verifyFirebaseToken: mocks.verifyFirebaseToken }));
+vi.mock('./services/firebaseAdmin.js', () => ({ verifyFirebaseIdentity: mocks.verifyFirebaseIdentity }));
 vi.mock('./services/professionalMatterAccess.js', () => ({
   createProfessionalGrant: mocks.createProfessionalGrant,
   acceptProfessionalGrant: mocks.acceptProfessionalGrant,
@@ -28,6 +28,8 @@ const MATTER = '24000000-0000-4000-8000-00000000000a';
 const OTHER_MATTER = '24000000-0000-4000-8000-0000000000ff';
 const GRANT = '34000000-0000-4000-8000-000000000001';
 const TOKEN = 'A'.repeat(21) + '_' + 'b'.repeat(20) + '-'; // 43 base64url characters
+const RECIPIENT = 'pro@example.test';
+const RB = { recipientEmail: RECIPIENT }; // the minimum valid create body since contract v4
 const SERVICES = [mocks.createProfessionalGrant, mocks.acceptProfessionalGrant, mocks.revokeProfessionalGrant];
 const serviceCalls = () => SERVICES.reduce((n, s) => n + s.mock.calls.length, 0);
 
@@ -43,7 +45,7 @@ const createUrl = (m = MATTER) => `/api/matters/${m}/access-grants`;
 const revokeUrl = (g = GRANT) => `/api/access-grants/${g}/revoke`;
 const ACCEPT_URL = '/api/access-invitations/accept';
 const ROUTES = [
-  { op: 'create', url: createUrl(), body: {}, service: mocks.createProfessionalGrant, unavailable: 'ACCESS_LIFECYCLE_UNAVAILABLE' },
+  { op: 'create', url: createUrl(), body: RB, service: mocks.createProfessionalGrant, unavailable: 'ACCESS_LIFECYCLE_UNAVAILABLE' },
   { op: 'accept', url: ACCEPT_URL, body: { token: TOKEN }, service: mocks.acceptProfessionalGrant, unavailable: 'ACCESS_LIFECYCLE_UNAVAILABLE' },
   { op: 'revoke', url: revokeUrl(), body: {}, service: mocks.revokeProfessionalGrant, unavailable: 'ACCESS_REVOCATION_UNCONFIRMED' },
 ] as const;
@@ -54,13 +56,14 @@ const post = (url: string, body: unknown = {}, token: string | null = 'tok-owner
 };
 
 beforeEach(() => {
-  mocks.verifyFirebaseToken.mockReset().mockImplementation(async (h?: string) => {
+  mocks.verifyFirebaseIdentity.mockReset().mockImplementation(async (h?: string) => {
     const m = /^Bearer (\S+)$/.exec(h ?? '');
-    return m && TOKENS[m[1]] ? { uid: TOKENS[m[1]], email: null } : null;
+    // Stage 10 slice 7: the verified token also carries the email claims.
+    return m && TOKENS[m[1]] ? { uid: TOKENS[m[1]], email: `${TOKENS[m[1]].slice(4)}@example.test`, emailVerified: true } : null;
   });
   mocks.createProfessionalGrant.mockReset().mockResolvedValue({
     grant: { id: GRANT, matterId: MATTER, grantorAccountId: 'acct-owner-internal', capability: 'REVIEWER', status: 'PENDING',
-      expiresAt: '2026-10-01T00:00:00.000Z', createdAt: '2026-09-24T00:00:00.000Z' },
+      expiresAt: '2026-10-01T00:00:00.000Z', createdAt: '2026-09-24T00:00:00.000Z', recipientEmail: RECIPIENT },
     rawToken: TOKEN,
   });
   mocks.acceptProfessionalGrant.mockReset().mockResolvedValue({ success: true, matterId: MATTER });
@@ -77,25 +80,25 @@ describe('Stage 10 slice 6: adapter contract (isolated app)', () => {
   });
 
   it('create: 201 with the path matter, the grant and the one-time token; nothing internal', async () => {
-    const res = await post(createUrl(), { expiresInDays: 3 });
+    const res = await post(createUrl(), { ...RB, expiresInDays: 3 });
     expect(res.status).toBe(201);
     expect(res.body).toEqual({
       matterId: MATTER,
-      grant: { id: GRANT, status: 'PENDING', expiresAt: '2026-10-01T00:00:00.000Z', createdAt: '2026-09-24T00:00:00.000Z' },
+      grant: { id: GRANT, status: 'PENDING', expiresAt: '2026-10-01T00:00:00.000Z', createdAt: '2026-09-24T00:00:00.000Z', recipientEmail: RECIPIENT },
       invitationToken: TOKEN,
     });
     expect(res.text).not.toContain('acct-owner-internal');
     expect(res.headers['cache-control']).toBe('no-store');
-    expect(mocks.createProfessionalGrant).toHaveBeenCalledWith('uid-owner', MATTER, { expiresInDays: 3 });
+    expect(mocks.createProfessionalGrant).toHaveBeenCalledWith('uid-owner', MATTER, { recipientEmail: RECIPIENT, expiresInDays: 3 });
   });
 
   it('create: omitting expiresInDays leaves the service default in charge', async () => {
-    await post(createUrl(), {});
-    expect(mocks.createProfessionalGrant).toHaveBeenCalledWith('uid-owner', MATTER, undefined);
+    await post(createUrl(), RB);
+    expect(mocks.createProfessionalGrant).toHaveBeenCalledWith('uid-owner', MATTER, { recipientEmail: RECIPIENT });
   });
 
   it('create: the path matter is canonicalized and authoritative', async () => {
-    await post(createUrl(MATTER.toUpperCase()), {});
+    await post(createUrl(MATTER.toUpperCase()), RB);
     expect(mocks.createProfessionalGrant.mock.calls[0][1]).toBe(MATTER);
   });
 
@@ -107,26 +110,26 @@ describe('Stage 10 slice 6: adapter contract (isolated app)', () => {
     ['grantorAccountId', { grantorAccountId: 'x' }],
     ['tokenDigest', { tokenDigest: 'a'.repeat(64) }],
   ])('create: a body %s cannot override anything; it is refused before the service', async (_k, body) => {
-    const res = await post(createUrl(), body);
+    const res = await post(createUrl(), { ...RB, ...body });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('INVALID_REQUEST');
     expect(serviceCalls()).toBe(0);
   });
 
   it('create: query parameters (e.g. a second matterId) are refused', async () => {
-    const res = await post(`${createUrl()}?matterId=${OTHER_MATTER}`, {});
+    const res = await post(`${createUrl()}?matterId=${OTHER_MATTER}`, RB);
     expect(res.status).toBe(400);
     expect(serviceCalls()).toBe(0);
   });
 
   it.each([[0], [366], [1.5], ['7'], [null], [-1]])('create: expiresInDays %j is refused', async days => {
-    const res = await post(createUrl(), { expiresInDays: days });
+    const res = await post(createUrl(), { ...RB, expiresInDays: days });
     expect(res.status).toBe(400);
     expect(serviceCalls()).toBe(0);
   });
 
   it.each(['not-a-uuid', '24000000-0000-4000-8000-00000000000', "' OR 1=1 --"])('create: malformed matter id %j is a 400 without a service call', async m => {
-    const res = await post(`/api/matters/${encodeURIComponent(m)}/access-grants`, {});
+    const res = await post(`/api/matters/${encodeURIComponent(m)}/access-grants`, RB);
     expect(res.status).toBe(400);
     expect(serviceCalls()).toBe(0);
   });
@@ -134,7 +137,7 @@ describe('Stage 10 slice 6: adapter contract (isolated app)', () => {
   it('create: a service result for a different matter is never returned (identity guard)', async () => {
     mocks.createProfessionalGrant.mockResolvedValue({ grant: { id: GRANT, matterId: OTHER_MATTER, status: 'PENDING' }, rawToken: TOKEN });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const res = await post(createUrl(), {});
+    const res = await post(createUrl(), RB);
     spy.mockRestore();
     expect(res.status).toBe(503);
     expect(res.text).not.toContain(OTHER_MATTER);
@@ -145,7 +148,7 @@ describe('Stage 10 slice 6: adapter contract (isolated app)', () => {
     const res = await post(ACCEPT_URL, { token: TOKEN }, 'tok-pro');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ matterId: MATTER, role: 'REVIEWER' });
-    expect(mocks.acceptProfessionalGrant).toHaveBeenCalledWith('uid-pro', TOKEN);
+    expect(mocks.acceptProfessionalGrant).toHaveBeenCalledWith('uid-pro', TOKEN, { email: 'pro@example.test', emailVerified: true });
   });
 
   it.each([
@@ -219,7 +222,7 @@ describe.each(ROUTES)('Stage 10 slice 6: $op authentication and failure contract
   });
 
   it('fails closed with a fixed 503 when identity verification throws', async () => {
-    mocks.verifyFirebaseToken.mockRejectedValueOnce(new Error('firebase-admin: private_key parse failure'));
+    mocks.verifyFirebaseIdentity.mockRejectedValueOnce(new Error('firebase-admin: private_key parse failure'));
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await post(url, body);
     const logged = JSON.stringify(spy.mock.calls);
@@ -272,7 +275,7 @@ describe('Stage 10 slice 6: service refusals through the adapter (non-enumeratio
     for (const err of [new Error('Account not found'), new Error('UNAUTHORIZED: Only OWNER can grant access.'),
       new LifecycleError(403, 'ACCOUNT_UNAVAILABLE', 'Account is unavailable.')]) {
       mocks.createProfessionalGrant.mockRejectedValueOnce(err);
-      const res = await post(createUrl(), {});
+      const res = await post(createUrl(), RB);
       expect(res.status).toBe(403);
       bodies.add(res.text);
     }
@@ -329,5 +332,94 @@ describe('Stage 10 slice 6: service refusals through the adapter (non-enumeratio
       expect(r.status).toBe(503);
       expect(r.body).toEqual({ code: 'ACCESS_REVOCATION_UNCONFIRMED', error: 'Revocation could not be confirmed. Access may not have been removed.' });
     }
+  });
+});
+
+describe('Stage 10 slice 7: recipient binding through the adapter', () => {
+  it.each([
+    ['missing', {}], ['empty', { recipientEmail: '' }], ['not a string', { recipientEmail: ['pro@example.test'] }],
+    ['no @', { recipientEmail: 'pro.example.test' }], ['two @', { recipientEmail: 'a@b@c.test' }],
+    ['non-ASCII', { recipientEmail: 'prö@example.test' }], ['too long', { recipientEmail: 'x'.repeat(251) + '@b.c' }],
+    ['control character', { recipientEmail: 'pro\u0001@example.test' }],
+  ])('create: a %s recipientEmail is one constant 400 that never echoes the input; no service call', async (_l, body) => {
+    const res = await post(createUrl(), body);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ code: 'INVALID_REQUEST', error: 'recipientEmail must be a valid email address.' });
+    const raw = (body as any).recipientEmail;
+    if (typeof raw === 'string' && raw) expect(res.text).not.toContain(raw);
+    expect(serviceCalls()).toBe(0);
+  });
+
+  it('create: the recipient is canonicalized (trim + ASCII lower-case) before reaching the service', async () => {
+    const res = await post(createUrl(), { recipientEmail: '  Pro@Example.TEST ' });
+    expect(res.status).toBe(201);
+    expect(mocks.createProfessionalGrant).toHaveBeenCalledWith('uid-owner', MATTER, { recipientEmail: RECIPIENT });
+  });
+
+  it('create: a service result bound to a different recipient is not reported as success', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.createProfessionalGrant.mockResolvedValueOnce({
+      grant: { id: GRANT, matterId: MATTER, status: 'PENDING', expiresAt: 'x', createdAt: 'y', recipientEmail: 'other@example.test' }, rawToken: TOKEN,
+    });
+    const res = await post(createUrl(), RB);
+    spy.mockRestore();
+    expect(res.status).toBe(503);
+    expect(res.text).not.toContain('other@example.test');
+    expect(res.text).not.toContain(TOKEN);
+  });
+
+  it('create: the service refusing an invalid recipient is the same constant 400', async () => {
+    mocks.createProfessionalGrant.mockRejectedValueOnce(new Error('Recipient email must be a valid address.'));
+    const res = await post(createUrl(), RB);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ code: 'INVALID_REQUEST', error: 'recipientEmail must be a valid email address.' });
+  });
+
+  it.each([['email'], ['recipientEmail'], ['emailVerified'], ['email_verified'], ['uid']])(
+    'accept: a body %s is refused as an extra field; identity never comes from the request', async key => {
+      const res = await post(ACCEPT_URL, { token: TOKEN, [key]: key.startsWith('email') && key !== 'email' ? true : 'owner@example.test' }, 'tok-pro');
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('INVALID_REQUEST');
+      expect(serviceCalls()).toBe(0);
+    });
+
+  it('accept: an email in the query string is refused', async () => {
+    const res = await post(`${ACCEPT_URL}?email=owner@example.test`, { token: TOKEN }, 'tok-pro');
+    expect(res.status).toBe(400);
+    expect(serviceCalls()).toBe(0);
+  });
+
+  it('accept: the email and its verification status are passed exactly as the verified token reported them', async () => {
+    mocks.verifyFirebaseIdentity.mockResolvedValueOnce({ uid: 'uid-pro', email: 'Pro@Example.test', emailVerified: false });
+    mocks.acceptProfessionalGrant.mockRejectedValueOnce(new Error('Verified email required.'));
+    await post(ACCEPT_URL, { token: TOKEN }, 'tok-pro');
+    expect(mocks.acceptProfessionalGrant).toHaveBeenCalledWith('uid-pro', TOKEN, { email: 'Pro@Example.test', emailVerified: false });
+  });
+
+  it('accept: an unverified email is a token-independent 403 EMAIL_NOT_VERIFIED', async () => {
+    const bodies = new Set<string>();
+    for (const t of [TOKEN, 'Z'.repeat(43)]) {
+      mocks.acceptProfessionalGrant.mockRejectedValueOnce(new Error('Verified email required.'));
+      const res = await post(ACCEPT_URL, { token: t }, 'tok-pro');
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ code: 'EMAIL_NOT_VERIFIED', error: 'Sign in with a verified email address to accept this invitation.' });
+      bodies.add(res.text);
+    }
+    expect(bodies.size).toBe(1);
+  });
+
+  it('accept: a non-recipient gets exactly the same 410 as an unknown token', async () => {
+    mocks.acceptProfessionalGrant.mockRejectedValueOnce(new Error('Invalid token.'));
+    const nonRecipient = await post(ACCEPT_URL, { token: TOKEN }, 'tok-pro');
+    mocks.acceptProfessionalGrant.mockRejectedValueOnce(new Error('Invalid token.'));
+    const unknown = await post(ACCEPT_URL, { token: 'Z'.repeat(43) }, 'tok-pro');
+    expect(nonRecipient.status).toBe(410);
+    expect(nonRecipient.text).toBe(unknown.text);
+  });
+
+  it('accept: a successful acceptance response carries no email', async () => {
+    const res = await post(ACCEPT_URL, { token: TOKEN }, 'tok-pro');
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain('@');
   });
 });
