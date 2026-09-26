@@ -30,6 +30,7 @@ import { registerMatterAccessAuditRoutes } from "./matterAccessAuditRoutes.js";
 import { registerMatterAccessEventRoutes } from "./matterAccessEventRoutes.js";
 import { registerMatterAccessHistoryRoutes } from "./matterAccessHistoryRoutes.js";
 import { registerMatterAccessLifecycleRoutes } from "./matterAccessLifecycleRoutes.js";
+import { registerParentProfessionalCollaborationRoutes } from "./parentProfessionalCollaborationRoutes.js";
 import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
@@ -808,6 +809,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   // POST routes; every authorization decision stays in the v4 database functions. The per-IP
   // apiLimiter above still applies; the adapter adds a per-account write limiter after auth.
   registerMatterAccessLifecycleRoutes(app);
+  registerParentProfessionalCollaborationRoutes(app);
 
   // API 2: Analyze Document Endpoint (Educational advice based on CYFSA of Ontario)
   // Step 1 of the two-pass pipeline: OCR/text extraction only.

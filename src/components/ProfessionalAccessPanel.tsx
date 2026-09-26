@@ -83,6 +83,22 @@ export default function ProfessionalAccessPanel({ matterId }: { matterId: string
   const emailRef = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
 
+  const [collaboration, setCollaboration] = useState<{
+    reviewProgressSummary?: {
+      totalReviewed: number;
+      confirmedRelevant: number;
+      possiblyRelevant: number;
+      requiresResearch: number;
+      notRelevant: number;
+    };
+    finalizedWorkProducts?: Array<{
+      id: string;
+      versionNumber: number;
+      workProductType: string;
+      finalizedAt: string;
+    }>;
+  } | null>(null);
+
   const refresh = useCallback(async () => {
     const current = ++generation.current;
     setLoad('loading');
@@ -95,6 +111,18 @@ export default function ProfessionalAccessPanel({ matterId }: { matterId: string
       if (current !== generation.current) return;
       if (!data || !Array.isArray(data.grants) || !Array.isArray(data.currentAccess)) { setLoad('error'); return; }
       setReport(data);
+
+      // Fetch collaboration review progress & finalized snapshots
+      try {
+        const collabRes = await apiFetch(`/api/matters/${encodeURIComponent(matterId)}/collaboration`);
+        if (collabRes.ok) {
+          const collabData = await collabRes.json();
+          setCollaboration(collabData);
+        }
+      } catch {
+        // Non-blocking fallback
+      }
+
       setLoad('loaded');
     } catch {
       if (current === generation.current) { setReport(null); setLoad('error'); }
@@ -271,6 +299,49 @@ export default function ProfessionalAccessPanel({ matterId }: { matterId: string
               );
             })}
           </ul>}
+
+        {collaboration?.reviewProgressSummary && (
+          <div className="mt-6 pt-4 border-t">
+            <h4 className="font-semibold text-sm text-slate-900 mb-2">Professional Review Progress Summary</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="bg-slate-50 p-2 rounded border">
+                <span className="font-bold text-slate-800 text-sm block">{collaboration.reviewProgressSummary.totalReviewed}</span>
+                <span className="text-slate-600">Total Items Reviewed</span>
+              </div>
+              <div className="bg-emerald-50 p-2 rounded border border-emerald-200">
+                <span className="font-bold text-emerald-800 text-sm block">{collaboration.reviewProgressSummary.confirmedRelevant}</span>
+                <span className="text-emerald-700">Confirmed Relevant</span>
+              </div>
+              <div className="bg-indigo-50 p-2 rounded border border-indigo-200">
+                <span className="font-bold text-indigo-800 text-sm block">{collaboration.reviewProgressSummary.possiblyRelevant}</span>
+                <span className="text-indigo-700">Possibly Relevant</span>
+              </div>
+              <div className="bg-amber-50 p-2 rounded border border-amber-200">
+                <span className="font-bold text-amber-800 text-sm block">{collaboration.reviewProgressSummary.requiresResearch}</span>
+                <span className="text-amber-700">Requires Research</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {collaboration?.finalizedWorkProducts && collaboration.finalizedWorkProducts.length > 0 && (
+          <div className="mt-4 pt-4 border-t">
+            <h4 className="font-semibold text-sm text-slate-900 mb-2">Shared Work Product Snapshots</h4>
+            <ul className="space-y-2 text-xs">
+              {collaboration.finalizedWorkProducts.map(wp => (
+                <li key={wp.id} className="p-2.5 bg-slate-50 rounded border flex justify-between items-center">
+                  <div>
+                    <span className="font-semibold text-slate-900">Case Brief Version {wp.versionNumber}</span>
+                    <span className="text-slate-500 block text-[11px]">Finalized: {formatDate(wp.finalizedAt)}</span>
+                  </div>
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-medium rounded text-[10px]">
+                    FINALIZED
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </>}
     </section>
   );
