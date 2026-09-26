@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import CaseBriefViewer from './CaseBriefViewer';
 import LegalDiscoveryTab from './LegalDiscoveryTab';
+import ProfessionalOutputsViewer from './ProfessionalOutputsViewer';
 
 interface MatterItem {
   id: string;
@@ -263,6 +264,7 @@ export default function ProfessionalWorkspace() {
               { id: 'LEGAL', label: 'Case Snapshots' },
               { id: 'LEGAL_DISCOVERY', label: 'Legal Research' },
               { id: 'CASE_BRIEF', label: 'Case Brief' },
+              { id: 'OUTPUTS', label: 'Review-Ready Exports' },
               { id: 'VERSIONS', label: 'Versions' }
             ].map(tab => (
               <button
@@ -449,6 +451,11 @@ export default function ProfessionalWorkspace() {
                 onRefresh={() => loadIntelligence('CASE_BRIEF')}
                 onFinalize={handleFinalize}
               />
+            )}
+
+            {/* REVIEW-READY OUTPUTS TAB */}
+            {activeTab === 'OUTPUTS' && (
+              <ProfessionalOutputsViewer matterId={selectedMatter} />
             )}
 
             {/* VERSIONS TAB */}
