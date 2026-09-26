@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getParentCollaborationSummary, requireMatterOwnerAccess } from './parentProfessionalCollaboration.js';
+import { getParentCollaborationSummary } from './parentProfessionalCollaboration.js';
 import { requireProfessionalAccess, getMatterOverview, saveProfessionalReview } from './professionalWorkspace.js';
 import { revokeProfessionalGrant } from './professionalMatterAccess.js';
 
@@ -125,7 +125,6 @@ describe('Stage 11 Slice 3: Parent <-> Professional Collaboration & Isolation In
 
   describe('2. Stale Client Revocation & Workspace Access Collapse', () => {
     it('immediately denies professional read/write access after server-side revocation', async () => {
-      // 1. Setup initial active reviewer membership
       (findAccount as any).mockResolvedValue({ id: mockProAccountId });
       let isRevoked = false;
 
@@ -161,7 +160,7 @@ describe('Stage 11 Slice 3: Parent <-> Professional Collaboration & Isolation In
           if (fn === 'revoke_matter_grant') {
             isRevoked = true;
             return Promise.resolve({
-              data: { grant_id: 'grant-101', status: 'REVOKED', membership_removed: true },
+              data: { grant_id: '00000000-0000-4000-a000-000000000101', status: 'REVOKED', membership_removed: true },
               error: null
             });
           }
@@ -198,27 +197,21 @@ describe('Stage 11 Slice 3: Parent <-> Professional Collaboration & Isolation In
       const mockDb = {
         from: vi.fn((table: string) => {
           if (table === 'navigator_matter_members') {
-            return {
+            let checkedMatterId: string | null = null;
+            const builder = {
               select: vi.fn().mockReturnThis(),
               eq: vi.fn().mockImplementation((col: string, val: string) => {
-                const chain = {
-                  select: vi.fn().mockReturnThis(),
-                  eq: vi.fn().mockImplementation((c2: string, v2: string) => {
-                    const chain2 = {
-                      single: vi.fn().mockImplementation(() => {
-                        // Authorized on Matter A only
-                        if (val === mockMatterA || v2 === mockMatterA) {
-                          return Promise.resolve({ data: { role: 'REVIEWER' }, error: null });
-                        }
-                        return Promise.resolve({ data: null, error: { message: 'Not found' } });
-                      })
-                    };
-                    return chain2;
-                  })
-                };
-                return chain;
+                if (col === 'matter_id') checkedMatterId = val;
+                return builder;
+              }),
+              single: vi.fn().mockImplementation(() => {
+                if (checkedMatterId === mockMatterA) {
+                  return Promise.resolve({ data: { role: 'REVIEWER' }, error: null });
+                }
+                return Promise.resolve({ data: null, error: { message: 'Not found' } });
               })
             };
+            return builder;
           }
           return {};
         })
