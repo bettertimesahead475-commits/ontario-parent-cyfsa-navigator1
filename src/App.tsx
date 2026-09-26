@@ -18,6 +18,7 @@ const DefenseStrategiesTab = lazy(() => import("./components/DefenseStrategiesTa
 const FamilyCourtTab = lazy(() => import("./components/FamilyCourtTab"));
 const ChildDevelopmentTab = lazy(() => import("./components/ChildDevelopmentTab"));
 const DocumentAnalyzerTab = lazy(() => import("./components/DocumentAnalyzerTab"));
+const AnalysisExample = lazy(() => import("./components/AnalysisExample"));
 const TemplatesTab = lazy(() => import("./components/TemplatesTab"));
 const VoiceAssistantTab = lazy(() => import("./components/VoiceAssistantTab"));
 const LawyerDirectoryTab = lazy(() => import("./components/LawyerDirectoryTab"));
@@ -298,6 +299,10 @@ export default function App() {
 
           <Route path="/child-development">
             <ChildDevelopmentTab />
+          </Route>
+
+          <Route path="/analysis-example">
+            <AnalysisExample />
           </Route>
 
           <Route path="/document-analyzer">

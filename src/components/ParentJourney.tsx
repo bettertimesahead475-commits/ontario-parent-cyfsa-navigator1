@@ -430,6 +430,11 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
               Case Roadmap <ArrowRight className="h-4 w-4" />
             </span>
           </Link>
+          <Link href="/analysis-example">
+            <span className="inline-flex items-center gap-2 rounded-xl border border-brand-300 bg-white px-5 py-2 text-sm font-bold text-brand-800 transition hover:bg-brand-100">
+              Sample Analysis <ArrowRight className="h-4 w-4" />
+            </span>
+          </Link>
         </div>
       </div>
     </section>
