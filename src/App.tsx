@@ -31,6 +31,7 @@ const PricingTab = lazy(() => import("./components/PricingTab"));
 const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWorkspace"));
 const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorkspace"));
 const AcceptInvitation = lazy(() => import("./components/AcceptInvitation"));
+const PrivacyNoticeTab = lazy(() => import("./components/PrivacyNoticeTab"));
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
 import { sanitizeTelemetryEvent } from "./utils/telemetrySanitizer";
@@ -348,6 +349,10 @@ export default function App() {
             </RequireAuth>
           </Route>
 
+          <Route path="/privacy">
+            <PrivacyNoticeTab />
+          </Route>
+
           {/* Fallback route */}
           <Route><Redirect to="/" /></Route>
 
@@ -469,7 +474,9 @@ export default function App() {
 
             <div className="space-y-1 text-center sm:text-right font-mono text-[10px]">
               <span className="block text-slate-600 font-bold">Jurisdiction: Ontario Court of Justice, Canada</span>
-              <span className="block text-slate-500 mt-0.5">Primary sources updated: Q2 2026</span>
+              <span className="block text-slate-500 mt-0.5">
+                Primary sources updated: Q2 2026 · <Link href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Privacy Policy</Link>
+              </span>
             </div>
           </div>
 
