@@ -18,6 +18,7 @@ export async function getProfessionalMatters(firebaseUid: string) {
   return (members || []).map((m: any) => ({
     id: m.matter_id,
     title: m.navigator_matters?.title,
+    role: m.role,
     createdAt: m.navigator_matters?.created_at,
     updatedAt: m.navigator_matters?.updated_at
   }));
@@ -80,7 +81,8 @@ export async function getIntelligenceCategory(firebaseUid: string, matterId: str
   else if (category === 'CLAIMS') tableName = 'navigator_claims';
   else if (category === 'RELATIONSHIPS') tableName = 'navigator_claim_relationships';
   else if (category === 'GAPS') tableName = 'navigator_evidence_gap_findings';
-  else if (category === 'LEGAL') tableName = 'navigator_case_intelligence_snapshots'; // For simplicity, we just fetch from the snapshots table or whatever makes sense
+  else if (category === 'LEGAL') tableName = 'navigator_case_intelligence_snapshots';
+  else if (category === 'DOCUMENTS') tableName = 'navigator_documents';
   else throw new LifecycleError(400, 'INVALID_CATEGORY', 'Unknown category');
 
   // Fetch the items
@@ -96,6 +98,44 @@ export async function getIntelligenceCategory(firebaseUid: string, matterId: str
   return {
     items: items || [],
     reviews: reviews || []
+  };
+}
+
+export async function getProfessionalSourcePage(firebaseUid: string, matterId: string, evidenceId: string) {
+  matterId = requireUuid(matterId, 'matterId');
+  evidenceId = requireUuid(evidenceId, 'evidenceId');
+  const account = await findAccount(firebaseUid);
+  if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
+
+  const db = getSupabase();
+  await requireProfessionalAccess(db, account.id, matterId);
+
+  const { data: item, error: itemErr } = await db
+    .from('navigator_evidence_items')
+    .select('id, matter_id, document_id, document_version_id, page_id, page_number')
+    .eq('id', evidenceId)
+    .eq('matter_id', matterId)
+    .single();
+
+  if (itemErr || !item) {
+    throw new LifecycleError(404, 'NOT_FOUND', 'Evidence item not found in this matter.');
+  }
+
+  const { data: page, error: pageErr } = await db
+    .from('navigator_document_pages')
+    .select('id, page_number, text')
+    .eq('id', item.page_id)
+    .single();
+
+  if (pageErr || !page) {
+    throw new LifecycleError(404, 'NOT_FOUND', 'Source page text not found.');
+  }
+
+  return {
+    evidenceId: item.id,
+    documentId: item.document_id,
+    versionId: item.document_version_id,
+    page
   };
 }
 

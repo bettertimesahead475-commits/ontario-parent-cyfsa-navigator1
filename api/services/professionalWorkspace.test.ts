@@ -56,6 +56,10 @@ function fakeDatabase() {
           query = query.filter(r => r[col] === val);
           return chain;
         },
+        in: (col: string, vals: any[]) => {
+          query = query.filter(r => vals.includes(r[col]));
+          return chain;
+        },
         limit: (n: number) => {
           query = query.slice(0, n);
           return chain;
@@ -168,4 +172,21 @@ describe("Professional Workspace Authorization & Access", () => {
   it("guessed matter ID fails", async () => {
     await expect(getMatterOverview("LAWYER_UID", "99999999-9999-9999-9999-999999999999")).rejects.toThrow(/professional access/);
   });
+
+  it("authorized user can retrieve DOCUMENTS category for document inventory", async () => {
+    const category = await getIntelligenceCategory("LAWYER_UID", "11111111-1111-1111-1111-111111111111", "DOCUMENTS");
+    expect(category.items).toHaveLength(1);
+    expect(category.items[0].id).toBe("d1");
+  });
+
+  it("owner without REVIEWER role cannot access professional workspace endpoints", async () => {
+    await expect(getMatterOverview("PARENT_UID", "11111111-1111-1111-1111-111111111111")).rejects.toThrow(/professional access/);
+  });
+
+  it("data minimization: no raw token digests or internal firebase credentials exposed", async () => {
+    const matters = await getProfessionalMatters("LAWYER_UID");
+    expect(matters[0]).not.toHaveProperty("token_digest");
+    expect(matters[0]).not.toHaveProperty("firebase_uid");
+  });
 });
+
