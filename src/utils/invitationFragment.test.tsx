@@ -115,7 +115,7 @@ describe('Stage 10 slice 8: invitation fragment capture', () => {
     const fs = await import('fs');
     const path = await import('path');
     const src = fs.readFileSync(path.resolve(__dirname, '../main.tsx'), 'utf8');
-    const imports = src.split('\n').filter(l => /^import\b/.test(l));
+    const imports = src.split('\n').map(l => l.trim()).filter(l => /^import\b/.test(l));
     expect(imports[0]).toBe("import './utils/invitationFragment';");
   });
 });
