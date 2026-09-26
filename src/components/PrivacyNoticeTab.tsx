@@ -119,7 +119,7 @@ export default function PrivacyNoticeTab() {
           </p>
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-sm space-y-1">
             <div><strong>Privacy Responsible Person:</strong> Chris Pelkie</div>
-            <div><strong>Email:</strong> <code className="text-brand-700 font-mono">privacy@cyfsa-navigator.example.org</code></div>
+            <div><strong>Email:</strong> <code className="text-brand-700 font-mono">Chris@CYFSANavigator.com</code></div>
             <div><strong>Handling Procedure:</strong> Privacy requests are evaluated under our documented administrative request procedure, distinguishing active authorization from immutable security audit records.</div>
           </div>
         </section>

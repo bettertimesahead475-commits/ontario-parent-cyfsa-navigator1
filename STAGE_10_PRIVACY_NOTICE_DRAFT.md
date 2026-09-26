@@ -65,7 +65,7 @@ Professional-access records and security audit logs are retained under our curre
 If you have questions regarding our retention practices or wish to submit a privacy inquiry or deletion request regarding your professional access data, you may contact our Privacy Administrator:
 
 * **Privacy Responsible Person**: Chris Pelkie
-* **Email**: `privacy@cyfsa-navigator.example.org` *(or designated project privacy contact)*
+* **Email**: `Chris@CYFSANavigator.com`
 * **Handling Procedure**: Privacy requests are evaluated under our documented administrative request procedure, distinguishing active authorization from immutable security audit records.
 
 ---

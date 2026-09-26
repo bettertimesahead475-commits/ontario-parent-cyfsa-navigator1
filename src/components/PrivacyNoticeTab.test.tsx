@@ -25,6 +25,6 @@ describe('Stage 11 Slice 5: Privacy Notice Publication', () => {
     render(<PrivacyNoticeTab />);
 
     expect(screen.getAllByText(/Chris Pelkie/i)[0]).toBeDefined();
-    expect(screen.getAllByText(/privacy@cyfsa-navigator.example.org/i)[0]).toBeDefined();
+    expect(screen.getAllByText(/Chris@CYFSANavigator.com/i)[0]).toBeDefined();
   });
 });
