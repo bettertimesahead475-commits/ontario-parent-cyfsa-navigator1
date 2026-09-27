@@ -16,7 +16,11 @@
 
 - **Overall Phase 7B3 Status:** **PASS**
 - **Remediation Summary:** Fixed confirmed Node ESM runtime defect (`ERR_MODULE_NOT_FOUND: Cannot find module '/var/task/api/services/access' imported from /var/task/api/services/professionalMatterAccess.js`). Added explicit `.js` import specifiers in `api/services/professionalMatterAccess.ts` (remediation commit `893cf2d2ba6f8a2585d773e6c5b9630df4edcb03`).
-- **Security Event Resolution:** The legacy staging service-role key exposed in prior terminal output was replaced on Vercel Preview with the newly generated Staging Secret key (`sb_secret_-OLE6...`). Zero secret values were committed or printed.
+- **Security Event Resolution:**
+  - **OLD EXPOSED CREDENTIAL USED BY PREVIEW:** NO (Removed from Vercel Preview configuration)
+  - **OLD EXPOSED CREDENTIAL CRYPTOGRAPHICALLY REVOKED:** NOT PROVEN (Replaced in Vercel configuration; revocation unconfirmed)
+  - **REPLACEMENT PREVIEW SECRET:** CONFIGURED (Staging secret key `sb_secret_-OLE6...` configured for Preview scope)
+  - Zero secret values were committed or printed.
 - **Production Safety Boundaries:** 100% Intact and Unmodified.
   - Production Supabase (`qboidsfpjuxeqtfotryj`): 0 writes, 0 DDL, 0 migrations.
   - Excluded Supabase (`lrygsrwjjmonhzujckoq`): ZERO access.
