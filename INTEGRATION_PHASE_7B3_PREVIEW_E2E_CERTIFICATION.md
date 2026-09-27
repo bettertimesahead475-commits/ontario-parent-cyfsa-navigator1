@@ -19,7 +19,7 @@
 - **Security Event Resolution:**
   - **OLD EXPOSED CREDENTIAL USED BY PREVIEW:** NO (Removed from Vercel Preview configuration)
   - **OLD EXPOSED CREDENTIAL CRYPTOGRAPHICALLY REVOKED:** NOT PROVEN (Replaced in Vercel configuration; revocation unconfirmed)
-  - **REPLACEMENT PREVIEW SECRET:** CONFIGURED (Staging secret key `sb_secret_-OLE6...` configured for Preview scope)
+  - **REPLACEMENT PREVIEW SECRET:** CONFIGURED (replacement staging secret)
   - Zero secret values were committed or printed.
 - **Production Safety Boundaries:** 100% Intact and Unmodified.
   - Production Supabase (`qboidsfpjuxeqtfotryj`): 0 writes, 0 DDL, 0 migrations.
@@ -36,8 +36,8 @@
 - **Vercel Project:** `cyfsanavigator` (`prj_wbNOXbsCWbj7vyu7JjxlXwt4WQpR`)
 - **Preview Environment Variable Overrides:**
   - `SUPABASE_URL` (Preview) → `https://nxfhvebzzobegubefcda.supabase.co`
-  - `SUPABASE_SERVICE_ROLE_KEY` (Preview) → Replacement Secret Key (`sb_secret_-OLE6...`)
-  - `SUPABASE_SERVICE_KEY` (Preview) → Replacement Secret Key (`sb_secret_-OLE6...`)
+  - `SUPABASE_SERVICE_ROLE_KEY` (Preview) → Replacement Secret Key
+  - `SUPABASE_SERVICE_KEY` (Preview) → Replacement Secret Key
 - **Isolation Verification:** Production environment variables for `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` remain unchanged, targeting Production `qboidsfpjuxeqtfotryj`. Preview functions connect exclusively to Staging `nxfhvebzzobegubefcda`.
 
 ---
