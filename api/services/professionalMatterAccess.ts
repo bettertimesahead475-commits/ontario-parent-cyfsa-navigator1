@@ -1,8 +1,8 @@
-import { getSupabase } from './access';
-import { findAccount } from './accounts';
-import { requireUuid } from './lifecycleErrors';
+import { getSupabase } from './access.js';
+import { findAccount } from './accounts.js';
+import { requireUuid } from './lifecycleErrors.js';
 import crypto from 'crypto';
-import { canonicalRecipientEmail } from './recipientEmail';
+import { canonicalRecipientEmail } from './recipientEmail.js';
 
 // Required database contract. v2 (Stage 7B remediation, frozen at a452c6c) made the lifecycle
 // functions safe; v3 (Stage 10 slice 4) records every access transition in the append-only event
