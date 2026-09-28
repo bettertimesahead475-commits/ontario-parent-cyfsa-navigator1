@@ -155,7 +155,7 @@ export async function listRequirements(
   if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
 
   const db = getSupabase();
-  await requireMatterAccess(db, account.id, matterId);
+  const access = await requireMatterAccess(db, account.id, matterId);
 
   let query = db
     .from('navigator_case_requirements')
@@ -170,10 +170,14 @@ export async function listRequirements(
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw new LifecycleError(500, 'DB_ERROR', `Failed to list requirements: ${error.message}`);
 
-  return (data || []).map((row: any) => ({
-    ...row,
-    isOverdue: calculateIsOverdue(row.due_at, row.completion_state),
-  }));
+  return (data || []).map((row: any) => {
+    const { lawyer_notes, ...rest } = row;
+    const reqData = access.isReviewer ? row : rest;
+    return {
+      ...reqData,
+      isOverdue: calculateIsOverdue(row.due_at, row.completion_state),
+    };
+  });
 }
 
 export async function getRequirement(firebaseUid: string, matterId: string, requirementId: string) {
@@ -184,7 +188,7 @@ export async function getRequirement(firebaseUid: string, matterId: string, requ
   if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
 
   const db = getSupabase();
-  await requireMatterAccess(db, account.id, matterId);
+  const access = await requireMatterAccess(db, account.id, matterId);
 
   const [reqRes, actionsRes, evidenceRes] = await Promise.all([
     db.from('navigator_case_requirements').select('*').eq('id', requirementId).eq('matter_id', matterId).single(),
@@ -194,8 +198,13 @@ export async function getRequirement(firebaseUid: string, matterId: string, requ
 
   if (reqRes.error || !reqRes.data) throw new LifecycleError(404, 'NOT_FOUND', 'Requirement not found');
 
+  const reqData = access.isReviewer ? reqRes.data : (() => {
+    const { lawyer_notes, ...rest } = reqRes.data;
+    return rest;
+  })();
+
   return {
-    ...reqRes.data,
+    ...reqData,
     isOverdue: calculateIsOverdue(reqRes.data.due_at, reqRes.data.completion_state),
     actions: actionsRes.data || [],
     evidenceLinks: evidenceRes.data || [],
@@ -253,7 +262,8 @@ export async function createRequirement(firebaseUid: string, matterId: string, i
     reviewState: data.review_state,
   });
 
-  return data;
+  const { lawyer_notes, ...rest } = data;
+  return access.isReviewer ? data : rest;
 }
 
 export async function updateRequirement(firebaseUid: string, matterId: string, requirementId: string, updates: Partial<CaseRequirementInput> & { completionState?: CompletionState; disputeState?: DisputeState }) {
@@ -314,7 +324,8 @@ export async function updateRequirement(firebaseUid: string, matterId: string, r
     });
   }
 
-  return data;
+  const { lawyer_notes, ...rest } = data;
+  return access.isReviewer ? data : rest;
 }
 
 export async function confirmRequirement(firebaseUid: string, matterId: string, requirementId: string) {

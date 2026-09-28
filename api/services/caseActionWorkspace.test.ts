@@ -424,5 +424,24 @@ describe('Post-Launch Case-Action Workspace Services (Batch 1)', () => {
       expect(updated.lawyer_notes).toBe('Reviewed court order condition. Parent is fully compliant.');
       expect(updated.verified_by_lawyer_at).toBeDefined();
     });
+
+    it('sanitizes lawyer_notes from parent responses (critical privacy rule)', async () => {
+      const req = await createRequirement('uid-owner-a', MATTER_A_ID, {
+        title: 'Supervised Access Log Requirement',
+        authorityType: 'COURT_ORDERED',
+      });
+
+      await updateRequirement('uid-reviewer-a', MATTER_A_ID, req.id, {
+        lawyerNotes: 'Private legal analysis not for parent eyes',
+      });
+
+      // Parent fetches requirement
+      const parentReq = await getRequirement('uid-owner-a', MATTER_A_ID, req.id);
+      expect((parentReq as any).lawyer_notes).toBeUndefined();
+
+      // Parent lists requirements
+      const parentList = await listRequirements('uid-owner-a', MATTER_A_ID);
+      expect((parentList[0] as any).lawyer_notes).toBeUndefined();
+    });
   });
 });

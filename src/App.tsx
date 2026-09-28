@@ -33,6 +33,7 @@ const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWo
 const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorkspace"));
 const AcceptInvitation = lazy(() => import("./components/AcceptInvitation"));
 const PrivacyNoticeTab = lazy(() => import("./components/PrivacyNoticeTab"));
+const CaseActionWorkspace = lazy(() => import("./components/CaseActionWorkspace"));
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
 import { sanitizeTelemetryEvent } from "./utils/telemetrySanitizer";
@@ -112,6 +113,7 @@ export default function App() {
     { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
     { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
     { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
+    { name: "Case Workspace", path: "/case-workspace", icon: <Shield className="w-4 h-4" /> },
     { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
     { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
   ];
@@ -351,6 +353,12 @@ export default function App() {
           <Route path="/accept-invitation">
             <RequireAuth>
               <AcceptInvitation />
+            </RequireAuth>
+          </Route>
+
+          <Route path="/case-workspace">
+            <RequireAuth>
+              <CaseActionWorkspace />
             </RequireAuth>
           </Route>
 
