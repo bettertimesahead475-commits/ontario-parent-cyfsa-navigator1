@@ -107,7 +107,7 @@ Phase 7B3 deployed the integration branch to Vercel Preview (`dpl_EvmRNbHdk3su2r
 ## 11. HISTORICAL INCIDENTS & AUDIT EXCEPTIONS
 
 1. **Phase 7B2 Excluded-Project Violation:** An initial attempt accessed excluded project `lrygsrwjjmonhzujckoq`. This was documented and isolated; subsequent operations strictly targeted dedicated staging `nxfhvebzzobegubefcda`.
-2. **Staging Credential Output:** A legacy staging service-role key appeared in terminal output during early Preview setup. It was removed from Vercel Preview configuration and replaced with modern Staging Secret key `sb_secret_-OLE6...`. Cryptographic revocation status remains **NOT PROVEN**. Zero secret values were printed in final reports.
+2. **Staging Credential Output:** A legacy staging service-role key appeared in terminal output during early Preview setup. It was removed from Vercel Preview configuration and replaced with a replacement staging secret. Cryptographic revocation status of the legacy credential remains **NOT PROVEN**. Zero secret values were printed in final reports.
 3. **Phase 7B3 Tag Force-Move:** Tag `integration/phase-7b3-preview-e2e-certified-v1` was force-moved once during certification. This was documented in the addendum; no tags were moved during addendum or closeout passes.
 
 ---
