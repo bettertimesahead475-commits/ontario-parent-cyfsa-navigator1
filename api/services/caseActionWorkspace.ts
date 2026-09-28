@@ -230,6 +230,14 @@ export async function createRequirement(firebaseUid: string, matterId: string, i
     }
   }
 
+  // Validate cross-matter source document version if supplied
+  if (input.sourceDocumentVersionId) {
+    const { data: ver } = await db.from('navigator_document_versions').select('document_id, matter_id').eq('id', input.sourceDocumentVersionId).single();
+    if (!ver || ver.matter_id !== matterId || (input.sourceDocumentId && ver.document_id !== input.sourceDocumentId)) {
+      throw new LifecycleError(400, 'INVALID_REFERENCE', 'Source document version does not belong to this document/matter');
+    }
+  }
+
   const newRow = {
     matter_id: matterId,
     title: input.title.trim(),
@@ -554,6 +562,14 @@ export async function attachEvidenceLink(firebaseUid: string, matterId: string, 
     throw new LifecycleError(400, 'INVALID_REFERENCE', 'Requirement does not belong to this matter');
   }
 
+  // Validate action belongs to matter AND requirement if supplied
+  if (input.actionId) {
+    const { data: act } = await db.from('navigator_case_actions').select('matter_id, requirement_id').eq('id', input.actionId).single();
+    if (!act || act.matter_id !== matterId || act.requirement_id !== requirementId) {
+      throw new LifecycleError(400, 'INVALID_REFERENCE', 'Action does not belong to this matter and requirement');
+    }
+  }
+
   // Validate cross-matter evidence item if supplied
   if (input.evidenceItemId) {
     const { data: item } = await db.from('navigator_evidence_items').select('matter_id').eq('id', input.evidenceItemId).single();
@@ -567,6 +583,14 @@ export async function attachEvidenceLink(firebaseUid: string, matterId: string, 
     const { data: doc } = await db.from('navigator_documents').select('matter_id').eq('id', input.documentId).single();
     if (!doc || doc.matter_id !== matterId) {
       throw new LifecycleError(400, 'INVALID_REFERENCE', 'Document does not belong to this matter');
+    }
+  }
+
+  // Validate cross-matter document version if supplied
+  if (input.documentVersionId) {
+    const { data: ver } = await db.from('navigator_document_versions').select('document_id, matter_id').eq('id', input.documentVersionId).single();
+    if (!ver || ver.matter_id !== matterId || (input.documentId && ver.document_id !== input.documentId)) {
+      throw new LifecycleError(400, 'INVALID_REFERENCE', 'Document version does not belong to this document/matter');
     }
   }
 

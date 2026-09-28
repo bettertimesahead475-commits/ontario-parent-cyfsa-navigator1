@@ -222,12 +222,24 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
   const [showAddActionModal, setShowAddActionModal] = useState<CaseRequirement | null>(null);
   const [showAttachEvidenceModal, setShowAttachEvidenceModal] = useState<CaseRequirement | null>(null);
   const [showDisputeModal, setShowDisputeModal] = useState<CaseRequirement | null>(null);
+  const [showExtractModal, setShowExtractModal] = useState<boolean>(false);
+  const [showEditReqModal, setShowEditReqModal] = useState<CaseRequirement | null>(null);
 
   // Form Inputs
   const [newReqTitle, setNewReqTitle] = useState("");
   const [newReqDesc, setNewReqDesc] = useState("");
   const [newReqAuthority, setNewReqAuthority] = useState<AuthorityType>("PARENT_CREATED");
   const [newReqDueAt, setNewReqDueAt] = useState("");
+
+  const [editReqTitle, setEditReqTitle] = useState("");
+  const [editReqDesc, setEditReqDesc] = useState("");
+  const [editReqAuthority, setEditReqAuthority] = useState<AuthorityType>("PARENT_CREATED");
+  const [editReqDueAt, setEditReqDueAt] = useState("");
+
+  const [extractDocId, setExtractDocId] = useState("");
+  const [extractDocVersionId, setExtractDocVersionId] = useState("");
+  const [extractCandidatesJson, setExtractCandidatesJson] = useState("");
+  const [extractDocText, setExtractDocText] = useState("");
 
   const [newActionTitle, setNewActionTitle] = useState("");
   const [newActionDueAt, setNewActionDueAt] = useState("");
@@ -351,6 +363,80 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
       if (selectedReq?.id === reqId) await inspectRequirement(reqId);
     } catch (err: any) {
       setError(err.message || "Failed to confirm item.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveEditRequirement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!matterId || !showEditReqModal) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await apiFetch(`/api/matters/${encodeURIComponent(matterId)}/case-actions/requirements/${encodeURIComponent(showEditReqModal.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editReqTitle.trim(),
+          description: editReqDesc.trim() || null,
+          authorityType: editReqAuthority,
+          dueAt: editReqDueAt ? new Date(editReqDueAt).toISOString() : null,
+        }),
+      });
+      await safeReadJson(res);
+      setNotice("Requirement updated.");
+      setShowEditReqModal(null);
+      await fetchRequirements();
+      if (selectedReq?.id === showEditReqModal.id) await inspectRequirement(showEditReqModal.id);
+    } catch (err: any) {
+      setError(err.message || "Failed to update requirement.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExtractAnalyzer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!matterId) return;
+    if (!extractDocId.trim()) {
+      setError("Document ID is required for extraction.");
+      return;
+    }
+
+    let parsedCandidates: any[] = [];
+    if (extractCandidatesJson.trim()) {
+      try {
+        parsedCandidates = JSON.parse(extractCandidatesJson.trim());
+      } catch (e) {
+        setError("Invalid candidate JSON format.");
+        return;
+      }
+    }
+
+    setSaving(true);
+    setError("");
+    try {
+      const res = await apiFetch(`/api/matters/${encodeURIComponent(matterId)}/case-actions/analyzer-extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: extractDocId.trim(),
+          documentVersionId: extractDocVersionId.trim() || null,
+          documentText: extractDocText.trim() || null,
+          candidates: parsedCandidates.length > 0 ? parsedCandidates : undefined,
+        }),
+      });
+      const data = await safeReadJson(res);
+      setNotice(`Extraction complete: ${data.extractedCount} proposed item(s) created. (${data.skippedDuplicates} duplicate(s) skipped)`);
+      setShowExtractModal(false);
+      setExtractDocId("");
+      setExtractDocVersionId("");
+      setExtractCandidatesJson("");
+      setExtractDocText("");
+      await fetchRequirements();
+    } catch (err: any) {
+      setError(err.message || "Failed to extract candidates from document.");
     } finally {
       setSaving(false);
     }
@@ -597,6 +683,16 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
 
               <button
                 type="button"
+                onClick={() => setShowExtractModal(true)}
+                disabled={!matterId}
+                className="min-h-[44px] px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold text-xs rounded-xl flex items-center gap-2 shadow-xs transition-colors focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              >
+                <FileCheck className="w-4 h-4" />
+                <span>Scan Document</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setShowCreateReqModal(true)}
                 disabled={!matterId}
                 className="min-h-[44px] px-4 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold text-xs rounded-xl flex items-center gap-2 shadow-xs transition-colors focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
@@ -731,6 +827,13 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
                         requirement={req}
                         onInspect={() => inspectRequirement(req.id)}
                         onConfirm={() => handleConfirmProposed(req.id)}
+                        onEdit={() => {
+                          setShowEditReqModal(req);
+                          setEditReqTitle(req.title);
+                          setEditReqDesc(req.description || "");
+                          setEditReqAuthority(req.authority_type);
+                          setEditReqDueAt(req.due_at ? req.due_at.substring(0, 10) : "");
+                        }}
                         onReject={() => handleRejectProposed(req.id)}
                         onDispute={() => setShowDisputeModal(req)}
                       />
@@ -807,6 +910,13 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
                         requirement={req}
                         onInspect={() => inspectRequirement(req.id)}
                         onConfirm={() => handleConfirmProposed(req.id)}
+                        onEdit={() => {
+                          setShowEditReqModal(req);
+                          setEditReqTitle(req.title);
+                          setEditReqDesc(req.description || "");
+                          setEditReqAuthority(req.authority_type);
+                          setEditReqDueAt(req.due_at ? req.due_at.substring(0, 10) : "");
+                        }}
                         onReject={() => handleRejectProposed(req.id)}
                         onDispute={() => setShowDisputeModal(req)}
                       />
@@ -1389,6 +1499,168 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
           </div>
         </div>
       )}
+
+      {/* EXTRACT ANALYZER MODAL */}
+      {showExtractModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="extract-modal-title">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h2 id="extract-modal-title" className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-indigo-600" />
+                <span>Scan Document for Action Items</span>
+              </h2>
+              <button onClick={() => setShowExtractModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleExtractAnalyzer} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Document ID *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 22222222-2222-4222-a222-222222222222"
+                  value={extractDocId}
+                  onChange={(e) => setExtractDocId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs font-mono rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Document Version ID (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Optional version UUID"
+                  value={extractDocVersionId}
+                  onChange={(e) => setExtractDocVersionId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs font-mono rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Source Document Text (Optional Verification)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Raw document text for quote containment verification..."
+                  value={extractDocText}
+                  onChange={(e) => setExtractDocText(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Candidate Items JSON (Optional)</label>
+                <textarea
+                  rows={3}
+                  placeholder='[{"title":"Complete screening","proposedAuthorityType":"CAS_REQUESTED","sourcePageNumber":1,"sourceExactQuote":"CAS worker requested..."}]'
+                  value={extractCandidatesJson}
+                  onChange={(e) => setExtractCandidatesJson(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs font-mono rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowExtractModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl disabled:opacity-50"
+                >
+                  {saving ? "Extracting..." : "Run Extraction"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT REQUIREMENT MODAL */}
+      {showEditReqModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h2 id="edit-modal-title" className="text-base font-bold text-slate-900">
+                Edit Proposed Item
+              </h2>
+              <button onClick={() => setShowEditReqModal(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditRequirement} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Item Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={editReqTitle}
+                  onChange={(e) => setEditReqTitle(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Authority Category *</label>
+                <select
+                  value={editReqAuthority}
+                  onChange={(e) => setEditReqAuthority(e.target.value as AuthorityType)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                >
+                  {Object.keys(AUTHORITY_LABELS).map((k) => (
+                    <option key={k} value={k}>
+                      {AUTHORITY_LABELS[k as AuthorityType].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Description / Notes</label>
+                <textarea
+                  rows={3}
+                  value={editReqDesc}
+                  onChange={(e) => setEditReqDesc(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Due Date</label>
+                <input
+                  type="date"
+                  value={editReqDueAt}
+                  onChange={(e) => setEditReqDueAt(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-brand-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditReqModal(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1398,6 +1670,7 @@ interface RequirementCardProps {
   requirement: CaseRequirement;
   onInspect: () => void;
   onConfirm?: () => void;
+  onEdit?: () => void;
   onReject?: () => void;
   onDispute?: () => void;
 }
@@ -1407,6 +1680,7 @@ function RequirementCard({
   requirement,
   onInspect,
   onConfirm,
+  onEdit,
   onReject,
   onDispute,
 }: RequirementCardProps) {
@@ -1417,6 +1691,14 @@ function RequirementCard({
   return (
     <div className="p-4 bg-white border border-slate-200 hover:border-slate-300 rounded-2xl shadow-xs space-y-3 flex flex-col justify-between transition-all">
       <div className="space-y-2">
+        {/* Proposed Banner */}
+        {requirement.review_state === "PROPOSED" && (
+          <div className="p-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 font-medium flex items-start gap-1.5 mb-1">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+            <span>Potential item found in document — review before adding to your case plan.</span>
+          </div>
+        )}
+
         {/* Top Badges */}
         <div className="flex flex-wrap items-center justify-between gap-1.5">
           <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase border ${authMeta.bg} ${authMeta.text} ${authMeta.border}`}>
@@ -1447,6 +1729,17 @@ function RequirementCard({
 
         {/* Description snippet */}
         {requirement.description && <p className="text-xs text-slate-600 line-clamp-2">{requirement.description}</p>}
+
+        {/* Exact Source Quote Callout */}
+        {requirement.source_exact_quote && (
+          <div className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-700 italic">
+            <span className="font-semibold not-italic block text-[10px] text-slate-500 uppercase mb-0.5 flex items-center justify-between">
+              <span>Exact text in document:</span>
+              {requirement.source_page_number && <span>Page {requirement.source_page_number}</span>}
+            </span>
+            "{requirement.source_exact_quote}"
+          </div>
+        )}
       </div>
 
       {/* Bottom Metadata & Controls */}
@@ -1470,7 +1763,7 @@ function RequirementCard({
 
         {/* Action Controls for Proposed items */}
         {requirement.review_state === "PROPOSED" && onConfirm && onReject && (
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex items-center gap-1.5 pt-1">
             <button
               type="button"
               onClick={onConfirm}
@@ -1478,6 +1771,15 @@ function RequirementCard({
             >
               Confirm
             </button>
+            {onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="px-3 py-1.5 bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-semibold rounded-xl border border-brand-200"
+              >
+                Edit
+              </button>
+            )}
             <button
               type="button"
               onClick={onReject}

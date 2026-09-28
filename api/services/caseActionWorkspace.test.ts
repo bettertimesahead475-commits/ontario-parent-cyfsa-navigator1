@@ -390,6 +390,29 @@ describe('Post-Launch Case-Action Workspace Services (Batch 1)', () => {
       ).rejects.toThrow('Document does not belong to this matter');
     });
 
+    it('rejects cross-matter or cross-requirement action in attachEvidenceLink', async () => {
+      const reqA1 = await createRequirement('uid-owner-a', MATTER_A_ID, {
+        title: 'Requirement A1',
+        authorityType: 'CAS_REQUESTED',
+      });
+      const reqA2 = await createRequirement('uid-owner-a', MATTER_A_ID, {
+        title: 'Requirement A2',
+        authorityType: 'CAS_REQUESTED',
+      });
+      const actA2 = await createAction('uid-owner-a', MATTER_A_ID, reqA2.id, {
+        title: 'Action under Requirement A2',
+      });
+
+      // Attempting to link actA2 (under reqA2) to reqA1
+      await expect(
+        attachEvidenceLink('uid-owner-a', MATTER_A_ID, reqA1.id, {
+          actionId: actA2.id,
+          evidenceType: 'COMPLETION_CERTIFICATE',
+          title: 'Mismatched Action Link',
+        })
+      ).rejects.toThrow('Action does not belong to this matter and requirement');
+    });
+
     it('unlinks evidence without deleting underlying document or evidence item', async () => {
       const req = await createRequirement('uid-owner-a', MATTER_A_ID, {
         title: 'Substance Screening',

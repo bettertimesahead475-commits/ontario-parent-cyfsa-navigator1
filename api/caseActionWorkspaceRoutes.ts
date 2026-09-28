@@ -25,6 +25,7 @@ import {
   attachEvidenceLink,
   unlinkEvidenceLink,
 } from './services/caseActionWorkspace.js';
+import { extractAnalyzerRequirements } from './services/analyzerRequirementExtractor.js';
 
 export function registerCaseActionWorkspaceRoutes(app: Express) {
   const authenticated = (action: (req: Request, uid: string) => Promise<unknown>) => async (req: Request, res: Response) => {
@@ -45,6 +46,11 @@ export function registerCaseActionWorkspaceRoutes(app: Express) {
       }
     }
   };
+
+  // Analyzer Extraction Endpoint
+  app.post('/api/matters/:matterId/case-actions/analyzer-extract', authenticated((r, u) => {
+    return extractAnalyzerRequirements(u, r.params.matterId, r.body);
+  }));
 
   // Requirements
   app.get('/api/matters/:matterId/case-actions/requirements', authenticated((r, u) => {
