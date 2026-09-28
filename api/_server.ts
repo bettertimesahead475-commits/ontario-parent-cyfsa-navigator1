@@ -36,6 +36,7 @@ import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.j
 import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
+import { formatAnalyzerErrorResponse, AnalyzerError } from "./services/analyzerErrors.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 
 dotenv.config();
@@ -335,48 +336,14 @@ function extractJson(text: string): any {
   throw new Error("The analysis response was not valid JSON and could not be parsed.");
 }
 
-// Unified AI error handling and user-friendly formatting with HTTP status codes
+// Unified AI error handling and user-friendly formatting with HTTP status codes and taxonomy
 function handleAIError(error: any, contextDescription: string, res: Response) {
   console.error(`[AI Error] during ${contextDescription}:`, error);
-  const errMsg = (error?.message || "").toLowerCase();
-  const status = (error as any)?.status;
-
-  // BUG FOUND: this list didn't match "503"/"unavailable"/"high demand" - even though
-  // generateGeminiContentWithRetry (above) already treats those exact words as transient and
-  // retries on them. That meant once retries were exhausted on a genuine Google outage, the
-  // raw Gemini error JSON (e.g. {"error":{"code":503,"message":"...high demand...",
-  // "status":"UNAVAILABLE"}}) fell through every check here and got dumped straight into the
-  // response as the user-facing error text - a parent seeing raw API JSON instead of a plain
-  // sentence. Expanded to match the same transient-detection words used by the retry logic.
-  const isRateLimit =
-    status === 429 ||
-    status === 503 ||
-    errMsg.includes("429") ||
-    errMsg.includes("503") ||
-    errMsg.includes("quota") ||
-    errMsg.includes("rate limit") ||
-    errMsg.includes("overloaded") ||
-    errMsg.includes("exhausted") ||
-    errMsg.includes("unavailable") ||
-    errMsg.includes("high demand");
-
-  if (isRateLimit) {
-    return res.status(429).json({
-      error: "The AI service is experiencing high demand right now. Please wait a moment and try again - this is temporary and not a problem with your document.",
-      isRateLimit: true
-    });
-  }
-
-  if (errMsg.includes("api key") || errMsg.includes("invalid key") || status === 403 || status === 401) {
-    return res.status(status || 400).json({
-      error: "AI provider authentication failed. Check the configured API key in Vercel project environment variables."
-    });
-  }
-
-  // Final fallback - never pass a raw provider error message straight through to the user,
-  // since it can be an unformatted JSON blob (see above) rather than a readable sentence.
-  res.status(status || 500).json({
-    error: `Something went wrong during ${contextDescription}. Please try again in a moment.`
+  const formatted = formatAnalyzerErrorResponse(error);
+  res.status(formatted.statusCode).json({
+    code: formatted.code,
+    error: formatted.error,
+    retryable: formatted.retryable
   });
 }
 
@@ -1143,11 +1110,11 @@ THINGS TO NEVER DO
 - Never generate content that could be read as legal advice ("you should file a motion to strike") — reframe as questions for counsel ("ask your lawyer whether a motion to strike is appropriate here").
 - Never fabricate a case name, citation, or quote. If asked to support a point with case law and you cannot verify one via search, say so directly.`;
 
-      const coreSystemInstruction = `You are ParentShield's Evidence Strength Audit tool. You analyze legal documents (affidavits, motion records, CAS correspondence) submitted by self-represented parents in Ontario child protection proceedings under the CYFSA. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
+      const coreSystemInstruction = `You are CYFSA Navigator's Evidence Strength Audit tool. You analyze legal documents (affidavits, motion records, CAS correspondence) submitted by self-represented parents in Ontario child protection proceedings under the CYFSA. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
 
 ${analysisRules}`;
 
-      const deepDiveSystemInstruction = `You are ParentShield's Evidence Strength Audit tool, running the statutory-threshold and timeline half of a two-part review of one document already reviewed once by a parallel pass. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
+      const deepDiveSystemInstruction = `You are CYFSA Navigator's Evidence Strength Audit tool, running the statutory-threshold and timeline half of a two-part review of one document already reviewed once by a parallel pass. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
 
 ${analysisRules}`;
 
@@ -1399,7 +1366,7 @@ ${analysisRules}`;
         .map((d, i) => `--- DOCUMENT ${i + 1}: "${d.name}" ${d.sourceDate ? `(dated/received: ${d.sourceDate})` : ""} ---\n${d.text}`)
         .join("\n\n");
 
-      const systemInstruction = `You are ParentShield's Cross-Document Timeline tool. You are given multiple documents from a single CYFSA case — affidavits, emails, call/meeting transcripts, prior court orders. Your only job is to merge them into one chronological, sourced timeline and flag where they conflict or where something is missing.
+      const systemInstruction = `You are CYFSA Navigator's Cross-Document Timeline tool. You are given multiple documents from a single CYFSA case — affidavits, emails, call/meeting transcripts, prior court orders. Your only job is to merge them into one chronological, sourced timeline and flag where they conflict or where something is missing.
 
 NON-NEGOTIABLE RULES
 1. Every timeline row must cite which supplied document(s) it came from, by the exact document name/number given. Never invent a citation.

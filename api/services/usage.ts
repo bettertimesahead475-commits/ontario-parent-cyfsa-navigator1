@@ -7,14 +7,29 @@
 // ---------------------------------------------------------------------------
 
 import { getSupabase } from "./access.js";
+import { LifecycleError } from "./lifecycleErrors.js";
+import { withTransientRetry } from "./transientRetry.js";
 
 export const FREE_ANALYSES_LIMIT = 1;
 
 export async function getFreeUsage(uid: string): Promise<number> {
-  const db = getSupabase();
-  const { data, error } = await db.from("free_usage").select("analyses_used").eq("uid", uid).maybeSingle();
-  if (error) throw Object.assign(new Error(`Failed to read usage: ${error.message}`), { statusCode: 500 });
-  return data?.analyses_used ?? 0;
+  try {
+    return await withTransientRetry(async () => {
+      const db = getSupabase();
+      const { data, error } = await db.from("free_usage").select("analyses_used").eq("uid", uid).maybeSingle();
+      if (error) {
+        throw Object.assign(new Error(`Failed to read usage: ${error.message}`), { statusCode: 500 });
+      }
+      return data?.analyses_used ?? 0;
+    });
+  } catch (err: any) {
+    if (err instanceof LifecycleError) throw err;
+    throw new LifecycleError(
+      503,
+      "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
+      "We couldn't verify your analysis access right now. Your document is safe. Please retry in a moment."
+    );
+  }
 }
 
 /**
@@ -23,18 +38,31 @@ export async function getFreeUsage(uid: string): Promise<number> {
  * try. Upserts the row and increments the count.
  */
 export async function recordFreeUse(uid: string, email: string | null): Promise<void> {
-  const db = getSupabase();
-  const current = await getFreeUsage(uid);
-  const now = new Date().toISOString();
-  const { error } = await db.from("free_usage").upsert(
-    {
-      uid,
-      email,
-      analyses_used: current + 1,
-      first_analysis_at: current === 0 ? now : undefined,
-      last_analysis_at: now,
-    },
-    { onConflict: "uid" }
-  );
-  if (error) throw Object.assign(new Error(`Failed to record usage: ${error.message}`), { statusCode: 500 });
+  try {
+    const current = await getFreeUsage(uid);
+    const now = new Date().toISOString();
+    await withTransientRetry(async () => {
+      const db = getSupabase();
+      const { error } = await db.from("free_usage").upsert(
+        {
+          uid,
+          email,
+          analyses_used: current + 1,
+          first_analysis_at: current === 0 ? now : undefined,
+          last_analysis_at: now,
+        },
+        { onConflict: "uid" }
+      );
+      if (error) {
+        throw Object.assign(new Error(`Failed to record usage: ${error.message}`), { statusCode: 500 });
+      }
+    });
+  } catch (err: any) {
+    if (err instanceof LifecycleError) throw err;
+    throw new LifecycleError(
+      503,
+      "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
+      "We couldn't update your analysis usage right now. Please try again in a moment."
+    );
+  }
 }

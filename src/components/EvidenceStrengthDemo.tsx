@@ -2,9 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Interactive homepage demo of ParentShield's Evidence Strength analysis methodology.
+ * Interactive homepage demo of CYFSA Navigator's Evidence Strength analysis methodology.
  * Uses anonymized, representative findings from actual case analysis to demonstrate
- * the breadth and depth of ParentShield's document examination process.
+ * the breadth and depth of CYFSA Navigator's document examination process.
  * 
  * DO NOT include identifying information in this demo.
  * DO NOT show this as a "legal violations detector."
@@ -142,7 +142,7 @@ export function EvidenceStrengthDemo() {
           One document. Nine different evidence checks.
         </h2>
         <p className="mt-4 text-center text-base text-slate-600 max-w-2xl mx-auto">
-          ParentShield doesn't simply summarize your paperwork. It examines how information is sourced, supported, corroborated, documented, and internally consistent.
+          CYFSA Navigator doesn't simply summarize your paperwork. It examines how information is sourced, supported, corroborated, documented, and internally consistent.
         </p>
       </div>
 
@@ -167,7 +167,7 @@ export function EvidenceStrengthDemo() {
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white font-bold">2</div>
               <div className="flex-1">
-                <p className="font-display text-xl font-bold text-slate-900">ParentShield Analyzing</p>
+                <p className="font-display text-xl font-bold text-slate-900">CYFSA Navigator Analyzing</p>
                 <p className="mt-2 text-sm text-slate-600">Examining across multiple evidence dimensions...</p>
                 <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                   {[
@@ -270,7 +270,7 @@ export function EvidenceStrengthDemo() {
         {/* PHASE 5: Action */}
         {activePhase === "action" && (
           <div className="mt-10 rounded-2xl border-2 border-brand-300 bg-brand-50 p-8 transition-all duration-500">
-            <h3 className="font-display text-2xl font-bold text-slate-900">What would ParentShield find in YOUR documents?</h3>
+            <h3 className="font-display text-2xl font-bold text-slate-900">What would CYFSA Navigator find in YOUR documents?</h3>
             <p className="mt-3 text-slate-700">
               Upload your case documents and see a detailed evidence audit of your affidavits, CAS correspondence, and court filings. Identify gaps, inconsistencies, missing corroboration, and procedural questions worth raising with counsel.
             </p>
@@ -298,7 +298,7 @@ export function EvidenceStrengthDemo() {
       <div className="mx-auto max-w-5xl rounded-2xl border border-slate-200 bg-slate-50 p-6">
         <p className="text-sm font-bold text-slate-900">What this demonstrates:</p>
         <p className="mt-2 text-sm leading-relaxed text-slate-700">
-          ParentShield examines your documents across <strong>eight different analytical dimensions</strong>: source attribution, corroboration, internal consistency, documentary support, legal authority verification, procedural documentation, information completeness, and verification requirements. The result is not a legal verdict, but a detailed map of what's strong in your case, what needs verification, and what gaps require discussion with counsel.
+          CYFSA Navigator examines your documents across <strong>eight different analytical dimensions</strong>: source attribution, corroboration, internal consistency, documentary support, legal authority verification, procedural documentation, information completeness, and verification requirements. The result is not a legal verdict, but a detailed map of what's strong in your case, what needs verification, and what gaps require discussion with counsel.
         </p>
       </div>
     </section>

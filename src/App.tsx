@@ -130,12 +130,12 @@ export default function App() {
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
                 <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
-                  <img src="/logo.png" alt="ParentShield logo" className="w-full h-full object-cover" />
+                  <img src="/logo.png" alt="CYFSA Navigator logo" className="w-full h-full object-cover" />
                 </div>
               </div>
               <div className="text-left">
                 <div className="font-display font-black text-slate-900 leading-none text-base md:text-lg tracking-tight uppercase">
-                  ONTARIO <span className="text-brand-600">PARENT ASSIST</span>
+                  <span className="text-brand-600">CYFSA</span> NAVIGATOR
                 </div>
                 <div className="text-[9px] text-slate-500 font-semibold font-mono tracking-widest uppercase mt-1 block">
                   KNOWLEDGE IS POWER
@@ -399,7 +399,7 @@ export default function App() {
                   ? "Export the order-hierarchy and lawyer-discussion points as a formatted PDF."
                   : ["/rights", "/cyfsa-procedure", "/five-day-rule", "/45-day-roadmap"].includes(location)
                   ? "Export this step of the guided journey as a formatted PDF."
-                  : "Save a clean, formatted educational draft copy of the active ParentShield views."}
+                  : "Save a clean, formatted educational draft copy of the active CYFSA Navigator views."}
               </p>
             </div>
             <div className="shrink-0">

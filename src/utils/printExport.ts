@@ -41,13 +41,13 @@ export function printBrandedDocument(title: string, bodyHtml: string) {
   const htmlContent = `
     <html>
       <head>
-        <title>${title} - ParentShield</title>
+        <title>${title} - CYFSA Navigator</title>
         <style>${LETTERHEAD_STYLES}</style>
       </head>
       <body>
         <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
         <div class="header-container">
-          <span class="platform-label">Ontario Parent Assist &middot; ParentShield</span>
+          <span class="platform-label">CYFSA Navigator</span>
           <div class="title-main">${title}</div>
           <div class="meta-bar">Educational material — not legal advice. Generated ${new Date().toLocaleDateString("en-CA")}.</div>
         </div>

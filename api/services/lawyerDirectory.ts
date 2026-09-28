@@ -1,5 +1,6 @@
 import { getSupabase } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
+import { withTransientRetry } from "./transientRetry.js";
 
 export interface PublicDirectoryProfile {
   id: string;
@@ -34,13 +35,16 @@ export async function searchDirectory(filters: {
   isOntarioWide?: boolean;
   requiresCyfsa?: boolean;
 }): Promise<PublicDirectoryProfile[]> {
-  const db = getSupabase();
+  const data = await withTransientRetry(async () => {
+    const db = getSupabase();
 
-  let query = db.from('professional_profiles').select("id, account_id, display_name, professional_type, public_phone, public_email, lifecycle_state, identity_verified, licence_verified, practice_verified, platform_participating, professional_office_locations ( id, address, locality, province, postal_code, lat, lng ), professional_service_areas ( id, coverage_type, locality_name, region_name ), professional_practice_areas ( id, practice_area, provenance_type )")
-    .in('lifecycle_state', PUBLIC_DIRECTORY_STATES);
+    let query = db.from('professional_profiles').select("id, account_id, display_name, professional_type, public_phone, public_email, lifecycle_state, identity_verified, licence_verified, practice_verified, platform_participating, professional_office_locations ( id, address, locality, province, postal_code, lat, lng ), professional_service_areas ( id, coverage_type, locality_name, region_name ), professional_practice_areas ( id, practice_area, provenance_type )")
+      .in('lifecycle_state', PUBLIC_DIRECTORY_STATES);
 
-  const { data, error } = await query;
-  if (error) throw new Error("Search failed: " + error.message);
+    const { data, error } = await query;
+    if (error) throw new Error("Search failed: " + error.message);
+    return data;
+  });
 
   const results: PublicDirectoryProfile[] = [];
 

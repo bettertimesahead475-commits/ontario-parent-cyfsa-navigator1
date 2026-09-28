@@ -469,7 +469,7 @@ export default function LegalTerminologyDrawer({ isOpen, onClose }: LegalTermino
             {/* Drawer Footer */}
             <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
               <span className="text-[9px] text-slate-400 font-mono uppercase tracking-wider select-none">
-                ParentShield Glossary Desk • Ontario S.O. 2017
+                CYFSA Navigator Glossary Desk • Ontario S.O. 2017
               </span>
               <button
                 onClick={onClose}

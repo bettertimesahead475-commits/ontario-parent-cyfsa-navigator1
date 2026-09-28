@@ -60,7 +60,7 @@ export default function CYFSAGuideTab() {
     const htmlContent = `
       <html>
         <head>
-          <title>${topic.title} - ParentShield</title>
+          <title>${topic.title} - CYFSA Navigator</title>
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
             body {
@@ -282,7 +282,7 @@ export default function CYFSAGuideTab() {
           <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
 
           <div class="header-container">
-            <span class="platform-label">ParentShield • Case Education Library</span>
+            <span class="platform-label">CYFSA Navigator • Case Education Library</span>
             <h1 class="title-main">${topic.title}</h1>
             <div class="meta-bar">
               Category: <span class="badge-cat">${topic.category}</span>

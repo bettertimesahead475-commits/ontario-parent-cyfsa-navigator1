@@ -56,7 +56,7 @@ const missing = [
 export default function AnalysisExample() {
  return <div className="mx-auto max-w-6xl space-y-8 pb-16">
   <header data-tts-read className="rounded-3xl bg-gradient-to-br from-slate-950 via-brand-950 to-brand-800 p-7 text-white md:p-10">
-   <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-200">PARENTSHIELD • EVIDENCE STRENGTH AUDIT</p>
+   <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-200">CYFSA NAVIGATOR • EVIDENCE STRENGTH AUDIT</p>
    <h1 className="mt-3 font-display text-4xl font-black">File Analysis &amp; Evidence Strength Report</h1>
    <p className="mt-4 max-w-4xl leading-relaxed text-slate-200">This public example reproduces the actual analyzer-generated report content. Only identifying names, child/family identifiers and the court-file number are replaced with neutral labels.</p>
    <div className="mt-5 rounded-xl border border-white/20 bg-white/10 p-4 text-sm"><strong>Redaction key:</strong> CAS Manager, CAS Worker, Parent A, Parent B, Child A and Child B replace identifying names. No synthetic allegations, findings, scores or analysis have been added.</div>
