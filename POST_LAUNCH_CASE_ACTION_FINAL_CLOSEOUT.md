@@ -15,7 +15,7 @@
 | **Batch 1 (Backend/DB)** | `70f60e37965efcde819625132c9a035bb519b5f2` | `post-launch/case-action-batch-1-v1` | **CERTIFIED** |
 | **Batch 2 (Parent UI)** | `fbea1a10c5b1f83c01f21be753412b70702856a7` | `post-launch/case-action-batch-2-v1` | **CERTIFIED** |
 | **Batch 3 (Analyzer Link)**| `95a681aa6848edfdaccca885db72e249cc4a46f6` | `post-launch/case-action-batch-3-v1` | **CERTIFIED** |
-| **Batch 4 (Final Closeout)**| `<FINAL_SHA>` | `post-launch/case-action-workspace-final-v1` | **CERTIFIED & FROZEN** |
+| **Batch 4 (Final Closeout)**| `a2a01391757e34e750aab20f89a57fd7e29463b4` | `post-launch/case-action-workspace-final-v1` | **CERTIFIED & FROZEN** |
 
 ---
 
