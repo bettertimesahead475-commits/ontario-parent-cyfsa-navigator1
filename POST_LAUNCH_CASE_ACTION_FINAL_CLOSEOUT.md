@@ -17,7 +17,7 @@
 | **Batch 3 (Analyzer Link)**| `95a681aa6848edfdaccca885db72e249cc4a46f6` | `post-launch/case-action-batch-3-v1` | **CERTIFIED** |
 | **Batch 4 Implementation**| `a2a01391757e34e750aab20f89a57fd7e29463b4` | Feature Source Complete | **CERTIFIED** |
 | **Pre-Repair Doc HEAD** | `6b3a8690b37dc166e543e9a6b6cd3c9ddde2b2b2` | `post-launch/case-action-workspace-final-v1` | **HISTORICAL (FORCE-MOVED)** |
-| **Repaired Final Metadata**| `063713b128b18e39a12f4f09c95ffcc9bf7e592f` | `post-launch/case-action-workspace-final-v2` | **CERTIFIED & IMMUTABLE** |
+| **Repaired Final Metadata**| `7fd7e97082bf120927fb1cd7631fd399bc8bfc6f` | `post-launch/case-action-workspace-final-v2` | **CERTIFIED & IMMUTABLE** |
 
 ---
 
