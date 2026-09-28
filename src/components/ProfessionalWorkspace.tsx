@@ -114,7 +114,7 @@ export default function ProfessionalWorkspace() {
     setError('');
     
     try {
-      if (['DOCUMENTS', 'EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL'].includes(tab)) {
+      if (['DOCUMENTS', 'EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL', 'CASE_ACTIONS'].includes(tab)) {
         const res = await apiFetch(`/api/professional-workspace/matters/${selectedMatter}/intelligence/${tab}`);
         if (res.status === 401 || res.status === 403) {
           setAccessDenied(true);
@@ -255,6 +255,7 @@ export default function ProfessionalWorkspace() {
           <div role="tablist" aria-label="Matter Workspace Sections" className="flex border-b bg-slate-50 overflow-x-auto">
             {[
               { id: 'OVERVIEW', label: 'Overview' },
+              { id: 'CASE_ACTIONS', label: 'Case Actions' },
               { id: 'DOCUMENTS', label: 'Documents' },
               { id: 'EVIDENCE', label: 'Evidence Review' },
               { id: 'CHRONOLOGY', label: 'Chronology' },
@@ -290,6 +291,7 @@ export default function ProfessionalWorkspace() {
                 <h2 className="text-xl font-bold text-slate-900 mb-2">Matter Overview & Context</h2>
                 <p className="text-slate-600 text-sm mb-6">Matter identity: <code className="bg-slate-100 px-2 py-0.5 rounded text-slate-800">{selectedMatter}</code></p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-purple-50 p-4 rounded-xl border border-purple-200"><div className="text-2xl font-bold text-purple-900">{overview.caseRequirements || 0}</div><div className="text-sm font-medium text-purple-700">Case Requirements</div></div>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"><div className="text-2xl font-bold text-slate-900">{overview.documents}</div><div className="text-sm font-medium text-slate-600">Documents</div></div>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"><div className="text-2xl font-bold text-slate-900">{overview.chronologyEvents}</div><div className="text-sm font-medium text-slate-600">Chronology Events</div></div>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"><div className="text-2xl font-bold text-slate-900">{overview.claims}</div><div className="text-sm font-medium text-slate-600">Claims</div></div>
@@ -330,10 +332,10 @@ export default function ProfessionalWorkspace() {
             )}
 
             {/* INTELLIGENCE CATEGORIES TABS */}
-            {!loading && ['EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL'].includes(activeTab) && intelligence && (
+            {!loading && ['EVIDENCE', 'CHRONOLOGY', 'CLAIMS', 'RELATIONSHIPS', 'GAPS', 'LEGAL', 'CASE_ACTIONS'].includes(activeTab) && intelligence && (
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
-                  <h2 className="text-xl font-bold text-slate-900">{activeTab} Intelligence</h2>
+                  <h2 className="text-xl font-bold text-slate-900">{activeTab === 'CASE_ACTIONS' ? 'Case Actions & Requirements' : `${activeTab} Intelligence`}</h2>
                   <span className="text-xs font-semibold px-2.5 py-1 bg-amber-100 text-amber-900 rounded-full w-fit mt-2 sm:mt-0">
                     AI Analysis vs Professional Disposition
                   </span>
@@ -347,18 +349,34 @@ export default function ProfessionalWorkspace() {
                 ) : (
                   <ul className="space-y-5">
                     {intelligence.items.map((item: any) => {
-                      const review = intelligence.reviews.find((r: any) => r.finding_id === item.id);
-                      const hasSourceProvenance = Boolean(item.document_id || item.page_id || item.exact_quote);
+                      const findingTypeKey = activeTab === 'CASE_ACTIONS' ? 'CASE_REQUIREMENT' : activeTab;
+                      const review = intelligence.reviews.find((r: any) => r.finding_type === findingTypeKey && r.finding_id === item.id);
+                      const hasSourceProvenance = Boolean(item.document_id || item.source_document_id || item.page_id || item.exact_quote || item.source_exact_quote);
 
                       return (
                         <li key={item.id} className="border rounded-xl p-5 bg-white shadow-2xs space-y-4">
                           {/* Machine Content Header */}
                           <div className="flex items-start justify-between gap-2 border-b pb-3">
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 bg-slate-100 text-slate-700 rounded">
-                                  AI Extraction
+                                  {item.provenance_type || 'AI Extraction'}
                                 </span>
+                                {item.authority_type && (
+                                  <span className="text-xs font-semibold px-2 py-0.5 bg-purple-100 text-purple-900 rounded border border-purple-200">
+                                    {item.authority_type.replace('_', ' ')}
+                                  </span>
+                                )}
+                                {item.review_state && (
+                                  <span className="text-xs font-semibold px-2 py-0.5 bg-amber-50 text-amber-900 rounded">
+                                    Parent State: {item.review_state}
+                                  </span>
+                                )}
+                                {item.dispute_state === 'DISPUTED' && (
+                                  <span className="text-xs font-semibold px-2 py-0.5 bg-rose-100 text-rose-900 rounded border border-rose-300">
+                                    DISPUTED BY PARENT
+                                  </span>
+                                )}
                                 {item.classification && (
                                   <span className="text-xs font-semibold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded">
                                     {item.classification}
@@ -366,8 +384,11 @@ export default function ProfessionalWorkspace() {
                                 )}
                               </div>
                               <p className="mt-2 text-slate-900 font-medium text-base">
-                                {item.normalized_statement || item.title || item.event_title || item.description || item.claim_description || JSON.stringify(item)}
+                                {item.title || item.normalized_statement || item.event_title || item.description || item.claim_description || JSON.stringify(item)}
                               </p>
+                              {item.description && item.title && (
+                                <p className="mt-1 text-xs text-slate-600">{item.description}</p>
+                              )}
                             </div>
                           </div>
 
@@ -376,20 +397,22 @@ export default function ProfessionalWorkspace() {
                             <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-700 space-y-1.5">
                               <div className="font-semibold text-slate-900">Source Provenance:</div>
                               {item.document_name && <div>Document: <span className="font-medium">{item.document_name}</span></div>}
-                              {item.page_number && <div>Page: <span className="font-medium">{item.page_number}</span></div>}
-                              {item.exact_quote && (
+                              {(item.page_number || item.source_page_number) && <div>Page: <span className="font-medium">{item.page_number || item.source_page_number}</span></div>}
+                              {(item.exact_quote || item.source_exact_quote) && (
                                 <blockquote className="border-l-3 border-indigo-400 pl-2 text-slate-800 italic mt-1 bg-white p-2 rounded">
-                                  "{item.exact_quote}"
+                                  "{item.exact_quote || item.source_exact_quote}"
                                 </blockquote>
                               )}
                               {item.quote_verification && <div>Quote Verification: <code className="text-indigo-800 font-mono">{item.quote_verification}</code></div>}
 
-                              <button
-                                onClick={() => viewSourceJumpBack(item.id, item.exact_quote)}
-                                className="mt-2 px-3 py-1 bg-white border border-indigo-300 text-indigo-700 font-semibold rounded text-xs hover:bg-indigo-50 transition-colors"
-                              >
-                                Jump to Source Text →
-                              </button>
+                              {(item.id && (item.document_id || item.source_document_id)) && (
+                                <button
+                                  onClick={() => viewSourceJumpBack(item.id, item.exact_quote || item.source_exact_quote)}
+                                  className="mt-2 px-3 py-1 bg-white border border-indigo-300 text-indigo-700 font-semibold rounded text-xs hover:bg-indigo-50 transition-colors"
+                                >
+                                  Jump to Source Text →
+                                </button>
+                              )}
                             </div>
                           )}
 
@@ -402,7 +425,7 @@ export default function ProfessionalWorkspace() {
                                 id={`review-select-${item.id}`}
                                 className="border rounded-lg p-2 text-sm bg-white font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500"
                                 value={review?.review_state || 'UNREVIEWED'}
-                                onChange={(e) => saveReview(activeTab, item.id, e.target.value, review?.review_note || '')}
+                                onChange={(e) => saveReview(findingTypeKey, item.id, e.target.value, review?.review_note || '')}
                               >
                                 <option value="UNREVIEWED">Unreviewed</option>
                                 <option value="CONFIRMED_RELEVANT">Confirmed Relevant</option>
@@ -416,7 +439,7 @@ export default function ProfessionalWorkspace() {
                               </span>
                             </div>
                             <div>
-                              <label htmlFor={`review-note-${item.id}`} className="block text-xs font-semibold text-slate-700 mb-1">Professional Notes</label>
+                              <label htmlFor={`review-note-${item.id}`} className="block text-xs font-semibold text-slate-700 mb-1">Professional Notes (Private by Default)</label>
                               <input 
                                 id={`review-note-${item.id}`}
                                 type="text"
@@ -425,7 +448,7 @@ export default function ProfessionalWorkspace() {
                                 defaultValue={review?.review_note || ''}
                                 onBlur={(e) => {
                                   if (e.target.value !== (review?.review_note || '')) {
-                                    saveReview(activeTab, item.id, review?.review_state || 'UNREVIEWED', e.target.value);
+                                    saveReview(findingTypeKey, item.id, review?.review_state || 'UNREVIEWED', e.target.value);
                                   }
                                 }}
                               />

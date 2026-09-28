@@ -21,7 +21,10 @@ export async function generateCaseBrief(firebaseUid: string, matterId: string) {
     { data: relationships },
     { data: gaps },
     { data: legal },
-    { data: reviews }
+    { data: reviews },
+    { data: caseReqs },
+    { data: caseActionsList },
+    { data: caseEvidenceLinks }
   ] = await Promise.all([
     db.from('navigator_matters').select('*').eq('id', matterId).maybeSingle(),
     db.from('navigator_entities').select('*').eq('matter_id', matterId),
@@ -31,7 +34,10 @@ export async function generateCaseBrief(firebaseUid: string, matterId: string) {
     db.from('navigator_claim_relationships').select('*').eq('matter_id', matterId),
     db.from('navigator_evidence_gap_findings').select('*').eq('matter_id', matterId),
     db.from('navigator_case_intelligence_snapshots').select('*').eq('matter_id', matterId),
-    db.from('professional_reviews').select('*').eq('matter_id', matterId).eq('reviewer_account_id', account.id)
+    db.from('professional_reviews').select('*').eq('matter_id', matterId).eq('reviewer_account_id', account.id),
+    db.from('navigator_case_requirements').select('*').eq('matter_id', matterId).not('review_state', 'in', '("ARCHIVED","REJECTED")'),
+    db.from('navigator_case_actions').select('*').eq('matter_id', matterId),
+    db.from('navigator_action_evidence_links').select('*').eq('matter_id', matterId)
   ]);
 
   const timestamp = new Date().toISOString();
@@ -96,6 +102,35 @@ export async function generateCaseBrief(firebaseUid: string, matterId: string) {
         classification: c.classification || 'UNVERIFIED_CLAIM',
         reviewState: c.review_state,
         provenance: { matterId, canonicalId: c.id, type: 'CLAIM' }
+      })),
+      caseActions: (caseReqs || []).map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        description: r.description || null,
+        authorityType: r.authority_type,
+        reviewState: r.review_state,
+        completionState: r.completion_state,
+        disputeState: r.dispute_state,
+        disputeType: r.dispute_type || null,
+        disputeNote: r.dispute_note || null,
+        dueAt: r.due_at || null,
+        provenanceType: r.provenance_type || null,
+        sourceDocumentId: r.source_document_id || null,
+        sourcePageNumber: r.source_page_number || null,
+        sourceExactQuote: r.source_exact_quote || null,
+        actions: (caseActionsList || []).filter((a: any) => a.requirement_id === r.id).map((a: any) => ({
+          id: a.id,
+          title: a.title,
+          status: a.status,
+          dueAt: a.due_at || null
+        })),
+        evidenceLinks: (caseEvidenceLinks || []).filter((el: any) => el.requirement_id === r.id).map((el: any) => ({
+          id: el.id,
+          title: el.title,
+          evidenceType: el.evidence_type,
+          notes: el.notes || null
+        })),
+        provenance: { matterId, canonicalId: r.id, type: 'CASE_REQUIREMENT' }
       })),
       corroborationRelationships: (relationships || []).filter((r: any) => r.relationship_type === 'CORROBORATION' || r.relationship_type === 'SUPPORT').map((r: any) => ({
         id: r.id,

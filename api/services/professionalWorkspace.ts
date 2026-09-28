@@ -46,14 +46,15 @@ export async function getMatterOverview(firebaseUid: string, matterId: string) {
   const db = getSupabase();
   await requireProfessionalAccess(db, account.id, matterId);
 
-  const [docs, events, claims, relations, gaps, legal, reviews] = await Promise.all([
+  const [docs, events, claims, relations, gaps, legal, reviews, reqs] = await Promise.all([
     db.from('navigator_documents').select('id', { count: 'exact', head: true }).eq('matter_id', matterId),
     db.from('navigator_events').select('id', { count: 'exact', head: true }).eq('matter_id', matterId),
     db.from('navigator_claims').select('id', { count: 'exact', head: true }).eq('matter_id', matterId),
     db.from('navigator_claim_relationships').select('id', { count: 'exact', head: true }).eq('matter_id', matterId),
     db.from('navigator_evidence_gap_findings').select('id', { count: 'exact', head: true }).eq('matter_id', matterId),
     db.from('navigator_case_intelligence_snapshots').select('id', { count: 'exact', head: true }).eq('matter_id', matterId),
-    db.from('professional_reviews').select('id', { count: 'exact', head: true }).eq('matter_id', matterId).eq('reviewer_account_id', account.id)
+    db.from('professional_reviews').select('id', { count: 'exact', head: true }).eq('matter_id', matterId).eq('reviewer_account_id', account.id),
+    db.from('navigator_case_requirements').select('id', { count: 'exact', head: true }).eq('matter_id', matterId)
   ]);
 
   return {
@@ -63,7 +64,8 @@ export async function getMatterOverview(firebaseUid: string, matterId: string) {
     relationships: relations.count || 0,
     evidenceGaps: gaps.count || 0,
     legalIssues: legal.count || 0,
-    reviewedItems: reviews.count || 0
+    reviewedItems: reviews.count || 0,
+    caseRequirements: reqs.count || 0
   };
 }
 
@@ -83,20 +85,37 @@ export async function getIntelligenceCategory(firebaseUid: string, matterId: str
   else if (category === 'GAPS') tableName = 'navigator_evidence_gap_findings';
   else if (category === 'LEGAL') tableName = 'navigator_case_intelligence_snapshots';
   else if (category === 'DOCUMENTS') tableName = 'navigator_documents';
+  else if (category === 'CASE_ACTIONS' || category === 'CASE_REQUIREMENTS') tableName = 'navigator_case_requirements';
   else throw new LifecycleError(400, 'INVALID_CATEGORY', 'Unknown category');
 
   // Fetch the items
   const { data: items, error } = await db.from(tableName).select('*').eq('matter_id', matterId).limit(50);
   if (error) throw new LifecycleError(500, 'DB_ERROR', 'Failed to fetch items: ' + error.message);
 
+  let enrichedItems = items || [];
+  if (category === 'CASE_ACTIONS' || category === 'CASE_REQUIREMENTS') {
+    const [{ data: actions }, { data: links }] = await Promise.all([
+      db.from('navigator_case_actions').select('*').eq('matter_id', matterId),
+      db.from('navigator_action_evidence_links').select('*').eq('matter_id', matterId)
+    ]);
+    enrichedItems = (items || []).map((req: any) => {
+      const { lawyer_notes, ...rest } = req;
+      return {
+        ...rest,
+        actions: (actions || []).filter((a: any) => a.requirement_id === req.id),
+        evidenceLinks: (links || []).filter((l: any) => l.requirement_id === req.id)
+      };
+    });
+  }
+
   // Fetch professional reviews for this category
-  const { data: reviews, error: reviewErr } = await db.from('professional_reviews')
+  const { data: reviews } = await db.from('professional_reviews')
     .select('*')
     .eq('matter_id', matterId)
     .eq('reviewer_account_id', account.id);
 
   return {
-    items: items || [],
+    items: enrichedItems,
     reviews: reviews || []
   };
 }

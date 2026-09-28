@@ -307,9 +307,67 @@ export default function CaseBriefViewer({ caseBrief, onRefresh, isFinalized, ver
           )}
         </section>
 
-        {/* 11. SOURCE INDEX */}
+        {/* 11. CASE ACTIONS & REUNIFICATION ROADMAP */}
+        {sections.caseActions && (
+          <section>
+            <h2 className="text-xl font-bold border-b pb-2 mb-4">11. Case Actions & Legal Requirements Roadmap</h2>
+            {sections.caseActions?.length > 0 ? (
+              <div className="space-y-4">
+                {sections.caseActions.map((req: any) => {
+                  const review = getReviewForFinding('CASE_REQUIREMENT', req.id);
+                  return (
+                    <div key={req.id} className="p-4 border rounded bg-slate-50 space-y-2">
+                      <div className="flex justify-between items-start flex-wrap gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-purple-900 bg-purple-100 px-2.5 py-0.5 rounded border border-purple-200">
+                          {req.authorityType?.replace('_', ' ')}
+                        </span>
+                        <div className="flex items-center gap-1.5 text-xs font-semibold">
+                          <span className="px-2 py-0.5 bg-slate-200 text-slate-800 rounded">{req.reviewState}</span>
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-900 rounded">{req.completionState}</span>
+                          {req.disputeState === 'DISPUTED' && (
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-900 rounded border border-amber-300">DISPUTED</span>
+                          )}
+                          {renderReviewState(review?.reviewState)}
+                        </div>
+                      </div>
+                      <p className="font-bold text-base text-slate-900">{req.title}</p>
+                      {req.description && <p className="text-xs text-slate-600">{req.description}</p>}
+                      {req.sourceExactQuote && (
+                        <blockquote className="border-l-4 border-indigo-400 pl-3 py-1 italic text-xs text-slate-700 bg-white rounded">
+                          "{req.sourceExactQuote}" {req.sourcePageNumber ? `(Page ${req.sourcePageNumber})` : ''}
+                        </blockquote>
+                      )}
+                      {req.actions?.length > 0 && (
+                        <div className="pt-2">
+                          <span className="text-xs font-bold text-slate-700 block mb-1">Action Tasks:</span>
+                          <ul className="list-disc pl-5 text-xs text-slate-800 space-y-1">
+                            {req.actions.map((act: any) => (
+                              <li key={act.id}>
+                                <span className={act.status === 'COMPLETED' ? 'line-through text-slate-500' : ''}>{act.title}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {req.evidenceLinks?.length > 0 && (
+                        <div className="pt-1 text-xs text-slate-700">
+                          <span className="font-bold">Attached Proof: </span>
+                          {req.evidenceLinks.map((el: any) => el.title).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-slate-500 italic">No active case requirements registered.</p>
+            )}
+          </section>
+        )}
+
+        {/* 12. SOURCE INDEX */}
         <section>
-          <h2 className="text-xl font-bold border-b pb-2 mb-4">11. Source Index</h2>
+          <h2 className="text-xl font-bold border-b pb-2 mb-4">12. Source Index</h2>
           {sections.sourceIndex?.length > 0 ? (
             <ul className="list-disc pl-5 space-y-1">
               {sections.sourceIndex.map((docId: string, idx: number) => (
