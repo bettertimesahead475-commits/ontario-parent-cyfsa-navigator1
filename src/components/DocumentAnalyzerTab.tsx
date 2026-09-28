@@ -368,6 +368,16 @@ export default function DocumentAnalyzerTab() {
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
       localStorage.setItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
+
+      // Merge Deep Scan findings into active report state
+      setOrganizedFiles(prev => prev.map(f => {
+        if (f.id === file.id) {
+          const mergedReport = { ...(f.analysisReport || {}), ...report };
+          return { ...f, analysisReport: mergedReport };
+        }
+        return f;
+      }));
+      setSelectedReport(prev => prev ? { ...prev, ...report } : report);
     } catch (err: any) {
       console.error("[deep scan] request failed:", err);
       setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
@@ -1634,18 +1644,17 @@ export default function DocumentAnalyzerTab() {
               while (attempts < maxAttempts && !success) {
                 try {
                   const payload: any = {};
-                  if (file.mimeType === "text/plain") {
-                    payload.textContent = file.content;
+                  let extractedText = file.content;
+                  if (extractedContentById[file.id]) {
+                    extractedText = extractedContentById[file.id];
+                  }
+
+                  const isRawBase64 = file.mimeType !== "text/plain" && 
+                    (extractedText.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(extractedText.slice(0, 100)));
+
+                  if (!isRawBase64) {
+                    payload.textContent = extractedText;
                   } else {
-                    // BUG FIX: this used to send fileData straight to /api/analyze, which made
-                    // that endpoint do its own OCR (up to 6 Gemini attempts across 2 models)
-                    // AND the full Claude analysis in one request — the exact combined-request
-                    // pattern that the single-file re-analyze path (triggerSingleAnalysis,
-                    // below) was already split apart to avoid, because it reliably approached
-                    // or exceeded the serverless timeout on real documents. Bulk/auto-upload
-                    // never got that same fix, so every upload was going through the slow path.
-                    // Splitting it here too: extract text first (its own fast request), then
-                    // analyze just the text.
                     const extractResponse = await apiFetch("/api/extract-text", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
@@ -1661,6 +1670,7 @@ export default function DocumentAnalyzerTab() {
                       throw new Error("No readable text could be extracted from this document.");
                     }
                     payload.textContent = extractResult.extractedText;
+                    extractedContentById[file.id] = extractResult.extractedText;
                     setOrganizedFiles(prev => prev.map(f => f.id === file.id
                       ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
                   }
@@ -1668,7 +1678,7 @@ export default function DocumentAnalyzerTab() {
                   const response = await apiFetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ...payload, model: claudeModel })
+                    body: JSON.stringify({ ...payload, mode: "fast", model: claudeModel })
                   });
 
                   const dataResult = await safeReadJson(response);
@@ -1769,14 +1779,13 @@ export default function DocumentAnalyzerTab() {
 
     try {
       const payload: any = {};
-      if (file.mimeType === "text/plain") {
-        payload.textContent = file.content;
+      let extractedText = file.content;
+      const isRawBase64 = file.mimeType !== "text/plain" && 
+        (extractedText.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(extractedText.slice(0, 100)));
+
+      if (!isRawBase64) {
+        payload.textContent = extractedText;
       } else {
-        // Two-pass pipeline: extract text in its own request first, then send
-        // the extracted TEXT for analysis. Doing both in one request reliably
-        // blew past the serverless function timeout on real documents
-        // (OCR retries + a full Claude analysis in a single invocation), which
-        // surfaced as FUNCTION_INVOCATION_TIMEOUT / 504.
         setSingleAnalysisError("");
         const extractResponse = await apiFetch("/api/extract-text", {
           method: "POST",
@@ -1805,7 +1814,7 @@ export default function DocumentAnalyzerTab() {
       const response = await apiFetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, model: claudeModel })
+        body: JSON.stringify({ ...payload, mode: "fast", model: claudeModel })
       });
 
       const report = await safeReadJson(response);
@@ -3131,25 +3140,32 @@ export default function DocumentAnalyzerTab() {
                       </p>
                     </div>
 
-                    {/* Single Trigger Pipeline button */}
+                    {/* Automatic Pipeline Stage Indicator & Retry button */}
                     <div className="flex items-center gap-2 shrink-0">
-                      {activeSelectedFile.analysisStatus !== "completed" && (
-                        <button
-                          onClick={() => triggerSingleAnalysis(activeSelectedFile)}
-                          disabled={isSingleAnalyzing}
-                          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all hover:shadow-md disabled:bg-slate-300"
-                        >
-                          {isSingleAnalyzing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          <span>Run Fast Statutory Audit</span>
-                        </button>
+                      {(activeSelectedFile.analysisStatus === "analyzing" || isSingleAnalyzing) && (
+                        <span className="px-3 py-1.5 bg-brand-50 text-brand-800 border border-brand-200 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
+                          <span>Analyzing key issues & evidence strength...</span>
+                        </span>
                       )}
 
                       {activeSelectedFile.analysisStatus === "completed" && (
-                        <span className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-mono font-bold flex items-center gap-1 animate-pulse">
-                          <Check className="w-4 h-4" /> Ready for Case Chat
+                        <span className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5">
+                          <Check className="w-4 h-4 text-emerald-600" />
+                          <span>Fast Analysis Complete</span>
                         </span>
                       )}
-                  </div>
+
+                      {activeSelectedFile.analysisStatus === "failed" && (
+                        <button
+                          onClick={() => triggerSingleAnalysis(activeSelectedFile)}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Retry Analysis</span>
+                        </button>
+                      )}
+                    </div>
                 </div>
 
                   {singleAnalysisError && (
@@ -3999,9 +4015,9 @@ export default function DocumentAnalyzerTab() {
                         <>
                           <Sparkles className="w-12 h-12 text-slate-300 mx-auto" />
                           <div className="space-y-1">
-                            <h5 className="font-display font-bold text-gray-700 text-sm">No analysis active on this file</h5>
+                            <h5 className="font-display font-bold text-gray-700 text-sm">Analysis incomplete for this file</h5>
                             <p className="text-xs text-slate-500 max-w-sm mx-auto p-1">
-                              This file is organized in Case Locker but lacks an active audit. Click "Run Fast Statutory Audit" to scan it concurrently.
+                              Your document was uploaded to Case Locker. If analysis was interrupted, click "Retry Analysis" above to run Fast Analysis.
                             </p>
                           </div>
                         </>

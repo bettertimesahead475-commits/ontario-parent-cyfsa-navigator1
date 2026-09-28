@@ -365,9 +365,9 @@ export default function CaseBriefViewer({ caseBrief, onRefresh, isFinalized, ver
           </section>
         )}
 
-        {/* 12. SOURCE INDEX */}
+        {/* SOURCE INDEX */}
         <section>
-          <h2 className="text-xl font-bold border-b pb-2 mb-4">12. Source Index</h2>
+          <h2 className="text-xl font-bold border-b pb-2 mb-4">{sections.caseActions ? "12. Source Index" : "11. Source Index"}</h2>
           {sections.sourceIndex?.length > 0 ? (
             <ul className="list-disc pl-5 space-y-1">
               {sections.sourceIndex.map((docId: string, idx: number) => (

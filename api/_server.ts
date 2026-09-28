@@ -868,6 +868,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       if (base64Data.includes(",")) base64Data = base64Data.split(",")[1];
       const mime = fileData.mimeType || "";
 
+      const startTime = Date.now();
       if (!(mime === 'application/pdf' || mime.startsWith('image/') || mime === 'text/plain')) {
         return res.status(400).json({ error: `Unsupported file type for extraction: ${mime}` });
       }
@@ -881,8 +882,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         });
       }
 
+      const durationMs = Date.now() - startTime;
       // Compatibility text remains for legacy reports; pages are authoritative attribution.
-      res.json({ pages, contentHash: source.checksum, extractedText, characters: extractedText.length });
+      res.json({ pages, contentHash: source.checksum, extractedText, characters: extractedText.length, timing: { extractMs: durationMs } });
     } catch (err: any) {
       if (err instanceof LifecycleError) return res.status(err.statusCode).json({code:err.code,error:err.message});
       console.error("[/api/extract-text]", err);
@@ -982,7 +984,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let targetText = "";
     let fileDataObj: any = null;
     try {
-      const { textContent, fileData, model } = req.body;
+      const { textContent, fileData, model, mode } = req.body;
       fileDataObj = fileData;
 
       if (!textContent && !fileData) {
@@ -1292,31 +1294,51 @@ ${analysisRules}`;
         }
       `;
 
-      // Both halves of the schema depend only on the same source document text, not on each
-      // other's output, so they're independent requests — issuing them concurrently is safe and
-      // is the actual speedup (see comment above documentContentBlock).
-      const [coreResponse, deepDiveResponse] = await Promise.all([
-        generateContentWithFallback({
+      const startTime = Date.now();
+      let report: any = null;
+
+      if (mode === "fast") {
+        const coreResponse = await generateContentWithFallback({
           system: coreSystemInstruction,
           messages: [{ role: "user", content: [{ type: "text", text: corePromptText }] }],
           max_tokens: 8000
-        }, model || "claude-sonnet-5"),
-        generateContentWithFallback({
-          system: deepDiveSystemInstruction,
-          messages: [{ role: "user", content: [{ type: "text", text: deepDivePromptText }] }],
-          max_tokens: 8000
-        }, model || "claude-sonnet-5")
-      ]);
+        }, model || "claude-sonnet-5");
 
-      if (!coreResponse.text || !deepDiveResponse.text) {
-        throw new Error("Empty response received from the analysis service.");
+        if (!coreResponse.text) {
+          throw new Error("Empty response received from the analysis service.");
+        }
+
+        const coreReport = extractJson(coreResponse.text);
+        const durationMs = Date.now() - startTime;
+        report = { ...coreReport, timing: { mode: "fast", durationMs } };
+      } else {
+        // Both halves of the schema depend only on the same source document text, not on each
+        // other's output, so they're independent requests — issuing them concurrently is safe and
+        // is the actual speedup (see comment above documentContentBlock).
+        const [coreResponse, deepDiveResponse] = await Promise.all([
+          generateContentWithFallback({
+            system: coreSystemInstruction,
+            messages: [{ role: "user", content: [{ type: "text", text: corePromptText }] }],
+            max_tokens: 8000
+          }, model || "claude-sonnet-5"),
+          generateContentWithFallback({
+            system: deepDiveSystemInstruction,
+            messages: [{ role: "user", content: [{ type: "text", text: deepDivePromptText }] }],
+            max_tokens: 8000
+          }, model || "claude-sonnet-5")
+        ]);
+
+        if (!coreResponse.text || !deepDiveResponse.text) {
+          throw new Error("Empty response received from the analysis service.");
+        }
+
+        const coreReport = extractJson(coreResponse.text);
+        const deepDiveReport = extractJson(deepDiveResponse.text);
+        const durationMs = Date.now() - startTime;
+
+        // Field-disjoint by construction (see the two schemas above), so a plain merge is safe.
+        report = { ...coreReport, ...deepDiveReport, timing: { mode: "full", durationMs } };
       }
-
-      const coreReport = extractJson(coreResponse.text);
-      const deepDiveReport = extractJson(deepDiveResponse.text);
-
-      // Field-disjoint by construction (see the two schemas above), so a plain merge is safe.
-      const report = { ...coreReport, ...deepDiveReport };
 
       if (!isPaid && uid) {
         try {
@@ -1693,6 +1715,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
     if (!(await requireSession(req, res))) return;
     try {
+      const startTime = Date.now();
       const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {
         return res.status(400).json({ error: "Document text is required for a deep scan." });
@@ -1715,34 +1738,58 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 RED FLAGS ALREADY RAISED:
 ${priorRedFlags || "(none raised)"}
 
-THRESHOLD FINDINGS MARKED INCONCLUSIVE/NOT DETERMINABLE (worth pressing further with a different angle, not just repeating):
+THRESHOLD FINDINGS MARKED INCONCLUSIVE/NOT DETERMINABLE:
 ${inconclusiveThresholds || "(none marked inconclusive)"}
 
 ALREADY-NOTED MISSING ELEMENTS:
 ${priorMissing ? "- " + priorMissing : "(none noted)"}`;
       }
 
-      const systemInstruction = `You are ParentShield's Deep Scan tool — a genuine SECOND pass over ONE document already reviewed once by a parallel first-pass analysis, specifically hunting for statutory omissions, missing corroborating evidence, and rebuttal material that the first pass did not already surface.
+      const systemInstruction = `You are ParentShield's Deep Scan tool — an exhaustive SECOND-STAGE review of ONE document already analyzed by Level 1 Fast Analysis. Your job is to conduct a fine-tooth-comb legal examination of statutory thresholds, procedural timelines, Charter rights, evidentiary deficiencies, and defense retorts.
 
-NON-NEGOTIABLE RULES
-1. Every "claim" in a retort must be a real assertion actually present in the supplied document text — quote or closely paraphrase it. Never invent a claim the document doesn't make.
-2. Every "gap" must point to something the document specifically fails to address, given what kind of document it is — not a generic boilerplate observation unconnected to this document's actual content.
-3. Never fabricate names, dates, or incidents not present in the document.
-4. Frame "action" steps as things to raise with a lawyer or gather as evidence, never as legal conclusions or instructions to file anything.
-5. If the document is too short or too generic to support a specific gap, evidence item, or retort, return fewer items rather than inventing filler — an empty array is honest; a fabricated one is not.
-6. Do not restate anything already listed in the prior first-pass findings below as if it were a new finding — this pass only earns its name by surfacing what the first pass missed.
-7. End every report with the disclaimer field, unmodified.
+NON-NEGOTIABLE RULES:
+1. Ground every finding in the document text. Quote or cite exact lines/pages where possible.
+2. Verify citations: CYFSA s.74(2) (protection grounds), s.94(1) (30-day adjournment limit), s.125(1) (duty to report), Bill 188 (2024), Bill 33 (2025). Unverified sections must state '⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.' Never cite s.94(5) for hearing timelines (s.94(5) is placement with relative).
+3. Do not repeat existing first-pass red flags. Focus on statutory omissions, timeline defects, hearsay chain issues, missing foundation, and strategic retorts.
+4. Output strict JSON matching the schema below. End with the exact disclaimer.
 
 OUTPUT — return strictly this JSON schema, nothing else:
 {
-  "gaps": ["Specific statutory or procedural omission this document has that the first pass did not already flag, tied to what it actually says or fails to say."],
-  "missingEvidence": ["Specific evidence the parent should gather to address a gap above, given this document's actual content."],
+  "gaps": ["Specific statutory or procedural omission this document has that the first pass did not flag."],
+  "missingEvidence": ["Specific evidence the parent should gather to address a gap above."],
   "retorts": [
     {
-      "claim": "A specific assertion actually made in this document, not already addressed by an existing red flag — quote or closely paraphrase it.",
-      "objection": "Why this claim is weak, unsupported, or hearsay — grounded in the document, not a generic evidentiary rule.",
+      "claim": "A specific assertion actually made in this document.",
+      "objection": "Why this claim is weak, unsupported, or hearsay.",
       "action": "A concrete next step to raise with counsel or evidence to gather in response."
     }
+  ],
+  "thresholdAnalysis": [
+    {
+      "thresholdChecked": "CYFSA s. 81 / s. 74 / s. 125 / Kinship Documentation Check",
+      "isMet": "Yes / No / Inconclusive",
+      "reasoning": "Detailed analysis grounded in document text.",
+      "primarySourceLaw": "Specific statutory section or unverified warning."
+    }
+  ],
+  "proceduralTimelineViolations": [
+    {
+      "timelineRule": "30-Day Adjournment Limit (CYFSA s. 94(1)) / Court hearing timeline post-apprehension / Ombudsman Access / Parentage",
+      "documentAssertion": "Dates or schedule mentioned in document.",
+      "evaluation": "Evaluation of compliance or missing information.",
+      "citation": "Verified section or unverified warning.",
+      "locationInDocument": "Page X, Paragraph Y or Checked & Compliant",
+      "parentActionStep": "Concrete parent action step."
+    }
+  ],
+  "charterAndHumanRightsIssues": [
+    "Section 7 Charter rights, Section 15 equality, Section 2 CYFSA Indigenous heritage considerations"
+  ],
+  "whatToVerify": ["Specific items parent should check in records"],
+  "whatToAskALawyer": ["Specific educational questions for counsel"],
+  "whatIsMissing": ["Elements missing from document"],
+  "lawyerCaseBrief": [
+    "A 5-bullet in-depth legal Case Brief for counsel tracing legal grounds, deficiencies, and strategy."
   ],
   "disclaimer": "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."
 }`;
@@ -1756,7 +1803,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         DOCUMENT TEXT:
         ${documentText}
 
-        Perform the deep scan described above, grounded strictly in the document text above, and building on — not repeating — the prior first-pass findings.
+        Perform the deep scan described above, building on — not repeating — the prior first-pass findings.
       `;
 
       const response = await generateContentWithFallback({
@@ -1771,7 +1818,8 @@ OUTPUT — return strictly this JSON schema, nothing else:
       }
 
       const report = extractJson(responseText);
-      res.json(report);
+      const durationMs = Date.now() - startTime;
+      res.json({ ...report, timing: { durationMs } });
     } catch (error: any) {
       console.error("[deep scan] API error, returning honest failure (no fabricated fallback):", error);
       handleAIError(error, "deep scan", res);

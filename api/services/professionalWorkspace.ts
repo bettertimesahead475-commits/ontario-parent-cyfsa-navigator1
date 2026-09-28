@@ -54,7 +54,10 @@ export async function getMatterOverview(firebaseUid: string, matterId: string) {
     db.from('navigator_evidence_gap_findings').select('id', { count: 'exact', head: true }).eq('matter_id', matterId),
     db.from('navigator_case_intelligence_snapshots').select('id', { count: 'exact', head: true }).eq('matter_id', matterId),
     db.from('professional_reviews').select('id', { count: 'exact', head: true }).eq('matter_id', matterId).eq('reviewer_account_id', account.id),
-    db.from('navigator_case_requirements').select('id', { count: 'exact', head: true }).eq('matter_id', matterId)
+    (() => {
+      try { return db.from('navigator_case_requirements').select('id', { count: 'exact', head: true }).eq('matter_id', matterId); }
+      catch { return Promise.resolve({ data: [], count: 0 }); }
+    })()
   ]);
 
   return {

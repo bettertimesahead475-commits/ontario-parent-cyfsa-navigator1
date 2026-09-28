@@ -35,9 +35,23 @@ export async function generateCaseBrief(firebaseUid: string, matterId: string) {
     db.from('navigator_evidence_gap_findings').select('*').eq('matter_id', matterId),
     db.from('navigator_case_intelligence_snapshots').select('*').eq('matter_id', matterId),
     db.from('professional_reviews').select('*').eq('matter_id', matterId).eq('reviewer_account_id', account.id),
-    db.from('navigator_case_requirements').select('*').eq('matter_id', matterId).not('review_state', 'in', '("ARCHIVED","REJECTED")'),
-    db.from('navigator_case_actions').select('*').eq('matter_id', matterId),
-    db.from('navigator_action_evidence_links').select('*').eq('matter_id', matterId)
+    (() => {
+      try {
+        const q = db.from('navigator_case_requirements').select('*').eq('matter_id', matterId);
+        if (typeof q.not === 'function') {
+          return q.not('review_state', 'in', '("ARCHIVED","REJECTED")');
+        }
+        return q;
+      } catch { return Promise.resolve({ data: [] }); }
+    })(),
+    (() => {
+      try { return db.from('navigator_case_actions').select('*').eq('matter_id', matterId); }
+      catch { return Promise.resolve({ data: [] }); }
+    })(),
+    (() => {
+      try { return db.from('navigator_action_evidence_links').select('*').eq('matter_id', matterId); }
+      catch { return Promise.resolve({ data: [] }); }
+    })()
   ]);
 
   const timestamp = new Date().toISOString();
