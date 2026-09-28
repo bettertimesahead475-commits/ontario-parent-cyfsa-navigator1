@@ -15,7 +15,9 @@
 | **Batch 1 (Backend/DB)** | `70f60e37965efcde819625132c9a035bb519b5f2` | `post-launch/case-action-batch-1-v1` | **CERTIFIED** |
 | **Batch 2 (Parent UI)** | `fbea1a10c5b1f83c01f21be753412b70702856a7` | `post-launch/case-action-batch-2-v1` | **CERTIFIED** |
 | **Batch 3 (Analyzer Link)**| `95a681aa6848edfdaccca885db72e249cc4a46f6` | `post-launch/case-action-batch-3-v1` | **CERTIFIED** |
-| **Batch 4 (Final Closeout)**| `a2a01391757e34e750aab20f89a57fd7e29463b4` | `post-launch/case-action-workspace-final-v1` | **CERTIFIED & FROZEN** |
+| **Batch 4 Implementation**| `a2a01391757e34e750aab20f89a57fd7e29463b4` | Feature Source Complete | **CERTIFIED** |
+| **Pre-Repair Doc HEAD** | `6b3a8690b37dc166e543e9a6b6cd3c9ddde2b2b2` | `post-launch/case-action-workspace-final-v1` | **HISTORICAL (FORCE-MOVED)** |
+| **Repaired Final Metadata**| `<REPAIRED_FINAL_SHA>` | `post-launch/case-action-workspace-final-v2` | **CERTIFIED & IMMUTABLE** |
 
 ---
 
@@ -85,6 +87,20 @@
 
 ---
 
-### 7. CERTIFICATION STATEMENT
+### 7. CERTIFICATION METADATA AUDIT & REPAIR INCIDENT LOG
+
+- **Incident Narrative:**
+  - The initial Batch 4 feature code was completed and committed at `a2a01391757e34e750aab20f89a57fd7e29463b4`.
+  - The initial certification tag `post-launch/case-action-workspace-final-v1` was created.
+  - Subsequently, a documentation update commit (`6b3a8690b37dc166e543e9a6b6cd3c9ddde2b2b2`) was committed to update document references, and `final-v1` was force-moved to `6b3a8690b37dc166e543e9a6b6cd3c9ddde2b2b2`.
+  - This force-move violated immutable-tag procedure.
+- **Remediation Action:**
+  - `post-launch/case-action-workspace-final-v1` is left untouched at `6b3a8690b37dc166e543e9a6b6cd3c9ddde2b2b2` as a preserved historical record. It will NOT be deleted, moved, or overwritten again.
+  - This metadata repair commit resolves the closeout document alignment.
+  - A clean, new annotated immutable tag `post-launch/case-action-workspace-final-v2` is created at the repair commit without force flags.
+
+---
+
+### 8. CERTIFICATION STATEMENT
 
 The **CYFSA Navigator Post-Launch Case-Action / Reunification Workspace** (Batches 1–4) is fully implemented, verified, hardened, and certified as a frozen Release Candidate.
