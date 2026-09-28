@@ -241,3 +241,178 @@ describe("Lawyer Directory Data Foundation - Remediation", () => {
   });
 });
 
+describe("Lawyer Directory Transient Retry and Error Handling", () => {
+  it("successful directory search returns results", async () => {
+    const results = await searchDirectory({ locality: "Toronto" });
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("legitimate empty result returns empty array without throwing error", async () => {
+    __current.db = {
+      from: () => ({
+        select: () => ({
+          in: async () => ({ data: [], error: null })
+        })
+      })
+    };
+    const results = await searchDirectory({ locality: "NonexistentCityXYZ" });
+    expect(results).toEqual([]);
+  });
+
+  it("transient fetch failure on attempt 1 succeeds on attempt 2", async () => {
+    let calls = 0;
+    __current.db = {
+      from: () => ({
+        select: () => ({
+          in: async () => {
+            calls++;
+            if (calls === 1) {
+              return { data: null, error: { message: "fetch failed" } };
+            }
+            return {
+              data: [
+                {
+                  id: "prof-1",
+                  display_name: "Jane Doe",
+                  professional_type: "LAWYER",
+                  lifecycle_state: "VERIFIED_LAWYER",
+                  professional_office_locations: [],
+                  professional_service_areas: [],
+                  professional_practice_areas: []
+                }
+              ],
+              error: null
+            };
+          }
+        })
+      })
+    };
+
+    const results = await searchDirectory({});
+    expect(calls).toBe(2);
+    expect(results).toHaveLength(1);
+  });
+
+  it("multiple transient failures (attempt 1 & 2) succeed on final retry (attempt 3)", async () => {
+    let calls = 0;
+    __current.db = {
+      from: () => ({
+        select: () => ({
+          in: async () => {
+            calls++;
+            if (calls < 3) {
+              return { data: null, error: { message: calls === 1 ? "TypeError: fetch failed" : "ECONNRESET" } };
+            }
+            return {
+              data: [
+                {
+                  id: "prof-1",
+                  display_name: "Jane Doe",
+                  professional_type: "LAWYER",
+                  lifecycle_state: "VERIFIED_LAWYER",
+                  professional_office_locations: [],
+                  professional_service_areas: [],
+                  professional_practice_areas: []
+                }
+              ],
+              error: null
+            };
+          }
+        })
+      })
+    };
+
+    const results = await searchDirectory({});
+    expect(calls).toBe(3);
+    expect(results).toHaveLength(1);
+  });
+
+  it("retry exhaustion throws error and does NOT return fake empty result", async () => {
+    let calls = 0;
+    __current.db = {
+      from: () => ({
+        select: () => ({
+          in: async () => {
+            calls++;
+            return { data: null, error: { message: "fetch failed" } };
+          }
+        })
+      })
+    };
+
+    await expect(searchDirectory({})).rejects.toThrow("fetch failed");
+    expect(calls).toBe(3);
+  });
+
+  it("non-retryable Supabase HTTP 400 error fails immediately without retrying", async () => {
+    let calls = 0;
+    __current.db = {
+      from: () => ({
+        select: () => ({
+          in: async () => {
+            calls++;
+            return { data: null, error: { message: "Bad Request", status: 400 } };
+          }
+        })
+      })
+    };
+
+    await expect(searchDirectory({})).rejects.toThrow("Bad Request");
+    expect(calls).toBe(1);
+  });
+
+  it("401 / 403 authorization-style errors are NOT retried", async () => {
+    let calls = 0;
+    __current.db = {
+      from: () => ({
+        select: () => ({
+          in: async () => {
+            calls++;
+            return { data: null, error: { message: "JWT expired", status: 401 } };
+          }
+        })
+      })
+    };
+
+    await expect(searchDirectory({})).rejects.toThrow("JWT expired");
+    expect(calls).toBe(1);
+  });
+
+  it("schema / query errors (e.g. 42P01 table missing) are NOT retried", async () => {
+    let calls = 0;
+    __current.db = {
+      from: () => ({
+        select: () => ({
+          in: async () => {
+            calls++;
+            return { data: null, error: { message: 'relation "professional_profiles" does not exist', code: "42P01" } };
+          }
+        })
+      })
+    };
+
+    await expect(searchDirectory({})).rejects.toThrow(/does not exist/);
+    expect(calls).toBe(1);
+  });
+
+  it("temporary infrastructure failure does NOT become fake empty result in getPublicProfile", async () => {
+    let calls = 0;
+    __current.db = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            in: () => ({
+              maybeSingle: async () => {
+                calls++;
+                return { data: null, error: { message: "fetch failed" } };
+              }
+            })
+          })
+        })
+      })
+    };
+
+    await expect(getPublicProfile("prof-1")).rejects.toThrow("fetch failed");
+    expect(calls).toBe(3);
+  });
+});

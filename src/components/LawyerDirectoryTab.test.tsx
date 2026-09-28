@@ -80,13 +80,14 @@ describe("Stage 7E UI Tests - LawyerDirectoryTab", () => {
   it("handles directory error state safely", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
-      status: 500
+      status: 500,
+      json: async () => ({ error: "The directory is temporarily unavailable. Please try again." })
     });
 
     render(<LawyerDirectoryTab />);
     
     await waitFor(() => {
-      expect(screen.getByText("Failed to search directory.")).toBeTruthy();
+      expect(screen.getByText(/temporarily unavailable|Failed to search directory/)).toBeTruthy();
     });
     expect(screen.queryByText("John Smith")).toBeNull();
   });

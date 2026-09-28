@@ -15,7 +15,11 @@ export function registerLawyerDirectoryRoutes(app: Express) {
       const results = await searchDirectory(filters);
       res.json(results);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error('[LawyerDirectory] Search failure:', e?.message || e);
+      res.status(503).json({
+        code: 'DIRECTORY_TEMPORARILY_UNAVAILABLE',
+        error: 'The directory is temporarily unavailable. Please try again.'
+      });
     }
   });
 
@@ -26,7 +30,11 @@ export function registerLawyerDirectoryRoutes(app: Express) {
       if (!profile) res.status(404).json({ error: 'Not found' });
       else res.json(profile);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error('[LawyerDirectory] Get profile failure:', e?.message || e);
+      res.status(503).json({
+        code: 'DIRECTORY_TEMPORARILY_UNAVAILABLE',
+        error: 'The directory is temporarily unavailable. Please try again.'
+      });
     }
   });
 
@@ -45,7 +53,8 @@ export function registerLawyerDirectoryRoutes(app: Express) {
       if (e instanceof LifecycleError) {
         res.status(e.statusCode).json({ code: e.code, error: e.message });
       } else {
-        res.status(500).json({ error: e.message });
+        console.error('[LawyerDirectory] Claim profile failure:', e?.message || e);
+        res.status(500).json({ error: 'Profile claim request failed.' });
       }
     }
   });

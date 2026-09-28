@@ -43,7 +43,12 @@ export default function LawyerDirectoryTab() {
         }),
       });
       if (!response.ok) {
-        throw new Error("Failed to search directory.");
+        let errorMsg = "The directory is temporarily unavailable. Please try again.";
+        if (typeof response.json === "function") {
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData?.error) errorMsg = errorData.error;
+        }
+        throw new Error(errorMsg);
       }
       const data = await response.json();
       setResults(data);
