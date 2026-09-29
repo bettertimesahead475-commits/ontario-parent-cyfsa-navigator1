@@ -35,6 +35,7 @@
 
 import crypto from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { Agent } from "undici";
 
 export type Tier = "Pro" | "Premium";
 
@@ -47,6 +48,23 @@ export const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L — easy to type off a phone
 const CODE_TTL_DAYS = 14; // an issued-but-unredeemed code expires after this long
+
+const supabaseDispatcher = new Agent({
+  connect: {
+    timeout: 10000,
+  },
+  keepAliveTimeout: 1000,
+  keepAliveMaxTimeout: 5000,
+  pipelining: 1,
+});
+
+const supabaseFetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  return fetch(input, {
+    ...init,
+    // @ts-ignore - Undici dispatcher option supported in Node.js fetch
+    dispatcher: supabaseDispatcher,
+  });
+};
 
 let supabase: SupabaseClient | null = null;
 export function getSupabase(): SupabaseClient {
@@ -61,7 +79,10 @@ export function getSupabase(): SupabaseClient {
       { statusCode: 503 }
     );
   }
-  supabase = createClient(url, key, { auth: { persistSession: false } });
+  supabase = createClient(url, key, {
+    auth: { persistSession: false },
+    global: { fetch: supabaseFetch }
+  });
   return supabase;
 }
 
