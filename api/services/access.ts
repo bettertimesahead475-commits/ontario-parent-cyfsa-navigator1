@@ -61,6 +61,10 @@ export function getSupabase(): SupabaseClient {
       { statusCode: 503 }
     );
   }
+  // Uses Node's built-in global fetch. The experimental custom undici Agent that was
+  // injected here (aea2f41) imported "undici", which this project never declared as a
+  // dependency (it only resolved through jsdom, a devDependency). Native fetch is the
+  // transport supabase-js is built and tested against.
   supabase = createClient(url, key, { auth: { persistSession: false } });
   return supabase;
 }
@@ -205,7 +209,7 @@ export async function getActivePaidSession(sessionId: string): Promise<PaidSessi
     .select("id, firebase_uid, tier, revoked_at, expires_at")
     .eq("id", sessionId)
     .maybeSingle();
-  if (error) throw Object.assign(new Error(`Failed to look up paid session: ${error.message}`), { statusCode: 500 });
+  if (error) throw Object.assign(new Error(`Failed to look up paid session: ${error.message}`), { statusCode: 500, supabaseError: error });
   if (!data) return null;
   if (data.revoked_at) return null;
   if (new Date(data.expires_at).getTime() <= Date.now()) return null;

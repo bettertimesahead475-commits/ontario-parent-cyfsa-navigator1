@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
@@ -36,7 +36,8 @@ import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.j
 import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
-import { formatAnalyzerErrorResponse, AnalyzerError } from "./services/analyzerErrors.js";
+import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure } from "./services/analyzerErrors.js";
+import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 
 dotenv.config();
@@ -183,7 +184,7 @@ async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): 
     return response.text || "";
   } catch (error) {
     console.error("extractTextWithGeminiBase64 error:", error);
-    throw error;
+    throw providerFailure(error, "gemini");
   }
 }
 
@@ -259,18 +260,37 @@ async function generateContentWithFallback(
   }));
 
   console.log(`[AI Engine] Claude routing. Model: ${model}`);
-  const response = await client.messages.create({
-    model,
-    // Raised again - Sonnet 5's actual ceiling is 128,000, confirmed against Anthropic's own
-    // docs (AWS Bedrock model card, platform "what's new" page). The prior defaults of 8000/
-    // 16000 were conservative guesses nowhere near the real limit, and combined with adaptive
-    // thinking eating into the same budget (see enableThinking above), were truncating real
-    // documents in production.
-    max_tokens: params.max_tokens || 16000,
-    thinking: params.enableThinking ? undefined : { type: "disabled" as const },
-    system: params.system,
-    messages,
-  });
+  const providerStart = Date.now();
+  let response;
+  try {
+    response = await client.messages.create({
+      model,
+      // Raised again - Sonnet 5's actual ceiling is 128,000, confirmed against Anthropic's own
+      // docs (AWS Bedrock model card, platform "what's new" page). The prior defaults of 8000/
+      // 16000 were conservative guesses nowhere near the real limit, and combined with adaptive
+      // thinking eating into the same budget (see enableThinking above), were truncating real
+      // documents in production.
+      max_tokens: params.max_tokens || 16000,
+      thinking: params.enableThinking ? undefined : { type: "disabled" as const },
+      system: params.system,
+      messages,
+    });
+  } catch (error: any) {
+    throw providerFailure(error, "claude");
+  }
+  const stopReason = (response as any).stop_reason;
+  console.log(
+    `[AI Engine] Claude ${model} finished in ${Date.now() - providerStart}ms stop_reason=${stopReason} ` +
+    `usage=${JSON.stringify((response as any).usage ?? null)}`
+  );
+  if (stopReason === "refusal") {
+    throw new AnalyzerError(
+      "AI_RESPONSE_INVALID",
+      422,
+      "The analysis service declined to analyze this content. Your document is safe and this attempt was not counted against your analyses.",
+      false
+    );
+  }
   const textOut = response.content
     .filter((block) => block.type === "text")
     .map((block) => block.text)
@@ -327,13 +347,21 @@ function extractJson(text: string): any {
   // off before it finished — most often because it needed more room than max_tokens allowed.
   const looksTruncated = /```(?:json)?\s*\{/.test(trimmed) || (startIndex !== -1 && endIndex <= startIndex);
   if (looksTruncated) {
-    throw new Error(
+    throw new AnalyzerError(
+      "AI_RESPONSE_INVALID",
+      422,
       "The analysis response was incomplete — it looks like it was cut off before finishing, " +
       "likely because the document was long or complex enough to need more output room than was " +
-      "allotted. Try again; if it keeps happening on this document, try a shorter excerpt."
+      "allotted. Try again; if it keeps happening on this document, try a shorter excerpt.",
+      true
     );
   }
-  throw new Error("The analysis response was not valid JSON and could not be parsed.");
+  throw new AnalyzerError(
+    "AI_RESPONSE_INVALID",
+    422,
+    "The AI analysis response could not be formatted cleanly. Please retry analysis.",
+    true
+  );
 }
 
 // Unified AI error handling and user-friendly formatting with HTTP status codes and taxonomy
@@ -343,7 +371,10 @@ function handleAIError(error: any, contextDescription: string, res: Response) {
   res.status(formatted.statusCode).json({
     code: formatted.code,
     error: formatted.error,
-    retryable: formatted.retryable
+    retryable: formatted.retryable,
+    // Backward-compatible flag the analyzer UI and its tests key their rate-limit backoff on.
+    // It was dropped when the error taxonomy was introduced, leaving that backoff path dead.
+    ...(formatted.code === "AI_RATE_LIMITED" ? { isRateLimit: true } : {}),
   });
 }
 
@@ -629,6 +660,45 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
   });
 
+  // Admin-only, read-only Supabase connectivity check. Returns only non-secret facts: the
+  // configured hostname (project ref), the key's format and public role/ref claims, whether DNS
+  // resolves, and the outcome of a head-only count on free_usage (no rows are read or returned).
+  // Exists so a production configuration problem (wrong SUPABASE_URL, key for a different
+  // project, unreachable host) can be confirmed with one request instead of log archaeology.
+  app.get("/api/admin/supabase-health", async (req: Request, res: Response) => {
+    if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
+    const host = configuredSupabaseHost();
+    const key = describeConfiguredKey();
+    let dns: { resolved: boolean; error: string | null } = { resolved: false, error: null };
+    if (host && !host.startsWith("(")) {
+      try {
+        const { lookup } = await import("node:dns/promises");
+        await lookup(host);
+        dns = { resolved: true, error: null };
+      } catch (err: any) {
+        dns = { resolved: false, error: String(err?.code || err?.message || err).slice(0, 120) };
+      }
+    }
+    const started = Date.now();
+    let query: { ok: boolean; ms: number; failure: ReturnType<typeof describeSupabaseFailure> | null };
+    try {
+      const { error } = await getSupabase().from("free_usage").select("uid", { count: "exact", head: true }).retry(false);
+      query = { ok: !error, ms: Date.now() - started, failure: error ? describeSupabaseFailure(error) : null };
+    } catch (err: any) {
+      query = { ok: false, ms: Date.now() - started, failure: describeSupabaseFailure(err) };
+    }
+    res.status(query.ok ? 200 : 503).json({
+      host,
+      keyRefMatchesHost: key.jwtRef && host ? host.startsWith(`${key.jwtRef}.`) : null,
+      key,
+      dns,
+      query,
+      runtime: { node: process.versions.node },
+    });
+  });
+
   // API 1f: Runs the actual payment-detection scan. Callable two ways:
   //   - Manually, with header x-admin-secret: <ADMIN_SECRET>
   //   - By a Vercel Cron job, which Vercel automatically calls with
@@ -809,14 +879,12 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // SECURITY FIX (M-2 / Finding 3): see requireSession()'s comment above - a session
       // token alone is no longer sufficient; it must also be a still-active,
       // Firebase-uid-bound navigator_paid_sessions row for the calling identity.
+      // A paid session only ever counts when it is bound to a verified Firebase identity (see
+      // requireSession), so a verified identity is necessary AND sufficient here. The paid-session
+      // database lookup that used to run first could never change the outcome; it only added a
+      // Supabase round-trip and a way for a database outage to block text extraction.
       const identity = await verifyFirebaseToken(req.header("authorization"));
-      const parsedSession = verifySessionToken(req.header("x-ps-session") || "");
-      let isPaid = false;
-      if (parsedSession && identity) {
-        const session = await getActivePaidSession(parsedSession.jti);
-        isPaid = !!session && session.firebaseUid === identity.uid;
-      }
-      if (!isPaid && !identity) {
+      if (!identity) {
         return res.status(401).json({
           error: "Please sign in to use the Document Analyzer.",
           code: "SIGN_IN_REQUIRED",
@@ -855,6 +923,22 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     } catch (err: any) {
       if (err instanceof LifecycleError) return res.status(err.statusCode).json({code:err.code,error:err.message});
       console.error("[/api/extract-text]", err);
+      // OCR provider failures are reported as extraction failures (not "analysis" failures), so
+      // the parent knows the document could not be read yet. Rate limits keep their own code.
+      if (err instanceof AnalyzerError && err.code !== "AI_RATE_LIMITED") {
+        return handleAIError(
+          new AnalyzerError(
+            "EXTRACTION_FAILED",
+            err.statusCode,
+            err.code === "AI_REQUEST_REJECTED"
+              ? "We couldn't read the text of this file. Try a clearer copy, a smaller file, or a PDF with fewer pages."
+              : "We couldn't read the text of this document right now. Your file is safe - please try again in a moment.",
+            err.retryable
+          ),
+          "text extraction",
+          res
+        );
+      }
       handleAIError(err, "text extraction", res);
     }
   });
@@ -867,6 +951,31 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
   const SESSION_REQUIRED_MESSAGE =
     "This feature requires an active Pro or Premium plan. Activate your access code (or upgrade) on the Membership page.";
+
+  const ACCESS_CHECK_UNAVAILABLE_MESSAGE =
+    "We couldn't verify your analysis access right now. Your document is safe. Please retry in a moment.";
+
+  // Paid-session lookups read Supabase. A failed lookup must fail CLOSED - never treated as paid
+  // and never silently downgraded to the free tier (that would charge a paying parent's free
+  // allowance) - and it must still produce a JSON response. Several routes call requireSession()
+  // outside their own try/catch, so a raw rejection here used to leave the request with no
+  // response at all until the function timed out.
+  async function lookupPaidSession(jti: string) {
+    try {
+      return await getActivePaidSession(jti);
+    } catch (err: any) {
+      logSupabaseFailure("paid session lookup", err?.supabaseError ?? err);
+      throw new LifecycleError(503, "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE", ACCESS_CHECK_UNAVAILABLE_MESSAGE);
+    }
+  }
+
+  function sendAccessCheckUnavailable(res: Response) {
+    res.status(503).json({
+      code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
+      error: ACCESS_CHECK_UNAVAILABLE_MESSAGE,
+      retryable: true,
+    });
+  }
 
   // SECURITY FIX (M-2 / Finding 3): a valid `x-ps-session` token used to be sufficient on its
   // own - it was a fully self-contained, unrevocable claim, never cross-checked against the
@@ -904,7 +1013,13 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       return null;
     }
 
-    const session = await getActivePaidSession(parsed.jti);
+    let session;
+    try {
+      session = await lookupPaidSession(parsed.jti);
+    } catch {
+      sendAccessCheckUnavailable(res);
+      return null;
+    }
     if (!session || session.firebaseUid !== identity.uid) {
       res.status(402).json({ error: SESSION_REQUIRED_MESSAGE, code: "SESSION_REQUIRED" });
       return null;
@@ -922,7 +1037,13 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     if (sessionToken && identity) {
       const parsed = verifySessionToken(sessionToken);
       if (parsed) {
-        const session = await getActivePaidSession(parsed.jti);
+        let session;
+        try {
+          session = await lookupPaidSession(parsed.jti);
+        } catch {
+          sendAccessCheckUnavailable(res);
+          return false;
+        }
         if (session && session.firebaseUid === identity.uid) return true; // paid users never touch the free-use table
       }
     }
@@ -939,9 +1060,14 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const key = identity.email || identity.uid;
       if (await checkAndConsumeFreeToolUse(key, tool)) return true;
     } catch (err) {
-      console.error(`[free-tool-usage] ${tool}`, err);
-      // Fail closed to the paid gate below rather than granting unlimited free use if the
-      // usage table is unreachable.
+      logSupabaseFailure(`free tool usage (${tool})`, err);
+      // Fail closed rather than granting unlimited free use if the usage table is unreachable.
+      // Without a paid-session token there is nothing else to check, so report the outage
+      // honestly instead of telling the parent they need a paid plan.
+      if (!sessionToken) {
+        sendAccessCheckUnavailable(res);
+        return false;
+      }
     }
 
     return !!(await requireSession(req, res, identity));
@@ -978,7 +1104,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
       let isPaid = false;
       if (parsedSession && identity) {
-        const session = await getActivePaidSession(parsedSession.jti);
+        const session = await lookupPaidSession(parsedSession.jti);
         isPaid = !!session && session.firebaseUid === identity.uid;
       }
 
@@ -1272,7 +1398,7 @@ ${analysisRules}`;
         }, model || "claude-sonnet-5");
 
         if (!coreResponse.text) {
-          throw new Error("Empty response received from the analysis service.");
+          throw new AnalyzerError("AI_RESPONSE_INVALID", 422, "The analysis service returned an empty response. Please retry analysis - your document is safe.", true);
         }
 
         const coreReport = extractJson(coreResponse.text);
@@ -1296,7 +1422,7 @@ ${analysisRules}`;
         ]);
 
         if (!coreResponse.text || !deepDiveResponse.text) {
-          throw new Error("Empty response received from the analysis service.");
+          throw new AnalyzerError("AI_RESPONSE_INVALID", 422, "The analysis service returned an empty response. Please retry analysis - your document is safe.", true);
         }
 
         const coreReport = extractJson(coreResponse.text);
@@ -1781,7 +1907,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
       const responseText = response.text;
       if (!responseText) {
-        throw new Error("Empty response received from the deep scan service.");
+        throw new AnalyzerError("AI_RESPONSE_INVALID", 422, "The deep scan returned an empty response. Please retry - your document is safe.", true);
       }
 
       const report = extractJson(responseText);

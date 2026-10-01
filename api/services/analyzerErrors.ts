@@ -5,6 +5,8 @@ export type AnalyzerErrorCode =
   | "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE"
   | "USAGE_LIMIT_REACHED"
   | "AI_PROVIDER_TEMPORARILY_UNAVAILABLE"
+  | "AI_PROVIDER_CONFIGURATION_ERROR"
+  | "AI_REQUEST_REJECTED"
   | "AI_RATE_LIMITED"
   | "AI_RESPONSE_INVALID"
   | "ANALYSIS_PERSISTENCE_FAILED"
@@ -26,8 +28,59 @@ export class AnalyzerError extends Error {
   }
 }
 
+/**
+ * Converts an error thrown by an AI provider SDK (Anthropic or Google GenAI) into an
+ * AnalyzerError using the HTTP status the SDK reports. Without this, a provider-side 401/403
+ * (bad or revoked API key) fell into the generic "status === 401" branch below and told the
+ * parent to sign in, and a 404 (unknown model) surfaced as a generic internal error. Nothing in
+ * the returned error contains provider credentials; the provider's own status/type are only
+ * logged server-side.
+ */
+export function providerFailure(error: any, provider: "claude" | "gemini"): AnalyzerError {
+  if (error instanceof AnalyzerError) return error;
+  const rawStatus = error?.status ?? error?.code;
+  const status = typeof rawStatus === "number" ? rawStatus : undefined;
+  const msg = String(error?.message || "").toLowerCase();
+  console.error(
+    `[AI Engine] ${provider} request failed: status=${status ?? "none"} name=${error?.name || "Error"} ` +
+      `type=${error?.error?.error?.type || error?.error?.type || "unknown"}`
+  );
+
+  if (status === 429 || msg.includes("rate limit") || msg.includes("quota") || msg.includes("resource_exhausted")) {
+    return new AnalyzerError(
+      "AI_RATE_LIMITED",
+      429,
+      "The AI service is experiencing rate limits. Please wait a moment before retrying - your document is safe.",
+      true
+    );
+  }
+  if (status === 401 || status === 403 || status === 404) {
+    return new AnalyzerError(
+      "AI_PROVIDER_CONFIGURATION_ERROR",
+      503,
+      "The analysis service is unavailable right now because of a configuration problem on our side. Your document is safe and this attempt was not counted against your analyses.",
+      false
+    );
+  }
+  if (status === 400 || status === 413 || status === 422) {
+    return new AnalyzerError(
+      "AI_REQUEST_REJECTED",
+      502,
+      "The analysis service could not process this document as submitted. Your document is safe - if it is very long, try a shorter excerpt.",
+      false
+    );
+  }
+  // No status (connection reset, DNS, timeout) or 408/409/5xx/529 overloaded.
+  return new AnalyzerError(
+    "AI_PROVIDER_TEMPORARILY_UNAVAILABLE",
+    503,
+    "The AI analysis engine is temporarily busy or unreachable. Please wait a moment and try again - your document is safe.",
+    true
+  );
+}
+
 export function formatAnalyzerErrorResponse(error: any): {
-  code: AnalyzerErrorCode;
+  code: AnalyzerErrorCode | string;
   error: string;
   statusCode: number;
   retryable: boolean;
@@ -38,6 +91,18 @@ export function formatAnalyzerErrorResponse(error: any): {
       error: error.userMessage,
       statusCode: error.statusCode,
       retryable: error.retryable,
+    };
+  }
+
+  // Explicitly constructed lifecycle errors (e.g. INVALID_SOURCE, EMPTY_SOURCE) already carry a
+  // safe status/code/message - keep them instead of relabelling every one as a usage outage.
+  if (error?.name === "LifecycleError" && error?.code && error.code !== "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE") {
+    const lifecycleStatus = typeof error.statusCode === "number" ? error.statusCode : 400;
+    return {
+      code: error.code,
+      error: error.message,
+      statusCode: lifecycleStatus,
+      retryable: lifecycleStatus >= 500,
     };
   }
 
