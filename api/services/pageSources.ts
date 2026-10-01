@@ -15,6 +15,7 @@ export const hash = (value: string | Uint8Array) => createHash('sha256').update(
 const invalid = (message: string) => new LifecycleError(400,'INVALID_SOURCE',message);
 export type PageSource = { pageNumber: number; text: string; extractionMethod: string; confidence: null; checksum: string };
 export type OCR = (base64: string, mime: string) => Promise<string>;
+export const OCR_CONCURRENCY = 4;
 
 export function decodeSource(base64: unknown, mime: unknown): { bytes: Buffer; mime: string; checksum: string } {
   if (typeof base64 !== 'string' || base64.length > 30_000_000 || typeof mime !== 'string') throw invalid('Invalid or oversized source.');
@@ -38,15 +39,26 @@ export async function extractPages(bytes: Buffer, mime: string, ocr: OCR): Promi
       inputs.push({bytes:await single.save(),method:'gemini-page-ocr'});
     }
   } else inputs.push({bytes,method:mime==='text/plain'?'utf8-single-source':'gemini-image-ocr'});
-  const pages: PageSource[]=[];
-  for (const input of inputs) {
+  // Pages are OCR'd with bounded concurrency instead of strictly one after another: a 20-page
+  // PDF used to make 20 sequential OCR model calls, which could exceed the serverless function's
+  // time limit on its own. Each page is still a separate call with the same model and prompt,
+  // and page numbers still come from the PDF's own page order (results are stored by index).
+  const texts: string[] = new Array(inputs.length);
+  let next = 0;
+  const readPage = async (index: number) => {
+    const input = inputs[index];
     let text: string;
     if (mime==='text/plain') {
       try {text=new TextDecoder('utf-8',{fatal:true}).decode(input.bytes);} catch {throw invalid('Text must be valid UTF-8.');}
     } else text=await ocr(Buffer.from(input.bytes).toString('base64'),mime);
     if (typeof text!=='string'||text.length>100_000) throw invalid('Extracted page exceeds the supported limit.');
-    pages.push({pageNumber:pages.length+1,text,extractionMethod:input.method,confidence:null,checksum:hash(text)});
-  }
+    texts[index] = text;
+  };
+  const worker = async () => { while (next < inputs.length) await readPage(next++); };
+  await Promise.all(Array.from({ length: Math.min(OCR_CONCURRENCY, inputs.length) }, worker));
+  const pages: PageSource[] = inputs.map((input, index) => ({
+    pageNumber: index + 1, text: texts[index], extractionMethod: input.method, confidence: null, checksum: hash(texts[index]),
+  }));
   if (!pages.some(p=>p.text.trim())) throw new LifecycleError(422,'EMPTY_SOURCE','No readable text was extracted.');
   return pages;
 }

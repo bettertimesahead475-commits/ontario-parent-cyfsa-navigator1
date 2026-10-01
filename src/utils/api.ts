@@ -34,19 +34,52 @@ export async function apiFetch(input: string, init?: RequestInit): Promise<Respo
   return fetch(input, { ...init, headers });
 }
 
+/** Error thrown by safeReadJson for a non-2xx or non-JSON response. */
+export class ApiResponseError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly retryable: boolean;
+  readonly isRateLimit: boolean;
+  constructor(message: string, status: number, code: string | null, retryable: boolean, isRateLimit = false) {
+    super(message);
+    this.name = "ApiResponseError";
+    this.status = status;
+    this.code = code;
+    this.retryable = retryable;
+    this.isRateLimit = isRateLimit;
+  }
+}
+
 /**
- * Safely parses the JSON response. If the response content-type is not JSON,
- * it returns a helpful error with a snippet of the response text (e.g. from a server 502/503 HTML error page).
+ * Safely parses the JSON response. A non-2xx response throws an ApiResponseError that keeps the
+ * server's status, machine-readable `code` and `retryable` flag, so callers can tell "sign in" /
+ * "free limit reached" (never worth retrying) apart from a temporary outage. A non-JSON response
+ * (typically a gateway timeout page) is reported as a readable message, never raw HTML.
  */
 export async function safeReadJson(response: Response): Promise<any> {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {
-    const text = await response.text();
-    throw new Error(`Server returned non-JSON response (${response.status}): ${text.substring(0, 150) || "No content"}`);
+    await response.text().catch(() => "");
+    const status = response.status;
+    const message =
+      status === 504 || status === 502
+        ? "The server took too long to respond. Your document is safe - please try again in a moment."
+        : status >= 500
+          ? `The server is temporarily unavailable (${status}). Your document is safe - please try again in a moment.`
+          : `Unexpected server response (${status}).`;
+    throw new ApiResponseError(message, status, null, status >= 500 || status === 408);
   }
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || `Server error (${response.status})`);
+    const status = response.status;
+    const retryable = typeof data?.retryable === "boolean" ? data.retryable : status >= 500 || status === 429 || status === 408;
+    throw new ApiResponseError(
+      data?.error || `Server error (${status})`,
+      status,
+      typeof data?.code === "string" ? data.code : null,
+      retryable,
+      status === 429 || data?.isRateLimit === true
+    );
   }
   return data;
 }

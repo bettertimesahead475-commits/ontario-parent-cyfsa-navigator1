@@ -7,7 +7,7 @@ import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson } from "../utils/api";
+import { apiFetch, safeReadJson, ApiResponseError } from "../utils/api";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -49,6 +49,7 @@ import {
   CloudUpload
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
+import { normalizeAnalysisReport } from "../utils/analysisReport";
 
 // Escapes a value for safe interpolation into the raw HTML strings the print/export
 // views build (both as element text and inside HTML attributes like `class="..."`).
@@ -85,6 +86,8 @@ interface OrganizedFile {
   content: string; // Plaintext content or base64 representation
   analysisStatus: "pending" | "analyzing" | "completed" | "failed";
   analysisReport?: AnalysisReport;
+  // Why the last analysis attempt failed, as reported by the server (shown to the parent).
+  analysisError?: string;
   // Legacy local workspace retains structural page attribution. Persistent UUIDs
   // are issued only by the matter-scoped document API, never invented here.
   sourcePages?: { pageNumber: number; text: string; extractionMethod: string; checksum: string }[];
@@ -315,9 +318,16 @@ export default function DocumentAnalyzerTab() {
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Active Audit Visual State
-  const [selectedReport, setSelectedReport] = useState<AnalysisReport | null>(() => {
-    return parsedProg?.selectedReport || null;
+  const [selectedReport, setSelectedReportState] = useState<AnalysisReport | null>(() => {
+    return normalizeAnalysisReport(parsedProg?.selectedReport || null);
   });
+  // Every report entering the results view is normalized, whichever path set it (fast analysis,
+  // deep-scan merge, a saved report re-opened, or progress restored from localStorage).
+  const setSelectedReport = React.useCallback(
+    (next: AnalysisReport | null | ((prev: AnalysisReport | null) => AnalysisReport | null)) =>
+      setSelectedReportState(prev => normalizeAnalysisReport(typeof next === "function" ? next(prev) : next)),
+    []
+  );
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState<boolean>(false);
   const [singleAnalysisError, setSingleAnalysisError] = useState<string>("");
 
@@ -1681,33 +1691,12 @@ export default function DocumentAnalyzerTab() {
                     body: JSON.stringify({ ...payload, mode: "fast", model: claudeModel })
                   });
 
+                  // safeReadJson throws an ApiResponseError (status/code/retryable) for any
+                  // non-2xx response; the catch below decides whether a retry can help. The
+                  // status checks that used to sit here ran only after that throw, so they were
+                  // unreachable: "sign in" / "free limit reached" were retried three times and the
+                  // reason never reached the parent.
                   const dataResult = await safeReadJson(response);
-
-                  if (response.status === 429 || dataResult.isRateLimit) {
-                    attempts++;
-                    if (attempts >= maxAttempts) throw new Error("Quota/rate limit exceeded.");
-                    await new Promise(r => setTimeout(r, delayMs));
-                    delayMs = Math.min(delayMs * 1.5, 10000);
-                    continue;
-                  }
-
-                  if (!response.ok) {
-                    const errMsg = (dataResult.error || "").toLowerCase();
-                    if (dataResult.code === "SIGN_IN_REQUIRED" || dataResult.code === "FREE_LIMIT_REACHED") {
-                      // No retry can fix "not signed in" or "out of free uses" - force the
-                      // loop to stop now instead of burning two more pointless attempts.
-                      attempts = maxAttempts;
-                      throw new Error(dataResult.error);
-                    }
-                    if (errMsg.includes("quota") || errMsg.includes("429") || errMsg.includes("rate") || errMsg.includes("exhausted")) {
-                      attempts++;
-                      if (attempts >= maxAttempts) throw new Error("Quota limit exceeded.");
-                      await new Promise(r => setTimeout(r, delayMs));
-                      delayMs = Math.min(delayMs * 1.5, 10000);
-                      continue;
-                    }
-                    throw new Error(dataResult.error || `Server returned error ${response.status}`);
-                  }
 
                   // Update UI for this individual file as soon as it's done
                   // BUG FIX (flagged in audit): this used to leave f.content as the original
@@ -1719,7 +1708,7 @@ export default function DocumentAnalyzerTab() {
                   // uploads. Persisting payload.textContent here (the real extracted text used
                   // for this very analysis) is the fix.
                   setOrganizedFiles(prev => prev.map(f =>
-                    f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: dataResult, content: payload.textContent || f.content } : f
+                    f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: dataResult, analysisError: undefined, content: payload.textContent || f.content } : f
                   ));
                   // Show the first completed report so its case brief and handover are usable,
                   // including when an earlier file in the batch failed.
@@ -1732,16 +1721,21 @@ export default function DocumentAnalyzerTab() {
 
                   setBulkProgress(`Audited ${completedCount} of ${totalFiles} files.`);
 
-                } catch (error) {
+                } catch (error: any) {
                   console.error(`Analysis failed for ${file.name}:`, error);
                   attempts++;
-                  if (attempts >= maxAttempts) {
+                  // Errors without a status (network drop, client-side extraction checks) keep
+                  // the old retry behaviour; server responses are only retried when retryable.
+                  const canRetry = error instanceof ApiResponseError ? error.retryable : true;
+                  if (!canRetry || attempts >= maxAttempts) {
+                    const reason = error?.message || "Analysis failed. Please retry.";
                     setOrganizedFiles(prev => prev.map(f =>
-                      f.id === file.id ? { ...f, analysisStatus: "failed" } : f
+                      f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: reason } : f
                     ));
                     break;
                   }
                   await new Promise(r => setTimeout(r, delayMs));
+                  delayMs = Math.min(delayMs * 1.5, 10000);
                 }
               }
               activeCount--;
@@ -1774,7 +1768,7 @@ export default function DocumentAnalyzerTab() {
     setSelectedReport(null);
 
     setOrganizedFiles(prev => prev.map(f => 
-      f.id === file.id ? { ...f, analysisStatus: "analyzing" } : f
+      f.id === file.id ? { ...f, analysisStatus: "analyzing", analysisError: undefined } : f
     ));
 
     try {
@@ -1826,7 +1820,7 @@ export default function DocumentAnalyzerTab() {
       // real extracted text onto content, not just the analysis report, so the Cross-Document
       // Timeline and RAG case chat get real text instead of leftover raw base64 for this file.
       setOrganizedFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: report, content: payload.textContent || f.content } : f
+        f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: report, analysisError: undefined, content: payload.textContent || f.content } : f
       ));
       autoUploadToTemplates(report, file.name, file.id);
       autoBuildCaseTimeline(
@@ -1836,7 +1830,7 @@ export default function DocumentAnalyzerTab() {
     } catch (err: any) {
       setSingleAnalysisError(err.message || "Failed single scan.");
       setOrganizedFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, analysisStatus: "failed" } : f
+        f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: err.message || "Failed single scan." } : f
       ));
     } finally {
       setIsSingleAnalyzing(false);
@@ -3168,10 +3162,10 @@ export default function DocumentAnalyzerTab() {
                     </div>
                 </div>
 
-                  {singleAnalysisError && (
-                    <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2" id="single-analysis-error-banner">
+                  {(singleAnalysisError || (activeSelectedFile.analysisStatus === "failed" && activeSelectedFile.analysisError)) && (
+                    <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2" id="single-analysis-error-banner">
                       <span className="font-bold shrink-0">⚠️ Audit failed:</span>
-                      <span className="break-words">{singleAnalysisError}</span>
+                      <span className="break-words">{singleAnalysisError || activeSelectedFile.analysisError}</span>
                     </div>
                   )}
 

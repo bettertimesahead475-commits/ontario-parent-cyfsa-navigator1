@@ -9,6 +9,7 @@
 import { getSupabase } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 import { withTransientRetry } from "./transientRetry.js";
+import { logSupabaseFailure } from "./supabaseDiagnostics.js";
 
 export const FREE_ANALYSES_LIMIT = 1;
 
@@ -16,14 +17,25 @@ export async function getFreeUsage(uid: string): Promise<number> {
   try {
     return await withTransientRetry(async () => {
       const db = getSupabase();
-      const { data, error } = await db.from("free_usage").select("analyses_used").eq("uid", uid).maybeSingle();
+      // postgrest-js retries failed GETs internally (1s + 2s + 4s backoff). Stacked under
+      // withTransientRetry's own three attempts, an unreachable database made the parent wait
+      // ~20s (or minutes on connect timeouts) before the access check failed. One retry layer -
+      // the short one here - is kept; the result still fails closed.
+      const { data, error } = await db
+        .from("free_usage")
+        .select("analyses_used")
+        .eq("uid", uid)
+        .retry(false)
+        .maybeSingle();
       if (error) {
-        throw Object.assign(new Error(`Failed to read usage: ${error.message}`), { statusCode: 500 });
+        throw Object.assign(new Error(`Failed to read usage: ${error.message}`), { statusCode: 500, supabaseError: error });
       }
       return data?.analyses_used ?? 0;
     });
   } catch (err: any) {
     if (err instanceof LifecycleError) throw err;
+    // Still fails closed (never grants access); the cause is now recorded instead of discarded.
+    logSupabaseFailure("free_usage read", err?.supabaseError ?? err);
     throw new LifecycleError(
       503,
       "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
@@ -54,11 +66,12 @@ export async function recordFreeUse(uid: string, email: string | null): Promise<
         { onConflict: "uid" }
       );
       if (error) {
-        throw Object.assign(new Error(`Failed to record usage: ${error.message}`), { statusCode: 500 });
+        throw Object.assign(new Error(`Failed to record usage: ${error.message}`), { statusCode: 500, supabaseError: error });
       }
     });
   } catch (err: any) {
     if (err instanceof LifecycleError) throw err;
+    logSupabaseFailure("free_usage write", err?.supabaseError ?? err);
     throw new LifecycleError(
       503,
       "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
