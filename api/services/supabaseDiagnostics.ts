@@ -10,6 +10,8 @@
 // `ref` claims, the error message, and the network cause code. Key material is never returned.
 // ---------------------------------------------------------------------------
 
+import { resolveSupabaseCredentials } from "./access.js";
+
 export type SupabaseFailureKind =
   | "NOT_CONFIGURED"
   | "NETWORK" // the request never got an HTTP response (DNS, TCP, TLS, reset, timeout)
@@ -44,10 +46,10 @@ const NETWORK_CODES = new Set([
 ]);
 
 export function configuredSupabaseHost(): string | null {
-  const raw = process.env.SUPABASE_URL;
-  if (!raw) return null;
+  const { url } = resolveSupabaseCredentials();
+  if (!url) return null;
   try {
-    return new URL(raw.trim()).hostname || null;
+    return new URL(url.trim()).hostname || null;
   } catch {
     return "(SUPABASE_URL is not a valid URL)";
   }
@@ -117,18 +119,13 @@ export function logSupabaseFailure(operation: string, err: any): SupabaseFailure
 
 /** Non-secret facts about the configured service key, for the admin diagnostics route. */
 export function describeConfiguredKey(): {
-  source: "SUPABASE_SERVICE_ROLE_KEY" | "SUPABASE_SERVICE_KEY" | null;
+  source: string | null;
   format: "jwt" | "sb_secret" | "sb_publishable" | "other" | null;
   jwtRole: string | null;
   jwtRef: string | null;
 } {
-  const source = process.env.SUPABASE_SERVICE_ROLE_KEY
-    ? "SUPABASE_SERVICE_ROLE_KEY"
-    : process.env.SUPABASE_SERVICE_KEY
-      ? "SUPABASE_SERVICE_KEY"
-      : null;
-  const key = (source ? process.env[source] : "")?.trim() || "";
-  if (!key) return { source, format: null, jwtRole: null, jwtRef: null };
+  const { key, source } = resolveSupabaseCredentials();
+  if (!key) return { source: null, format: null, jwtRole: null, jwtRef: null };
   if (key.startsWith("sb_secret_")) return { source, format: "sb_secret", jwtRole: null, jwtRef: null };
   if (key.startsWith("sb_publishable_")) return { source, format: "sb_publishable", jwtRole: null, jwtRef: null };
   const parts = key.split(".");

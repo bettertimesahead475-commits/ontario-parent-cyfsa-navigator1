@@ -44,6 +44,7 @@ const {
   getActivePaidSession,
   revokeSession,
   revokeAllSessionsForUid,
+  resolveSupabaseCredentials,
 } = await import("./access.js");
 
 // Mirrors access.ts's private hashCode() exactly (SHA-256 of the uppercased/trimmed code) -
@@ -621,5 +622,60 @@ describe("revocation", () => {
     expect(await getActivePaidSession(userASessionB.id)).toBeNull();
     // The unrelated user's session must remain completely unaffected.
     expect(await getActivePaidSession(userBSession.id)).not.toBeNull();
+  });
+});
+
+describe("resolveSupabaseCredentials", () => {
+  const origRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const origKey = process.env.SUPABASE_SERVICE_KEY;
+  const origUrl = process.env.SUPABASE_URL;
+
+  afterEach(() => {
+    delete process.env.sb_secret_123_SERVICE_ROLE_KEY;
+    delete process.env.sb_secret_123_SUPABASE_URL;
+    if (origRole !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = origRole;
+    else delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (origKey !== undefined) process.env.SUPABASE_SERVICE_KEY = origKey;
+    else delete process.env.SUPABASE_SERVICE_KEY;
+    if (origUrl !== undefined) process.env.SUPABASE_URL = origUrl;
+    else delete process.env.SUPABASE_URL;
+  });
+
+  it("prioritizes SUPABASE_SERVICE_ROLE_KEY over integration and legacy keys", () => {
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "role-key";
+    process.env.sb_secret_123_SERVICE_ROLE_KEY = "int-key";
+    process.env.SUPABASE_SERVICE_KEY = "legacy-key";
+
+    const res = resolveSupabaseCredentials();
+    expect(res.key).toBe("role-key");
+    expect(res.source).toBe("SUPABASE_SERVICE_ROLE_KEY");
+  });
+
+  it("uses integration sb_secret_..._SERVICE_ROLE_KEY if SUPABASE_SERVICE_ROLE_KEY is missing", () => {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.sb_secret_123_SERVICE_ROLE_KEY = "int-key";
+    process.env.SUPABASE_SERVICE_KEY = "legacy-key";
+
+    const res = resolveSupabaseCredentials();
+    expect(res.key).toBe("int-key");
+    expect(res.source).toBe("sb_secret_123_SERVICE_ROLE_KEY");
+  });
+
+  it("falls back to SUPABASE_SERVICE_KEY if no role key or integration key exists", () => {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.sb_secret_123_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SERVICE_KEY = "legacy-key";
+
+    const res = resolveSupabaseCredentials();
+    expect(res.key).toBe("legacy-key");
+    expect(res.source).toBe("SUPABASE_SERVICE_KEY");
+  });
+
+  it("resolves integration sb_secret_..._SUPABASE_URL if SUPABASE_URL is missing", () => {
+    delete process.env.SUPABASE_URL;
+    process.env.sb_secret_123_SUPABASE_URL = "https://int-proj.supabase.co";
+
+    const res = resolveSupabaseCredentials();
+    expect(res.url).toBe("https://int-proj.supabase.co");
   });
 });

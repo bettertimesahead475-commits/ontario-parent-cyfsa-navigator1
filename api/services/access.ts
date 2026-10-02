@@ -48,15 +48,49 @@ export const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L — easy to type off a phone
 const CODE_TTL_DAYS = 14; // an issued-but-unredeemed code expires after this long
 
+export function resolveSupabaseCredentials(): { url: string | null; key: string | null; source: string | null } {
+  let url = (process.env.SUPABASE_URL || "").trim() || null;
+  if (!url) {
+    const intUrlKey = Object.keys(process.env).find((k) => /^sb_secret_.*_(SUPABASE_URL|URL)$/i.test(k));
+    if (intUrlKey) {
+      url = (process.env[intUrlKey] || "").trim() || null;
+    }
+  }
+
+  let key: string | null = null;
+  let source: string | null = null;
+
+  if ((process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim()) {
+    key = process.env.SUPABASE_SERVICE_ROLE_KEY!.trim();
+    source = "SUPABASE_SERVICE_ROLE_KEY";
+  } else {
+    const intKey = Object.keys(process.env).find((k) =>
+      /^sb_secret_.*_(SERVICE_ROLE_KEY|SUPABASE_SERVICE_ROLE_KEY)$/i.test(k)
+    );
+    if (intKey && (process.env[intKey] || "").trim()) {
+      key = process.env[intKey]!.trim();
+      source = intKey;
+    } else if ((process.env.SUPABASE_SERVICE_KEY || "").trim()) {
+      key = process.env.SUPABASE_SERVICE_KEY!.trim();
+      source = "SUPABASE_SERVICE_KEY";
+    }
+  }
+
+  return { url, key, source };
+}
+
 let supabase: SupabaseClient | null = null;
+export function resetSupabaseClientForTesting() {
+  supabase = null;
+}
+
 export function getSupabase(): SupabaseClient {
   if (supabase) return supabase;
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+  const { url, key } = resolveSupabaseCredentials();
   if (!url || !key) {
     throw Object.assign(
       new Error(
-        "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY) are not configured. Set them in Vercel → Project → Settings → Environment Variables, then redeploy."
+        "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY or integration sb_secret_*_SERVICE_ROLE_KEY) are not configured. Set them in Vercel → Project → Settings → Environment Variables, then redeploy."
       ),
       { statusCode: 503 }
     );
