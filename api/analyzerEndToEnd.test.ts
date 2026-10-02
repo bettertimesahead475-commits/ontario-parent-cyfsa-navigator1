@@ -28,6 +28,11 @@ const mockAccess = vi.hoisted(() => ({
   revokeSession: vi.fn(),
   revokeAllSessionsForUid: vi.fn(),
   checkAndConsumeFreeToolUse: vi.fn(),
+  resolveSupabaseCredentials: vi.fn(() => ({
+    url: process.env.SUPABASE_URL || "https://example.supabase.co",
+    key: process.env.SUPABASE_SERVICE_ROLE_KEY || "test-service-role-key",
+    source: "SUPABASE_SERVICE_ROLE_KEY",
+  })),
   TIER_PRICES: { Pro: 19, Premium: 49 },
 }));
 const mockFirebaseAdmin = vi.hoisted(() => ({ verifyFirebaseToken: vi.fn() }));
