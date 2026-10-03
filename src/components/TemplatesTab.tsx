@@ -900,12 +900,15 @@ export default function TemplatesTab() {
         </div>
       `;
     } else if (activeBuilderTab === "answer-33b") {
-      title = "Form 33B Answer Draft";
+      title = "Form 33B.1 Answer Preparation (Educational)";
       bodyContent = `
         <div class="court-header">
           <div class="court-title">Ontario Court of Justice (Family Branch)</div>
           <div class="jurisdiction">Province of Ontario, Canada • Family Law Rules</div>
-          <div class="draft-notice">FORM 33B: ANSWER (CHILD PROTECTION) - EDUCATIONAL WORKBOOK DRAFT</div>
+          <div class="draft-notice">⚠️ EDUCATIONAL PREPARATION DRAFT — NOT AN OFFICIAL FORM</div>
+          <div style="margin-top: 8px; padding: 10px; background-color: #fef08a; border: 1px solid #eab308; border-radius: 6px; font-size: 11px; line-height: 1.4; color: #713f12; font-weight: normal;">
+            <strong>CRITICAL:</strong> This educational draft must be filed as official <strong>FORM 33B.1: Answer and Plan of Care (Parties Other Than CAS)</strong>, not Form 33B. Form 33B is only for Children's Aid Society. Parents and respondents must file Form 33B.1. Confirm with your lawyer before filing.
+          </div>
         </div>
 
         <table class="court-box-table">
@@ -929,7 +932,7 @@ export default function TemplatesTab() {
           </tr>
         </table>
 
-        <div class="document-title">Respondent's Answer (Child Protection)</div>
+        <div class="document-title">RESPONDENT'S ANSWER AND PLAN OF CARE (EDUCATIONAL PREPARATION FOR FORM 33B.1)</div>
 
         <div class="section-header">1. Respondent parent's legal claim details</div>
         <div class="text-block"><strong>Proposed Order Requested:</strong><br/>${escapeHtml(form33b.claimDetails || "Not Specified")}</div>
@@ -1076,9 +1079,12 @@ export default function TemplatesTab() {
         <div className="flex gap-3">
           <Info className="text-amber-600 shrink-0 w-6 h-6" />
           <div>
-            <h4 className="font-display font-medium text-amber-900 text-sm md:text-base">EDUCATIONAL TEMPLATES WARNING</h4>
-            <p className="text-amber-800 text-xs md:text-sm mt-1 leading-relaxed">
-              These auto-fill sheets generate **informally prepared educational drafts** to structure your thoughts and evidentiary indexes. **They are not court-ready legal filings.** Do not submit these directly to the court registry without your defense counsel's review and signature.
+            <h4 className="font-display font-medium text-amber-900 text-sm md:text-base">⚠️ EDUCATIONAL TEMPLATES ONLY — NOT OFFICIAL COURT FORMS</h4>
+            <p className="text-amber-800 text-xs md:text-sm mt-2 leading-relaxed">
+              The 7 builders below generate **self-authored educational preparation drafts** to help you organize your thoughts, evidence, and arguments. These are <strong>NOT official Ontario Family Law Rules prescribed forms</strong> (Forms 8B, 14, 14A, 17B, 17C, 23, 33B, 33B.1, etc.).
+            </p>
+            <p className="text-amber-800 text-xs md:text-sm mt-2 leading-relaxed">
+              You must file the actual prescribed forms from the Ontario Courts website when required by the Family Law Rules. Your lawyer will advise which official forms are required for your case and must review them before filing. These educational tools are for preparing your arguments and organizing evidence only.
             </p>
           </div>
         </div>
@@ -1086,94 +1092,96 @@ export default function TemplatesTab() {
 
       {/* Builder Select tabs */}
       <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3" id="builder-tabs-list">
+        <div className="w-full text-[10px] font-mono text-slate-500 mb-1">📚 EDUCATIONAL PREPARATION BUILDERS (Not Official Forms)</div>
+
         <button
           onClick={() => setActiveBuilderTab("affidavit")}
           className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border cursor-pointer transition-all ${
             activeBuilderTab === "affidavit"
-              ? "bg-brand-900 border-brand-950 text-white shadow-xs"
-              : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+              ? "bg-slate-800 border-slate-900 text-white shadow-xs"
+              : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
           }`}
         >
           <Scale className="w-3.5 h-3.5" />
-          <span>1. Affidavit Draft Builder</span>
+          <span>1. 📝 Affidavit Prep</span>
         </button>
 
         <button
           onClick={() => setActiveBuilderTab("timeline")}
           className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border cursor-pointer transition-all ${
             activeBuilderTab === "timeline"
-              ? "bg-brand-900 border-brand-950 text-white shadow-xs"
-              : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+              ? "bg-slate-800 border-slate-900 text-white shadow-xs"
+              : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
           }`}
         >
           <Calendar className="w-3.5 h-3.5" />
-          <span>2. Factual Case Timeline</span>
-          
+          <span>2. 📅 Timeline Tracker</span>
+
         </button>
 
         <button
           onClick={() => setActiveBuilderTab("evidence-log")}
           className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border cursor-pointer transition-all ${
             activeBuilderTab === "evidence-log"
-              ? "bg-brand-900 border-brand-950 text-white shadow-xs"
-              : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+              ? "bg-slate-800 border-slate-900 text-white shadow-xs"
+              : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
-          <span>3. Evidentiary Audit Log</span>
-          
+          <span>3. 📋 Evidence Log</span>
+
         </button>
 
         <button
           onClick={() => setActiveBuilderTab("issue-sheet")}
           className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border cursor-pointer transition-all ${
             activeBuilderTab === "issue-sheet"
-              ? "bg-brand-900 border-brand-950 text-white shadow-xs"
-              : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+              ? "bg-slate-800 border-slate-900 text-white shadow-xs"
+              : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
           }`}
         >
           <BookOpen className="w-3.5 h-3.5" />
-          <span>4. CAS Allegations Reply</span>
-          
+          <span>4. ⚖️ Issue Sheet</span>
+
         </button>
 
         <button
           onClick={() => setActiveBuilderTab("prep")}
           className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border cursor-pointer transition-all ${
             activeBuilderTab === "prep"
-              ? "bg-brand-900 border-brand-950 text-white shadow-xs"
-              : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+              ? "bg-slate-800 border-slate-900 text-white shadow-xs"
+              : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
           }`}
         >
           <Clock className="w-3.5 h-3.5" />
-          <span>5. Hearing Preparation Sheet</span>
-          
+          <span>5. 🎯 Prep Sheet</span>
+
         </button>
 
         <button
           onClick={() => setActiveBuilderTab("answer-33b")}
           className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border cursor-pointer transition-all ${
             activeBuilderTab === "answer-33b"
-              ? "bg-brand-900 border-brand-950 text-white shadow-xs"
-              : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+              ? "bg-amber-900 border-amber-950 text-white shadow-xs"
+              : "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300"
           }`}
         >
-          <Scale className="w-3.5 h-3.5 text-brand-500" />
-          <span>6. Form 33B Answer</span>
-          
+          <Scale className="w-3.5 h-3.5 text-amber-600" />
+          <span>6. 📋 Educational: Respondent Answer (Maps to Official Form 33B.1)</span>
+
         </button>
 
         <button
           onClick={() => setActiveBuilderTab("plan-of-care")}
           className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border cursor-pointer transition-all ${
             activeBuilderTab === "plan-of-care"
-              ? "bg-brand-900 border-brand-950 text-white shadow-xs"
-              : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+              ? "bg-slate-800 border-slate-900 text-white shadow-xs"
+              : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
           }`}
         >
-          <Heart className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
-          <span>7. Personalized Plan of Care</span>
-          
+          <Heart className="w-3.5 h-3.5 text-rose-500" />
+          <span>7. 💝 Plan of Care Prep</span>
+
         </button>
       </div>
 
