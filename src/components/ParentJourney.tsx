@@ -274,34 +274,58 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
   }, [page]);
 
   if (page === "home") return <div className="space-y-0">
-    <JourneyNav />
-
     {/* HERO */}
-    <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-brand-950 to-brand-800 px-6 py-12 text-white shadow-xl sm:px-10 md:py-20">
-      <div className="mx-auto max-w-5xl">
-        <p className="text-xs font-bold uppercase tracking-widest text-brand-200">For Ontario parents in child protection proceedings</p>
-        <h1 className="mt-4 font-display text-4xl font-black leading-tight md:text-5xl">Understand your CAS paperwork before your next court date.</h1>
-        <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-200">
-          CYFSA Navigator explains your rights in plain language and reads your court documents with you, so you can spot what is missing, what is unclear, and what to ask your lawyer.
-        </p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/rights">
-            <span className="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-base font-bold text-brand-900 transition hover:bg-slate-100">
-              START WITH YOUR RIGHTS <ArrowRight className="h-5 w-5" />
-            </span>
-          </Link>
-          <Link href="/document-analyzer">
-            <span className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-6 py-3 text-base font-bold text-white transition hover:bg-white/10">
-              Analyze a document
-            </span>
-          </Link>
+    <section
+      className="relative isolate overflow-hidden rounded-[1.75rem] border border-white/10 px-6 py-10 text-white shadow-2xl shadow-slate-950/20 sm:px-10 sm:py-14 lg:px-14 lg:py-16"
+      style={{ background: "radial-gradient(ellipse at 82% 45%, rgba(37, 99, 235, .35), transparent 36%), linear-gradient(118deg, #07142f 0%, #0a1c41 54%, #102e68 100%)" }}
+      aria-labelledby="home-hero-title"
+    >
+      <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[48%] items-center justify-center sm:flex" aria-hidden="true">
+        <svg viewBox="0 0 440 360" className="h-full max-h-[360px] w-full max-w-[440px] opacity-35" fill="none">
+          <circle cx="222" cy="56" r="21" stroke="#d9e7ff" strokeWidth="2" />
+          <path d="M196 83c-15 8-24 22-27 42l-7 48 31 8 8-47-3 51h48l-3-51 8 47 31-8-7-48c-3-20-12-34-27-42l-12-5-14 18-14-18-12 5Z" stroke="#d9e7ff" strokeWidth="2" strokeLinejoin="round" />
+          <path d="M222 96v113m-71-78h142m-71-17-57 17m57-17 57 17" stroke="#e4bd68" strokeWidth="2.2" strokeLinecap="round" />
+          <path d="m151 131-23 45m23-45 23 45m-46 0h46c0 14-10 23-23 23s-23-9-23-23Zm142-45-23 45m23-45 23 45m-46 0h46c0 14-10 23-23 23s-23-9-23-23Z" stroke="#e4bd68" strokeWidth="2" strokeLinejoin="round" />
+          <path d="M201 209h42m-21 0v37m-36 0h72m-62-8h52m-43-8h34" stroke="#d9e7ff" strokeWidth="2" strokeLinecap="round" />
+          <circle cx="222" cy="151" r="116" stroke="#d9e7ff" strokeOpacity=".24" />
+          <circle cx="222" cy="151" r="139" stroke="#d9e7ff" strokeOpacity=".12" />
+        </svg>
+      </div>
+      <div className="relative z-10 grid items-center gap-8 lg:grid-cols-[1.12fr_.88fr]">
+        <div className="max-w-3xl">
+          <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-blue-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+            Real analysis <span className="text-white/45">•</span> Real results
+          </p>
+          <h1 id="home-hero-title" className="mt-5 max-w-3xl font-display text-[2.35rem] font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-[3.7rem]">
+            What your CAS affidavits really say — <span className="text-blue-200">and what they don’t.</span>
+          </h1>
+          <p className="mt-5 max-w-2xl text-base leading-relaxed text-slate-200 sm:text-lg">
+            Upload the court documents from your case and review potential contradictions, unsupported statements, missing evidence, and questions to discuss with your lawyer.
+          </p>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <Link href="/document-analyzer">
+              <span className="inline-flex min-h-14 w-full cursor-pointer items-center justify-center gap-2.5 rounded-xl bg-blue-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-blue-900 sm:w-auto">
+                <FileSearch className="h-5 w-5" aria-hidden="true" />
+                Upload Your Documents
+              </span>
+            </Link>
+            <Link href="/analysis-example">
+              <span className="inline-flex min-h-14 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/5 px-5 py-4 text-sm font-semibold text-white transition hover:border-white/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:w-auto">
+                See an Example Analysis <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </span>
+            </Link>
+          </div>
+          <p className="mt-5 text-xs leading-relaxed text-blue-100/75">
+            Educational document analysis to help you prepare questions. It is not legal advice or a substitute for a lawyer’s review.
+          </p>
         </div>
-        <p className="mt-6 text-xs text-slate-300">Educational tool. Not legal advice. Not affiliated with any Children's Aid Society, court, or the Law Society of Ontario.</p>
+        <div className="hidden min-h-64 lg:block" aria-hidden="true" />
       </div>
     </section>
 
     {/* FIRST FIVE DAYS — urgency that opens into the whole journey */}
-    <section className="px-6 py-14 sm:px-10 md:py-20 bg-amber-50 border-y border-amber-200">
+    <section className="px-6 py-14 sm:px-10 md:py-20 bg-slate-50 border-y border-slate-200">
       <div className="mx-auto max-w-5xl">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-800">The first five days are crucial. Your journey doesn't end there.</p>
         <h2 className="mt-3 max-w-4xl font-display text-3xl font-black leading-tight text-slate-950 md:text-4xl">Be prepared for the first hearing — and for what comes next.</h2>
