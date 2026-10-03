@@ -181,7 +181,10 @@ export default function App() {
             <div className="md:hidden flex items-center">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none"
+                aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="mobile-nav-panel"
+                className="p-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -233,7 +236,7 @@ export default function App() {
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
       <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-2 overflow-x-auto py-1">
+          <div className="flex flex-wrap justify-center gap-2 py-1">
             {navItems.map((item) => {
               const isActive = location === item.path;
               return (
