@@ -312,6 +312,19 @@ describe("POST /api/analyze", () => {
     expect(res.body.isRateLimit).toBe(true);
   });
 
+  it("rejects encoded PDF content as plaintext before calling Claude", async () => {
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: Buffer.alloc(1500, 42).toString("base64") });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("EXTRACTION_REQUIRED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized analysis inputs before calling Claude", async () => {
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "court record ".repeat(26_000) });
+    expect(res.status).toBe(413);
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
   it("rejects an unauthenticated, unpaid request with SIGN_IN_REQUIRED", async () => {
     const res = await request(app).post("/api/analyze").send({ textContent: "some text" });
     expect(res.status).toBe(401);
@@ -319,19 +332,18 @@ describe("POST /api/analyze", () => {
     expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
-  it("allows an authenticated analysis when the usage store is temporarily unavailable", async () => {
+  it("fails closed with a structured error when usage is unavailable", async () => {
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "parent@example.com" });
     mockUsage.getFreeUsage.mockRejectedValueOnce(new Error("fetch failed"));
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
 
     const res = await request(app)
       .post("/api/analyze")
       .set("Authorization", "Bearer valid-firebase-token")
       .send({ textContent: "some text" });
 
-    expect(res.status).toBe(200);
-    expect(mockUsage.recordFreeUse).toHaveBeenCalledWith("uid-1", "parent@example.com");
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("USAGE_UNAVAILABLE");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
   it("allows a signed-in parent's first free analysis, then blocks the second", async () => {
@@ -432,6 +444,18 @@ describe("POST /api/rag-query", () => {
     const sentPrompt = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
     expect(sentPrompt).toContain("CONVERSATION SO FAR");
     expect(sentPrompt).toContain("Jane");
+  });
+
+  it("reduces oversized retrieved context while preserving source identity", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("The document states ..."));
+    const res = await request(app).post("/api/rag-query").set(paid()).send({
+      query: "hearing", files: [{ name: "Affidavit", category: "Court Filings", content: "hearing " + "Court filing paragraph. ".repeat(18_000) }]
+    });
+    expect(res.status).toBe(200);
+    const sent = JSON.stringify(mockCreateMessage.mock.calls[0][0].messages);
+    expect(sent.length).toBeLessThan(320_000);
+    expect(sent).toContain("Affidavit");
+    expect(sent).toContain("character offset");
   });
 
   it("omits the conversation-history block when no history is given", async () => {
