@@ -278,7 +278,8 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
 
     {/* HERO */}
     <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-brand-950 to-brand-800 px-6 py-12 text-white shadow-xl sm:px-10 md:py-20">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto grid max-w-5xl items-center gap-10 md:grid-cols-[1fr_280px]">
+        <div>
         <p className="text-xs font-bold uppercase tracking-widest text-brand-200">For Ontario parents in child protection proceedings</p>
         <h1 className="mt-4 font-display text-4xl font-black leading-tight md:text-5xl">Understand your CAS paperwork before your next court date.</h1>
         <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-200">
@@ -297,6 +298,16 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
           </Link>
         </div>
         <p className="mt-6 text-xs text-slate-300">Educational tool. Not legal advice. Not affiliated with any Children's Aid Society, court, or the Law Society of Ontario.</p>
+        </div>
+        <div className="hidden md:flex flex-col items-center justify-center" aria-label="Lady Justice">
+          <div className="relative flex h-64 w-56 items-center justify-center rounded-[2rem] border border-white/20 bg-white/10 shadow-2xl backdrop-blur-sm">
+            <Scale className="h-36 w-36 text-white/90" strokeWidth={1.15} />
+            <div className="absolute bottom-5 text-center">
+              <p className="font-display text-sm font-black uppercase tracking-[0.22em] text-white">Lady Justice</p>
+              <p className="mt-1 text-[10px] uppercase tracking-widest text-brand-200">Clarity · Balance · Evidence</p>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
