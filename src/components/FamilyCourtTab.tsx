@@ -6,7 +6,8 @@
 import React, { useState } from "react";
 import { COURT_STEPS } from "../data";
 import { CourtStep } from "../types";
-import { GitCommit, Download, Calendar, Scale, HelpCircle, Shield, AlertCircle, Sparkles, ChevronRight } from "lucide-react";
+import { OFFICIAL_FORMS, getAllFormNumbers } from "../data/formRegistry";
+import { GitCommit, Download, Calendar, Scale, HelpCircle, Shield, AlertCircle, Sparkles, ChevronRight, BookOpen, Gavel } from "lucide-react";
 
 export default function FamilyCourtTab() {
   const [activeStepId, setActiveStepId] = useState<string>("step-1-apprehension");
@@ -240,6 +241,68 @@ export default function FamilyCourtTab() {
             <p className="text-xs text-slate-400 mt-1 lines-clamp-3 leading-relaxed">
               Make sure your lawyer calls first-hand observers (like doctors, relatives, daycare supervisors) to file Form 14A affidavits. Relying on your own memory to counter CAS claims is rarely enough; direct evidence speaks loudest.
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Official Ontario Court Forms Library */}
+      <div className="space-y-6 pt-4 border-t border-gray-200" id="official-court-forms-library">
+        <div className="text-left">
+          <h2 className="font-display text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Gavel className="w-6 h-6 text-emerald-600" />
+            Official Ontario Family Law Rules Prescribed Forms
+          </h2>
+          <p className="text-sm text-slate-700 mt-2 leading-relaxed">
+            Below are the official Ontario Family Law Rules (O. Reg. 114/99) prescribed forms that must be filed in child protection proceedings. These are downloadable from the Ontario Courts website. **Do not submit educational preparation templates** — you must file the official prescribed forms. Confirm with your lawyer which forms are required for your case.
+          </p>
+        </div>
+
+        {/* Forms Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {getAllFormNumbers().map((formNumber) => {
+            const form = OFFICIAL_FORMS[formNumber];
+            if (!form) return null;
+            return (
+              <div key={formNumber} className="bg-white rounded-xl border border-emerald-200 hover:border-emerald-400 p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className="inline-block text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-200">
+                      Form {formNumber}
+                    </span>
+                    <span className="text-[10px] font-mono font-medium text-slate-500">
+                      {form.stages.join(", ")}
+                    </span>
+                  </div>
+                  <h5 className="font-display font-semibold text-gray-800 text-xs md:text-sm">{form.officialTitle}</h5>
+                  <p className="text-xs text-slate-600 mt-2 leading-relaxed">{form.purpose}</p>
+                  <p className="text-[10px] text-slate-500 mt-1.5 italic">
+                    <strong>Filed by:</strong> {form.filedBy}
+                  </p>
+                </div>
+                <a
+                  href={form.officialUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-1.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium cursor-pointer transition-colors w-full mt-3"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Ontario Courts Download</span>
+                </a>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Legal Notice */}
+        <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl p-4">
+          <div className="flex gap-3">
+            <BookOpen className="text-emerald-700 w-4 h-4 mt-0.5 shrink-0" />
+            <div>
+              <h5 className="text-xs font-semibold text-emerald-900">Official vs. Educational Distinction</h5>
+              <p className="text-[11px] text-emerald-800 leading-relaxed mt-1">
+                The court forms library above contains the official Ontario Family Law Rules prescribed forms you must file. CYFSA Navigator also includes educational preparation templates (in the Templates tab) to help you organize evidence and arguments before consulting with your lawyer. These educational templates are NOT official forms and must never be submitted to the court as if they were.
+              </p>
+            </div>
           </div>
         </div>
       </div>
