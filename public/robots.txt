@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /signup
+Disallow: /templates
+
+Sitemap: https://cyfsanavigator.com/sitemap.xml
