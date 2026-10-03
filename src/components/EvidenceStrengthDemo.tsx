@@ -148,7 +148,7 @@ export function EvidenceStrengthDemo() {
 
       <div className="mx-auto max-w-5xl">
         {/* PHASE 1: Upload */}
-        <div className={`transition-all duration-500 ${activePhase === "upload" ? "opacity-100" : "opacity-30"}`}>
+        <div className="transition-all duration-500">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-8">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white font-bold">1</div>
@@ -162,7 +162,7 @@ export function EvidenceStrengthDemo() {
         </div>
 
         {/* PHASE 2: Analyzing */}
-        <div className={`transition-all duration-500 ${activePhase === "analyze" || activePhase === "findings" || activePhase === "action" ? "opacity-100" : "opacity-30"} mt-6`}>
+        <div className="mt-6 transition-all duration-500">
           <div className="rounded-2xl border border-brand-200 bg-brand-50 p-8">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white font-bold">2</div>

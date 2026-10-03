@@ -34,10 +34,9 @@ const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorksp
 const AcceptInvitation = lazy(() => import("./components/AcceptInvitation"));
 const PrivacyNoticeTab = lazy(() => import("./components/PrivacyNoticeTab"));
 const CaseActionWorkspace = lazy(() => import("./components/CaseActionWorkspace"));
-import RequireAuth from "./components/RequireAuth";
-import MigrationNotice from "./components/MigrationNotice";
+const RequireAuth = lazy(() => import("./components/RequireAuth"));
+const MigrationNotice = lazy(() => import("./components/MigrationNotice"));
 import { sanitizeTelemetryEvent } from "./utils/telemetrySanitizer";
-import { getUserKey } from "./utils/storage";
 
 // Core icons represent core section identity
 import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
@@ -46,30 +45,54 @@ export default function App() {
   useGlobalResetListener();
   const [location, setLocation] = useLocation();
 
-  const [userProfile, setUserProfile] = useState<any>(() => {
-    try {
-      const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.warn("Failed to load user profile in header:", e);
+  useEffect(() => {
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+      ?? document.head.appendChild(document.createElement("link"));
+    canonical.rel = "canonical";
+    const publicPath = location || "/";
+    canonical.href = `https://cyfsanavigator.com${publicPath === "/" ? "/" : publicPath.replace(/\/+$/, "")}`;
+
+    const privatePaths = ["/document-analyzer", "/templates", "/signup", "/review", "/professional-workspace", "/case-workspace", "/accept-invitation"];
+    const isPrivatePath = privatePaths.some((path) => publicPath === path || publicPath.startsWith(`${path}/`));
+    let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
+    if (isPrivatePath) {
+      robots ??= document.head.appendChild(document.createElement("meta"));
+      robots.name = "robots";
+      robots.content = "noindex,nofollow";
+    } else if (robots) {
+      robots.remove();
     }
-    return null;
-  });
+  }, [location]);
+
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
-    const handleProfileUpdate = () => {
+    let cancelled = false;
+    const readProfileAndTier = async () => {
       try {
-        const saved = localStorage.getItem(getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE");
-        setUserProfile(saved ? JSON.parse(saved) : null);
+        const { getUserKey } = await import("./utils/storage");
+        if (cancelled) return;
+
+        const profileKey = getUserKey("OPA_USER_PROFILE") || "OPA_USER_PROFILE";
+        const savedProfile = localStorage.getItem(profileKey);
+        setUserProfile(savedProfile ? JSON.parse(savedProfile) : null);
+
+        const tierKey = getUserKey("ps_session_tier") || "ps_session_tier";
+        const savedTier = localStorage.getItem(tierKey);
+        if (savedTier === "Pro" || savedTier === "Premium") setCurrentTier(savedTier);
       } catch (e) {
-        console.warn(e);
+        console.warn("Failed to load saved profile and tier:", e);
       }
     };
-    window.addEventListener("opa-user-profile-updated", handleProfileUpdate);
+    // Firebase-backed, user-scoped storage is not needed to paint the public homepage. Load
+    // it only after a route/account interaction or a profile update.
+    if (location !== "/") void readProfileAndTier();
+    window.addEventListener("opa-user-profile-updated", readProfileAndTier);
     return () => {
-      window.removeEventListener("opa-user-profile-updated", handleProfileUpdate);
+      cancelled = true;
+      window.removeEventListener("opa-user-profile-updated", readProfileAndTier);
     };
-  }, []);
+  }, [location]);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [terminologyOpen, setTerminologyOpen] = useState<boolean>(false);
@@ -80,15 +103,7 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, []);
 
-  const [currentTier, setCurrentTier] = useState<"Basic" | "Pro" | "Premium">(() => {
-    try {
-      const stored = localStorage.getItem(getUserKey("ps_session_tier") || "ps_session_tier");
-      if (stored === "Pro" || stored === "Premium") return stored;
-    } catch (e) {
-      console.warn("Failed to read stored tier:", e);
-    }
-    return "Basic";
-  });
+  const [currentTier, setCurrentTier] = useState<"Basic" | "Pro" | "Premium">("Basic");
 
   // Global listener to easily toggle Glossary from any custom event
   useEffect(() => {
@@ -130,7 +145,7 @@ export default function App() {
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
                 <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
-                  <img src="/logo.png" alt="CYFSA Navigator logo" className="w-full h-full object-cover" />
+                  <img src="/logo.webp" alt="CYFSA Navigator logo" width="256" height="239" className="w-full h-full object-cover" />
                 </div>
               </div>
               <div className="text-left">
@@ -194,6 +209,8 @@ export default function App() {
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="p-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none"
+                aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+                aria-expanded={mobileMenuOpen}
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -240,7 +257,9 @@ export default function App() {
         )}
       </header>
 
-      <MigrationNotice />
+      <Suspense fallback={null}>
+        <MigrationNotice />
+      </Suspense>
 
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
       <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
@@ -380,10 +399,10 @@ export default function App() {
           {/* Real-time PDF / Printexport contextual launcher block */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl" id="footer-print-actions">
             <div>
-              <h4 className="font-display font-bold text-slate-900 text-sm flex items-center gap-2">
+              <h2 className="font-display font-bold text-slate-900 text-sm flex items-center gap-2">
                 <Printer className="w-4 h-4 text-brand-600 shrink-0" />
                 <span>Parent Document Export Desk</span>
-              </h4>
+              </h2>
               <p className="text-xs text-slate-500 mt-1">
                 {location === "/cyfsa-guide"
                   ? "Export the active statutory guide segment, watchpoint checklists, and verified citations as a clean, professionally formatted PDF."
@@ -510,6 +529,7 @@ export default function App() {
       <button
         onClick={() => setTerminologyOpen(true)}
         title="Open CYFSA Legal Terminology Glossary"
+        aria-label="Open CYFSA Legal Terminology Glossary"
         className="fixed bottom-6 left-6 w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 select-none cursor-pointer border bg-white border-slate-200 text-brand-600 hover:bg-brand-50 hover:text-brand-700 z-[98] no-print group hover:scale-105"
         id="legal-terminology-floating-btn"
       >

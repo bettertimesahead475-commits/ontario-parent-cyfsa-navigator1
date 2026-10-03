@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /document-analyzer
+Disallow: /templates
+Disallow: /signup
+Disallow: /review
+Disallow: /professional-workspace
+Disallow: /case-workspace
+Disallow: /accept-invitation
+
+Sitemap: https://cyfsanavigator.com/sitemap.xml

@@ -10,7 +10,7 @@
  * untouched (not deleted) so a second person signing in on the same machine gets the same
  * notice and the same chance to notice/preserve it before it's gone for good.
  */
-import { shouldShowMigrationNotice, markMigrationNoticeSeen } from "../utils/storage";
+import { shouldShowMigrationNotice, markMigrationNoticeSeen } from "../utils/legacyStorage";
 import { useState, useEffect } from "react";
 import { AlertTriangle, X } from "lucide-react";
 
@@ -38,7 +38,7 @@ export default function MigrationNotice() {
           open the relevant tab and use its Export/Print option before it's cleared - dismissing
           this message will not delete anything, but it also won't be shown again on this device.
         </p>
-        <button onClick={dismiss} className="text-amber-500 hover:text-amber-700 shrink-0">
+        <button onClick={dismiss} aria-label="Dismiss saved-work notice" className="text-amber-500 hover:text-amber-700 shrink-0">
           <X className="w-4 h-4" />
         </button>
       </div>
