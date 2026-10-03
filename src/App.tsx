@@ -128,7 +128,7 @@ export default function App() {
               </div>
               <div className="text-left">
                 <div className="font-display font-black text-slate-900 leading-none text-base md:text-lg tracking-tight uppercase">
-                  ONTARIO <span className="text-brand-600">PARENT ASSIST</span>
+                  CYFSA <span className="text-brand-600">NAVIGATOR</span>
                 </div>
                 <div className="text-[9px] text-slate-500 font-semibold font-mono tracking-widest uppercase mt-1 block">
                   KNOWLEDGE IS POWER
