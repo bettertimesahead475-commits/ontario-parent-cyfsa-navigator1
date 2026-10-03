@@ -48,35 +48,95 @@ export const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L — easy to type off a phone
 const CODE_TTL_DAYS = 14; // an issued-but-unredeemed code expires after this long
 
+function parseJwtPayload(token: string): { role?: string; ref?: string } | null {
+  const parts = token.split(".");
+  if (parts.length === 3) {
+    try {
+      return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function extractProjectRef(urlStr: string | null): string | null {
+  if (!urlStr) return null;
+  try {
+    const host = new URL(urlStr.trim()).hostname;
+    const match = host.match(/^([a-z0-9_-]+)\.supabase\./i);
+    return match ? match[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveSupabaseCredentials(): { url: string | null; key: string | null; source: string | null } {
   let url = (process.env.SUPABASE_URL || "").trim() || null;
   if (!url) {
-    const intUrlKey = Object.keys(process.env).find((k) => /^sb_secret_.*_(SUPABASE_URL|URL)$/i.test(k));
+    const intUrlKey = Object.keys(process.env).find(
+      (k) => /^sb_secret_.*_(SUPABASE_URL|URL)$/i.test(k) || k === "NEXT_PUBLIC_SUPABASE_URL"
+    );
     if (intUrlKey) {
       url = (process.env[intUrlKey] || "").trim() || null;
     }
   }
 
-  let key: string | null = null;
-  let source: string | null = null;
+  const targetRef = extractProjectRef(url);
 
-  if ((process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim()) {
-    key = process.env.SUPABASE_SERVICE_ROLE_KEY!.trim();
-    source = "SUPABASE_SERVICE_ROLE_KEY";
-  } else {
-    const intKey = Object.keys(process.env).find((k) =>
-      /^sb_secret_.*_(SERVICE_ROLE_KEY|SUPABASE_SERVICE_ROLE_KEY)$/i.test(k)
-    );
-    if (intKey && (process.env[intKey] || "").trim()) {
-      key = process.env[intKey]!.trim();
-      source = intKey;
-    } else if ((process.env.SUPABASE_SERVICE_KEY || "").trim()) {
-      key = process.env.SUPABASE_SERVICE_KEY!.trim();
-      source = "SUPABASE_SERVICE_KEY";
+  function isCandidateAcceptable(candidateVal: string): boolean {
+    const trimmed = candidateVal.trim();
+    if (!trimmed) return false;
+    const claims = parseJwtPayload(trimmed);
+    if (claims) {
+      if (claims.role && claims.role !== "service_role") {
+        return false;
+      }
+      if (targetRef && claims.ref && claims.ref.toLowerCase() !== targetRef) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const candidateKeys: string[] = [];
+
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY !== undefined) {
+    candidateKeys.push("SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  const allEnvKeys = Object.keys(process.env);
+  const intKeys = allEnvKeys.filter(
+    (k) =>
+      /^sb_secret_.*_(SERVICE_ROLE_KEY|SUPABASE_SERVICE_ROLE_KEY|SECRET_KEY)$/i.test(k) ||
+      k === "SUPABASE_SECRET_KEY" ||
+      (/^sb_secret_/i.test(k) && !/URL|ANON_KEY|PUBLISHABLE/i.test(k))
+  );
+
+  intKeys.sort((a, b) => {
+    const aMatch = targetRef && a.toLowerCase().includes(targetRef) ? 1 : 0;
+    const bMatch = targetRef && b.toLowerCase().includes(targetRef) ? 1 : 0;
+    return bMatch - aMatch;
+  });
+
+  for (const k of intKeys) {
+    if (!candidateKeys.includes(k)) {
+      candidateKeys.push(k);
     }
   }
 
-  return { url, key, source };
+  if (process.env.SUPABASE_SERVICE_KEY !== undefined && !candidateKeys.includes("SUPABASE_SERVICE_KEY")) {
+    candidateKeys.push("SUPABASE_SERVICE_KEY");
+  }
+
+  for (const varName of candidateKeys) {
+    const val = (process.env[varName] || "").trim();
+    if (val && isCandidateAcceptable(val)) {
+      return { url, key: val, source: varName };
+    }
+  }
+
+  return { url, key: null, source: null };
 }
 
 let supabase: SupabaseClient | null = null;
