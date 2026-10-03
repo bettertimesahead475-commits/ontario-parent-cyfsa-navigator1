@@ -96,19 +96,14 @@ export default function App() {
   }, []);
 
   const navItems = [
-    { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
+    { name: "Start", path: "/", icon: <Heart className="w-4 h-4" /> },
     { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
-    { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
     { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
-    { name: "Investigation Process", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
-    { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
-    { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
-    { name: "Defense Strategies", path: "/defense-strategies", icon: <Shield className="w-4 h-4" /> },
-    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
-    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
-    { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
-    { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
-    { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
+    { name: "First Five Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
+    { name: "Evidence", path: "/investigation", icon: <FileSpreadsheet className="w-4 h-4" /> },
+    { name: "Court Forms", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
+    { name: "Meetings", path: "/voice-assistant", icon: <Headphones className="w-4 h-4" /> },
+    { name: "Resources", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
   ];
 
   return (
@@ -128,7 +123,7 @@ export default function App() {
               </div>
               <div className="text-left">
                 <div className="font-display font-black text-slate-900 leading-none text-base md:text-lg tracking-tight uppercase">
-                  ONTARIO <span className="text-brand-600">PARENT ASSIST</span>
+                  CYFSA <span className="text-brand-600">NAVIGATOR</span>
                 </div>
                 <div className="text-[9px] text-slate-500 font-semibold font-mono tracking-widest uppercase mt-1 block">
                   KNOWLEDGE IS POWER
