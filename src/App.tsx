@@ -39,7 +39,7 @@ const MigrationNotice = lazy(() => import("./components/MigrationNotice"));
 import { sanitizeTelemetryEvent } from "./utils/telemetrySanitizer";
 
 // Core icons represent core section identity
-import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
+import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart, Search } from "lucide-react";
 
 export default function App() {
   useGlobalResetListener();
@@ -116,20 +116,31 @@ export default function App() {
     };
   }, []);
 
-  const navItems = [
-    { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
-    { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
-    { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
-    { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
-    { name: "Investigation Process", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
-    { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
-    { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
-    { name: "Defense Strategies", path: "/defense-strategies", icon: <Shield className="w-4 h-4" /> },
-    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
+  const pillNavItems = [
+    { name: "Start", path: "/" },
+    { name: "Family rights", path: "/rights" },
+    { name: "CAS procedure", path: "/cyfsa-procedure" },
+    { name: "First five days", path: "/five-day-rule" },
+    { name: "Evidence", path: "/investigation", alias: "/evidence" },
+    { name: "Court forms", path: "/templates", alias: "/court-forms" },
+    { name: "Meetings", path: "/defense-strategies", alias: "/meetings" },
+    { name: "Resources", path: "/cyfsa-guide", alias: "/resources" },
+  ];
+
+  const allNavItems = [
+    { name: "Start", path: "/", icon: <Heart className="w-4 h-4" /> },
+    { name: "Family rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
+    { name: "CAS procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
+    { name: "First five days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
+    { name: "Evidence", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
+    { name: "Court forms", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
+    { name: "Meetings", path: "/defense-strategies", icon: <Shield className="w-4 h-4" /> },
+    { name: "Resources", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
     { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
-    { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
     { name: "Case Workspace", path: "/case-workspace", icon: <Shield className="w-4 h-4" /> },
     { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
+    { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
+    { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
     { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
   ];
 
@@ -137,37 +148,35 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between font-sans selection:bg-brand-100 selection:text-brand-900" id="root-viewport">
       
       {/* Top Professional Header Bar */}
-      <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
+      <header className="bg-white border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             
             {/* Left Brand Area */}
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
-                <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
-                  <img src="/logo.webp" alt="CYFSA Navigator logo" width="256" height="239" className="w-full h-full object-cover" />
+            <Link href="/">
+              <div className="flex items-center gap-3 cursor-pointer">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
+                  <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
+                    <img src="/logo.webp" alt="CYFSA Navigator logo" width="256" height="239" className="w-full h-full object-cover" />
+                  </div>
+                </div>
+                <div className="text-left">
+                  <div className="font-display font-black text-slate-900 leading-none text-base md:text-lg tracking-tight uppercase">
+                    <span className="text-brand-600">CYFSA</span> NAVIGATOR
+                  </div>
+                  <div className="text-[9px] text-slate-500 font-semibold font-mono tracking-widest uppercase mt-1 block">
+                    KNOWLEDGE IS POWER
+                  </div>
                 </div>
               </div>
-              <div className="text-left">
-                <div className="font-display font-black text-slate-900 leading-none text-base md:text-lg tracking-tight uppercase">
-                  <span className="text-brand-600">CYFSA</span> NAVIGATOR
-                </div>
-                <div className="text-[9px] text-slate-500 font-semibold font-mono tracking-widest uppercase mt-1 block">
-                  KNOWLEDGE IS POWER
-                </div>
-              </div>
-            </div>
+            </Link>
 
-            {/* Middle Quick Active-Membership indicator */}
-            <div className="hidden md:flex items-center gap-3">
+            {/* Right Helpline Widget & Passport on wide desktop */}
+            <div className="hidden lg:flex items-center gap-4">
               {userProfile ? (
                 <Link href="/signup">
                   <div className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all">
                     <User className="w-3 h-3 text-slate-500" />
-                    {/* BUG FOUND IN AUDIT: this crashed the entire header (and therefore every
-                        page, since this is app-shell code) if a saved profile existed but was
-                        missing fullName for any reason - corrupted/partial localStorage data,
-                        manual tampering, etc. Added a safe fallback. */}
                     <span>Passport: {(userProfile.fullName || "Parent").split(" ")[0]} 🛡️</span>
                   </div>
                 </Link>
@@ -179,18 +188,6 @@ export default function App() {
                   </div>
                 </Link>
               )}
-              <button
-                onClick={() => setTerminologyOpen(true)}
-                className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-slate-200 text-brand-600 bg-brand-50/50 hover:bg-brand-50 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
-                id="legal-terminology-header-btn"
-              >
-                <BookOpen className="w-3 h-3 text-brand-600 shrink-0" />
-                <span>CYFSA Glossary</span>
-              </button>
-            </div>
-
-            {/* Right Helpline Widget */}
-            <div className="hidden lg:flex items-center gap-4">
               <div className="text-right">
                 <span className="text-[9px] text-slate-400 block font-bold uppercase tracking-wider">Free Help Center</span>
                 <a
@@ -204,13 +201,14 @@ export default function App() {
               </div>
             </div>
 
-            {/* Mobile Hamburger menu */}
-            <div className="md:hidden flex items-center">
+            {/* Header Menu / Hamburger button (matching monitor reference) */}
+            <div className="flex items-center">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none"
+                className="p-2.5 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 cursor-pointer"
                 aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
                 aria-expanded={mobileMenuOpen}
+                aria-controls="mobile-nav-panel"
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
@@ -219,27 +217,29 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile Navigation Drawer Dropdown */}
+        {/* Navigation Drawer Dropdown */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-t border-slate-200 py-3 px-4 space-y-1.5 shadow-md" id="mobile-nav-panel">
-            {navItems.map((item) => {
-              const isActive = location === item.path;
-              return (
-                <Link key={item.path} href={item.path}>
-                  <div
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold ${
-                      isActive 
-                        ? "bg-brand-600 text-white" 
-                        : "text-slate-600 hover:bg-slate-50 bg-white border border-slate-100"
-                    }`}
-                  >
-                    {item.icon}
-                    <span>{item.name}</span>
-                  </div>
-                </Link>
-              );
-            })}
+          <div className="bg-white border-t border-slate-200 py-4 px-4 sm:px-6 space-y-2 shadow-xl max-h-[80vh] overflow-y-auto" id="mobile-nav-panel">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {allNavItems.map((item) => {
+                const isActive = location === item.path;
+                return (
+                  <Link key={item.path} href={item.path}>
+                    <div
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl cursor-pointer text-xs font-semibold transition-colors ${
+                        isActive 
+                          ? "bg-blue-600 text-white" 
+                          : "text-slate-700 hover:bg-slate-50 bg-white border border-slate-200"
+                      }`}
+                    >
+                      {item.icon}
+                      <span>{item.name}</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
 
             {/* Legal Glossary option */}
             <div
@@ -247,11 +247,11 @@ export default function App() {
                 setMobileMenuOpen(false);
                 setTerminologyOpen(true);
               }}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-100"
+              className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl cursor-pointer text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-100"
               id="legal-glossary-mobile-menu-btn"
             >
               <BookOpen className="w-4 h-4 text-brand-600 shrink-0" />
-              <span>📚 CYFSA Legal Glossary</span>
+              <span>📚 CYFSA Legal Glossary & Search</span>
             </div>
           </div>
         )}
@@ -261,26 +261,40 @@ export default function App() {
         <MigrationNotice />
       </Suspense>
 
-      {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
-      <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
+      {/* Navigation Rail: Pill controls matching monitor reference */}
+      <nav className="bg-white border-b border-slate-200/80 no-print py-2 sticky top-20 z-40 shadow-xs" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-2 overflow-x-auto py-1">
-            {navItems.map((item) => {
-              const isActive = location === item.path;
-              return (
-                <Link key={item.path} href={item.path}>
-                  <div
-                    className={`group px-4 py-2.5 font-display rounded-xl transition-all text-xs font-semibold uppercase tracking-wider cursor-pointer flex items-center gap-2 ${
-                      isActive
-                        ? "bg-brand-600 text-white shadow-sm shadow-brand-600/10"
-                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
-                    }`}
-                  >
-                    <span>{item.name}</span>
-                  </div>
-                </Link>
-              );
-            })}
+          <div className="flex items-center justify-between gap-3">
+            {/* Pill Navigation items */}
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-1 -my-1 scrollbar-none">
+              {pillNavItems.map((item) => {
+                const isActive = location === item.path || (item.alias && location === item.alias);
+                return (
+                  <Link key={item.path} href={item.path}>
+                    <button
+                      type="button"
+                      className={`whitespace-nowrap rounded-full px-3.5 sm:px-4 py-1.5 text-xs sm:text-[13px] font-medium transition-all duration-150 cursor-pointer ${
+                        isActive
+                          ? "bg-blue-600 text-white shadow-xs font-semibold"
+                          : "border border-slate-200/90 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900"
+                      }`}
+                    >
+                      {item.name}
+                    </button>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Search button on far right matching monitor reference */}
+            <button
+              onClick={() => setTerminologyOpen(true)}
+              className="p-2 rounded-full border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors shrink-0 cursor-pointer"
+              aria-label="Search CYFSA legal terms and glossary"
+              title="Search terms and glossary"
+            >
+              <Search className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </nav>
@@ -383,6 +397,20 @@ export default function App() {
 
           <Route path="/privacy">
             <PrivacyNoticeTab />
+          </Route>
+
+          {/* Navigation aliases mapping to existing routes */}
+          <Route path="/evidence">
+            <Redirect to="/investigation" />
+          </Route>
+          <Route path="/court-forms">
+            <Redirect to="/templates" />
+          </Route>
+          <Route path="/meetings">
+            <Redirect to="/defense-strategies" />
+          </Route>
+          <Route path="/resources">
+            <Redirect to="/cyfsa-guide" />
           </Route>
 
           {/* Fallback route */}

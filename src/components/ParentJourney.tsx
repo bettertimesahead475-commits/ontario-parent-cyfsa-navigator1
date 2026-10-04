@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { Link } from "wouter";
-import { ArrowRight, BookOpen, CalendarDays, FileSearch, Heart, Scale, ShieldCheck, Users, Search, Shield } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarDays, FileSearch, Heart, Scale, ShieldCheck, Users, Search, Shield, Upload } from "lucide-react";
 import { CYFSA_TOPICS } from "../data";
 import { ROADMAP_STAGES } from "../data-transferred";
 import { printBrandedDocument } from "../utils/printExport";
@@ -278,25 +278,70 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
 // Replace the entire `if (page === "home")` section with this
 
   if (page === "home") return <div className="space-y-0">
-    <JourneyNav />
-    
-    {/* HERO: Problem-focused, curiosity-driven */}
-    <section className="rounded-3xl bg-gradient-to-br from-slate-950 via-brand-950 to-brand-800 px-6 py-12 text-white shadow-xl sm:px-10 md:py-20">
-      <div className="mx-auto max-w-5xl">
-        <p className="text-xs font-bold uppercase tracking-widest text-brand-200">REAL ANALYSIS • REAL RESULTS</p>
-        <h1 className="mt-4 font-display text-4xl font-black leading-tight md:text-5xl">What your CAS affidavits really say — and what they don't.</h1>
-        <p className="mt-6 max-w-2xl text-base leading-relaxed text-slate-200">
-          Upload the court documents from your case and see what a professional document audit finds: contradictions, unsupported claims, missing evidence, and the questions worth discussing with your lawyer.
-        </p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/document-analyzer">
-            <span className="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-base font-bold text-brand-900 transition hover:bg-slate-100">
-              ANALYZE A DOCUMENT <ArrowRight className="h-5 w-5" />
-            </span>
-          </Link>
-          <button className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-6 py-3 text-base font-bold text-white transition hover:bg-white/10">
-            See what we found
-          </button>
+    {/* HERO — Rebuilt to closely match approved reference monitor */}
+    <section
+      className="relative isolate overflow-hidden rounded-[2rem] sm:rounded-[2.5rem] border border-blue-900/40 text-white shadow-2xl shadow-blue-950/40"
+      style={{
+        background: "radial-gradient(ellipse at 80% 35%, rgba(29, 78, 216, 0.45) 0%, rgba(14, 165, 233, 0.12) 35%, transparent 70%), linear-gradient(125deg, #05132f 0%, #071a44 42%, #0a245a 78%, #0d2e6e 100%)",
+      }}
+      aria-labelledby="hero-title"
+    >
+      {/* Integrated Lady Justice composition on the right side */}
+      <div
+        className="pointer-events-none absolute inset-y-0 right-0 w-full sm:w-[65%] md:w-[55%] lg:w-[48%] xl:w-[45%] flex items-end justify-end overflow-hidden"
+        aria-hidden="true"
+      >
+        <img
+          src="/assets/lady-justice-hero.webp"
+          alt=""
+          className="h-full w-auto max-h-[640px] lg:max-h-[720px] object-contain object-right-bottom opacity-35 sm:opacity-65 md:opacity-85 lg:opacity-100 select-none translate-x-[4%] sm:translate-x-[6%] lg:translate-x-[3%]"
+          loading="eager"
+          decoding="async"
+        />
+        {/* Soft edge gradient to ensure seamless merge with navy hero */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#05132f] via-[#05132f]/60 to-transparent sm:via-[#05132f]/20 lg:via-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#05132f]/80 via-transparent to-transparent sm:from-transparent" />
+      </div>
+
+      {/* Hero Content Left Column */}
+      <div className="relative z-10 px-6 py-12 sm:px-10 sm:py-16 md:py-20 lg:px-14 lg:py-24">
+        <div className="max-w-2xl lg:max-w-xl xl:max-w-2xl">
+          {/* Eyebrow */}
+          <div className="flex items-center gap-2 text-xs sm:text-[13px] font-bold uppercase tracking-[0.18em] text-blue-400">
+            <span>REAL ANALYSIS</span>
+            <span className="text-blue-400/80">•</span>
+            <span>REAL RESULTS</span>
+          </div>
+
+          {/* Primary Headline */}
+          <h1
+            id="hero-title"
+            className="mt-4 sm:mt-5 font-display text-3xl sm:text-4xl md:text-5xl lg:text-[3.25rem] xl:text-[3.6rem] font-extrabold leading-[1.12] tracking-tight text-white"
+          >
+            What your CAS affidavits really say — and what they don't.
+          </h1>
+
+          {/* Supporting Copy */}
+          <p className="mt-5 sm:mt-6 text-base sm:text-lg leading-relaxed text-blue-100/90 font-normal max-w-xl">
+            Upload the court documents from your case and see what a professional document audit finds — including contradictions, unsupported claims, missing evidence, and the questions you can discuss with your lawyer.
+          </p>
+
+          {/* Action Row */}
+          <div className="mt-8 sm:mt-10 flex flex-wrap items-center gap-4 sm:gap-6">
+            <Link href="/document-analyzer">
+              <span className="inline-flex items-center justify-center gap-2.5 px-6 sm:px-7 py-3.5 sm:py-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-700 shadow-lg shadow-blue-950/40 transition-all duration-200 cursor-pointer text-sm sm:text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+                <Upload className="w-5 h-5 stroke-[2.5]" aria-hidden="true" />
+                <span>Upload Your Documents</span>
+              </span>
+            </Link>
+
+            <Link href="/analysis-example">
+              <span className="inline-flex items-center gap-2 text-white hover:text-blue-200 font-semibold text-sm sm:text-base transition-colors duration-150 cursor-pointer group py-2">
+                <span>See an Example Analysis</span>
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" aria-hidden="true" />
+              </span>
+            </Link>
+          </div>
         </div>
       </div>
     </section>
