@@ -299,14 +299,21 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
         </div>
         <p className="mt-6 text-xs text-slate-300">Educational tool. Not legal advice. Not affiliated with any Children's Aid Society, court, or the Law Society of Ontario.</p>
         </div>
-        <div className="hidden md:flex flex-col items-center justify-center" aria-label="Lady Justice">
-          <div className="relative flex h-64 w-56 items-center justify-center rounded-[2rem] border border-white/20 bg-white/10 shadow-2xl backdrop-blur-sm">
-            <Scale className="h-36 w-36 text-white/90" strokeWidth={1.15} />
-            <div className="absolute bottom-5 text-center">
+        <div className="flex flex-col items-center justify-center" aria-label="Lady Justice">
+          <div className="relative flex min-h-64 w-full max-w-[280px] items-end justify-center overflow-hidden rounded-[2rem] border border-white/20 bg-white/10 px-5 pt-5 shadow-2xl backdrop-blur-sm md:min-h-[340px]">
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/8/80/Justice_Lady.svg"
+              alt="Lady Justice holding the scales of justice"
+              className="h-56 w-auto max-w-full object-contain brightness-0 invert opacity-95 drop-shadow-2xl md:h-72"
+              loading="eager"
+              decoding="async"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent px-4 pb-4 pt-12 text-center">
               <p className="font-display text-sm font-black uppercase tracking-[0.22em] text-white">Lady Justice</p>
               <p className="mt-1 text-[10px] uppercase tracking-widest text-brand-200">Clarity · Balance · Evidence</p>
             </div>
           </div>
+          <p className="mt-2 text-[9px] text-slate-400">Lady Justice artwork: CC0 / public domain</p>
         </div>
       </div>
     </section>
