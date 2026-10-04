@@ -288,13 +288,13 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     >
       {/* Integrated Lady Justice composition on the right side */}
       <div
-        className="pointer-events-none absolute inset-y-0 right-0 w-full sm:w-[65%] md:w-[55%] lg:w-[48%] xl:w-[45%] flex items-end justify-end overflow-hidden"
+        className="pointer-events-none absolute inset-y-0 right-0 w-full sm:w-[68%] md:w-[59%] lg:w-[53%] xl:w-[50%] flex items-end justify-end overflow-hidden"
         aria-hidden="true"
       >
         <img
           src="/assets/lady-justice-hero.webp"
           alt=""
-          className="h-full w-auto max-h-[640px] lg:max-h-[720px] object-contain object-right-bottom opacity-35 sm:opacity-65 md:opacity-85 lg:opacity-100 select-none translate-x-[4%] sm:translate-x-[6%] lg:translate-x-[3%]"
+          className="h-[108%] w-auto max-w-none object-contain object-right-bottom opacity-35 sm:opacity-65 md:opacity-85 lg:opacity-100 select-none translate-x-[3%] sm:translate-x-[4%] lg:translate-x-[1%] scale-[1.06] origin-bottom-right"
           loading="eager"
           decoding="async"
         />
