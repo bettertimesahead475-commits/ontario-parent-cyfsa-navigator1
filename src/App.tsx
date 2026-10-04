@@ -45,6 +45,12 @@ export default function App() {
   useGlobalResetListener();
   const [location, setLocation] = useLocation();
 
+  // Always begin a newly selected route at the top instead of preserving the
+  // scroll position from the previous tab/page.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [location]);
+
   useEffect(() => {
     const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
       ?? document.head.appendChild(document.createElement("link"));
