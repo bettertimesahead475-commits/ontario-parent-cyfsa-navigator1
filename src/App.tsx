@@ -33,12 +33,33 @@ import MigrationNotice from "./components/MigrationNotice";
 import { getUserKey } from "./utils/storage";
 
 // Core icons represent core section identity
-import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
+import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart, Search } from "lucide-react";
 
 export default function App() {
   useGlobalResetListener();
   const { resetAll } = useAppReset();
   const [location, setLocation] = useLocation();
+ 
+  // Centralized scroll reset on every route change
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [location]);
+
+  useEffect(() => {
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+      ?? document.head.appendChild(document.createElement("link"));
+    canonical.rel = "canonical";
+    const publicPath = location || "/";
+    canonical.href = `https://cyfsanavigator.com${publicPath === "/" ? "/" : publicPath.replace(/\/+$/, "")}`;
+
+    let metaRobots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
+    if (!metaRobots) {
+      metaRobots = document.createElement("meta");
+      metaRobots.name = "robots";
+      document.head.appendChild(metaRobots);
+    }
+    metaRobots.content = "index, follow";
+  }, [location]);
 
   const [userProfile, setUserProfile] = useState<any>(() => {
     try {
@@ -109,6 +130,17 @@ export default function App() {
     { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
     { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
     { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
+  ];
+
+  const pillNavItems = [
+    { name: "Start", path: "/" },
+    { name: "Family rights", path: "/rights" },
+    { name: "CAS procedure", path: "/45-day-roadmap", alias: "/cyfsa-procedure" },
+    { name: "First five days", path: "/five-day-rule" },
+    { name: "Evidence", path: "/evidence", alias: "/investigation" },
+    { name: "Court forms", path: "/court-forms", alias: "/templates" },
+    { name: "Meetings", path: "/meetings", alias: "/defense-strategies" },
+    { name: "Resources", path: "/resources", alias: "/cyfsa-guide" },
   ];
 
   return (
@@ -198,24 +230,34 @@ export default function App() {
         {/* Mobile Navigation Drawer Dropdown */}
         {mobileMenuOpen && (
           <div className="md:hidden bg-white border-t border-slate-200 py-3 px-4 space-y-1.5 shadow-md" id="mobile-nav-panel">
-            {navItems.map((item) => {
-              const isActive = location === item.path;
+            {pillNavItems.map((item) => {
+              const isActive = location === item.path || (item.alias && location === item.alias);
               return (
                 <Link key={item.path} href={item.path}>
                   <div
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold ${
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl cursor-pointer text-xs font-semibold ${
                       isActive 
-                        ? "bg-brand-600 text-white" 
-                        : "text-slate-600 hover:bg-slate-50 bg-white border border-slate-100"
+                        ? "bg-blue-600 text-white" 
+                        : "text-slate-700 hover:bg-slate-50 bg-white border border-slate-100"
                     }`}
                   >
-                    {item.icon}
                     <span>{item.name}</span>
                   </div>
                 </Link>
               );
             })}
+
+            {/* Document Analyzer quick link in mobile drawer */}
+            <Link href="/document-analyzer">
+              <div
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl cursor-pointer text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 mt-2"
+              >
+                <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Document Analyzer</span>
+              </div>
+            </Link>
 
             {/* Legal Glossary option */}
             <div
@@ -223,7 +265,7 @@ export default function App() {
                 setMobileMenuOpen(false);
                 setTerminologyOpen(true);
               }}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-100"
+              className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl cursor-pointer text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-100"
               id="legal-glossary-mobile-menu-btn"
             >
               <BookOpen className="w-4 h-4 text-brand-600 shrink-0" />
@@ -236,25 +278,39 @@ export default function App() {
       <MigrationNotice />
 
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
-      <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
+      <nav className="bg-white border-b border-slate-200/80 no-print py-2 hidden md:block" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-2 overflow-x-auto py-1">
-            {navItems.map((item) => {
-              const isActive = location === item.path;
-              return (
-                <Link key={item.path} href={item.path}>
-                  <div
-                    className={`group px-4 py-2.5 font-display rounded-xl transition-all text-xs font-semibold uppercase tracking-wider cursor-pointer flex items-center gap-2 ${
-                      isActive
-                        ? "bg-brand-600 text-white shadow-sm shadow-brand-600/10"
-                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
-                    }`}
-                  >
-                    <span>{item.name}</span>
-                  </div>
-                </Link>
-              );
-            })}
+          <div className="flex items-center justify-between gap-3">
+            {/* Pill Navigation items */}
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-1 -my-1 scrollbar-none">
+              {pillNavItems.map((item) => {
+                const isActive = location === item.path || (item.alias && location === item.alias);
+                return (
+                  <Link key={item.path} href={item.path}>
+                    <button
+                      type="button"
+                      className={`whitespace-nowrap rounded-full px-3.5 sm:px-4 py-1.5 text-xs sm:text-[13px] font-medium transition-all duration-150 cursor-pointer ${
+                        isActive
+                          ? "bg-blue-600 text-white shadow-xs font-semibold"
+                          : "border border-slate-200/90 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900"
+                      }`}
+                    >
+                      {item.name}
+                    </button>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Search button on far right matching monitor reference */}
+            <button
+              onClick={() => setTerminologyOpen(true)}
+              className="p-2 rounded-full border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors shrink-0 cursor-pointer"
+              aria-label="Search CYFSA legal terms and glossary"
+              title="Search terms and glossary"
+            >
+              <Search className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </nav>
@@ -324,6 +380,26 @@ export default function App() {
             <RequireAuth>
               <SignUpTab />
             </RequireAuth>
+          </Route>
+
+          {/* Navigation aliases mapping to existing routes */}
+          <Route path="/evidence">
+            <Redirect to="/investigation" />
+          </Route>
+          <Route path="/court-forms">
+            <Redirect to="/templates" />
+          </Route>
+          <Route path="/meetings">
+            <Redirect to="/defense-strategies" />
+          </Route>
+          <Route path="/resources">
+            <Redirect to="/cyfsa-guide" />
+          </Route>
+          <Route path="/roadmap">
+            <Redirect to="/45-day-roadmap" />
+          </Route>
+          <Route path="/five-day">
+            <Redirect to="/five-day-rule" />
           </Route>
 
           {/* Fallback route */}
