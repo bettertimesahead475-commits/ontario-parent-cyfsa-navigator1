@@ -142,7 +142,7 @@ async function extractTextWithGeminiBase64(base64Data: string, mimeType: string)
 
   try {
     const ai = getGeminiClient();
-    const modelsToTry = ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
+    const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
     const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
       contents: [
         {
@@ -174,7 +174,7 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
   if (!cleaned) throw new Error("No audio data was provided.");
 
   const ai = getGeminiClient();
-  const modelsToTry = ["gemini-3.1-pro-preview", "gemini-3.6-flash"];
+  const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
   const response = await generateGeminiContentWithRetry(ai, modelsToTry, {
     contents: [
       {
@@ -465,7 +465,7 @@ app.use(express.json({ limit: "100mb" }));
     try {
       const { query } = req.body;
       const ai = getGeminiClient();
-      const response = await generateGeminiContentWithRetry(ai, ["gemini-3.1-pro-preview"], {
+      const response = await generateGeminiContentWithRetry(ai, ["gemini-2.0-flash", "gemini-1.5-pro"], {
         contents: [{ role: "user", parts: [{ text: `Explain the following legal concept for a family law context (CYFSA), for a self-represented Ontario parent: ${query}` }] }],
         config: {
           systemInstruction: `You are CYFSA Navigator's concept-lookup tool. You explain CYFSA/CLRA legal concepts in plain language for a self-represented Ontario parent. This is educational information, not legal advice — you never tell the parent what to do in their specific case.
