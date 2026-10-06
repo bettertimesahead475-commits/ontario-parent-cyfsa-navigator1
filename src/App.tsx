@@ -28,6 +28,9 @@ const FloatingTTS = lazy(() => import("./components/FloatingTTS"));
 const ParentChatBot = lazy(() => import("./components/ParentChatBot"));
 const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyDrawer"));
 const PricingTab = lazy(() => import("./components/PricingTab"));
+// Admin-only Marketing Agent console (gated by ADMIN_SECRET inside the component,
+// not the parent Firebase sign-in gate). Intentionally omitted from site nav.
+const MarketingAgentTab = lazy(() => import("./components/admin/MarketingAgentTab"));
 import RequireAuth from "./components/RequireAuth";
 import MigrationNotice from "./components/MigrationNotice";
 import { getUserKey } from "./utils/storage";
@@ -374,6 +377,12 @@ export default function App() {
 
           <Route path="/lawyers">
             <LawyerDirectoryTab />
+          </Route>
+
+          {/* Admin-only Marketing Agent console. Not linked in nav; access is
+              gated by the ADMIN_SECRET entered inside the component. */}
+          <Route path="/admin/marketing">
+            <MarketingAgentTab />
           </Route>
 
           <Route path="/signup">

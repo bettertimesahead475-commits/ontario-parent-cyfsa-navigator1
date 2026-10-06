@@ -18,6 +18,7 @@ import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, ch
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments } from "./services/gmailAgent.js";
+import { marketingRouter } from "./services/marketing/routes.js";
 
 dotenv.config();
 
@@ -394,6 +395,12 @@ app.use(express.json({ limit: "100mb" }));
   app.get("/api/health", (req: Request, res: Response) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   });
+
+  // Marketing Agent — admin-gated social content pipeline (draft -> approve ->
+  // schedule -> publish) with a pluggable per-platform adapter layer. All routes
+  // live under /api/admin/marketing; auth (x-admin-secret, plus CRON_SECRET for
+  // the scheduler) is enforced inside the router. See services/marketing/.
+  app.use("/api/admin/marketing", marketingRouter);
 
   // Natural tap-to-read voice. Kept server-side so Google credentials are never exposed
   // to the browser. The endpoint returns MP3 bytes as base64 for immediate playback.
