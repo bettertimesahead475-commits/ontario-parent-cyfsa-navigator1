@@ -61,6 +61,7 @@ create table if not exists marketing_channels (
   updated_at          timestamptz not null default now()
 );
 
+drop trigger if exists marketing_channels_set_updated_at on marketing_channels;
 create trigger marketing_channels_set_updated_at
   before update on marketing_channels
   for each row execute function marketing_set_updated_at();
@@ -80,6 +81,7 @@ create table if not exists marketing_campaigns (
   updated_at  timestamptz not null default now()
 );
 
+drop trigger if exists marketing_campaigns_set_updated_at on marketing_campaigns;
 create trigger marketing_campaigns_set_updated_at
   before update on marketing_campaigns
   for each row execute function marketing_set_updated_at();
@@ -132,6 +134,7 @@ create index if not exists marketing_posts_due_idx
   on marketing_posts (scheduled_for)
   where status = 'scheduled';
 
+drop trigger if exists marketing_posts_set_updated_at on marketing_posts;
 create trigger marketing_posts_set_updated_at
   before update on marketing_posts
   for each row execute function marketing_set_updated_at();

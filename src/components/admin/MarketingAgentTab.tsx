@@ -409,6 +409,7 @@ function PostCard({ post, onReload, onError }: { post: Post; onReload: () => voi
         <p className="text-sm text-slate-800 whitespace-pre-wrap mb-2">{post.content}</p>
       )}
       {post.hashtags?.length ? <p className="text-xs text-blue-600 mb-2">{post.hashtags.map((h) => `#${h}`).join(" ")}</p> : null}
+      {post.link_url ? <p className="text-[11px] text-slate-500 mb-2 break-all">🔗 <span className="font-mono">{post.link_url}</span></p> : null}
       {post.rejection_reason && <p className="text-xs text-rose-600 mb-2">Rejected: {post.rejection_reason}</p>}
       {post.last_error && <p className="text-xs text-red-600 mb-2">Last error: {post.last_error}</p>}
 

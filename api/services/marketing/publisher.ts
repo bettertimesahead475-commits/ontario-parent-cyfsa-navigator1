@@ -19,6 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import { getAdapter } from "./adapters/registry.js";
+import { buildUtmUrl, slugifyCampaign } from "./utm.js";
 import {
   logAgentAction,
   recordAnalyticsSnapshot,
@@ -64,12 +65,21 @@ export async function publishPost(post: MarketingPost): Promise<PublishOutcome> 
   }
 
   const adapter = getAdapter(platform);
+
+  // Ensure the outbound link carries UTM attribution. This is idempotent: if the
+  // link was already tagged at draft-generation time, buildUtmUrl won't overwrite
+  // those params — it only fills in anything missing (so manually-created posts
+  // still get utm_source/medium). Campaign falls back to the generation context.
+  const gen = (post.generation_context || {}) as { campaignSlug?: string; topic?: string };
+  const campaignSlug = gen.campaignSlug || slugifyCampaign(gen.topic);
+  const linkWithUtm = buildUtmUrl(post.link_url, { source: platform, medium: "social", campaign: campaignSlug });
+
   let result;
   try {
     result = await adapter.publish({
       content: post.content,
       mediaUrl: post.media_url,
-      linkUrl: post.link_url,
+      linkUrl: linkWithUtm,
       hashtags: post.hashtags,
     });
   } catch (e: any) {

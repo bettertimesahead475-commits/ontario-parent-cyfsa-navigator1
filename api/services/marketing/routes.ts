@@ -16,6 +16,7 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import { isPlatform, PLATFORMS, type Platform } from "./types.js";
 import { generateMarketingPosts } from "./ai.js";
+import { buildUtmUrl, slugifyCampaign } from "./utm.js";
 import { getAllAdapters } from "./adapters/registry.js";
 import { runScheduler, refreshAllChannelStates } from "./scheduler.js";
 import { publishPost } from "./publisher.js";
@@ -121,17 +122,23 @@ marketingRouter.post("/generate", requireAdmin, async (req: Request, res: Respon
       model,
     });
 
+    // UTM campaign slug is shared across this batch; utm_source is per-platform
+    // so each platform's traffic is attributed separately in web analytics.
+    const campaignSlug = slugifyCampaign(objective || topic);
     const created: MarketingPost[] = [];
     for (const d of drafts) {
+      const taggedLink = linkUrl
+        ? buildUtmUrl(linkUrl, { source: d.platform, medium: "social", campaign: campaignSlug })
+        : null;
       const post = await createPost({
         platform: d.platform,
         content: d.content,
         hashtags: d.hashtags,
-        link_url: linkUrl || null,
+        link_url: taggedLink,
         campaign_id: campaignId || null,
         ai_generated: true,
         ai_model: usedModel,
-        generation_context: { topic, objective, callToAction },
+        generation_context: { topic, objective, callToAction, campaignSlug },
         created_by: actor(req),
         status: "draft",
       });

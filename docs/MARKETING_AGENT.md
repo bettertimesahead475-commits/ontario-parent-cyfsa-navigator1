@@ -26,6 +26,7 @@ publication, or a metric.
 | Adapter registry | `api/services/marketing/adapters/registry.ts` |
 | AI content agent (guardrails) | `api/services/marketing/ai.ts` |
 | Supabase store + status lifecycle | `api/services/marketing/store.ts` |
+| UTM link tagging | `api/services/marketing/utm.ts` |
 | Single-post publisher | `api/services/marketing/publisher.ts` |
 | Scheduler (cron run) | `api/services/marketing/scheduler.ts` |
 | Admin API routes | `api/services/marketing/routes.ts` (mounted at `/api/admin/marketing`) |
@@ -130,6 +131,23 @@ posts. You can also run it on demand from the **Scheduled** tab.
 | GET | `/analytics` | Aggregated real metrics |
 | GET | `/log` | Agent activity/audit log |
 | GET/POST | `/run-scheduler` | Run the scheduler (also accepts `CRON_SECRET` bearer) |
+
+## UTM attribution
+
+Links that point back to CYFSA Navigator are automatically tagged with UTM
+parameters so the organization can attribute web traffic by platform/campaign:
+
+- `utm_source` = the platform (`facebook`, `linkedin`, …) — set per-post, so each
+  platform's traffic is counted separately.
+- `utm_medium` = `social`.
+- `utm_campaign` = a slug of the campaign objective/theme.
+
+Tagging happens at draft-generation time (so the admin sees and can edit the
+final URL in the Approval Queue) and again defensively at publish time. It is
+**idempotent** — `buildUtmUrl` never overwrites a UTM key that's already present,
+so a manually set value is respected and double-tagging is a no-op. Unparseable
+or relative URLs are left untouched rather than mangled. See `utm.ts` /
+`utm.test.ts`.
 
 ## Adding a new platform
 1. Create `adapters/<platform>.ts` extending `BaseAdapter`, implementing
