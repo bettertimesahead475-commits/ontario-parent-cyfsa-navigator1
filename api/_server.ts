@@ -903,15 +903,15 @@ ${analysisRules}`;
             "calculation": "The final score must equal the sum of the eight component scores and must never be invented independently.",
             "limitations": "A low score means the document contains gaps, unsupported assertions, limited firsthand knowledge, contradictions, or insufficient documentation. It does not mean the document is false or inadmissible. A high score does not establish legal correctness or admissibility."
           },
-          "fileSummary": "A concise, 2-3 sentence executive summary of the document, its core purpose, and the key evidentiary or procedural issues it raises. Must state that the Evidence Strength Index is a heuristic assessment of the evidence contained in the reviewed document, not a legal admissibility ruling. Missing information must reduce completeness only where appropriate and must never be treated as proof that an event, violation, or statutory failure occurred.",
+          "fileSummary": "Write a plain-language executive briefing of 5-8 sentences. Identify what the document is, what it is trying to establish, the 2-4 most important factual/evidentiary issues actually visible in the document, the strongest documented support, the most important gap or weakness, and what the parent should verify next. Explain legal significance cautiously and distinguish document facts from inference. State that the Evidence Strength Index is a heuristic assessment of the evidence contained in the reviewed document, not a legal admissibility ruling. Missing information must reduce completeness only where appropriate and must never be treated as proof that an event, violation, or statutory failure occurred.",
           "redFlags": [
             {
                "id": "rf1",
                "severity": "Affects Evidentiary Weight", // Allowed: "Affects Evidentiary Weight", "Worth Raising With Counsel", or "CRITICAL". CRITICAL requires an explicit documented admission of a material procedural failure AND verified statutory authority; otherwise do not use CRITICAL.
                "category": "Hearsay", // "Hearsay", "Unsupported Claim", "Procedural Defect", "Authority Overreach", "Rights Omission", etc.
                "phraseDetected": "The exact sentence in the text representing the red flag",
-               "explanation": "One sentence connecting the specific document language to the specific statutory requirement — not a general summary of the section.",
-               "verifyRequirement": "What the parent should seek to prove this wrong or check (eg logs, direct eyewitness statement).",
+               "explanation": "Write 3-5 clear sentences: (1) what the quoted passage actually says, (2) why it affects evidentiary weight or procedure, (3) what evidence in this document supports or weakens the point, and (4) what cannot be concluded from this document alone. Do not use generic legal filler.",
+               "verifyRequirement": "Give a specific verification checklist naming the record, witness, date, log, message, medical/school record, disclosure item, or other evidence that would confirm or challenge this exact point. Avoid vague phrases such as 'get more evidence'.",
                "legalReference": "The specific CYFSA section, ONLY if verified. If unverified: '⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.'",
                "locationInDocument": "Page X, Paragraph Y",
                "parentActionStep": "concrete next step — 'ask your lawyer about X' / 'request disclosure of Y' — not a legal conclusion"
@@ -938,7 +938,7 @@ ${analysisRules}`;
             {
               "thresholdChecked": "Child in Need of Protection grounds (CYFSA s. 74)",
               "isMet": "Yes / No / Inconclusive",
-              "reasoning": "Check whether any of the 17 clauses defined under s. 74(2) of the CYFSA are asserted in the file. Evaluate whether assertion stands on uncorroborated hearsay or objective proof.",
+              "reasoning": "Identify the specific protection allegation(s) actually asserted in the file. For each, separate allegation from supporting proof; name the strongest direct/documentary support, any hearsay or source limitation, any contradiction or missing corroboration, and state why the result is Yes, No, or Inconclusive. Be concrete and document-specific, not generic.",
               "primarySourceLaw": "CYFSA 2017, Section 74"
             },
             {
@@ -994,16 +994,16 @@ ${analysisRules}`;
             "Mandatory Consideration of Indigenous, First Nations, Inuit, or Métis Heritage (CYFSA Section 2): Check and analyze whether culture and kinship options were respected."
           ],
           "whatToVerify": [
-            "List specific items parent needs to double-check (e.g. text messages, calendars, doctor records, school attendance forms)"
+            "List 5-10 specific verification items where supported by the document. Each item must say WHAT to obtain/check, WHY it matters to a named finding, and WHAT question it could resolve. Prefer exact records, dates, people, logs, messages, medical/school records, disclosure, or court documents over generic advice."
           ],
           "whatToAskALawyer": [
-            "List specific educational questions parent can ask their counsel about this text"
+            "List 5-10 precise questions for counsel tied to actual passages/findings in this document. Each question should identify the issue and, where available, the page/paragraph or quoted wording that triggered it."
           ],
           "whatIsMissing": [
-            "List elements that are missing from the analyzed text (e.g., direct worker observation, timeline of safe contact attempts, statement from child)"
+            "List material information missing from THIS document. For each item, explain why the missing information matters and what record/source would normally answer it. Never treat absence from this document as proof the event did not occur."
           ],
           "lawyerCaseBrief": [
-            "A comprehensive, highly-professional, 5-bullet detailed Case Brief structured specifically for legal counsel/attorneys. Each bullet should be in-depth and trace legal grounds, evidentiary deficiencies (such as hearsay, gaps, statutory overreach, or s. 94 timeline failures), and action plans."
+            "A comprehensive 5-bullet counsel briefing. Each bullet must use this internal structure in plain text: ISSUE — DOCUMENT EVIDENCE — SIGNIFICANCE — LIMITATION/COUNTERPOINT — VERIFY/NEXT QUESTION. Tie every bullet to the reviewed document and avoid generic legal commentary."
           ]
         }
       `;
