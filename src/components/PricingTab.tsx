@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { AccessTier } from "../types";
 import { Check, Sparkles, Loader2, Shield, ArrowRight, CheckCircle, Scale, Coins } from "lucide-react";
 import { getUserKey } from "../utils/storage";
-import { apiFetch } from "../utils/api";
+import { useLocation } from "wouter";
 
 interface PricingTabProps {
   currentTier: AccessTier;
@@ -21,6 +21,7 @@ const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
 
 export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }: PricingTabProps) {
+  const [, setLocation] = useLocation();
   const [selectedTier, setSelectedTier] = useState<"Pro" | "Premium" | null>(null);
   const [stage, setStage] = useState<CheckoutStage>("idle");
   const [email, setEmail] = useState(userEmail);
@@ -53,7 +54,25 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       });
   }, []);
 
+  React.useEffect(() => {
+    if (!userEmail) return;
+    try {
+      const pending = localStorage.getItem("cyfsa_pending_plan");
+      if (pending === "Pro" || pending === "Premium") {
+        localStorage.removeItem("cyfsa_pending_plan");
+        setSelectedTier(pending);
+        setEmail(userEmail);
+        setStage("email");
+      }
+    } catch {}
+  }, [userEmail]);
+
   const triggerCheckout = (tier: "Pro" | "Premium") => {
+    if (!userEmail) {
+      try { localStorage.setItem("cyfsa_pending_plan", tier); } catch {}
+      setLocation("/signup");
+      return;
+    }
     setSelectedTier(tier);
     setStage("email");
     setEmail(userEmail);
@@ -105,11 +124,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
     onBusy(true);
     onError("");
     try {
-      // Activation now requires a signed-in Firebase identity - the resulting paid session
-      // is bound to it, not to whatever email string is typed below (see M-2/Finding 3
-      // remediation, api/services/access.ts's verifyAccessCode()). apiFetch() attaches the
-      // Firebase ID token automatically when the parent is signed in.
-      const res = await apiFetch("/api/activate-code", {
+      const res = await fetch("/api/activate-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailToUse, code: codeToRedeem.trim() }),
@@ -163,7 +178,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             Secure Full Advocacy Tools and Unlimited AI Support
           </h1>
           <p className="text-slate-300 text-xs md:text-sm mt-2 max-w-2xl leading-relaxed">
-            As a self-represented parent in family court, every second and statutory reference counts. Payment is by Interac e-Transfer only — no cards, nothing stored.
+            Choose your plan, sign in or create your free account, then follow the on-screen Interac e-Transfer checkout. Your payment receives a unique reference so it can be matched securely to your membership.
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-4 text-xs">
             <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/10">
@@ -277,7 +292,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               </button>
             ) : (
               <button type="button" onClick={() => triggerCheckout("Pro")} className="w-full py-2.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-950 text-white text-xs font-bold rounded-xl transition shadow-xs hover:shadow-md uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2">
-                <span>Upgrade to Pro</span>
+                <span>{userEmail ? "Upgrade to Pro" : "Sign Up & Choose Pro"}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
@@ -329,10 +344,23 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               </button>
             ) : (
               <button type="button" onClick={() => triggerCheckout("Premium")} className="w-full py-2.5 bg-emerald-900 hover:bg-emerald-950 border border-emerald-900 text-white text-xs font-bold rounded-xl transition shadow-xs hover:shadow-md uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2">
-                <span>Go Premium Elite</span>
+                <span>{userEmail ? "Choose Premium" : "Sign Up & Choose Premium"}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border-2 border-indigo-100 rounded-2xl p-6 md:p-7 shadow-sm" id="checkout-how-it-works">
+        <div className="flex flex-col md:flex-row gap-5 md:items-center md:justify-between">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">How membership works</span>
+            <h2 className="text-xl font-black text-slate-900 mt-1">Sign up, pay, activate — all from this page</h2>
+            <p className="text-sm text-slate-600 mt-2 max-w-2xl leading-6">Choose Pro or Premium above. If you are not signed in, we will take you to secure Google sign-in first and bring you back to checkout. Then CYFSA Navigator creates your unique payment reference and shows the exact e-Transfer amount, address, and memo.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 shrink-0 text-center">
+            {["1. Sign in","2. Send e-Transfer","3. Activate"].map(step => <div key={step} className="px-3 py-3 rounded-xl bg-slate-50 border text-xs font-bold text-slate-700">{step}</div>)}
           </div>
         </div>
       </div>
@@ -432,18 +460,19 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             {stage === "email" && (
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  Enter the email you'll use so your payment can be matched to your account and your access code can be sent to you.
+                  Confirm the signed-in email below. This email links your payment request and is required when you activate the access code.
                 </p>
                 <input
                   type="email"
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full text-sm border border-slate-200 bg-slate-50 text-slate-800 p-3 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
+                  readOnly={Boolean(userEmail)}
+                  className="w-full text-sm border border-slate-200 bg-slate-50 text-slate-800 p-3 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 read-only:bg-slate-100"
                 />
                 {errorMessage && <p className="text-xs text-red-600 font-semibold">{errorMessage}</p>}
                 <button type="button" onClick={handleRequestAccess} className="w-full py-3 bg-indigo-950 hover:bg-indigo-900 text-white text-xs font-bold rounded-xl transition cursor-pointer uppercase tracking-wider">
-                  Continue
+                  Create Payment Instructions
                 </button>
               </div>
             )}
@@ -470,7 +499,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                   </div>
                 </div>
                 <p className="text-[10.5px] text-gray-500 leading-relaxed italic">
-                  Once your e-transfer is confirmed, you'll be sent an access code by email or text. Enter it below to unlock.
+                  Keep this page or return later. The system checks incoming e-Transfers against your unique reference. After approval, your access code is sent to your payment email. Enter it below to unlock your plan.
                 </p>
                 <div className="bg-white border border-indigo-100 p-4 rounded-xl space-y-3 shadow-3xs">
                   <label className="text-[10.5px] font-mono font-bold text-indigo-900 uppercase tracking-wider block">Enter Access Code</label>
