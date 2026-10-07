@@ -314,7 +314,7 @@ export default function DocumentAnalyzerTab() {
   // in api/_server.ts). The backend silently substitutes "claude-sonnet-5" whenever an unknown
   // model string comes in, so this default (and, worse, both options in the dropdown below) never
   // actually did anything - the model selector was a non-functional illusion of choice.
-  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-5");
+  const [claudeModel, setClaudeModel] = useState<string>("claude-haiku-4-5-20251001");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Active Audit Visual State
@@ -2666,8 +2666,8 @@ export default function DocumentAnalyzerTab() {
                   "claude-3-5-sonnet-20241022") were invalid model strings the backend would
                   silently reject and replace with claude-sonnet-5 regardless of selection - this
                   dropdown did nothing. Now offers the two models the backend actually accepts. */}
-              <option value="claude-sonnet-5">Claude Sonnet 5</option>
-              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (faster)</option>
+              <option value="claude-haiku-4-5-20251001">Fast analysis — Claude Haiku 4.5</option>
+              <option value="claude-sonnet-5">Deep analysis — Claude Sonnet 5</option>
             </select>
           </div>
           
