@@ -201,12 +201,12 @@ export default function DocumentAnalyzerTab() {
 
   // Foldable Section component
   const FoldableSection = ({ title, icon, count, isOpen, onToggle, children }: any) => (
-    <div className="border border-slate-200 rounded-xl overflow-hidden mb-4 bg-white">
+    <div className="border border-slate-300 rounded-xl overflow-hidden mb-5 bg-white shadow-sm">
       <button
         onClick={onToggle}
-        className="w-full p-4 bg-slate-50 flex items-center justify-between hover:bg-slate-100 transition-colors"
+        className="w-full p-5 bg-slate-50 flex items-center justify-between hover:bg-slate-100 transition-colors text-left"
       >
-        <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
+        <h5 className="font-display font-bold text-gray-900 text-sm md:text-base tracking-wide flex items-center gap-2 text-slate-800">
           {icon} {title} {count !== undefined && `(${count})`}
         </h5>
         {isOpen ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
@@ -218,7 +218,7 @@ export default function DocumentAnalyzerTab() {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
           >
-            <div className="p-4">{children}</div>
+            <div className="p-5 md:p-6 text-[15px] md:text-base leading-7 text-slate-800 space-y-4">{children}</div>
           </motion.div>
         )}
       </AnimatePresence>
