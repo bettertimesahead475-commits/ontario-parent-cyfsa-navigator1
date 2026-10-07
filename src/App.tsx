@@ -29,6 +29,8 @@ const ParentChatBot = lazy(() => import("./components/ParentChatBot"));
 const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyDrawer"));
 const PricingTab = lazy(() => import("./components/PricingTab"));
 import RequireAuth from "./components/RequireAuth";
+import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+import { auth } from "./utils/firebase";
 import MigrationNotice from "./components/MigrationNotice";
 import { getUserKey } from "./utils/storage";
 
@@ -85,6 +87,9 @@ export default function App() {
       window.removeEventListener("opa-user-profile-updated", handleProfileUpdate);
     };
   }, []);
+
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(auth.currentUser);
+  useEffect(() => onAuthStateChanged(auth, setFirebaseUser), []);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [terminologyOpen, setTerminologyOpen] = useState<boolean>(false);
@@ -341,7 +346,7 @@ export default function App() {
           </Route>
 
           <Route path="/pricing">
-            <PricingTab currentTier={currentTier} onChangeTier={setCurrentTier} />
+            <PricingTab currentTier={currentTier} onChangeTier={setCurrentTier} userEmail={firebaseUser?.email || userProfile?.email || ""} />
           </Route>
 
           <Route path="/family-court">
