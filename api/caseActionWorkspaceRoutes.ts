@@ -8,6 +8,7 @@
 import type { Express, Request, Response } from 'express';
 import { verifyFirebaseToken } from './services/firebaseAdmin.js';
 import { LifecycleError } from './services/lifecycleErrors.js';
+import { verifySessionToken, getActivePaidSession, hasCaseAccess } from './services/access.js';
 import {
   listRequirements,
   getRequirement,
@@ -37,6 +38,23 @@ export function registerCaseActionWorkspaceRoutes(app: Express) {
         res.status(401).json({ code: 'SIGN_IN_REQUIRED', error: 'Authentication required.' });
         return;
       }
+
+      const sessionToken = req.header('x-ps-session');
+      if (sessionToken) {
+        const parsed = verifySessionToken(sessionToken);
+        if (parsed) {
+          const session = await getActivePaidSession(parsed.jti);
+          if (session && !hasCaseAccess(session.tier)) {
+            res.status(403).json({
+              code: 'CASE_ACCESS_REQUIRED',
+              error: 'CYFSA Case Access is required for Case Workspace features. Your active subscription covers Document Analyzer access only.',
+              currentTier: session.tier,
+            });
+            return;
+          }
+        }
+      }
+
       res.json(await action(req, identity.uid));
     } catch (e: any) {
       if (e instanceof LifecycleError) {

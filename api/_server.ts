@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, LEGACY_TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
@@ -537,15 +537,16 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
   // API 1b: Request access before paying — creates a pending payment record
   // and a reference number the parent puts in their Interac e-transfer memo.
-  // Body: { email: string, tier: "Pro" | "Premium" }
+  // Body: { email: string, tier: Tier }
   app.post("/api/request-access", async (req: Request, res: Response) => {
     try {
       const { email, tier } = req.body || {};
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
         return res.status(400).json({ error: "A valid email is required." });
       }
-      if (tier !== "Pro" && tier !== "Premium" && tier !== "Community5" && tier !== "Community10" && tier !== "Community25") {
-        return res.status(400).json({ error: 'tier must be a valid plan tier ("Pro", "Community5", "Community10", "Community25", or legacy "Premium").' });
+      const validTiers = ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"];
+      if (!validTiers.includes(tier)) {
+        return res.status(400).json({ error: 'tier must be a valid plan tier ("Basic", "Premium", "Pro", "Community5", "Community10", or "Community25").' });
       }
       const result = await requestAccess(email, tier as Tier);
       res.json(result);
@@ -723,6 +724,113 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   app.get("/api/access-pricing", (_req: Request, res: Response) => {
     res.json({
       prices: TIER_PRICES,
+      products: {
+        analyzer_products: {
+          basic: {
+            id: "Basic",
+            name: "Document Analyzer — Basic",
+            price: 19.99,
+            currency: "CAD",
+            interval: "one-time",
+            scope: "analyzer_only",
+            description: "Document Analyzer access only. Quick Document Review, on-screen timeline, and core red-flag audit. Does not include Case Workspace.",
+            features: [
+              "Core Quick Document Review (Fast Audit)",
+              "Contemporaneous fact vs allegation extraction",
+              "Statutory CYFSA section reference mapping",
+              "On-screen document timeline breakdown"
+            ],
+            restrictions: [
+              "No Case Workspace or evidence vault access",
+              "No Forensic In-Depth Dual-Pass scanning",
+              "No court template builders or lawyer PDF exports"
+            ]
+          },
+          premium: {
+            id: "Premium",
+            name: "Document Analyzer — Premium",
+            price: 49.99,
+            currency: "CAD",
+            interval: "one-time",
+            scope: "analyzer_only",
+            description: "Premium Document Analyzer access with Forensic In-Depth Dual-Pass analysis. Document Analyzer access only; does not include Case Workspace.",
+            features: [
+              "Everything in Analyzer Basic",
+              "Forensic In-Depth Dual-Pass Analysis",
+              "Cross-examination vulnerability scanner",
+              "Evidentiary Weight & Hearsay objection audit",
+              "Priority document analysis processing"
+            ],
+            restrictions: [
+              "No Case Workspace or evidence vault access",
+              "No ongoing case management or court filing workflows"
+            ]
+          }
+        },
+        case_access: {
+          individual: {
+            id: "Pro",
+            name: "Individual / Family — CYFSA Case Access",
+            price: 149,
+            currency: "CAD",
+            interval: "month",
+            scope: "full_platform",
+            forensicLimit: 5,
+            description: "Full CYFSA case management, preparation, and evidence platform access. Includes 5 Forensic In-Depth Analyses per monthly billing cycle.",
+            features: [
+              "Full premium case platform access",
+              "Case Workspace & Evidence Management Vault",
+              "5 Forensic In-Depth Analyses per monthly billing cycle",
+              "All 5 Ontario Court Template Builders Unlocked",
+              "Cross-Document Matter Timelines & Chronologies",
+              "Professional Lawyer PDF Export Desk",
+              "Multi-File RAG Chat & Forensic Workspace"
+            ]
+          }
+        },
+        community: {
+          community5: {
+            id: "Community5",
+            name: "Community 5 Sponsored Case Access",
+            price: 2000,
+            currency: "CAD",
+            interval: "month",
+            scope: "sponsored_case_access",
+            sponsoredFamilies: 5,
+            description: "Sponsors full CYFSA Case Access for up to 5 participating families."
+          },
+          community10: {
+            id: "Community10",
+            name: "Community 10 Sponsored Case Access",
+            price: 3500,
+            currency: "CAD",
+            interval: "month",
+            scope: "sponsored_case_access",
+            sponsoredFamilies: 10,
+            description: "Sponsors full CYFSA Case Access for up to 10 participating families."
+          },
+          community25: {
+            id: "Community25",
+            name: "Community 25 Sponsored Case Access",
+            price: 7500,
+            currency: "CAD",
+            interval: "month",
+            scope: "sponsored_case_access",
+            sponsoredFamilies: 25,
+            description: "Sponsors full CYFSA Case Access for up to 25 participating families."
+          },
+          enterprise: {
+            id: "Enterprise",
+            name: "Regional / Enterprise Sponsored Case Access",
+            price: null,
+            currency: "CAD",
+            interval: "custom",
+            scope: "sponsored_case_access",
+            sponsoredFamilies: "25+",
+            description: "25+ sponsored families — Custom enterprise pricing for legal clinics, First Nations child wellbeing agencies, and community organizations."
+          }
+        }
+      },
       tiers: {
         free: {
           name: "Free / Self-Represented",
@@ -740,6 +848,22 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             "1 Free Quick Document Review"
           ]
         },
+        basic: {
+          id: "Basic",
+          name: "Document Analyzer — Basic",
+          price: 19.99,
+          interval: "one-time",
+          currency: "CAD",
+          description: "Document Analyzer access only. Quick Document Review and on-screen red-flag audit."
+        },
+        premium: {
+          id: "Premium",
+          name: "Document Analyzer — Premium",
+          price: 49.99,
+          interval: "one-time",
+          currency: "CAD",
+          description: "Premium Document Analyzer access with Forensic In-Depth Dual-Pass analysis."
+        },
         individual: {
           id: "Pro",
           name: "Individual / Family — CYFSA Case Access",
@@ -747,14 +871,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           interval: "month",
           currency: "CAD",
           forensicLimit: 5,
-          description: "Full premium platform access. 5 Forensic In-Depth Analyses per monthly billing cycle.",
-          features: [
-            "Full premium platform access",
-            "5 Forensic In-Depth Analyses per monthly billing cycle",
-            "All 5 Court Template Builders Unlocked",
-            "Multi-File RAG Chat & Forensic Workspace",
-            "Professional Lawyer PDF Export Desk"
-          ]
+          description: "Full premium platform access. 5 Forensic In-Depth Analyses per monthly billing cycle."
         },
         community5: {
           id: "Community5",
@@ -790,7 +907,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           description: "25+ sponsored families — Custom pricing"
         }
       },
-      legacy_prices: LEGACY_TIER_PRICES
+      legacy_prices: {
+        Premium: 49.99
+      }
     });
   });
 
@@ -901,7 +1020,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     const raw=response.content.filter(part=>part.type==='text').map(part=>part.text).join('');
     return {items:JSON.parse(raw),usage:{input_tokens:response.usage.input_tokens,output_tokens:response.usage.output_tokens}};
   }, aiCostLimiter, async (req,res,next) => {
-    try { if (await requireSession(req,res)) next(); }
+    try { if (await requireCaseAccess(req,res)) next(); }
     catch { res.status(503).json({code:'SOURCE_UNAVAILABLE',error:'Source operation unavailable.'}); }
   });
   registerEvidenceReviewRoutes(app);
@@ -1022,7 +1141,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   // "family-advocate" focus, and /api/extract-evidence gets its own "1 free, then pay" pass.
 
   const SESSION_REQUIRED_MESSAGE =
-    "This feature requires an active Individual Case Access plan. Activate your access code (or upgrade) on the Membership page.";
+    "This feature requires an active paid plan. Activate your access code (or upgrade) on the Membership page.";
+
+  const CASE_ACCESS_REQUIRED_MESSAGE =
+    "CYFSA Case Access is required for this case platform feature. Your active subscription covers Document Analyzer access only.";
 
   const ACCESS_CHECK_UNAVAILABLE_MESSAGE =
     "We couldn't verify your analysis access right now. Your document is safe. Please retry in a moment.";
@@ -1100,6 +1222,26 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     return { uid: identity.uid, email: identity.email, tier: session.tier };
   }
 
+  async function requireCaseAccess(
+    req: Request,
+    res: Response,
+    preResolvedIdentity?: { uid: string; email: string | null } | null
+  ): Promise<{ uid: string; email: string | null; tier: Tier } | null> {
+    const sessionInfo = await requireSession(req, res, preResolvedIdentity);
+    if (!sessionInfo) return null;
+
+    if (!hasCaseAccess(sessionInfo.tier)) {
+      res.status(403).json({
+        error: CASE_ACCESS_REQUIRED_MESSAGE,
+        code: "CASE_ACCESS_REQUIRED",
+        currentTier: sessionInfo.tier,
+      });
+      return null;
+    }
+
+    return sessionInfo;
+  }
+
   async function allowFreeToolUse(req: Request, res: Response, tool: FreeTool): Promise<boolean> {
     // Resolved once and reused for both the paid-session binding check below and the
     // free-tier fallback, rather than verifying the Firebase token twice per request.
@@ -1175,9 +1317,29 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const sessionToken = req.header("x-ps-session");
       const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
       let isPaid = false;
+      let paidTier: Tier | null = null;
       if (parsedSession && identity) {
         const session = await lookupPaidSession(parsedSession.jti);
-        isPaid = !!session && session.firebaseUid === identity.uid;
+        if (session && session.firebaseUid === identity.uid) {
+          isPaid = true;
+          paidTier = session.tier as Tier;
+        }
+      }
+
+      if (mode === "full") {
+        if (!isPaid) {
+          return res.status(403).json({
+            error: "Forensic In-Depth Dual-Pass scanning requires Document Analyzer Premium ($49.99) or CYFSA Case Access ($149/mo). Your free analysis includes Quick Document Review.",
+            code: "FORENSIC_UPGRADE_REQUIRED",
+          });
+        }
+        if (paidTier && !hasForensicInDepthAccess(paidTier)) {
+          return res.status(403).json({
+            error: "Forensic In-Depth Dual-Pass scanning requires Document Analyzer Premium ($49.99) or CYFSA Case Access ($149/mo). Your current plan includes Quick Document Review.",
+            code: "FORENSIC_UPGRADE_REQUIRED",
+            currentTier: paidTier,
+          });
+        }
       }
 
       if (!isPaid) {
@@ -1192,7 +1354,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         const used = await getFreeUsage(uid);
         if (used >= FREE_ANALYSES_LIMIT) {
           return res.status(402).json({
-            error: "You've used your free analysis. Upgrade to Individual Case Access for unlimited document analysis.",
+            error: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access for unlimited document analysis.",
             code: "FREE_LIMIT_REACHED",
             usedCount: used,
             limit: FREE_ANALYSES_LIMIT
@@ -1538,7 +1700,7 @@ ${analysisRules}`;
   // mirrors exactly how the manual cross-referencing distinguished "confirmed in writing"
   // from "described by the parent, not yet located in any document."
   app.post("/api/case-timeline", async (req: Request, res: Response) => {
-    if (!(await requireSession(req, res))) return;
+    if (!(await requireCaseAccess(req, res))) return;
     try {
       const { documents, model, parentClaims } = req.body as {
         documents?: { name: string; text: string; sourceDate?: string }[];
@@ -1653,9 +1815,20 @@ OUTPUT — return strictly this JSON schema, nothing else:
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
     // The free "OPA Coach" chat (ParentChatBot.tsx) sends focus: "family-advocate" and stays
-    // ungated - it's informational, not one of the paid document tools. Every other focus
-    // (the Document Analyzer's case chat / deep-scan chat) requires a valid paid session.
-    if (req.body?.focus !== "family-advocate" && !(await requireSession(req, res))) return;
+    // ungated - it's informational, not one of the paid document tools.
+    if (req.body?.focus !== "family-advocate") {
+      const sessionInfo = await requireSession(req, res);
+      if (!sessionInfo) return;
+      const inputFiles = req.body?.files || [];
+      if (inputFiles.length > 1 && !hasCaseAccess(sessionInfo.tier)) {
+        res.status(403).json({
+          error: "Multi-file Case Cabinet chat requires CYFSA Case Access ($149/mo). Your current subscription covers single-document analysis.",
+          code: "CASE_ACCESS_REQUIRED",
+          currentTier: sessionInfo.tier,
+        });
+        return;
+      }
+    }
     let queryVal = "";
     let filesVal: any[] = [];
     let focusVal = "";
@@ -1878,7 +2051,16 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   // second, deeper look. It now receives that prior report and is explicitly told
   // not to restate what it already found, but to dig into what it missed.
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
-    if (!(await requireSession(req, res))) return;
+    const sessionInfo = await requireSession(req, res);
+    if (!sessionInfo) return;
+    if (!hasForensicInDepthAccess(sessionInfo.tier)) {
+      res.status(403).json({
+        error: "Forensic In-Depth Dual-Pass scanning requires Document Analyzer Premium ($49.99) or CYFSA Case Access ($149/mo). Your current plan includes Quick Document Review.",
+        code: "FORENSIC_UPGRADE_REQUIRED",
+        currentTier: sessionInfo.tier,
+      });
+      return;
+    }
     try {
       const startTime = Date.now();
       const { documentText, documentName, category, model, priorAnalysis } = req.body || {};

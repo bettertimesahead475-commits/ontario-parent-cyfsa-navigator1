@@ -16,11 +16,12 @@ interface PricingTabProps {
 }
 
 const FALLBACK_TIER_PRICES: Record<string, number> = {
+  Basic: 19.99,
+  Premium: 49.99,
   Pro: 149,
   Community5: 2000,
   Community10: 3500,
   Community25: 7500,
-  Premium: 49,
 };
 const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
 
@@ -28,7 +29,7 @@ type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success
 
 export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }: PricingTabProps) {
   const [, setLocation] = useLocation();
-  const [selectedTier, setSelectedTier] = useState<"Pro" | "Premium" | null>(null);
+  const [selectedTier, setSelectedTier] = useState<"Pro" | "Premium" | "Basic" | null>(null);
   const [stage, setStage] = useState<CheckoutStage>("idle");
   const [email, setEmail] = useState(userEmail);
   const [referenceNumber, setReferenceNumber] = useState("");
@@ -46,7 +47,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
     fetch("/api/access-pricing")
       .then(res => (res.ok ? res.json() : Promise.reject()))
       .then(data => {
-        if (data?.prices?.Pro) {
+        if (data?.prices) {
           setTierPrices(prev => ({
             ...prev,
             ...data.prices,
@@ -63,7 +64,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
     if (!userEmail) return;
     try {
       const pending = localStorage.getItem("cyfsa_pending_plan");
-      if (pending === "Pro" || pending === "Premium") {
+      if (pending === "Pro" || pending === "Premium" || pending === "Basic") {
         localStorage.removeItem("cyfsa_pending_plan");
         setSelectedTier(pending);
         setEmail(userEmail);
@@ -72,7 +73,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
     } catch {}
   }, [userEmail]);
 
-  const triggerCheckout = (tier: "Pro" | "Premium") => {
+  const triggerCheckout = (tier: "Pro" | "Premium" | "Basic") => {
     if (!userEmail) {
       try { localStorage.setItem("cyfsa_pending_plan", tier); } catch {}
       setLocation("/signup");
@@ -189,9 +190,9 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg border border-white/10">
               <span className="text-indigo-300 font-bold font-mono">My Active Tier:</span>
               <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] uppercase ${
-                currentTier === "Premium" ? "bg-emerald-500 text-white" : currentTier === "Pro" ? "bg-indigo-500 text-white" : "bg-slate-700 text-slate-300"
+                currentTier === "Pro" ? "bg-indigo-500 text-white" : currentTier === "Premium" ? "bg-purple-600 text-white" : "bg-slate-700 text-slate-300"
               }`}>
-                {currentTier} Plan
+                {currentTier === "Pro" ? "CYFSA Case Access ($149/mo)" : currentTier === "Premium" ? "Analyzer Premium ($49.99)" : `${currentTier} Plan`}
               </span>
             </div>
           </div>
@@ -254,13 +255,13 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
 
         {/* Pro Plan - Individual / Family Case Access */}
         <div className={`bg-gradient-to-b from-white to-slate-50 rounded-2xl border-2 p-6 text-left flex flex-col justify-between transition-all relative ${
-          currentTier === "Pro" || currentTier === "Premium" ? "border-indigo-600 ring-4 ring-indigo-50 shadow-md" : "border-indigo-200/80 hover:border-indigo-300 shadow-xs"
+          currentTier === "Pro" ? "border-indigo-600 ring-4 ring-indigo-50 shadow-md" : "border-indigo-200/80 hover:border-indigo-300 shadow-xs"
         }`} id="plan-pro-card">
           <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-indigo-950 text-white font-mono text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-indigo-400" />
             <span>Litigation-Ready Access</span>
           </div>
-          {(currentTier === "Pro" || currentTier === "Premium") && (
+          {currentTier === "Pro" && (
             <span className="absolute top-4 right-4 bg-indigo-600 text-white font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
           )}
           <div className="space-y-4">
@@ -303,7 +304,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             </div>
           </div>
           <div className="pt-6 mt-auto">
-            {currentTier === "Pro" || currentTier === "Premium" ? (
+            {currentTier === "Pro" ? (
               <button type="button" disabled className="w-full py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-bold rounded-xl cursor-not-allowed uppercase tracking-wider">
                 Active Plan
               </button>
@@ -313,6 +314,147 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Dedicated Section: Document Analyzer Access Only (Entry & Intake) */}
+      <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-6 md:p-8 text-left space-y-6 max-w-4xl mx-auto w-full" id="document-analyzer-standalone-tiers">
+        <div className="max-w-3xl">
+          <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full font-mono font-bold tracking-wider text-[10px] uppercase border border-purple-200">
+            Document Analyzer Access Only
+          </span>
+          <h2 className="font-display font-extrabold text-xl text-slate-900 mt-2">
+            Targeted Document Analyzer Plans
+          </h2>
+          <p className="text-slate-600 text-xs md:text-sm mt-1 leading-relaxed">
+            Need comprehensive document analysis without full case platform features? Get dedicated Document Analyzer access for individual affidavits, CAS letters, and disclosure records. <strong>Note:</strong> Document Analyzer access covers single-document review only and does not include Case Workspace or evidence vault tools.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Document Analyzer — Basic */}
+          <div className="bg-white rounded-2xl border border-slate-200 hover:border-purple-300 p-6 text-left flex flex-col justify-between transition-all shadow-xs" id="plan-analyzer-basic-card">
+            <div className="space-y-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Document Review Only</span>
+                <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Document Analyzer — Basic</h3>
+                <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+                  Single-document Quick Document Review, on-screen timeline, and core red-flag audit.
+                </p>
+              </div>
+              <div className="py-2">
+                <span className="font-display font-black text-3.5xl text-slate-900">${TIER_PRICES.Basic || 19.99}</span>
+                <span className="text-gray-400 text-xs font-semibold font-sans"> CAD one-time</span>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[10px] text-amber-900 font-medium">
+                Document Analyzer access only — Case Workspace not included.
+              </div>
+              <div className="border-t border-slate-100 pt-4 space-y-2.5">
+                <div className="flex items-start gap-2.5 text-xs text-slate-800">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Core Quick Document Review (Fast Audit)</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Contemporaneous fact vs allegation extraction</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Statutory CYFSA section reference mapping</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>On-screen document timeline breakdown</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-400 line-through">
+                  <span>Forensic In-Depth Dual-Pass scanning</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-400 line-through">
+                  <span>Case Workspace & court form builders</span>
+                </div>
+              </div>
+            </div>
+            <div className="pt-6 mt-auto">
+              <button
+                type="button"
+                onClick={() => triggerCheckout("Basic")}
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-900 text-white text-xs font-bold rounded-xl transition shadow-xs hover:shadow-md uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Get Analyzer Basic (${TIER_PRICES.Basic || 19.99})</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Document Analyzer — Premium */}
+          <div className={`bg-white rounded-2xl border-2 p-6 text-left flex flex-col justify-between transition-all relative ${
+            currentTier === "Premium" ? "border-purple-600 ring-4 ring-purple-50 shadow-md" : "border-purple-200 hover:border-purple-300 shadow-xs"
+          }`} id="plan-analyzer-premium-card">
+            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-purple-900 text-white font-mono text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-purple-300" />
+              <span>Full Forensic Pass</span>
+            </div>
+            {currentTier === "Premium" && (
+              <span className="absolute top-4 right-4 bg-purple-600 text-white font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
+            )}
+            <div className="space-y-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold tracking-widest text-purple-600">Forensic Audit Only</span>
+                <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Document Analyzer — Premium</h3>
+                <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+                  Forensic In-Depth Dual-Pass analysis, cross-examination vulnerabilities, and hearsay weight audit.
+                </p>
+              </div>
+              <div className="py-2">
+                <span className="font-display font-black text-3.5xl text-slate-900">${TIER_PRICES.Premium || 49.99}</span>
+                <span className="text-gray-400 text-xs font-semibold font-sans"> CAD one-time</span>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[10px] text-amber-900 font-medium">
+                Document Analyzer access only — Case Workspace not included.
+              </div>
+              <div className="border-t border-slate-100 pt-4 space-y-2.5">
+                <div className="flex items-start gap-2.5 text-xs text-slate-800">
+                  <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <span className="font-semibold">Everything in Analyzer Basic</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-800">
+                  <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <span className="font-semibold">Forensic In-Depth Dual-Pass Analysis</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                  <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <span>Cross-examination vulnerability scanner</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                  <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <span>Evidentiary Weight & Hearsay objection audit</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                  <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <span>Priority document analysis queue</span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-400 line-through">
+                  <span>Case Workspace & court form builders</span>
+                </div>
+              </div>
+            </div>
+            <div className="pt-6 mt-auto">
+              {currentTier === "Premium" ? (
+                <button type="button" disabled className="w-full py-2.5 bg-purple-50 border border-purple-200 text-purple-800 text-xs font-bold rounded-xl cursor-not-allowed uppercase tracking-wider">
+                  Active Plan
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => triggerCheckout("Premium")}
+                  className="w-full py-2.5 bg-purple-950 hover:bg-purple-900 border border-purple-950 text-white text-xs font-bold rounded-xl transition shadow-xs hover:shadow-md uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Get Analyzer Premium (${TIER_PRICES.Premium || 49.99})</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -32,8 +32,32 @@ const mockAccess = vi.hoisted(() => ({
   revokeSession: vi.fn(),
   revokeAllSessionsForUid: vi.fn(),
   checkAndConsumeFreeToolUse: vi.fn(),
-  TIER_PRICES: { Pro: 149, Community5: 2000, Community10: 3500, Community25: 7500 },
-  LEGACY_TIER_PRICES: { Premium: 49 },
+  TIER_PRICES: {
+    Basic: 19.99,
+    AnalyzerBasic: 19.99,
+    Premium: 49.99,
+    AnalyzerPremium: 49.99,
+    Pro: 149,
+    Community5: 2000,
+    Community10: 3500,
+    Community25: 7500,
+  },
+  ALL_TIER_PRICES: {
+    Basic: 19.99,
+    AnalyzerBasic: 19.99,
+    Premium: 49.99,
+    AnalyzerPremium: 49.99,
+    Pro: 149,
+    Community5: 2000,
+    Community10: 3500,
+    Community25: 7500,
+  },
+  LEGACY_TIER_PRICES: { Premium: 49.99 },
+  isAnalyzerTier: vi.fn((tier: string) => ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium"].includes(tier)),
+  isCaseAccessTier: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
+  hasCaseAccess: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
+  hasAnalyzerAccess: vi.fn((tier: string) => ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
+  hasForensicInDepthAccess: vi.fn((tier: string) => ["Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
 }));
 
 const mockFirebaseAdmin = vi.hoisted(() => ({
@@ -178,18 +202,28 @@ describe("GET /api/health", () => {
 });
 
 describe("GET /api/access-pricing", () => {
-  it("returns the tier prices from the access service", async () => {
+  it("returns the authoritative tiered product hierarchy and prices", async () => {
     const res = await request(app).get("/api/access-pricing");
     expect(res.status).toBe(200);
     expect(res.body.prices).toEqual({
+      Basic: 19.99,
+      AnalyzerBasic: 19.99,
+      Premium: 49.99,
+      AnalyzerPremium: 49.99,
       Pro: 149,
       Community5: 2000,
       Community10: 3500,
       Community25: 7500,
     });
-    expect(res.body.legacy_prices).toEqual({ Premium: 49 });
+    expect(res.body.legacy_prices).toEqual({ Premium: 49.99 });
+    expect(res.body.products.analyzer_products.basic.price).toBe(19.99);
+    expect(res.body.products.analyzer_products.premium.price).toBe(49.99);
+    expect(res.body.products.case_access.individual.price).toBe(149);
+    expect(res.body.products.community.community5.price).toBe(2000);
     expect(res.body.tiers.individual.price).toBe(149);
     expect(res.body.tiers.free.price).toBe(0);
+    expect(res.body.tiers.basic.price).toBe(19.99);
+    expect(res.body.tiers.premium.price).toBe(49.99);
   });
 });
 
@@ -1154,5 +1188,145 @@ describe("Lifecycle routes are mounted behind authentication", () => {
     const response = await request(app).get("/api/matters/00000000-0000-4000-8000-000000000001");
     expect(response.status).toBe(401);
     expect(response.body.code).toBe("SIGN_IN_REQUIRED");
+  });
+});
+
+describe("Tier Entitlement Boundaries & Anti-Bypass Security", () => {
+  const FREE_AUTH = "Bearer valid-free-token";
+  const BASIC_TOKEN = "basic-analyzer-session";
+  const PREMIUM_TOKEN = "premium-analyzer-session";
+  const PRO_TOKEN = "pro-case-access-session";
+
+  beforeEach(() => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) => {
+      if (header === FREE_AUTH) return { uid: "free-user", email: "free@example.com" };
+      if (header === "Bearer basic-token") return { uid: "basic-user", email: "basic@example.com" };
+      if (header === "Bearer premium-token") return { uid: "premium-user", email: "premium@example.com" };
+      if (header === "Bearer pro-token") return { uid: "pro-user", email: "pro@example.com" };
+      return null;
+    });
+
+    mockAccess.verifySessionToken.mockImplementation((t: string) => {
+      if (t === BASIC_TOKEN) return { jti: "jti-basic" };
+      if (t === PREMIUM_TOKEN) return { jti: "jti-premium" };
+      if (t === PRO_TOKEN) return { jti: "jti-pro" };
+      return null;
+    });
+
+    mockAccess.getActivePaidSession.mockImplementation(async (jti: string) => {
+      if (jti === "jti-basic") return { id: "jti-basic", firebaseUid: "basic-user", tier: "Basic" };
+      if (jti === "jti-premium") return { id: "jti-premium", firebaseUid: "premium-user", tier: "Premium" };
+      if (jti === "jti-pro") return { id: "jti-pro", firebaseUid: "pro-user", tier: "Pro" };
+      return null;
+    });
+  });
+
+  it("1. Free user is blocked from Case Access timeline with 402 SESSION_REQUIRED", async () => {
+    const res = await request(app)
+      .post("/api/case-timeline")
+      .set("Authorization", FREE_AUTH)
+      .send({ documents: [{ name: "doc1.pdf", text: "t1" }, { name: "doc2.pdf", text: "t2" }] });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("SESSION_REQUIRED");
+  });
+
+  it("2. Free user is blocked from Forensic In-Depth (mode: full) with 403 FORENSIC_UPGRADE_REQUIRED", async () => {
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", FREE_AUTH)
+      .send({ textContent: "some text", mode: "full" });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
+  });
+
+  const MINIMAL_DEEP_SCAN_FIXTURE = { gaps: [], missingEvidence: [], retorts: [], disclaimer: "d" };
+
+  it("3. Free user is allowed Quick Document Review (mode: fast)", async () => {
+    mockUsage.getFreeUsage.mockResolvedValueOnce(0);
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", FREE_AUTH)
+      .send({ textContent: "some text", mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.documentTitle).toBe("Uploaded Document");
+  });
+
+  it("4. Basic Analyzer ($19.99) is allowed Quick Document Review (mode: fast)", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN })
+      .send({ textContent: "some text", mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.documentTitle).toBe("Uploaded Document");
+  });
+
+  it("5. Basic Analyzer ($19.99) is blocked from Forensic In-Depth (mode: full) with 403 FORENSIC_UPGRADE_REQUIRED", async () => {
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN })
+      .send({ textContent: "some text", mode: "full" });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
+  });
+
+  it("6. Basic Analyzer ($19.99) is blocked from /api/deep-scan with 403 FORENSIC_UPGRADE_REQUIRED", async () => {
+    const res = await request(app)
+      .post("/api/deep-scan")
+      .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN })
+      .send({ documentText: "some document text" });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
+  });
+
+  it("7. Basic Analyzer ($19.99) is blocked from Case Workspace timeline with 403 CASE_ACCESS_REQUIRED", async () => {
+    const res = await request(app)
+      .post("/api/case-timeline")
+      .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN })
+      .send({ documents: [{ name: "doc1.pdf", text: "t1" }, { name: "doc2.pdf", text: "t2" }] });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("CASE_ACCESS_REQUIRED");
+  });
+
+  it("8. Basic Analyzer ($19.99) is blocked from multi-file RAG chat with 403 CASE_ACCESS_REQUIRED", async () => {
+    const res = await request(app)
+      .post("/api/rag-query")
+      .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN })
+      .send({ query: "Question across files", files: [{ name: "f1.pdf", content: "c1" }, { name: "f2.pdf", content: "c2" }] });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("CASE_ACCESS_REQUIRED");
+  });
+
+  it("9. Premium Analyzer ($49.99) is allowed /api/deep-scan and full analysis but blocked from Case Workspace timeline", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN_FIXTURE));
+    const deepScanRes = await request(app)
+      .post("/api/deep-scan")
+      .set({ Authorization: "Bearer premium-token", "x-ps-session": PREMIUM_TOKEN })
+      .send({ documentText: "some document text" });
+    expect(deepScanRes.status).toBe(200);
+
+    const timelineRes = await request(app)
+      .post("/api/case-timeline")
+      .set({ Authorization: "Bearer premium-token", "x-ps-session": PREMIUM_TOKEN })
+      .send({ documents: [{ name: "doc1.pdf", text: "t1" }, { name: "doc2.pdf", text: "t2" }] });
+    expect(timelineRes.status).toBe(403);
+    expect(timelineRes.body.code).toBe("CASE_ACCESS_REQUIRED");
+  });
+
+  it("10. CYFSA Case Access ($149/mo) is allowed Case Workspace timeline and multi-file RAG", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ timeline: [], conflicts: [], openItems: [] }));
+    const timelineRes = await request(app)
+      .post("/api/case-timeline")
+      .set({ Authorization: "Bearer pro-token", "x-ps-session": PRO_TOKEN })
+      .send({ documents: [{ name: "doc1.pdf", text: "t1" }, { name: "doc2.pdf", text: "t2" }] });
+    expect(timelineRes.status).toBe(200);
+
+    mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("Multi-file answer"));
+    const ragRes = await request(app)
+      .post("/api/rag-query")
+      .set({ Authorization: "Bearer pro-token", "x-ps-session": PRO_TOKEN })
+      .send({ query: "Question across files", files: [{ name: "f1.pdf", content: "c1" }, { name: "f2.pdf", content: "c2" }] });
+    expect(ragRes.status).toBe(200);
   });
 });
