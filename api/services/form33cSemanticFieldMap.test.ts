@@ -11,6 +11,7 @@
 // implies agreement.
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import {
   validateSemanticFieldMap,
@@ -549,25 +550,25 @@ describe("Other controlled forms remain unmapped/quarantined; PDF unavailable", 
   it("32/33. no real semantic-map module exists for Form 8B or Form 33B.1", () => {
     const otherFormFiles = ["./form8bSemanticFieldMap.ts", "./form33b1SemanticFieldMap.ts"];
     for (const rel of otherFormFiles) {
-      const abs = new URL(rel, import.meta.url).pathname;
+      const abs = fileURLToPath(new URL(rel, import.meta.url));
       expect(fs.existsSync(abs), `${rel} must not exist yet`).toBe(false);
     }
   });
 
   it("34. Form 33B remains quarantined: no semantic-map module exists for it, and it has no entry in the technical inventory data used here", () => {
-    const abs = new URL("./form33bSemanticFieldMap.ts", import.meta.url).pathname;
+    const abs = fileURLToPath(new URL("./form33bSemanticFieldMap.ts", import.meta.url));
     expect(fs.existsSync(abs)).toBe(false);
     expect(DOCX_FIELD_INVENTORIES.some(f => f.formNumber === "33B")).toBe(false);
   });
 
   it("35. PDF track remains unavailable: this map's binding format is DOCX only, and no PDF field-map module exists", () => {
     expect(FORM_33C_EXACT_TEMPLATE_BINDING.format).toBe("DOCX");
-    const abs = new URL("./form33cSemanticFieldMapPdf.ts", import.meta.url).pathname;
+    const abs = fileURLToPath(new URL("./form33cSemanticFieldMapPdf.ts", import.meta.url));
     expect(fs.existsSync(abs)).toBe(false);
   });
 
   it("no content-population module (word/document.xml writer) exists alongside this map", () => {
-    const abs = new URL("./form33cDocxPopulate.ts", import.meta.url).pathname;
+    const abs = fileURLToPath(new URL("./form33cDocxPopulate.ts", import.meta.url));
     expect(fs.existsSync(abs)).toBe(false);
   });
 });
