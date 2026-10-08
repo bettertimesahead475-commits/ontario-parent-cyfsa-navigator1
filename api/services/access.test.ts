@@ -45,6 +45,8 @@ const {
   revokeSession,
   revokeAllSessionsForUid,
   resolveSupabaseCredentials,
+  resetSupabaseClientForTesting,
+  getSupabase,
 } = await import("./access.js");
 
 // Mirrors access.ts's private hashCode() exactly (SHA-256 of the uppercased/trimmed code) -
@@ -630,15 +632,25 @@ describe("resolveSupabaseCredentials", () => {
   const origKey = process.env.SUPABASE_SERVICE_KEY;
   const origUrl = process.env.SUPABASE_URL;
 
+  function makeTestJwt(payload: { role?: string; ref?: string }): string {
+    const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+    const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    return `${header}.${body}.dummy_sig`;
+  }
+
   afterEach(() => {
     delete process.env.sb_secret_123_SERVICE_ROLE_KEY;
     delete process.env.sb_secret_123_SUPABASE_URL;
+    delete process.env.sb_secret_qboidsfpjuxeqtfotryj_SERVICE_ROLE_KEY;
+    delete process.env.sb_secret_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SECRET_KEY;
     if (origRole !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = origRole;
     else delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (origKey !== undefined) process.env.SUPABASE_SERVICE_KEY = origKey;
     else delete process.env.SUPABASE_SERVICE_KEY;
     if (origUrl !== undefined) process.env.SUPABASE_URL = origUrl;
     else delete process.env.SUPABASE_URL;
+    resetSupabaseClientForTesting();
   });
 
   it("prioritizes SUPABASE_SERVICE_ROLE_KEY over integration and legacy keys", () => {
@@ -677,5 +689,74 @@ describe("resolveSupabaseCredentials", () => {
 
     const res = resolveSupabaseCredentials();
     expect(res.url).toBe("https://int-proj.supabase.co");
+  });
+
+  it("recovers from competing configuration: rejects stale/mismatched SUPABASE_SERVICE_ROLE_KEY and selects valid QBOIDS integration credential", () => {
+    process.env.SUPABASE_URL = "https://qboidsfpjuxeqtfotryj.supabase.co";
+    // Competing stale key with mismatched project reference (e.g. from staging or previous project)
+    process.env.SUPABASE_SERVICE_ROLE_KEY = makeTestJwt({ role: "service_role", ref: "nxfhvebzzobegubefcda" });
+    // Valid integration-managed credential for QBOIDS production
+    process.env.sb_secret_qboidsfpjuxeqtfotryj_SERVICE_ROLE_KEY = makeTestJwt({ role: "service_role", ref: "qboidsfpjuxeqtfotryj" });
+    process.env.SUPABASE_SERVICE_KEY = "legacy-invalid-key";
+
+    const res = resolveSupabaseCredentials();
+    expect(res.source).toBe("sb_secret_qboidsfpjuxeqtfotryj_SERVICE_ROLE_KEY");
+    expect(res.url).toBe("https://qboidsfpjuxeqtfotryj.supabase.co");
+  });
+
+  it("does not silently accept URL/key mismatch when no matching credential exists (fails closed)", () => {
+    process.env.SUPABASE_URL = "https://qboidsfpjuxeqtfotryj.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = makeTestJwt({ role: "service_role", ref: "other_mismatched_project" });
+
+    const res = resolveSupabaseCredentials();
+    expect(res.key).toBeNull();
+    expect(res.source).toBeNull();
+
+    resetSupabaseClientForTesting();
+    expect(() => getSupabase()).toThrowError(/not configured/);
+  });
+
+  it("rejects client/anon JWT keys from being selected as server service role credentials", () => {
+    process.env.SUPABASE_URL = "https://qboidsfpjuxeqtfotryj.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = makeTestJwt({ role: "anon", ref: "qboidsfpjuxeqtfotryj" });
+    process.env.sb_secret_SERVICE_ROLE_KEY = makeTestJwt({ role: "service_role", ref: "qboidsfpjuxeqtfotryj" });
+
+    const res = resolveSupabaseCredentials();
+    expect(res.source).toBe("sb_secret_SERVICE_ROLE_KEY");
+  });
+
+  it("recognizes SUPABASE_SECRET_KEY as integration credential", () => {
+    process.env.SUPABASE_URL = "https://qboidsfpjuxeqtfotryj.supabase.co";
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SECRET_KEY = "sb_secret_opaque_token";
+
+    const res = resolveSupabaseCredentials();
+    expect(res.source).toBe("SUPABASE_SECRET_KEY");
+    expect(res.key).toBe("sb_secret_opaque_token");
+  });
+
+  it("fails closed when no credentials are configured", () => {
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_KEY;
+
+    const res = resolveSupabaseCredentials();
+    expect(res.key).toBeNull();
+    expect(res.url).toBeNull();
+
+    resetSupabaseClientForTesting();
+    expect(() => getSupabase()).toThrowError(/not configured/);
+  });
+
+  it("allows free_usage and navigator_paid_sessions lookups after resolving valid credential", async () => {
+    process.env.SUPABASE_URL = "https://qboidsfpjuxeqtfotryj.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = makeTestJwt({ role: "service_role", ref: "qboidsfpjuxeqtfotryj" });
+    resetSupabaseClientForTesting();
+
+    const client = getSupabase();
+    expect(client).toBeDefined();
+
+    const session = await getActivePaidSession("non-existent-session-id");
+    expect(session).toBeNull();
   });
 });
