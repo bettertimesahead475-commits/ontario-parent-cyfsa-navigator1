@@ -427,7 +427,7 @@ export default function CYFSAGuideTab() {
             </h4>
           </div>
           <p className="text-slate-600 text-xs md:text-sm leading-relaxed">
-            Ready to audit your casework paperwork? You get <span className="font-extrabold text-brand-900">1 free document review and 1 free evidence extraction</span> in our **Document Analyzer** tab for immediate statutory cross-referencing and parent-focused strategy mapping — after that, upgrade to Pro or Premium for unlimited use.
+            Ready to audit your casework paperwork? You get <span className="font-extrabold text-brand-900">1 free document review and 1 free evidence extraction</span> in our **Document Analyzer** tab for immediate statutory cross-referencing and parent-focused strategy mapping — after that, upgrade to Individual Case Access for unlimited use.
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 font-medium">
             <span className="flex items-center gap-1.5 text-emerald-700 font-semibold">

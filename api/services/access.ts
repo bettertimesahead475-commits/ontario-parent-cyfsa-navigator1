@@ -36,11 +36,24 @@
 import crypto from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export type Tier = "Pro" | "Premium";
+export type ActiveTier = "Pro" | "Community5" | "Community10" | "Community25";
+export type LegacyTier = "Premium";
+export type Tier = ActiveTier | LegacyTier;
 
-export const TIER_PRICES: Record<Tier, number> = {
+export const TIER_PRICES: Record<ActiveTier, number> = {
   Pro: 149,
+  Community5: 2000,
+  Community10: 3500,
+  Community25: 7500,
+};
+
+export const LEGACY_TIER_PRICES: Record<LegacyTier, number> = {
   Premium: 49,
+};
+
+export const ALL_TIER_PRICES: Record<Tier, number> = {
+  ...TIER_PRICES,
+  ...LEGACY_TIER_PRICES,
 };
 
 export const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
@@ -365,7 +378,7 @@ export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool):
 export async function requestAccess(email: string, tier: Tier) {
   const db = getSupabase();
   const referenceNumber = generateReferenceNumber();
-  const amount = TIER_PRICES[tier];
+  const amount = ALL_TIER_PRICES[tier] ?? TIER_PRICES.Pro;
 
   const { error } = await db.from("payments").insert({
     plan: tier,

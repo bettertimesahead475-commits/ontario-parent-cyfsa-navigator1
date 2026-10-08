@@ -144,7 +144,7 @@ export function formatAnalyzerErrorResponse(error: any): {
   if (status === 402 || errMsg.includes("free limit") || errMsg.includes("free analysis") || errMsg.includes("usage limit")) {
     return {
       code: "USAGE_LIMIT_REACHED",
-      error: "You've used your free analysis limit. Upgrade to Pro or Premium for unlimited document analysis.",
+      error: "You've used your free analysis limit. Upgrade to Individual Case Access for unlimited document analysis.",
       statusCode: 402,
       retryable: false,
     };

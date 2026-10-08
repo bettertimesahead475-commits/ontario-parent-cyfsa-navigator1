@@ -315,6 +315,7 @@ export default function DocumentAnalyzerTab() {
   // model string comes in, so this default (and, worse, both options in the dropdown below) never
   // actually did anything - the model selector was a non-functional illusion of choice.
   const [claudeModel, setClaudeModel] = useState<string>("claude-haiku-4-5-20251001");
+  const [analysisMode, setAnalysisMode] = useState<"fast" | "full">("fast");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Active Audit Visual State
@@ -1688,7 +1689,7 @@ export default function DocumentAnalyzerTab() {
                   const response = await apiFetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ...payload, mode: "fast", model: claudeModel })
+                    body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
                   });
 
                   // safeReadJson throws an ApiResponseError (status/code/retryable) for any
@@ -1808,7 +1809,7 @@ export default function DocumentAnalyzerTab() {
       const response = await apiFetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, mode: "fast", model: claudeModel })
+        body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
       });
 
       const report = await safeReadJson(response);
@@ -2662,12 +2663,24 @@ export default function DocumentAnalyzerTab() {
               onChange={(e) => setClaudeModel(e.target.value)}
               className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors"
             >
-              {/* BUG FOUND IN AUDIT: both previous options ("claude-sonnet-4-20250514" and
-                  "claude-3-5-sonnet-20241022") were invalid model strings the backend would
-                  silently reject and replace with claude-sonnet-5 regardless of selection - this
-                  dropdown did nothing. Now offers the two models the backend actually accepts. */}
               <option value="claude-haiku-4-5-20251001">Fast analysis — Claude Haiku 4.5</option>
               <option value="claude-sonnet-5">Deep analysis — Claude Sonnet 5</option>
+            </select>
+          </div>
+
+          {/* Analysis Mode Selector */}
+          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
+            <span className="text-[10px] text-slate-500 font-mono pl-1 shrink-0 flex items-center gap-1 font-bold uppercase tracking-wider">
+              Analysis Mode
+            </span>
+            <select
+              value={analysisMode}
+              onChange={(e) => setAnalysisMode(e.target.value as "fast" | "full")}
+              className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors"
+              aria-label="Analysis Mode"
+            >
+              <option value="fast">Quick Document Review (Core Audit)</option>
+              <option value="full">Forensic In-Depth (Full Dual-Pass Audit)</option>
             </select>
           </div>
           
@@ -2784,7 +2797,7 @@ export default function DocumentAnalyzerTab() {
                   multiple
                   ref={fileInputRef}
                   onChange={handleMultipleFilesUpload}
-                  accept=".txt,.pdf,.heic,.heif,image/*,audio/*,.mp3,.wav,.m4a,.webm,.ogg"
+                  accept=".txt,.pdf,.docx,.heic,.heif,image/*,audio/*,.mp3,.wav,.m4a,.webm,.ogg"
                   className="hidden"
                 />
                 <Upload className="w-8 h-8 text-brand-500 mx-auto mb-2 group-hover:scale-110 transition-transform" />
@@ -2792,7 +2805,7 @@ export default function DocumentAnalyzerTab() {
                   Click to select multiple casework files or audio logs
                 </span>
                 <span className="text-[10px] text-slate-500 block mt-1">
-                  Supports TXT, PDF, HEIC/HEIF, Photo, and Audio recordings • Auto-transcribed & Stored in PDF format
+                  Supports PDF, DOCX, TXT, HEIC/HEIF, Photo, and Audio recordings • Auto-transcribed & Stored in PDF format
                 </span>
               </div>
             </div>

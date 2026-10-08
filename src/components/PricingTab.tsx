@@ -15,7 +15,13 @@ interface PricingTabProps {
   userEmail?: string;
 }
 
-const FALLBACK_TIER_PRICES: Record<"Pro" | "Premium", number> = { Pro: 149, Premium: 49 };
+const FALLBACK_TIER_PRICES: Record<string, number> = {
+  Pro: 149,
+  Community5: 2000,
+  Community10: 3500,
+  Community25: 7500,
+  Premium: 49,
+};
 const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
 
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
@@ -33,20 +39,19 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
   const [sidebarError, setSidebarError] = useState("");
   const [sidebarBusy, setSidebarBusy] = useState(false);
 
-  // BUG FOUND IN AUDIT: the real prices are enforced server-side in api/services/access.ts,
-  // but this component had its own hardcoded copy - two sources of truth that happened to
-  // match today but had nothing keeping them in sync. If the backend price ever changed,
-  // this page would keep quoting the old number with no warning. There's also an existing
-  // /api/access-pricing endpoint that returns the real values but nothing was calling it.
-  // Now this fetches the real prices on load, falling back to the hardcoded values only if
-  // that fetch fails, so the UI never breaks even when offline/erroring.
-  const [TIER_PRICES, setTierPrices] = useState<Record<"Pro" | "Premium", number>>(FALLBACK_TIER_PRICES);
+  // Authoritative prices are retrieved from /api/access-pricing on load,
+  // falling back to FALLBACK_TIER_PRICES if network is unavailable.
+  const [TIER_PRICES, setTierPrices] = useState<Record<string, number>>(FALLBACK_TIER_PRICES);
   React.useEffect(() => {
     fetch("/api/access-pricing")
       .then(res => (res.ok ? res.json() : Promise.reject()))
       .then(data => {
-        if (data?.prices?.Pro && data?.prices?.Premium) {
-          setTierPrices(data.prices);
+        if (data?.prices?.Pro) {
+          setTierPrices(prev => ({
+            ...prev,
+            ...data.prices,
+            ...(data.legacy_prices || {}),
+          }));
         }
       })
       .catch(() => {
@@ -194,7 +199,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       </div>
 
       {/* Grid of Plans */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2" id="pricing-plan-grid">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 max-w-4xl mx-auto" id="pricing-plan-grid">
 
         {/* Basic Plan */}
         <div className={`bg-white rounded-2xl border p-6 text-left flex flex-col justify-between transition-all relative ${
@@ -216,6 +221,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               <span className="text-gray-400 text-xs font-semibold font-sans"> / forever CAD</span>
             </div>
             <div className="border-t border-slate-100 pt-4 space-y-2.5">
+              <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                <span>1 Free Quick Document Review</span>
+              </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                 <span>CYFSA Statutory Search Guides</span>
@@ -245,14 +254,14 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
 
         {/* Pro Plan - Individual / Family Case Access */}
         <div className={`bg-gradient-to-b from-white to-slate-50 rounded-2xl border-2 p-6 text-left flex flex-col justify-between transition-all relative ${
-          currentTier === "Pro" ? "border-indigo-600 ring-4 ring-indigo-50 shadow-md" : "border-indigo-200/80 hover:border-indigo-300 shadow-xs"
+          currentTier === "Pro" || currentTier === "Premium" ? "border-indigo-600 ring-4 ring-indigo-50 shadow-md" : "border-indigo-200/80 hover:border-indigo-300 shadow-xs"
         }`} id="plan-pro-card">
           <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-indigo-950 text-white font-mono text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-indigo-400" />
-            <span>Most Popular Choice</span>
+            <span>Litigation-Ready Access</span>
           </div>
-          {currentTier === "Pro" && (
-            <span className="absolute top-4 right-4 bg-indigo-600 text-white font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Selected</span>
+          {(currentTier === "Pro" || currentTier === "Premium") && (
+            <span className="absolute top-4 right-4 bg-indigo-600 text-white font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
           )}
           <div className="space-y-4">
             <div>
@@ -273,7 +282,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <span>5 Forensic In-Depth Analyses per cycle</span>
+                <span className="font-semibold">5 Forensic In-Depth Analyses per cycle</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
@@ -287,68 +296,20 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <span>Professional Lawyer PDF Export Desk</span>
               </div>
+              <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                <span>Unlimited Casework File Uploads & Timelines</span>
+              </div>
             </div>
           </div>
           <div className="pt-6 mt-auto">
-            {currentTier === "Pro" ? (
+            {currentTier === "Pro" || currentTier === "Premium" ? (
               <button type="button" disabled className="w-full py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-bold rounded-xl cursor-not-allowed uppercase tracking-wider">
-                Selected Plan Active
+                Active Plan
               </button>
             ) : (
               <button type="button" onClick={() => triggerCheckout("Pro")} className="w-full py-2.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-950 text-white text-xs font-bold rounded-xl transition shadow-xs hover:shadow-md uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2">
                 <span>{userEmail ? "Upgrade to Individual Access" : "Sign Up & Choose Individual Access"}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Premium Plan */}
-        <div className={`bg-gradient-to-b from-white to-emerald-50/20 rounded-2xl border p-6 text-left flex flex-col justify-between transition-all relative ${
-          currentTier === "Premium" ? "border-emerald-600 ring-4 ring-emerald-50 shadow-md" : "border-gray-100 hover:border-gray-200"
-        }`} id="plan-premium-card">
-          {currentTier === "Premium" && (
-            <span className="absolute top-4 right-4 bg-emerald-600 text-white font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Selected</span>
-          )}
-          <div className="space-y-4">
-            <div>
-              <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-600">Premium Attorney</span>
-              <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Full Legal Defense</h3>
-              <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                Complete system listing, advanced audio roleplay preps, and priority compute processing.
-              </p>
-            </div>
-            <div className="py-2">
-              <span className="font-display font-black text-3.5xl text-slate-900">${TIER_PRICES.Premium}</span>
-              <span className="text-gray-400 text-xs font-semibold font-sans"> / month CAD</span>
-            </div>
-            <div className="border-t border-slate-100 pt-4 space-y-2.5">
-              <div className="flex items-start gap-2.5 text-xs text-slate-800 font-semibold">
-                <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>All Pro features included</span>
-              </div>
-              <div className="flex items-start gap-2.5 text-xs text-slate-700">
-                <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>Exclusive Attorney Listing Profile Slots</span>
-              </div>
-              <div className="flex items-start gap-2.5 text-xs text-slate-700">
-                <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>Priority RAG vector indexing compute</span>
-              </div>
-              <div className="flex items-start gap-2.5 text-xs text-slate-700">
-                <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>Unlimited Audio Voice Transcription hours</span>
-              </div>
-            </div>
-          </div>
-          <div className="pt-6 mt-auto">
-            {currentTier === "Premium" ? (
-              <button type="button" disabled className="w-full py-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-xl cursor-not-allowed uppercase tracking-wider">
-                Selected Plan Active
-              </button>
-            ) : (
-              <button type="button" onClick={() => triggerCheckout("Premium")} className="w-full py-2.5 bg-emerald-900 hover:bg-emerald-950 border border-emerald-900 text-white text-xs font-bold rounded-xl transition shadow-xs hover:shadow-md uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2">
-                <span>{userEmail ? "Choose Premium" : "Sign Up & Choose Premium"}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
@@ -409,7 +370,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           <div>
             <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">How membership works</span>
             <h2 className="text-xl font-black text-slate-900 mt-1">Sign up, pay, activate — all from this page</h2>
-            <p className="text-sm text-slate-600 mt-2 max-w-2xl leading-6">Choose Pro or Premium above. If you are not signed in, we will take you to secure Google sign-in first and bring you back to checkout. Then CYFSA Navigator creates your unique payment reference and shows the exact e-Transfer amount, address, and memo.</p>
+            <p className="text-sm text-slate-600 mt-2 max-w-2xl leading-6">Choose Individual Case Access above. If you are not signed in, we will take you to secure Google sign-in first and bring you back to checkout. Then CYFSA Navigator creates your unique payment reference and shows the exact e-Transfer amount, address, and memo.</p>
           </div>
           <div className="grid grid-cols-3 gap-2 shrink-0 text-center">
             {["1. Sign in","2. Send e-Transfer","3. Activate"].map(step => <div key={step} className="px-3 py-3 rounded-xl bg-slate-50 border text-xs font-bold text-slate-700">{step}</div>)}

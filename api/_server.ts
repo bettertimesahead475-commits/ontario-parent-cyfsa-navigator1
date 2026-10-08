@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, LEGACY_TIER_PRICES, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
@@ -513,7 +513,7 @@ app.use((req, res, next) => {
       const response = await generateGeminiContentWithRetry(ai, ["gemini-3.1-pro-preview"], {
         contents: [{ role: "user", parts: [{ text: `Explain the following legal concept for a family law context (CYFSA), for a self-represented Ontario parent: ${query}` }] }],
         config: {
-          systemInstruction: `You are ParentShield's concept-lookup tool. You explain CYFSA/CLRA legal concepts in plain language for a self-represented Ontario parent. This is educational information, not legal advice — you never tell the parent what to do in their specific case.
+          systemInstruction: `You are CYFSA Navigator's concept-lookup tool. You explain CYFSA/CLRA legal concepts in plain language for a self-represented Ontario parent. This is educational information, not legal advice — you never tell the parent what to do in their specific case.
 
 CORE RULES (non-negotiable)
 1. Only cite a specific CYFSA/CLRA section number if it is one of these confirmed, verified references:
@@ -544,8 +544,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
         return res.status(400).json({ error: "A valid email is required." });
       }
-      if (tier !== "Pro" && tier !== "Premium") {
-        return res.status(400).json({ error: 'tier must be "Pro" or "Premium".' });
+      if (tier !== "Pro" && tier !== "Premium" && tier !== "Community5" && tier !== "Community10" && tier !== "Community25") {
+        return res.status(400).json({ error: 'tier must be a valid plan tier ("Pro", "Community5", "Community10", "Community25", or legacy "Premium").' });
       }
       const result = await requestAccess(email, tier as Tier);
       res.json(result);
@@ -721,7 +721,77 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   });
 
   app.get("/api/access-pricing", (_req: Request, res: Response) => {
-    res.json({ prices: TIER_PRICES });
+    res.json({
+      prices: TIER_PRICES,
+      tiers: {
+        free: {
+          name: "Free / Self-Represented",
+          price: 0,
+          interval: "forever",
+          description: "Free on-screen document understanding. No premium report download/export/print unless included in paid access.",
+          features: [
+            "Free on-screen document understanding",
+            "CYFSA Statutory Search Guides",
+            "Ontario Family Court Process Checklists",
+            "On-Screen Document Understanding & Timelines"
+          ],
+          restrictions: [
+            "No premium report download/export/print unless included in paid access",
+            "1 Free Quick Document Review"
+          ]
+        },
+        individual: {
+          id: "Pro",
+          name: "Individual / Family — CYFSA Case Access",
+          price: 149,
+          interval: "month",
+          currency: "CAD",
+          forensicLimit: 5,
+          description: "Full premium platform access. 5 Forensic In-Depth Analyses per monthly billing cycle.",
+          features: [
+            "Full premium platform access",
+            "5 Forensic In-Depth Analyses per monthly billing cycle",
+            "All 5 Court Template Builders Unlocked",
+            "Multi-File RAG Chat & Forensic Workspace",
+            "Professional Lawyer PDF Export Desk"
+          ]
+        },
+        community5: {
+          id: "Community5",
+          name: "Community 5",
+          price: 2000,
+          interval: "month",
+          currency: "CAD",
+          sponsoredFamilies: 5,
+          description: "Up to 5 sponsored families"
+        },
+        community10: {
+          id: "Community10",
+          name: "Community 10",
+          price: 3500,
+          interval: "month",
+          currency: "CAD",
+          sponsoredFamilies: 10,
+          description: "Up to 10 sponsored families"
+        },
+        community25: {
+          id: "Community25",
+          name: "Community 25",
+          price: 7500,
+          interval: "month",
+          currency: "CAD",
+          sponsoredFamilies: 25,
+          description: "Up to 25 sponsored families"
+        },
+        enterprise: {
+          id: "Enterprise",
+          name: "Regional / Enterprise",
+          price: null,
+          description: "25+ sponsored families — Custom pricing"
+        }
+      },
+      legacy_prices: LEGACY_TIER_PRICES
+    });
   });
 
   // API 1d: Activate Access Code — parent redeems email + code.
@@ -952,7 +1022,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   // "family-advocate" focus, and /api/extract-evidence gets its own "1 free, then pay" pass.
 
   const SESSION_REQUIRED_MESSAGE =
-    "This feature requires an active Pro or Premium plan. Activate your access code (or upgrade) on the Membership page.";
+    "This feature requires an active Individual Case Access plan. Activate your access code (or upgrade) on the Membership page.";
 
   const ACCESS_CHECK_UNAVAILABLE_MESSAGE =
     "We couldn't verify your analysis access right now. Your document is safe. Please retry in a moment.";
@@ -1122,7 +1192,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         const used = await getFreeUsage(uid);
         if (used >= FREE_ANALYSES_LIMIT) {
           return res.status(402).json({
-            error: "You've used your free analysis. Upgrade to Pro or Premium for unlimited document analysis.",
+            error: "You've used your free analysis. Upgrade to Individual Case Access for unlimited document analysis.",
             code: "FREE_LIMIT_REACHED",
             usedCount: used,
             limit: FREE_ANALYSES_LIMIT
@@ -1840,7 +1910,7 @@ ALREADY-NOTED MISSING ELEMENTS:
 ${priorMissing ? "- " + priorMissing : "(none noted)"}`;
       }
 
-      const systemInstruction = `You are ParentShield's Deep Scan tool — an exhaustive SECOND-STAGE review of ONE document already analyzed by Level 1 Fast Analysis. Your job is to conduct a fine-tooth-comb legal examination of statutory thresholds, procedural timelines, Charter rights, evidentiary deficiencies, and defense retorts.
+      const systemInstruction = `You are CYFSA Navigator's Deep Scan tool — an exhaustive SECOND-STAGE review of ONE document already analyzed by Level 1 Fast Analysis. Your job is to conduct a fine-tooth-comb legal examination of statutory thresholds, procedural timelines, Charter rights, evidentiary deficiencies, and defense retorts.
 
 NON-NEGOTIABLE RULES:
 1. Ground every finding in the document text. Quote or cite exact lines/pages where possible.

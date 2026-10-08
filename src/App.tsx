@@ -56,6 +56,10 @@ export default function App() {
     const publicPath = location || "/";
     canonical.href = `https://cyfsanavigator.com${publicPath === "/" ? "/" : publicPath.replace(/\/+$/, "")}`;
 
+    if (typeof window !== "undefined") {
+      window.scrollTo(0, 0);
+    }
+
     const privatePaths = ["/document-analyzer", "/templates", "/signup", "/review", "/professional-workspace", "/case-workspace", "/accept-invitation", "/admin"];
     const isPrivatePath = privatePaths.some((path) => publicPath === path || publicPath.startsWith(`${path}/`));
     let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
