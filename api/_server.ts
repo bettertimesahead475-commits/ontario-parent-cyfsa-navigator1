@@ -39,6 +39,7 @@ import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usa
 import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure } from "./services/analyzerErrors.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
+import { marketingRouter } from "./services/marketing/routes.js";
 
 dotenv.config();
 
