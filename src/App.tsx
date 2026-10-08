@@ -106,8 +106,17 @@ export default function App() {
   const [nonCriticalWidgetsReady, setNonCriticalWidgetsReady] = useState(false);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setNonCriticalWidgetsReady(true), 1500);
-    return () => window.clearTimeout(timeout);
+    if (typeof window === "undefined") return;
+    const win = window as any;
+    if (typeof win.requestIdleCallback === "function") {
+      const handle = win.requestIdleCallback(
+        () => setNonCriticalWidgetsReady(true),
+        { timeout: 3500 }
+      );
+      return () => win.cancelIdleCallback(handle);
+    }
+    const timeout = setTimeout(() => setNonCriticalWidgetsReady(true), 3500);
+    return () => clearTimeout(timeout);
   }, []);
 
   const [currentTier, setCurrentTier] = useState<"Basic" | "Pro" | "Premium">("Basic");

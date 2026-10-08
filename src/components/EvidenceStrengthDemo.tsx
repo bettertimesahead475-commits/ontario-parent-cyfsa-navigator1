@@ -94,10 +94,12 @@ const DEMO_FINDINGS: DemoFinding[] = [
 ];
 
 export function EvidenceStrengthDemo() {
-  const [activePhase, setActivePhase] = useState<"upload" | "analyze" | "findings" | "action">("upload");
+  const [activePhase, setActivePhase] = useState<"upload" | "analyze" | "findings" | "action">("action");
   const [revealedFinding, setRevealedFinding] = useState<string | null>(null);
+  const [isAutoPlaying, setIsAutoPlaying] = useState<boolean>(false);
 
   useEffect(() => {
+    if (!isAutoPlaying) return;
     // Auto-advance through phases after delays for demo effect
     const timers: NodeJS.Timeout[] = [];
 
@@ -112,11 +114,14 @@ export function EvidenceStrengthDemo() {
           setTimeout(() => setRevealedFinding(finding.id), 2400 + index * 300)
         );
       });
-      timers.push(setTimeout(() => setActivePhase("action"), 2400 + DEMO_FINDINGS.length * 300 + 800));
+      timers.push(setTimeout(() => {
+        setActivePhase("action");
+        setIsAutoPlaying(false);
+      }, 2400 + DEMO_FINDINGS.length * 300 + 800));
     }
 
     return () => timers.forEach(clearTimeout);
-  }, [activePhase]);
+  }, [activePhase, isAutoPlaying]);
 
   const colorClasses = {
     amber: "border-amber-200 bg-amber-50",
@@ -284,6 +289,7 @@ export function EvidenceStrengthDemo() {
                 onClick={() => {
                   setActivePhase("upload");
                   setRevealedFinding(null);
+                  setIsAutoPlaying(true);
                 }}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-6 py-3 font-bold text-slate-700 transition hover:bg-slate-100"
               >
