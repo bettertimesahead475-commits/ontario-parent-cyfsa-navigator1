@@ -8,5 +8,7 @@ Disallow: /review
 Disallow: /professional-workspace
 Disallow: /case-workspace
 Disallow: /accept-invitation
+Disallow: /admin
+Disallow: /admin/
 
 Sitemap: https://cyfsanavigator.com/sitemap.xml

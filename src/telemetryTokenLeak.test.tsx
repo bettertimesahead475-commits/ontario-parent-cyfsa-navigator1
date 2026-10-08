@@ -7,7 +7,7 @@
 // sanitizing beforeSend; a collector reading the page URL at any later time finds no token; nothing
 // is fetched, stored, logged or rendered with the token.
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { act } from '@testing-library/react';
+import { act, waitFor } from '@testing-library/react';
 
 const TOKEN = 'Zq9_' + 'x'.repeat(35) + '-Y1z';
 
@@ -86,6 +86,8 @@ describe('Stage 10 slice 8: no invitation token reaches Analytics or Speed Insig
     expect(document.cookie).not.toContain(TOKEN);
     expect(document.documentElement.outerHTML).not.toContain(TOKEN);
     // The acceptance page did render (the capture is in memory, not lost).
-    expect(document.body.textContent).toContain('Accept invitation');
+    await waitFor(() => {
+      expect(document.body.textContent).toContain('Accept invitation');
+    }, { timeout: 10000 });
   });
 });
