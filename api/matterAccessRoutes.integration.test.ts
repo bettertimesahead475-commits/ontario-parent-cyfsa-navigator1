@@ -68,7 +68,7 @@ describe('Stage 10 slice 5: route registration in api/_server.ts', () => {
     expect(scoped).toHaveLength(1);
     expect(scoped[0].handle.length).toBe(4);
     for (const r of ROUTES) expect(scoped[0].match(r.path)).toBeFalsy();
-    const lastMiddleware = stack.reduce((idx, l, i) => (!l.route && !['query', 'expressInit', 'lifecycleBodyParseErrors'].includes(l.name) ? i : idx), -1);
+    const lastMiddleware = stack.reduce((idx, l, i) => (!l.route && !['query', 'expressInit', 'lifecycleBodyParseErrors', 'router'].includes(l.name) ? i : idx), -1);
     expect(firstStage10).toBeGreaterThan(lastMiddleware);
     // No earlier route can match a Stage 10 URL (e.g. GET /api/matters/:matterId is one segment shorter).
     for (const l of stack.slice(0, firstStage10)) {

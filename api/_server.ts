@@ -852,6 +852,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   registerParentProfessionalCollaborationRoutes(app);
   registerProfessionalOutputRoutes(app);
   registerCaseActionWorkspaceRoutes(app);
+  app.use("/api/admin/marketing", marketingRouter);
 
   // API 2: Analyze Document Endpoint (Educational advice based on CYFSA of Ontario)
   // Step 1 of the two-pass pipeline: OCR/text extraction only.

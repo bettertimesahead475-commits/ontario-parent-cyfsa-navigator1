@@ -972,6 +972,20 @@ describe("POST /api/admin/revoke-sessions-for-uid", () => {
   });
 });
 
+describe("Mounted Marketing Agent router (/api/admin/marketing)", () => {
+  it("rejects unauthorized access to /api/admin/marketing/channels without admin secret", async () => {
+    const res = await request(app).get("/api/admin/marketing/channels");
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("Unauthorized.");
+  });
+
+  it("rejects unauthorized access to /api/admin/marketing/campaigns without admin secret", async () => {
+    const res = await request(app).get("/api/admin/marketing/campaigns");
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("Unauthorized.");
+  });
+});
+
 describe("POST /api/transcribe", () => {
   it("rejects a request with neither narrative text nor audio", async () => {
     const res = await request(app).post("/api/transcribe").send({});
