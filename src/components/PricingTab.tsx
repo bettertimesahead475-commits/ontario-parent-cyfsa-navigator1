@@ -15,7 +15,7 @@ interface PricingTabProps {
   userEmail?: string;
 }
 
-const FALLBACK_TIER_PRICES: Record<"Pro" | "Premium", number> = { Pro: 19, Premium: 49 };
+const FALLBACK_TIER_PRICES: Record<"Pro" | "Premium", number> = { Pro: 149, Premium: 49 };
 const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
 
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
@@ -206,9 +206,9 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           <div className="space-y-4">
             <div>
               <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Basic Tier</span>
-              <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Self-Represented</h3>
+              <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Free / Self-Represented</h3>
               <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                Essential educational material for parents seeking immediate local statutory grounding in family crises.
+                On-screen document understanding. No premium report download/export/print.
               </p>
             </div>
             <div className="py-2">
@@ -226,13 +226,13 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                <span>Interactive Child Trauma Timelines</span>
+                <span>On-Screen Document Understanding & Timelines</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-600 line-through opacity-60">
-                <span>Advanced Affidavit Builders & Chronologies</span>
+                <span>Premium Report Download / Export / Print</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-600 line-through opacity-60">
-                <span>Concurrent Multi-File RAG Deep Scans</span>
+                <span>Forensic In-Depth Multi-Document Analysis</span>
               </div>
             </div>
           </div>
@@ -243,7 +243,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           </div>
         </div>
 
-        {/* Pro Plan */}
+        {/* Pro Plan - Individual / Family Case Access */}
         <div className={`bg-gradient-to-b from-white to-slate-50 rounded-2xl border-2 p-6 text-left flex flex-col justify-between transition-all relative ${
           currentTier === "Pro" ? "border-indigo-600 ring-4 ring-indigo-50 shadow-md" : "border-indigo-200/80 hover:border-indigo-300 shadow-xs"
         }`} id="plan-pro-card">
@@ -256,10 +256,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           )}
           <div className="space-y-4">
             <div>
-              <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-600">Pro Advocate</span>
-              <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Parent Defender</h3>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-600">Individual & Family</span>
+              <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Individual / Family Case Access</h3>
               <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                Designed for litigation-ready parents requiring high-precision document analyzers and full draft packages.
+                Includes premium platform access and five Forensic In-Depth analyses per billing cycle.
               </p>
             </div>
             <div className="py-2">
@@ -269,19 +269,23 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             <div className="border-t border-slate-100 pt-4 space-y-2.5">
               <div className="flex items-start gap-2.5 text-xs text-slate-800">
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <span className="font-semibold">All 5 Template Builders Unlocked</span>
+                <span className="font-semibold">Full Premium Platform Access</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <span>Unlimited Casework File Uploads</span>
+                <span>5 Forensic In-Depth Analyses per cycle</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <span>Advanced Multi-File RAG Deep Scan Chat</span>
+                <span>All 5 Court Template Builders Unlocked</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <span>One-click Lawyer PDF export desk</span>
+                <span>Multi-File RAG Chat & Forensic Workspace</span>
+              </div>
+              <div className="flex items-start gap-2.5 text-xs text-slate-700">
+                <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                <span>Professional Lawyer PDF Export Desk</span>
               </div>
             </div>
           </div>
@@ -292,7 +296,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               </button>
             ) : (
               <button type="button" onClick={() => triggerCheckout("Pro")} className="w-full py-2.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-950 text-white text-xs font-bold rounded-xl transition shadow-xs hover:shadow-md uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2">
-                <span>{userEmail ? "Upgrade to Pro" : "Sign Up & Choose Pro"}</span>
+                <span>{userEmail ? "Upgrade to Individual Access" : "Sign Up & Choose Individual Access"}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
@@ -350,6 +354,54 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             )}
           </div>
         </div>
+      </div>
+
+      {/* Community & Organizational Sponsorships */}
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 md:p-8 text-left space-y-6" id="community-sponsorship-tiers">
+        <div className="max-w-3xl">
+          <span className="px-3 py-1 bg-brand-50 text-brand-700 rounded-full font-mono font-bold tracking-wider text-[10px] uppercase border border-brand-200">
+            Organizational & Community Access
+          </span>
+          <h2 className="font-display font-extrabold text-xl text-slate-900 mt-2">
+            Community & Legal Clinic Sponsorship Tiers
+          </h2>
+          <p className="text-slate-600 text-xs md:text-sm mt-1">
+            Empower legal clinics, Indigenous child & family services, grassroots advocacy groups, and family defense collectives with sponsored multi-seat case access.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
+            <span className="text-[10px] font-mono font-bold uppercase text-indigo-600 tracking-wider">Community 5</span>
+            <div className="font-display font-black text-2xl text-slate-900">$2,000 <span className="text-xs font-normal text-slate-500">/mo CAD</span></div>
+            <p className="text-xs text-slate-600 font-medium">5 sponsored families</p>
+            <p className="text-[11px] text-slate-500">Full platform and forensic analysis allocations for 5 active matters.</p>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
+            <span className="text-[10px] font-mono font-bold uppercase text-indigo-600 tracking-wider">Community 10</span>
+            <div className="font-display font-black text-2xl text-slate-900">$3,500 <span className="text-xs font-normal text-slate-500">/mo CAD</span></div>
+            <p className="text-xs text-slate-600 font-medium">10 sponsored families</p>
+            <p className="text-[11px] text-slate-500">Dedicated casework allocations for 10 active parent matters.</p>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
+            <span className="text-[10px] font-mono font-bold uppercase text-indigo-600 tracking-wider">Community 25</span>
+            <div className="font-display font-black text-2xl text-slate-900">$7,500 <span className="text-xs font-normal text-slate-500">/mo CAD</span></div>
+            <p className="text-xs text-slate-600 font-medium">25 sponsored families</p>
+            <p className="text-[11px] text-slate-500">Full-scale community organization allocation for 25 parent matters.</p>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
+            <span className="text-[10px] font-mono font-bold uppercase text-emerald-600 tracking-wider">Regional / Enterprise</span>
+            <div className="font-display font-black text-2xl text-slate-900">Custom <span className="text-xs font-normal text-slate-500">pricing</span></div>
+            <p className="text-xs text-slate-600 font-medium">25+ sponsored families</p>
+            <p className="text-[11px] text-slate-500">Regional service authorities, band councils, and multi-office legal teams.</p>
+          </div>
+        </div>
+        <p className="text-[11px] text-slate-500 italic">
+          For organizational billing, direct invoicing, or customized allocations, contact our intake team at <a href={`mailto:${PAYMENT_EMAIL}`} className="text-brand-600 underline font-semibold">{PAYMENT_EMAIL}</a>.
+        </p>
       </div>
 
       <div className="bg-white border-2 border-indigo-100 rounded-2xl p-6 md:p-7 shadow-sm" id="checkout-how-it-works">

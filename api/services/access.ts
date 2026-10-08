@@ -39,7 +39,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 export type Tier = "Pro" | "Premium";
 
 export const TIER_PRICES: Record<Tier, number> = {
-  Pro: 19,
+  Pro: 149,
   Premium: 49,
 };
 

@@ -33,7 +33,7 @@ const mockAccess = vi.hoisted(() => ({
     key: process.env.SUPABASE_SERVICE_ROLE_KEY || "test-service-role-key",
     source: "SUPABASE_SERVICE_ROLE_KEY",
   })),
-  TIER_PRICES: { Pro: 19, Premium: 49 },
+  TIER_PRICES: { Pro: 149, Premium: 49 },
 }));
 const mockFirebaseAdmin = vi.hoisted(() => ({ verifyFirebaseToken: vi.fn() }));
 const mockUsage = vi.hoisted(() => ({ getFreeUsage: vi.fn(), recordFreeUse: vi.fn(), FREE_ANALYSES_LIMIT: 1 }));

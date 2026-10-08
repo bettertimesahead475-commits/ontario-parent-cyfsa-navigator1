@@ -32,7 +32,7 @@ const mockAccess = vi.hoisted(() => ({
   revokeSession: vi.fn(),
   revokeAllSessionsForUid: vi.fn(),
   checkAndConsumeFreeToolUse: vi.fn(),
-  TIER_PRICES: { Pro: 19, Premium: 49 },
+  TIER_PRICES: { Pro: 149, Premium: 49 },
 }));
 
 const mockFirebaseAdmin = vi.hoisted(() => ({
@@ -180,7 +180,7 @@ describe("GET /api/access-pricing", () => {
   it("returns the tier prices from the access service", async () => {
     const res = await request(app).get("/api/access-pricing");
     expect(res.status).toBe(200);
-    expect(res.body.prices).toEqual({ Pro: 19, Premium: 49 });
+    expect(res.body.prices).toEqual({ Pro: 149, Premium: 49 });
   });
 });
 
