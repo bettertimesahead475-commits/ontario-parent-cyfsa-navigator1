@@ -24,6 +24,14 @@ const { mockCreateMessage, mockGenerateContent, mockSendMail } = vi.hoisted(() =
 }));
 
 const mockAccess = vi.hoisted(() => ({
+  resolveSupabaseCredentials: vi.fn(() => ({ url: "https://test.supabase.co", key: "test-key", source: "test" })),
+  getSupabase: vi.fn(() => ({
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        limit: vi.fn(async () => ({ data: [], error: null })),
+      })),
+    })),
+  })),
   requestAccess: vi.fn(),
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
@@ -232,6 +240,15 @@ describe("GET /api/health", () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("healthy");
     expect(typeof res.body.timestamp).toBe("string");
+  });
+
+  it("GET /api/preview-health reports non-secret diagnostic state", async () => {
+    const res = await request(app).get("/api/preview-health");
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("ok");
+    expect(res.body.supabase).toBeDefined();
+    expect(res.body.envChecks).toBeDefined();
+    expect(typeof res.body.envChecks.geminiApiKeyConfigured).toBe("boolean");
   });
 });
 

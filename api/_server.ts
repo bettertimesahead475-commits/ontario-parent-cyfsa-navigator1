@@ -497,6 +497,53 @@ app.use((req, res, next) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   });
 
+  // Diagnostic endpoint for preview environment inspection (zero secrets exposed)
+  app.get("/api/preview-health", async (req: Request, res: Response) => {
+    const host = configuredSupabaseHost();
+    const keyInfo = describeConfiguredKey();
+    let dbStatus: { connected: boolean; error: string | null; latencyMs: number } = {
+      connected: false,
+      error: null,
+      latencyMs: 0
+    };
+    try {
+      const dbStart = Date.now();
+      const { error } = await getSupabase().from("payments").select("id", { count: "exact", head: true }).limit(1);
+      dbStatus = {
+        connected: !error,
+        error: error ? error.message : null,
+        latencyMs: Date.now() - dbStart
+      };
+    } catch (dbErr: any) {
+      dbStatus = {
+        connected: false,
+        error: dbErr?.message || String(dbErr),
+        latencyMs: 0
+      };
+    }
+
+    res.json({
+      status: "ok",
+      environment: process.env.NODE_ENV || "unknown",
+      vercelEnv: process.env.VERCEL_ENV || "unknown",
+      supabase: {
+        host,
+        keySource: keyInfo.source,
+        keyFormat: keyInfo.format,
+        jwtRole: keyInfo.jwtRole,
+        jwtRef: keyInfo.jwtRef,
+        ...dbStatus
+      },
+      envChecks: {
+        firebaseAdminConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON),
+        sessionSecretConfigured: Boolean(process.env.SESSION_SECRET),
+        geminiApiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
+        anthropicApiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
+        adminSecretConfigured: Boolean(process.env.ADMIN_SECRET),
+      }
+    });
+  });
+
   const SEARCH_CONNECTORS_DISCLAIMER =
     "This explanation is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on it.";
 
