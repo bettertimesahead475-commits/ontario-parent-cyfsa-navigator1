@@ -20,6 +20,10 @@ vi.mock("./components/LawyerDirectoryTab", () => ({
   __esModule: true,
   default: () => <div data-testid="mock-lawyer-directory">Lawyer Directory Content</div>
 }));
+vi.mock("./components/PricingTab", () => ({
+  __esModule: true,
+  default: () => <div data-testid="mock-pricing-tab">Pricing Tab Content</div>
+}));
 vi.mock("./components/ProfessionalWorkspace", () => ({
   __esModule: true,
   default: () => <div data-testid="mock-professional-workspace">Professional Workspace Content</div>
@@ -76,5 +80,33 @@ describe("Stage 7E App Routing Regression Tests", () => {
     );
     expect((await screen.findAllByTestId("mock-require-auth")).length).toBeGreaterThan(0);
     expect(await screen.findByTestId("mock-professional-workspace")).toBeTruthy();
+  });
+
+  it("renders Membership & Pricing in navigation and routes to /pricing publicly", async () => {
+    const { hook } = memoryLocation({ path: "/pricing" });
+    render(
+      <Router hook={hook}>
+        <App />
+      </Router>
+    );
+
+    // Nav pills include Membership & Pricing
+    expect(screen.getAllByText(/Membership & Pricing/i).length).toBeGreaterThan(0);
+
+    // Pricing tab renders publicly without requiring auth gate
+    expect(await screen.findByTestId("mock-pricing-tab")).toBeTruthy();
+    expect(screen.queryAllByTestId("mock-require-auth").length).toBe(0);
+  });
+
+  it("redirects /upgrade to /pricing", async () => {
+    const { hook } = memoryLocation({ path: "/upgrade" });
+    render(
+      <Router hook={hook}>
+        <App />
+      </Router>
+    );
+
+    // Renders the pricing view via redirect
+    expect(await screen.findByTestId("mock-pricing-tab")).toBeTruthy();
   });
 });

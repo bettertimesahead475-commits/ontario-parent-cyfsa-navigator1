@@ -246,7 +246,7 @@ export default function SignUpTab() {
   const downloadNoteAsPDF = (note: PassportNote) => {
     if (currentTier === "Basic") {
       alert("🔒 Premium Feature Locked\n\nConverting and downloading transcripts or case notes as court-admissible PDFs is a premium feature. Please upgrade to Pro Advocate to download or print formatted documents.");
-      setLocation("/upgrade");
+      setLocation("/pricing");
       return;
     }
 

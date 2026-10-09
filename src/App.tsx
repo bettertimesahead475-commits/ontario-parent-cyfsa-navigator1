@@ -45,7 +45,7 @@ import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { auth } from "./utils/firebase";
 
 // Core icons represent core section identity
-import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart } from "lucide-react";
+import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart, Coins } from "lucide-react";
 
 export default function App() {
   useGlobalResetListener();
@@ -152,7 +152,7 @@ export default function App() {
     { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
     { name: "Case Workspace", path: "/case-workspace", icon: <Shield className="w-4 h-4" /> },
     { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
-    { name: "Membership", path: "/pricing", icon: <Shield className="w-4 h-4" /> },
+    { name: "Membership & Pricing", path: "/pricing", icon: <Coins className="w-4 h-4" /> },
   ];
 
   return (
@@ -181,7 +181,13 @@ export default function App() {
             </div>
 
             {/* Middle Quick Active-Membership indicator */}
-            <div className="hidden md:flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2.5">
+              <Link href="/pricing">
+                <div className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-amber-300/80 text-amber-900 bg-amber-50 hover:bg-amber-100/80 uppercase rounded-full flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all" id="header-pricing-nav-btn">
+                  <Coins className="w-3 h-3 text-amber-700" />
+                  <span>Membership &amp; Pricing</span>
+                </div>
+              </Link>
               {userProfile ? (
                 <Link href="/signup">
                   <div className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all">
@@ -334,6 +340,10 @@ export default function App() {
 
           <Route path="/pricing">
             <PricingTab currentTier={currentTier} onChangeTier={setCurrentTier} userEmail={firebaseUser?.email || userProfile?.email || ""} />
+          </Route>
+
+          <Route path="/upgrade">
+            <Redirect to="/pricing" />
           </Route>
 
           <Route path="/family-court">
