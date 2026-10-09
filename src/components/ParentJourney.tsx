@@ -288,7 +288,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
         aria-hidden="true"
       >
         <img
-          src="https://upload.wikimedia.org/wikipedia/commons/8/80/Justice_Lady.svg"
+          src="/assets/lady-justice-hero.webp"
           alt=""
           className="h-[108%] w-auto max-w-none object-contain object-right-bottom opacity-35 sm:opacity-65 md:opacity-85 lg:opacity-100 select-none translate-x-[3%] sm:translate-x-[4%] lg:translate-x-[1%] scale-[1.06] origin-bottom-right"
           loading="eager"
