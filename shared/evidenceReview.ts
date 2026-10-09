@@ -1,5 +1,69 @@
-/** Wire contracts shared by the API and review workspace; no server dependencies. */
-export const EVIDENCE_CLASSIFICATIONS = ['FACT','ALLEGATION','OPINION','PROFESSIONAL_ASSESSMENT','INFERENCE','UNVERIFIED_CLAIM','UNKNOWN'] as const;
+/** The 8 authoritative CYFSA Navigator evidence classifications. */
+export const AUTHORITATIVE_EVIDENCE_CLASSIFICATIONS = [
+  'DIRECT',
+  'DOCUMENTARY',
+  'CORROBORATED',
+  'HEARSAY',
+  'INFERENCE',
+  'OPINION',
+  'UNSUPPORTED',
+  'UNCLEAR',
+] as const;
+
+export type AuthoritativeEvidenceClassification = typeof AUTHORITATIVE_EVIDENCE_CLASSIFICATIONS[number];
+
+/** Legacy and authoritative classifications accepted across wire contracts and persistence. */
+export const EVIDENCE_CLASSIFICATIONS = [
+  'DIRECT',
+  'DOCUMENTARY',
+  'CORROBORATED',
+  'HEARSAY',
+  'INFERENCE',
+  'OPINION',
+  'UNSUPPORTED',
+  'UNCLEAR',
+  // Legacy classifications preserved for backwards compatibility
+  'FACT',
+  'ALLEGATION',
+  'PROFESSIONAL_ASSESSMENT',
+  'UNVERIFIED_CLAIM',
+  'UNKNOWN',
+] as const;
+
+/** Normalizes any raw, legacy, or variant classification into one of the 8 authoritative classifications. */
+export function normalizeEvidenceClassification(raw: string | null | undefined): AuthoritativeEvidenceClassification {
+  if (!raw) return 'UNCLEAR';
+  const clean = String(raw).trim().toUpperCase();
+  switch (clean) {
+    case 'DIRECT':
+      return 'DIRECT';
+    case 'DOCUMENTARY':
+      return 'DOCUMENTARY';
+    case 'CORROBORATED':
+      return 'CORROBORATED';
+    case 'HEARSAY':
+      return 'HEARSAY';
+    case 'INFERENCE':
+    case 'CIRCUMSTANTIAL':
+      return 'INFERENCE';
+    case 'OPINION':
+    case 'PROFESSIONAL_ASSESSMENT':
+      return 'OPINION';
+    case 'UNSUPPORTED':
+    case 'ALLEGATION':
+    case 'UNVERIFIED_CLAIM':
+    case 'UNVERIFIED':
+    case 'CONTESTED':
+      return 'UNSUPPORTED';
+    case 'FACT':
+      return 'DOCUMENTARY';
+    case 'UNCLEAR':
+    case 'UNKNOWN':
+    default:
+      return 'UNCLEAR';
+  }
+}
+
 export const EVIDENCE_REVIEW_STATES = ['UNREVIEWED','REVIEWED','CONFIRMED','DISPUTED','REQUIRES_SOURCE','NOT_RELEVANT'] as const;
 export type ReviewState = typeof EVIDENCE_REVIEW_STATES[number];
 export interface EvidenceRow {

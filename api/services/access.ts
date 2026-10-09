@@ -278,10 +278,11 @@ export interface PaidSession {
   id: string;
   firebaseUid: string;
   tier: Tier;
+  email?: string | null;
 }
 
 function mapPaidSessionRow(row: any): PaidSession {
-  return { id: row.id, firebaseUid: row.firebase_uid, tier: row.tier as Tier };
+  return { id: row.id, firebaseUid: row.firebase_uid, tier: row.tier as Tier, email: row.email ?? null };
 }
 
 const DEFAULT_SESSION_TTL_HOURS = 24 * 30;
@@ -330,7 +331,7 @@ export async function getActivePaidSession(sessionId: string): Promise<PaidSessi
   const db = getSupabase();
   const { data, error } = await db
     .from("navigator_paid_sessions")
-    .select("id, firebase_uid, tier, revoked_at, expires_at")
+    .select("id, firebase_uid, tier, revoked_at, expires_at, email")
     .eq("id", sessionId)
     .maybeSingle();
   if (error) throw Object.assign(new Error(`Failed to look up paid session: ${error.message}`), { statusCode: 500, supabaseError: error });

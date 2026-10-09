@@ -166,6 +166,27 @@ export interface AffidavitDraft {
   }[];
 }
 
+export type AuthoritativeEvidenceClassification =
+  | "DIRECT"
+  | "DOCUMENTARY"
+  | "CORROBORATED"
+  | "HEARSAY"
+  | "INFERENCE"
+  | "OPINION"
+  | "UNSUPPORTED"
+  | "UNCLEAR";
+
+export const AUTHORITATIVE_EVIDENCE_CLASSIFICATIONS: readonly AuthoritativeEvidenceClassification[] = [
+  "DIRECT",
+  "DOCUMENTARY",
+  "CORROBORATED",
+  "HEARSAY",
+  "INFERENCE",
+  "OPINION",
+  "UNSUPPORTED",
+  "UNCLEAR",
+] as const;
+
 export interface EvidenceLogItem {
   id: string;
   date: string;
@@ -173,6 +194,7 @@ export interface EvidenceLogItem {
   whatHappened: string;
   statementsMade: string;
   hearsayFlag: "Direct Evidence" | "Hearsay (Worker told me)" | "Double Hearsay (Worker said another said)";
+  evidenceClassification?: AuthoritativeEvidenceClassification;
   audioPhotoLog?: string;
   questionsForCounsel: string;
 }

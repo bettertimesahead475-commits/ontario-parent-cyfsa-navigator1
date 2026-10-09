@@ -53,7 +53,7 @@ const mockAccess = vi.hoisted(() => ({
     Community10: 3500,
     Community25: 7500,
   },
-  LEGACY_TIER_PRICES: { Premium: 49.99 },
+  LEGACY_TIER_PRICES: {},
   isAnalyzerTier: vi.fn((tier: string) => ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium"].includes(tier)),
   isCaseAccessTier: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
   hasCaseAccess: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
@@ -61,7 +61,45 @@ const mockAccess = vi.hoisted(() => ({
   hasForensicInDepthAccess: vi.fn((tier: string) => ["Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
 }));
 const mockFirebaseAdmin = vi.hoisted(() => ({ verifyFirebaseToken: vi.fn() }));
-const mockUsage = vi.hoisted(() => ({ getFreeUsage: vi.fn(), recordFreeUse: vi.fn(), FREE_ANALYSES_LIMIT: 1 }));
+const mockUsage = vi.hoisted(() => ({
+  getFreeUsage: vi.fn(async () => 0),
+  recordFreeUse: vi.fn(async () => {}),
+  FREE_ANALYSES_LIMIT: 1,
+  BASIC_QUICK_REVIEWS_LIMIT: 3,
+  PREMIUM_FORENSIC_ANALYSES_LIMIT: 3,
+  CASE_ACCESS_FORENSIC_ANALYSES_LIMIT: 5,
+  TIER_LIMITS: {
+    Free: { quickReviews: 1, forensicAnalyses: 0 },
+    Basic: { quickReviews: 3, forensicAnalyses: 0 },
+    AnalyzerBasic: { quickReviews: 3, forensicAnalyses: 0 },
+    Premium: { quickReviews: Infinity, forensicAnalyses: 3 },
+    AnalyzerPremium: { quickReviews: Infinity, forensicAnalyses: 3 },
+    Pro: { quickReviews: Infinity, forensicAnalyses: 5 },
+    Community5: { quickReviews: Infinity, forensicAnalyses: 5 },
+    Community10: { quickReviews: Infinity, forensicAnalyses: 5 },
+    Community25: { quickReviews: Infinity, forensicAnalyses: 5 },
+  },
+  checkPaidUsage: vi.fn((_sessionId: string, tier: string, type: string) => ({
+    allowed: true,
+    used: 0,
+    limit: type === "quick" ? (tier.startsWith("Basic") ? 3 : Infinity) : (tier === "Pro" || tier.startsWith("Community") ? 5 : 3),
+    remaining: type === "quick" ? (tier.startsWith("Basic") ? 3 : null) : (tier === "Pro" || tier.startsWith("Community") ? 5 : 3),
+    tier,
+  }) as any),
+  recordPaidUse: vi.fn(async () => 1),
+  getPaidUsageStatus: vi.fn(async (_sessionId: string, tier: string) => ({
+    tier,
+    quickReviewsUsed: 0,
+    quickReviewsLimit: tier.startsWith("Basic") ? 3 : null,
+    quickReviewsRemaining: tier.startsWith("Basic") ? 3 : null,
+    forensicAnalysesUsed: 0,
+    forensicAnalysesLimit: tier === "Pro" || tier.startsWith("Community") ? 5 : 3,
+    forensicAnalysesRemaining: tier === "Pro" || tier.startsWith("Community") ? 5 : 3,
+  })),
+  isAnalysisAlreadyRecorded: vi.fn(() => false),
+  markAnalysisRecorded: vi.fn(),
+  resetUsageCachesForTesting: vi.fn(),
+}));
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class MockAnthropic {

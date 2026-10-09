@@ -52,7 +52,7 @@ const mockAccess = vi.hoisted(() => ({
     Community10: 3500,
     Community25: 7500,
   },
-  LEGACY_TIER_PRICES: { Premium: 49.99 },
+  LEGACY_TIER_PRICES: {},
   isAnalyzerTier: vi.fn((tier: string) => ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium"].includes(tier)),
   isCaseAccessTier: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
   hasCaseAccess: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
@@ -65,9 +65,43 @@ const mockFirebaseAdmin = vi.hoisted(() => ({
 }));
 
 const mockUsage = vi.hoisted(() => ({
-  getFreeUsage: vi.fn(),
-  recordFreeUse: vi.fn(),
+  getFreeUsage: vi.fn(async () => 0),
+  recordFreeUse: vi.fn(async () => {}),
   FREE_ANALYSES_LIMIT: 1,
+  BASIC_QUICK_REVIEWS_LIMIT: 3,
+  PREMIUM_FORENSIC_ANALYSES_LIMIT: 3,
+  CASE_ACCESS_FORENSIC_ANALYSES_LIMIT: 5,
+  TIER_LIMITS: {
+    Free: { quickReviews: 1, forensicAnalyses: 0 },
+    Basic: { quickReviews: 3, forensicAnalyses: 0 },
+    AnalyzerBasic: { quickReviews: 3, forensicAnalyses: 0 },
+    Premium: { quickReviews: Infinity, forensicAnalyses: 3 },
+    AnalyzerPremium: { quickReviews: Infinity, forensicAnalyses: 3 },
+    Pro: { quickReviews: Infinity, forensicAnalyses: 5 },
+    Community5: { quickReviews: Infinity, forensicAnalyses: 5 },
+    Community10: { quickReviews: Infinity, forensicAnalyses: 5 },
+    Community25: { quickReviews: Infinity, forensicAnalyses: 5 },
+  },
+  checkPaidUsage: vi.fn((_sessionId: string, tier: string, type: string) => ({
+    allowed: true,
+    used: 0,
+    limit: type === "quick" ? (tier.startsWith("Basic") ? 3 : Infinity) : (tier === "Pro" || tier.startsWith("Community") ? 5 : 3),
+    remaining: type === "quick" ? (tier.startsWith("Basic") ? 3 : null) : (tier === "Pro" || tier.startsWith("Community") ? 5 : 3),
+    tier,
+  }) as any),
+  recordPaidUse: vi.fn(async () => 1),
+  getPaidUsageStatus: vi.fn(async (_sessionId: string, tier: string) => ({
+    tier,
+    quickReviewsUsed: 0,
+    quickReviewsLimit: tier.startsWith("Basic") ? 3 : null,
+    quickReviewsRemaining: tier.startsWith("Basic") ? 3 : null,
+    forensicAnalysesUsed: 0,
+    forensicAnalysesLimit: tier === "Pro" || tier.startsWith("Community") ? 5 : 3,
+    forensicAnalysesRemaining: tier === "Pro" || tier.startsWith("Community") ? 5 : 3,
+  })),
+  isAnalysisAlreadyRecorded: vi.fn(() => false),
+  markAnalysisRecorded: vi.fn(),
+  resetUsageCachesForTesting: vi.fn(),
 }));
 
 // Added in Phase 1.5 remediation: previously nothing mocked services/gmailAgent.js at all,
@@ -215,7 +249,7 @@ describe("GET /api/access-pricing", () => {
       Community10: 3500,
       Community25: 7500,
     });
-    expect(res.body.legacy_prices).toEqual({ Premium: 49.99 });
+    expect(res.body.legacy_prices).toEqual({});
     expect(res.body.products.analyzer_products.basic.price).toBe(19.99);
     expect(res.body.products.analyzer_products.premium.price).toBe(49.99);
     expect(res.body.products.case_access.individual.price).toBe(149);
@@ -1328,5 +1362,180 @@ describe("Tier Entitlement Boundaries & Anti-Bypass Security", () => {
       .set({ Authorization: "Bearer pro-token", "x-ps-session": PRO_TOKEN })
       .send({ query: "Question across files", files: [{ name: "f1.pdf", content: "c1" }, { name: "f2.pdf", content: "c2" }] });
     expect(ragRes.status).toBe(200);
+  });
+});
+
+describe("Server-Authoritative Usage Accounting & Idempotency", () => {
+  const BASIC_TOKEN = "basic-usage-token";
+  const PREMIUM_TOKEN = "premium-usage-token";
+  const PRO_TOKEN = "pro-usage-token";
+
+  beforeEach(() => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) => {
+      if (header === "Bearer basic-token") return { uid: "basic-uid", email: "basic@example.com" };
+      if (header === "Bearer premium-token") return { uid: "premium-uid", email: "premium@example.com" };
+      if (header === "Bearer pro-token") return { uid: "pro-uid", email: "pro@example.com" };
+      return null;
+    });
+
+    mockAccess.verifySessionToken.mockImplementation((t: string) => {
+      if (t === BASIC_TOKEN) return { jti: "session-basic-1" };
+      if (t === PREMIUM_TOKEN) return { jti: "session-premium-1" };
+      if (t === PRO_TOKEN) return { jti: "session-pro-1" };
+      return null;
+    });
+
+    mockAccess.getActivePaidSession.mockImplementation(async (jti: string) => {
+      if (jti === "session-basic-1") return { id: "session-basic-1", firebaseUid: "basic-uid", tier: "Basic" };
+      if (jti === "session-premium-1") return { id: "session-premium-1", firebaseUid: "premium-uid", tier: "Premium" };
+      if (jti === "session-pro-1") return { id: "session-pro-1", firebaseUid: "pro-uid", tier: "Pro" };
+      return null;
+    });
+  });
+
+  it("fails closed with 402 QUICK_REVIEW_LIMIT_REACHED before AI call when Basic tier allowance is exhausted", async () => {
+    mockUsage.checkPaidUsage.mockResolvedValueOnce({
+      allowed: false,
+      code: "QUICK_REVIEW_LIMIT_REACHED",
+      error: "You've used all 3 Quick Document Reviews included with your Document Analyzer Basic pass.",
+      used: 3,
+      limit: 3,
+      remaining: 0,
+      tier: "Basic",
+    });
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN })
+      .send({ textContent: "Valid test document text", mode: "fast" });
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("QUICK_REVIEW_LIMIT_REACHED");
+    expect(res.body.limit).toBe(3);
+    expect(res.body.used).toBe(3);
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+    expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with 402 FORENSIC_LIMIT_REACHED before AI call when Premium tier allowance is exhausted", async () => {
+    mockUsage.checkPaidUsage.mockResolvedValueOnce({
+      allowed: false,
+      code: "FORENSIC_LIMIT_REACHED",
+      error: "You've used all 3 Forensic In-Depth Analyses included with your Document Analyzer Premium pass.",
+      used: 3,
+      limit: 3,
+      remaining: 0,
+      tier: "Premium",
+    });
+
+    const res = await request(app)
+      .post("/api/deep-scan")
+      .set({ Authorization: "Bearer premium-token", "x-ps-session": PREMIUM_TOKEN })
+      .send({ documentText: "Valid test document text" });
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("FORENSIC_LIMIT_REACHED");
+    expect(res.body.limit).toBe(3);
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+    expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with 402 FORENSIC_LIMIT_REACHED for Pro Case Access when monthly allowance (5) is exhausted", async () => {
+    mockUsage.checkPaidUsage.mockResolvedValueOnce({
+      allowed: false,
+      code: "FORENSIC_LIMIT_REACHED",
+      error: "You've reached your allowance of 5 Forensic In-Depth Analyses for this billing cycle.",
+      used: 5,
+      limit: 5,
+      remaining: 0,
+      tier: "Pro",
+    });
+
+    const res = await request(app)
+      .post("/api/deep-scan")
+      .set({ Authorization: "Bearer pro-token", "x-ps-session": PRO_TOKEN })
+      .send({ documentText: "Valid test document text" });
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("FORENSIC_LIMIT_REACHED");
+    expect(res.body.limit).toBe(5);
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+    expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
+  });
+
+  it("does NOT deduct paid usage credit if AI generation encounters an error", async () => {
+    mockUsage.checkPaidUsage.mockResolvedValueOnce({
+      allowed: true,
+      used: 1,
+      limit: 3,
+      remaining: 2,
+      tier: "Basic",
+    });
+    mockCreateMessage.mockRejectedValueOnce(new Error("Anthropic upstream service overload"));
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN })
+      .send({ textContent: "Valid test document text", mode: "fast" });
+
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
+  });
+
+  it("forwards idempotency key and prevents duplicate deductions across network retries", async () => {
+    mockUsage.checkPaidUsage.mockResolvedValueOnce({
+      allowed: true,
+      alreadyConsumed: true,
+      used: 1,
+      limit: 3,
+      remaining: 2,
+      tier: "Basic",
+    });
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({
+        Authorization: "Bearer basic-token",
+        "x-ps-session": BASIC_TOKEN,
+        "x-analysis-id": "retry-id-12345",
+      })
+      .send({ textContent: "Valid test document text", mode: "fast" });
+
+    expect(res.status).toBe(200);
+    expect(mockUsage.checkPaidUsage).toHaveBeenCalledWith("session-basic-1", "Basic", "quick", "retry-id-12345");
+    expect(mockUsage.recordPaidUse).toHaveBeenCalledWith("session-basic-1", "Basic", "basic@example.com", "quick", "retry-id-12345");
+  });
+
+  it("GET /api/analyzer-usage returns paid credit status for a valid session", async () => {
+    mockUsage.getPaidUsageStatus.mockResolvedValueOnce({
+      tier: "Basic",
+      quickReviewsUsed: 1,
+      quickReviewsLimit: 3,
+      quickReviewsRemaining: 2,
+      forensicAnalysesUsed: 0,
+      forensicAnalysesLimit: 0,
+      forensicAnalysesRemaining: 0,
+    });
+
+    const res = await request(app)
+      .get("/api/analyzer-usage")
+      .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN });
+
+    expect(res.status).toBe(200);
+    expect(res.body.tier).toBe("Basic");
+    expect(res.body.quickReviewsUsed).toBe(1);
+    expect(res.body.quickReviewsRemaining).toBe(2);
+  });
+
+  it("GET /api/analyzer-usage returns free allowance status for anonymous/unauthenticated user", async () => {
+    mockUsage.getFreeUsage.mockResolvedValueOnce(0);
+
+    const res = await request(app).get("/api/analyzer-usage");
+
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe("free");
+    expect(res.body.limit).toBe(1);
+    expect(res.body.remaining).toBe(1);
   });
 });

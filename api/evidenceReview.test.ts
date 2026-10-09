@@ -10,7 +10,7 @@ vi.mock('./services/firebaseAdmin.js',()=>({verifyFirebaseToken:vi.fn(async(h:st
 vi.mock('../src/utils/api',()=>({apiFetch:vi.fn()}));
 import {registerEvidenceReviewRoutes} from './evidenceReviewRoutes.js';
 import {EvidenceCard,SourceText} from '../src/components/EvidenceReviewWorkspace';
-import {availableReviewStates,evidenceQuery,sourcePath,type EvidenceRow} from '../shared/evidenceReview';
+import {availableReviewStates,evidenceQuery,sourcePath,type EvidenceRow,AUTHORITATIVE_EVIDENCE_CLASSIFICATIONS,normalizeEvidenceClassification} from '../shared/evidenceReview';
 const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const matter=id(1),evidence=id(2),doc=id(3),version=id(4),page=id(5),run=id(6);
 const time='2026-09-13T14:00:00.123456+00:00';
@@ -79,4 +79,40 @@ describe('review response and combined-filter regression checks',()=>{
   const sql=readFileSync(new URL('../supabase/migrations_pending_approval/create_navigator_evidence_review.sql',import.meta.url),'utf8');
   expect(sql.match(/set timezone='UTC'/g)).toHaveLength(4);
  });
+});
+
+describe('authoritative 8-class evidence classification taxonomy and legacy normalization',()=>{
+  it('contains exactly the 8 authoritative classifications without omissions or deviations',()=>{
+    expect(AUTHORITATIVE_EVIDENCE_CLASSIFICATIONS).toEqual([
+      'DIRECT',
+      'DOCUMENTARY',
+      'CORROBORATED',
+      'HEARSAY',
+      'INFERENCE',
+      'OPINION',
+      'UNSUPPORTED',
+      'UNCLEAR',
+    ]);
+  });
+
+  it('preserves all 8 authoritative classifications as identity',()=>{
+    for (const c of AUTHORITATIVE_EVIDENCE_CLASSIFICATIONS) {
+      expect(normalizeEvidenceClassification(c)).toBe(c);
+      expect(normalizeEvidenceClassification(c.toLowerCase())).toBe(c);
+    }
+  });
+
+  it('normalizes legacy and non-standard classifications safely into authoritative 8',()=>{
+    expect(normalizeEvidenceClassification('FACT')).toBe('DOCUMENTARY');
+    expect(normalizeEvidenceClassification('ALLEGATION')).toBe('UNSUPPORTED');
+    expect(normalizeEvidenceClassification('UNVERIFIED')).toBe('UNSUPPORTED');
+    expect(normalizeEvidenceClassification('UNVERIFIED_CLAIM')).toBe('UNSUPPORTED');
+    expect(normalizeEvidenceClassification('CONTESTED')).toBe('UNSUPPORTED');
+    expect(normalizeEvidenceClassification('CIRCUMSTANTIAL')).toBe('INFERENCE');
+    expect(normalizeEvidenceClassification('PROFESSIONAL_ASSESSMENT')).toBe('OPINION');
+    expect(normalizeEvidenceClassification('UNKNOWN')).toBe('UNCLEAR');
+    expect(normalizeEvidenceClassification(null)).toBe('UNCLEAR');
+    expect(normalizeEvidenceClassification(undefined)).toBe('UNCLEAR');
+    expect(normalizeEvidenceClassification('')).toBe('UNCLEAR');
+  });
 });

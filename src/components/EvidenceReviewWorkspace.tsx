@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {apiFetch} from '../utils/api';
 import AccessHistoryPanel from './AccessHistoryPanel';
 import ProfessionalAccessPanel from './ProfessionalAccessPanel';
-import {EVIDENCE_CLASSIFICATIONS,EVIDENCE_REVIEW_STATES,availableReviewStates,evidenceQuery,sourcePath,
+import {AUTHORITATIVE_EVIDENCE_CLASSIFICATIONS,EVIDENCE_CLASSIFICATIONS,EVIDENCE_REVIEW_STATES,availableReviewStates,evidenceQuery,sourcePath,
  type EvidenceFilters,type EvidencePage,type EvidenceRow,type EvidenceSource,type ReviewState} from '../../shared/evidenceReview';
 
 async function request<T>(path:string,init?:RequestInit):Promise<T>{
@@ -87,7 +87,7 @@ export default function EvidenceReviewWorkspace(){
     {matterId&&<>
       <h2 className="text-xl font-semibold mb-3">{data?.matter.title||'Matter evidence'}</h2>
       <form aria-label="Evidence filters" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-100 p-4 rounded-xl mb-5" onSubmit={e=>{e.preventDefault();setCursor(null);setPrevious([]);setFilters({...draft});}}>
-        <label>Classification<select className={inputClass} value={draft.classification||''} onChange={e=>setDraft({...draft,classification:e.target.value})}><option value="">All classifications</option>{EVIDENCE_CLASSIFICATIONS.map(s=><option key={s}>{s}</option>)}</select></label>
+        <label>Classification<select className={inputClass} value={draft.classification||''} onChange={e=>setDraft({...draft,classification:e.target.value})}><option value="">All classifications</option>{AUTHORITATIVE_EVIDENCE_CLASSIFICATIONS.map(s=><option key={s}>{s}</option>)}</select></label>
         <label>Review state<select className={inputClass} value={draft.reviewState||''} onChange={e=>setDraft({...draft,reviewState:e.target.value})}><option value="">All review states</option>{EVIDENCE_REVIEW_STATES.map(s=><option key={s}>{s}</option>)}</select></label>
         <label>Document ID<input className={inputClass} value={draft.documentId||''} onChange={e=>setDraft({...draft,documentId:e.target.value})} placeholder="All documents" /></label>
         <label>Page number<input type="number" min="1" max="20" className={inputClass} value={draft.page||''} onChange={e=>setDraft({...draft,page:e.target.value})}/></label>

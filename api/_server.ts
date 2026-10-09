@@ -35,7 +35,7 @@ import { registerProfessionalOutputRoutes } from "./professionalOutputRoutes.js"
 import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.js";
 import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
-import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT } from "./services/usage.js";
+import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure } from "./services/analyzerErrors.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
@@ -733,9 +733,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             currency: "CAD",
             interval: "one-time",
             scope: "analyzer_only",
-            description: "Document Analyzer access only. Quick Document Review, on-screen timeline, and core red-flag audit. Does not include Case Workspace.",
+            description: "Document Analyzer access only. Up to 3 Quick Document Reviews, on-screen timeline, and core red-flag audit. Does not include Case Workspace.",
+            quickReviewsLimit: 3,
             features: [
-              "Core Quick Document Review (Fast Audit)",
+              "3 Quick Document Reviews included (Core Audit)",
               "Contemporaneous fact vs allegation extraction",
               "Statutory CYFSA section reference mapping",
               "On-screen document timeline breakdown"
@@ -753,10 +754,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             currency: "CAD",
             interval: "one-time",
             scope: "analyzer_only",
-            description: "Premium Document Analyzer access with Forensic In-Depth Dual-Pass analysis. Document Analyzer access only; does not include Case Workspace.",
+            forensicLimit: 3,
+            description: "Premium Document Analyzer access with 3 Forensic In-Depth Dual-Pass analyses. Document Analyzer access only; does not include Case Workspace.",
             features: [
-              "Everything in Analyzer Basic",
-              "Forensic In-Depth Dual-Pass Analysis",
+              "3 Forensic In-Depth Dual-Pass Analyses included",
+              "Standard Quick Document Reviews included",
               "Cross-examination vulnerability scanner",
               "Evidentiary Weight & Hearsay objection audit",
               "Priority document analysis processing"
@@ -854,7 +856,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           price: 19.99,
           interval: "one-time",
           currency: "CAD",
-          description: "Document Analyzer access only. Quick Document Review and on-screen red-flag audit."
+          quickReviewsLimit: 3,
+          description: "Document Analyzer access only. 3 Quick Document Reviews and on-screen red-flag audit."
         },
         premium: {
           id: "Premium",
@@ -862,7 +865,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           price: 49.99,
           interval: "one-time",
           currency: "CAD",
-          description: "Premium Document Analyzer access with Forensic In-Depth Dual-Pass analysis."
+          forensicLimit: 3,
+          description: "Premium Document Analyzer access with 3 Forensic In-Depth Dual-Pass analyses."
         },
         individual: {
           id: "Pro",
@@ -907,10 +911,59 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           description: "25+ sponsored families — Custom pricing"
         }
       },
-      legacy_prices: {
-        Premium: 49.99
-      }
+      legacy_prices: {}
     });
+  });
+
+  // API 1c-2: Current user/session usage and credit balance
+  app.get("/api/analyzer-usage", async (req: Request, res: Response) => {
+    try {
+      const identity = await verifyFirebaseToken(req.header("authorization"));
+      const sessionToken = req.header("x-ps-session");
+      const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
+      if (parsedSession && identity) {
+        const session = await lookupPaidSession(parsedSession.jti);
+        if (session && session.firebaseUid === identity.uid) {
+          const status = await getPaidUsageStatus(session.id, session.tier);
+          return res.json({
+            type: "paid",
+            ...status,
+          });
+        }
+      }
+
+      if (identity) {
+        const used = await getFreeUsage(identity.uid);
+        return res.json({
+          type: "free",
+          tier: "Free",
+          limit: FREE_ANALYSES_LIMIT,
+          remaining: Math.max(0, FREE_ANALYSES_LIMIT - used),
+          quickReviewsUsed: used,
+          quickReviewsLimit: FREE_ANALYSES_LIMIT,
+          quickReviewsRemaining: Math.max(0, FREE_ANALYSES_LIMIT - used),
+          forensicAnalysesUsed: 0,
+          forensicAnalysesLimit: 0,
+          forensicAnalysesRemaining: 0,
+        });
+      }
+
+      return res.json({
+        type: "free",
+        tier: "Anonymous",
+        limit: 1,
+        remaining: 1,
+        quickReviewsUsed: 0,
+        quickReviewsLimit: 1,
+        quickReviewsRemaining: 1,
+        forensicAnalysesUsed: 0,
+        forensicAnalysesLimit: 0,
+        forensicAnalysesRemaining: 0,
+      });
+    } catch (err: any) {
+      console.error("[/api/analyzer-usage] error:", err);
+      res.status(500).json({ error: "Failed to read analyzer usage." });
+    }
   });
 
   // API 1d: Activate Access Code — parent redeems email + code.
@@ -1190,7 +1243,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     req: Request,
     res: Response,
     preResolvedIdentity?: { uid: string; email: string | null } | null
-  ): Promise<{ uid: string; email: string | null; tier: Tier } | null> {
+  ): Promise<{ uid: string; email: string | null; tier: Tier; sessionId: string } | null> {
     const sessionToken = req.header("x-ps-session");
     const parsed = sessionToken ? verifySessionToken(sessionToken) : null;
     if (!parsed) {
@@ -1219,14 +1272,14 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       return null;
     }
 
-    return { uid: identity.uid, email: identity.email, tier: session.tier };
+    return { uid: identity.uid, email: identity.email, tier: session.tier, sessionId: session.id };
   }
 
   async function requireCaseAccess(
     req: Request,
     res: Response,
     preResolvedIdentity?: { uid: string; email: string | null } | null
-  ): Promise<{ uid: string; email: string | null; tier: Tier } | null> {
+  ): Promise<{ uid: string; email: string | null; tier: Tier; sessionId: string } | null> {
     const sessionInfo = await requireSession(req, res, preResolvedIdentity);
     if (!sessionInfo) return null;
 
@@ -1312,19 +1365,29 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // row's firebase_uid matching the verified caller - see requireSession()'s comment above
       // for the full rationale, identical here.
       let uid: string | null = null;
-      let userEmail: string | null = null;
       const identity = await verifyFirebaseToken(req.header("authorization"));
+      let userEmail: string | null = identity?.email || null;
       const sessionToken = req.header("x-ps-session");
       const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
       let isPaid = false;
       let paidTier: Tier | null = null;
+      let paidSessionId: string | null = null;
       if (parsedSession && identity) {
         const session = await lookupPaidSession(parsedSession.jti);
         if (session && session.firebaseUid === identity.uid) {
           isPaid = true;
           paidTier = session.tier as Tier;
+          paidSessionId = session.id;
+          if (session.email) userEmail = session.email;
         }
       }
+
+      const idempotencyKey =
+        (req.header("x-analysis-id") as string) ||
+        (req.header("x-request-id") as string) ||
+        req.body?.analysisId ||
+        req.body?.requestId ||
+        null;
 
       if (mode === "full") {
         if (!isPaid) {
@@ -1340,6 +1403,34 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             currentTier: paidTier,
           });
         }
+        if (paidSessionId && paidTier) {
+          const check = await checkPaidUsage(paidSessionId, paidTier, "forensic", idempotencyKey);
+          if (!check.allowed) {
+            return res.status(402).json({
+              error: check.error,
+              code: check.code,
+              used: check.used,
+              usedCount: check.used,
+              limit: check.limit,
+              remaining: check.remaining,
+            });
+          }
+        }
+      } else {
+        // Quick Document Review
+        if (isPaid && paidSessionId && paidTier) {
+          const check = await checkPaidUsage(paidSessionId, paidTier, "quick", idempotencyKey);
+          if (!check.allowed) {
+            return res.status(402).json({
+              error: check.error,
+              code: check.code,
+              used: check.used,
+              usedCount: check.used,
+              limit: check.limit,
+              remaining: check.remaining,
+            });
+          }
+        }
       }
 
       if (!isPaid) {
@@ -1354,7 +1445,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         const used = await getFreeUsage(uid);
         if (used >= FREE_ANALYSES_LIMIT) {
           return res.status(402).json({
-            error: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access for unlimited document analysis.",
+            error: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access to continue.",
             code: "FREE_LIMIT_REACHED",
             usedCount: used,
             limit: FREE_ANALYSES_LIMIT
@@ -1667,14 +1758,37 @@ ${analysisRules}`;
         report = { ...coreReport, ...deepDiveReport, timing: { mode: "full", durationMs } };
       }
 
+      let credits: CreditStatus | null = null;
       if (!isPaid && uid) {
         try {
           await recordFreeUse(uid, userEmail);
+          const used = await getFreeUsage(uid);
+          credits = {
+            tier: "Free",
+            quickReviewsUsed: used,
+            quickReviewsLimit: FREE_ANALYSES_LIMIT,
+            quickReviewsRemaining: Math.max(0, FREE_ANALYSES_LIMIT - used),
+            forensicAnalysesUsed: 0,
+            forensicAnalysesLimit: 0,
+            forensicAnalysesRemaining: 0,
+          };
         } catch (usageErr) {
           // A parent's completed analysis must never be withheld because our own
           // usage bookkeeping failed - log it and let the real result through.
           console.error("[document analysis] Failed to record free-tier usage (non-fatal):", usageErr);
         }
+      } else if (isPaid && paidSessionId && paidTier) {
+        try {
+          const usageType = mode === "full" ? "forensic" : "quick";
+          await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, idempotencyKey);
+          credits = await getPaidUsageStatus(paidSessionId, paidTier);
+        } catch (usageErr) {
+          console.error("[document analysis] Failed to record paid usage (non-fatal):", usageErr);
+        }
+      }
+
+      if (credits) {
+        report.credits = credits;
       }
 
       res.json(report);
@@ -2061,6 +2175,26 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       });
       return;
     }
+
+    const idempotencyKey =
+      (req.header("x-analysis-id") as string) ||
+      (req.header("x-request-id") as string) ||
+      req.body?.analysisId ||
+      req.body?.requestId ||
+      null;
+
+    const check = await checkPaidUsage(sessionInfo.sessionId, sessionInfo.tier, "forensic", idempotencyKey);
+    if (!check.allowed) {
+      return res.status(402).json({
+        error: check.error,
+        code: check.code,
+        used: check.used,
+        usedCount: check.used,
+        limit: check.limit,
+        remaining: check.remaining,
+      });
+    }
+
     try {
       const startTime = Date.now();
       const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
@@ -2166,7 +2300,14 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
       const report = extractJson(responseText);
       const durationMs = Date.now() - startTime;
-      res.json({ ...report, timing: { durationMs } });
+      let credits: CreditStatus | null = null;
+      try {
+        await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey);
+        credits = await getPaidUsageStatus(sessionInfo.sessionId, sessionInfo.tier);
+      } catch (usageErr) {
+        console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
+      }
+      res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
     } catch (error: any) {
       console.error("[deep scan] API error, returning honest failure (no fabricated fallback):", error);
       handleAIError(error, "deep scan", res);

@@ -269,7 +269,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-600">Individual & Family</span>
               <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Individual / Family Case Access</h3>
               <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                Includes premium platform access and five Forensic In-Depth analyses per billing cycle.
+                Includes full premium case platform access and 5 Forensic In-Depth Analyses per monthly billing cycle.
               </p>
             </div>
             <div className="py-2">
@@ -283,7 +283,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <span className="font-semibold">5 Forensic In-Depth Analyses per cycle</span>
+                <span className="font-semibold">5 Forensic In-Depth Analyses per monthly cycle</span>
               </div>
               <div className="flex items-start gap-2.5 text-xs text-slate-700">
                 <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
@@ -340,7 +340,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                 <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Document Review Only</span>
                 <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Document Analyzer — Basic</h3>
                 <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                  Single-document Quick Document Review, on-screen timeline, and core red-flag audit.
+                  Single-document Quick Document Review, on-screen timeline, and core red-flag audit. Includes 3 Quick Document Reviews.
                 </p>
               </div>
               <div className="py-2">
@@ -353,7 +353,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               <div className="border-t border-slate-100 pt-4 space-y-2.5">
                 <div className="flex items-start gap-2.5 text-xs text-slate-800">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>Core Quick Document Review (Fast Audit)</span>
+                  <span className="font-semibold">3 Quick Document Reviews included (Core Audit)</span>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-slate-700">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -403,7 +403,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                 <span className="text-[10px] uppercase font-bold tracking-widest text-purple-600">Forensic Audit Only</span>
                 <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Document Analyzer — Premium</h3>
                 <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                  Forensic In-Depth Dual-Pass analysis, cross-examination vulnerabilities, and hearsay weight audit.
+                  Forensic In-Depth Dual-Pass analysis, cross-examination vulnerabilities, and hearsay weight audit. Includes 3 Forensic Analyses.
                 </p>
               </div>
               <div className="py-2">
@@ -416,11 +416,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               <div className="border-t border-slate-100 pt-4 space-y-2.5">
                 <div className="flex items-start gap-2.5 text-xs text-slate-800">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <span className="font-semibold">Everything in Analyzer Basic</span>
+                  <span className="font-semibold">3 Forensic In-Depth Analyses included</span>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-slate-800">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <span className="font-semibold">Forensic In-Depth Dual-Pass Analysis</span>
+                  <span>Standard Quick Document Reviews included</span>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-slate-700">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
