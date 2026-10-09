@@ -45,7 +45,7 @@ const SERVICES = CASES.map(c => c.service);
 function sourceFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(d => {
     const p = path.join(dir, d.name);
-    if (d.isDirectory()) return ['node_modules', 'dist', '.git', 'legal-reference', 'docs', 'tempmediaStorage', '.system_generated', '.gemini', '.claude'].includes(d.name) ? [] : sourceFiles(p);
+    if (d.isDirectory()) return ['node_modules', 'dist', '.git', '.vercel', 'legal-reference', 'docs', 'tempmediaStorage', '.system_generated', '.gemini', '.claude'].includes(d.name) ? [] : sourceFiles(p);
     return /\.(ts|tsx|js|mjs|cjs)$/.test(d.name) && !/\.test\.(ts|tsx)$/.test(d.name) ? [p] : [];
   });
 }
