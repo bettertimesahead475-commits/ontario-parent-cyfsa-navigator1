@@ -1513,8 +1513,10 @@ export default function DocumentAnalyzerTab() {
       let parsedContent = "";
       let finalName = f.name;
       const nameL = f.name.toLowerCase();
-      // Some browsers leave File.type empty for PDFs and common image formats.
+      // Some browsers leave File.type empty for PDFs, DOCX, and common image formats.
       const inferredMimeType = nameL.endsWith(".pdf") ? "application/pdf"
+        : nameL.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : nameL.endsWith(".doc") ? "application/msword"
         : nameL.endsWith(".png") ? "image/png"
         : /\.(jpe?g)$/.test(nameL) ? "image/jpeg"
         : nameL.endsWith(".webp") ? "image/webp"
