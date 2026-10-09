@@ -28,6 +28,7 @@ alter table public.access_codes add constraint access_codes_tier_check
     'Community5',
     'Community10',
     'Community25',
+    'Enterprise',
     'pro_advocate',
     'premium_attorney'
   ));
@@ -44,6 +45,7 @@ alter table public.navigator_paid_sessions add constraint navigator_paid_session
     'Community5',
     'Community10',
     'Community25',
+    'Enterprise',
     'pro_advocate',
     'premium_attorney'
   ));
