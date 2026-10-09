@@ -73,7 +73,7 @@ export function hasForensicInDepthAccess(tier: string): boolean {
   return ["Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier);
 }
 
-export const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
+export const PAYMENT_EMAIL = process.env.PAYMENT_EMAIL || "chris@cyfsanavigator.com";
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L — easy to type off a phone
 const CODE_TTL_DAYS = 14; // an issued-but-unredeemed code expires after this long

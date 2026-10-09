@@ -36,6 +36,8 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 const {
+  requestAccess,
+  PAYMENT_EMAIL,
   approvePayment,
   issueSessionToken,
   verifySessionToken,
@@ -101,6 +103,11 @@ function createFakeDb(initialPayment: Record<string, any>) {
               }),
             }),
           }),
+          insert: async (row: any) => {
+            await networkDelay();
+            paymentsRow = { ...row };
+            return { data: [row], error: null };
+          },
         };
       }
       if (table === "access_codes") {
@@ -760,3 +767,33 @@ describe("resolveSupabaseCredentials", () => {
     expect(session).toBeNull();
   });
 });
+
+describe("requestAccess & PAYMENT_EMAIL branding", () => {
+  it("uses chris@cyfsanavigator.com as authoritative payment address", () => {
+    expect(PAYMENT_EMAIL).toBe("chris@cyfsanavigator.com");
+  });
+
+  it("generates payment request with chris@cyfsanavigator.com and valid PS- reference number", async () => {
+    const fakeDb = createFakeDb({});
+    currentDb.ref = fakeDb;
+
+    const result = await requestAccess("parent@example.com", "Premium");
+
+    expect(result.payTo).toBe("chris@cyfsanavigator.com");
+    expect(result.amount).toBe(49.99);
+    expect(result.referenceNumber).toMatch(/^PS-[A-Z0-9]{5}$/);
+    expect(result.instructions).toContain("chris@cyfsanavigator.com");
+    expect(result.instructions).toContain(result.referenceNumber);
+    expect(result.instructions).toContain("$49.99 CAD");
+
+    const savedRow = fakeDb._paymentsRow();
+    expect(savedRow.payment_email).toBe("chris@cyfsanavigator.com");
+    expect(savedRow.plan).toBe("Premium");
+    expect(savedRow.amount).toBe(49.99);
+    expect(savedRow.reference_number).toBe(result.referenceNumber);
+    expect(savedRow.status).toBe("pending");
+    expect(savedRow.payment_method).toBe("interac_etransfer");
+    expect(savedRow.notes).toBe("email:parent@example.com");
+  });
+});
+

@@ -23,7 +23,7 @@ const FALLBACK_TIER_PRICES: Record<string, number> = {
   Community10: 3500,
   Community25: 7500,
 };
-const PAYMENT_EMAIL = "donations.ontarioparentassist@gmail.com";
+const PAYMENT_EMAIL = "chris@cyfsanavigator.com";
 
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
 

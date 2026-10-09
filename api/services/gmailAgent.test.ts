@@ -32,7 +32,7 @@ vi.mock("googleapis", () => ({
 const mockAccess = vi.hoisted(() => ({
   getSupabase: vi.fn(),
   approvePayment: vi.fn(),
-  PAYMENT_EMAIL: "donations.ontarioparentassist@gmail.com",
+  PAYMENT_EMAIL: "chris@cyfsanavigator.com",
 }));
 vi.mock("./access.js", () => mockAccess);
 
@@ -287,5 +287,54 @@ describe("scanForPayments - stale pending payment alerting", () => {
 
     expect(result.stalePending).toHaveLength(0);
     expect(mockSendMail).not.toHaveBeenCalled();
+  });
+
+  it("recognizes forwarded Interac notifications sent to chris@cyfsanavigator.com without auto-approving", async () => {
+    // Simulates an Interac notification email originally addressed to chris@cyfsanavigator.com
+    // and forwarded via MX/ImprovMX into the monitored Gmail inbox
+    const forwardedNotificationText = [
+      "From: notify@payments.interac.ca",
+      "To: chris@cyfsanavigator.com",
+      "Subject: INTERAC e-Transfer: Autodeposit complete",
+      "",
+      "An INTERAC e-Transfer for $49.99 (CAD) sent to chris@cyfsanavigator.com has been deposited into your account.",
+      "Message / Memo: PS-FWD49",
+      "Reference Number: CA12345678",
+    ].join("\n");
+
+    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-forwarded-1" }] } });
+    mockGmailApi.users.messages.get.mockResolvedValue({
+      data: gmailMessage("msg-forwarded-1", forwardedNotificationText),
+    });
+
+    const inserted: any[] = [];
+    mockAccess.getSupabase.mockReturnValue(
+      fakeSupabase({
+        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
+        payments: { list: () => ({ data: [], error: null }) },
+      })
+    );
+
+    const result = await scanForPayments();
+
+    // 1. Detects match correctly
+    expect(result.matchedPendingApproval).toHaveLength(1);
+    expect(result.matchedPendingApproval[0]).toEqual({
+      referenceNumber: "PS-FWD49",
+      amount: 49.99,
+      messageId: "msg-forwarded-1",
+    });
+
+    // 2. CRITICAL: Never auto-approves payment on detection alone
+    expect(mockAccess.approvePayment).not.toHaveBeenCalled();
+
+    // 3. Admin alert sent with manual confirmation instructions
+    expect(mockSendMail).toHaveBeenCalledTimes(1);
+    expect(mockSendMail.mock.calls[0][0].subject).toContain("PS-FWD49");
+    expect(mockSendMail.mock.calls[0][0].text).toContain("POST /api/admin/approve-payment");
+
+    // 4. Status recorded as pending manual approval
+    expect(inserted[0].outcome).toBe("matched_pending_manual_approval");
+    expect(inserted[0].matched_reference).toBe("PS-FWD49");
   });
 });
