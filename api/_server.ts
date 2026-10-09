@@ -36,6 +36,15 @@ import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.j
 import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
+import {
+  reserveAnalysisCredit,
+  releaseAnalysisReservation,
+  finalizeAnalysisCredit,
+  getCreditBalance,
+  suspendSession,
+  restoreSession,
+  type ReservationResult,
+} from "./services/creditAccounting.js";
 import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure } from "./services/analyzerErrors.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
@@ -549,7 +558,17 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       if (!validTiers.includes(tier)) {
         return res.status(400).json({ error: 'tier must be a valid plan tier ("Basic", "Premium", "Pro", "Community5", "Community10", or "Community25").' });
       }
-      const result = await requestAccess(email, tier as Tier);
+      const identity = await verifyFirebaseToken(req.header("authorization"));
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || null;
+      const userAgent = (req.headers["user-agent"] as string) || null;
+      const hasMetadata = Boolean(identity?.uid || req.headers["x-forwarded-for"] || req.headers["user-agent"]);
+      const result = hasMetadata
+        ? await requestAccess(email, tier as Tier, {
+            uid: identity?.uid || null,
+            clientIp,
+            userAgent,
+          })
+        : await requestAccess(email, tier as Tier);
       res.json(result);
     } catch (err: any) {
       console.error("[/api/request-access]", err);
@@ -616,6 +635,205 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     } catch (err: any) {
       console.error("[/api/admin/revoke-sessions-for-uid]", err);
       res.status(err.statusCode || 500).json({ error: err.message || "Failed to revoke sessions." });
+    }
+  });
+
+  // --- Admin Payment & Usage Observability & Control Endpoints ---
+  app.get("/api/admin/payments/overview", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const db = getSupabase();
+      const { data: payments, error } = await db
+        .from("payments")
+        .select("*")
+        .order("submitted_at", { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+
+      const { data: sessions } = await db
+        .from("navigator_paid_sessions")
+        .select("*");
+
+      const sessionByUidOrEmail = new Map<string, any>();
+      for (const s of sessions || []) {
+        if (s.email) sessionByUidOrEmail.set(s.email.toLowerCase().trim(), s);
+        if (s.firebase_uid) sessionByUidOrEmail.set(s.firebase_uid, s);
+      }
+
+      const rows = (payments || []).map((p: any) => {
+        const rawNotes = p.notes || "";
+        const emailMatch = rawNotes.match(/^email:([^;]+)/);
+        const customerEmail = (emailMatch ? emailMatch[1] : rawNotes.replace(/^email:/, "")).trim();
+        const uidMatch = rawNotes.match(/;uid:([^;]+)/);
+        const firebaseUid = p.firebase_uid || (uidMatch ? uidMatch[1] : null);
+
+        const matchedSession = (customerEmail ? sessionByUidOrEmail.get(customerEmail.toLowerCase().trim()) : null) ||
+                               (firebaseUid ? sessionByUidOrEmail.get(firebaseUid) : null);
+
+        let defaultLimit = 3;
+        if (p.plan === "Premium" || p.plan === "AnalyzerPremium") defaultLimit = 5;
+        else if (p.plan === "Pro" || (p.plan && p.plan.startsWith("Community"))) defaultLimit = 5;
+
+        const creditsGranted = matchedSession?.credits_granted || defaultLimit;
+        const creditsConsumed = matchedSession?.credits_consumed || 0;
+        const creditsRemaining = Math.max(0, creditsGranted - creditsConsumed);
+
+        let accessStatus = "pending";
+        if (matchedSession) {
+          if (matchedSession.revoked_at) accessStatus = "revoked";
+          else if (matchedSession.is_suspended) accessStatus = "suspended";
+          else accessStatus = "active";
+        } else if (p.status === "approved" || p.status === "notification_accepted_trust_grant") {
+          accessStatus = "code_issued";
+        }
+
+        return {
+          referenceNumber: p.reference_number,
+          customerEmail,
+          package: p.plan,
+          amount: p.amount,
+          submittedAt: p.submitted_at,
+          notificationStatus: p.status,
+          bankSettlementStatus: p.bank_settlement_status || (p.status === "approved" ? "pending_settlement" : "unpaid"),
+          creditsGranted,
+          creditsConsumed,
+          creditsRemaining,
+          lastActivity: matchedSession?.updated_at || p.approved_at || p.submitted_at,
+          accessStatus,
+          sessionId: matchedSession?.id || null,
+          firebaseUid,
+        };
+      });
+
+      res.json({ payments: rows });
+    } catch (err: any) {
+      console.error("[/api/admin/payments/overview]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to load payment overview." });
+    }
+  });
+
+  app.post("/api/admin/payments/confirm-bank", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const { referenceNumber } = req.body || {};
+      if (!referenceNumber) return res.status(400).json({ error: "referenceNumber is required." });
+
+      const db = getSupabase();
+      const now = new Date().toISOString();
+      const { error } = await db
+        .from("payments")
+        .update({ bank_settlement_status: "bank_confirmed" })
+        .eq("reference_number", referenceNumber);
+
+      if (error && (error.message?.includes("column") || error.code === "42703")) {
+        // column not present yet, still report success
+      } else if (error) {
+        throw error;
+      }
+
+      try {
+        await db.from("credit_audit_ledger").insert({
+          firebase_uid: "system",
+          event_type: "bank_confirmation",
+          reference_id: referenceNumber,
+          operator_role: "admin",
+          details: { referenceNumber, confirmedAt: now },
+        });
+      } catch {}
+
+      res.json({ success: true, referenceNumber, bankSettlementStatus: "bank_confirmed" });
+    } catch (err: any) {
+      console.error("[/api/admin/payments/confirm-bank]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to confirm bank settlement." });
+    }
+  });
+
+  app.post("/api/admin/payments/dispute", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const { referenceNumber, reason } = req.body || {};
+      if (!referenceNumber) return res.status(400).json({ error: "referenceNumber is required." });
+
+      const db = getSupabase();
+      await db
+        .from("payments")
+        .update({ bank_settlement_status: "missing_or_disputed" })
+        .eq("reference_number", referenceNumber);
+
+      try {
+        await db.from("credit_audit_ledger").insert({
+          firebase_uid: "system",
+          event_type: "dispute",
+          reference_id: referenceNumber,
+          operator_role: "admin",
+          details: { referenceNumber, reason: reason || "missing_deposit" },
+        });
+      } catch {}
+
+      res.json({ success: true, referenceNumber, bankSettlementStatus: "missing_or_disputed" });
+    } catch (err: any) {
+      console.error("[/api/admin/payments/dispute]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to flag dispute." });
+    }
+  });
+
+  app.post("/api/admin/payments/suspend", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const { sessionId, reason } = req.body || {};
+      if (!sessionId) return res.status(400).json({ error: "sessionId is required." });
+
+      await suspendSession({ sessionId, reason: reason || "Administrative suspension pending payment verification." });
+      res.json({ success: true, sessionId, status: "suspended" });
+    } catch (err: any) {
+      console.error("[/api/admin/payments/suspend]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to suspend session." });
+    }
+  });
+
+  app.post("/api/admin/payments/restore", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const { sessionId } = req.body || {};
+      if (!sessionId) return res.status(400).json({ error: "sessionId is required." });
+
+      await restoreSession(sessionId);
+      res.json({ success: true, sessionId, status: "active" });
+    } catch (err: any) {
+      console.error("[/api/admin/payments/restore]", err);
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to restore session." });
+    }
+  });
+
+  app.get("/api/admin/payments/audit-history", async (req: Request, res: Response) => {
+    try {
+      if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+      const db = getSupabase();
+      const { data, error } = await db
+        .from("credit_audit_ledger")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) {
+        return res.json({ events: [] });
+      }
+      res.json({ events: data || [] });
+    } catch (err: any) {
+      res.json({ events: [] });
     }
   });
 
@@ -755,10 +973,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             currency: "CAD",
             interval: "one-time",
             scope: "analyzer_only",
-            forensicLimit: 3,
-            description: "Premium Document Analyzer access with 3 Forensic In-Depth Dual-Pass analyses. Document Analyzer access only; does not include Case Workspace.",
+            forensicLimit: 5,
+            description: "Premium Document Analyzer access with 5 Forensic In-Depth Dual-Pass analyses. Document Analyzer access only; does not include Case Workspace.",
             features: [
-              "3 Forensic In-Depth Dual-Pass Analyses included",
+              "5 Forensic In-Depth Dual-Pass Analyses included",
               "Standard Quick Document Reviews included",
               "Cross-examination vulnerability scanner",
               "Evidentiary Weight & Hearsay objection audit",
@@ -866,8 +1084,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           price: 49.99,
           interval: "one-time",
           currency: "CAD",
-          forensicLimit: 3,
-          description: "Premium Document Analyzer access with 3 Forensic In-Depth Dual-Pass analyses."
+          forensicLimit: 5,
+          description: "Premium Document Analyzer access with 5 Forensic In-Depth Dual-Pass analyses."
         },
         individual: {
           id: "Pro",
@@ -926,9 +1144,20 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         const session = await lookupPaidSession(parsedSession.jti);
         if (session && session.firebaseUid === identity.uid) {
           const status = await getPaidUsageStatus(session.id, session.tier);
+          let extraBalance: any = {};
+          try {
+            const balance = await getCreditBalance(session.id, session.tier);
+            extraBalance = {
+              creditsRemaining: balance.creditsRemaining,
+              creditsUsed: balance.creditsConsumed,
+              creditsLimit: balance.creditsGranted,
+              isSuspended: balance.isSuspended,
+            };
+          } catch {}
           return res.json({
             type: "paid",
             ...status,
+            ...extraBalance,
           });
         }
       }
@@ -1345,6 +1574,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   app.post("/api/analyze", async (req: Request, res: Response) => {
     let targetText = "";
     let fileDataObj: any = null;
+    let creditReservation: ReservationResult | null = null;
+    let paidSessionId: string | null = null;
+    let analysisRequestId = "";
     try {
       const { textContent, fileData, model, mode } = req.body;
       fileDataObj = fileData;
@@ -1373,7 +1605,6 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
       let isPaid = false;
       let paidTier: Tier | null = null;
-      let paidSessionId: string | null = null;
       if (parsedSession && identity) {
         const session = await lookupPaidSession(parsedSession.jti);
         if (session && session.firebaseUid === identity.uid) {
@@ -1433,6 +1664,21 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             });
           }
         }
+      }
+
+      // Server-authoritative atomic credit reservation before AI begins
+      analysisRequestId =
+        idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+      if (isPaid && paidSessionId && paidTier && identity) {
+        creditReservation = await reserveAnalysisCredit({
+          sessionId: paidSessionId,
+          firebaseUid: identity.uid,
+          tier: paidTier,
+          requestId: analysisRequestId,
+          analysisType: mode === "full" ? "forensic" : "quick",
+          documentName: req.body?.documentName || req.body?.fileData?.name || "document",
+        });
       }
 
       if (!isPaid) {
@@ -1783,6 +2029,16 @@ ${analysisRules}`;
         try {
           const usageType = mode === "full" ? "forensic" : "quick";
           await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, idempotencyKey);
+          if (creditReservation && identity) {
+            await finalizeAnalysisCredit({
+              sessionId: paidSessionId,
+              firebaseUid: identity.uid,
+              requestId: analysisRequestId,
+              reservationId: creditReservation.reservationId,
+              tier: paidTier,
+              documentName: req.body?.documentName || req.body?.fileData?.name,
+            });
+          }
           credits = await getPaidUsageStatus(paidSessionId, paidTier);
         } catch (usageErr) {
           console.error("[document analysis] Failed to record paid usage (non-fatal):", usageErr);
@@ -1796,6 +2052,27 @@ ${analysisRules}`;
       res.json(report);
 
     } catch (error: any) {
+      if (creditReservation && paidSessionId) {
+        try {
+          await releaseAnalysisReservation({
+            sessionId: paidSessionId,
+            requestId: analysisRequestId,
+            reservationId: creditReservation.reservationId,
+            reason: error?.message || "analysis_failed",
+          });
+        } catch (relErr) {
+          console.error("[document analysis] Failed to release reservation:", relErr);
+        }
+      }
+      if (error instanceof LifecycleError) {
+        if (
+          error.code === "ANALYSIS_LIMIT_REACHED" ||
+          error.code === "FORENSIC_UPGRADE_REQUIRED" ||
+          error.code === "ACCOUNT_SUSPENDED"
+        ) {
+          return res.status(error.statusCode).json({ error: error.message, code: error.code });
+        }
+      }
       // Do NOT fabricate a fake analysis on failure — a parent could mistake
       // invented names/dates for a real reading of their own document.
       console.error("[document analysis] API error, returning honest failure (no fabricated fallback):", error);
@@ -2197,6 +2474,25 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       });
     }
 
+    const analysisRequestId =
+      idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    let creditReservation: ReservationResult | null = null;
+    try {
+      creditReservation = await reserveAnalysisCredit({
+        sessionId: sessionInfo.sessionId,
+        firebaseUid: sessionInfo.uid,
+        tier: sessionInfo.tier,
+        requestId: analysisRequestId,
+        analysisType: "forensic",
+        documentName: req.body?.documentName || "deep-scan-document",
+      });
+    } catch (resErr: any) {
+      if (resErr instanceof LifecycleError) {
+        return res.status(resErr.statusCode).json({ error: resErr.message, code: resErr.code });
+      }
+      throw resErr;
+    }
+
     try {
       const startTime = Date.now();
       const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
@@ -2305,12 +2601,43 @@ OUTPUT — return strictly this JSON schema, nothing else:
       let credits: CreditStatus | null = null;
       try {
         await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey);
+        if (creditReservation) {
+          await finalizeAnalysisCredit({
+            sessionId: sessionInfo.sessionId,
+            firebaseUid: sessionInfo.uid,
+            requestId: analysisRequestId,
+            reservationId: creditReservation.reservationId,
+            tier: sessionInfo.tier,
+            documentName: req.body?.documentName || "deep-scan-document",
+          });
+        }
         credits = await getPaidUsageStatus(sessionInfo.sessionId, sessionInfo.tier);
       } catch (usageErr) {
         console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
       }
       res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
     } catch (error: any) {
+      if (creditReservation) {
+        try {
+          await releaseAnalysisReservation({
+            sessionId: sessionInfo.sessionId,
+            requestId: analysisRequestId,
+            reservationId: creditReservation.reservationId,
+            reason: error?.message || "deep_scan_failed",
+          });
+        } catch (relErr) {
+          console.error("[deep scan] Failed to release reservation:", relErr);
+        }
+      }
+      if (error instanceof LifecycleError) {
+        if (
+          error.code === "ANALYSIS_LIMIT_REACHED" ||
+          error.code === "FORENSIC_UPGRADE_REQUIRED" ||
+          error.code === "ACCOUNT_SUSPENDED"
+        ) {
+          return res.status(error.statusCode).json({ error: error.message, code: error.code });
+        }
+      }
       console.error("[deep scan] API error, returning honest failure (no fabricated fallback):", error);
       handleAIError(error, "deep scan", res);
     }

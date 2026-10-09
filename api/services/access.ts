@@ -393,12 +393,22 @@ export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool):
 }
 
 // --- Step 1: parent requests access before paying --------------------------
-export async function requestAccess(email: string, tier: Tier) {
+export async function requestAccess(
+  email: string,
+  tier: Tier,
+  clientInfo?: { uid?: string | null; clientIp?: string | null; userAgent?: string | null }
+) {
   const db = getSupabase();
   const referenceNumber = generateReferenceNumber();
   const amount = ALL_TIER_PRICES[tier] ?? TIER_PRICES.Pro;
+  const normalizedEmail = email.toLowerCase().trim();
 
-  const { error } = await db.from("payments").insert({
+  let notes = `email:${normalizedEmail}`;
+  if (clientInfo?.uid) notes += `;uid:${clientInfo.uid}`;
+  if (clientInfo?.clientIp) notes += `;ip:${clientInfo.clientIp}`;
+  if (clientInfo?.userAgent) notes += `;ua:${encodeURIComponent(clientInfo.userAgent.slice(0, 100))}`;
+
+  const rowPayload: any = {
     plan: tier,
     user_role: "parent",
     amount,
@@ -406,9 +416,31 @@ export async function requestAccess(email: string, tier: Tier) {
     payment_email: PAYMENT_EMAIL,
     reference_number: referenceNumber,
     status: "pending",
-    notes: `email:${email.toLowerCase().trim()}`,
-  });
-  if (error) throw Object.assign(new Error(`Failed to record payment request: ${error.message}`), { statusCode: 500 });
+    notes,
+  };
+  if (clientInfo?.uid) rowPayload.firebase_uid = clientInfo.uid;
+  if (clientInfo?.clientIp) rowPayload.client_ip = clientInfo.clientIp;
+  if (clientInfo?.userAgent) rowPayload.user_agent = clientInfo.userAgent;
+
+  const { error } = await db.from("payments").insert(rowPayload);
+  if (error) {
+    // If insert failed due to unknown columns, fallback to base columns
+    if (error.message?.includes("column") || error.code === "42703") {
+      const { error: fallbackErr } = await db.from("payments").insert({
+        plan: tier,
+        user_role: "parent",
+        amount,
+        payment_method: "interac_etransfer",
+        payment_email: PAYMENT_EMAIL,
+        reference_number: referenceNumber,
+        status: "pending",
+        notes,
+      });
+      if (fallbackErr) throw Object.assign(new Error(`Failed to record payment request: ${fallbackErr.message}`), { statusCode: 500 });
+    } else {
+      throw Object.assign(new Error(`Failed to record payment request: ${error.message}`), { statusCode: 500 });
+    }
+  }
 
   return {
     referenceNumber,
@@ -418,7 +450,194 @@ export async function requestAccess(email: string, tier: Tier) {
   };
 }
 
-// --- Step 2: admin approves after confirming the e-transfer landed --------
+// --- Step 2a: automated trust-based activation upon matching Interac notification ---
+export async function activateTrustBasedPayment(
+  referenceNumber: string,
+  amountReceived: number,
+  options?: { senderInfo?: string; messageId?: string }
+): Promise<{
+  email: string;
+  tier: Tier;
+  code: string;
+  referenceNumber: string;
+  emailSent: boolean;
+  activatedSessionId?: string | null;
+  creditsGranted: number;
+  status: string;
+  settlementStatus: string;
+}> {
+  const db = getSupabase();
+  const { data: payment, error: findErr } = await db
+    .from("payments")
+    .select("*")
+    .eq("reference_number", referenceNumber)
+    .maybeSingle();
+
+  if (findErr) throw Object.assign(new Error(findErr.message), { statusCode: 500 });
+  if (!payment) {
+    throw Object.assign(new Error("No payment request found for that reference number."), { statusCode: 404 });
+  }
+
+  if (payment.status !== "pending") {
+    throw Object.assign(
+      new Error(`This payment was already processed (status: ${payment.status}). No duplicate access granted.`),
+      { statusCode: 409 }
+    );
+  }
+
+  const expected = Number(payment.amount);
+  if (amountReceived < expected) {
+    throw Object.assign(
+      new Error(`Amount received ($${amountReceived}) is less than expected $${expected} for ${payment.plan}. Not activating.`),
+      { statusCode: 400 }
+    );
+  }
+
+  // Atomically claim the payment under trust-based policy
+  const now = new Date().toISOString();
+  const updatePayload: any = {
+    status: "approved",
+    approved_at: now,
+    notification_accepted_at: now,
+    bank_settlement_status: "pending_settlement",
+  };
+
+  const { data: claimed, error: claimErr } = await db
+    .from("payments")
+    .update(updatePayload)
+    .eq("reference_number", referenceNumber)
+    .eq("status", "pending")
+    .select("reference_number");
+
+  if (claimErr) {
+    // If bank_settlement_status column doesn't exist yet, fallback
+    if (claimErr.message?.includes("column") || claimErr.code === "42703") {
+      const { data: fallbackClaimed, error: fbErr } = await db
+        .from("payments")
+        .update({ status: "approved", approved_at: now })
+        .eq("reference_number", referenceNumber)
+        .eq("status", "pending")
+        .select("reference_number");
+      if (fbErr) throw Object.assign(new Error(`Failed to claim payment: ${fbErr.message}`), { statusCode: 500 });
+      if (!fallbackClaimed || fallbackClaimed.length === 0) {
+        throw Object.assign(
+          new Error("This payment was already claimed by a concurrent request. No duplicate entitlement issued."),
+          { statusCode: 409 }
+        );
+      }
+    } else {
+      throw Object.assign(new Error(`Failed to claim payment: ${claimErr.message}`), { statusCode: 500 });
+    }
+  } else if (!claimed || claimed.length === 0) {
+    throw Object.assign(
+      new Error("This payment was already claimed by a concurrent request. No duplicate entitlement issued."),
+      { statusCode: 409 }
+    );
+  }
+
+  const rawNotes = payment.notes || "";
+  const emailMatch = rawNotes.match(/^email:([^;]+)/);
+  const email = (emailMatch ? emailMatch[1] : rawNotes.replace(/^email:/, "")).trim();
+  const uidMatch = rawNotes.match(/;uid:([^;]+)/);
+  const firebaseUid = payment.firebase_uid || (uidMatch ? uidMatch[1] : null);
+  const tier = payment.plan as Tier;
+  const code = generateAccessCode();
+
+  // Create single-use access code
+  const { error: codeErr } = await db.from("access_codes").insert({
+    email,
+    tier,
+    reference_number: referenceNumber,
+    amount: amountReceived,
+    code_hash: hashCode(code),
+    expires_at: new Date(Date.now() + CODE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+  });
+  if (codeErr) {
+    throw Object.assign(new Error(`Payment notification accepted but code generation failed: ${codeErr.message}`), { statusCode: 500 });
+  }
+
+  // Calculate allowance
+  let creditsGranted = 3;
+  if (tier === "Premium" || tier === "AnalyzerPremium") creditsGranted = 5;
+  else if (tier === "Pro" || tier.startsWith("Community")) creditsGranted = 5;
+
+  let activatedSessionId: string | null = null;
+  if (firebaseUid) {
+    try {
+      const { data: codeRow } = await db
+        .from("access_codes")
+        .select("id")
+        .eq("reference_number", referenceNumber)
+        .maybeSingle();
+
+      const session = await createPaidSession({
+        firebaseUid,
+        email,
+        tier,
+        accessCodeId: codeRow?.id || code,
+      });
+      activatedSessionId = session.id;
+    } catch {
+      // Non-fatal: user can redeem via access code on /api/activate-code
+    }
+  }
+
+  // Outbound email notification: trust-based acceptance, specifies package & analyses allowance
+  const emailSent = await sendTrustGrantNotificationEmail(email, tier, code, referenceNumber, creditsGranted);
+
+  return {
+    email,
+    tier,
+    code,
+    referenceNumber,
+    emailSent,
+    activatedSessionId,
+    creditsGranted,
+    status: "notification_accepted_trust_grant",
+    settlementStatus: "pending_settlement",
+  };
+}
+
+async function sendTrustGrantNotificationEmail(
+  email: string,
+  tier: Tier,
+  code: string,
+  referenceNumber: string,
+  creditsGranted: number
+): Promise<boolean> {
+  const hasSmtpConfig = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  if (!hasSmtpConfig || !email) {
+    console.error("[trust-grant email] SMTP not configured or no email - notification NOT emailed:", referenceNumber);
+    return false;
+  }
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === "true",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: email,
+      subject: `Your CYFSA Navigator access is active (${tier}) — Payment Notification Received`,
+      text:
+        `Your Interac e-transfer notification (reference ${referenceNumber}) for ${tier} has been accepted.\n\n` +
+        `Under our trust-based access policy, your ${creditsGranted} document analyses are active immediately while bank settlement processes.\n\n` +
+        `Your Single-Use Access Code: ${code}\n\n` +
+        `To use the Document Analyzer: visit https://cyfsanavigator.com/analyzer\n\n` +
+        `If you need to activate on another device, go to Membership and enter your email (${email}) and access code above.\n\n` +
+        `Thank you for using CYFSA Navigator.`
+    });
+    return true;
+  } catch (mailErr) {
+    console.error("[trust-grant email] send failed", mailErr);
+    return false;
+  }
+}
+
+// --- Step 2b: manual admin confirmation (confirms deposit in bank) --------
 export async function approvePayment(referenceNumber: string, amountReceived: number) {
   const db = getSupabase();
   const { data: payment, error: findErr } = await db

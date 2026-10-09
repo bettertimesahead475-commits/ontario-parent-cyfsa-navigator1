@@ -36,7 +36,7 @@
 
 import { google } from "googleapis";
 import crypto from "node:crypto";
-import { getSupabase, PAYMENT_EMAIL } from "./access.js";
+import { getSupabase, PAYMENT_EMAIL, activateTrustBasedPayment } from "./access.js";
 
 const SENDER_QUERY = 'from:(interac.ca OR payments.interac.ca) newer_than:7d';
 const REFERENCE_PATTERN = /\bPS-[A-Z0-9]{5}\b/;
@@ -353,25 +353,68 @@ export async function scanForPayments(): Promise<ScanResult> {
       // manual step that was always required before this agent existed, just found for him
       // automatically instead of requiring him to read his own inbox.
       result.matchedPendingApproval.push({ referenceNumber, amount, messageId });
-      const alertSent = await sendAdminAlert(
-        `[CYFSA Navigator] Payment match found - confirm to approve - ${referenceNumber}`,
-        `A possible e-transfer match was found and needs your confirmation before an access code is issued - this agent no longer auto-approves.\n\n` +
-          `Reference number: ${referenceNumber}\n` +
-          `Amount detected: $${amount}\n` +
-          `Gmail message: ${gmailMessageLink(messageId)}\n\n` +
-          `If this looks like a real, legitimate e-transfer, approve it with:\n` +
-          `POST /api/admin/approve-payment\n` +
-          `  header: x-admin-secret: <ADMIN_SECRET>\n` +
-          `  body: {"referenceNumber":"${referenceNumber}","amountReceived":${amount}}\n\n` +
-          `If this does NOT look legitimate (unexpected sender, mismatched amount, anything that looks spoofed or crafted), do not approve it - leave it pending and investigate the message directly.`
-      );
 
-      await db.from("gmail_processed_messages").insert({
-        message_id: messageId,
-        matched_reference: referenceNumber,
-        outcome: "matched_pending_manual_approval",
-        alerted_at: alertSent ? new Date().toISOString() : null,
-      });
+      // Owner trust-based policy: automatically activate entitlement upon validating notification
+      let activationSucceeded = false;
+      let activationOutcome = "matched_pending_manual_approval";
+      try {
+        const activation = await activateTrustBasedPayment(referenceNumber, amount, { messageId });
+        activationSucceeded = true;
+        activationOutcome = "trust_grant_activated";
+
+        const alertSent = await sendAdminAlert(
+          `[CYFSA Navigator] Payment notification accepted (trust-based grant) - ${referenceNumber}`,
+          `An Interac e-Transfer notification was matched and customer access was automatically activated under your trust-based access policy.\n\n` +
+            `Reference number: ${referenceNumber}\n` +
+            `Amount detected: $${amount}\n` +
+            `Package: ${activation.tier}\n` +
+            `Analyses granted: ${activation.creditsGranted}\n` +
+            `Customer: ${activation.email}\n` +
+            `Access code: ${activation.code}\n` +
+            `Settlement status: pending_settlement\n` +
+            `Gmail message: ${gmailMessageLink(messageId)}\n\n` +
+            `Customer has received access instructions. To confirm final bank settlement once money is verified in your account, visit /admin/payments or use POST /api/admin/payments/confirm-bank.`
+        );
+
+        await db.from("gmail_processed_messages").insert({
+          message_id: messageId,
+          matched_reference: referenceNumber,
+          outcome: activationOutcome,
+          alerted_at: alertSent ? new Date().toISOString() : null,
+        });
+      } catch (actErr: any) {
+        if (actErr?.statusCode === 409) {
+          // Already claimed / processed - idempotent, no duplicate credits
+          await db.from("gmail_processed_messages").insert({
+            message_id: messageId,
+            matched_reference: referenceNumber,
+            outcome: "already_processed_no_duplicate",
+            alerted_at: null,
+          });
+        } else {
+          // Fall back to alerting Chris for manual review
+          const alertSent = await sendAdminAlert(
+            `[CYFSA Navigator] Payment match found - confirm to approve - ${referenceNumber}`,
+            `A possible e-transfer match was found and needs your confirmation before an access code is issued.\n\n` +
+              `Reference number: ${referenceNumber}\n` +
+              `Amount detected: $${amount}\n` +
+              `Notice: ${actErr?.message || "Pending manual review"}\n` +
+              `Gmail message: ${gmailMessageLink(messageId)}\n\n` +
+              `Approve with:\n` +
+              `POST /api/admin/approve-payment\n` +
+              `  header: x-admin-secret: <ADMIN_SECRET>\n` +
+              `  body: {"referenceNumber":"${referenceNumber}","amountReceived":${amount}}`
+          );
+
+          await db.from("gmail_processed_messages").insert({
+            message_id: messageId,
+            matched_reference: referenceNumber,
+            outcome: "matched_pending_manual_approval",
+            alerted_at: alertSent ? new Date().toISOString() : null,
+          });
+        }
+      }
+
       await gmail.users.messages.modify({ userId: "me", id: messageId, requestBody: { addLabelIds: [labelId!] } });
     } catch (e: any) {
       const errorMessage = e.message || String(e);

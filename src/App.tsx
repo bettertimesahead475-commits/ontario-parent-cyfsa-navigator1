@@ -32,6 +32,7 @@ const PricingTab = lazy(() => import("./components/PricingTab"));
 // Admin-only Marketing Agent console; intentionally omitted from public navigation.
 const MarketingAgentTab = lazy(() => import("./components/admin/MarketingAgentTab"));
 const SystemHealthTab = lazy(() => import("./components/admin/SystemHealthTab"));
+const PaymentMonitoringTab = lazy(() => import("./components/admin/PaymentMonitoringTab"));
 const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWorkspace"));
 const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorkspace"));
 const AcceptInvitation = lazy(() => import("./components/AcceptInvitation"));
@@ -382,6 +383,10 @@ export default function App() {
           </Route>
           <Route path="/admin/monitoring">
             <SystemHealthTab />
+          </Route>
+          {/* Admin-only Payment & Customer Usage Observability console. */}
+          <Route path="/admin/payments">
+            <PaymentMonitoringTab />
           </Route>
 
           <Route path="/signup">

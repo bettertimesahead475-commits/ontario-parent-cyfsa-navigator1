@@ -46,7 +46,8 @@ import {
   Copy,
   ExternalLink,
   X,
-  CloudUpload
+  CloudUpload,
+  ArrowRight
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
@@ -332,6 +333,35 @@ export default function DocumentAnalyzerTab() {
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState<boolean>(false);
   const [singleAnalysisError, setSingleAnalysisError] = useState<string>("");
 
+  // Server-authoritative credit ledger balance
+  interface CreditBalanceInfo {
+    tier: string;
+    creditsRemaining: number;
+    creditsUsed: number;
+    creditsLimit: number;
+    isSuspended: boolean;
+    suspendedReason?: string | null;
+    allowsForensic: boolean;
+    isMonthly: boolean;
+  }
+  const [creditBalance, setCreditBalance] = useState<CreditBalanceInfo | null>(null);
+
+  const fetchCreditBalance = React.useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/analyzer-usage");
+      if (res.ok) {
+        const data = await res.json();
+        setCreditBalance(data);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch analyzer credit balance:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCreditBalance();
+  }, [fetchCreditBalance]);
+
   // Deep Scan states
   const [isDeepScanning, setIsDeepScanning] = useState<boolean>(false);
   const [deepScanFileId, setDeepScanFileId] = useState<string | null>(null);
@@ -395,6 +425,7 @@ export default function DocumentAnalyzerTab() {
     } finally {
       setIsDeepScanning(false);
       setDeepScanFileId(null);
+      fetchCreditBalance();
     }
   };
 
@@ -1759,6 +1790,7 @@ export default function DocumentAnalyzerTab() {
     } finally {
       setIsBulkAnalyzing(false);
       setBulkProgress("");
+      fetchCreditBalance();
     }
   };
 
@@ -1835,6 +1867,7 @@ export default function DocumentAnalyzerTab() {
       ));
     } finally {
       setIsSingleAnalyzing(false);
+      fetchCreditBalance();
     }
   };
 
@@ -2638,13 +2671,38 @@ export default function DocumentAnalyzerTab() {
       {/* Platform Sub-Header Banner */}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 border-b border-gray-100 pb-4">
         <div className="text-left">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="px-2.5 py-1 bg-brand-900 text-white rounded-lg text-xs font-mono font-bold tracking-wider uppercase flex items-center gap-1 shadow-xs">
               <Library className="w-3.5 h-3.5" /> Case Data Locker
             </span>
             <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-mono font-bold uppercase tracking-wider">
               Fast Parallel Pipeline (&lt; 2 min)
             </span>
+            {creditBalance && (
+              creditBalance.isSuspended ? (
+                <span className="px-2.5 py-1 bg-red-100 border border-red-300 text-red-900 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-600" /> Account Suspended
+                </span>
+              ) : creditBalance.creditsRemaining <= 0 ? (
+                <div className="flex items-center gap-1.5" id="credit-status-pill">
+                  <span className="px-2.5 py-1 bg-amber-100 border border-amber-300 text-amber-900 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> 0 Analyses Remaining
+                  </span>
+                  <button
+                    onClick={() => setLocation("/pricing")}
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-mono font-bold tracking-wider uppercase shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Purchase additional analyses"
+                  >
+                    Purchase More <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <span className="px-2.5 py-1 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
+                  <CheckCircle className="w-3.5 h-3.5 text-indigo-600" />
+                  {creditBalance.tier === "free" ? "Free Account" : creditBalance.tier}: {creditBalance.creditsRemaining} of {creditBalance.creditsLimit} analyses remaining
+                </span>
+              )
+            )}
           </div>
           <h2 className="font-display text-2xl font-bold text-gray-900 mt-2">Ontario Child Welfare File Organizer & Case Assistant</h2>
           <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
@@ -3175,12 +3233,39 @@ export default function DocumentAnalyzerTab() {
                     </div>
                 </div>
 
-                  {(singleAnalysisError || (activeSelectedFile.analysisStatus === "failed" && activeSelectedFile.analysisError)) && (
-                    <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2" id="single-analysis-error-banner">
-                      <span className="font-bold shrink-0">⚠️ Audit failed:</span>
-                      <span className="break-words">{singleAnalysisError || activeSelectedFile.analysisError}</span>
-                    </div>
-                  )}
+                  {(() => {
+                    const errText = singleAnalysisError || (activeSelectedFile.analysisStatus === "failed" ? activeSelectedFile.analysisError : "") || "";
+                    if (!errText) return null;
+                    const isLimitReached = errText.includes("Purchase additional analyses to continue") || errText.includes("ANALYSIS_LIMIT_REACHED");
+                    if (isLimitReached) {
+                      return (
+                        <div role="alert" className="bg-amber-50 border-2 border-amber-300 text-amber-950 rounded-xl p-4 text-xs font-sans space-y-2 shadow-xs" id="analysis-limit-reached-banner">
+                          <div className="flex items-center gap-2 font-bold text-sm text-amber-900">
+                            <AlertTriangle className="w-4.5 h-4.5 text-amber-600 shrink-0" />
+                            <span>Package Analysis Limit Reached</span>
+                          </div>
+                          <p className="text-amber-900 font-medium leading-relaxed">
+                            You&apos;ve used all analyses included in your package. Purchase additional analyses to continue.
+                          </p>
+                          <div className="pt-1 flex items-center gap-3">
+                            <button
+                              onClick={() => setLocation("/pricing")}
+                              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <span>Purchase Additional Analyses</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2" id="single-analysis-error-banner">
+                        <span className="font-bold shrink-0">⚠️ Audit failed:</span>
+                        <span className="break-words">{errText}</span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Document content viewer with custom Court Transcript Rendering & Density Limits Check */}
                   <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-1.5 relative overflow-hidden" id="file-plain-viewer">
@@ -3426,10 +3511,31 @@ export default function DocumentAnalyzerTab() {
 
                       {/* Deep Scan Error State */}
                       {deepScanError && !isDeepScanning && !deepScanReports[activeSelectedFile.id] && (
-                        <div className="bg-rose-950/40 border border-rose-500/30 rounded-xl p-4 text-xs text-rose-200 flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                          <span>{deepScanError}</span>
-                        </div>
+                        (deepScanError.includes("Purchase additional analyses to continue") || deepScanError.includes("ANALYSIS_LIMIT_REACHED")) ? (
+                          <div role="alert" className="bg-amber-950/70 border border-amber-400/40 rounded-xl p-4 text-xs text-amber-100 space-y-2" id="deep-scan-limit-reached-banner">
+                            <div className="flex items-center gap-2 font-bold text-amber-300 text-sm">
+                              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span>Package Analysis Limit Reached</span>
+                            </div>
+                            <p className="leading-relaxed">
+                              You&apos;ve used all analyses included in your package. Purchase additional analyses to continue.
+                            </p>
+                            <div className="pt-1">
+                              <button
+                                onClick={() => setLocation("/pricing")}
+                                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg transition text-xs flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <span>Purchase Additional Analyses</span>
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-rose-950/40 border border-rose-500/30 rounded-xl p-4 text-xs text-rose-200 flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                            <span>{deepScanError}</span>
+                          </div>
+                        )
                       )}
 
                       {/* Deep Scan Report Content */}

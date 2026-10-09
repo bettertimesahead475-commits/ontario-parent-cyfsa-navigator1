@@ -46,9 +46,10 @@ const NETWORK_CODES = new Set([
 ]);
 
 export function configuredSupabaseHost(): string | null {
-  const { url } = resolveSupabaseCredentials();
-  if (!url) return null;
   try {
+    const creds = typeof resolveSupabaseCredentials === "function" ? resolveSupabaseCredentials() : null;
+    const url = creds?.url || process.env.SUPABASE_URL || null;
+    if (!url) return null;
     return new URL(url.trim()).hostname || null;
   } catch {
     return "(SUPABASE_URL is not a valid URL)";

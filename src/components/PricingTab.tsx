@@ -403,7 +403,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                 <span className="text-[10px] uppercase font-bold tracking-widest text-purple-600">Forensic Audit Only</span>
                 <h3 className="font-display font-extrabold text-xl text-slate-800 mt-1">Document Analyzer — Premium</h3>
                 <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                  Forensic In-Depth Dual-Pass analysis, cross-examination vulnerabilities, and hearsay weight audit. Includes 3 Forensic Analyses.
+                  Forensic In-Depth Dual-Pass analysis, cross-examination vulnerabilities, and hearsay weight audit. Includes 5 Forensic or Quick Analyses.
                 </p>
               </div>
               <div className="py-2">
@@ -416,11 +416,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               <div className="border-t border-slate-100 pt-4 space-y-2.5">
                 <div className="flex items-start gap-2.5 text-xs text-slate-800">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <span className="font-semibold">3 Forensic In-Depth Analyses included</span>
+                  <span className="font-semibold">5 Forensic In-Depth or Quick Analyses included</span>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-slate-800">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <span>Standard Quick Document Reviews included</span>
+                  <span>Dual-Pass Forensic and Quick Document Reviews</span>
                 </div>
                 <div className="flex items-start gap-2.5 text-xs text-slate-700">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />

@@ -16,7 +16,7 @@ import { logSupabaseFailure } from "./supabaseDiagnostics.js";
 
 export const FREE_ANALYSES_LIMIT = 1;
 export const BASIC_QUICK_REVIEWS_LIMIT = 3;
-export const PREMIUM_FORENSIC_ANALYSES_LIMIT = 3;
+export const PREMIUM_FORENSIC_ANALYSES_LIMIT = 5;
 export const CASE_ACCESS_FORENSIC_ANALYSES_LIMIT = 5;
 
 export interface TierLimits {
@@ -28,8 +28,8 @@ export const TIER_LIMITS: Record<string, TierLimits> = {
   Free: { quickReviews: 1, forensicAnalyses: 0 },
   Basic: { quickReviews: 3, forensicAnalyses: 0 },
   AnalyzerBasic: { quickReviews: 3, forensicAnalyses: 0 },
-  Premium: { quickReviews: Infinity, forensicAnalyses: 3 },
-  AnalyzerPremium: { quickReviews: Infinity, forensicAnalyses: 3 },
+  Premium: { quickReviews: 5, forensicAnalyses: 5 },
+  AnalyzerPremium: { quickReviews: 5, forensicAnalyses: 5 },
   Pro: { quickReviews: Infinity, forensicAnalyses: 5 },
   Community5: { quickReviews: Infinity, forensicAnalyses: 5 },
   Community10: { quickReviews: Infinity, forensicAnalyses: 5 },
@@ -182,30 +182,15 @@ export async function checkPaidUsage(
   }
 
   if (limit !== Infinity && used >= limit) {
-    if (type === "quick") {
-      return {
-        allowed: false,
-        code: "QUICK_REVIEW_LIMIT_REACHED",
-        error: "You've used all 3 Quick Document Reviews included with your Document Analyzer Basic pass. Upgrade to Document Analyzer Premium or Individual Case Access to continue.",
-        used,
-        limit,
-        remaining: 0,
-        tier,
-      };
-    } else {
-      const isCaseAccess = tier === "Pro" || tier.startsWith("Community");
-      return {
-        allowed: false,
-        code: "FORENSIC_LIMIT_REACHED",
-        error: isCaseAccess
-          ? "You've reached your allowance of 5 Forensic In-Depth Analyses for this billing cycle. Your allowance resets on your next monthly billing date."
-          : "You've used all 3 Forensic In-Depth Analyses included with your Document Analyzer Premium pass. Upgrade to Individual Case Access or purchase an additional pass to continue.",
-        used,
-        limit,
-        remaining: 0,
-        tier,
-      };
-    }
+    return {
+      allowed: false,
+      code: "ANALYSIS_LIMIT_REACHED",
+      error: "You've used all analyses included in your package. Purchase additional analyses to continue.",
+      used,
+      limit,
+      remaining: 0,
+      tier,
+    };
   }
 
   return {
