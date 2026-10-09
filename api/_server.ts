@@ -40,6 +40,7 @@ import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure } from "./s
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
+import { monitoringRouter } from "./services/monitoring/routes.js";
 
 dotenv.config();
 
@@ -1095,6 +1096,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   registerProfessionalOutputRoutes(app);
   registerCaseActionWorkspaceRoutes(app);
   app.use("/api/admin/marketing", marketingRouter);
+  app.use("/api/admin/monitoring", monitoringRouter);
 
   // API 2: Analyze Document Endpoint (Educational advice based on CYFSA of Ontario)
   // Step 1 of the two-pass pipeline: OCR/text extraction only.

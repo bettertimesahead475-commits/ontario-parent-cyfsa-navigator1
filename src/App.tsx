@@ -31,6 +31,7 @@ const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyD
 const PricingTab = lazy(() => import("./components/PricingTab"));
 // Admin-only Marketing Agent console; intentionally omitted from public navigation.
 const MarketingAgentTab = lazy(() => import("./components/admin/MarketingAgentTab"));
+const SystemHealthTab = lazy(() => import("./components/admin/SystemHealthTab"));
 const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWorkspace"));
 const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorkspace"));
 const AcceptInvitation = lazy(() => import("./components/AcceptInvitation"));
@@ -373,6 +374,14 @@ export default function App() {
           {/* Admin-only Marketing Agent console. */}
           <Route path="/admin/marketing">
             <MarketingAgentTab />
+          </Route>
+
+          {/* Admin-only System Observability & Monitoring console. */}
+          <Route path="/admin/system-health">
+            <SystemHealthTab />
+          </Route>
+          <Route path="/admin/monitoring">
+            <SystemHealthTab />
           </Route>
 
           <Route path="/signup">

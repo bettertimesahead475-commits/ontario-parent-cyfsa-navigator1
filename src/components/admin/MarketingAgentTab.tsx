@@ -190,10 +190,16 @@ export default function MarketingAgentTab() {
           <h1 className="font-display font-black text-xl text-slate-900 tracking-tight">Marketing Agent</h1>
           <p className="text-xs text-slate-500">AI drafts → human approval → schedule → publish. Nothing posts without your approval.</p>
         </div>
-        <button
-          onClick={() => { sessionStorage.removeItem(ADMIN_SECRET_KEY); setUnlocked(false); }}
-          className="ml-auto text-xs text-slate-500 hover:text-slate-800 border border-slate-200 rounded-lg px-3 py-1.5"
-        >Lock</button>
+        <div className="ml-auto flex items-center gap-2">
+          <a
+            href="/admin/system-health"
+            className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 bg-indigo-50 rounded-lg px-3 py-1.5 font-medium transition"
+          >System Health</a>
+          <button
+            onClick={() => { sessionStorage.removeItem(ADMIN_SECRET_KEY); setUnlocked(false); }}
+            className="text-xs text-slate-500 hover:text-slate-800 border border-slate-200 rounded-lg px-3 py-1.5"
+          >Lock</button>
+        </div>
       </div>
 
       <div className="flex gap-1.5 flex-wrap mb-6 border-b border-slate-200 pb-3">
