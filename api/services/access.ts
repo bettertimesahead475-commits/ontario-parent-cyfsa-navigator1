@@ -143,12 +143,6 @@ export function resolveSupabaseCredentials(): { url: string | null; key: string 
       (/^sb_secret_/i.test(k) && !/URL|ANON_KEY|PUBLISHABLE/i.test(k))
   );
 
-  intKeys.sort((a, b) => {
-    const aMatch = targetRef && a.toLowerCase().includes(targetRef) ? 1 : 0;
-    const bMatch = targetRef && b.toLowerCase().includes(targetRef) ? 1 : 0;
-    return bMatch - aMatch;
-  });
-
   for (const k of intKeys) {
     if (!candidateKeys.includes(k)) {
       candidateKeys.push(k);
@@ -158,6 +152,33 @@ export function resolveSupabaseCredentials(): { url: string | null; key: string 
   if (process.env.SUPABASE_SERVICE_KEY !== undefined && !candidateKeys.includes("SUPABASE_SERVICE_KEY")) {
     candidateKeys.push("SUPABASE_SERVICE_KEY");
   }
+
+  // Stable sort candidate keys:
+  // Keys whose decoded JWT ref strictly matches targetRef get top priority (+20).
+  // Keys whose variable name includes targetRef get next priority (+10).
+  // Otherwise, maintain default precedence: SUPABASE_SERVICE_ROLE_KEY (3) > integration (2) > legacy (1).
+  candidateKeys.sort((a, b) => {
+    const valA = (process.env[a] || "").trim();
+    const valB = (process.env[b] || "").trim();
+    const claimsA = parseJwtPayload(valA);
+    const claimsB = parseJwtPayload(valB);
+
+    const getBaseScore = (name: string) => {
+      if (name === "SUPABASE_SERVICE_ROLE_KEY") return 3;
+      if (name === "SUPABASE_SERVICE_KEY") return 1;
+      return 2;
+    };
+
+    const aRefMatch = targetRef && claimsA?.ref && claimsA.ref.toLowerCase() === targetRef ? 20 : 0;
+    const bRefMatch = targetRef && claimsB?.ref && claimsB.ref.toLowerCase() === targetRef ? 20 : 0;
+
+    const aNameMatch = targetRef && a.toLowerCase().includes(targetRef) ? 10 : 0;
+    const bNameMatch = targetRef && b.toLowerCase().includes(targetRef) ? 10 : 0;
+
+    const scoreA = aRefMatch + aNameMatch + getBaseScore(a);
+    const scoreB = bRefMatch + bNameMatch + getBaseScore(b);
+    return scoreB - scoreA;
+  });
 
   for (const varName of candidateKeys) {
     const val = (process.env[varName] || "").trim();

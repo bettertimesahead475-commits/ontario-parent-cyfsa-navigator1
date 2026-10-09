@@ -34,6 +34,7 @@ import { registerParentProfessionalCollaborationRoutes } from "./parentProfessio
 import { registerProfessionalOutputRoutes } from "./professionalOutputRoutes.js";
 import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.js";
 import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
+import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import {
@@ -1426,6 +1427,38 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const mime = fileData.mimeType || "";
 
       const startTime = Date.now();
+      const isDocx =
+        mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        mime === 'application/docx' ||
+        mime === 'application/msword' ||
+        (typeof fileData.fileName === 'string' && fileData.fileName.toLowerCase().endsWith('.docx')) ||
+        (typeof fileData.name === 'string' && fileData.name.toLowerCase().endsWith('.docx'));
+
+      if (isDocx) {
+        const docxSource = decodeSource(base64Data, 'application/octet-stream');
+        const extractedText = extractTextFromDocx(docxSource.bytes);
+        if (!extractedText.trim()) {
+          return res.status(422).json({
+            error: "No readable text could be extracted from this DOCX file.",
+          });
+        }
+        const pages = [{
+          pageNumber: 1,
+          text: extractedText,
+          extractionMethod: "docx-xml-extraction",
+          confidence: null,
+          checksum: docxSource.checksum,
+        }];
+        const durationMs = Date.now() - startTime;
+        return res.json({
+          pages,
+          contentHash: docxSource.checksum,
+          extractedText,
+          characters: extractedText.length,
+          timing: { extractMs: durationMs }
+        });
+      }
+
       if (!(mime === 'application/pdf' || mime.startsWith('image/') || mime === 'text/plain')) {
         return res.status(400).json({ error: `Unsupported file type for extraction: ${mime}` });
       }
@@ -1758,7 +1791,23 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         }
 
         const mime = fileData.mimeType || "";
-        if (mime === "application/pdf" || mime.startsWith("image/")) {
+        const fileName = (fileData.name || fileData.fileName || "").toLowerCase();
+        const isDocx =
+          mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+          mime === "application/docx" ||
+          mime === "application/msword" ||
+          fileName.endsWith(".docx");
+
+        if (isDocx) {
+          try {
+            console.log(`[Dual Pass] Extracting text from DOCX: ${fileName || mime}`);
+            const buf = Buffer.from(base64Data, "base64");
+            extractedText = extractTextFromDocx(buf);
+            console.log(`[Dual Pass] DOCX extracted ${extractedText.length} characters successfully.`);
+          } catch (e) {
+            console.error("DOCX extraction failed, falling back to text", e);
+          }
+        } else if (mime === "application/pdf" || mime.startsWith("image/")) {
           try {
             console.log(`[Dual Pass] Using Gemini for text/OCR extraction on mime: ${mime}`);
             extractedText = await extractTextWithGeminiBase64(base64Data, mime);
