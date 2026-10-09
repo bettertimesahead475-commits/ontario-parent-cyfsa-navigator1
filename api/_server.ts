@@ -509,10 +509,13 @@ app.use((req, res, next) => {
     };
     try {
       const dbStart = Date.now();
-      const { error } = await getSupabase().from("payments").select("id", { count: "exact", head: true }).limit(1);
+      const { error: paymentsErr } = await getSupabase().from("payments").select("id", { count: "exact", head: true }).limit(1);
+      const { error: freeUsageErr } = await getSupabase().from("free_usage").select("id", { count: "exact", head: true }).limit(1);
+      const { error: sessionsErr } = await getSupabase().from("navigator_paid_sessions").select("id", { count: "exact", head: true }).limit(1);
+
       dbStatus = {
-        connected: !error,
-        error: error ? error.message : null,
+        connected: !paymentsErr && !freeUsageErr && !sessionsErr,
+        error: paymentsErr?.message || freeUsageErr?.message || sessionsErr?.message || null,
         latencyMs: Date.now() - dbStart
       };
     } catch (dbErr: any) {
