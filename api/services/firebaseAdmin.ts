@@ -67,6 +67,33 @@ export async function verifyFirebaseToken(authHeader: string | undefined): Promi
 export async function verifyFirebaseTokenViaGoogleTokenInfo(
   idToken: string
 ): Promise<{ uid: string; email: string | null; emailVerified: boolean } | null> {
+  // First attempt: verify Firebase Auth ID token via Google Identity Toolkit REST API
+  const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyAZEnJOLnAp6SrLI5LEXGQKSeQ4Utp6NKM";
+  try {
+    const toolkitRes = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      }
+    );
+    if (toolkitRes.ok) {
+      const toolkitData: any = await toolkitRes.json();
+      const user = toolkitData.users?.[0];
+      if (user && user.localId) {
+        return {
+          uid: user.localId,
+          email: typeof user.email === "string" && user.email ? user.email : null,
+          emailVerified: user.emailVerified === true,
+        };
+      }
+    }
+  } catch (err) {
+    // Identity toolkit error, fallback to tokeninfo
+  }
+
+  // Second attempt: verify Google OAuth ID token via Google tokeninfo endpoint
   try {
     const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
     const res = await fetch(url);
@@ -92,7 +119,7 @@ export async function verifyFirebaseTokenViaGoogleTokenInfo(
       emailVerified: data.email_verified === "true" || data.email_verified === true,
     };
   } catch (err) {
-    console.error("[Firebase Token Fallback] tokeninfo verification error:", err);
+    console.error("[Firebase Token Fallback] token verification error:", err);
     return null;
   }
 }
