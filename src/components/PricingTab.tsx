@@ -27,6 +27,7 @@ import {
 import { getUserKey } from "../utils/storage";
 import { useLocation } from "wouter";
 import { auth, signInMinimal } from "../utils/firebase";
+import { apiFetch } from "../utils/api";
 
 interface PricingTabProps {
   currentTier: AccessTier;
@@ -160,12 +161,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
     setStage("verifying");
     setErrorMessage("");
     try {
-      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
-      const res = await fetch("/api/request-access", {
+      const res = await apiFetch("/api/request-access", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ email, tier: selectedTier }),
       });
@@ -193,7 +192,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
     onBusy(true);
     onError("");
     try {
-      const res = await fetch("/api/activate-code", {
+      const res = await apiFetch("/api/activate-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailToUse, code: codeToRedeem.trim() }),

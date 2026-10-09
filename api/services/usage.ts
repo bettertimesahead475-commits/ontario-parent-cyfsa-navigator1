@@ -95,15 +95,21 @@ export function getPaidUsageKey(sessionId: string, tier: string, type: UsageAnal
   return `paid_session_${sessionId}_forensic`;
 }
 
-export async function getUsageCount(key: string): Promise<number> {
+export async function getUsageCount(key: string, alternateEmail?: string | null): Promise<number> {
   try {
     return await withTransientRetry(async () => {
       const db = getSupabase();
-      const { data, error } = await db
-        .from("free_usage")
-        .select("analyses_used")
-        .eq("uid", key)
+      let query = db.from("free_usage").select("analyses_used");
+      if (alternateEmail && alternateEmail.trim()) {
+        const normEmail = alternateEmail.trim().toLowerCase();
+        query = query.or(`uid.eq.${key},email.eq.${normEmail}`);
+      } else {
+        query = query.eq("uid", key);
+      }
+      const { data, error } = await query
         .retry(false)
+        .order("analyses_used", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (error) {
         throw Object.assign(new Error(`Failed to read usage: ${error.message}`), { statusCode: 500, supabaseError: error });
@@ -255,8 +261,8 @@ export async function getPaidUsageStatus(sessionId: string, tier: string): Promi
 // Free tier functions (preserved for backward compatibility)
 // ---------------------------------------------------------------------------
 
-export async function getFreeUsage(uid: string): Promise<number> {
-  return await getUsageCount(uid);
+export async function getFreeUsage(uid: string, email?: string | null): Promise<number> {
+  return await getUsageCount(uid, email);
 }
 
 /**

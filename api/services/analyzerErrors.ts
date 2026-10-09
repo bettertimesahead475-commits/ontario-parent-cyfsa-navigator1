@@ -118,6 +118,23 @@ export function formatAnalyzerErrorResponse(error: any): {
   const errMsg = (error?.message || String(error)).toLowerCase();
   const status = error?.statusCode || error?.status || 500;
 
+  const isDatabaseError =
+    Boolean(error?.supabaseError) ||
+    errMsg.includes("supabase") ||
+    errMsg.includes("postgrest") ||
+    errMsg.includes("pgrst") ||
+    errMsg.includes("relation") ||
+    errMsg.includes("database");
+
+  if (isDatabaseError) {
+    return {
+      code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
+      error: "We couldn't verify your analysis access right now. Your document is safe. Please retry in a moment.",
+      statusCode: 503,
+      retryable: true,
+    };
+  }
+
   if (status === 401 || status === 403 || errMsg.includes("sign in") || errMsg.includes("unauthorized")) {
     return {
       code: "ACCESS_DENIED",

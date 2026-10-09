@@ -16,6 +16,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { PDFDocument } from 'pdf-lib';
+import { resetCreditAccountingCachesForTesting } from "./services/creditAccounting.js";
+import { resetUsageCachesForTesting } from "./services/usage.js";
 
 const { mockCreateMessage, mockGenerateContent, mockSendMail } = vi.hoisted(() => ({
   mockCreateMessage: vi.fn(),
@@ -25,6 +27,17 @@ const { mockCreateMessage, mockGenerateContent, mockSendMail } = vi.hoisted(() =
 
 const mockAccess = vi.hoisted(() => ({
   resolveSupabaseCredentials: vi.fn(() => ({ url: "https://test.supabase.co", key: "test-key", source: "test" })),
+  getConfiguredProjectRef: vi.fn(() => "test-project-ref"),
+  extractProjectRef: vi.fn((url: string | null) => "test-project-ref"),
+  isSessionBoundToIdentity: vi.fn((session: any, identity: any) => {
+    if (!session || !identity) return false;
+    if (session.firebaseUid === identity.uid) return true;
+    if (Array.isArray(identity.allUids) && identity.allUids.includes(session.firebaseUid)) return true;
+    if (identity.email && session.firebaseUid?.toLowerCase() === identity.email.toLowerCase()) return true;
+    if (session.email && identity.email && session.email.toLowerCase() === identity.email.toLowerCase()) return true;
+    return false;
+  }),
+  healSessionUidBinding: vi.fn(async () => {}),
   getSupabase: vi.fn(() => ({
     from: vi.fn(() => ({
       select: vi.fn(() => ({
@@ -218,6 +231,8 @@ const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FI
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetCreditAccountingCachesForTesting();
+  resetUsageCachesForTesting();
   mockAccess.verifySessionToken.mockImplementation((token: string) => (token === PAID_SESSION_TOKEN ? { jti: PAID_JTI } : null));
   mockAccess.getActivePaidSession.mockImplementation(async (jti: string) =>
     jti === PAID_JTI ? { id: PAID_JTI, firebaseUid: PAID_FIREBASE_UID, tier: "Pro" } : null

@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, isSessionBoundToIdentity, healSessionUidBinding, getConfiguredProjectRef, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
@@ -388,6 +388,33 @@ function handleAIError(error: any, contextDescription: string, res: Response) {
     // It was dropped when the error taxonomy was introduced, leaving that backoff path dead.
     ...(formatted.code === "AI_RATE_LIMITED" ? { isRateLimit: true } : {}),
   });
+}
+
+export interface AnalyzerTraceStage {
+  requestId: string;
+  stage: number;
+  stageName: string;
+  httpStatus?: number;
+  errorCode?: string | null;
+  dbProjectRef?: string | null;
+  uidMatched?: boolean | null;
+  details?: Record<string, string | number | boolean | null>;
+}
+
+export function logAnalyzerTraceStage(trace: AnalyzerTraceStage): void {
+  // STRICT SANITIZATION: Never log tokens, keys, passwords, or document content
+  const sanitized = {
+    tag: "[ANALYZER_DIAGNOSTIC_TRACE]",
+    requestId: trace.requestId,
+    stage: trace.stage,
+    stageName: trace.stageName,
+    httpStatus: trace.httpStatus ?? null,
+    errorCode: trace.errorCode ?? null,
+    dbProjectRef: trace.dbProjectRef ?? null,
+    uidMatched: trace.uidMatched ?? null,
+    ...(trace.details ? { meta: trace.details } : {}),
+  };
+  console.log(JSON.stringify(sanitized));
 }
 
 const app = express();
@@ -1187,13 +1214,72 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
   // API 1c-2: Current user/session usage and credit balance
   app.get("/api/analyzer-usage", async (req: Request, res: Response) => {
+    const traceId = (req.header("x-request-id") as string) || `usage_${Date.now()}`;
+    const dbProjectRef = getConfiguredProjectRef();
     try {
       const identity = await verifyFirebaseToken(req.header("authorization"));
+      logAnalyzerTraceStage({
+        requestId: traceId,
+        stage: 1,
+        stageName: "firebase_token_verification",
+        httpStatus: identity ? 200 : 401,
+        errorCode: identity ? null : "NO_FIREBASE_IDENTITY",
+        dbProjectRef,
+        details: { hasIdentity: Boolean(identity), hasEmail: Boolean(identity?.email) },
+      });
+
       const sessionToken = req.header("x-ps-session");
       const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
+      logAnalyzerTraceStage({
+        requestId: traceId,
+        stage: 2,
+        stageName: "analyzer_auth_middleware",
+        httpStatus: 200,
+        errorCode: null,
+        dbProjectRef,
+        details: { hasSessionToken: Boolean(sessionToken), isSessionTokenValid: Boolean(parsedSession) },
+      });
+
       if (parsedSession && identity) {
-        const session = await lookupPaidSession(parsedSession.jti);
-        if (session && session.firebaseUid === identity.uid) {
+        let session;
+        try {
+          session = await lookupPaidSession(parsedSession.jti);
+          logAnalyzerTraceStage({
+            requestId: traceId,
+            stage: 4,
+            stageName: "navigator_paid_sessions_lookup",
+            httpStatus: session ? 200 : 404,
+            errorCode: session ? null : "SESSION_NOT_FOUND_OR_EXPIRED",
+            dbProjectRef,
+            details: { sessionFound: Boolean(session), sessionTier: session?.tier || null },
+          });
+        } catch (lookupErr: any) {
+          logAnalyzerTraceStage({
+            requestId: traceId,
+            stage: 4,
+            stageName: "navigator_paid_sessions_lookup",
+            httpStatus: 503,
+            errorCode: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
+            dbProjectRef,
+          });
+          throw lookupErr;
+        }
+
+        const uidMatched = isSessionBoundToIdentity(session, identity);
+        logAnalyzerTraceStage({
+          requestId: traceId,
+          stage: 5,
+          stageName: "paid_session_uid_matching",
+          httpStatus: uidMatched ? 200 : 403,
+          errorCode: uidMatched ? null : "UID_MISMATCH",
+          dbProjectRef,
+          uidMatched,
+        });
+
+        if (session && uidMatched) {
+          if (session.firebaseUid !== identity.uid) {
+            healSessionUidBinding(session.id, identity.uid).catch(() => {});
+          }
           const status = await getPaidUsageStatus(session.id, session.tier);
           let extraBalance: any = {};
           try {
@@ -1205,6 +1291,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
               isSuspended: balance.isSuspended,
             };
           } catch {}
+          logAnalyzerTraceStage({
+            requestId: traceId,
+            stage: 7,
+            stageName: "final_access_decision",
+            httpStatus: 200,
+            errorCode: null,
+            dbProjectRef,
+            uidMatched: true,
+          });
           return res.json({
             type: "paid",
             ...status,
@@ -1214,7 +1309,23 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       }
 
       if (identity) {
-        const used = await getFreeUsage(identity.uid);
+        logAnalyzerTraceStage({
+          requestId: traceId,
+          stage: 3,
+          stageName: "supabase_free_usage_lookup",
+          httpStatus: 200,
+          dbProjectRef,
+        });
+        const used = await getFreeUsage(identity.uid, identity.email);
+        logAnalyzerTraceStage({
+          requestId: traceId,
+          stage: 7,
+          stageName: "final_access_decision",
+          httpStatus: 200,
+          errorCode: null,
+          dbProjectRef,
+          uidMatched: null,
+        });
         return res.json({
           type: "free",
           tier: "Free",
@@ -1229,6 +1340,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         });
       }
 
+      logAnalyzerTraceStage({
+        requestId: traceId,
+        stage: 7,
+        stageName: "final_access_decision",
+        httpStatus: 200,
+        errorCode: null,
+        dbProjectRef,
+        uidMatched: null,
+      });
       return res.json({
         type: "free",
         tier: "Anonymous",
@@ -1242,6 +1362,14 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         forensicAnalysesRemaining: 0,
       });
     } catch (err: any) {
+      logAnalyzerTraceStage({
+        requestId: traceId,
+        stage: 7,
+        stageName: "final_access_decision",
+        httpStatus: 500,
+        errorCode: "FAILED_TO_READ_USAGE",
+        dbProjectRef,
+      });
       console.error("[/api/analyzer-usage] error:", err);
       res.status(500).json({ error: "Failed to read analyzer usage." });
     }
@@ -1581,9 +1709,13 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       sendAccessCheckUnavailable(res);
       return null;
     }
-    if (!session || session.firebaseUid !== identity.uid) {
+    const uidMatched = isSessionBoundToIdentity(session, identity);
+    if (!session || !uidMatched) {
       res.status(402).json({ error: SESSION_REQUIRED_MESSAGE, code: "SESSION_REQUIRED" });
       return null;
+    }
+    if (session.firebaseUid !== identity.uid) {
+      healSessionUidBinding(session.id, identity.uid).catch(() => {});
     }
 
     return { uid: identity.uid, email: identity.email, tier: session.tier, sessionId: session.id };
@@ -1625,7 +1757,12 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           sendAccessCheckUnavailable(res);
           return false;
         }
-        if (session && session.firebaseUid === identity.uid) return true; // paid users never touch the free-use table
+        if (session && isSessionBoundToIdentity(session, identity)) {
+          if (session.firebaseUid !== identity.uid) {
+            healSessionUidBinding(session.id, identity.uid).catch(() => {});
+          }
+          return true; // paid users never touch the free-use table
+        }
       }
     }
 
@@ -1660,6 +1797,16 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let creditReservation: ReservationResult | null = null;
     let paidSessionId: string | null = null;
     let analysisRequestId = "";
+    const dbProjectRef = getConfiguredProjectRef();
+    const idempotencyKey =
+      (req.header("x-analysis-id") as string) ||
+      (req.header("x-request-id") as string) ||
+      req.body?.analysisId ||
+      req.body?.requestId ||
+      null;
+    analysisRequestId =
+      idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
     try {
       const { textContent, fileData, model, mode } = req.body;
       fileDataObj = fileData;
@@ -1672,47 +1819,93 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
       // --- Paywall: a valid, DB-active, Firebase-bound Pro/Premium session means unlimited
       // use. Otherwise the caller must be a verified signed-in parent, checked against their
-      // free-use count. This is the actual enforcement of the "1 free analysis" tier —
-      // previously nothing here checked anything.
-      //
-      // SECURITY FIX (M-2 / Finding 3): a session token alone used to be sufficient (its own
-      // { email, tier, exp } claim was trusted outright). Paid access now additionally
-      // requires a verified Firebase identity for this same request, a still-active (not
-      // revoked, not DB-expired) navigator_paid_sessions row for the token's jti, and that
-      // row's firebase_uid matching the verified caller - see requireSession()'s comment above
-      // for the full rationale, identical here.
+      // free-use count.
       let uid: string | null = null;
       const identity = await verifyFirebaseToken(req.header("authorization"));
       let userEmail: string | null = identity?.email || null;
+
+      logAnalyzerTraceStage({
+        requestId: analysisRequestId,
+        stage: 1,
+        stageName: "firebase_token_verification",
+        httpStatus: identity ? 200 : 401,
+        errorCode: identity ? null : "SIGN_IN_REQUIRED",
+        dbProjectRef,
+        details: { hasIdentity: Boolean(identity), hasEmail: Boolean(identity?.email) },
+      });
+
       const sessionToken = req.header("x-ps-session");
       const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
+
+      logAnalyzerTraceStage({
+        requestId: analysisRequestId,
+        stage: 2,
+        stageName: "analyzer_auth_middleware",
+        httpStatus: 200,
+        errorCode: null,
+        dbProjectRef,
+        details: { hasSessionToken: Boolean(sessionToken), isSessionTokenValid: Boolean(parsedSession) },
+      });
+
       let isPaid = false;
       let paidTier: Tier | null = null;
       if (parsedSession && identity) {
+        logAnalyzerTraceStage({
+          requestId: analysisRequestId,
+          stage: 4,
+          stageName: "navigator_paid_sessions_lookup",
+          httpStatus: 200,
+          dbProjectRef,
+        });
         const session = await lookupPaidSession(parsedSession.jti);
-        if (session && session.firebaseUid === identity.uid) {
+        const uidMatched = isSessionBoundToIdentity(session, identity);
+        logAnalyzerTraceStage({
+          requestId: analysisRequestId,
+          stage: 5,
+          stageName: "paid_session_uid_matching",
+          httpStatus: uidMatched ? 200 : 403,
+          errorCode: uidMatched ? null : "UID_MISMATCH",
+          dbProjectRef,
+          uidMatched,
+        });
+
+        if (session && uidMatched) {
           isPaid = true;
           paidTier = session.tier as Tier;
           paidSessionId = session.id;
           if (session.email) userEmail = session.email;
+          if (session.firebaseUid !== identity.uid) {
+            healSessionUidBinding(session.id, identity.uid).catch(() => {});
+          }
         }
       }
 
-      const idempotencyKey =
-        (req.header("x-analysis-id") as string) ||
-        (req.header("x-request-id") as string) ||
-        req.body?.analysisId ||
-        req.body?.requestId ||
-        null;
-
       if (mode === "full") {
         if (!isPaid) {
+          logAnalyzerTraceStage({
+            requestId: analysisRequestId,
+            stage: 7,
+            stageName: "final_access_decision",
+            httpStatus: 403,
+            errorCode: "FORENSIC_UPGRADE_REQUIRED",
+            dbProjectRef,
+            uidMatched: false,
+          });
           return res.status(403).json({
             error: "Forensic In-Depth Dual-Pass scanning requires Document Analyzer Premium ($49.99) or CYFSA Case Access ($149/mo). Your free analysis includes Quick Document Review.",
             code: "FORENSIC_UPGRADE_REQUIRED",
           });
         }
         if (paidTier && !hasForensicInDepthAccess(paidTier)) {
+          logAnalyzerTraceStage({
+            requestId: analysisRequestId,
+            stage: 7,
+            stageName: "final_access_decision",
+            httpStatus: 403,
+            errorCode: "FORENSIC_UPGRADE_REQUIRED",
+            dbProjectRef,
+            uidMatched: true,
+          });
           return res.status(403).json({
             error: "Forensic In-Depth Dual-Pass scanning requires Document Analyzer Premium ($49.99) or CYFSA Case Access ($149/mo). Your current plan includes Quick Document Review.",
             code: "FORENSIC_UPGRADE_REQUIRED",
@@ -1721,7 +1914,26 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         }
         if (paidSessionId && paidTier) {
           const check = await checkPaidUsage(paidSessionId, paidTier, "forensic", idempotencyKey);
+          logAnalyzerTraceStage({
+            requestId: analysisRequestId,
+            stage: 6,
+            stageName: "credit_availability_check",
+            httpStatus: check.allowed ? 200 : 402,
+            errorCode: check.allowed ? null : check.code,
+            dbProjectRef,
+            uidMatched: true,
+            details: { allowed: check.allowed, used: check.used, limit: check.limit },
+          });
           if (!check.allowed) {
+            logAnalyzerTraceStage({
+              requestId: analysisRequestId,
+              stage: 7,
+              stageName: "final_access_decision",
+              httpStatus: 402,
+              errorCode: check.code,
+              dbProjectRef,
+              uidMatched: true,
+            });
             return res.status(402).json({
               error: check.error,
               code: check.code,
@@ -1736,7 +1948,26 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         // Quick Document Review
         if (isPaid && paidSessionId && paidTier) {
           const check = await checkPaidUsage(paidSessionId, paidTier, "quick", idempotencyKey);
+          logAnalyzerTraceStage({
+            requestId: analysisRequestId,
+            stage: 6,
+            stageName: "credit_availability_check",
+            httpStatus: check.allowed ? 200 : 402,
+            errorCode: check.allowed ? null : check.code,
+            dbProjectRef,
+            uidMatched: true,
+            details: { allowed: check.allowed, used: check.used, limit: check.limit },
+          });
           if (!check.allowed) {
+            logAnalyzerTraceStage({
+              requestId: analysisRequestId,
+              stage: 7,
+              stageName: "final_access_decision",
+              httpStatus: 402,
+              errorCode: check.code,
+              dbProjectRef,
+              uidMatched: true,
+            });
             return res.status(402).json({
               error: check.error,
               code: check.code,
@@ -1750,9 +1981,6 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       }
 
       // Server-authoritative atomic credit reservation before AI begins
-      analysisRequestId =
-        idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
       if (isPaid && paidSessionId && paidTier && identity) {
         creditReservation = await reserveAnalysisCredit({
           sessionId: paidSessionId,
@@ -1766,6 +1994,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
       if (!isPaid) {
         if (!identity) {
+          logAnalyzerTraceStage({
+            requestId: analysisRequestId,
+            stage: 7,
+            stageName: "final_access_decision",
+            httpStatus: 401,
+            errorCode: "SIGN_IN_REQUIRED",
+            dbProjectRef,
+            uidMatched: false,
+          });
           return res.status(401).json({
             error: "Please sign in to use the Document Analyzer.",
             code: "SIGN_IN_REQUIRED"
@@ -1773,8 +2010,33 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         }
         uid = identity.uid;
         userEmail = identity.email;
-        const used = await getFreeUsage(uid);
+        logAnalyzerTraceStage({
+          requestId: analysisRequestId,
+          stage: 3,
+          stageName: "supabase_free_usage_lookup",
+          httpStatus: 200,
+          dbProjectRef,
+        });
+        const used = await getFreeUsage(uid, userEmail);
         if (used >= FREE_ANALYSES_LIMIT) {
+          logAnalyzerTraceStage({
+            requestId: analysisRequestId,
+            stage: 6,
+            stageName: "credit_availability_check",
+            httpStatus: 402,
+            errorCode: "FREE_LIMIT_REACHED",
+            dbProjectRef,
+            details: { used, limit: FREE_ANALYSES_LIMIT },
+          });
+          logAnalyzerTraceStage({
+            requestId: analysisRequestId,
+            stage: 7,
+            stageName: "final_access_decision",
+            httpStatus: 402,
+            errorCode: "FREE_LIMIT_REACHED",
+            dbProjectRef,
+            uidMatched: false,
+          });
           return res.status(402).json({
             error: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access to continue.",
             code: "FREE_LIMIT_REACHED",
@@ -1783,6 +2045,17 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           });
         }
       }
+
+      logAnalyzerTraceStage({
+        requestId: analysisRequestId,
+        stage: 7,
+        stageName: "final_access_decision",
+        httpStatus: 200,
+        errorCode: null,
+        dbProjectRef,
+        uidMatched: isPaid ? true : null,
+        details: { mode, isPaid, tier: paidTier || "Free" },
+      });
 
       targetText = textContent || "";
       let extractedText = "";

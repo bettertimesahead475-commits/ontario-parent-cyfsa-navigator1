@@ -33,6 +33,17 @@ const mockAccess = vi.hoisted(() => ({
     key: process.env.SUPABASE_SERVICE_ROLE_KEY || "test-service-role-key",
     source: "SUPABASE_SERVICE_ROLE_KEY",
   })),
+  getConfiguredProjectRef: vi.fn(() => "test-project-ref"),
+  extractProjectRef: vi.fn((url: string | null) => "test-project-ref"),
+  isSessionBoundToIdentity: vi.fn((session: any, identity: any) => {
+    if (!session || !identity) return false;
+    if (session.firebaseUid === identity.uid) return true;
+    if (Array.isArray(identity.allUids) && identity.allUids.includes(session.firebaseUid)) return true;
+    if (identity.email && session.firebaseUid?.toLowerCase() === identity.email.toLowerCase()) return true;
+    if (session.email && identity.email && session.email.toLowerCase() === identity.email.toLowerCase()) return true;
+    return false;
+  }),
+  healSessionUidBinding: vi.fn(async () => {}),
   TIER_PRICES: {
     Basic: 19.99,
     AnalyzerBasic: 19.99,
@@ -403,3 +414,145 @@ describe("GET /api/admin/supabase-health", () => {
     }
   });
 });
+
+describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
+  it("recognizes paid access when session row was bound to user's Google numeric sub and caller presents Firebase alphanumeric UID with matching email", async () => {
+    const googleSub = "100892974326001234567";
+    const firebaseLocalId = "Wq9jKl209abCdEfGhIj";
+    const verifiedEmail = "parent.case@example.com";
+
+    mockAccess.verifySessionToken.mockReturnValueOnce({ jti: "session-google-sub" });
+    mockAccess.getActivePaidSession.mockResolvedValueOnce({
+      id: "session-google-sub",
+      firebaseUid: googleSub,
+      tier: "Premium",
+      email: verifiedEmail,
+    });
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+      uid: firebaseLocalId,
+      email: verifiedEmail,
+    });
+    mockCreateMessage.mockResolvedValueOnce(claudeText(JSON.stringify(CORE)));
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({
+        Authorization: "Bearer token-with-firebase-localid",
+        "x-ps-session": "token-for-google-sub",
+      })
+      .send({ textContent: "Valid test document text", mode: "fast" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.documentTitle).toBe("Affidavit of a worker");
+  });
+
+  it("recognizes paid access in /api/analyzer-usage when session is bound by verified email", async () => {
+    const verifiedEmail = "member@example.com";
+    mockAccess.verifySessionToken.mockReturnValueOnce({ jti: "session-email-bound" });
+    mockAccess.getActivePaidSession.mockResolvedValueOnce({
+      id: "session-email-bound",
+      firebaseUid: "old-device-uid-999",
+      tier: "Premium",
+      email: verifiedEmail,
+    });
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+      uid: "new-device-uid-111",
+      email: verifiedEmail,
+    });
+
+    const res = await request(app)
+      .get("/api/analyzer-usage")
+      .set({
+        Authorization: "Bearer new-device-token",
+        "x-ps-session": "session-token",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe("paid");
+  });
+
+  it("fails closed when identity email does NOT match the paid session", async () => {
+    mockAccess.verifySessionToken.mockReturnValueOnce({ jti: "session-stolen" });
+    mockAccess.getActivePaidSession.mockResolvedValueOnce({
+      id: "session-stolen",
+      firebaseUid: "legitimate-owner-uid",
+      tier: "Premium",
+      email: "owner@example.com",
+    });
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+      uid: "attacker-uid",
+      email: "attacker@example.com",
+    });
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({
+        Authorization: "Bearer attacker-token",
+        "x-ps-session": "stolen-session-token",
+      })
+      .send({ textContent: "Valid test document text", mode: "full" });
+
+    // Mode full requires paid tier, since session does not match attacker, they are treated as unpaid -> 403
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
+  });
+
+  it("fails closed with 401 when unauthenticated user attempts to analyze", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .send({ textContent: "Valid test document text", mode: "fast" });
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+  });
+
+  it("does NOT tell a signed-in user to sign in when a database error occurs", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+      uid: "signed-in-user",
+      email: "user@example.com",
+    });
+    mockUsage.getFreeUsage.mockRejectedValueOnce(
+      Object.assign(new Error("Supabase PostgREST 401 Unauthorized"), {
+        statusCode: 401,
+        supabaseError: { message: "JWT expired or unauthorized" },
+      })
+    );
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer signed-in-token")
+      .send({ textContent: "Valid test document text", mode: "fast" });
+
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("USAGE_SERVICE_TEMPORARILY_UNAVAILABLE");
+    expect(res.body.error).not.toContain("sign in");
+  });
+
+  it("emits sanitized diagnostic logs without exposing tokens or document text", async () => {
+    const consoleSpy = vi.spyOn(console, "log");
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+      uid: "trace-uid-123",
+      email: "trace@example.com",
+    });
+    mockCreateMessage.mockResolvedValueOnce(claudeText(JSON.stringify(CORE)));
+
+    await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer sensitive-secret-jwt-token")
+      .send({ textContent: "Highly confidential court affidavit content", mode: "fast" });
+
+    const traceCalls = consoleSpy.mock.calls
+      .map((call) => call[0])
+      .filter((str) => typeof str === "string" && str.includes("[ANALYZER_DIAGNOSTIC_TRACE]"));
+
+    expect(traceCalls.length).toBeGreaterThan(0);
+    for (const logLine of traceCalls) {
+      expect(logLine).not.toContain("sensitive-secret-jwt-token");
+      expect(logLine).not.toContain("Highly confidential court affidavit content");
+    }
+    consoleSpy.mockRestore();
+  });
+});
+

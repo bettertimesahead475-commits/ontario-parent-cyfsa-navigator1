@@ -90,7 +90,7 @@ function parseJwtPayload(token: string): { role?: string; ref?: string } | null 
   return null;
 }
 
-function extractProjectRef(urlStr: string | null): string | null {
+export function extractProjectRef(urlStr: string | null): string | null {
   if (!urlStr) return null;
   try {
     const host = new URL(urlStr.trim()).hostname;
@@ -99,6 +99,11 @@ function extractProjectRef(urlStr: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+export function getConfiguredProjectRef(): string | null {
+  const creds = resolveSupabaseCredentials();
+  return extractProjectRef(creds.url);
 }
 
 export function resolveSupabaseCredentials(): { url: string | null; key: string | null; source: string | null } {
@@ -300,6 +305,74 @@ export interface PaidSession {
   firebaseUid: string;
   tier: Tier;
   email?: string | null;
+}
+
+export interface VerifiedIdentity {
+  uid: string;
+  email: string | null;
+  emailVerified?: boolean;
+  allUids?: string[];
+}
+
+/**
+ * Robust, secure multi-representation session-to-identity binding check.
+ * Validates whether an active paid session belongs to the verified Firebase identity:
+ * 1. Direct UID equality (e.g. Firebase localId match)
+ * 2. Multi-representation UID match (e.g. Google numeric sub vs Firebase localId)
+ * 3. Email-to-UID match (e.g. session was bound to user's email)
+ * 4. Verified email match (both session.email and verified identity.email match case-insensitively)
+ *
+ * FAILS CLOSED: Returns false if either session or identity is missing, or if none of the above match.
+ */
+export function isSessionBoundToIdentity(
+  session: PaidSession | null | undefined,
+  identity: VerifiedIdentity | null | undefined
+): boolean {
+  if (!session || !identity) return false;
+
+  // 1. Direct UID equality (fast path)
+  if (session.firebaseUid === identity.uid) return true;
+
+  // 2. Alternative UID representations for the same user (e.g. Google numeric sub vs Firebase localId)
+  if (Array.isArray(identity.allUids) && identity.allUids.includes(session.firebaseUid)) {
+    return true;
+  }
+
+  // 3. If session.firebaseUid was stored as an email matching verified identity.email
+  if (
+    identity.email &&
+    session.firebaseUid.toLowerCase() === identity.email.toLowerCase()
+  ) {
+    return true;
+  }
+
+  // 4. Verified email match: if both session.email and identity.email exist and match (case-insensitive)
+  if (
+    session.email &&
+    identity.email &&
+    session.email.trim().toLowerCase() === identity.email.trim().toLowerCase()
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Self-healing UID binding for legacy or alternate-UID rows in navigator_paid_sessions.
+ * Non-blocking, non-fatal.
+ */
+export async function healSessionUidBinding(sessionId: string, primaryUid: string): Promise<void> {
+  try {
+    const db = getSupabase();
+    await db
+      .from("navigator_paid_sessions")
+      .update({ firebase_uid: primaryUid })
+      .eq("id", sessionId)
+      .is("revoked_at", null);
+  } catch {
+    // Non-fatal healing attempt
+  }
 }
 
 function mapPaidSessionRow(row: any): PaidSession {

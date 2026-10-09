@@ -250,34 +250,30 @@ async function getFallbackBalance(
   allowance: PackageAllowance
 ): Promise<CreditBalance> {
   const db = safeGetDb();
-  if (!db || typeof db.from !== "function") {
-    let consumed = 0;
-    for (const cached of requestCache.values()) {
-      if (cached.sessionId === sessionId && (cached.status === "reserved" || cached.status === "finalized")) {
-        consumed++;
-      }
+  let consumed = 0;
+  for (const cached of requestCache.values()) {
+    if (cached.sessionId === sessionId && (cached.status === "reserved" || cached.status === "finalized")) {
+      consumed++;
     }
-    const granted = allowance.totalLimit;
-    const remaining = Math.max(0, granted - consumed);
-    return {
-      sessionId,
-      tier: allowance.tier,
-      creditsGranted: granted,
-      creditsConsumed: consumed,
-      creditsRemaining: remaining,
-      isSuspended: false,
-      allowsForensic: allowance.allowsForensic,
-      isMonthly: allowance.isMonthly,
-    };
   }
-  const fallbackUsageKey = `paid_session_${sessionId}_total`;
-  const { data: usageRow } = await db
-    .from("free_usage")
-    .select("analyses_used")
-    .eq("uid", fallbackUsageKey)
-    .maybeSingle();
 
-  const consumed = usageRow?.analyses_used ?? 0;
+  if (db && typeof db.from === "function") {
+    try {
+      const fallbackUsageKey = `paid_session_${sessionId}_total`;
+      const { data: usageRow } = await db
+        .from("free_usage")
+        .select("analyses_used")
+        .eq("uid", fallbackUsageKey)
+        .maybeSingle();
+
+      if (usageRow?.analyses_used !== undefined && usageRow.analyses_used > consumed) {
+        consumed = usageRow.analyses_used;
+      }
+    } catch {
+      // Fallback safe: ignore db error in fallback calculation
+    }
+  }
+
   const granted = allowance.totalLimit;
   const remaining = Math.max(0, granted - consumed);
 
