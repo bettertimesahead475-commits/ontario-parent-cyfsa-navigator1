@@ -2161,14 +2161,14 @@ export default function TemplatesTab() {
           </div>
         )}
 
-        {/* 6. FORM 33B ANSWER (CHILD PROTECTION) */}
+        {/* 6. FORM 33B.1 ANSWER & PLAN OF CARE PREPARATION (CHILD PROTECTION) */}
         {activeBuilderTab === "answer-33b" && (
           <div className="space-y-6 animate-fade-in" id="answer-33b-workspace">
             <div className="border-b border-gray-100 pb-4">
-              <span className="text-[10px] font-mono font-black tracking-widest text-brand-600 block uppercase">FORM 33B • ONTARIO COURT RULES</span>
-              <h3 className="font-display text-xl font-bold text-slate-950 mt-1">Answer (Child Protection)</h3>
+              <span className="text-[10px] font-mono font-black tracking-widest text-brand-600 block uppercase">EDUCATIONAL PREPARATION • MAPS TO OFFICIAL FORM 33B.1</span>
+              <h3 className="font-display text-xl font-bold text-slate-950 mt-1">Respondent Answer & Care Plan Preparation (Form 33B.1)</h3>
               <p className="text-xs text-slate-600 mt-1 font-sans">
-                Respond paragraph-by-paragraph to the Children's Aid Society's protection assertions, record agreed facts, and state your legal claim/counter-proposals.
+                Educational worksheet for respondent parents to prepare responses to Children's Aid Society protection claims, record agreed facts, and organize counter-proposals for filing on official Ontario Form 33B.1 (Answer and plan of care). Note: Form 33B is exclusively for CAS care plans; parents must file Form 33B.1.
               </p>
             </div>
 

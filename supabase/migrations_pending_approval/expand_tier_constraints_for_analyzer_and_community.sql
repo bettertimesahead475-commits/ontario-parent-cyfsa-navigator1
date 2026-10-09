@@ -1,6 +1,7 @@
 -- ============================================================================
 -- Migration: expand_tier_constraints_for_analyzer_and_community.sql
--- Status: PENDING OWNER APPROVAL
+-- Status: PENDING OWNER APPROVAL (DO NOT EXECUTE AUTOMATICALLY)
+-- Target Database: Supabase Production (qboidsfpjuxeqtfotryj / cyfsa-parent-platform)
 -- Purpose: Expand the tier CHECK constraints on public.access_codes and
 --          public.navigator_paid_sessions to support the full authoritative
 --          product hierarchy:
@@ -8,7 +9,12 @@
 --          2. Document Analyzer Premium ($49.99 CAD) -> 'Premium' / 'AnalyzerPremium'
 --          3. Individual / Family CYFSA Case Access ($149 CAD/mo) -> 'Pro'
 --          4. Community Sponsorship Plans -> 'Community5', 'Community10', 'Community25'
+--          5. Historical donor tiers -> 'pro_advocate', 'premium_attorney'
+-- Transaction Safety: Wrapped in BEGIN / COMMIT. Idempotent DROP CONSTRAINT IF EXISTS.
+-- Rollback Plan: Can re-apply previous constraint if required; does not drop or rewrite data.
 -- ============================================================================
+
+begin;
 
 -- Expand access_codes tier constraint
 alter table public.access_codes drop constraint if exists access_codes_tier_check;
@@ -37,5 +43,9 @@ alter table public.navigator_paid_sessions add constraint navigator_paid_session
     'AnalyzerPremium',
     'Community5',
     'Community10',
-    'Community25'
+    'Community25',
+    'pro_advocate',
+    'premium_attorney'
   ));
+
+commit;

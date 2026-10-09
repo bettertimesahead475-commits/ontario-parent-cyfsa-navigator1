@@ -530,7 +530,7 @@ describe("createPaidSession / getActivePaidSession", () => {
     const created = await createPaidSession({ firebaseUid: "uid-1", email: "a@b.com", tier: "Pro", accessCodeId: "code-1" });
     const active = await getActivePaidSession(created.id);
 
-    expect(active).toEqual({ id: created.id, firebaseUid: "uid-1", tier: "Pro" });
+    expect(active).toEqual({ id: created.id, firebaseUid: "uid-1", tier: "Pro", email: "a@b.com" });
   });
 
   it("returns null for a nonexistent session id (forged/garbage jti)", async () => {
