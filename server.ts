@@ -7,5 +7,6 @@
  * `npm run dev` / `npm start` run this file, which simply loads that app
  * (and, when not on Vercel, starts the local listener + Vite middleware).
  */
+import "./api/services/pdfPolyfill.js";
 import app from "./api/_server.js";
 export default app;

@@ -1,3 +1,4 @@
+import './pdfPolyfill.js';
 import { createHash } from 'node:crypto';
 import zlib from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';

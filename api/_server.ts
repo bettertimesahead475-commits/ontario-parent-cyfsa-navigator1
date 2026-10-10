@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import "./services/pdfPolyfill.js";
 import express, { Request, Response } from "express";
 import helmet from "helmet";
 import cors from "cors";
