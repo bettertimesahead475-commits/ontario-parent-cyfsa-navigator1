@@ -54,9 +54,9 @@ function getFirebaseAdminApp(): App {
  * was disabled or its sessions revoked would keep authenticating until that
  * token's own natural expiry regardless of the revocation.
  */
-export async function verifyFirebaseToken(authHeader: string | undefined): Promise<{ uid: string; email: string | null; allUids?: string[] } | null> {
+export async function verifyFirebaseToken(authHeader: string | undefined): Promise<{ uid: string; email: string | null } | null> {
   const identity = await verifyFirebaseIdentity(authHeader);
-  return identity ? { uid: identity.uid, email: identity.email, allUids: identity.allUids } : null;
+  return identity ? { uid: identity.uid, email: identity.email } : null;
 }
 
 /**
@@ -66,7 +66,7 @@ export async function verifyFirebaseToken(authHeader: string | undefined): Promi
  */
 export async function verifyFirebaseTokenViaGoogleTokenInfo(
   idToken: string
-): Promise<{ uid: string; email: string | null; emailVerified: boolean; allUids?: string[] } | null> {
+): Promise<{ uid: string; email: string | null; emailVerified: boolean } | null> {
   // First attempt: verify Firebase Auth ID token via Google Identity Toolkit REST API
   const apiKey = process.env.VITE_FIREBASE_API_KEY || "AIzaSyAZEnJOLnAp6SrLI5LEXGQKSeQ4Utp6NKM";
   try {
@@ -82,18 +82,10 @@ export async function verifyFirebaseTokenViaGoogleTokenInfo(
       const toolkitData: any = await toolkitRes.json();
       const user = toolkitData.users?.[0];
       if (user && user.localId) {
-        const allUids: string[] = [user.localId];
-        if (Array.isArray(user.providerUserInfo)) {
-          for (const p of user.providerUserInfo) {
-            if (p.rawId && typeof p.rawId === "string" && !allUids.includes(p.rawId)) allUids.push(p.rawId);
-            if (p.federatedId && typeof p.federatedId === "string" && !allUids.includes(p.federatedId)) allUids.push(p.federatedId);
-          }
-        }
         return {
           uid: user.localId,
           email: typeof user.email === "string" && user.email ? user.email : null,
           emailVerified: user.emailVerified === true,
-          allUids,
         };
       }
     }
@@ -125,7 +117,6 @@ export async function verifyFirebaseTokenViaGoogleTokenInfo(
       uid: data.sub,
       email: typeof data.email === "string" && data.email ? data.email : null,
       emailVerified: data.email_verified === "true" || data.email_verified === true,
-      allUids: [data.sub],
     };
   } catch (err) {
     console.error("[Firebase Token Fallback] token verification error:", err);
@@ -142,7 +133,7 @@ export async function verifyFirebaseTokenViaGoogleTokenInfo(
  */
 export async function verifyFirebaseIdentity(
   authHeader: string | undefined,
-): Promise<{ uid: string; email: string | null; emailVerified: boolean; allUids?: string[] } | null> {
+): Promise<{ uid: string; email: string | null; emailVerified: boolean } | null> {
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
   const idToken = authHeader.slice("Bearer ".length).trim();
   if (!idToken) return null;
@@ -151,26 +142,10 @@ export async function verifyFirebaseIdentity(
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     try {
       const decoded = await getAuth(getFirebaseAdminApp()).verifyIdToken(idToken, true);
-      const allUids: string[] = [decoded.uid];
-      if (decoded.sub && typeof decoded.sub === "string" && !allUids.includes(decoded.sub)) {
-        allUids.push(decoded.sub);
-      }
-      if (decoded.firebase && typeof decoded.firebase === "object" && (decoded.firebase as any).identities) {
-        for (const [provider, ids] of Object.entries((decoded.firebase as any).identities)) {
-          if (Array.isArray(ids)) {
-            for (const id of ids) {
-              if (typeof id === "string" && id && !allUids.includes(id)) {
-                allUids.push(id);
-              }
-            }
-          }
-        }
-      }
       return {
         uid: decoded.uid,
         email: typeof decoded.email === "string" && decoded.email ? decoded.email : null,
         emailVerified: decoded.email_verified === true,
-        allUids,
       };
     } catch (e) {
       console.error("Firebase ID token verification failed:", e);
