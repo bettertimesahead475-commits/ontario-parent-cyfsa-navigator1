@@ -598,12 +598,12 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.status).toBe(200);
       expect(mockCreateMessage).toHaveBeenCalledTimes(1);
       const call = mockCreateMessage.mock.calls[0][0];
-      expect(call.model).toBe("claude-3-5-sonnet-20241022");
+      expect(call.model).toBe("claude-sonnet-5");
       expect(call.max_tokens).toBe(8000);
 
       // Verify metadata
       expect(res.body.modelMetadata).toBeDefined();
-      expect(res.body.modelMetadata.engine).toBe("claude-3-5-sonnet-20241022");
+      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
       expect(res.body.modelMetadata.mode).toBe("fast");
       expect(res.body.modelMetadata.usage.inputTokens).toBe(3500);
       expect(res.body.modelMetadata.usage.outputTokens).toBe(1200);
@@ -634,7 +634,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
 
       // Both passes must route to Claude Opus with 16000 token budget
       for (const call of mockCreateMessage.mock.calls) {
-        expect(call[0].model).toBe("claude-3-opus-20240229");
+        expect(call[0].model).toBe("claude-opus-5");
         expect(call[0].max_tokens).toBe(16000);
       }
 
@@ -645,7 +645,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.body.timing.mode).toBe("full");
 
       // Verify aggregated Opus usage and cost accounting
-      expect(res.body.modelMetadata.engine).toBe("claude-3-opus-20240229");
+      expect(res.body.modelMetadata.engine).toBe("claude-opus-5");
       expect(res.body.modelMetadata.mode).toBe("full");
       expect(res.body.modelMetadata.usage.inputTokens).toBe(12500);
       expect(res.body.modelMetadata.usage.outputTokens).toBe(5500);
@@ -673,14 +673,14 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         .send({
           textContent: "Some affidavit text",
           mode: "fast",
-          model: "claude-3-opus-20240229", // Client override attempt
+          model: "claude-opus-5", // Client override attempt
         });
 
       expect(res.status).toBe(200);
       expect(mockCreateMessage).toHaveBeenCalledTimes(1);
       // Server must have forced Sonnet instead of honoring client Opus override
-      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-3-5-sonnet-20241022");
-      expect(res.body.modelMetadata.engine).toBe("claude-3-5-sonnet-20241022");
+      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
     });
 
     it("rejects unpaid user from obtaining Forensic Opus mode with 403 FORENSIC_UPGRADE_REQUIRED", async () => {
@@ -718,7 +718,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       // Must NOT have silently substituted Sonnet: all calls made must be to Claude Opus
       expect(mockCreateMessage.mock.calls.length).toBeGreaterThan(0);
       for (const call of mockCreateMessage.mock.calls) {
-        expect(call[0].model).toBe("claude-3-opus-20240229");
+        expect(call[0].model).toBe("claude-opus-5");
       }
     });
 
@@ -740,8 +740,8 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
 
       expect(res.status).toBe(200);
       expect(mockCreateMessage).toHaveBeenCalledTimes(1);
-      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-3-5-sonnet-20241022");
-      expect(res.body.modelMetadata.engine).toBe("claude-3-5-sonnet-20241022");
+      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
     });
   });
 });

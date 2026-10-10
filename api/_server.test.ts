@@ -257,8 +257,11 @@ describe("GET /api/health", () => {
     expect(typeof res.body.timestamp).toBe("string");
   });
 
-  it("GET /api/preview-health reports non-secret diagnostic state", async () => {
-    const res = await request(app).get("/api/preview-health");
+  it("GET /api/preview-health requires admin secret and reports non-secret diagnostic state", async () => {
+    const unauth = await request(app).get("/api/preview-health");
+    expect(unauth.status).toBe(401);
+
+    const res = await request(app).get("/api/preview-health").set("x-admin-secret", "test-admin-secret");
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
     expect(res.body.supabase).toBeDefined();
@@ -725,7 +728,7 @@ describe("POST /api/analyze", () => {
     expect(res.body.documentTitle).toBe("Uploaded Document");
     expect(mockCreateMessage).toHaveBeenCalledTimes(1);
     expect(mockCreateMessage.mock.calls[0][0].max_tokens).toBe(8000);
-    expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-3-5-sonnet-20241022");
+    expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
   });
 
   it("authoritatively routes Forensic In-Depth (mode: full) to Claude Opus on both concurrent calls", async () => {
@@ -739,9 +742,9 @@ describe("POST /api/analyze", () => {
     expect(mockCreateMessage).toHaveBeenCalledTimes(2);
     for (const call of mockCreateMessage.mock.calls) {
       expect(call[0].max_tokens).toBe(16000);
-      expect(call[0].model).toBe("claude-3-opus-20240229");
+      expect(call[0].model).toBe("claude-opus-5");
     }
-    expect(res.body.modelMetadata?.engine).toBe("claude-3-opus-20240229");
+    expect(res.body.modelMetadata?.engine).toBe("claude-opus-5");
   });
 
   it("returns a clear error instead of fabricating a report when either response isn't valid JSON", async () => {

@@ -611,8 +611,12 @@ app.use((req, res, next) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   });
 
-  // Diagnostic endpoint for preview environment inspection (zero secrets exposed)
+  // Diagnostic endpoint for environment inspection (zero secrets exposed)
+  // Gated by ADMIN_SECRET to prevent exposing infrastructure or model configuration publicly
   app.get("/api/preview-health", async (req: Request, res: Response) => {
+    if (!process.env.ADMIN_SECRET || req.headers["x-admin-secret"] !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
     const host = configuredSupabaseHost();
     const keyInfo = describeConfiguredKey();
     let dbStatus: { connected: boolean; error: string | null; latencyMs: number } = {
@@ -2683,12 +2687,11 @@ ${analysisRules}`;
     res.json(job);
   });
 
-  // Diagnostics: Live Anthropic model verification & database capabilities probe
+  // Diagnostics: Live Anthropic model verification & database capabilities probe (admin-only)
   app.get("/api/diagnostics/system-health", async (req: Request, res: Response) => {
-    const diagKey = req.header("x-cyfsa-diag") || req.query.diagKey;
     const adminSecret = req.header("x-admin-secret");
-    if (diagKey !== "verify-2026" && (!process.env.ADMIN_SECRET || adminSecret !== process.env.ADMIN_SECRET)) {
-      return res.status(403).json({ error: "Access denied." });
+    if (!process.env.ADMIN_SECRET || adminSecret !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized." });
     }
 
     const results: any = {
@@ -2840,12 +2843,11 @@ ${analysisRules}`;
     res.json(results);
   });
 
-  // Diagnostics: Authorized live-provider smoke test using real AI
+  // Diagnostics: Authorized live-provider smoke test using real AI (admin-only)
   app.post("/api/diagnostics/smoke-test", async (req: Request, res: Response) => {
-    const diagKey = req.header("x-cyfsa-diag") || req.query.diagKey;
     const adminSecret = req.header("x-admin-secret");
-    if (diagKey !== "verify-2026" && (!process.env.ADMIN_SECRET || adminSecret !== process.env.ADMIN_SECRET)) {
-      return res.status(403).json({ error: "Access denied." });
+    if (!process.env.ADMIN_SECRET || adminSecret !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized." });
     }
 
     const testId = `smoke_${Date.now()}`;
