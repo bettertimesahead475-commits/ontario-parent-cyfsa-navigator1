@@ -92,8 +92,12 @@ function parseJwtPayload(token: string): { role?: string; ref?: string } | null 
 
 export function extractProjectRef(urlStr: string | null): string | null {
   if (!urlStr) return null;
+  const trimmed = urlStr.trim();
+  if (/^[a-z0-9_-]+$/i.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
   try {
-    const host = new URL(urlStr.trim()).hostname;
+    const host = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`).hostname;
     const match = host.match(/^([a-z0-9_-]+)\.supabase\./i);
     return match ? match[1].toLowerCase() : null;
   } catch {
@@ -107,14 +111,18 @@ export function getConfiguredProjectRef(): string | null {
 }
 
 export function resolveSupabaseCredentials(): { url: string | null; key: string | null; source: string | null } {
-  let url = (process.env.SUPABASE_URL || "").trim() || null;
+  let url = (process.env.SUPABASE_URL || "").trim().replace(/^["']|["']$/g, "") || null;
   if (!url) {
     const intUrlKey = Object.keys(process.env).find(
       (k) => /^sb_secret_.*_(SUPABASE_URL|URL)$/i.test(k) || k === "NEXT_PUBLIC_SUPABASE_URL"
     );
     if (intUrlKey) {
-      url = (process.env[intUrlKey] || "").trim() || null;
+      url = (process.env[intUrlKey] || "").trim().replace(/^["']|["']$/g, "") || null;
     }
+  }
+
+  if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
+    url = `https://${url}.supabase.co`;
   }
 
   const targetRef = extractProjectRef(url);

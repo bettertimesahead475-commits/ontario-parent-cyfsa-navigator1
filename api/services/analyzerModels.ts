@@ -12,8 +12,8 @@
 import { Tier, hasForensicInDepthAccess } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 
-export const DEFAULT_QUICK_MODEL = "claude-3-5-sonnet-20241022";
-export const DEFAULT_FORENSIC_MODEL = "claude-3-opus-20240229";
+export const DEFAULT_QUICK_MODEL = "claude-sonnet-5";
+export const DEFAULT_FORENSIC_MODEL = "claude-opus-5";
 
 export const ANALYZER_MODELS = {
   QUICK: process.env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL,
@@ -21,23 +21,28 @@ export const ANALYZER_MODELS = {
 } as const;
 
 export const CLAUDE_MODELS = new Set<string>([
-  "claude-3-5-sonnet-20241022",
-  "claude-3-5-sonnet-latest",
+  "claude-sonnet-5",
+  "claude-sonnet-5-5",
+  "claude-opus-5",
+  "claude-opus-5-5",
+  "claude-haiku-5-5",
+  "claude-sonnet-4-6",
+  "claude-opus-4-6",
+  "claude-sonnet-4-5-20250929",
+  "claude-opus-4-5-20251101",
+  "claude-haiku-4-5-20251001",
   "claude-3-7-sonnet-20250219",
   "claude-3-7-sonnet-latest",
+  "claude-3-5-sonnet-20241022",
+  "claude-3-5-sonnet-latest",
   "claude-3-opus-20240229",
   "claude-3-opus-latest",
-  "claude-sonnet-5",
-  "claude-haiku-4-5-20251001",
 ]);
 
 /**
- * Resolves wire-level Anthropic model identifier, mapping non-canonical aliases to the verified GA model.
+ * Resolves wire-level Anthropic model identifier, preserving canonical models without downgrade.
  */
 export function resolveAnthropicWireModel(model: string): string {
-  if (model === "claude-sonnet-5") {
-    return DEFAULT_QUICK_MODEL;
-  }
   return model || DEFAULT_QUICK_MODEL;
 }
 
@@ -53,13 +58,33 @@ export const MODEL_TIMEOUTS = {
 } as const;
 
 // Pricing per million tokens (Anthropic API standard rates)
-// Sonnet 3.5 / Sonnet 5: $3.00 / MTok prompt, $15.00 / MTok completion
+// Sonnet: $3.00 / MTok prompt, $15.00 / MTok completion
 // Opus: $15.00 / MTok prompt, $75.00 / MTok completion
 // CAD conversion constant: ~1.38 CAD per USD
 export const USD_TO_CAD_RATE = 1.38;
 
-export const MODEL_PRICING = {
-  [DEFAULT_QUICK_MODEL]: {
+export const MODEL_PRICING: Record<string, { inputCostPerMillionUsd: number; outputCostPerMillionUsd: number }> = {
+  "claude-sonnet-5": {
+    inputCostPerMillionUsd: 3.0,
+    outputCostPerMillionUsd: 15.0,
+  },
+  "claude-sonnet-5-5": {
+    inputCostPerMillionUsd: 3.0,
+    outputCostPerMillionUsd: 15.0,
+  },
+  "claude-opus-5": {
+    inputCostPerMillionUsd: 15.0,
+    outputCostPerMillionUsd: 75.0,
+  },
+  "claude-opus-5-5": {
+    inputCostPerMillionUsd: 15.0,
+    outputCostPerMillionUsd: 75.0,
+  },
+  "claude-haiku-5-5": {
+    inputCostPerMillionUsd: 0.8,
+    outputCostPerMillionUsd: 4.0,
+  },
+  "claude-3-5-sonnet-20241022": {
     inputCostPerMillionUsd: 3.0,
     outputCostPerMillionUsd: 15.0,
   },
@@ -67,11 +92,7 @@ export const MODEL_PRICING = {
     inputCostPerMillionUsd: 3.0,
     outputCostPerMillionUsd: 15.0,
   },
-  "claude-sonnet-5": {
-    inputCostPerMillionUsd: 3.0,
-    outputCostPerMillionUsd: 15.0,
-  },
-  [DEFAULT_FORENSIC_MODEL]: {
+  "claude-3-opus-20240229": {
     inputCostPerMillionUsd: 15.0,
     outputCostPerMillionUsd: 75.0,
   },
@@ -83,7 +104,7 @@ export const MODEL_PRICING = {
     inputCostPerMillionUsd: 0.8,
     outputCostPerMillionUsd: 4.0,
   },
-} as const;
+};
 
 export interface TokenUsage {
   inputTokens: number;

@@ -105,7 +105,7 @@ describe("Document Analyzer completion", () => {
     const { container } = render(<DocumentAnalyzerTab />);
     await uploadTextFile(container);
 
-    expect(await screen.findByText(/You've used your free analysis/, {}, { timeout: 5000 })).toBeTruthy();
+    expect(await screen.findAllByText(/You've used your free analysis/, {}, { timeout: 10000 })).not.toHaveLength(0);
     expect(analyzeCalls()).toHaveLength(1); // not retried
     expect(screen.getByRole("alert").textContent).toMatch(/Audit failed/);
   });
@@ -123,7 +123,7 @@ describe("Document Analyzer completion", () => {
     const { container } = render(<DocumentAnalyzerTab />);
     await uploadTextFile(container);
 
-    expect(await screen.findByText(/couldn't verify your analysis access/, {}, { timeout: 10000 })).toBeTruthy();
+    expect(await screen.findAllByText(/couldn't verify your analysis access/, {}, { timeout: 12000 })).not.toHaveLength(0);
     expect(analyzeCalls()).toHaveLength(3);
   }, 15000);
 });

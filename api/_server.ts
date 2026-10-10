@@ -2723,11 +2723,20 @@ ${analysisRules}`;
         }
 
         // Test probe candidates with 5-token calls
-        const candidates = [
+        const queryProbes = req.query.probes ? String(req.query.probes).split(",") : [];
+        const candidates = queryProbes.length > 0 ? queryProbes : [
+          "claude-sonnet-5",
+          "claude-sonnet-5-5",
+          "claude-opus-5",
+          "claude-opus-5-5",
+          "claude-haiku-5-5",
+          "claude-sonnet-4-6",
+          "claude-opus-4-6",
+          "claude-sonnet-4-5-20250929",
+          "claude-opus-4-5-20251101",
           "claude-3-7-sonnet-20250219",
           "claude-3-5-sonnet-20241022",
           "claude-3-opus-20240229",
-          "claude-3-5-haiku-20241022",
         ];
         results.models.probes = {};
         for (const candidate of candidates) {
@@ -2778,13 +2787,14 @@ ${analysisRules}`;
       results.models.error = e.message;
     }
 
-    // 2. Supabase tables probe
+    // 2. Supabase tables and storage probe
     try {
       const db = getSupabase();
       if (!db) {
         results.database.error = "Supabase client not initialized";
       } else {
         const tablesToProbe = [
+          "free_tool_usage",
           "free_usage",
           "navigator_paid_sessions",
           "analysis_credit_reservations",
@@ -2809,6 +2819,17 @@ ${analysisRules}`;
           } catch (err: any) {
             results.database.tables[tbl] = { exists: false, error: err.message };
           }
+        }
+
+        try {
+          const { data: buckets, error: bErr } = await db.storage.listBuckets();
+          results.database.storageBuckets = {
+            success: !bErr,
+            buckets: buckets?.map((b: any) => b.name) || [],
+            error: bErr?.message || null,
+          };
+        } catch (sErr: any) {
+          results.database.storageBuckets = { success: false, error: sErr.message };
         }
       }
     } catch (e: any) {
@@ -2854,6 +2875,7 @@ AFFIDAVIT OF CASEWORKER M. SMITH:
         isPaid: true,
         tier: "Pro",
       });
+      const targetModel = req.body?.model || modelResolution.authoritativeModel;
 
       // 2. Measure AI execution
       const aiStartTime = Date.now();
@@ -2899,7 +2921,7 @@ You MUST populate the response strictly matching this JSON schema:
         timeoutMs: 60000,
         requestId: testId,
         mode,
-      }, modelResolution.authoritativeModel);
+      }, targetModel);
 
       const aiDurationMs = Date.now() - aiStartTime;
       const parsedReport = extractJson(aiResponse.text);

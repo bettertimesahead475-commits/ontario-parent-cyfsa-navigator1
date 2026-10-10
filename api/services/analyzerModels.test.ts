@@ -20,7 +20,7 @@ describe("analyzerModels service", () => {
       });
 
       expect(resolution.authoritativeModel).toBe(ANALYZER_MODELS.QUICK);
-      expect(resolution.authoritativeModel).toBe("claude-3-5-sonnet-20241022");
+      expect(resolution.authoritativeModel).toBe("claude-sonnet-5");
       expect(resolution.mode).toBe("fast");
       expect(resolution.tokenBudget).toBe(TOKEN_BUDGETS.QUICK);
       expect(resolution.timeoutMs).toBe(MODEL_TIMEOUTS.QUICK);
@@ -31,12 +31,12 @@ describe("analyzerModels service", () => {
         mode: "fast",
         isPaid: true,
         tier: "Premium",
-        clientRequestedModel: "claude-3-opus-20240229",
+        clientRequestedModel: "claude-opus-5",
       });
 
       // Server authority overrides client override: Quick mode must always run Sonnet
       expect(resolution.authoritativeModel).toBe(ANALYZER_MODELS.QUICK);
-      expect(resolution.authoritativeModel).toBe("claude-3-5-sonnet-20241022");
+      expect(resolution.authoritativeModel).toBe("claude-sonnet-5");
     });
 
     it("rejects Forensic mode for unpaid users with 403 FORENSIC_UPGRADE_REQUIRED", () => {
@@ -77,7 +77,7 @@ describe("analyzerModels service", () => {
         tier: "Premium",
       });
       expect(premiumRes.authoritativeModel).toBe(ANALYZER_MODELS.FORENSIC);
-      expect(premiumRes.authoritativeModel).toBe("claude-3-opus-20240229");
+      expect(premiumRes.authoritativeModel).toBe("claude-opus-5");
       expect(premiumRes.mode).toBe("full");
 
       const proRes = resolveServerAuthoritativeModel({
@@ -86,20 +86,20 @@ describe("analyzerModels service", () => {
         tier: "Pro",
       });
       expect(proRes.authoritativeModel).toBe(ANALYZER_MODELS.FORENSIC);
-      expect(proRes.authoritativeModel).toBe("claude-3-opus-20240229");
+      expect(proRes.authoritativeModel).toBe("claude-opus-5");
     });
 
     it("ensures all supported models are in CLAUDE_MODELS set", () => {
       expect(CLAUDE_MODELS.has(ANALYZER_MODELS.QUICK)).toBe(true);
       expect(CLAUDE_MODELS.has(ANALYZER_MODELS.FORENSIC)).toBe(true);
-      expect(CLAUDE_MODELS.has("claude-3-opus-20240229")).toBe(true);
+      expect(CLAUDE_MODELS.has("claude-opus-5")).toBe(true);
       expect(CLAUDE_MODELS.has("claude-sonnet-5")).toBe(true);
     });
 
-    it("maps wire model aliases to official verified Anthropic models", () => {
-      expect(resolveAnthropicWireModel("claude-sonnet-5")).toBe("claude-3-5-sonnet-20241022");
+    it("preserves canonical Anthropic models without downgrade", () => {
+      expect(resolveAnthropicWireModel("claude-sonnet-5")).toBe("claude-sonnet-5");
+      expect(resolveAnthropicWireModel("claude-opus-5")).toBe("claude-opus-5");
       expect(resolveAnthropicWireModel("claude-3-opus-20240229")).toBe("claude-3-opus-20240229");
-      expect(resolveAnthropicWireModel("claude-3-5-sonnet-20241022")).toBe("claude-3-5-sonnet-20241022");
     });
   });
 
