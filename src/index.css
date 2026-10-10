@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..800;1,14..32,300..800&family=Plus+Jakarta+Sans:ital,wght@0,400..800;1,400..800&display=swap");
 @import "tailwindcss";
 
 @theme {
@@ -19,8 +20,10 @@
   --color-brand-950: #172554;
 }
 
-body {
+html, body, #root {
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   background-color: #f8fafc;
   color: #0f172a;
   overflow-x: hidden;
@@ -30,8 +33,16 @@ body {
   font-family: var(--font-display);
 }
 
-.font-mono {
-  font-family: var(--font-mono);
+/* Monospace is strictly reserved for code, pre, and technical tokens */
+code, pre, kbd, samp, .font-code, .code-font {
+  font-family: var(--font-mono) !important;
+}
+
+/* Guard: UI elements, badges, pills, and labels that carried legacy font-mono must render
+   in crisp, highly readable sans-serif rather than computer code font */
+.font-mono:not(code):not(pre):not(kbd):not(samp):not(.font-code):not(.code-font) {
+  font-family: var(--font-sans);
+  letter-spacing: 0.025em;
 }
 
 /* Custom scrollbars */

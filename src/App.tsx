@@ -174,7 +174,7 @@ export default function App() {
                 <div className="font-display font-black text-slate-900 leading-none text-base md:text-lg tracking-tight uppercase">
                   <span className="text-brand-600">CYFSA</span> NAVIGATOR
                 </div>
-                <div className="text-[9px] text-slate-500 font-semibold font-mono tracking-widest uppercase mt-1 block">
+                <div className="text-[9px] text-slate-500 font-semibold font-sans tracking-widest uppercase mt-1 block">
                   KNOWLEDGE IS POWER
                 </div>
               </div>
@@ -183,14 +183,14 @@ export default function App() {
             {/* Middle Quick Active-Membership indicator */}
             <div className="hidden md:flex items-center gap-2.5">
               <Link href="/pricing">
-                <div className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-amber-300/80 text-amber-900 bg-amber-50 hover:bg-amber-100/80 uppercase rounded-full flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all" id="header-pricing-nav-btn">
+                <div className="px-3 py-1.5 text-[10.5px] font-sans font-bold tracking-wider border border-amber-300/80 text-amber-900 bg-amber-50 hover:bg-amber-100/80 uppercase rounded-full flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all" id="header-pricing-nav-btn">
                   <Coins className="w-3 h-3 text-amber-700" />
                   <span>Membership &amp; Pricing</span>
                 </div>
               </Link>
               {userProfile ? (
                 <Link href="/signup">
-                  <div className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all">
+                  <div className="px-3 py-1.5 text-[10.5px] font-sans font-bold tracking-wider border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all">
                     <User className="w-3 h-3 text-slate-500" />
                     {/* BUG FOUND IN AUDIT: this crashed the entire header (and therefore every
                         page, since this is app-shell code) if a saved profile existed but was
@@ -201,7 +201,7 @@ export default function App() {
                 </Link>
               ) : (
                 <Link href="/signup">
-                  <div className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-dashed border-slate-200 text-slate-500 hover:bg-slate-50 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all">
+                  <div className="px-3 py-1.5 text-[10.5px] font-sans font-bold tracking-wider border border-dashed border-slate-200 text-slate-500 hover:bg-slate-50 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all">
                     <User className="w-3 h-3 text-slate-400" />
                     <span>Get Passport (Sign Up)</span>
                   </div>
@@ -209,7 +209,7 @@ export default function App() {
               )}
               <button
                 onClick={() => setTerminologyOpen(true)}
-                className="px-3 py-1.5 text-[10px] font-mono font-bold tracking-wider border border-slate-200 text-brand-600 bg-brand-50/50 hover:bg-brand-50 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                className="px-3 py-1.5 text-[10.5px] font-sans font-bold tracking-wider border border-slate-200 text-brand-600 bg-brand-50/50 hover:bg-brand-50 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
                 id="legal-terminology-header-btn"
               >
                 <BookOpen className="w-3 h-3 text-brand-600 shrink-0" />
@@ -225,7 +225,7 @@ export default function App() {
                   href="https://www.ontario.ca/page/legal-aid-ontario"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs font-mono font-semibold text-slate-600 hover:text-brand-600 transition-colors block mt-0.5"
+                  className="text-xs font-sans font-semibold text-slate-600 hover:text-brand-600 transition-colors block mt-0.5"
                 >
                   Legal Aid Ontario Hotline: 1-800-668-8258
                 </a>
@@ -553,7 +553,7 @@ export default function App() {
               <span className="block text-slate-500">Educational Portal only. Designed strictly for parental confidence and information sharing. S.O. 2017 Chapter 14 compliant.</span>
             </div>
 
-            <div className="space-y-1 text-center sm:text-right font-mono text-[10px]">
+            <div className="space-y-1 text-center sm:text-right font-sans text-xs">
               <span className="block text-slate-600 font-bold">Jurisdiction: Ontario Court of Justice, Canada</span>
               <span className="block text-slate-500 mt-0.5">
                 Primary sources updated: Q2 2026 · <Link href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Privacy Policy</Link>

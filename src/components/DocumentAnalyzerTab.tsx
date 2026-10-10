@@ -11,6 +11,7 @@ import { apiFetch, safeReadJson, ApiResponseError } from "../utils/api";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
+import FormattedReportText from "./FormattedReportText";
 import { 
   Upload, 
   FileText, 
@@ -2680,24 +2681,24 @@ export default function DocumentAnalyzerTab() {
             </span>
             {creditBalance && (
               creditBalance.isSuspended ? (
-                <span className="px-2.5 py-1 bg-red-100 border border-red-300 text-red-900 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
+                <span className="px-2.5 py-1 bg-red-100 border border-red-300 text-red-900 rounded-lg text-xs font-sans font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
                   <AlertTriangle className="w-3.5 h-3.5 text-red-600" /> Account Suspended
                 </span>
               ) : creditBalance.creditsRemaining <= 0 ? (
                 <div className="flex items-center gap-1.5" id="credit-status-pill">
-                  <span className="px-2.5 py-1 bg-amber-100 border border-amber-300 text-amber-900 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1">
+                  <span className="px-2.5 py-1 bg-amber-100 border border-amber-300 text-amber-900 rounded-lg text-xs font-sans font-bold uppercase tracking-wider flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> 0 Analyses Remaining
                   </span>
                   <button
                     onClick={() => setLocation("/pricing")}
-                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-mono font-bold tracking-wider uppercase shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-sans font-bold tracking-wider uppercase shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
                     title="Purchase additional analyses"
                   >
                     Purchase More <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
               ) : (
-                <span className="px-2.5 py-1 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
+                <span className="px-2.5 py-1 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg text-xs font-sans font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
                   <CheckCircle className="w-3.5 h-3.5 text-indigo-600" />
                   {creditBalance.tier === "free" ? "Free Account" : creditBalance.tier}: {creditBalance.creditsRemaining} of {creditBalance.creditsLimit} analyses remaining
                 </span>
@@ -2714,7 +2715,7 @@ export default function DocumentAnalyzerTab() {
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center self-start">
           {/* Analysis Mode Selector */}
           <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
-            <span className="text-[10px] text-slate-500 font-mono pl-1 shrink-0 flex items-center gap-1 font-bold uppercase tracking-wider">
+            <span className="text-[10px] text-slate-500 font-sans pl-1 shrink-0 flex items-center gap-1 font-bold uppercase tracking-wider">
               Analysis Mode
             </span>
             <select
@@ -2724,7 +2725,7 @@ export default function DocumentAnalyzerTab() {
                 setAnalysisMode(nextMode);
                 setClaudeModel(nextMode === "full" ? "claude-3-opus-20240229" : "claude-sonnet-5");
               }}
-              className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors font-medium"
+              className="text-[10px] font-sans bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors font-medium"
               aria-label="Analysis Mode"
             >
               <option value="fast">Quick Document Review (Core Audit)</option>
@@ -2734,16 +2735,16 @@ export default function DocumentAnalyzerTab() {
 
           {/* Active AI Engine Indicator */}
           <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl px-2.5 py-1.5 border border-slate-200">
-            <span className="text-[10px] text-slate-500 font-mono shrink-0 font-bold uppercase tracking-wider">
+            <span className="text-[10px] text-slate-500 font-sans shrink-0 font-bold uppercase tracking-wider">
               AI Engine
             </span>
             {analysisMode === "full" ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-mono font-bold tracking-tight border border-purple-200" title="Claude Opus forensic reasoning engine (16,000 token dual-pass audit)">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-sans font-bold tracking-tight border border-purple-200" title="Claude Opus forensic reasoning engine (16,000 token dual-pass audit)">
                 <ShieldAlert className="w-3 h-3 text-purple-700" />
                 Claude Opus (Forensic)
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-mono font-bold tracking-tight border border-blue-200" title="Claude Sonnet rapid review engine (8,000 token single-pass audit)">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-sans font-bold tracking-tight border border-blue-200" title="Claude Sonnet rapid review engine (8,000 token single-pass audit)">
                 <Sparkles className="w-3 h-3 text-blue-700" />
                 Claude Sonnet (Quick Review)
               </span>
@@ -3424,7 +3425,7 @@ export default function DocumentAnalyzerTab() {
 
                     {activeSelectedFile.name.toLowerCase().includes("transcript") ? (
                       /* Legal certified court transcript layout mockup */
-                      <div className="relative border-l-4 border-red-500 bg-[#fafafa]/80 rounded-xl p-5 font-mono text-[11px] md:text-xs text-slate-800 leading-6 shadow-inner max-h-72 overflow-y-auto overflow-x-hidden text-left relative group">
+                      <div className="relative border-l-4 border-red-500 bg-[#fafafa]/80 rounded-xl p-5 font-sans text-xs text-slate-800 leading-relaxed shadow-inner max-h-72 overflow-y-auto overflow-x-hidden text-left relative group">
                         {/* Official diagonal Watermark stamp */}
                         <div className="absolute top-3 right-3 border border-brand-300 bg-brand-50/95 text-brand-900 px-2.5 py-1 rounded text-[9px] font-extrabold uppercase tracking-widest rotate-3 select-none shrink-0 pointer-events-none shadow-xs">
                           CERTIFIED CASE SCAN
@@ -3438,13 +3439,13 @@ export default function DocumentAnalyzerTab() {
                               <div key={lineIdx}>{lineIdx + 1}</div>
                             ))}
                           </div>
-                          <div className="pl-1 whitespace-pre-wrap leading-6 text-slate-800 text-left font-mono">
+                          <div className="pl-1 whitespace-pre-wrap leading-relaxed text-slate-800 text-left font-sans text-xs">
                             {getHighlightedText(activeSelectedFile.content, searchQuery) || "Processing dialogue transcript text..."}
                           </div>
                         </div>
                       </div>
                     ) : (
-                      <div className="max-h-56 overflow-y-auto p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs font-mono text-slate-700 whitespace-pre-wrap leading-relaxed text-left" id="file-plain-content-viewer">
+                      <div className="max-h-56 overflow-y-auto p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs font-sans text-slate-800 whitespace-pre-wrap leading-relaxed text-left" id="file-plain-content-viewer">
                         {activeSelectedFile.mimeType === "text/plain" 
                           ? getHighlightedText(activeSelectedFile.content, searchQuery) 
                           : `This is a ${activeSelectedFile.mimeType.startsWith("image/") ? "image" : "PDF"} file — its raw content isn't shown here as plain text. Run the audit above to have it read and analyzed.`}
@@ -3689,10 +3690,10 @@ export default function DocumentAnalyzerTab() {
                         {/* Document Preview with Redaction Applied */}
                         {originalDocumentText && (
                           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                            <p className="text-[10px] font-mono font-bold uppercase text-slate-600 mb-2">
+                            <p className="text-[10px] font-sans font-bold uppercase text-slate-600 mb-2">
                               {redactionEnabled ? "📄 Redacted Document Preview" : "📄 Document Preview"}
                             </p>
-                            <div className="text-xs leading-relaxed text-slate-700 bg-white p-3 rounded border border-slate-200 font-mono max-h-40 overflow-auto whitespace-pre-wrap break-words">
+                            <div className="text-xs leading-relaxed text-slate-800 bg-white p-3 rounded border border-slate-200 font-sans max-h-40 overflow-auto whitespace-pre-wrap break-words">
                               {redactionEnabled 
                                 ? redactDocumentText(originalDocumentText, knownNamesToRedact)
                                 : originalDocumentText
@@ -3896,33 +3897,42 @@ export default function DocumentAnalyzerTab() {
                       >
                         <div className="space-y-3.5">
                           {selectedReport.redFlags.map((flag, idx) => (
-                            <div key={idx} className="bg-white border border-gray-200 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-brand-200 transition-colors">
-                              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-gray-100">
-                                <span className={`px-2.5 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider ${
-                                  flag.severity.includes("CRITICAL") ? "bg-rose-100 text-rose-800" : flag.severity.includes("Worth") ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-800"
-                                }`}>
-                                  {flag.severity}
-                                </span>
-                                <span className="font-mono font-bold text-rose-800 text-[11px]">{flag.category}</span>
-                                {factCheckEnabled && (
-                                  <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider ${
-                                    flag.legalReference && flag.legalReference !== "N/A" ? "bg-green-100 text-green-800" : "bg-rose-100 text-rose-800"
+                            <div key={idx} className="bg-white border border-gray-200 p-4.5 rounded-xl space-y-3.5 text-xs shadow-xs hover:border-brand-200 transition-colors">
+                              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className={`px-2.5 py-1 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
+                                    flag.severity.includes("CRITICAL") ? "bg-rose-100 text-rose-800" : flag.severity.includes("Worth") ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-800"
                                   }`}>
-                                    {flag.legalReference && flag.legalReference !== "N/A" ? "VERIFIED" : "UNVERIFIED"}
+                                    {flag.severity}
                                   </span>
-                                )}
+                                  <span className="font-sans font-bold text-rose-800 text-xs px-2 py-0.5 bg-rose-50 rounded-md border border-rose-100">
+                                    {flag.category}
+                                  </span>
+                                  {flag.evidenceClassification && (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-sans font-bold bg-slate-100 text-slate-800 border border-slate-200 uppercase tracking-wide">
+                                      Evidence: {flag.evidenceClassification}
+                                    </span>
+                                  )}
+                                  {factCheckEnabled && (
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
+                                      flag.legalReference && flag.legalReference !== "N/A" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                                    }`}>
+                                      {flag.legalReference && flag.legalReference !== "N/A" ? "VERIFIED" : "UNVERIFIED"}
+                                    </span>
+                                  )}
+                                </div>
                                 <button
                                   onClick={() => openLegislativeReference(flag.legalReference)}
-                                  className="font-mono text-brand-700 hover:text-brand-900 font-bold text-[10px] bg-brand-50 hover:bg-brand-100 border border-brand-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                  className="font-sans text-brand-700 hover:text-brand-900 font-bold text-xs bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                                   title="Click to open Verified Source reference modal"
                                 >
-                                  <Scale className="w-3 h-3 text-brand-600" /> Verify Law: {flag.legalReference} ↗
+                                  <Scale className="w-3.5 h-3.5 text-brand-600" /> Verify Law: {flag.legalReference} ↗
                                 </button>
                               </div>
                               {flag.phraseDetected && (
-                                <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
+                                <div className="space-y-1.5 bg-slate-50/80 p-3 border border-slate-200/80 rounded-xl">
                                   <div className="flex justify-between items-center">
-                                    <span className="text-[9px] font-mono font-extrabold text-slate-400 uppercase tracking-wider">Phrase in Document:</span>
+                                    <span className="text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider">Phrase in Document:</span>
                                     <button
                                       onClick={() => {
                                         setSearchQuery(flag.phraseDetected);
@@ -3931,36 +3941,34 @@ export default function DocumentAnalyzerTab() {
                                           docViewer.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                         }
                                       }}
-                                      className="text-[9px] font-mono text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 font-bold px-2 py-0.5 rounded border border-brand-200 transition-colors cursor-pointer"
+                                      className="text-xs font-sans text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 font-semibold px-2.5 py-1 rounded-md border border-brand-200 transition-colors cursor-pointer"
                                     >
                                       🔍 Locate Phrase
                                     </button>
                                   </div>
-                                  <p className="italic text-slate-700 leading-normal font-medium bg-white p-2 border border-slate-100 rounded text-[11.5px]">
+                                  <p className="italic text-slate-800 leading-relaxed font-sans bg-white p-3 border-l-4 border-amber-400 rounded-r-lg border-y border-r border-slate-200 text-xs shadow-2xs">
                                     "{flag.phraseDetected}"
                                   </p>
-                                
                                 </div>
                               )}
-      
-                              
-                              <p className="text-slate-600 leading-normal text-[11.5px]">
-                                <strong>Assessment:</strong> {flag.explanation}
-                              </p>
+
+                              <div className="text-slate-700 leading-relaxed text-xs space-y-1 font-sans">
+                                <span className="font-bold text-slate-900 block text-xs">Evidentiary Assessment:</span>
+                                <FormattedReportText content={flag.explanation} />
+                              </div>
 
                               {flag.locationInDocument && (
-                                <div className="flex items-center gap-1.5 p-2 bg-brand-50/50 border border-brand-100/40 rounded-lg text-[10.5px] font-mono text-brand-950">
+                                <div className="flex items-center gap-1.5 p-2 bg-brand-50/50 border border-brand-100/60 rounded-lg text-xs font-sans text-brand-950">
                                   <span className="shrink-0">📌</span>
-                                  <span><strong>Verification Locator:</strong> <span className="underline font-bold">{flag.locationInDocument}</span></span>
+                                  <span><strong>Verification Locator:</strong> <span className="underline font-semibold">{flag.locationInDocument}</span></span>
                                 </div>
                               )}
-      
 
-                              <div className="p-3 bg-brand-50/60 border border-brand-100 rounded-lg text-[11px] text-brand-950 font-medium space-y-1">
-                                <div className="font-bold text-brand-900 border-b border-brand-100/50 pb-0.5 flex items-center gap-1">
-                                  <span>💡</span> Parent Action & Defense Step:
+                              <div className="p-3.5 bg-brand-50/70 border border-brand-100 rounded-xl text-xs text-brand-950 font-sans space-y-1.5">
+                                <div className="font-bold text-brand-900 border-b border-brand-100 pb-1 flex items-center gap-1.5 text-xs">
+                                  <span>💡</span> Parent Action &amp; Defense Step:
                                 </div>
-                                <p className="text-[11px] leading-normal">{flag.parentActionStep || flag.verifyRequirement}</p>
+                                <FormattedReportText content={flag.parentActionStep || flag.verifyRequirement} />
                               </div>
                             </div>
                           ))}
@@ -4039,13 +4047,13 @@ export default function DocumentAnalyzerTab() {
                             {selectedReport.proceduralTimelineViolations.map((violation, idx) => (
                               <div key={idx} className="bg-white border border-amber-200/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-colors">
                                 <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-100">
-                                  <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider bg-amber-100 text-amber-800 uppercase">
+                                  <span className="px-2 py-0.5 rounded text-[9px] font-sans font-semibold tracking-wider bg-amber-100 text-amber-800 uppercase">
                                     TIMELINE RULE
                                   </span>
-                                  <span className="font-mono font-bold text-amber-900 text-[11px]">{violation.timelineRule}</span>
+                                  <span className="font-sans font-semibold text-amber-900 text-[11px]">{violation.timelineRule}</span>
                                   <button
                                     onClick={() => openLegislativeReference(violation.citation)}
-                                    className="font-mono text-amber-900 hover:text-amber-950 font-bold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                    className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
                                     title="Click to open Verified Source reference modal"
                                   >
                                     <Scale className="w-3 h-3 text-amber-600" /> Verify: {violation.citation} ↗
@@ -4055,7 +4063,7 @@ export default function DocumentAnalyzerTab() {
                                 {violation.documentAssertion && (
                                   <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
                                     <div className="flex justify-between items-center">
-                                      <span className="text-[9px] font-mono font-extrabold text-slate-400 uppercase tracking-wider">Assertion in Document:</span>
+                                      <span className="text-[9px] font-sans font-semibold text-slate-500 uppercase tracking-wider">Assertion in Document:</span>
                                       <button
                                         onClick={() => {
                                           setSearchQuery(violation.documentAssertion);
@@ -4064,35 +4072,35 @@ export default function DocumentAnalyzerTab() {
                                             docViewer.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                           }
                                         }}
-                                        className="text-[9px] font-mono text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 font-bold px-2 py-0.5 rounded border border-brand-200 transition-colors cursor-pointer"
+                                        className="text-[9px] font-sans text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 font-semibold px-2 py-0.5 rounded border border-brand-200 transition-colors cursor-pointer"
                                       >
                                         🔍 Locate Segment
                                       </button>
                                     </div>
-                                    <p className="italic text-slate-700 leading-normal font-medium bg-white p-2 border border-slate-100 rounded text-[11.5px]">
+                                    <p className="italic text-slate-700 leading-relaxed font-normal bg-white p-2.5 border border-slate-100 rounded text-xs">
                                       "{violation.documentAssertion}"
                                     </p>
                                   </div>
-                                  )}
+                                )}
           
-                                
-                                <p className="text-slate-600 leading-normal text-[11.5px]">
-                                  <strong>Evaluation:</strong> {violation.evaluation}
-                                </p>
+                                <div className="text-slate-700 leading-relaxed text-xs">
+                                  <strong>Evaluation:</strong> <FormattedReportText text={violation.evaluation} />
+                                </div>
 
                                 {violation.locationInDocument && (
-                                  <div className="flex items-center gap-1.5 p-2 bg-brand-50/50 border border-brand-100/40 rounded-lg text-[10.5px] font-mono text-brand-950">
+                                  <div className="flex items-center gap-1.5 p-2 bg-brand-50/50 border border-brand-100/40 rounded-lg text-xs font-sans text-brand-950">
                                     <span className="shrink-0">📌</span>
                                     <span><strong>Verification Locator:</strong> <span className="underline font-bold">{violation.locationInDocument}</span></span>
                                   </div>
                                 )}
-          
 
-                                <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-lg text-[11px] text-amber-950 font-medium space-y-1">
+                                <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-lg text-xs text-amber-950 font-medium space-y-1">
                                   <div className="font-bold text-amber-900 border-b border-amber-200/50 pb-0.5 flex items-center gap-1">
                                     <span>💡</span> Parent Action Plan:
                                   </div>
-                                  <p className="text-[11px] leading-normal">{violation.parentActionStep || "Verify this schedule with the court register immediately."}</p>
+                                  <div className="text-xs leading-relaxed text-amber-950">
+                                    <FormattedReportText text={violation.parentActionStep || "Verify this schedule with the court register immediately."} />
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -4109,18 +4117,39 @@ export default function DocumentAnalyzerTab() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {selectedReport.thresholdAnalysis.map((thresh, idx) => (
                             <div key={idx} className="p-3 bg-white border border-gray-100 rounded-lg space-y-1.5">
-                              <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 font-bold uppercase">
+                              <div className="flex justify-between items-center text-[10px] font-sans text-slate-600 font-semibold uppercase">
                                 <span>{thresh.thresholdChecked}</span>
                                 <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
                                   Met: {thresh.isMet}
                                 </span>
                               </div>
-                              <p className="text-xs text-slate-600 leading-normal">{thresh.reasoning}</p>
-                              <span className="text-[9px] text-brand-700 font-mono block font-bold mt-1">Law: {thresh.primarySourceLaw}</span>
+                              <div className="text-xs text-slate-700 leading-relaxed">
+                                <FormattedReportText text={thresh.reasoning} />
+                              </div>
+                              <span className="text-[10px] text-brand-700 font-sans block font-semibold mt-1">Law: {thresh.primarySourceLaw}</span>
                             </div>
                           ))}
                         </div>
                       </div>
+
+                      {/* Charter & Human Rights Issues */}
+                      {selectedReport.charterAndHumanRightsIssues && selectedReport.charterAndHumanRightsIssues.length > 0 && (
+                        <div className="space-y-3 pt-2 border-t border-gray-100">
+                          <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
+                            <ShieldAlert className="w-4 h-4 text-purple-600" /> Charter & Human Rights Issues ({selectedReport.charterAndHumanRightsIssues.length})
+                          </h5>
+                          <div className="space-y-2">
+                            {selectedReport.charterAndHumanRightsIssues.map((issue, idx) => (
+                              <div key={idx} className="p-3 bg-purple-50/50 border border-purple-200/70 rounded-xl text-xs text-purple-950 flex items-start gap-2.5">
+                                <span className="text-purple-600 font-bold shrink-0 mt-0.5">⚖️</span>
+                                <div className="text-slate-800 leading-relaxed flex-1">
+                                  <FormattedReportText text={issue} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Tri checklists */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
@@ -4128,9 +4157,11 @@ export default function DocumentAnalyzerTab() {
                           <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">1. Verify Checks</h6>
                           <ul className="space-y-1.5">
                             {selectedReport.whatToVerify.map((item, i) => (
-                              <li key={i} className="text-xs text-slate-600 leading-normal flex gap-1">
-                                <span className="text-brand-600 font-bold">☐</span>
-                                <span>{item}</span>
+                              <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
+                                <span className="text-brand-600 font-bold shrink-0 mt-0.5">☐</span>
+                                <div className="flex-1">
+                                  <FormattedReportText text={item} />
+                                </div>
                               </li>
                             ))}
                           </ul>
@@ -4139,9 +4170,11 @@ export default function DocumentAnalyzerTab() {
                           <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">2. Elements Missing</h6>
                           <ul className="space-y-1.5">
                             {selectedReport.whatIsMissing.map((item, i) => (
-                              <li key={i} className="text-xs text-slate-600 leading-normal flex gap-1">
-                                <span className="text-rose-500 font-bold">⚠</span>
-                                <span>{item}</span>
+                              <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
+                                <span className="text-rose-500 font-bold shrink-0 mt-0.5">⚠</span>
+                                <div className="flex-1">
+                                  <FormattedReportText text={item} />
+                                </div>
                               </li>
                             ))}
                           </ul>
@@ -4150,8 +4183,11 @@ export default function DocumentAnalyzerTab() {
                           <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">3. Ask Attorney</h6>
                           <ul className="space-y-1.5">
                             {selectedReport.whatToAskALawyer.map((item, i) => (
-                              <li key={i} className="text-xs text-brand-900 bg-brand-50/40 p-2 rounded border border-brand-100 leading-normal">
-                                <strong>Q:</strong> {item}
+                              <li key={i} className="text-xs text-brand-900 bg-brand-50/40 p-2.5 rounded-lg border border-brand-100 leading-relaxed flex items-start gap-1.5">
+                                <strong className="shrink-0 mt-0.5">Q:</strong>
+                                <div className="flex-1">
+                                  <FormattedReportText text={item} />
+                                </div>
                               </li>
                             ))}
                           </ul>
@@ -4239,7 +4275,7 @@ export default function DocumentAnalyzerTab() {
                       </div>
 
                       <div>
-                        <label className="text-[10px] font-mono font-extrabold uppercase text-slate-500">
+                        <label className="text-[10px] font-sans font-extrabold uppercase text-slate-500">
                           Your Own Account (optional, but this is what makes the check real)
                         </label>
                         <textarea
@@ -4251,9 +4287,8 @@ export default function DocumentAnalyzerTab() {
                         />
                       </div>
 
-
                       {timelineError && (
-                        <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2">
+                        <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-sans flex items-start gap-2">
                           <span className="font-bold shrink-0">⚠️</span>
                           <span className="break-words">{timelineError}</span>
                         </div>
@@ -4263,13 +4298,13 @@ export default function DocumentAnalyzerTab() {
                         <div className="space-y-5 pt-2">
                           {Array.isArray(caseTimeline.timeline) && caseTimeline.timeline.length > 0 && (
                             <div>
-                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Timeline</h5>
+                              <h5 className="font-sans text-[10px] text-slate-500 font-extrabold uppercase mb-2">Timeline</h5>
                               <div className="space-y-2">
                                 {caseTimeline.timeline.map((row: any, i: number) => (
                                   <div key={i} className="border border-gray-100 rounded-lg p-3 text-xs">
                                     <div className="flex justify-between gap-2 flex-wrap">
                                       <span className="font-bold text-slate-800">{row.date || "undated"}</span>
-                                      <span className="text-[10px] font-mono text-slate-400">
+                                      <span className="text-[10px] font-sans text-slate-400">
                                         {Array.isArray(row.sources) ? row.sources.join(" · ") : ""}
                                       </span>
                                     </div>
@@ -4283,13 +4318,13 @@ export default function DocumentAnalyzerTab() {
 
                           {Array.isArray(caseTimeline.conflicts) && caseTimeline.conflicts.length > 0 && (
                             <div>
-                              <h5 className="font-mono text-[10px] text-amber-700 font-extrabold uppercase mb-2">Conflicts Between Documents</h5>
+                              <h5 className="font-sans text-[10px] text-amber-700 font-extrabold uppercase mb-2">Conflicts Between Documents</h5>
                               <div className="space-y-2">
                                 {caseTimeline.conflicts.map((c: any, i: number) => (
                                   <div key={i} className="border border-amber-200 bg-amber-50 rounded-lg p-3 text-xs space-y-1">
                                     <p className="font-bold text-amber-900">{c.topic}</p>
-                                    <p><span className="font-mono text-[10px] text-slate-500">{c?.documentA?.source}:</span> {c?.documentA?.saysWhat}</p>
-                                    <p><span className="font-mono text-[10px] text-slate-500">{c?.documentB?.source}:</span> {c?.documentB?.saysWhat}</p>
+                                    <p><span className="font-sans text-[10px] text-slate-500">{c?.documentA?.source}:</span> {c?.documentA?.saysWhat}</p>
+                                    <p><span className="font-sans text-[10px] text-slate-500">{c?.documentB?.source}:</span> {c?.documentB?.saysWhat}</p>
                                   </div>
                                 ))}
                               </div>
@@ -4298,11 +4333,11 @@ export default function DocumentAnalyzerTab() {
 
                           {Array.isArray(caseTimeline.openItems) && caseTimeline.openItems.length > 0 && (
                             <div>
-                              <h5 className="font-mono text-[10px] text-brand-700 font-extrabold uppercase mb-2">Open Items (Promised, Never Followed Up)</h5>
+                              <h5 className="font-sans text-[10px] text-brand-700 font-extrabold uppercase mb-2">Open Items (Promised, Never Followed Up)</h5>
                               <div className="space-y-2">
                                 {caseTimeline.openItems.map((o: any, i: number) => (
                                   <div key={i} className="border border-brand-200 bg-brand-50 rounded-lg p-3 text-xs space-y-1">
-                                    <p><span className="font-mono text-[10px] text-slate-500">Promised in {o.promisedIn}:</span> {o.whatWasPromised}</p>
+                                    <p><span className="font-sans text-[10px] text-slate-500">Promised in {o.promisedIn}:</span> {o.whatWasPromised}</p>
                                     <p className="text-slate-500">Never addressed in: {o.neverAddressedIn}</p>
                                   </div>
                                 ))}
@@ -4312,7 +4347,7 @@ export default function DocumentAnalyzerTab() {
 
                           {Array.isArray(caseTimeline.claimChecks) && caseTimeline.claimChecks.length > 0 && (
                             <div>
-                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Your Claims, Checked Against the Documents</h5>
+                              <h5 className="font-sans text-[10px] text-slate-500 font-extrabold uppercase mb-2">Your Claims, Checked Against the Documents</h5>
                               <div className="space-y-2">
                                 {caseTimeline.claimChecks.map((c: any, i: number) => {
                                   const verdictStyle = c.verdict === "CONFIRMED"
@@ -4324,7 +4359,7 @@ export default function DocumentAnalyzerTab() {
                                     <div key={i} className={`border rounded-lg p-3 text-xs space-y-1 ${verdictStyle}`}>
                                       <div className="flex justify-between gap-2 flex-wrap">
                                         <p className="font-bold">{c.claim}</p>
-                                        <span className="text-[10px] font-mono uppercase font-extrabold shrink-0">{c.verdict}</span>
+                                        <span className="text-[10px] font-sans uppercase font-extrabold shrink-0">{c.verdict}</span>
                                       </div>
                                       <p>{c.explanation}</p>
                                     </div>
@@ -4336,7 +4371,7 @@ export default function DocumentAnalyzerTab() {
 
                           {Array.isArray(caseTimeline.requiresConfirmation) && caseTimeline.requiresConfirmation.length > 0 && (
                             <div>
-                              <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase mb-2">Questions for Counsel</h5>
+                              <h5 className="font-sans text-[10px] text-slate-500 font-extrabold uppercase mb-2">Questions for Counsel</h5>
                               <ul className="list-disc list-inside text-xs text-slate-700 space-y-1">
                                 {caseTimeline.requiresConfirmation.map((q: string, i: number) => <li key={i}>{q}</li>)}
                               </ul>
@@ -4468,12 +4503,12 @@ export default function DocumentAnalyzerTab() {
 
                                   {/* Executive Summary Paragraph */}
                                   <div className="md:col-span-3 space-y-1 bg-brand-50/20 border border-brand-100/40 p-3 rounded-lg">
-                                    <span className="text-[10px] font-mono font-bold uppercase text-brand-800 tracking-wider flex items-center gap-1">
+                                    <span className="text-[10px] font-sans font-bold uppercase text-brand-800 tracking-wider flex items-center gap-1">
                                       <Sparkles className="w-3 h-3 text-brand-500" /> Executive File Summary:
                                     </span>
-                                    <p className="text-xs text-slate-700 leading-relaxed font-sans font-normal italic">
-                                      {report.fileSummary || "Analysis complete. This document documents case-level protection assertions, statutory deadlines, or evidentiary statements needing legal review."}
-                                    </p>
+                                    <div className="text-xs text-slate-700 leading-relaxed font-sans font-normal italic">
+                                      <FormattedReportText text={report.fileSummary || "Analysis complete. This document documents case-level protection assertions, statutory deadlines, or evidentiary statements needing legal review."} />
+                                    </div>
                                   </div>
                                 </div>
 
@@ -4481,7 +4516,7 @@ export default function DocumentAnalyzerTab() {
                                 {report.lawyerCaseBrief && report.lawyerCaseBrief.length > 0 && (
                                   <div className="bg-slate-50 border border-slate-100 rounded-lg p-3.5 space-y-2">
                                     <div className="flex justify-between items-center border-b pb-1.5 border-slate-200">
-                                      <span className="text-[10px] font-mono font-bold uppercase text-slate-700 tracking-wider flex items-center gap-1">
+                                      <span className="text-[10px] font-sans font-bold uppercase text-slate-700 tracking-wider flex items-center gap-1">
                                         <Briefcase className="w-3 h-3 text-slate-500" /> Lawyer Case Brief (Auto-Extracted):
                                       </span>
                                       
@@ -4516,7 +4551,7 @@ export default function DocumentAnalyzerTab() {
                                           setSavedBriefs(prev => [newBrief, ...prev]);
                                           alert("Success: This case brief has been archived in the Saved Briefs tab!");
                                         }}
-                                        className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 hover:text-emerald-800 rounded font-mono text-[9px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                        className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 hover:text-emerald-800 rounded font-sans text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                                         title="Save this brief to the Saved Briefs Archive"
                                       >
                                         <Save className="w-2.5 h-2.5" /> Archive Brief
@@ -4525,7 +4560,7 @@ export default function DocumentAnalyzerTab() {
                                     <ul className="space-y-1.5 list-disc pl-4 text-xs text-slate-600 leading-normal">
                                       {report.lawyerCaseBrief.map((bullet: string, idx: number) => (
                                         <li key={idx} className="marker:text-slate-400 font-normal">
-                                          {renderBoldText(bullet)}
+                                          <FormattedReportText text={bullet} />
                                         </li>
                                       ))}
                                     </ul>
@@ -4681,7 +4716,9 @@ export default function DocumentAnalyzerTab() {
                       </div>
                       <ul className="space-y-1.5 list-disc pl-4 text-xs text-slate-600 leading-normal">
                         {brief.lawyerCaseBrief.map((bullet, idx) => (
-                          <li key={idx}>{renderBoldText(bullet)}</li>
+                          <li key={idx}>
+                            <FormattedReportText text={bullet} />
+                          </li>
                         ))}
                       </ul>
                       <textarea
@@ -4773,7 +4810,7 @@ export default function DocumentAnalyzerTab() {
                       <X className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-xs text-slate-700 leading-relaxed font-mono">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-xs text-slate-800 leading-relaxed font-sans italic">
                     {details.exactText}
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">{details.explanation}</p>

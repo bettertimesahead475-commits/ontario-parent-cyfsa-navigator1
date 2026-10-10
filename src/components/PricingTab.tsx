@@ -280,10 +280,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
         </div>
         <div className="relative z-10 max-w-3xl text-left">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full font-mono font-bold tracking-wider text-[11px] uppercase border border-blue-400/30">
+            <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full font-sans font-bold tracking-wider text-[11px] uppercase border border-blue-400/30">
               CYFSA Navigator Funding &amp; Membership
             </span>
-            <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full font-mono font-semibold text-[10px] uppercase border border-emerald-500/30">
+            <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full font-sans font-semibold text-[10px] uppercase border border-emerald-500/30">
               Clear &amp; Upfront Pricing
             </span>
           </div>
@@ -298,9 +298,9 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
 
           <div className="mt-6 flex flex-wrap items-center gap-4 text-xs">
             <div className="flex items-center gap-2 bg-white/10 px-3.5 py-2 rounded-xl border border-white/15 backdrop-blur-xs">
-              <span className="text-blue-300 font-bold font-mono">Your Current Status:</span>
+              <span className="text-blue-300 font-bold font-sans">Your Current Status:</span>
               <span
-                className={`px-2.5 py-0.5 rounded font-mono font-bold text-[11px] uppercase ${
+                className={`px-2.5 py-0.5 rounded font-sans font-bold text-[11px] uppercase ${
                   currentTier === "Pro"
                     ? "bg-indigo-600 text-white"
                     : currentTier === "Premium"
@@ -315,7 +315,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             </div>
 
             {userEmail && (
-              <span className="text-slate-300 text-xs font-mono">
+              <span className="text-slate-300 text-xs font-sans">
                 Signed in as: <strong className="text-white">{userEmail}</strong>
               </span>
             )}
@@ -345,13 +345,13 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             id="plan-basic-card"
           >
             {currentTier === "Basic" && (
-              <span className="absolute top-4 right-4 bg-blue-50 text-blue-800 border border-blue-200 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              <span className="absolute top-4 right-4 bg-blue-50 text-blue-800 border border-blue-200 font-sans text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                 Current Default
               </span>
             )}
             <div className="space-y-4">
               <div>
-                <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 font-mono">
+                <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 font-sans">
                   Educational Preview
                 </span>
                 <h3 className="font-display font-extrabold text-xl text-slate-900 mt-1">
@@ -367,14 +367,14 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                   <span className="font-display font-black text-3xl sm:text-4xl text-slate-900">$0</span>
                   <span className="text-slate-500 text-xs font-semibold">CAD</span>
                 </div>
-                <span className="text-[11px] font-mono text-emerald-700 font-semibold block mt-0.5">
+                <span className="text-[11px] font-sans text-emerald-700 font-semibold block mt-0.5">
                   Free Forever • No card needed
                 </span>
               </div>
 
               {/* Allocation pill */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1">
-                <span className="font-bold text-slate-900 block font-mono text-[11px] uppercase tracking-wider">
+                <span className="font-bold text-slate-900 block font-sans text-[11px] uppercase tracking-wider">
                   Analysis Allocation:
                 </span>
                 <p className="text-slate-700 font-semibold text-xs flex items-center gap-1.5">
@@ -434,7 +434,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           >
             <div className="space-y-4">
               <div>
-                <span className="text-[10px] uppercase font-bold tracking-widest text-blue-700 font-mono">
+                <span className="text-[10px] uppercase font-bold tracking-widest text-blue-700 font-sans">
                   Document Review Pack
                 </span>
                 <h3 className="font-display font-extrabold text-xl text-slate-900 mt-1">
@@ -452,14 +452,14 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                   </span>
                   <span className="text-slate-500 text-xs font-semibold">CAD</span>
                 </div>
-                <span className="text-[11px] font-mono text-blue-700 font-semibold block mt-0.5">
+                <span className="text-[11px] font-sans text-blue-700 font-semibold block mt-0.5">
                   One-Time Payment • No Subscription
                 </span>
               </div>
 
               {/* Allocation pill */}
               <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs space-y-1">
-                <span className="font-bold text-blue-950 block font-mono text-[11px] uppercase tracking-wider">
+                <span className="font-bold text-blue-950 block font-sans text-[11px] uppercase tracking-wider">
                   Analysis Allocation:
                 </span>
                 <p className="text-blue-900 font-bold text-xs flex items-center gap-1.5">
@@ -523,20 +523,20 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             }`}
             id="plan-analyzer-premium-card"
           >
-            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-purple-900 text-white font-mono text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm flex items-center gap-1">
+            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-purple-900 text-white font-sans text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-purple-300" />
               <span>Full Forensic Pass</span>
             </div>
 
             {currentTier === "Premium" && (
-              <span className="absolute top-4 right-4 bg-purple-600 text-white font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              <span className="absolute top-4 right-4 bg-purple-600 text-white font-sans text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                 Active Plan
               </span>
             )}
 
             <div className="space-y-4">
               <div>
-                <span className="text-[10px] uppercase font-bold tracking-widest text-purple-700 font-mono">
+                <span className="text-[10px] uppercase font-bold tracking-widest text-purple-700 font-sans">
                   Deep Evidence Audit
                 </span>
                 <h3 className="font-display font-extrabold text-xl text-slate-900 mt-1">
@@ -554,14 +554,14 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                   </span>
                   <span className="text-slate-500 text-xs font-semibold">CAD</span>
                 </div>
-                <span className="text-[11px] font-mono text-purple-700 font-semibold block mt-0.5">
+                <span className="text-[11px] font-sans text-purple-700 font-semibold block mt-0.5">
                   One-Time Payment • No Subscription
                 </span>
               </div>
 
               {/* Allocation pill */}
               <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-3 text-xs space-y-1">
-                <span className="font-bold text-purple-950 block font-mono text-[11px] uppercase tracking-wider">
+                <span className="font-bold text-purple-950 block font-sans text-[11px] uppercase tracking-wider">
                   Analysis Allocation:
                 </span>
                 <p className="text-purple-900 font-bold text-xs flex items-center gap-1.5">
@@ -637,20 +637,20 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             }`}
             id="plan-pro-card"
           >
-            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-indigo-950 text-white font-mono text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm flex items-center gap-1">
+            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-indigo-950 text-white font-sans text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm flex items-center gap-1">
               <Shield className="w-3 h-3 text-indigo-400" />
               <span>Full Platform Access</span>
             </div>
 
             {currentTier === "Pro" && (
-              <span className="absolute top-4 right-4 bg-indigo-600 text-white font-mono text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              <span className="absolute top-4 right-4 bg-indigo-600 text-white font-sans text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                 Active Plan
               </span>
             )}
 
             <div className="space-y-4">
               <div>
-                <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-700 font-mono">
+                <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-700 font-sans">
                   Monthly Platform Access
                 </span>
                 <h3 className="font-display font-extrabold text-xl text-slate-900 mt-1">
@@ -667,16 +667,16 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                     ${TIER_PRICES.Pro || 149}
                   </span>
                   <span className="text-slate-500 text-xs font-semibold">CAD</span>
-                  <span className="text-slate-500 text-xs font-semibold font-mono"> / month</span>
+                  <span className="text-slate-500 text-xs font-semibold font-sans"> / month</span>
                 </div>
-                <span className="text-[11px] font-mono text-indigo-700 font-semibold block mt-0.5">
+                <span className="text-[11px] font-sans text-indigo-700 font-semibold block mt-0.5">
                   Monthly Access • Standard Entitlement Rules
                 </span>
               </div>
 
               {/* Allocation pill */}
               <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs space-y-1">
-                <span className="font-bold text-indigo-950 block font-mono text-[11px] uppercase tracking-wider">
+                <span className="font-bold text-indigo-950 block font-sans text-[11px] uppercase tracking-wider">
                   Analysis Allocation:
                 </span>
                 <p className="text-indigo-900 font-bold text-xs flex items-center gap-1.5">
@@ -749,7 +749,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       {/* 3. Detailed Feature Comparison Table (Responsive) */}
       <section className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 text-left shadow-xs space-y-6">
         <div>
-          <span className="px-3 py-1 bg-slate-100 text-slate-800 rounded-full font-mono font-bold tracking-wider text-[10px] uppercase border border-slate-200">
+          <span className="px-3 py-1 bg-slate-100 text-slate-800 rounded-full font-sans font-semibold tracking-wider text-[10px] uppercase border border-slate-200">
             Side-by-Side Comparison
           </span>
           <h3 className="font-display font-extrabold text-xl text-slate-900 mt-2">
@@ -770,29 +770,29 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                 </th>
                 <th className="py-3 px-3 font-bold text-slate-800 text-center w-1/6">
                   Free
-                  <span className="block text-[10px] font-normal text-slate-500 font-mono">$0 CAD</span>
+                  <span className="block text-[10px] font-normal text-slate-500 font-sans">$0 CAD</span>
                 </th>
                 <th className="py-3 px-3 font-bold text-blue-900 text-center w-1/6">
                   Analyzer Basic
-                  <span className="block text-[10px] font-normal text-slate-500 font-mono">${TIER_PRICES.Basic || 19.99} CAD</span>
+                  <span className="block text-[10px] font-normal text-slate-500 font-sans">${TIER_PRICES.Basic || 19.99} CAD</span>
                 </th>
                 <th className="py-3 px-3 font-bold text-purple-900 text-center w-1/6">
                   Analyzer Premium
-                  <span className="block text-[10px] font-normal text-slate-500 font-mono">${TIER_PRICES.Premium || 49.99} CAD</span>
+                  <span className="block text-[10px] font-normal text-slate-500 font-sans">${TIER_PRICES.Premium || 49.99} CAD</span>
                 </th>
                 <th className="py-3 px-3 font-bold text-indigo-900 text-center w-1/6">
                   Case Access
-                  <span className="block text-[10px] font-normal text-slate-500 font-mono">${TIER_PRICES.Pro || 149}/mo CAD</span>
+                  <span className="block text-[10px] font-normal text-slate-500 font-sans">${TIER_PRICES.Pro || 149}/mo CAD</span>
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               <tr>
                 <td className="py-3 px-4 font-semibold text-slate-900">Billing Type</td>
-                <td className="py-3 px-3 text-center text-slate-600 font-mono text-[11px]">Free Forever</td>
-                <td className="py-3 px-3 text-center text-blue-800 font-mono text-[11px]">One-Time</td>
-                <td className="py-3 px-3 text-center text-purple-800 font-mono text-[11px]">One-Time</td>
-                <td className="py-3 px-3 text-center text-indigo-800 font-mono text-[11px]">Monthly Membership</td>
+                <td className="py-3 px-3 text-center text-slate-600 font-sans text-[11px]">Free Forever</td>
+                <td className="py-3 px-3 text-center text-blue-800 font-sans text-[11px]">One-Time</td>
+                <td className="py-3 px-3 text-center text-purple-800 font-sans text-[11px]">One-Time</td>
+                <td className="py-3 px-3 text-center text-indigo-800 font-sans text-[11px]">Monthly Membership</td>
               </tr>
               <tr className="bg-slate-50/40">
                 <td className="py-3 px-4 font-semibold text-slate-900">Included Analyses</td>
@@ -866,7 +866,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       <section className="bg-slate-50 border border-slate-200 rounded-2xl md:rounded-3xl p-6 sm:p-8 text-left space-y-6" id="community-sponsorship-tiers">
         <div className="max-w-3xl">
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 bg-emerald-50 text-emerald-800 rounded-full font-mono font-bold tracking-wider text-[10px] uppercase border border-emerald-200">
+            <span className="px-3 py-1 bg-emerald-50 text-emerald-800 rounded-full font-sans font-semibold tracking-wider text-[10px] uppercase border border-emerald-200">
               Community &amp; Organizational Access
             </span>
           </div>
@@ -882,12 +882,12 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           {/* Community 5 */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-3 shadow-2xs flex flex-col justify-between">
             <div className="space-y-2">
-              <span className="text-[10px] font-mono font-bold uppercase text-indigo-700 tracking-wider block">
+              <span className="text-[10px] font-sans font-bold uppercase text-indigo-700 tracking-wider block">
                 Community 5
               </span>
               <div className="font-display font-black text-2xl text-slate-900">
                 ${TIER_PRICES.Community5?.toLocaleString() || "2,000"}{" "}
-                <span className="text-xs font-normal text-slate-500 font-mono">/mo CAD</span>
+                <span className="text-xs font-normal text-slate-500 font-sans">/mo CAD</span>
               </div>
               <p className="text-xs text-slate-800 font-bold flex items-center gap-1">
                 <span>5 sponsored families</span>
@@ -908,12 +908,12 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           {/* Community 10 */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-3 shadow-2xs flex flex-col justify-between">
             <div className="space-y-2">
-              <span className="text-[10px] font-mono font-bold uppercase text-indigo-700 tracking-wider block">
+              <span className="text-[10px] font-sans font-bold uppercase text-indigo-700 tracking-wider block">
                 Community 10
               </span>
               <div className="font-display font-black text-2xl text-slate-900">
                 ${TIER_PRICES.Community10?.toLocaleString() || "3,500"}{" "}
-                <span className="text-xs font-normal text-slate-500 font-mono">/mo CAD</span>
+                <span className="text-xs font-normal text-slate-500 font-sans">/mo CAD</span>
               </div>
               <p className="text-xs text-slate-800 font-bold flex items-center gap-1">
                 <span>10 sponsored families</span>
@@ -934,12 +934,12 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           {/* Community 25 */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-3 shadow-2xs flex flex-col justify-between">
             <div className="space-y-2">
-              <span className="text-[10px] font-mono font-bold uppercase text-indigo-700 tracking-wider block">
+              <span className="text-[10px] font-sans font-bold uppercase text-indigo-700 tracking-wider block">
                 Community 25
               </span>
               <div className="font-display font-black text-2xl text-slate-900">
                 ${TIER_PRICES.Community25?.toLocaleString() || "7,500"}{" "}
-                <span className="text-xs font-normal text-slate-500 font-mono">/mo CAD</span>
+                <span className="text-xs font-normal text-slate-500 font-sans">/mo CAD</span>
               </div>
               <p className="text-xs text-slate-800 font-bold flex items-center gap-1">
                 <span>25 sponsored families</span>
@@ -960,11 +960,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           {/* Regional / Enterprise */}
           <div className="bg-white p-5 rounded-2xl border border-emerald-200 space-y-3 shadow-2xs flex flex-col justify-between">
             <div className="space-y-2">
-              <span className="text-[10px] font-mono font-bold uppercase text-emerald-700 tracking-wider block">
+              <span className="text-[10px] font-sans font-bold uppercase text-emerald-700 tracking-wider block">
                 Regional / Enterprise
               </span>
               <div className="font-display font-black text-2xl text-slate-900">
-                Custom <span className="text-xs font-normal text-slate-500 font-mono">pricing</span>
+                Custom <span className="text-xs font-normal text-slate-500 font-sans">pricing</span>
               </div>
               <p className="text-xs text-slate-800 font-bold flex items-center gap-1">
                 <span>25+ sponsored families</span>
@@ -1030,7 +1030,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       <div className="bg-white border-2 border-indigo-100 rounded-2xl p-6 md:p-8 shadow-xs" id="checkout-how-it-works">
         <div className="flex flex-col md:flex-row gap-6 md:items-center md:justify-between text-left">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 font-mono">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 font-sans">
               Simple 3-Step Checkout Flow
             </span>
             <h3 className="text-xl font-black text-slate-900 mt-1">
@@ -1057,7 +1057,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
-            <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] uppercase font-mono font-bold px-2.5 py-0.5 rounded-full tracking-wider inline-block">
+            <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] uppercase font-sans font-bold px-2.5 py-0.5 rounded-full tracking-wider inline-block">
               Already have a code?
             </span>
             <h3 className="font-display font-black text-[#0f172a] text-lg flex items-center gap-2">
@@ -1070,7 +1070,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
           </div>
 
           <div className="bg-white border text-left border-gray-100 p-5 rounded-2xl space-y-2.5 shrink-0 w-full md:w-80 shadow-3xs">
-            <span className="text-[10px] uppercase font-bold text-slate-500 font-mono tracking-widest block">
+            <span className="text-[10px] uppercase font-bold text-slate-500 font-sans tracking-widest block">
               Enter Credentials
             </span>
             <input
@@ -1085,7 +1085,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
               placeholder="XXXX-XXXX-XX"
               value={sidebarCode}
               onChange={(e) => setSidebarCode(e.target.value)}
-              className="w-full text-xs font-mono border border-slate-200 bg-slate-50 text-slate-800 p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 uppercase tracking-widest text-center"
+              className="w-full text-xs font-sans border border-slate-200 bg-slate-50 text-slate-800 p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 uppercase tracking-widest text-center"
             />
             {sidebarError && <p className="text-[10px] text-red-600 font-semibold">{sidebarError}</p>}
             {sidebarSuccess && (
@@ -1126,12 +1126,12 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
         </div>
         <div className="flex items-center gap-4 text-gray-400 shrink-0">
           <div className="flex flex-col items-center">
-            <span className="font-mono text-xs font-bold text-slate-800">INTERAC</span>
+            <span className="font-sans text-xs font-bold text-slate-800">INTERAC</span>
             <span className="text-[10px] text-gray-400">e-Transfer Only</span>
           </div>
           <div className="w-px h-8 bg-gray-200"></div>
           <div className="flex flex-col items-center">
-            <span className="font-mono text-xs font-bold text-slate-800">ACCESS CODE</span>
+            <span className="font-sans text-xs font-bold text-slate-800">ACCESS CODE</span>
             <span className="text-[10px] text-gray-400">Server-Verified</span>
           </div>
         </div>
@@ -1156,7 +1156,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                   <h3 id="checkout-modal-title" className="font-display font-extrabold text-sm uppercase tracking-wide">
                     Interac e-Transfer Checkout
                   </h3>
-                  <p className="text-[10px] text-emerald-400 font-semibold font-mono">
+                  <p className="text-[10px] text-emerald-400 font-semibold font-sans">
                     {selectedTier} Plan — ${selectedTier ? TIER_PRICES[selectedTier] : 0} CAD
                   </p>
                 </div>
@@ -1228,7 +1228,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                       type="email"
                       value={email}
                       readOnly
-                      className="w-full text-sm border border-slate-200 bg-slate-100 text-slate-800 p-3 rounded-lg outline-none cursor-default font-mono text-xs"
+                      className="w-full text-xs border border-slate-200 bg-slate-100 text-slate-800 p-3 rounded-lg outline-none cursor-default font-sans"
                     />
                     {errorMessage && <p className="text-xs text-red-600 font-semibold">{errorMessage}</p>}
                     <button
@@ -1249,11 +1249,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 text-xs">
                   {/* Step 1: Destination email */}
                   <div className="space-y-1">
-                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                    <span className="text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider block">
                       1. Send Interac e-Transfer To:
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className="bg-slate-900 text-white font-mono text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-950 select-all tracking-wide">
+                      <span className="bg-slate-900 text-white font-sans text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-950 select-all tracking-wide">
                         {PAYMENT_EMAIL}
                       </span>
                       <button
@@ -1271,7 +1271,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                   {/* Step 2: Amount & Memo */}
                   <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200">
                     <div>
-                      <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                      <span className="text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider block">
                         2. Exact Amount:
                       </span>
                       <span className="font-bold text-slate-900 text-sm">
@@ -1280,11 +1280,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                     </div>
 
                     <div>
-                      <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider block">
+                      <span className="text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider block">
                         3. Transfer Memo / Note:
                       </span>
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="font-mono text-xs text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 font-bold select-all break-all">
+                        <span className="font-sans text-xs text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 font-bold select-all break-all tracking-wider">
                           {referenceNumber}
                         </span>
                         <button
@@ -1293,7 +1293,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                           className="p-1 bg-white border border-slate-300 hover:bg-slate-100 rounded text-slate-700 text-[10px] font-semibold flex items-center gap-1 cursor-pointer shrink-0"
                           title="Copy memo"
                         >
-                          <Copy className="w-3 h-3" />
+                          <Copy className="w-3.5 h-3.5" />
                           <span>{copiedMemo ? "Copied!" : "Copy"}</span>
                         </button>
                       </div>
@@ -1313,7 +1313,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
 
                 {/* Code Entry Form */}
                 <div className="bg-white border border-indigo-100 p-4 rounded-xl space-y-3 shadow-3xs">
-                  <label className="text-[10.5px] font-mono font-bold text-indigo-950 uppercase tracking-wider block">
+                  <label className="text-[10.5px] font-sans font-bold text-indigo-950 uppercase tracking-wider block">
                     Enter Access Code to Unlock
                   </label>
                   <div className="flex gap-2">
@@ -1322,7 +1322,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                       placeholder="XXXX-XXXX-XX"
                       value={codeInput}
                       onChange={(e) => setCodeInput(e.target.value)}
-                      className="flex-1 text-xs font-mono border border-slate-200 bg-slate-50 text-slate-800 p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 uppercase tracking-widest text-center"
+                      className="flex-1 text-xs font-sans font-semibold border border-slate-200 bg-slate-50 text-slate-800 p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 uppercase tracking-widest text-center"
                     />
                     <button
                       type="button"
