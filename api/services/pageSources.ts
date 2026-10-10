@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import zlib from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
+import { PDFParse } from 'pdf-parse';
 import { LifecycleError } from './lifecycleErrors.js';
 
 export const SOURCE_SCHEMA = 'page-evidence-v1';
@@ -102,6 +103,31 @@ export function extractTextFromPdfPage(page: any, doc: PDFDocument): string {
   }
 }
 
+/**
+ * Production-grade PDF text extraction using Mozilla PDF.js layout & font engine.
+ * Handles embedded subset fonts, ToUnicode CMap, Flate compression, and kerning.
+ */
+export async function extractTextFromPdfBuffer(
+  bytes: Buffer
+): Promise<{ pages: { pageNumber: number; text: string }[]; totalPages: number } | null> {
+  try {
+    const parser = new PDFParse({ data: bytes });
+    const result = await parser.getText();
+    if (result && Array.isArray(result.pages)) {
+      return {
+        pages: result.pages.map((p: any, idx: number) => ({
+          pageNumber: p.num ?? idx + 1,
+          text: (p.text || '').trim(),
+        })),
+        totalPages: result.total || result.pages.length,
+      };
+    }
+  } catch (err) {
+    console.warn('[PDFParse] Full layout extraction encountered an issue, falling back:', err);
+  }
+  return null;
+}
+
 // Memory extraction cache keyed by document hash
 const pageExtractionCache = new Map<string, { pages: PageSource[]; expiresAt: number }>();
 
@@ -134,16 +160,31 @@ export async function extractPages(bytes: Buffer, mime: string, ocr: OCR): Promi
   if (mime === 'application/pdf') {
     let pdf: PDFDocument;
     try { pdf = await PDFDocument.load(bytes); } catch { throw invalid('PDF cannot be read or is encrypted.'); }
-    if (!pdf.getPageCount() || pdf.getPageCount()>20) throw invalid('PDF must contain 1–20 pages.');
-    for (let i=0;i<pdf.getPageCount();i++) {
+    const pageCount = pdf.getPageCount();
+    if (!pageCount || pageCount > 20) throw invalid('PDF must contain 1–20 pages.');
+
+    // Priority 1: Mozilla PDF.js layout & glyph decoder (handles ToUnicode, embedded fonts, kerning)
+    const parsedPdf = await extractTextFromPdfBuffer(bytes);
+
+    for (let i = 0; i < pageCount; i++) {
+      const parsedPageText = parsedPdf?.pages?.find(p => p.pageNumber === i + 1)?.text;
+      if (parsedPageText && parsedPageText.trim().length >= 20) {
+        inputs.push({ bytes: new Uint8Array(0), method: 'native-pdf-text', preExtractedText: parsedPageText.trim() });
+        continue;
+      }
+
+      // Priority 2: Direct stream extraction fallback
       const nativeText = extractTextFromPdfPage(pdf.getPages()[i], pdf);
       if (nativeText && nativeText.trim().length >= 20) {
-        inputs.push({bytes: new Uint8Array(0), method: 'native-pdf-text', preExtractedText: nativeText});
-      } else {
-        const single=await PDFDocument.create();
-        const [page]=await single.copyPages(pdf,[i]); single.addPage(page);
-        inputs.push({bytes:await single.save(),method:'gemini-page-ocr'});
+        inputs.push({ bytes: new Uint8Array(0), method: 'native-pdf-text', preExtractedText: nativeText.trim() });
+        continue;
       }
+
+      // Priority 3: Scanned or image-only page requires Gemini OCR
+      const single = await PDFDocument.create();
+      const [page] = await single.copyPages(pdf, [i]);
+      single.addPage(page);
+      inputs.push({ bytes: await single.save(), method: 'gemini-page-ocr' });
     }
   } else inputs.push({bytes,method:mime==='text/plain'?'utf8-single-source':'gemini-image-ocr'});
 

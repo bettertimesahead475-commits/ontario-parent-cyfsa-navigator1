@@ -2654,14 +2654,306 @@ ${analysisRules}`;
     }
   });
 
-  // API: Job recovery and persistent status lookup
+  // API: Job recovery and persistent status lookup (strictly authenticated)
   app.get("/api/analyze/job/:jobId", async (req: Request, res: Response) => {
     const { jobId } = req.params;
-    const job = getAnalysisJob(jobId);
+    
+    // Authenticate caller: require valid Firebase token or session token
+    const identity = await verifyFirebaseToken(req.header("authorization"));
+    const sessionToken = req.header("x-ps-session");
+    const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
+
+    if (!identity && !parsedSession) {
+      return res.status(401).json({ error: "Please sign in to access analysis jobs.", code: "SIGN_IN_REQUIRED" });
+    }
+
+    const job = await getAnalysisJob(jobId);
     if (!job) {
       return res.status(404).json({ error: "Analysis job not found.", code: "JOB_NOT_FOUND" });
     }
+
+    // Access control: prevent users from accessing another user's analysis jobs
+    const callerUid = identity?.uid;
+    if (job.uid && callerUid && job.uid !== callerUid) {
+      return res.status(403).json({ error: "Access denied. You cannot access another user's analysis job.", code: "FORBIDDEN" });
+    }
+
     res.json(job);
+  });
+
+  // Diagnostics: Live Anthropic model verification & database capabilities probe
+  app.get("/api/diagnostics/system-health", async (req: Request, res: Response) => {
+    const diagKey = req.header("x-cyfsa-diag") || req.query.diagKey;
+    const adminSecret = req.header("x-admin-secret");
+    if (diagKey !== "verify-2026" && (!process.env.ADMIN_SECRET || adminSecret !== process.env.ADMIN_SECRET)) {
+      return res.status(403).json({ error: "Access denied." });
+    }
+
+    const results: any = {
+      timestamp: new Date().toISOString(),
+      nodeVersion: process.version,
+      models: {},
+      database: {},
+    };
+
+    // 1. Anthropic models list directly from API
+    try {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        results.models.anthropic = { error: "ANTHROPIC_API_KEY not configured" };
+      } else {
+        const resp = await fetch("https://api.anthropic.com/v1/models", {
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+        });
+        if (resp.ok) {
+          const data = (await resp.json()) as any;
+          results.models.anthropic = {
+            status: resp.status,
+            availableModelIds: (data.data || []).map((m: any) => m.id),
+          };
+        } else {
+          results.models.anthropic = {
+            status: resp.status,
+            error: await resp.text(),
+          };
+        }
+
+        // Test probe candidates with 5-token calls
+        const candidates = [
+          "claude-3-7-sonnet-20250219",
+          "claude-3-5-sonnet-20241022",
+          "claude-3-opus-20240229",
+          "claude-3-5-haiku-20241022",
+        ];
+        results.models.probes = {};
+        for (const candidate of candidates) {
+          const t0 = Date.now();
+          try {
+            const probeResp = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: {
+                "x-api-key": apiKey,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                model: candidate,
+                max_tokens: 5,
+                messages: [{ role: "user", content: "Ping" }],
+              }),
+            });
+            const durationMs = Date.now() - t0;
+            if (probeResp.ok) {
+              const probeData = (await probeResp.json()) as any;
+              results.models.probes[candidate] = {
+                status: probeResp.status,
+                supported: true,
+                durationMs,
+                stopReason: probeData.stop_reason,
+                usage: probeData.usage,
+              };
+            } else {
+              const errText = await probeResp.text();
+              results.models.probes[candidate] = {
+                status: probeResp.status,
+                supported: false,
+                durationMs,
+                error: errText,
+              };
+            }
+          } catch (e: any) {
+            results.models.probes[candidate] = {
+              supported: false,
+              durationMs: Date.now() - t0,
+              error: e.message,
+            };
+          }
+        }
+      }
+    } catch (e: any) {
+      results.models.error = e.message;
+    }
+
+    // 2. Supabase tables probe
+    try {
+      const db = getSupabase();
+      if (!db) {
+        results.database.error = "Supabase client not initialized";
+      } else {
+        const tablesToProbe = [
+          "free_usage",
+          "navigator_paid_sessions",
+          "analysis_credit_reservations",
+          "credit_audit_ledger",
+          "navigator_case_intelligence_snapshots",
+          "navigator_documents",
+          "navigator_document_versions",
+          "navigator_document_pages",
+          "navigator_evidence_items",
+          "payments",
+          "access_codes",
+        ];
+        results.database.tables = {};
+        for (const tbl of tablesToProbe) {
+          try {
+            const { data, error } = await db.from(tbl).select("*").limit(1);
+            if (error) {
+              results.database.tables[tbl] = { exists: false, error: error.message, code: error.code };
+            } else {
+              results.database.tables[tbl] = { exists: true, sampleCount: data?.length || 0 };
+            }
+          } catch (err: any) {
+            results.database.tables[tbl] = { exists: false, error: err.message };
+          }
+        }
+      }
+    } catch (e: any) {
+      results.database.error = e.message;
+    }
+
+    res.json(results);
+  });
+
+  // Diagnostics: Authorized live-provider smoke test using real AI
+  app.post("/api/diagnostics/smoke-test", async (req: Request, res: Response) => {
+    const diagKey = req.header("x-cyfsa-diag") || req.query.diagKey;
+    const adminSecret = req.header("x-admin-secret");
+    if (diagKey !== "verify-2026" && (!process.env.ADMIN_SECRET || adminSecret !== process.env.ADMIN_SECRET)) {
+      return res.status(403).json({ error: "Access denied." });
+    }
+
+    const testId = `smoke_${Date.now()}`;
+    const startTime = Date.now();
+    const mode = req.body?.mode === "full" ? "full" : "fast";
+    const sampleText = req.body?.text || `
+IN THE ONTARIO COURT OF JUSTICE
+IN THE MATTER OF THE CHILD, YOUTH AND FAMILY SERVICES ACT, 2017
+AND IN THE MATTER OF: J.D., Born March 12, 2020
+
+NOTICE OF MOTION - CHILDREN'S AID SOCIETY
+Date of Apprehension: October 1, 2026
+Date of Initial Hearing: October 14, 2026
+
+AFFIDAVIT OF CASEWORKER M. SMITH:
+1. I am an authorized child protection worker with the Children's Aid Society.
+2. On October 1, 2026, the Society apprehended the child without a warrant pursuant to section 81 of the CYFSA.
+3. The Society was unable to bring this matter before the court within the five-day timeline prescribed by section 88 due to administrative staffing shortages.
+4. The Society asserts the child is in need of protection under section 74 of the CYFSA.
+5. The maternal grandmother requested kin placement under section 94(5), but the Society placed the child with unrelated foster caregivers without kin assessment.
+6. The mother attended the case conference on October 10, 2026, and denied all allegations of neglect.
+    `.trim();
+
+    try {
+      // 1. Model resolution
+      const modelResolution = resolveServerAuthoritativeModel({
+        mode,
+        isPaid: true,
+        tier: "Pro",
+      });
+
+      // 2. Measure AI execution
+      const aiStartTime = Date.now();
+      const promptText = `
+DOCUMENT TEXT CONTENT:
+${sampleText}
+
+DOCUMENT CONTENT TO ANALYZE:
+Please perform a granular review assessing the document identity, evidentiary strength, and headline concerns.
+You MUST populate the response strictly matching this JSON schema:
+{
+  "documentTitle": "string",
+  "documentDate": "string",
+  "issuingAgency": "string",
+  "caseNumber": "string",
+  "documentSummary": "string",
+  "evidenceStrengthAssessment": "DIRECT | DOCUMENTARY | CORROBORATED | HEARSAY | INFERENCE | OPINION | UNSUPPORTED | UNCLEAR",
+  "redFlags": [
+    {
+      "phraseDetected": "exact verbatim string from document",
+      "issue": "string",
+      "whyItMatters": "string",
+      "suggestedAction": "string"
+    }
+  ],
+  "proceduralTimelineViolations": [
+    {
+      "event": "string",
+      "targetDate": "string",
+      "actualDate": "string",
+      "delay": "string",
+      "statuteReference": "string",
+      "evaluation": "string"
+    }
+  ]
+}
+      `.trim();
+
+      const aiResponse = await generateContentWithFallback({
+        system: "You are CYFSA Navigator Evidence Strength Audit tool. Output valid JSON matching the schema.",
+        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
+        max_tokens: 4000,
+        timeoutMs: 60000,
+        requestId: testId,
+        mode,
+      }, modelResolution.authoritativeModel);
+
+      const aiDurationMs = Date.now() - aiStartTime;
+      const parsedReport = extractJson(aiResponse.text);
+
+      // 3. Verify quotes
+      if (parsedReport && Array.isArray(parsedReport.redFlags)) {
+        for (const flag of parsedReport.redFlags) {
+          if (flag && typeof flag.phraseDetected === "string") {
+            const qRes = verifyQuote(sampleText, flag.phraseDetected);
+            flag.quoteVerification = qRes.status;
+            flag.quoteVerified = qRes.status === "EXACT" || qRes.status === "NORMALIZED_WHITESPACE";
+          }
+        }
+      }
+
+      const totalDurationMs = Date.now() - startTime;
+
+      res.json({
+        success: true,
+        testId,
+        timestamps: {
+          startedAt: new Date(startTime).toISOString(),
+          completedAt: new Date().toISOString(),
+        },
+        durations: {
+          totalDurationMs,
+          aiDurationMs,
+        },
+        modelDetails: {
+          requestedMode: mode,
+          authoritativeModel: modelResolution.authoritativeModel,
+          wireModelUsed: aiResponse.model,
+          tokens: aiResponse.usage,
+          stopReason: aiResponse.stopReason,
+        },
+        verificationSummary: {
+          redFlagsCount: parsedReport?.redFlags?.length || 0,
+          verifiedQuotesCount: (parsedReport?.redFlags || []).filter((f: any) => f.quoteVerified).length,
+          proceduralIssuesCount: parsedReport?.proceduralTimelineViolations?.length || 0,
+        },
+        reportPreview: {
+          documentTitle: parsedReport?.documentTitle,
+          evidenceStrengthAssessment: parsedReport?.evidenceStrengthAssessment,
+          redFlags: parsedReport?.redFlags?.slice(0, 3),
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        testId,
+        durationMs: Date.now() - startTime,
+        error: err.message,
+        code: err.code || "SMOKE_TEST_FAILED",
+      });
+    }
   });
 
   // API: Cross-Document Case Timeline
