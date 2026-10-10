@@ -102,9 +102,15 @@ async function ensureBucket(): Promise<boolean> {
   if (!db) return false;
   try {
     const { data: buckets } = await db.storage.listBuckets();
-    if (buckets && buckets.some((b: any) => b.name === BUCKET_NAME)) {
-      bucketChecked = true;
-      return true;
+    if (buckets) {
+      const existing = buckets.find((b: any) => b.name === BUCKET_NAME);
+      if (existing) {
+        if (existing.public) {
+          await db.storage.updateBucket(BUCKET_NAME, { public: false });
+        }
+        bucketChecked = true;
+        return true;
+      }
     }
     const { error: cErr } = await db.storage.createBucket(BUCKET_NAME, { public: false });
     if (!cErr || cErr.message?.includes("already exists")) {

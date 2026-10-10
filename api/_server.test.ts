@@ -257,16 +257,15 @@ describe("GET /api/health", () => {
     expect(typeof res.body.timestamp).toBe("string");
   });
 
-  it("GET /api/preview-health requires admin secret and reports non-secret diagnostic state", async () => {
-    const unauth = await request(app).get("/api/preview-health");
-    expect(unauth.status).toBe(401);
+  it("confirms temporary diagnostic endpoints are removed and return 404", async () => {
+    const resPreview = await request(app).get("/api/preview-health");
+    expect(resPreview.status).toBe(404);
 
-    const res = await request(app).get("/api/preview-health").set("x-admin-secret", "test-admin-secret");
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("ok");
-    expect(res.body.supabase).toBeDefined();
-    expect(res.body.envChecks).toBeDefined();
-    expect(typeof res.body.envChecks.geminiApiKeyConfigured).toBe("boolean");
+    const resDiag = await request(app).get("/api/diagnostics/system-health");
+    expect(resDiag.status).toBe(404);
+
+    const resSmoke = await request(app).post("/api/diagnostics/smoke-test");
+    expect(resSmoke.status).toBe(404);
   });
 });
 

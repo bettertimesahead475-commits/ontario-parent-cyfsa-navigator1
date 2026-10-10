@@ -255,4 +255,52 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     expect(redFlag.quoteVerified).toBe(false);
     expect(redFlag.quoteVerification).toBe("ABSENT");
   });
+
+  it("GET /api/analyze/job/:jobId rejects unauthenticated requests with 401 SIGN_IN_REQUIRED", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+    const res = await request(app).get("/api/analyze/job/job-anon-123");
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+  });
+
+  it("GET /api/analyze/job/:jobId forbids access to another user's job with 403 FORBIDDEN", async () => {
+    createAnalysisJob({
+      jobId: "job-owned-by-other",
+      uid: "other-parent-uid",
+      mode: "fast",
+    });
+
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+      uid: "test-parent-uid",
+      email: "parent@example.com",
+    });
+
+    const res = await request(app)
+      .get("/api/analyze/job/job-owned-by-other")
+      .set(paid());
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("FORBIDDEN");
+  });
+
+  it("GET /api/analyze/job/:jobId recovers own completed job with 200 OK", async () => {
+    createAnalysisJob({
+      jobId: "job-owned-by-me",
+      uid: "test-parent-uid",
+      mode: "fast",
+    });
+
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+      uid: "test-parent-uid",
+      email: "parent@example.com",
+    });
+
+    const res = await request(app)
+      .get("/api/analyze/job/job-owned-by-me")
+      .set(paid());
+
+    expect(res.status).toBe(200);
+    expect(res.body.jobId).toBe("job-owned-by-me");
+    expect(res.body.uid).toBe("test-parent-uid");
+  });
 });
