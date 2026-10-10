@@ -47,9 +47,9 @@ export function resolveAnthropicWireModel(model: string): string {
 }
 
 export const TOKEN_BUDGETS = {
-  QUICK: 8000,
-  FORENSIC_PASS_1: 16000,
-  FORENSIC_PASS_2: 16000,
+  QUICK: 16000,
+  FORENSIC_PASS_1: 20000,
+  FORENSIC_PASS_2: 20000,
 } as const;
 
 export const MODEL_TIMEOUTS = {

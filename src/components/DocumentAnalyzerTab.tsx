@@ -373,14 +373,19 @@ export default function DocumentAnalyzerTab() {
     return () => clearInterval(timer);
   }, [rateLimitCountdown]);
 
-  // Check for existing in-progress or completed analysis job on mount/reconnect
+  // Check for existing in-progress or completed analysis job on mount/reconnect with active polling
   useEffect(() => {
     if (!activeJobId) return;
     let isMounted = true;
+    let pollTimeout: any = null;
+    let pollCount = 0;
+    const maxPolls = 48; // 48 * 2.5s = 120s max recovery window
+
     const checkJob = async () => {
       try {
         const res = await apiFetch(`/api/analyze/job/${activeJobId}`);
-        if (res.ok && isMounted) {
+        if (!isMounted) return;
+        if (res.ok) {
           const job = await res.json();
           if (job.status === "completed" && job.report) {
             setSelectedReport(job.report);
@@ -389,29 +394,51 @@ export default function DocumentAnalyzerTab() {
               localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
             } catch {}
             setActiveJobId(null);
+            return;
           } else if (job.status === "failed") {
             setAnalyzerState("ERROR");
-            setSingleAnalysisError(job.error?.message || "Previous analysis attempt failed.");
+            setSingleAnalysisError(job.error?.message || "Analysis could not complete. Zero credits deducted.");
             try {
               localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
             } catch {}
             setActiveJobId(null);
+            return;
           } else if (job.status === "analyzing") {
             setAnalyzerState("ANALYZING");
             setStreamingProgress({
-              stage: job.currentStage,
-              percent: job.percent,
-              message: "Resuming analysis in progress...",
+              stage: job.currentStage || "reviewing_evidence",
+              percent: job.percent || 45,
+              message: job.message || "Auditing document against statutory thresholds...",
             });
+            pollCount++;
+            if (pollCount < maxPolls) {
+              pollTimeout = setTimeout(checkJob, 2500);
+              return;
+            } else {
+              setAnalyzerState("ERROR");
+              setSingleAnalysisError("Analysis is taking longer than expected. Your document is safe and zero credits were deducted.");
+              try {
+                localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+              } catch {}
+              setActiveJobId(null);
+              return;
+            }
           }
+        } else if (res.status === 404) {
+          try {
+            localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+          } catch {}
+          setActiveJobId(null);
         }
       } catch (e) {
         console.warn("Failed to check active analysis job:", e);
       }
     };
+
     checkJob();
     return () => {
       isMounted = false;
+      if (pollTimeout) clearTimeout(pollTimeout);
     };
   }, [activeJobId, setSelectedReport]);
 
@@ -1716,8 +1743,10 @@ export default function DocumentAnalyzerTab() {
     setSelectedFileId(chunkedFiles[0]?.id || null);
     setSelectedReport(null);
     e.target.value = "";
-    // Uploading should produce a result without making the parent find a second action.
-    if (chunkedFiles.length > 0) {
+    // Single-file uploads use full streaming and stage callbacks; batches use parallel engine
+    if (chunkedFiles.length === 1) {
+      await triggerSingleAnalysis(chunkedFiles[0]);
+    } else if (chunkedFiles.length > 1) {
       await runParallelBulkAnalysis(chunkedFiles);
     } else {
       setBulkProgress(null);
@@ -1840,9 +1869,8 @@ export default function DocumentAnalyzerTab() {
                 } catch (error: any) {
                   console.error(`Analysis failed for ${file.name}:`, error);
                   attempts++;
-                  // Errors without a status (network drop, client-side extraction checks) keep
-                  // the old retry behaviour; server responses are only retried when retryable.
-                  const canRetry = error instanceof ApiResponseError ? error.retryable : true;
+                  // Do not retry fatal format/truncation errors
+                  const canRetry = error instanceof ApiResponseError ? (error.retryable && error.code !== "AI_RESPONSE_INVALID") : true;
                   if (!canRetry || attempts >= maxAttempts) {
                     const reason = error?.message || "Analysis failed. Please retry.";
                     setOrganizedFiles(prev => prev.map(f =>
@@ -1932,41 +1960,61 @@ export default function DocumentAnalyzerTab() {
           ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
       }
 
-      setAnalyzerState("AUTHENTICATING");
-      setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
+      let attempts = 0;
+      const maxAttempts = 3;
+      let delayMs = 1500;
+      let report: any = null;
 
-      const response = await apiFetch("/api/analyze", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "text/event-stream, application/json",
-          "X-Analysis-Id": analysisId,
-        },
-        body: JSON.stringify({
-          ...payload,
-          mode: analysisMode,
-          model: claudeModel,
-          stream: true,
-          analysisId,
-        })
-      });
+      while (attempts < maxAttempts) {
+        attempts++;
+        try {
+          setAnalyzerState("AUTHENTICATING");
+          setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
 
-      const report = await readAnalysisEventStream(response, {
-        onStage: (stage, percent, message) => {
-          if (stage === "extracting") setAnalyzerState("EXTRACTING");
-          else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
-          else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues") setAnalyzerState("ANALYZING");
-          else if (stage === "verifying_findings") setAnalyzerState("VALIDATING");
-          else if (stage === "preparing_report") setAnalyzerState("SAVING");
-          setStreamingProgress({ stage, percent, message });
-        },
-        onComplete: () => {
-          setAnalyzerState("COMPLETE");
-        },
-        onError: () => {
-          setAnalyzerState("ERROR");
+          const response = await apiFetch("/api/analyze", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "text/event-stream, application/json",
+              "X-Analysis-Id": analysisId,
+            },
+            body: JSON.stringify({
+              ...payload,
+              mode: analysisMode,
+              model: claudeModel,
+              stream: true,
+              analysisId,
+            })
+          });
+
+          report = await readAnalysisEventStream(response, {
+            onStage: (stage, percent, message) => {
+              if (stage === "extracting") setAnalyzerState("EXTRACTING");
+              else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
+              else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues") setAnalyzerState("ANALYZING");
+              else if (stage === "verifying_findings") setAnalyzerState("VALIDATING");
+              else if (stage === "preparing_report") setAnalyzerState("SAVING");
+              setStreamingProgress({ stage, percent, message });
+            },
+            onComplete: () => {
+              setAnalyzerState("COMPLETE");
+            },
+            onError: () => {
+              setAnalyzerState("ERROR");
+            }
+          });
+          break;
+        } catch (attemptErr: any) {
+          const canRetry = attemptErr instanceof ApiResponseError
+            ? (attemptErr.retryable && attemptErr.code !== "AI_RESPONSE_INVALID")
+            : (attemptErr?.retryable === true && attemptErr?.code !== "AI_RESPONSE_INVALID");
+          if (!canRetry || attempts >= maxAttempts) {
+            throw attemptErr;
+          }
+          await new Promise(r => setTimeout(r, delayMs));
+          delayMs = Math.min(delayMs * 1.5, 5000);
         }
-      });
+      }
 
       setSelectedReport(report);
       setAnalyzerState("COMPLETE");
@@ -4340,18 +4388,37 @@ export default function DocumentAnalyzerTab() {
                           <div className="space-y-2">
                             <div className="flex justify-between text-xs font-mono font-semibold text-slate-700">
                               <span>{streamingProgress.message || "Auditing document against statutory thresholds..."}</span>
-                              <span className="text-brand-600">{streamingProgress.percent || 45}%</span>
+                              <span className="text-brand-600">{streamingProgress.percent ? `${streamingProgress.percent}%` : "Analyzing..."}</span>
                             </div>
                             <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                               <div
                                 className="bg-brand-600 h-2 rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${Math.max(10, streamingProgress.percent || 30)}%` }}
+                                style={{ width: `${Math.max(8, streamingProgress.percent || 15)}%` }}
                               />
                             </div>
                           </div>
                           <p className="text-[11px] text-slate-500 font-sans">
                             🛡️ Zero credits deducted until analysis is verified and delivered to your screen.
                           </p>
+                          <div className="pt-1 flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsSingleAnalyzing(false);
+                                setIsBulkAnalyzing(false);
+                                setAnalyzerState("ERROR");
+                                setSingleAnalysisError("Analysis cancelled by user. Zero credits were consumed.");
+                                setOrganizedFiles(prev => prev.map(f =>
+                                  f.id === activeSelectedFile.id ? { ...f, analysisStatus: "failed", analysisError: "Analysis cancelled. Please retry." } : f
+                                ));
+                                try { localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID"); } catch {}
+                                setActiveJobId(null);
+                              }}
+                              className="text-[11px] text-slate-500 hover:text-red-600 underline font-sans cursor-pointer transition-colors"
+                            >
+                              Cancel & Retry
+                            </button>
+                          </div>
                         </div>
                       ) : activeSelectedFile.analysisStatus === "failed" || analyzerState === "ERROR" ? (
                         <div className="space-y-4 max-w-md mx-auto text-center" id="analysis-failed-view">

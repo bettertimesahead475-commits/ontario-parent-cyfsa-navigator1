@@ -716,7 +716,7 @@ describe("POST /api/analyze", () => {
   // see the comment above documentContentBlock in _server.ts) instead of one, so every test
   // below queues a resolved/rejected value for each of the two calls the endpoint actually
   // makes, in the order they're constructed: core first, then deep-dive.
-  it("requests 8000 max_tokens on Quick Review (Sonnet) and falls back an unknown model to claude-3-5-sonnet-20241022", async () => {
+  it("requests 16000 max_tokens on Quick Review (Sonnet) and falls back an unknown model to claude-3-5-sonnet-20241022", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     const res = await request(app)
       .post("/api/analyze")
@@ -726,7 +726,7 @@ describe("POST /api/analyze", () => {
     expect(res.status).toBe(200);
     expect(res.body.documentTitle).toBe("Uploaded Document");
     expect(mockCreateMessage).toHaveBeenCalledTimes(1);
-    expect(mockCreateMessage.mock.calls[0][0].max_tokens).toBe(8000);
+    expect(mockCreateMessage.mock.calls[0][0].max_tokens).toBe(16000);
     expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
   });
 
@@ -740,7 +740,7 @@ describe("POST /api/analyze", () => {
     expect(res.status).toBe(200);
     expect(mockCreateMessage).toHaveBeenCalledTimes(2);
     for (const call of mockCreateMessage.mock.calls) {
-      expect(call[0].max_tokens).toBe(16000);
+      expect(call[0].max_tokens).toBe(20000);
       expect(call[0].model).toBe("claude-opus-5");
     }
     expect(res.body.modelMetadata?.engine).toBe("claude-opus-5");

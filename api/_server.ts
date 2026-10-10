@@ -302,12 +302,14 @@ async function generateContentWithFallback(
     try {
       const createOptions: any = {
         model: wireModel,
-        max_tokens: params.max_tokens || (model === ANALYZER_MODELS.FORENSIC ? 16000 : 8000),
+        max_tokens: params.max_tokens || (model === ANALYZER_MODELS.FORENSIC ? 20000 : 16000),
         system: params.system,
         messages,
       };
       if (params.enableThinking) {
-        createOptions.thinking = { type: "enabled", budget_tokens: 1024 };
+        createOptions.thinking = { type: "enabled", budget_tokens: params.thinkingBudget || 2048 };
+      } else {
+        createOptions.thinking = { type: "disabled" };
       }
 
       response = await client.messages.create(createOptions, { timeout: timeoutMs });
@@ -451,7 +453,7 @@ function extractJson(text: string): any {
       "The analysis response was incomplete — it looks like it was cut off before finishing, " +
       "likely because the document was long or complex enough to need more output room than was " +
       "allotted. Try again; if it keeps happening on this document, try a shorter excerpt.",
-      true
+      false
     );
   }
   throw new AnalyzerError(
