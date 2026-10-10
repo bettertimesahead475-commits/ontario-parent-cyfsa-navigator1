@@ -61,6 +61,7 @@ import {
   SseStreamEmitter,
   createAnalysisJob,
   getAnalysisJob,
+  getAnalysisJobDurable,
   updateAnalysisJobStage,
   completeAnalysisJob,
   failAnalysisJob,
@@ -2668,7 +2669,7 @@ ${analysisRules}`;
       return res.status(401).json({ error: "Please sign in to access analysis jobs.", code: "SIGN_IN_REQUIRED" });
     }
 
-    const job = await getAnalysisJob(jobId);
+    const job = await getAnalysisJobDurable(jobId);
     if (!job) {
       return res.status(404).json({ error: "Analysis job not found.", code: "JOB_NOT_FOUND" });
     }
@@ -2917,8 +2918,8 @@ You MUST populate the response strictly matching this JSON schema:
       const aiResponse = await generateContentWithFallback({
         system: "You are CYFSA Navigator Evidence Strength Audit tool. Output valid JSON matching the schema.",
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
-        max_tokens: 4000,
-        timeoutMs: 60000,
+        max_tokens: req.body?.max_tokens || (mode === "full" ? 8000 : 4000),
+        timeoutMs: req.body?.timeoutMs || (mode === "full" ? 120000 : 60000),
         requestId: testId,
         mode,
       }, targetModel);

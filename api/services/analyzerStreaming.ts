@@ -81,8 +81,78 @@ export interface AnalysisJob {
   updatedAt: number;
 }
 
+import { getSupabase } from "./access.js";
+
 const jobStore = new Map<string, AnalysisJob>();
 const JOB_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
+const BUCKET_NAME = "analysis_jobs";
+let bucketChecked = false;
+
+function safeGetSupabase() {
+  try {
+    return getSupabase();
+  } catch {
+    return null;
+  }
+}
+
+async function ensureBucket(): Promise<boolean> {
+  if (bucketChecked) return true;
+  const db = safeGetSupabase();
+  if (!db) return false;
+  try {
+    const { data: buckets } = await db.storage.listBuckets();
+    if (buckets && buckets.some((b: any) => b.name === BUCKET_NAME)) {
+      bucketChecked = true;
+      return true;
+    }
+    const { error: cErr } = await db.storage.createBucket(BUCKET_NAME, { public: false });
+    if (!cErr || cErr.message?.includes("already exists")) {
+      bucketChecked = true;
+      return true;
+    }
+  } catch {
+    // fallback
+  }
+  return false;
+}
+
+export async function persistJobToStorage(job: AnalysisJob): Promise<void> {
+  const db = safeGetSupabase();
+  if (!db) return;
+  try {
+    const hasBucket = await ensureBucket();
+    if (hasBucket) {
+      await db.storage
+        .from(BUCKET_NAME)
+        .upload(`${job.jobId}.json`, JSON.stringify(job), {
+          upsert: true,
+          contentType: "application/json",
+        });
+    }
+  } catch {
+    // ignore storage upload failures, memory state remains intact
+  }
+}
+
+export async function fetchJobFromStorage(jobId: string): Promise<AnalysisJob | null> {
+  const db = safeGetSupabase();
+  if (!db) return null;
+  try {
+    const hasBucket = await ensureBucket();
+    if (!hasBucket) return null;
+    const { data, error } = await db.storage.from(BUCKET_NAME).download(`${jobId}.json`);
+    if (data && !error) {
+      const text = await data.text();
+      const job = JSON.parse(text) as AnalysisJob;
+      jobStore.set(job.jobId, job);
+      return job;
+    }
+  } catch {
+    // fallback
+  }
+  return null;
+}
 
 export function createAnalysisJob(params: {
   jobId: string;
@@ -110,11 +180,22 @@ export function createAnalysisJob(params: {
     updatedAt: now,
   };
   jobStore.set(params.jobId, job);
+  // Asynchronously persist initial job record
+  persistJobToStorage(job).catch(() => {});
   return job;
 }
 
 export function getAnalysisJob(jobId: string): AnalysisJob | null {
   return jobStore.get(jobId) || null;
+}
+
+export async function getAnalysisJobDurable(jobId: string): Promise<AnalysisJob | null> {
+  const local = jobStore.get(jobId);
+  if (local && (local.status === "completed" || local.status === "failed")) {
+    return local;
+  }
+  const fromStorage = await fetchJobFromStorage(jobId);
+  return fromStorage || local || null;
 }
 
 export function updateAnalysisJobStage(jobId: string, stage: AnalysisStage): void {
@@ -134,6 +215,7 @@ export function completeAnalysisJob(jobId: string, report: any): void {
     job.percent = 100;
     job.report = report;
     job.updatedAt = Date.now();
+    persistJobToStorage(job).catch(() => {});
   }
 }
 
@@ -146,6 +228,7 @@ export function failAnalysisJob(
     job.status = "failed";
     job.error = error;
     job.updatedAt = Date.now();
+    persistJobToStorage(job).catch(() => {});
   }
 }
 
