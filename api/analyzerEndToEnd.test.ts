@@ -553,5 +553,196 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
     }
     consoleSpy.mockRestore();
   });
+
+  describe("Dual-Engine Forensic Upgrade: Claude Sonnet & Claude Opus", () => {
+    const SAMPLE_DEEP_DIVE = {
+      thresholdAnalysis: [
+        {
+          thresholdChecked: "Child in Need of Protection grounds (CYFSA s. 74)",
+          isMet: "Inconclusive",
+          reasoning: "Allegations of domestic conflict lack corroborating police disclosure.",
+          primarySourceLaw: "CYFSA 2017, Section 74",
+        },
+      ],
+      proceduralTimelineViolations: [
+        {
+          timelineRule: "30-Day Adjournment Limit (CYFSA s. 94(1))",
+          documentAssertion: "Adjournment of 45 days requested without parent consent.",
+          evaluation: "Possible violation of s. 94(1) 30-day adjournment limit.",
+          citation: "CYFSA, S.O. 2017, c. 14, s. 94(1)",
+          locationInDocument: "Page 4, Para 12",
+          parentActionStep: "Instruct legal counsel to assert s. 94(1) rights at next appearance.",
+        },
+      ],
+      charterAndHumanRightsIssues: ["Section 7 Charter: Security of the person engaged."],
+      whatToVerify: ["Request complete CAS disclosure notes from July 14, 2026."],
+      whatToAskALawyer: ["Does the 45-day adjournment violate CYFSA s. 94(1)?"],
+      whatIsMissing: ["Supervised access observation notes."],
+      lawyerCaseBrief: [
+        "ISSUE — Adjournment duration — DOCUMENT EVIDENCE — Page 4 Para 12 — SIGNIFICANCE — Exceeds 30 days — LIMITATION — Consent status unstated — VERIFY — Court endorsement record",
+      ],
+    };
+
+    it("routes Quick Document Review to Claude Sonnet with accurate token metadata and cost accounting", async () => {
+      mockCreateMessage.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify(CORE) }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 3500, output_tokens: 1200 },
+      });
+
+      const res = await request(app)
+        .post("/api/analyze")
+        .set(paid())
+        .send({ textContent: "Child protection affidavit excerpt...", mode: "fast" });
+
+      expect(res.status).toBe(200);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(1);
+      const call = mockCreateMessage.mock.calls[0][0];
+      expect(call.model).toBe("claude-sonnet-5");
+      expect(call.max_tokens).toBe(8000);
+
+      // Verify metadata
+      expect(res.body.modelMetadata).toBeDefined();
+      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+      expect(res.body.modelMetadata.mode).toBe("fast");
+      expect(res.body.modelMetadata.usage.inputTokens).toBe(3500);
+      expect(res.body.modelMetadata.usage.outputTokens).toBe(1200);
+      expect(res.body.modelMetadata.usage.totalTokens).toBe(4700);
+      expect(res.body.modelMetadata.cost.totalCostUsd).toBeGreaterThan(0);
+      expect(res.body.modelMetadata.cost.totalCostCad).toBeGreaterThan(0);
+    });
+
+    it("routes Forensic In-Depth to Claude Opus with dual passes and 16000 max_tokens per pass", async () => {
+      mockCreateMessage.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify(CORE) }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 6000, output_tokens: 2500 },
+      });
+      mockCreateMessage.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify(SAMPLE_DEEP_DIVE) }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 6500, output_tokens: 3000 },
+      });
+
+      const res = await request(app)
+        .post("/api/analyze")
+        .set(paid())
+        .send({ textContent: "Detailed child protection affidavit...", mode: "full" });
+
+      expect(res.status).toBe(200);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(2);
+
+      // Both passes must route to Claude Opus with 16000 token budget
+      for (const call of mockCreateMessage.mock.calls) {
+        expect(call[0].model).toBe("claude-3-opus-20240229");
+        expect(call[0].max_tokens).toBe(16000);
+      }
+
+      // Verify merged forensic report
+      expect(res.body.redFlags).toHaveLength(1);
+      expect(res.body.thresholdAnalysis).toHaveLength(1);
+      expect(res.body.proceduralTimelineViolations).toHaveLength(1);
+      expect(res.body.timing.mode).toBe("full");
+
+      // Verify aggregated Opus usage and cost accounting
+      expect(res.body.modelMetadata.engine).toBe("claude-3-opus-20240229");
+      expect(res.body.modelMetadata.mode).toBe("full");
+      expect(res.body.modelMetadata.usage.inputTokens).toBe(12500);
+      expect(res.body.modelMetadata.usage.outputTokens).toBe(5500);
+      expect(res.body.modelMetadata.usage.totalTokens).toBe(18000);
+      // Opus cost should reflect $15/MTok input and $75/MTok output
+      expect(res.body.modelMetadata.cost.totalCostUsd).toBeCloseTo(
+        (12500 / 1e6) * 15 + (5500 / 1e6) * 75,
+        3
+      );
+      expect(res.body.modelMetadata.cost.totalCostCad).toBeGreaterThan(
+        res.body.modelMetadata.cost.totalCostUsd
+      );
+    });
+
+    it("prevents frontend from forcing unauthorized Opus access in Quick Review mode", async () => {
+      mockCreateMessage.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify(CORE) }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 2000, output_tokens: 800 },
+      });
+
+      const res = await request(app)
+        .post("/api/analyze")
+        .set(paid())
+        .send({
+          textContent: "Some affidavit text",
+          mode: "fast",
+          model: "claude-3-opus-20240229", // Client override attempt
+        });
+
+      expect(res.status).toBe(200);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(1);
+      // Server must have forced Sonnet instead of honoring client Opus override
+      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+    });
+
+    it("rejects unpaid user from obtaining Forensic Opus mode with 403 FORENSIC_UPGRADE_REQUIRED", async () => {
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+        uid: "free-parent-uid",
+        email: "parent@example.com",
+      });
+      mockUsage.getFreeUsage.mockResolvedValueOnce(0);
+
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer free-parent-token")
+        .send({
+          textContent: "Some affidavit text",
+          mode: "full",
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
+    it("fails closed without silently substituting Sonnet when Opus engine fails", async () => {
+      mockCreateMessage.mockRejectedValueOnce(
+        Object.assign(new Error("Opus model overloaded or unavailable"), { status: 529 })
+      );
+
+      const res = await request(app)
+        .post("/api/analyze")
+        .set(paid())
+        .send({ textContent: "Some court affidavit text", mode: "full" });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe("AI_PROVIDER_TEMPORARILY_UNAVAILABLE");
+      // Must NOT have silently substituted Sonnet: all calls made must be to Claude Opus
+      expect(mockCreateMessage.mock.calls.length).toBeGreaterThan(0);
+      for (const call of mockCreateMessage.mock.calls) {
+        expect(call[0].model).toBe("claude-3-opus-20240229");
+      }
+    });
+
+    it("processes TXT and DOCX files through the analyzer pipelines", async () => {
+      mockCreateMessage.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify(CORE) }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1500, output_tokens: 500 },
+      });
+
+      const txtBase64 = Buffer.from("Court filing narrative text...").toString("base64");
+      const res = await request(app)
+        .post("/api/analyze")
+        .set(paid())
+        .send({
+          fileData: { base64: txtBase64, mimeType: "text/plain", name: "affidavit.txt" },
+          mode: "fast",
+        });
+
+      expect(res.status).toBe(200);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(1);
+      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+    });
+  });
 });
 

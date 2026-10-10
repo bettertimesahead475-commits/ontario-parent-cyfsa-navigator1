@@ -714,34 +714,34 @@ describe("POST /api/analyze", () => {
   // see the comment above documentContentBlock in _server.ts) instead of one, so every test
   // below queues a resolved/rejected value for each of the two calls the endpoint actually
   // makes, in the order they're constructed: core first, then deep-dive.
-  it("always requests 8000 max_tokens on both concurrent calls, and falls back an unknown model to claude-sonnet-5", async () => {
+  it("requests 8000 max_tokens on Quick Review (Sonnet) and falls back an unknown model to claude-sonnet-5", async () => {
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({ textContent: "some affidavit text", mode: "fast", model: "not-a-real-model" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.documentTitle).toBe("Uploaded Document");
+    expect(mockCreateMessage).toHaveBeenCalledTimes(1);
+    expect(mockCreateMessage.mock.calls[0][0].max_tokens).toBe(8000);
+    expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+  });
+
+  it("authoritatively routes Forensic In-Depth (mode: full) to Claude Opus on both concurrent calls", async () => {
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
     const res = await request(app)
       .post("/api/analyze")
       .set(paid())
-      .send({ textContent: "some affidavit text", model: "not-a-real-model" });
-
+      .send({ textContent: "some affidavit text", mode: "full", model: "claude-haiku-4-5-20251001" });
     expect(res.status).toBe(200);
-    expect(res.body.documentTitle).toBe("Uploaded Document");
     expect(mockCreateMessage).toHaveBeenCalledTimes(2);
     for (const call of mockCreateMessage.mock.calls) {
-      expect(call[0].max_tokens).toBe(8000);
-      expect(call[0].model).toBe("claude-sonnet-5");
+      expect(call[0].max_tokens).toBe(16000);
+      expect(call[0].model).toBe("claude-3-opus-20240229");
     }
-  });
-
-  it("honors an explicitly valid model on both concurrent calls", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
-    await request(app)
-      .post("/api/analyze")
-      .set(paid())
-      .send({ textContent: "some affidavit text", model: "claude-haiku-4-5-20251001" });
-    expect(mockCreateMessage).toHaveBeenCalledTimes(2);
-    for (const call of mockCreateMessage.mock.calls) {
-      expect(call[0].model).toBe("claude-haiku-4-5-20251001");
-    }
+    expect(res.body.modelMetadata?.engine).toBe("claude-3-opus-20240229");
   });
 
   it("returns a clear error instead of fabricating a report when either response isn't valid JSON", async () => {

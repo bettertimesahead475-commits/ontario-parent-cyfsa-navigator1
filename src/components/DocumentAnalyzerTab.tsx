@@ -310,13 +310,11 @@ export default function DocumentAnalyzerTab() {
       setIsBuildingTimeline(false);
     }
   };
-  // BUG FOUND IN AUDIT: this defaulted to "claude-sonnet-4-20250514", which isn't in the
-  // backend's actual valid model set (CLAUDE_MODELS = {"claude-sonnet-5", "claude-haiku-4-5-20251001"}
-  // in api/_server.ts). The backend silently substitutes "claude-sonnet-5" whenever an unknown
-  // model string comes in, so this default (and, worse, both options in the dropdown below) never
-  // actually did anything - the model selector was a non-functional illusion of choice.
-  const [claudeModel, setClaudeModel] = useState<string>("claude-haiku-4-5-20251001");
+  // AI Engine model selection: Quick Document Review uses Claude Sonnet (claude-sonnet-5),
+  // Forensic In-Depth uses Claude Opus (claude-3-opus-20240229). The server authoritatively
+  // enforces this assignment so the frontend cannot override engine tier boundaries.
   const [analysisMode, setAnalysisMode] = useState<"fast" | "full">("fast");
+  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-5");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Active Audit Visual State
@@ -2714,20 +2712,6 @@ export default function DocumentAnalyzerTab() {
 
                 {/* Action tabs switcher & Session persistence */}
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center self-start">
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
-            <span className="text-[10px] text-slate-500 font-mono pl-1 shrink-0 flex items-center gap-1 font-bold uppercase tracking-wider">
-              AI Intelligence
-            </span>
-            <select
-              value={claudeModel}
-              onChange={(e) => setClaudeModel(e.target.value)}
-              className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors"
-            >
-              <option value="claude-haiku-4-5-20251001">Fast analysis — Claude Haiku 4.5</option>
-              <option value="claude-sonnet-5">Deep analysis — Claude Sonnet 5</option>
-            </select>
-          </div>
-
           {/* Analysis Mode Selector */}
           <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
             <span className="text-[10px] text-slate-500 font-mono pl-1 shrink-0 flex items-center gap-1 font-bold uppercase tracking-wider">
@@ -2735,13 +2719,35 @@ export default function DocumentAnalyzerTab() {
             </span>
             <select
               value={analysisMode}
-              onChange={(e) => setAnalysisMode(e.target.value as "fast" | "full")}
-              className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors"
+              onChange={(e) => {
+                const nextMode = e.target.value as "fast" | "full";
+                setAnalysisMode(nextMode);
+                setClaudeModel(nextMode === "full" ? "claude-3-opus-20240229" : "claude-sonnet-5");
+              }}
+              className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors font-medium"
               aria-label="Analysis Mode"
             >
               <option value="fast">Quick Document Review (Core Audit)</option>
               <option value="full">Forensic In-Depth (Full Dual-Pass Audit)</option>
             </select>
+          </div>
+
+          {/* Active AI Engine Indicator */}
+          <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl px-2.5 py-1.5 border border-slate-200">
+            <span className="text-[10px] text-slate-500 font-mono shrink-0 font-bold uppercase tracking-wider">
+              AI Engine
+            </span>
+            {analysisMode === "full" ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-mono font-bold tracking-tight border border-purple-200" title="Claude Opus forensic reasoning engine (16,000 token dual-pass audit)">
+                <ShieldAlert className="w-3 h-3 text-purple-700" />
+                Claude Opus (Forensic)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-mono font-bold tracking-tight border border-blue-200" title="Claude Sonnet rapid review engine (8,000 token single-pass audit)">
+                <Sparkles className="w-3 h-3 text-blue-700" />
+                Claude Sonnet (Quick Review)
+              </span>
+            )}
           </div>
           
           {/* Active Session status & manual save controller */}
@@ -3631,6 +3637,45 @@ export default function DocumentAnalyzerTab() {
                           </div>
                         </div>
                       </div>
+
+                      {/* Model & Execution Metadata Banner */}
+                      {selectedReport.modelMetadata && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold tracking-tight border ${
+                              selectedReport.modelMetadata.mode === "full"
+                                ? "bg-purple-100 text-purple-900 border-purple-200"
+                                : "bg-blue-100 text-blue-900 border-blue-200"
+                            }`}>
+                              {selectedReport.modelMetadata.mode === "full" ? (
+                                <ShieldAlert className="w-3.5 h-3.5 text-purple-700" />
+                              ) : (
+                                <Sparkles className="w-3.5 h-3.5 text-blue-700" />
+                              )}
+                              {selectedReport.modelMetadata.engineName}
+                            </span>
+                            <span className="font-mono text-[11px] text-slate-500">
+                              ({selectedReport.modelMetadata.model})
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono text-slate-600">
+                            <span className="flex items-center gap-1" title="Server Analysis Processing Time">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              {(selectedReport.modelMetadata.durationMs / 1000).toFixed(1)}s
+                            </span>
+                            {selectedReport.modelMetadata.usage && (
+                              <span title={`Input: ${selectedReport.modelMetadata.usage.inputTokens.toLocaleString()} | Output: ${selectedReport.modelMetadata.usage.outputTokens.toLocaleString()}`}>
+                                Tokens: <strong>{selectedReport.modelMetadata.usage.totalTokens.toLocaleString()}</strong>
+                              </span>
+                            )}
+                            {selectedReport.modelMetadata.cost && (
+                              <span className="text-emerald-700 font-semibold" title={`USD $${selectedReport.modelMetadata.cost.totalCostUsd.toFixed(4)}`}>
+                                Est. CAD: ${selectedReport.modelMetadata.cost.totalCostCad.toFixed(3)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Redaction Toggle & Preview */}
                       <div className="space-y-3">

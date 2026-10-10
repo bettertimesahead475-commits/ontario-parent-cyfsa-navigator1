@@ -47,6 +47,14 @@ import {
   type ReservationResult,
 } from "./services/creditAccounting.js";
 import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure } from "./services/analyzerErrors.js";
+import {
+  ANALYZER_MODELS,
+  CLAUDE_MODELS,
+  TOKEN_BUDGETS,
+  MODEL_TIMEOUTS,
+  resolveServerAuthoritativeModel,
+  calculateEstimatedCost,
+} from "./services/analyzerModels.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -232,8 +240,8 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
   return response.text || "";
 }
 
-// Text analysis uses Claude. Gemini remains dedicated to OCR and audio transcription.
-const CLAUDE_MODELS = new Set(["claude-sonnet-5", "claude-haiku-4-5-20251001"]);
+// Text analysis uses Claude (Sonnet for Quick Review, Opus for Forensic In-Depth).
+// Gemini remains dedicated to OCR and audio transcription.
 
 async function generateContentWithFallback(
   params: {
@@ -242,26 +250,24 @@ async function generateContentWithFallback(
     max_tokens?: number;
     // BUG FOUND: Claude Sonnet 5 runs adaptive thinking BY DEFAULT on every request that
     // doesn't explicitly disable it, and max_tokens is a hard cap on thinking + response
-    // TOGETHER (confirmed in Anthropic's own Sonnet 5 migration docs). That's the real reason
-    // truncation was document-dependent rather than purely length-dependent: however much the
-    // model adaptively decided to "think" on a given document ate into the same budget the
-    // actual JSON output needed, with no way to predict it in advance. For structured
+    // TOGETHER (confirmed in Anthropic's own Sonnet 5 migration docs). For structured
     // extraction tasks like this (fill in a fixed schema), thinking isn't needed - explicitly
-    // disabling it removes that unpredictable variable entirely. Defaults to disabled since
-    // every current caller in this file is a structured-extraction task.
+    // disabling it removes that unpredictable variable entirely. Defaults to disabled.
     enableThinking?: boolean;
+    timeoutMs?: number;
+    retries?: number;
   },
-  primaryModel: string = "claude-sonnet-5"
-): Promise<{ text: string }> {
+  primaryModel: string = ANALYZER_MODELS.QUICK
+): Promise<{
+  text: string;
+  usage?: { input_tokens: number; output_tokens: number } | null;
+  model: string;
+  durationMs: number;
+  stopReason?: string;
+}> {
   const client = getAnthropicClient();
-  const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : "claude-sonnet-5";
+  const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : ANALYZER_MODELS.QUICK;
   const messages = params.messages.map((message: any) => ({
-    // BUG FOUND IN AUDIT: this ternary always evaluates to "assistant" or "user" but TypeScript
-    // was widening the inferred type to plain `string`, which doesn't satisfy the Anthropic
-    // SDK's stricter `"user" | "assistant"` role type. This has been showing up as a build-time
-    // type error on every single deploy today (harmless in practice since esbuild doesn't
-    // type-check at build time, but worth actually fixing rather than leaving a permanent red
-    // herring in the build logs that could mask a real error next time).
     role: (message.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
     content: Array.isArray(message.content)
       ? message.content.map((part: any) => ({
@@ -273,27 +279,60 @@ async function generateContentWithFallback(
 
   console.log(`[AI Engine] Claude routing. Model: ${model}`);
   const providerStart = Date.now();
-  let response;
-  try {
-    response = await client.messages.create({
-      model,
-      // Raised again - Sonnet 5's actual ceiling is 128,000, confirmed against Anthropic's own
-      // docs (AWS Bedrock model card, platform "what's new" page). The prior defaults of 8000/
-      // 16000 were conservative guesses nowhere near the real limit, and combined with adaptive
-      // thinking eating into the same budget (see enableThinking above), were truncating real
-      // documents in production.
-      max_tokens: params.max_tokens || 16000,
-      thinking: params.enableThinking ? undefined : { type: "disabled" as const },
-      system: params.system,
-      messages,
-    });
-  } catch (error: any) {
-    throw providerFailure(error, "claude");
+  let response: any;
+  let attempts = 0;
+  const maxAttempts = params.retries ?? (process.env.NODE_ENV === "test" || process.env.VITEST ? 1 : 2);
+  let delayMs = 1000;
+  const timeoutMs =
+    params.timeoutMs ||
+    (model === ANALYZER_MODELS.FORENSIC ? MODEL_TIMEOUTS.FORENSIC : MODEL_TIMEOUTS.QUICK);
+
+  while (true) {
+    try {
+      response = await client.messages.create(
+        {
+          model,
+          max_tokens: params.max_tokens || (model === ANALYZER_MODELS.FORENSIC ? 16000 : 8000),
+          thinking: params.enableThinking ? undefined : { type: "disabled" as const },
+          system: params.system,
+          messages,
+        },
+        { timeout: timeoutMs }
+      );
+      break;
+    } catch (error: any) {
+      attempts++;
+      const isTransient =
+        error?.status === 429 ||
+        error?.status === 503 ||
+        error?.status === 529 ||
+        String(error?.message || "").includes("overloaded") ||
+        String(error?.message || "").includes("rate limit") ||
+        String(error?.message || "").includes("timeout");
+
+      if (isTransient && attempts < maxAttempts) {
+        console.log(
+          `[AI Engine] Claude ${model} transient failure (${error?.status || error?.message}), retrying in ${delayMs}ms (attempt ${attempts}/${maxAttempts})...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        delayMs *= 2;
+        continue;
+      }
+
+      // NO SILENT FALLBACK: If Opus fails, do NOT silently downgrade to Sonnet while claiming it was an Opus analysis.
+      if (model === ANALYZER_MODELS.FORENSIC) {
+        console.error(`[AI Engine] Claude Opus forensic engine failed without fallback:`, error);
+      }
+      throw providerFailure(error, "claude");
+    }
   }
-  const stopReason = (response as any).stop_reason;
+
+  const stopReason = response?.stop_reason;
+  const usage = response?.usage || null;
+  const durationMs = Date.now() - providerStart;
   console.log(
-    `[AI Engine] Claude ${model} finished in ${Date.now() - providerStart}ms stop_reason=${stopReason} ` +
-    `usage=${JSON.stringify((response as any).usage ?? null)}`
+    `[AI Engine] Claude ${model} finished in ${durationMs}ms stop_reason=${stopReason} ` +
+      `usage=${JSON.stringify(usage)}`
   );
   if (stopReason === "refusal") {
     throw new AnalyzerError(
@@ -303,26 +342,19 @@ async function generateContentWithFallback(
       false
     );
   }
-  const textOut = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
+  const textOut = (response.content || [])
+    .filter((block: any) => block.type === "text")
+    .map((block: any) => block.text)
     .join("");
 
-  // BUG FIX: an empty result here was previously silent and unexplained — the caller just saw
-  // "Empty response received from the analysis service," with no way to tell why. The most
-  // common real cause is the response being cut off by max_tokens before any usable text block
-  // was completed (large analysis schemas, like /api/analyze's, need more headroom than the old
-  // 4000-token default gave them). Logging stop_reason here makes that diagnosable immediately
-  // instead of requiring a runtime-log archaeology session every time it happens.
   if (!textOut) {
     console.error(
-      `[AI Engine] Empty text output. stop_reason=${(response as any).stop_reason}, ` +
-      `usage=${JSON.stringify((response as any).usage)}. ` +
-      `If stop_reason is "max_tokens", raise the max_tokens parameter for this call.`
+      `[AI Engine] Empty text output. stop_reason=${stopReason}, usage=${JSON.stringify(usage)}. ` +
+        `If stop_reason is "max_tokens", raise the max_tokens parameter for this call.`
     );
   }
 
-  return { text: textOut };
+  return { text: textOut, usage, model, durationMs, stopReason };
 }
 
 // Helper to extract JSON from any block resiliently.
@@ -571,6 +603,11 @@ app.use((req, res, next) => {
         geminiApiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
         anthropicApiKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
         adminSecretConfigured: Boolean(process.env.ADMIN_SECRET),
+      },
+      models: {
+        quickReview: ANALYZER_MODELS.QUICK,
+        forensicInDepth: ANALYZER_MODELS.FORENSIC,
+        supportedModels: Array.from(CLAUDE_MODELS),
       }
     });
   });
@@ -2221,6 +2258,7 @@ ${analysisRules}`;
                "id": "rf1",
                "severity": "Affects Evidentiary Weight", // Allowed: "Affects Evidentiary Weight", "Worth Raising With Counsel", or "CRITICAL". CRITICAL requires an explicit documented admission of a material procedural failure AND verified statutory authority; otherwise do not use CRITICAL.
                "category": "Hearsay", // "Hearsay", "Unsupported Claim", "Procedural Defect", "Authority Overreach", "Rights Omission", etc.
+               "evidenceClassification": "HEARSAY", // Must be strictly one of: "DIRECT", "DOCUMENTARY", "CORROBORATED", "HEARSAY", "INFERENCE", "OPINION", "UNSUPPORTED", "UNCLEAR"
                "phraseDetected": "The exact sentence in the text representing the red flag",
                "explanation": "Write 3-5 clear sentences: (1) what the quoted passage actually says, (2) why it affects evidentiary weight or procedure, (3) what evidence in this document supports or weakens the point, and (4) what cannot be concluded from this document alone. Do not use generic legal filler.",
                "verifyRequirement": "Give a specific verification checklist naming the record, witness, date, log, message, medical/school record, disclosure item, or other evidence that would confirm or challenge this exact point. Avoid vague phrases such as 'get more evidence'.",
@@ -2323,12 +2361,22 @@ ${analysisRules}`;
       const startTime = Date.now();
       let report: any = null;
 
-      if (mode === "fast") {
+      // Server-authoritative model resolution (strips unauthorized client overrides)
+      const modelResolution = resolveServerAuthoritativeModel({
+        mode,
+        isPaid,
+        tier: paidTier,
+        clientRequestedModel: model,
+      });
+      const authoritativeModel = modelResolution.authoritativeModel;
+
+      if (modelResolution.mode === "fast") {
         const coreResponse = await generateContentWithFallback({
           system: coreSystemInstruction,
           messages: [{ role: "user", content: [{ type: "text", text: corePromptText }] }],
-          max_tokens: 8000
-        }, model || "claude-sonnet-5");
+          max_tokens: modelResolution.tokenBudget,
+          timeoutMs: modelResolution.timeoutMs,
+        }, authoritativeModel);
 
         if (!coreResponse.text) {
           throw new AnalyzerError("AI_RESPONSE_INVALID", 422, "The analysis service returned an empty response. Please retry analysis - your document is safe.", true);
@@ -2336,8 +2384,31 @@ ${analysisRules}`;
 
         const coreReport = extractJson(coreResponse.text);
         const durationMs = Date.now() - startTime;
-        report = { ...coreReport, timing: { mode: "fast", durationMs } };
+        const inputTokens = coreResponse.usage?.input_tokens || 0;
+        const outputTokens = coreResponse.usage?.output_tokens || 0;
+        const totalTokens = inputTokens + outputTokens;
+        const cost = calculateEstimatedCost(authoritativeModel, coreResponse.usage || {});
+
+        report = {
+          ...coreReport,
+          timing: { mode: "fast", durationMs },
+          modelMetadata: {
+            engine: authoritativeModel,
+            model: authoritativeModel,
+            engineName: modelResolution.engineDisplayName,
+            mode: "fast",
+            modeName: modelResolution.modeDisplayName,
+            durationMs,
+            usage: {
+              inputTokens,
+              outputTokens,
+              totalTokens,
+            },
+            cost,
+          },
+        };
       } else {
+        // Forensic In-Depth Dual-Pass running on Claude Opus
         // Both halves of the schema depend only on the same source document text, not on each
         // other's output, so they're independent requests — issuing them concurrently is safe and
         // is the actual speedup (see comment above documentContentBlock).
@@ -2345,13 +2416,15 @@ ${analysisRules}`;
           generateContentWithFallback({
             system: coreSystemInstruction,
             messages: [{ role: "user", content: [{ type: "text", text: corePromptText }] }],
-            max_tokens: 8000
-          }, model || "claude-sonnet-5"),
+            max_tokens: TOKEN_BUDGETS.FORENSIC_PASS_1,
+            timeoutMs: modelResolution.timeoutMs,
+          }, authoritativeModel),
           generateContentWithFallback({
             system: deepDiveSystemInstruction,
             messages: [{ role: "user", content: [{ type: "text", text: deepDivePromptText }] }],
-            max_tokens: 8000
-          }, model || "claude-sonnet-5")
+            max_tokens: TOKEN_BUDGETS.FORENSIC_PASS_2,
+            timeoutMs: modelResolution.timeoutMs,
+          }, authoritativeModel)
         ]);
 
         if (!coreResponse.text || !deepDiveResponse.text) {
@@ -2361,9 +2434,31 @@ ${analysisRules}`;
         const coreReport = extractJson(coreResponse.text);
         const deepDiveReport = extractJson(deepDiveResponse.text);
         const durationMs = Date.now() - startTime;
+        const totalInputTokens = (coreResponse.usage?.input_tokens || 0) + (deepDiveResponse.usage?.input_tokens || 0);
+        const totalOutputTokens = (coreResponse.usage?.output_tokens || 0) + (deepDiveResponse.usage?.output_tokens || 0);
+        const totalTokens = totalInputTokens + totalOutputTokens;
+        const cost = calculateEstimatedCost(authoritativeModel, { input_tokens: totalInputTokens, output_tokens: totalOutputTokens });
 
         // Field-disjoint by construction (see the two schemas above), so a plain merge is safe.
-        report = { ...coreReport, ...deepDiveReport, timing: { mode: "full", durationMs } };
+        report = {
+          ...coreReport,
+          ...deepDiveReport,
+          timing: { mode: "full", durationMs },
+          modelMetadata: {
+            engine: authoritativeModel,
+            model: authoritativeModel,
+            engineName: modelResolution.engineDisplayName,
+            mode: "full",
+            modeName: modelResolution.modeDisplayName,
+            durationMs,
+            usage: {
+              inputTokens: totalInputTokens,
+              outputTokens: totalOutputTokens,
+              totalTokens,
+            },
+            cost,
+          },
+        };
       }
 
       let credits: CreditStatus | null = null;

@@ -105,6 +105,15 @@ export interface AnalysisReport {
     childNames?: string;
     hearingDate?: string;
   };
+  evidenceStrengthIndex?: {
+    score: number;
+    scale?: string;
+    label?: string;
+    method?: string;
+    components?: Record<string, { score: number; max: number; explanation: string }>;
+    calculation?: string;
+    limitations?: string;
+  };
   redFlags: {
     id: string;
     severity: string;
@@ -115,6 +124,7 @@ export interface AnalysisReport {
     legalReference: string; // Cites sections of CYFSA or Family Law Rules
     locationInDocument?: string; // Exact page or section location where violation is found
     parentActionStep?: string; // Step-by-step visual instruction for parents to debunk this violation
+    evidenceClassification?: AuthoritativeEvidenceClassification;
   }[];
   thresholdAnalysis: {
     thresholdChecked: string;
@@ -136,6 +146,30 @@ export interface AnalysisReport {
   whatIsMissing: string[];
   lawyerCaseBrief?: string[]; // Bullet form detailed lawyer case brief points
   customAnalysisNotes?: string;
+  timing?: {
+    mode: "fast" | "full";
+    durationMs: number;
+  };
+  modelMetadata?: {
+    engine: string;
+    model: string;
+    engineName: string;
+    mode: "fast" | "full";
+    modeName: string;
+    durationMs: number;
+    usage?: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    };
+    cost?: {
+      inputCostUsd: number;
+      outputCostUsd: number;
+      totalCostUsd: number;
+      totalCostCad: number;
+    };
+  };
+  credits?: any;
 }
 
 // User Membership types
