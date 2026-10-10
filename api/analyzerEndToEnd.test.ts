@@ -39,8 +39,6 @@ const mockAccess = vi.hoisted(() => ({
     if (!session || !identity) return false;
     if (session.firebaseUid === identity.uid) return true;
     if (Array.isArray(identity.allUids) && identity.allUids.includes(session.firebaseUid)) return true;
-    if (identity.email && session.firebaseUid?.toLowerCase() === identity.email.toLowerCase()) return true;
-    if (session.email && identity.email && session.email.toLowerCase() === identity.email.toLowerCase()) return true;
     return false;
   }),
   healSessionUidBinding: vi.fn(async () => {}),
@@ -416,7 +414,7 @@ describe("GET /api/admin/supabase-health", () => {
 });
 
 describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
-  it("recognizes paid access when session row was bound to user's Google numeric sub and caller presents Firebase alphanumeric UID with matching email", async () => {
+  it("recognizes paid access when session row was bound to user's Google numeric sub and caller presents Firebase localId with verified allUids link", async () => {
     const googleSub = "100892974326001234567";
     const firebaseLocalId = "Wq9jKl209abCdEfGhIj";
     const verifiedEmail = "parent.case@example.com";
@@ -431,6 +429,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
       uid: firebaseLocalId,
       email: verifiedEmail,
+      allUids: [firebaseLocalId, googleSub],
     });
     mockCreateMessage.mockResolvedValueOnce(claudeText(JSON.stringify(CORE)));
 
@@ -446,29 +445,29 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
     expect(res.body.documentTitle).toBe("Affidavit of a worker");
   });
 
-  it("recognizes paid access in /api/analyzer-usage when session is bound by verified email", async () => {
+  it("fails closed when identity email matches but UID does NOT match and is not in verified allUids", async () => {
     const verifiedEmail = "member@example.com";
     mockAccess.verifySessionToken.mockReturnValueOnce({ jti: "session-email-bound" });
     mockAccess.getActivePaidSession.mockResolvedValueOnce({
       id: "session-email-bound",
-      firebaseUid: "old-device-uid-999",
+      firebaseUid: "old-account-uid-999",
       tier: "Premium",
       email: verifiedEmail,
     });
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
-      uid: "new-device-uid-111",
+      uid: "different-account-uid-111",
       email: verifiedEmail,
     });
 
     const res = await request(app)
       .get("/api/analyzer-usage")
       .set({
-        Authorization: "Bearer new-device-token",
+        Authorization: "Bearer different-account-token",
         "x-ps-session": "session-token",
       });
 
     expect(res.status).toBe(200);
-    expect(res.body.type).toBe("paid");
+    expect(res.body.type).toBe("free");
   });
 
   it("fails closed when identity email does NOT match the paid session", async () => {

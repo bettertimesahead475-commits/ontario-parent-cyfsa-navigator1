@@ -315,12 +315,16 @@ export interface VerifiedIdentity {
 }
 
 /**
- * Robust, secure multi-representation session-to-identity binding check.
+ * Authoritative session-to-identity binding check.
  * Validates whether an active paid session belongs to the verified Firebase identity:
- * 1. Direct UID equality (e.g. Firebase localId match)
- * 2. Multi-representation UID match (e.g. Google numeric sub vs Firebase localId)
- * 3. Email-to-UID match (e.g. session was bound to user's email)
- * 4. Verified email match (both session.email and verified identity.email match case-insensitively)
+ * 1. Primary authoritative check: Direct verified Firebase UID equality.
+ * 2. Cryptographically verified linked UIDs from the same Firebase account (e.g. Google numeric sub vs Firebase localId
+ *    extracted from the authenticated ID token claims).
+ *
+ * CRITICAL SECURITY INVARIANT:
+ * A paid session must NEVER be granted to another Firebase account merely because an email address
+ * or alternate unverified identifier matches. The verified Firebase UID is the authoritative identity.
+ * Silent database rewriting of session ownership is strictly disallowed.
  *
  * FAILS CLOSED: Returns false if either session or identity is missing, or if none of the above match.
  */
@@ -330,49 +334,27 @@ export function isSessionBoundToIdentity(
 ): boolean {
   if (!session || !identity) return false;
 
-  // 1. Direct UID equality (fast path)
+  // 1. Primary authoritative check: verified Firebase UID equality
   if (session.firebaseUid === identity.uid) return true;
 
-  // 2. Alternative UID representations for the same user (e.g. Google numeric sub vs Firebase localId)
+  // 2. Independently verifiable linked UIDs for the same account
+  // (e.g. Google numeric sub vs Firebase localId extracted from cryptographically verified token claims)
   if (Array.isArray(identity.allUids) && identity.allUids.includes(session.firebaseUid)) {
     return true;
   }
 
-  // 3. If session.firebaseUid was stored as an email matching verified identity.email
-  if (
-    identity.email &&
-    session.firebaseUid.toLowerCase() === identity.email.toLowerCase()
-  ) {
-    return true;
-  }
-
-  // 4. Verified email match: if both session.email and identity.email exist and match (case-insensitive)
-  if (
-    session.email &&
-    identity.email &&
-    session.email.trim().toLowerCase() === identity.email.trim().toLowerCase()
-  ) {
-    return true;
-  }
-
+  // Security Invariant: A paid session must NEVER be granted to another Firebase account
+  // merely because an email address or unverified identifier matches.
   return false;
 }
 
 /**
- * Self-healing UID binding for legacy or alternate-UID rows in navigator_paid_sessions.
- * Non-blocking, non-fatal.
+ * Legacy session reconciliation stub:
+ * Silent rewriting of session ownership in the database is strictly disallowed.
+ * Any legacy session reconciliation requires independently verifiable ownership evidence.
  */
-export async function healSessionUidBinding(sessionId: string, primaryUid: string): Promise<void> {
-  try {
-    const db = getSupabase();
-    await db
-      .from("navigator_paid_sessions")
-      .update({ firebase_uid: primaryUid })
-      .eq("id", sessionId)
-      .is("revoked_at", null);
-  } catch {
-    // Non-fatal healing attempt
-  }
+export async function healSessionUidBinding(_sessionId: string, _primaryUid: string): Promise<void> {
+  // Intentionally a no-op to ensure session ownership in the database is never silently overwritten.
 }
 
 function mapPaidSessionRow(row: any): PaidSession {

@@ -14,7 +14,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, isSessionBoundToIdentity, healSessionUidBinding, getConfiguredProjectRef, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, isSessionBoundToIdentity, getConfiguredProjectRef, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
@@ -1277,9 +1277,6 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         });
 
         if (session && uidMatched) {
-          if (session.firebaseUid !== identity.uid) {
-            healSessionUidBinding(session.id, identity.uid).catch(() => {});
-          }
           const status = await getPaidUsageStatus(session.id, session.tier);
           let extraBalance: any = {};
           try {
@@ -1714,9 +1711,6 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       res.status(402).json({ error: SESSION_REQUIRED_MESSAGE, code: "SESSION_REQUIRED" });
       return null;
     }
-    if (session.firebaseUid !== identity.uid) {
-      healSessionUidBinding(session.id, identity.uid).catch(() => {});
-    }
 
     return { uid: identity.uid, email: identity.email, tier: session.tier, sessionId: session.id };
   }
@@ -1758,9 +1752,6 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           return false;
         }
         if (session && isSessionBoundToIdentity(session, identity)) {
-          if (session.firebaseUid !== identity.uid) {
-            healSessionUidBinding(session.id, identity.uid).catch(() => {});
-          }
           return true; // paid users never touch the free-use table
         }
       }
@@ -1874,9 +1865,6 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           paidTier = session.tier as Tier;
           paidSessionId = session.id;
           if (session.email) userEmail = session.email;
-          if (session.firebaseUid !== identity.uid) {
-            healSessionUidBinding(session.id, identity.uid).catch(() => {});
-          }
         }
       }
 
