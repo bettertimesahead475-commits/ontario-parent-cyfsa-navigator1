@@ -7,7 +7,7 @@ import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson, ApiResponseError } from "../utils/api";
+import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream } from "../utils/api";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -311,12 +311,44 @@ export default function DocumentAnalyzerTab() {
       setIsBuildingTimeline(false);
     }
   };
-  // AI Engine model selection: Quick Document Review uses Claude Sonnet (claude-sonnet-5),
+  // AI Engine model selection: Quick Document Review uses Claude Sonnet (claude-3-5-sonnet-20241022),
   // Forensic In-Depth uses Claude Opus (claude-3-opus-20240229). The server authoritatively
   // enforces this assignment so the frontend cannot override engine tier boundaries.
   const [analysisMode, setAnalysisMode] = useState<"fast" | "full">("fast");
-  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-5");
+  const [claudeModel, setClaudeModel] = useState<string>("claude-3-5-sonnet-20241022");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
+
+  // Explicit, resilient document processing state machine
+  type AnalyzerProcessingState =
+    | "IDLE"
+    | "UPLOADING"
+    | "AUTHENTICATING"
+    | "EXTRACTING"
+    | "VERIFYING_ACCESS"
+    | "ANALYZING"
+    | "VALIDATING"
+    | "SAVING"
+    | "COMPLETE"
+    | "ERROR";
+
+  const [analyzerState, setAnalyzerState] = useState<AnalyzerProcessingState>("IDLE");
+  const [activeJobId, setActiveJobId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("OPA_ACTIVE_ANALYZER_JOB_ID") || null;
+    } catch {
+      return null;
+    }
+  });
+  const [streamingProgress, setStreamingProgress] = useState<{
+    stage: string;
+    percent: number;
+    message: string;
+  }>({
+    stage: "",
+    percent: 0,
+    message: "",
+  });
+  const [rateLimitCountdown, setRateLimitCountdown] = useState<number | null>(null);
 
   // Active Audit Visual State
   const [selectedReport, setSelectedReportState] = useState<AnalysisReport | null>(() => {
@@ -331,6 +363,57 @@ export default function DocumentAnalyzerTab() {
   );
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState<boolean>(false);
   const [singleAnalysisError, setSingleAnalysisError] = useState<string>("");
+
+  // Countdown timer for rate-limit cooldown
+  useEffect(() => {
+    if (rateLimitCountdown === null || rateLimitCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setRateLimitCountdown(prev => (prev && prev > 1 ? prev - 1 : null));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [rateLimitCountdown]);
+
+  // Check for existing in-progress or completed analysis job on mount/reconnect
+  useEffect(() => {
+    if (!activeJobId) return;
+    let isMounted = true;
+    const checkJob = async () => {
+      try {
+        const res = await apiFetch(`/api/analyze/job/${activeJobId}`);
+        if (res.ok && isMounted) {
+          const job = await res.json();
+          if (job.status === "completed" && job.report) {
+            setSelectedReport(job.report);
+            setAnalyzerState("COMPLETE");
+            try {
+              localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+            } catch {}
+            setActiveJobId(null);
+          } else if (job.status === "failed") {
+            setAnalyzerState("ERROR");
+            setSingleAnalysisError(job.error?.message || "Previous analysis attempt failed.");
+            try {
+              localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+            } catch {}
+            setActiveJobId(null);
+          } else if (job.status === "analyzing") {
+            setAnalyzerState("ANALYZING");
+            setStreamingProgress({
+              stage: job.currentStage,
+              percent: job.percent,
+              message: "Resuming analysis in progress...",
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to check active analysis job:", e);
+      }
+    };
+    checkJob();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeJobId, setSelectedReport]);
 
   // Server-authoritative credit ledger balance
   interface CreditBalanceInfo {
@@ -1800,10 +1883,18 @@ export default function DocumentAnalyzerTab() {
     setIsSingleAnalyzing(true);
     setSingleAnalysisError("");
     setSelectedReport(null);
+    setAnalyzerState("UPLOADING");
+    setStreamingProgress({ stage: "uploading", percent: 10, message: "Preparing document for analysis..." });
 
     setOrganizedFiles(prev => prev.map(f => 
       f.id === file.id ? { ...f, analysisStatus: "analyzing", analysisError: undefined } : f
     ));
+
+    const analysisId = "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+    try {
+      localStorage.setItem("OPA_ACTIVE_ANALYZER_JOB_ID", analysisId);
+      setActiveJobId(analysisId);
+    } catch {}
 
     try {
       const payload: any = {};
@@ -1814,6 +1905,8 @@ export default function DocumentAnalyzerTab() {
       if (!isRawBase64) {
         payload.textContent = extractedText;
       } else {
+        setAnalyzerState("EXTRACTING");
+        setStreamingProgress({ stage: "extracting", percent: 20, message: "Extracting document text & verifying structure..." });
         setSingleAnalysisError("");
         const extractResponse = await apiFetch("/api/extract-text", {
           method: "POST",
@@ -1839,17 +1932,49 @@ export default function DocumentAnalyzerTab() {
           ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
       }
 
+      setAnalyzerState("AUTHENTICATING");
+      setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
+
       const response = await apiFetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream, application/json",
+          "X-Analysis-Id": analysisId,
+        },
+        body: JSON.stringify({
+          ...payload,
+          mode: analysisMode,
+          model: claudeModel,
+          stream: true,
+          analysisId,
+        })
       });
 
-      const report = await safeReadJson(response);
-      if (!response.ok) {
-        throw new Error(report.error || `Server returned error ${response.status}`);
-      }
+      const report = await readAnalysisEventStream(response, {
+        onStage: (stage, percent, message) => {
+          if (stage === "extracting") setAnalyzerState("EXTRACTING");
+          else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
+          else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues") setAnalyzerState("ANALYZING");
+          else if (stage === "verifying_findings") setAnalyzerState("VALIDATING");
+          else if (stage === "preparing_report") setAnalyzerState("SAVING");
+          setStreamingProgress({ stage, percent, message });
+        },
+        onComplete: () => {
+          setAnalyzerState("COMPLETE");
+        },
+        onError: () => {
+          setAnalyzerState("ERROR");
+        }
+      });
+
       setSelectedReport(report);
+      setAnalyzerState("COMPLETE");
+      try {
+        localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+        setActiveJobId(null);
+      } catch {}
+
       // BUG FIX (flagged in audit, same root cause as the bulk-upload path above): persist the
       // real extracted text onto content, not just the analysis report, so the Cross-Document
       // Timeline and RAG case chat get real text instead of leftover raw base64 for this file.
@@ -1862,9 +1987,18 @@ export default function DocumentAnalyzerTab() {
       );
 
     } catch (err: any) {
-      setSingleAnalysisError(err.message || "Failed single scan.");
+      setAnalyzerState("ERROR");
+      try {
+        localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+        setActiveJobId(null);
+      } catch {}
+      if (err.isRateLimit || err.status === 429) {
+        setRateLimitCountdown(30);
+      }
+      const errMsg = err.message || "Failed single scan.";
+      setSingleAnalysisError(errMsg);
       setOrganizedFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: err.message || "Failed single scan." } : f
+        f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: errMsg } : f
       ));
     } finally {
       setIsSingleAnalyzing(false);
@@ -3219,7 +3353,7 @@ export default function DocumentAnalyzerTab() {
                       {(activeSelectedFile.analysisStatus === "analyzing" || isSingleAnalyzing) && (
                         <span className="px-3 py-1.5 bg-brand-50 text-brand-800 border border-brand-200 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5">
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
-                          <span>Analyzing key issues & evidence strength...</span>
+                          <span>{streamingProgress.message || "Analyzing key issues & evidence strength..."}</span>
                         </span>
                       )}
 
@@ -4196,25 +4330,73 @@ export default function DocumentAnalyzerTab() {
 
                     </div>
                   ) : (
-                    <div className="bg-slate-50 border border-dashed border-gray-100 py-12 rounded-2xl text-center space-y-4">
-                      {isSingleAnalyzing ? (
-                        <div className="space-y-4">
+                    <div className="bg-slate-50 border border-dashed border-gray-200 py-10 px-6 rounded-2xl text-center space-y-5">
+                      {isSingleAnalyzing || (activeSelectedFile.analysisStatus === "analyzing") ? (
+                        <div className="space-y-4 max-w-md mx-auto">
                           <div className="relative inline-block">
-                            <div className="w-12 h-12 rounded-full border-4 border-brand-100 border-t-brand-600 animate-spin" />
-                            <Scale className="w-5 h-5 text-brand-600 absolute inset-0 m-auto animate-pulse" />
+                            <div className="w-14 h-14 rounded-full border-4 border-brand-100 border-t-brand-600 animate-spin" />
+                            <Scale className="w-6 h-6 text-brand-600 absolute inset-0 m-auto animate-pulse" />
                           </div>
-                          <div className="text-xs text-slate-500 font-mono">
-                            Running Fast Parallel Analysis (&lt; 10s)...
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs font-mono font-semibold text-slate-700">
+                              <span>{streamingProgress.message || "Auditing document against statutory thresholds..."}</span>
+                              <span className="text-brand-600">{streamingProgress.percent || 45}%</span>
+                            </div>
+                            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="bg-brand-600 h-2 rounded-full transition-all duration-500 ease-out"
+                                style={{ width: `${Math.max(10, streamingProgress.percent || 30)}%` }}
+                              />
+                            </div>
                           </div>
+                          <p className="text-[11px] text-slate-500 font-sans">
+                            🛡️ Zero credits deducted until analysis is verified and delivered to your screen.
+                          </p>
+                        </div>
+                      ) : activeSelectedFile.analysisStatus === "failed" || analyzerState === "ERROR" ? (
+                        <div className="space-y-4 max-w-md mx-auto text-center" id="analysis-failed-view">
+                          <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                            <AlertTriangle className="w-6 h-6" />
+                          </div>
+                          <div className="space-y-1">
+                            <h5 className="font-display font-bold text-gray-800 text-sm">Analysis Could Not Complete</h5>
+                            <p className="text-xs text-red-700 bg-red-50 p-2.5 rounded-lg border border-red-200">
+                              {activeSelectedFile.analysisError || singleAnalysisError || "The AI analysis engine is temporarily busy or unreachable. Your document is safe."}
+                            </p>
+                          </div>
+                          <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg p-2.5 text-xs font-medium flex items-center justify-center gap-1.5">
+                            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Zero credits consumed. Your balance has been preserved intact.</span>
+                          </div>
+                          {rateLimitCountdown !== null && rateLimitCountdown > 0 ? (
+                            <div className="text-xs text-amber-700 font-mono font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
+                              ⏳ Rate limit in effect. Retrying in {rateLimitCountdown}s...
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => triggerSingleAnalysis(activeSelectedFile)}
+                              className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                              <span>Retry Analysis</span>
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <>
                           <Sparkles className="w-12 h-12 text-slate-300 mx-auto" />
                           <div className="space-y-1">
-                            <h5 className="font-display font-bold text-gray-700 text-sm">Analysis incomplete for this file</h5>
+                            <h5 className="font-display font-bold text-gray-700 text-sm">Ready for Document Analysis</h5>
                             <p className="text-xs text-slate-500 max-w-sm mx-auto p-1">
-                              Your document was uploaded to Case Locker. If analysis was interrupted, click "Retry Analysis" above to run Fast Analysis.
+                              Click "Run Analysis Now" below to audit this document against CYFSA statutory thresholds.
                             </p>
+                            <button
+                              onClick={() => triggerSingleAnalysis(activeSelectedFile)}
+                              className="mt-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                            >
+                              <Sparkles className="w-4 h-4" />
+                              <span>Run Analysis Now</span>
+                            </button>
                           </div>
                         </>
                       )}

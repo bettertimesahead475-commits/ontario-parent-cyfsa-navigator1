@@ -83,3 +83,82 @@ export async function safeReadJson(response: Response): Promise<any> {
   }
   return data;
 }
+
+export interface AnalysisStreamCallbacks {
+  onStage?: (stage: string, percent: number, message: string) => void;
+  onSection?: (section: string, data: any) => void;
+  onComplete?: (report: any, credits?: any) => void;
+  onError?: (error: { code: string; message: string; statusCode: number; retryable: boolean }) => void;
+}
+
+/**
+ * Reads real-time progress events from the Server-Sent Events (SSE) stream returned by /api/analyze.
+ * Automatically decodes chunked transfer, dispatches stage callbacks, and resolves with the verified report.
+ */
+export async function readAnalysisEventStream(
+  response: Response,
+  callbacks?: AnalysisStreamCallbacks
+): Promise<any> {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("text/event-stream")) {
+    return safeReadJson(response);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("Unable to establish streaming connection.");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalReport: any = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() || "";
+
+    for (const rawEvent of events) {
+      const line = rawEvent.trim();
+      if (!line || line.startsWith(":")) continue; // heartbeat
+      if (line.startsWith("data: ")) {
+        try {
+          const payload = JSON.parse(line.slice(6));
+          if (payload.type === "stage") {
+            callbacks?.onStage?.(payload.stage, payload.percent, payload.message);
+          } else if (payload.type === "section") {
+            callbacks?.onSection?.(payload.section, payload.data);
+          } else if (payload.type === "complete") {
+            finalReport = payload.report;
+            callbacks?.onComplete?.(payload.report, payload.credits);
+          } else if (payload.type === "error") {
+            callbacks?.onError?.({
+              code: payload.code,
+              message: payload.error,
+              statusCode: payload.statusCode,
+              retryable: payload.retryable,
+            });
+            throw new ApiResponseError(
+              payload.error || "Analysis failed.",
+              payload.statusCode || 500,
+              payload.code || "AI_ERROR",
+              payload.retryable ?? true,
+              payload.statusCode === 429
+            );
+          }
+        } catch (e) {
+          if (e instanceof ApiResponseError) throw e;
+          console.warn("Failed to parse SSE line:", line, e);
+        }
+      }
+    }
+  }
+
+  if (!finalReport) {
+    throw new Error("Analysis stream disconnected before completion. Please retry.");
+  }
+  return finalReport;
+}

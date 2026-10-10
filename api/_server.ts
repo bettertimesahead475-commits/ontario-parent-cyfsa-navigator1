@@ -33,7 +33,7 @@ import { registerMatterAccessLifecycleRoutes } from "./matterAccessLifecycleRout
 import { registerParentProfessionalCollaborationRoutes } from "./parentProfessionalCollaborationRoutes.js";
 import { registerProfessionalOutputRoutes } from "./professionalOutputRoutes.js";
 import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.js";
-import { decodeSource, extractPages, SOURCE_SYSTEM } from "./services/pageSources.js";
+import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./services/pageSources.js";
 import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
@@ -46,7 +46,7 @@ import {
   restoreSession,
   type ReservationResult,
 } from "./services/creditAccounting.js";
-import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure } from "./services/analyzerErrors.js";
+import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure, logAiDiagnostic } from "./services/analyzerErrors.js";
 import {
   ANALYZER_MODELS,
   CLAUDE_MODELS,
@@ -54,7 +54,16 @@ import {
   MODEL_TIMEOUTS,
   resolveServerAuthoritativeModel,
   calculateEstimatedCost,
+  resolveAnthropicWireModel,
 } from "./services/analyzerModels.js";
+import {
+  SseStreamEmitter,
+  createAnalysisJob,
+  getAnalysisJob,
+  updateAnalysisJobStage,
+  completeAnalysisJob,
+  failAnalysisJob,
+} from "./services/analyzerStreaming.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -71,7 +80,7 @@ function getAnthropicClient(): Anthropic {
   if (!apiKey || !apiKey.trim()) {
     throw new Error("ANTHROPIC_API_KEY environment variable is not configured. Add the Claude API key in Vercel project environment variables and redeploy.");
   }
-  anthropicClient = new Anthropic({ apiKey });
+  anthropicClient = new Anthropic({ apiKey, maxRetries: 1 });
   return anthropicClient;
 }
 
@@ -248,14 +257,12 @@ async function generateContentWithFallback(
     system?: string;
     messages: any[];
     max_tokens?: number;
-    // BUG FOUND: Claude Sonnet 5 runs adaptive thinking BY DEFAULT on every request that
-    // doesn't explicitly disable it, and max_tokens is a hard cap on thinking + response
-    // TOGETHER (confirmed in Anthropic's own Sonnet 5 migration docs). For structured
-    // extraction tasks like this (fill in a fixed schema), thinking isn't needed - explicitly
-    // disabling it removes that unpredictable variable entirely. Defaults to disabled.
     enableThinking?: boolean;
     timeoutMs?: number;
     retries?: number;
+    requestId?: string;
+    stage?: string;
+    mode?: "fast" | "full";
   },
   primaryModel: string = ANALYZER_MODELS.QUICK
 ): Promise<{
@@ -267,6 +274,7 @@ async function generateContentWithFallback(
 }> {
   const client = getAnthropicClient();
   const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : ANALYZER_MODELS.QUICK;
+  const wireModel = resolveAnthropicWireModel(model);
   const messages = params.messages.map((message: any) => ({
     role: (message.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
     content: Array.isArray(message.content)
@@ -277,7 +285,7 @@ async function generateContentWithFallback(
       : String(message.content),
   }));
 
-  console.log(`[AI Engine] Claude routing. Model: ${model}`);
+  console.log(`[AI Engine] Claude routing. Model: ${model} (wire: ${wireModel})`);
   const providerStart = Date.now();
   let response: any;
   let attempts = 0;
@@ -288,17 +296,19 @@ async function generateContentWithFallback(
     (model === ANALYZER_MODELS.FORENSIC ? MODEL_TIMEOUTS.FORENSIC : MODEL_TIMEOUTS.QUICK);
 
   while (true) {
+    const attemptStart = Date.now();
     try {
-      response = await client.messages.create(
-        {
-          model,
-          max_tokens: params.max_tokens || (model === ANALYZER_MODELS.FORENSIC ? 16000 : 8000),
-          thinking: params.enableThinking ? undefined : { type: "disabled" as const },
-          system: params.system,
-          messages,
-        },
-        { timeout: timeoutMs }
-      );
+      const createOptions: any = {
+        model: wireModel,
+        max_tokens: params.max_tokens || (model === ANALYZER_MODELS.FORENSIC ? 16000 : 8000),
+        system: params.system,
+        messages,
+      };
+      if (params.enableThinking) {
+        createOptions.thinking = { type: "enabled", budget_tokens: 1024 };
+      }
+
+      response = await client.messages.create(createOptions, { timeout: timeoutMs });
       break;
     } catch (error: any) {
       attempts++;
@@ -306,15 +316,32 @@ async function generateContentWithFallback(
         error?.status === 429 ||
         error?.status === 503 ||
         error?.status === 529 ||
-        String(error?.message || "").includes("overloaded") ||
-        String(error?.message || "").includes("rate limit") ||
-        String(error?.message || "").includes("timeout");
+        error?.name === "APIConnectionTimeoutError" ||
+        error?.name === "APIConnectionError" ||
+        String(error?.message || "").toLowerCase().includes("overloaded") ||
+        String(error?.message || "").toLowerCase().includes("rate limit") ||
+        String(error?.message || "").toLowerCase().includes("timed out") ||
+        String(error?.message || "").toLowerCase().includes("timeout");
 
       if (isTransient && attempts < maxAttempts) {
-        console.log(
-          `[AI Engine] Claude ${model} transient failure (${error?.status || error?.message}), retrying in ${delayMs}ms (attempt ${attempts}/${maxAttempts})...`
-        );
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const jitterMs = Math.floor(Math.random() * 500);
+        const waitMs = delayMs + jitterMs;
+        logAiDiagnostic({
+          requestId: params.requestId || `ai_${Date.now()}`,
+          stage: params.stage || "claude_call",
+          mode: params.mode || "fast",
+          model,
+          provider: "claude",
+          httpStatus: error?.status ?? null,
+          errorCode: "TRANSIENT_RETRY",
+          errorType: error?.error?.type || error?.name,
+          durationMs: Date.now() - attemptStart,
+          timeoutOrAbort: error?.name === "APIConnectionTimeoutError",
+          attempt: attempts,
+          outcome: "retry",
+          message: `Claude ${model} transient failure (${error?.status || error?.message}), retrying in ${waitMs}ms...`,
+        });
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
         delayMs *= 2;
         continue;
       }
@@ -323,13 +350,38 @@ async function generateContentWithFallback(
       if (model === ANALYZER_MODELS.FORENSIC) {
         console.error(`[AI Engine] Claude Opus forensic engine failed without fallback:`, error);
       }
-      throw providerFailure(error, "claude");
+      throw providerFailure(error, "claude", {
+        requestId: params.requestId,
+        stage: params.stage,
+        mode: params.mode,
+        model,
+        durationMs: Date.now() - providerStart,
+        attempt: attempts,
+      });
     }
   }
 
   const stopReason = response?.stop_reason;
   const usage = response?.usage || null;
   const durationMs = Date.now() - providerStart;
+
+  logAiDiagnostic({
+    requestId: params.requestId || `ai_${Date.now()}`,
+    stage: params.stage || "claude_call",
+    mode: params.mode || "fast",
+    model,
+    provider: "claude",
+    httpStatus: 200,
+    durationMs,
+    timeoutOrAbort: false,
+    attempt: attempts + 1,
+    tokens: {
+      inputTokens: usage?.input_tokens || 0,
+      outputTokens: usage?.output_tokens || 0,
+    },
+    outcome: "success",
+  });
+
   console.log(
     `[AI Engine] Claude ${model} finished in ${durationMs}ms stop_reason=${stopReason} ` +
       `usage=${JSON.stringify(usage)}`
@@ -1825,6 +1877,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let creditReservation: ReservationResult | null = null;
     let paidSessionId: string | null = null;
     let analysisRequestId = "";
+    let streamEmitter: SseStreamEmitter | null = null;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -2082,6 +2135,19 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         details: { mode, isPaid, tier: paidTier || "Free" },
       });
 
+      const wantsStream = Boolean(
+        req.body?.stream === true || (req.header("accept") || "").includes("text/event-stream")
+      );
+      if (wantsStream) {
+        streamEmitter = new SseStreamEmitter(res, analysisRequestId);
+        createAnalysisJob({
+          jobId: analysisRequestId,
+          uid: isPaid && identity ? identity.uid : (uid || null),
+          mode: mode === "full" ? "full" : "fast",
+        });
+        streamEmitter.emitStage("extracting");
+      }
+
       targetText = textContent || "";
       let extractedText = "";
 
@@ -2129,6 +2195,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       if (extractedText) {
         targetText = extractedText + "\n\n" + targetText;
       }
+
+      streamEmitter?.emitStage("reviewing_evidence");
 
       const documentContentBlock = targetText && targetText.trim()
         ? `DOCUMENT TEXT CONTENT:\n${targetText}`
@@ -2408,6 +2476,7 @@ ${analysisRules}`;
           },
         };
       } else {
+        streamEmitter?.emitStage("identifying_legal_issues");
         // Forensic In-Depth Dual-Pass running on Claude Opus
         // Both halves of the schema depend only on the same source document text, not on each
         // other's output, so they're independent requests — issuing them concurrently is safe and
@@ -2461,6 +2530,33 @@ ${analysisRules}`;
         };
       }
 
+      streamEmitter?.emitStage("preparing_report");
+
+      // Verify direct quotes against the source text to prevent AI hallucinations or misplaced citations
+      if (report && Array.isArray(report.redFlags) && targetText) {
+        for (const flag of report.redFlags) {
+          if (flag && typeof flag.phraseDetected === "string") {
+            const quoteResult = verifyQuote(targetText, flag.phraseDetected);
+            flag.quoteVerification = quoteResult.status;
+            flag.quoteVerified = quoteResult.status === "EXACT" || quoteResult.status === "NORMALIZED_WHITESPACE";
+          }
+        }
+      }
+
+      // Enforce confirmed statute reference rule: s.94(5) is relative placement, NOT a 5-day hearing rule
+      if (report && Array.isArray(report.proceduralTimelineViolations)) {
+        for (const item of report.proceduralTimelineViolations) {
+          if (
+            item &&
+            typeof item.evaluation === "string" &&
+            item.evaluation.includes("s.94(5)") &&
+            item.evaluation.toLowerCase().includes("5-day")
+          ) {
+            item.citation = "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.";
+          }
+        }
+      }
+
       let credits: CreditStatus | null = null;
       if (!isPaid && uid) {
         try {
@@ -2504,7 +2600,12 @@ ${analysisRules}`;
         report.credits = credits;
       }
 
-      res.json(report);
+      if (streamEmitter) {
+        completeAnalysisJob(analysisRequestId, report);
+        streamEmitter.emitComplete(report, credits);
+      } else {
+        res.json(report);
+      }
 
     } catch (error: any) {
       if (creditReservation && paidSessionId) {
@@ -2519,6 +2620,24 @@ ${analysisRules}`;
           console.error("[document analysis] Failed to release reservation:", relErr);
         }
       }
+
+      if (streamEmitter) {
+        const formatted = formatAnalyzerErrorResponse(error);
+        failAnalysisJob(analysisRequestId, {
+          code: formatted.code,
+          message: formatted.error,
+          statusCode: formatted.statusCode,
+          retryable: formatted.retryable,
+        });
+        streamEmitter.emitError({
+          code: formatted.code,
+          message: formatted.error,
+          statusCode: formatted.statusCode,
+          retryable: formatted.retryable,
+        });
+        return;
+      }
+
       if (error instanceof LifecycleError) {
         if (
           error.code === "ANALYSIS_LIMIT_REACHED" ||
@@ -2533,6 +2652,16 @@ ${analysisRules}`;
       console.error("[document analysis] API error, returning honest failure (no fabricated fallback):", error);
       handleAIError(error, "document analysis", res);
     }
+  });
+
+  // API: Job recovery and persistent status lookup
+  app.get("/api/analyze/job/:jobId", async (req: Request, res: Response) => {
+    const { jobId } = req.params;
+    const job = getAnalysisJob(jobId);
+    if (!job) {
+      return res.status(404).json({ error: "Analysis job not found.", code: "JOB_NOT_FOUND" });
+    }
+    res.json(job);
   });
 
   // API: Cross-Document Case Timeline

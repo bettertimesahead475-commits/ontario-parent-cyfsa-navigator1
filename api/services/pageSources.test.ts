@@ -16,6 +16,17 @@ describe('deterministic page attribution',()=>{
   const ocr=vi.fn();const pages=await extractPages(Buffer.from('one\ftwo'),'text/plain',ocr);
   expect(pages).toHaveLength(1);expect(pages[0].text).toBe('one\ftwo');expect(ocr).not.toHaveBeenCalled();
  });
+ it('extracts machine-readable text PDF natively without invoking OCR',async()=>{
+  const pdf=await PDFDocument.create();
+  const page=pdf.addPage();
+  page.drawText('Child and Family Services Act Section 74 Notice of Application');
+  const ocr=vi.fn();
+  const pages=await extractPages(Buffer.from(await pdf.save()),'application/pdf',ocr);
+  expect(pages).toHaveLength(1);
+  expect(pages[0].extractionMethod).toBe('native-pdf-text');
+  expect(pages[0].text).toContain('Child and Family Services Act Section 74');
+  expect(ocr).not.toHaveBeenCalled();
+ });
  it('keeps an image as one source page',async()=>{
   const pages=await extractPages(Buffer.from('image'),'image/png',async()=> 'image text');expect(pages[0].extractionMethod).toBe('gemini-image-ocr');expect(pages[0].pageNumber).toBe(1);
  });

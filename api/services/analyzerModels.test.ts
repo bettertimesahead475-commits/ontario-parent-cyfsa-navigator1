@@ -6,6 +6,7 @@ import {
   MODEL_TIMEOUTS,
   calculateEstimatedCost,
   resolveServerAuthoritativeModel,
+  resolveAnthropicWireModel,
 } from "./analyzerModels.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 
@@ -19,7 +20,7 @@ describe("analyzerModels service", () => {
       });
 
       expect(resolution.authoritativeModel).toBe(ANALYZER_MODELS.QUICK);
-      expect(resolution.authoritativeModel).toBe("claude-sonnet-5");
+      expect(resolution.authoritativeModel).toBe("claude-3-5-sonnet-20241022");
       expect(resolution.mode).toBe("fast");
       expect(resolution.tokenBudget).toBe(TOKEN_BUDGETS.QUICK);
       expect(resolution.timeoutMs).toBe(MODEL_TIMEOUTS.QUICK);
@@ -35,7 +36,7 @@ describe("analyzerModels service", () => {
 
       // Server authority overrides client override: Quick mode must always run Sonnet
       expect(resolution.authoritativeModel).toBe(ANALYZER_MODELS.QUICK);
-      expect(resolution.authoritativeModel).toBe("claude-sonnet-5");
+      expect(resolution.authoritativeModel).toBe("claude-3-5-sonnet-20241022");
     });
 
     it("rejects Forensic mode for unpaid users with 403 FORENSIC_UPGRADE_REQUIRED", () => {
@@ -93,6 +94,12 @@ describe("analyzerModels service", () => {
       expect(CLAUDE_MODELS.has(ANALYZER_MODELS.FORENSIC)).toBe(true);
       expect(CLAUDE_MODELS.has("claude-3-opus-20240229")).toBe(true);
       expect(CLAUDE_MODELS.has("claude-sonnet-5")).toBe(true);
+    });
+
+    it("maps wire model aliases to official verified Anthropic models", () => {
+      expect(resolveAnthropicWireModel("claude-sonnet-5")).toBe("claude-3-5-sonnet-20241022");
+      expect(resolveAnthropicWireModel("claude-3-opus-20240229")).toBe("claude-3-opus-20240229");
+      expect(resolveAnthropicWireModel("claude-3-5-sonnet-20241022")).toBe("claude-3-5-sonnet-20241022");
     });
   });
 

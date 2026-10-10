@@ -12,17 +12,34 @@
 import { Tier, hasForensicInDepthAccess } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 
+export const DEFAULT_QUICK_MODEL = "claude-3-5-sonnet-20241022";
+export const DEFAULT_FORENSIC_MODEL = "claude-3-opus-20240229";
+
 export const ANALYZER_MODELS = {
-  QUICK: "claude-sonnet-5",
-  FORENSIC: "claude-3-opus-20240229",
+  QUICK: process.env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL,
+  FORENSIC: process.env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL,
 } as const;
 
 export const CLAUDE_MODELS = new Set<string>([
-  "claude-sonnet-5",
   "claude-3-5-sonnet-20241022",
+  "claude-3-5-sonnet-latest",
+  "claude-3-7-sonnet-20250219",
+  "claude-3-7-sonnet-latest",
   "claude-3-opus-20240229",
+  "claude-3-opus-latest",
+  "claude-sonnet-5",
   "claude-haiku-4-5-20251001",
 ]);
+
+/**
+ * Resolves wire-level Anthropic model identifier, mapping non-canonical aliases to the verified GA model.
+ */
+export function resolveAnthropicWireModel(model: string): string {
+  if (model === "claude-sonnet-5") {
+    return DEFAULT_QUICK_MODEL;
+  }
+  return model || DEFAULT_QUICK_MODEL;
+}
 
 export const TOKEN_BUDGETS = {
   QUICK: 8000,
@@ -31,7 +48,7 @@ export const TOKEN_BUDGETS = {
 } as const;
 
 export const MODEL_TIMEOUTS = {
-  QUICK: 60000,
+  QUICK: 90000,
   FORENSIC: 150000,
 } as const;
 
@@ -42,15 +59,23 @@ export const MODEL_TIMEOUTS = {
 export const USD_TO_CAD_RATE = 1.38;
 
 export const MODEL_PRICING = {
-  [ANALYZER_MODELS.QUICK]: {
+  [DEFAULT_QUICK_MODEL]: {
     inputCostPerMillionUsd: 3.0,
     outputCostPerMillionUsd: 15.0,
   },
-  "claude-3-5-sonnet-20241022": {
+  "claude-3-5-sonnet-latest": {
     inputCostPerMillionUsd: 3.0,
     outputCostPerMillionUsd: 15.0,
   },
-  [ANALYZER_MODELS.FORENSIC]: {
+  "claude-sonnet-5": {
+    inputCostPerMillionUsd: 3.0,
+    outputCostPerMillionUsd: 15.0,
+  },
+  [DEFAULT_FORENSIC_MODEL]: {
+    inputCostPerMillionUsd: 15.0,
+    outputCostPerMillionUsd: 75.0,
+  },
+  "claude-3-opus-latest": {
     inputCostPerMillionUsd: 15.0,
     outputCostPerMillionUsd: 75.0,
   },
@@ -75,6 +100,8 @@ export interface CostEstimate {
 
 export interface ModelResolution {
   authoritativeModel: string;
+  primaryModel: string;
+  verificationModel?: string;
   engineDisplayName: string;
   mode: "fast" | "full";
   modeDisplayName: string;
@@ -114,7 +141,9 @@ export function resolveServerAuthoritativeModel(params: {
 
     return {
       authoritativeModel: ANALYZER_MODELS.FORENSIC,
-      engineDisplayName: "Claude Opus (Forensic In-Depth)",
+      primaryModel: ANALYZER_MODELS.QUICK,
+      verificationModel: ANALYZER_MODELS.FORENSIC,
+      engineDisplayName: "Claude Sonnet + Claude Opus (Forensic In-Depth)",
       mode: "full",
       modeDisplayName: "Forensic In-Depth Dual-Pass",
       tokenBudget: TOKEN_BUDGETS.FORENSIC_PASS_1,
@@ -125,6 +154,7 @@ export function resolveServerAuthoritativeModel(params: {
   if (params.mode === "fast") {
     return {
       authoritativeModel: ANALYZER_MODELS.QUICK,
+      primaryModel: ANALYZER_MODELS.QUICK,
       engineDisplayName: "Claude Sonnet (Quick Review)",
       mode: "fast",
       modeDisplayName: "Quick Document Review",
@@ -138,8 +168,10 @@ export function resolveServerAuthoritativeModel(params: {
   const isPaidForensic = params.isPaid && hasForensicInDepthAccess(params.tier);
   return {
     authoritativeModel: isPaidForensic ? ANALYZER_MODELS.FORENSIC : ANALYZER_MODELS.QUICK,
+    primaryModel: ANALYZER_MODELS.QUICK,
+    verificationModel: isPaidForensic ? ANALYZER_MODELS.FORENSIC : undefined,
     engineDisplayName: isPaidForensic
-      ? "Claude Opus (Forensic In-Depth)"
+      ? "Claude Sonnet + Claude Opus (Forensic In-Depth)"
       : "Claude Sonnet (Dual-Pass)",
     mode: "full",
     modeDisplayName: isPaidForensic

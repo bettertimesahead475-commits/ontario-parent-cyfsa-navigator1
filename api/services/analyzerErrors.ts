@@ -28,6 +28,43 @@ export class AnalyzerError extends Error {
   }
 }
 
+export interface AiDiagnosticParams {
+  requestId: string;
+  stage: string;
+  mode?: "fast" | "full";
+  model: string;
+  provider: "claude" | "gemini";
+  httpStatus?: number | null;
+  errorCode?: string | null;
+  errorType?: string | null;
+  durationMs: number;
+  timeoutOrAbort?: boolean;
+  attempt?: number;
+  tokens?: { inputTokens: number; outputTokens: number } | null;
+  outcome: "success" | "retry" | "failure";
+  message?: string;
+}
+
+export function logAiDiagnostic(params: AiDiagnosticParams): void {
+  const sanitized = {
+    tag: "[AI_DIAGNOSTIC_TRACE]",
+    requestId: params.requestId,
+    stage: params.stage,
+    mode: params.mode ?? "fast",
+    model: params.model,
+    provider: params.provider,
+    httpStatus: params.httpStatus ?? null,
+    errorCode: params.errorCode ?? null,
+    errorType: params.errorType ?? null,
+    durationMs: params.durationMs,
+    timeoutOrAbort: Boolean(params.timeoutOrAbort),
+    attempt: params.attempt ?? 1,
+    tokens: params.tokens ?? null,
+    outcome: params.outcome,
+  };
+  console.log(JSON.stringify(sanitized));
+}
+
 /**
  * Converts an error thrown by an AI provider SDK (Anthropic or Google GenAI) into an
  * AnalyzerError using the HTTP status the SDK reports. Without this, a provider-side 401/403
@@ -36,47 +73,127 @@ export class AnalyzerError extends Error {
  * the returned error contains provider credentials; the provider's own status/type are only
  * logged server-side.
  */
-export function providerFailure(error: any, provider: "claude" | "gemini"): AnalyzerError {
+export function providerFailure(
+  error: any,
+  provider: "claude" | "gemini",
+  context?: { requestId?: string; stage?: string; mode?: "fast" | "full"; model?: string; durationMs?: number; attempt?: number }
+): AnalyzerError {
   if (error instanceof AnalyzerError) return error;
   const rawStatus = error?.status ?? error?.code;
   const status = typeof rawStatus === "number" ? rawStatus : undefined;
   const msg = String(error?.message || "").toLowerCase();
+  const errorName = String(error?.name || "Error");
+  const errorType = error?.error?.error?.type || error?.error?.type || "unknown";
+
+  const isTimeout =
+    errorName === "APIConnectionTimeoutError" ||
+    msg.includes("timed out") ||
+    msg.includes("timeout") ||
+    error?.code === "ETIMEDOUT";
+
+  const isAbort =
+    errorName === "APIUserAbortError" ||
+    errorName === "AbortError" ||
+    msg.includes("abort");
+
+  const isRateLimit =
+    status === 429 ||
+    msg.includes("rate limit") ||
+    msg.includes("quota") ||
+    msg.includes("resource_exhausted");
+
+  const isAuth =
+    status === 401 ||
+    (status === 403 && (msg.includes("api key") || msg.includes("auth") || msg.includes("permission") || msg.includes("credential")));
+
+  const isCredits =
+    status === 402 ||
+    msg.includes("credit") ||
+    msg.includes("balance") ||
+    msg.includes("billing");
+
+  const isNotFound =
+    status === 404 ||
+    errorType === "not_found_error" ||
+    msg.includes("model not found") ||
+    msg.includes("unknown model");
+
+  const isBadReq =
+    status === 400 ||
+    status === 413 ||
+    status === 422;
+
+  let classification = "TEMPORARY_UNAVAILABLE";
+  if (isTimeout) classification = "REQUEST_TIMEOUT";
+  else if (isAbort) classification = "REQUEST_ABORTED";
+  else if (isRateLimit) classification = "RATE_LIMIT";
+  else if (isAuth) classification = "AUTHENTICATION_FAILURE";
+  else if (isCredits) classification = "INSUFFICIENT_CREDITS";
+  else if (isNotFound) classification = "INVALID_MODEL";
+  else if (isBadReq) classification = "REQUEST_REJECTED";
+  else if (status === 503 || status === 529 || msg.includes("overloaded")) classification = "PROVIDER_OUTAGE";
+
   console.error(
-    `[AI Engine] ${provider} request failed: status=${status ?? "none"} name=${error?.name || "Error"} ` +
-      `type=${error?.error?.error?.type || error?.error?.type || "unknown"}`
+    `[AI Engine] ${provider} request failed: status=${status ?? "none"} name=${errorName} ` +
+      `type=${errorType} classification=${classification} timeoutOrAbort=${isTimeout || isAbort}`
   );
 
-  if (status === 429 || msg.includes("rate limit") || msg.includes("quota") || msg.includes("resource_exhausted")) {
-    return new AnalyzerError(
+  let resultError: AnalyzerError;
+
+  if (isRateLimit) {
+    resultError = new AnalyzerError(
       "AI_RATE_LIMITED",
       429,
       "The AI service is experiencing rate limits. Please wait a moment before retrying - your document is safe.",
       true
     );
-  }
-  if (status === 401 || status === 403 || status === 404) {
-    return new AnalyzerError(
+  } else if (isAuth || isNotFound || isCredits) {
+    resultError = new AnalyzerError(
       "AI_PROVIDER_CONFIGURATION_ERROR",
       503,
       "The analysis service is unavailable right now because of a configuration problem on our side. Your document is safe and this attempt was not counted against your analyses.",
       false
     );
-  }
-  if (status === 400 || status === 413 || status === 422) {
-    return new AnalyzerError(
+  } else if (isBadReq) {
+    resultError = new AnalyzerError(
       "AI_REQUEST_REJECTED",
       502,
       "The analysis service could not process this document as submitted. Your document is safe - if it is very long, try a shorter excerpt.",
       false
     );
+  } else {
+    // Timeout, connection drop, DNS, or 503/529 provider overload
+    const userMessage = isTimeout
+      ? "The AI analysis engine timed out while processing this document. Please retry — if the file is long, try a shorter excerpt."
+      : "The AI analysis engine is temporarily busy or unreachable. Please wait a moment and try again - your document is safe.";
+
+    resultError = new AnalyzerError(
+      "AI_PROVIDER_TEMPORARILY_UNAVAILABLE",
+      503,
+      userMessage,
+      true
+    );
   }
-  // No status (connection reset, DNS, timeout) or 408/409/5xx/529 overloaded.
-  return new AnalyzerError(
-    "AI_PROVIDER_TEMPORARILY_UNAVAILABLE",
-    503,
-    "The AI analysis engine is temporarily busy or unreachable. Please wait a moment and try again - your document is safe.",
-    true
-  );
+
+  if (context?.requestId) {
+    logAiDiagnostic({
+      requestId: context.requestId,
+      stage: context.stage || "ai_analysis",
+      mode: context.mode,
+      model: context.model || "unknown",
+      provider,
+      httpStatus: status ?? null,
+      errorCode: resultError.code,
+      errorType: String(errorType),
+      durationMs: context.durationMs ?? 0,
+      timeoutOrAbort: isTimeout || isAbort,
+      attempt: context.attempt ?? 1,
+      outcome: "failure",
+      message: resultError.userMessage,
+    });
+  }
+
+  return resultError;
 }
 
 export function formatAnalyzerErrorResponse(error: any): {
