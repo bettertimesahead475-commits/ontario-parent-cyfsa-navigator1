@@ -113,37 +113,30 @@ export async function readAnalysisEventStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let finalReport: any = null;
-  const inactivityTimeoutMs = options?.inactivityTimeoutMs ?? 40000;
-  const maxDurationMs = options?.maxDurationMs ?? 240000;
+  // The server sends a heartbeat every 5 s, so 45 s of silence means the connection is gone.
+  // The overall cap sits above the server's 300 s function limit.
+  const inactivityTimeoutMs = options?.inactivityTimeoutMs ?? 45000;
+  const maxDurationMs = options?.maxDurationMs ?? 330000;
   const startOverall = Date.now();
 
   while (true) {
     if (Date.now() - startOverall > maxDurationMs) {
-      throw new ApiResponseError(
-        "Analysis exceeded maximum duration limit. Your document is safe — please retry.",
-        504,
-        "ANALYSIS_TIMEOUT",
-        true
-      );
+      throw streamInterrupted();
     }
 
     let timeoutId: any;
     const timeoutPromise = new Promise<{ done: boolean; value: undefined }>((_, reject) => {
       timeoutId = setTimeout(() => {
-        reject(
-          new ApiResponseError(
-            "Analysis stream connection stalled waiting for server response. Zero credits were consumed. Please check your connection and retry.",
-            504,
-            "STREAM_TIMEOUT",
-            true
-          )
-        );
+        reject(streamInterrupted());
       }, inactivityTimeoutMs);
     });
 
     let readResult: ReadableStreamReadResult<Uint8Array>;
     try {
       readResult = await Promise.race([reader.read(), timeoutPromise]);
+    } catch (e) {
+      if (e instanceof ApiResponseError) throw e;
+      throw streamInterrupted(); // network dropped mid-stream
     } finally {
       clearTimeout(timeoutId);
     }
@@ -192,7 +185,136 @@ export async function readAnalysisEventStream(
   }
 
   if (!finalReport) {
-    throw new Error("Analysis stream disconnected before completion. Please retry.");
+    throw streamInterrupted();
   }
   return finalReport;
+}
+
+/**
+ * The live progress connection ended before the result arrived. The analysis may still be running
+ * (or finished) on the server, so callers recover it with pollAnalysisJob - they must not start a
+ * second analysis, and must not claim nothing was charged, because the server may yet complete it.
+ */
+export const STREAM_INTERRUPTED = "STREAM_INTERRUPTED";
+function streamInterrupted(): ApiResponseError {
+  return new ApiResponseError(
+    "The live progress connection was interrupted. Checking whether your analysis finished on the server...",
+    0,
+    STREAM_INTERRUPTED,
+    false
+  );
+}
+
+export interface AnalysisJobSnapshot {
+  jobId: string;
+  status: "pending" | "analyzing" | "completed" | "failed";
+  currentStage?: string;
+  percent?: number;
+  message?: string;
+  sections?: Record<string, any>;
+  sectionsTotal?: number;
+  report?: any;
+  error?: { code: string; message: string; statusCode: number; retryable: boolean };
+}
+
+export type AnalysisJobOutcome =
+  | { status: "completed"; report: any }
+  | { status: "failed"; error: { code: string; message: string; statusCode: number; retryable: boolean } };
+
+/**
+ * Follows a server-side analysis job until it completes or fails, reporting real progress from the
+ * persisted job record. Used after a dropped stream and after a page reload; it never starts or
+ * pays for a new analysis. Gives up (throwing ApiResponseError) only when the job cannot exist any
+ * more: never created, the account is signed out, or it outlived the server's time limit.
+ */
+export async function pollAnalysisJob(
+  jobId: string,
+  options: {
+    onProgress?: (job: AnalysisJobSnapshot) => void;
+    isCancelled?: () => boolean;
+    intervalMs?: number;
+    maxWaitMs?: number;
+    /** Request function; defaults to apiFetch (which attaches the caller's identity headers). */
+    fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+  } = {}
+): Promise<AnalysisJobOutcome> {
+  const fetcher = options.fetcher ?? apiFetch;
+  const intervalMs = options.intervalMs ?? 3000;
+  const maxWaitMs = options.maxWaitMs ?? 6 * 60 * 1000; // > 300 s function limit + persistence
+  const started = Date.now();
+  let notFoundCount = 0;
+  let networkFailures = 0;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  while (true) {
+    if (options.isCancelled?.()) throw new ApiResponseError("Cancelled.", 0, "CANCELLED", false);
+    if (Date.now() - started > maxWaitMs) {
+      throw new ApiResponseError(
+        "We couldn't confirm whether this analysis finished. Your document is safe. Check your saved reports, or start the analysis again.",
+        504,
+        "RECOVERY_TIMEOUT",
+        true
+      );
+    }
+    let res: Response;
+    try {
+      res = await fetcher(`/api/analyze/job/${encodeURIComponent(jobId)}`);
+      networkFailures = 0;
+    } catch {
+      if (++networkFailures >= 10) {
+        throw new ApiResponseError(
+          "We lost the connection while checking your analysis. Your document is safe - please check your connection and reopen this page.",
+          0,
+          "NETWORK_ERROR",
+          true
+        );
+      }
+      await sleep(intervalMs);
+      continue;
+    }
+    if (res.status === 401) {
+      throw new ApiResponseError("Please sign in again to see this analysis.", 401, "SIGN_IN_REQUIRED", false);
+    }
+    if (res.status === 403) {
+      throw new ApiResponseError("This analysis belongs to a different account.", 403, "FORBIDDEN", false);
+    }
+    if (res.status === 404) {
+      // The record may not be written yet right after the request starts; then it truly does not exist.
+      if (++notFoundCount >= 6) {
+        throw new ApiResponseError(
+          "This analysis never started on the server (for example, the request was refused). Nothing was charged. Please start it again.",
+          404,
+          "JOB_NOT_FOUND",
+          false
+        );
+      }
+      await sleep(intervalMs);
+      continue;
+    }
+    if (!res.ok) {
+      await sleep(intervalMs);
+      continue;
+    }
+    const job = (await res.json().catch(() => null)) as AnalysisJobSnapshot | null;
+    if (job?.status === "completed" && job.report) return { status: "completed", report: job.report };
+    if (job?.status === "failed") {
+      return {
+        status: "failed",
+        error: job.error || { code: "INTERNAL_ANALYSIS_ERROR", message: "The analysis could not be completed.", statusCode: 500, retryable: true },
+      };
+    }
+    if (job?.status === "pending") {
+      if (++notFoundCount >= 6) {
+        throw new ApiResponseError(
+          "This analysis never started on the server (for example, the request was refused). Nothing was charged. Please start it again.",
+          404,
+          "JOB_NOT_FOUND",
+          false
+        );
+      }
+    } else if (job) {
+      options.onProgress?.(job);
+    }
+    await sleep(intervalMs);
+  }
 }
