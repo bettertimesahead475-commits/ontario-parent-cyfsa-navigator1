@@ -94,7 +94,7 @@ describe("generate — validation + UTM tagging", () => {
   it("creates drafts with per-platform UTM-tagged links", async () => {
     vi.mocked(ai.generateMarketingPosts).mockResolvedValue({
       drafts: [{ platform: "facebook", content: "Learn about the free guide", hashtags: ["CYFSA"] }],
-      model: "claude-sonnet-5",
+      model: "claude-sonnet-5-5",
     });
     vi.mocked(store.createPost).mockImplementation(async (p: any) => ({ id: "p1", ...p }));
 

@@ -19,8 +19,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Platform } from "./types.js";
 import { getAdapter } from "./adapters/registry.js";
 
-const CLAUDE_MODELS = new Set(["claude-sonnet-5", "claude-haiku-4-5-20251001"]);
-const DEFAULT_MODEL = "claude-sonnet-5";
+const CLAUDE_MODELS = new Set(["claude-sonnet-5-5", "claude-haiku-4-5-20251001"]);
+const DEFAULT_MODEL = "claude-sonnet-5-5";
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic {

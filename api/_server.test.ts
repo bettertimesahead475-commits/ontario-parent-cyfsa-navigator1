@@ -734,7 +734,7 @@ describe("POST /api/analyze", () => {
     expect(res.body.documentTitle).toBe("Uploaded Document");
     expect(mockCreateMessage).toHaveBeenCalledTimes(1);
     expect(mockCreateMessage.mock.calls[0][0].max_tokens).toBe(16000);
-    expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+    expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5-5");
   });
 
   it("authoritatively routes Forensic In-Depth (mode: full) to Claude Opus on both concurrent calls", async () => {
@@ -748,9 +748,9 @@ describe("POST /api/analyze", () => {
     expect(mockCreateMessage).toHaveBeenCalledTimes(2);
     for (const call of mockCreateMessage.mock.calls) {
       expect(call[0].max_tokens).toBe(20000);
-      expect(call[0].model).toBe("claude-opus-5");
+      expect(call[0].model).toBe("claude-opus-5-5");
     }
-    expect(res.body.modelMetadata?.engine).toBe("claude-opus-5");
+    expect(res.body.modelMetadata?.engine).toBe("claude-opus-5-5");
   });
 
   it("returns a clear error instead of fabricating a report when either response isn't valid JSON", async () => {

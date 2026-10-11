@@ -2,8 +2,8 @@
  * Centralized AI Model Selection & Cost Accounting for CYFSA Document Analyzer.
  *
  * Enforces server-authoritative model routing:
- *   - Quick Document Review  -> Claude Sonnet ("claude-sonnet-5")
- *   - Forensic In-Depth       -> Claude Opus   ("claude-3-opus-20240229")
+ *   - Quick Document Review  -> Claude Sonnet ("claude-sonnet-5-5")
+ *   - Forensic In-Depth       -> Claude Opus   ("claude-opus-5-5")
  *
  * The frontend cannot override or tamper with model selection to obtain unauthorized Opus access.
  * Silent downgrades from Opus to Sonnet are strictly forbidden.
@@ -12,8 +12,8 @@
 import { Tier, hasForensicInDepthAccess } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 
-export const DEFAULT_QUICK_MODEL = "claude-sonnet-5";
-export const DEFAULT_FORENSIC_MODEL = "claude-opus-5";
+export const DEFAULT_QUICK_MODEL = "claude-sonnet-5-5";
+export const DEFAULT_FORENSIC_MODEL = "claude-opus-5-5";
 
 export const ANALYZER_MODELS = {
   QUICK: process.env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL,

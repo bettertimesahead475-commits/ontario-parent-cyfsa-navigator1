@@ -36,7 +36,7 @@ export async function uploadSource(uid:string,matterId:string,body:any,ocr:OCR) 
 }
 export async function analyzeSourcePage(uid:string,matterId:string,versionId:string,pageId:string,provider:EvidenceProvider) {
   versionId=requireUuid(versionId,'versionId');pageId=requireUuid(pageId,'pageId');
-  const run=await sourceOperation(uid,matterId,'begin_evidence',{versionId,pageId,model:'claude-sonnet-5',schema:SOURCE_SCHEMA});
+  const run=await sourceOperation(uid,matterId,'begin_evidence',{versionId,pageId,model:'claude-sonnet-5-5',schema:SOURCE_SCHEMA});
   try {
     if(run.page.text.length>30000)throw new LifecycleError(422,'PAGE_TOO_LARGE','Page requires chunking before evidence extraction.');
     const result=await provider(run.page);

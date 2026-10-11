@@ -358,6 +358,13 @@ export async function scanForPayments(): Promise<ScanResult> {
       let activationSucceeded = false;
       let activationOutcome = "matched_pending_manual_approval";
       try {
+        // SAFETY GATE (audit fix): an email text match alone must never grant paid access.
+        // Automatic activation runs only when the owner explicitly sets
+        // ENABLE_EMAIL_TRUST_GRANT=true. Otherwise the throw below routes to the
+        // fallback branch, which alerts the admin to approve manually with the admin secret.
+        if (process.env.ENABLE_EMAIL_TRUST_GRANT !== "true") {
+          throw new Error("Email trust-grant disabled: manual admin approval required.");
+        }
         const activation = await activateTrustBasedPayment(referenceNumber, amount, { messageId });
         activationSucceeded = true;
         activationOutcome = "trust_grant_activated";

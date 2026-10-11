@@ -1559,7 +1559,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   registerLifecycleRoutes(app);
   registerDocumentRoutes(app, ocrSingleSourceWithGemini, async page => {
     const response = await getAnthropicClient().messages.create({
-      model: "claude-sonnet-5", max_tokens: 8000,
+      model: "claude-sonnet-5-5", max_tokens: 8000,
       system: SOURCE_SYSTEM + '\nReturn ONLY a JSON array (maximum 50 items), each with page_id, page_number, classification, normalized_statement, exact_quote, confidence (0–1 or null), review_state UNREVIEWED. Classifications: FACT, ALLEGATION, OPINION, PROFESSIONAL_ASSESSMENT, INFERENCE, UNVERIFIED_CLAIM, UNKNOWN. Classify attributed allegations as ALLEGATION, never FACT. Quote only this page. No legal conclusions. Empty array if no supported items.',
       messages: [{role: 'user', content: JSON.stringify({page_id:page.id,page_number:page.page_number,untrusted_source_text:page.text})}],
     });
@@ -2849,7 +2849,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         // a timeline + conflicts + open items + claim checks across all of them, which can
         // easily need more room than a single-document response.
         max_tokens: 16000
-      }, model || "claude-sonnet-5");
+      }, model || "claude-sonnet-5-5");
 
       const responseText = response.text;
       if (!responseText) {
@@ -3014,7 +3014,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       const response = await generateContentWithFallback({
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptBody }] }]
-      }, model || "claude-sonnet-5");
+      }, model || "claude-sonnet-5-5");
 
       const responseText = response.text || "No response text received from the model.";
 
@@ -3072,7 +3072,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       const response = await generateContentWithFallback({
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }]
-      }, "claude-sonnet-5");
+      }, "claude-sonnet-5-5");
 
       const responseText = response.text;
 
@@ -3252,7 +3252,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         max_tokens: 16000
-      }, model || "claude-sonnet-5");
+      }, model || "claude-sonnet-5-5");
 
       const responseText = response.text;
       if (!responseText) {
@@ -3372,7 +3372,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       const response = await generateContentWithFallback({
         system: "You help a self-represented parent organize their own personal case journal. You never invent facts, dialogue, or details the parent did not provide, and you never claim their notes are an official or certified record.",
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }]
-      }, "claude-sonnet-5");
+      }, "claude-sonnet-5-5");
 
       const responseText = response.text;
       if (!responseText) {

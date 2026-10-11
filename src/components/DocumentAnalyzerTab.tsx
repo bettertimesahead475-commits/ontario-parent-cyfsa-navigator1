@@ -315,7 +315,7 @@ export default function DocumentAnalyzerTab() {
   // Forensic In-Depth uses Claude Opus (claude-3-opus-20240229). The server authoritatively
   // enforces this assignment so the frontend cannot override engine tier boundaries.
   const [analysisMode, setAnalysisMode] = useState<"fast" | "full">("fast");
-  const [claudeModel, setClaudeModel] = useState<string>("claude-3-5-sonnet-20241022");
+  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-5-5");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
   // Explicit, resilient document processing state machine
@@ -2958,7 +2958,7 @@ export default function DocumentAnalyzerTab() {
               onChange={(e) => {
                 const nextMode = e.target.value as "fast" | "full";
                 setAnalysisMode(nextMode);
-                setClaudeModel(nextMode === "full" ? "claude-3-opus-20240229" : "claude-sonnet-5");
+                setClaudeModel(nextMode === "full" ? "claude-opus-5-5" : "claude-sonnet-5-5");
               }}
               className="text-[10px] font-sans bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors font-medium"
               aria-label="Analysis Mode"
