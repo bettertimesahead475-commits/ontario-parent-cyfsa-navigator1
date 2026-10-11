@@ -73,6 +73,7 @@ const mockFirebaseAdmin = vi.hoisted(() => ({ verifyFirebaseToken: vi.fn() }));
 const mockUsage = vi.hoisted(() => ({
   getFreeUsage: vi.fn(async () => 0),
   recordFreeUse: vi.fn(async () => {}),
+  decrementFreeUse: vi.fn(async () => {}),
   FREE_ANALYSES_LIMIT: 1,
   BASIC_QUICK_REVIEWS_LIMIT: 3,
   PREMIUM_FORENSIC_ANALYSES_LIMIT: 3,
