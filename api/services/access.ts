@@ -101,6 +101,7 @@ export function isAuthorizedSiteOwner(email: string | null | undefined, adminSec
     "chris@cyfsanavigator.com",
     "donations.ontarioparentassist@gmail.com",
     "chrispelkie@gmail.com",
+    "mr.pelkie@gmail.com",
     ...(configuredAdminAlert ? [configuredAdminAlert] : []),
     ...(configuredPaymentEmail ? [configuredPaymentEmail] : []),
     ...(configuredIntake ? [configuredIntake] : []),
