@@ -746,10 +746,10 @@ describe("POST /api/analyze", () => {
       .send({ textContent: "some affidavit text", mode: "full", model: "claude-haiku-4-5-20251001" });
     expect(res.status).toBe(200);
     expect(mockCreateMessage).toHaveBeenCalledTimes(2);
-    for (const call of mockCreateMessage.mock.calls) {
-      expect(call[0].max_tokens).toBe(20000);
-      expect(call[0].model).toBe("claude-opus-5");
-    }
+    const tokenBudgets = mockCreateMessage.mock.calls.map(c => c[0].max_tokens);
+    const models = mockCreateMessage.mock.calls.map(c => c[0].model);
+    expect(tokenBudgets).toEqual([10000, 8000]);
+    expect(models).toEqual(["claude-opus-5", "claude-opus-5"]);
     expect(res.body.modelMetadata?.engine).toBe("claude-opus-5");
   });
 

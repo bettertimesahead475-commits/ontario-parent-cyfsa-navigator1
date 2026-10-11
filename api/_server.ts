@@ -329,7 +329,13 @@ async function generateContentWithFallback(
         String(error?.message || "").toLowerCase().includes("timed out") ||
         String(error?.message || "").toLowerCase().includes("timeout");
 
-      if (isTransient && attempts < maxAttempts) {
+      const isTimeout =
+        error?.name === "APIConnectionTimeoutError" ||
+        String(error?.message || "").toLowerCase().includes("timed out") ||
+        String(error?.message || "").toLowerCase().includes("timeout");
+      const wasLongTimeout = isTimeout && (Date.now() - attemptStart >= 60000);
+
+      if (isTransient && attempts < maxAttempts && !wasLongTimeout) {
         const jitterMs = Math.floor(Math.random() * 500);
         const waitMs = delayMs + jitterMs;
         logAiDiagnostic({
@@ -2302,7 +2308,7 @@ THINGS TO NEVER DO
 
 ${analysisRules}`;
 
-      const deepDiveSystemInstruction = `You are CYFSA Navigator's Evidence Strength Audit tool, running the statutory-threshold and timeline half of a two-part review of one document already reviewed once by a parallel pass. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions.
+      const deepDiveSystemInstruction = `You are CYFSA Navigator's Evidence Strength Audit tool, running the statutory-threshold and timeline half of a two-part review of one document already reviewed once by a parallel pass. Your job is to help the parent and their lawyer identify weaknesses, procedural issues, and points worth raising — NOT to issue legal conclusions. Be concise, direct, and actionable. Keep evaluations to 2-3 focused sentences per checkpoint so the analysis is immediately usable and completes promptly. Do not pad answers with generic legal theory.
 
 ${analysisRules}`;
 
@@ -2374,7 +2380,7 @@ ${analysisRules}`;
             {
               "thresholdChecked": "CYFSA s. 81 — Application / Child Protection Proceeding Authority",
               "isMet": "Yes / No / Inconclusive",
-              "reasoning": "Analyze the role of CYFSA s. 81 in the proceeding. Do not characterize s. 81 itself as an "imminent danger" threshold. Distinguish the statutory authority for commencing proceedings from the separate statutory grounds and tests applicable to whether a child is in need of protection or may be apprehended.",
+              "reasoning": "Analyze the role of CYFSA s. 81 in the proceeding. Do not characterize s. 81 itself as an 'imminent danger' threshold. Distinguish the statutory authority for commencing proceedings from the separate statutory grounds and tests applicable to whether a child is in need of protection or may be apprehended.",
               "primarySourceLaw": "⚠️ Statute citation unverified — confirm exact subsection with counsel before relying on this. (s.81 generally covers warrants/apprehension/hearing procedure, but the exact subsection for this point is not in the confirmed reference and must not be stated as fact.)"
             },
             {
@@ -2392,7 +2398,7 @@ ${analysisRules}`;
             {
               "thresholdChecked": "Kinship / Family-Based Alternatives — Documentation Check",
               "isMet": "Yes / No / Inconclusive",
-              "reasoning": "Determine whether the reviewed document documents consideration of kinship, extended-family, customary-care, Indigenous, or other family-based alternatives where legally relevant. Do NOT infer that the Society failed to consider such alternatives merely because the affidavit does not mention them. Classify an absence of documentation as "Missing Evidence" or "Not Determinable From This Document" and identify the records required to verify what was actually considered.",
+              "reasoning": "Determine whether the reviewed document documents consideration of kinship, extended-family, customary-care, Indigenous, or other family-based alternatives where legally relevant. Do NOT infer that the Society failed to consider such alternatives merely because the affidavit does not mention them. Classify an absence of documentation as 'Missing Evidence' or 'Not Determinable From This Document' and identify the records required to verify what was actually considered.",
               "primarySourceLaw": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this."
             }
           ],
@@ -2400,7 +2406,7 @@ ${analysisRules}`;
             {
               "timelineRule": "30-Day Adjournment Limit (CYFSA s. 94(1))",
               "documentAssertion": "E.g. calendar gaps, schedule arrangements or dates mentioned.",
-              "evaluation": "Analyze if the document indicates court processes are adjourned for more than 30 days without universal consent under Section 94(1). If the document does not contain enough information to determine compliance, mark the result "Not Determinable From This Document". Never infer compliance merely because a violation or event is not mentioned.",
+              "evaluation": "Analyze if the document indicates court processes are adjourned for more than 30 days without universal consent under Section 94(1). If the document does not contain enough information to determine compliance, mark the result 'Not Determinable From This Document'. Never infer compliance merely because a violation or event is not mentioned.",
               "citation": "CYFSA, S.O. 2017, c. 14, s. 94(1)",
               "locationInDocument": "Page X, Paragraph Y, or state 'Checked & Compliant'",
               "parentActionStep": "Parent action steps to track scheduled court dates and ensure their lawyer asserts s. 94(1) rights."
@@ -2436,16 +2442,16 @@ ${analysisRules}`;
             "Mandatory Consideration of Indigenous, First Nations, Inuit, or Métis Heritage (CYFSA Section 2): Check and analyze whether culture and kinship options were respected."
           ],
           "whatToVerify": [
-            "List 5-10 specific verification items where supported by the document. Each item must say WHAT to obtain/check, WHY it matters to a named finding, and WHAT question it could resolve. Prefer exact records, dates, people, logs, messages, medical/school records, disclosure, or court documents over generic advice."
+            "List 3-5 specific verification items where supported by the document. Each item must say WHAT to obtain/check, WHY it matters to a named finding, and WHAT question it could resolve. Prefer exact records, dates, people, logs, messages, medical/school records, disclosure, or court documents over generic advice."
           ],
           "whatToAskALawyer": [
-            "List 5-10 precise questions for counsel tied to actual passages/findings in this document. Each question should identify the issue and, where available, the page/paragraph or quoted wording that triggered it."
+            "List 3-5 precise questions for counsel tied to actual passages/findings in this document. Each question should identify the issue and, where available, the page/paragraph or quoted wording that triggered it."
           ],
           "whatIsMissing": [
-            "List material information missing from THIS document. For each item, explain why the missing information matters and what record/source would normally answer it. Never treat absence from this document as proof the event did not occur."
+            "List 3-5 material information items missing from THIS document. For each item, explain why the missing information matters and what record/source would normally answer it. Never treat absence from this document as proof the event did not occur."
           ],
           "lawyerCaseBrief": [
-            "A comprehensive 5-bullet counsel briefing. Each bullet must use this internal structure in plain text: ISSUE — DOCUMENT EVIDENCE — SIGNIFICANCE — LIMITATION/COUNTERPOINT — VERIFY/NEXT QUESTION. Tie every bullet to the reviewed document and avoid generic legal commentary."
+            "A comprehensive 3-5 bullet counsel briefing. Each bullet must use this internal structure in plain text: ISSUE — DOCUMENT EVIDENCE — SIGNIFICANCE — LIMITATION/COUNTERPOINT — VERIFY/NEXT QUESTION. Tie every bullet to the reviewed document and avoid generic legal commentary."
           ]
         }
       `;

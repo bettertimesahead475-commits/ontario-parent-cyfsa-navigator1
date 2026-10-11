@@ -627,7 +627,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.body.modelMetadata.cost.totalCostCad).toBeGreaterThan(0);
     });
 
-    it("routes Forensic In-Depth to Claude Opus with dual passes and 20000 max_tokens per pass", async () => {
+    it("routes Forensic In-Depth to Claude Opus with dual passes and optimized token budgets", async () => {
       mockCreateMessage.mockResolvedValueOnce({
         content: [{ type: "text", text: JSON.stringify(CORE) }],
         stop_reason: "end_turn",
@@ -647,11 +647,11 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.status).toBe(200);
       expect(mockCreateMessage).toHaveBeenCalledTimes(2);
 
-      // Both passes must route to Claude Opus with 20000 token budget
-      for (const call of mockCreateMessage.mock.calls) {
-        expect(call[0].model).toBe("claude-opus-5");
-        expect(call[0].max_tokens).toBe(20000);
-      }
+      // Both passes must route to Claude Opus with optimized token budgets
+      const models = mockCreateMessage.mock.calls.map(c => c[0].model);
+      const tokenBudgets = mockCreateMessage.mock.calls.map(c => c[0].max_tokens);
+      expect(models).toEqual(["claude-opus-5", "claude-opus-5"]);
+      expect(tokenBudgets).toEqual([10000, 8000]);
 
       // Verify merged forensic report
       expect(res.body.redFlags).toHaveLength(1);
