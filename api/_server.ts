@@ -2946,6 +2946,11 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       return;
     }
 
+    // Validate input before any paid usage check or credit reservation.
+    if (typeof req.body?.documentText !== "string" || !req.body.documentText.trim()) {
+      return res.status(400).json({ error: "Document text is required for a deep scan.", code: "EMPTY_DOCUMENT" });
+    }
+
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
       (req.header("x-request-id") as string) ||
@@ -2988,7 +2993,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
     try {
       const startTime = Date.now();
-      const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
+      const { documentText, documentName, category, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {
         return res.status(400).json({ error: "Document text is required for a deep scan." });
       }
@@ -3082,7 +3087,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         max_tokens: 16000
-      }, model || "claude-sonnet-5");
+      }, resolveServerAuthoritativeModel("full"));
 
       const responseText = response.text;
       if (!responseText) {
