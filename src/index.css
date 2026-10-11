@@ -131,3 +131,51 @@ code, pre, kbd, samp, .font-code, .code-font {
     max-width: none;
   }
 }
+
+/* Readable legal assessment workspace; scoped to the Document Analyzer. */
+#document-analyzer-tab {
+  font-family: "Plus Jakarta Sans", "Inter", "Segoe UI", Arial, sans-serif;
+  line-height: 1.65;
+}
+#document-analyzer-tab #case-workspace { align-items: start; }
+#document-analyzer-tab #workspace-action-screen { min-width: 0; overflow-wrap: anywhere; }
+#document-analyzer-tab #workspace-action-screen p,
+#document-analyzer-tab #workspace-action-screen li { line-height: 1.75; }
+#document-analyzer-tab #workspace-action-screen h2,
+#document-analyzer-tab #workspace-action-screen h3,
+#document-analyzer-tab #workspace-action-screen h4,
+#document-analyzer-tab #workspace-action-screen h5 {
+  font-family: inherit;
+  line-height: 1.4;
+  letter-spacing: -0.012em;
+}
+#document-analyzer-tab #workspace-action-screen pre,
+#document-analyzer-tab #workspace-action-screen code,
+#document-analyzer-tab #workspace-action-screen .font-mono {
+  font-family: inherit !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#document-analyzer-tab #lawyer-detailed-case-brief {
+  background: #f8fafc !important;
+  color: #172554 !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: none;
+}
+#document-analyzer-tab #lawyer-detailed-case-brief .text-white,
+#document-analyzer-tab #lawyer-detailed-case-brief .text-slate-100,
+#document-analyzer-tab #lawyer-detailed-case-brief .text-slate-200,
+#document-analyzer-tab #lawyer-detailed-case-brief .text-brand-300,
+#document-analyzer-tab #lawyer-detailed-case-brief .text-brand-400 {
+  color: #1e3a8a !important;
+}
+#document-analyzer-tab #lawyer-detailed-case-brief .border-slate-800 { border-color: #cbd5e1 !important; }
+#document-analyzer-tab #workspace-action-screen .text-\\[9px\\],
+#document-analyzer-tab #workspace-action-screen .text-\\[10px\\],
+#document-analyzer-tab #workspace-action-screen .text-\\[11px\\] { font-size: 12px; }
+@media (min-width: 1024px) {
+  #document-analyzer-tab #organizer-sidebar { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; }
+}
+@media (max-width: 1023px) {
+  #document-analyzer-tab #organizer-sidebar { position: static; max-height: none; }
+}

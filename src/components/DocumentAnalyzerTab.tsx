@@ -745,6 +745,8 @@ export default function DocumentAnalyzerTab() {
   });
 
   // Sub-navigation: Organizer vs RAG Chat vs Saved Briefs
+  const [workspaceSidebarOpen, setWorkspaceSidebarOpen] = useState(true);
+
   const [activeTab, setActiveTab] = useState<"organizer" | "rag-chat" | "saved-briefs">(() => {
     return parsedProg?.activeTab || "organizer";
   });
@@ -3120,11 +3122,26 @@ export default function DocumentAnalyzerTab() {
         </div>
       </div>
 
-      {/* Main workspace display grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="case-workspace">
+      {/* Responsive workspace: keep all original upload, analysis and evidence controls mounted. */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-slate-900">Document workspace</h2>
+          <p className="text-xs text-slate-600">Manage your files and read your analysis side by side.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setWorkspaceSidebarOpen((open) => !open)}
+          aria-expanded={workspaceSidebarOpen}
+          aria-controls="organizer-sidebar"
+          className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+        >
+          {workspaceSidebarOpen ? "Expand report" : "Show documents"}
+        </button>
+      </div>
+      <div className={`grid grid-cols-1 gap-4 lg:gap-5 ${workspaceSidebarOpen ? "lg:grid-cols-[minmax(280px,32%)_minmax(0,1fr)]" : "lg:grid-cols-[minmax(0,1fr)]"}`} id="case-workspace">
         
         {/* LEFT COLUMN: MULTIPLE FILES UPLOADER & ORGANIZE FOLDERS */}
-        <div className="lg:col-span-5 space-y-4" id="organizer-sidebar">
+        <div className={`min-w-0 space-y-4 ${workspaceSidebarOpen ? "" : "hidden"}`} id="organizer-sidebar">
           
           <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-4 text-left shadow-2xs">
             
@@ -3132,10 +3149,10 @@ export default function DocumentAnalyzerTab() {
             <div className="flex justify-between items-center pb-2.5 border-b border-gray-100">
               <div className="flex items-center gap-1.5">
                 <FolderOpen className="w-4 h-4 text-brand-900 shrink-0" />
-                <h4 className="font-display font-bold text-gray-900 text-sm">Case Folders</h4>
+                <h4 className="font-display font-bold text-gray-900 text-sm">Case files</h4>
               </div>
               <span className="text-[10px] font-sans bg-slate-100 text-brand-950 px-2.5 py-0.5 rounded-full font-bold border border-slate-200">
-                {organizedFiles.length} Cabinet Files
+                {organizedFiles.length} documents
               </span>
             </div>
 
@@ -3478,7 +3495,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
           {/* RIGHT COLUMN: WORKSPACE SWITCHER */}
-        <div className="lg:col-span-7" id="workspace-action-screen">
+        <div className="min-w-0 w-full" id="workspace-action-screen">
           
           {/* TAB 1: FILE ORGANIZER DETAILS & ACTIVE DOCUMENT AUDIT */}
           {activeTab === "organizer" && (
@@ -4028,7 +4045,7 @@ export default function DocumentAnalyzerTab() {
                         </button>
                       </div>
 
-                      {/* Lawyer Detailed Case Brief in bullet-form structure */}
+                      {/* Detailed case assessment in bullet-form structure */}
                       {selectedReport.lawyerCaseBrief && selectedReport.lawyerCaseBrief.length > 0 && (
                         <div className="bg-slate-900 text-white rounded-2xl p-5 md:p-6 space-y-4 shadow-md border border-slate-800 relative overflow-hidden" id="lawyer-detailed-case-brief">
                           <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -4039,7 +4056,7 @@ export default function DocumentAnalyzerTab() {
                                 Lawyer Detailed Case Brief
                               </h5>
                               <p className="text-[10px] text-brand-300 font-sans">
-                                Bullet Form Structure • Ready for Intake Sharing
+                                Structured findings for review and preparation
                               </p>
                             </div>
                           </div>
