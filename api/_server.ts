@@ -3086,7 +3086,10 @@ OUTPUT — return strictly this JSON schema, nothing else:
       const response = await generateContentWithFallback({
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
-        max_tokens: 16000
+        max_tokens: 16000,
+        requestId: analysisRequestId,
+        stage: "forensic_deep_scan",
+        mode: "full"
       }, ANALYZER_MODELS.FORENSIC);
 
       const responseText = response.text;
@@ -3094,7 +3097,47 @@ OUTPUT — return strictly this JSON schema, nothing else:
         throw new AnalyzerError("AI_RESPONSE_INVALID", 422, "The deep scan returned an empty response. Please retry - your document is safe.", true);
       }
 
-      const report = extractJson(responseText);
+      // Do not accept a JSON object if the provider stopped at the output token limit:
+      // even syntactically valid JSON can contain an incomplete substantive assessment.
+      if (response.stopReason === "max_tokens") {
+        console.warn("[deep scan] Incomplete provider output", {
+          requestId: analysisRequestId, model: response.model,
+          stopReason: response.stopReason, outputLength: responseText.length,
+          usage: response.usage, durationMs: response.durationMs
+        });
+        throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
+          "The deep scan exceeded its response limit. Please analyze a shorter document or section.", false);
+      }
+
+      let report: any;
+      try {
+        report = extractJson(responseText);
+      } catch (parseError: any) {
+        console.warn("[deep scan] Provider response parse failure", {
+          requestId: analysisRequestId, model: response.model,
+          stopReason: response.stopReason, outputLength: responseText.length,
+          usage: response.usage, durationMs: response.durationMs,
+          errorCode: parseError?.code || "AI_RESPONSE_INVALID"
+        });
+        // Only attempt a bounded repair for a completed response, never for truncation.
+        // The repair model must not be asked to invent, fill, or rewrite substantive findings.
+        if (response.stopReason !== "end_turn" || responseText.length > 90000) throw parseError;
+        const repair = await generateContentWithFallback({
+          system: "You are a strict JSON syntax formatter. Return ONLY valid JSON. Correct formatting errors in the supplied content without adding, removing, summarizing, interpreting, or inventing any information. If the content cannot be represented completely and faithfully as JSON, respond with exactly: UNRECOVERABLE.",
+          messages: [{ role: "user", content: [{ type: "text", text: responseText }] }],
+          max_tokens: 16000,
+          retries: 1,
+          requestId: analysisRequestId,
+          stage: "forensic_json_repair",
+          mode: "full"
+        }, ANALYZER_MODELS.FORENSIC);
+        if (repair.stopReason === "max_tokens" || repair.text.trim() === "UNRECOVERABLE") throw parseError;
+        report = extractJson(repair.text);
+      }
+      if (!report || typeof report !== "object" || Array.isArray(report)) {
+        throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
+          "The deep scan did not return a complete structured report. Please retry.", true);
+      }
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
       if (sessionInfo) try {
