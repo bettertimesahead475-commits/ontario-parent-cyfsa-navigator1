@@ -119,7 +119,11 @@ const mockUsage = vi.hoisted(() => ({
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class MockAnthropic {
-    messages = { create: mockCreateMessage };
+    messages = {
+      create: mockCreateMessage,
+      // Mirrors the SDK: stream(body, options).finalMessage() resolves the same response.
+      stream: (body: any, options: any) => ({ finalMessage: () => mockCreateMessage(body, options) }),
+    };
   },
 }));
 vi.mock("@google/genai", () => ({
@@ -665,9 +669,9 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.body.modelMetadata.usage.inputTokens).toBe(12500);
       expect(res.body.modelMetadata.usage.outputTokens).toBe(5500);
       expect(res.body.modelMetadata.usage.totalTokens).toBe(18000);
-      // Opus cost should reflect $15/MTok input and $75/MTok output
+      // Opus cost should reflect $5/MTok input and $25/MTok output (Claude Opus 5 rates)
       expect(res.body.modelMetadata.cost.totalCostUsd).toBeCloseTo(
-        (12500 / 1e6) * 15 + (5500 / 1e6) * 75,
+        (12500 / 1e6) * 5 + (5500 / 1e6) * 25,
         3
       );
       expect(res.body.modelMetadata.cost.totalCostCad).toBeGreaterThan(

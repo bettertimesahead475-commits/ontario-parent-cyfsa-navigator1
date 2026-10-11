@@ -47,7 +47,14 @@ import {
   restoreSession,
   type ReservationResult,
 } from "./services/creditAccounting.js";
-import { formatAnalyzerErrorResponse, AnalyzerError, providerFailure, logAiDiagnostic } from "./services/analyzerErrors.js";
+import {
+  formatAnalyzerErrorResponse,
+  AnalyzerError,
+  providerFailure,
+  logAiDiagnostic,
+  providerErrorClass,
+  isProviderConnectionFailure,
+} from "./services/analyzerErrors.js";
 import {
   ANALYZER_MODELS,
   CLAUDE_MODELS,
@@ -56,6 +63,7 @@ import {
   resolveServerAuthoritativeModel,
   calculateEstimatedCost,
   resolveAnthropicWireModel,
+  buildThinkingRequestFields,
 } from "./services/analyzerModels.js";
 import {
   SseStreamEmitter,
@@ -307,33 +315,36 @@ async function generateContentWithFallback(
         max_tokens: params.max_tokens || (model === ANALYZER_MODELS.FORENSIC ? 20000 : 16000),
         system: params.system,
         messages,
+        ...buildThinkingRequestFields(wireModel, Boolean(params.enableThinking), params.thinkingBudget),
       };
-      if (params.enableThinking) {
-        createOptions.thinking = { type: "enabled", budget_tokens: params.thinkingBudget || 2048 };
-      } else {
-        createOptions.thinking = { type: "disabled" };
-      }
 
-      response = await client.messages.create(createOptions, { timeout: timeoutMs });
+      // Streamed so the connection stays active for the whole generation instead of waiting silently
+      // for one large body, and so long outputs never hit the SDK's non-streaming duration guard.
+      // finalMessage() still yields the complete, validated Message object (stop_reason, usage, content).
+      response = await client.messages.stream(createOptions, { timeout: timeoutMs }).finalMessage();
       break;
     } catch (error: any) {
       attempts++;
-      const isTransient =
-        error?.status === 429 ||
-        error?.status === 503 ||
-        error?.status === 529 ||
-        error?.name === "APIConnectionTimeoutError" ||
-        error?.name === "APIConnectionError" ||
-        String(error?.message || "").toLowerCase().includes("overloaded") ||
-        String(error?.message || "").toLowerCase().includes("rate limit") ||
-        String(error?.message || "").toLowerCase().includes("timed out") ||
-        String(error?.message || "").toLowerCase().includes("timeout");
-
+      const errorMessage = String(error?.message || "").toLowerCase();
+      const status = typeof error?.status === "number" ? error.status : undefined;
+      const errorClass = providerErrorClass(error);
       const isTimeout =
-        error?.name === "APIConnectionTimeoutError" ||
-        String(error?.message || "").toLowerCase().includes("timed out") ||
-        String(error?.message || "").toLowerCase().includes("timeout");
-      const wasLongTimeout = isTimeout && (Date.now() - attemptStart >= 60000);
+        errorClass === "APIConnectionTimeoutError" ||
+        errorMessage.includes("timed out") ||
+        errorMessage.includes("timeout");
+      const isConnection = isProviderConnectionFailure(error);
+      // Retry only transient failures: rate limits, provider overload/5xx, and connection drops.
+      // Permanent failures (400/401/402/403/404/413/422) are never retried.
+      const isTransient =
+        status === 429 ||
+        status === 500 ||
+        status === 502 ||
+        status === 503 ||
+        status === 529 ||
+        isConnection;
+      // A timeout that already consumed a full minute of the per-attempt budget is not retried: a
+      // second attempt would push the request past the function's duration limit.
+      const wasLongTimeout = isTimeout && Date.now() - attemptStart >= 60000;
 
       if (isTransient && attempts < maxAttempts && !wasLongTimeout) {
         const jitterMs = Math.floor(Math.random() * 500);
@@ -344,14 +355,14 @@ async function generateContentWithFallback(
           mode: params.mode || "fast",
           model,
           provider: "claude",
-          httpStatus: error?.status ?? null,
+          httpStatus: status ?? null,
           errorCode: "TRANSIENT_RETRY",
-          errorType: error?.error?.type || error?.name,
+          errorType: error?.error?.type || errorClass,
           durationMs: Date.now() - attemptStart,
-          timeoutOrAbort: error?.name === "APIConnectionTimeoutError",
+          timeoutOrAbort: isTimeout,
           attempt: attempts,
           outcome: "retry",
-          message: `Claude ${model} transient failure (${error?.status || error?.message}), retrying in ${waitMs}ms...`,
+          message: `Claude ${model} transient failure (${status ?? errorClass}), retrying in ${waitMs}ms...`,
         });
         await new Promise((resolve) => setTimeout(resolve, waitMs));
         delayMs *= 2;

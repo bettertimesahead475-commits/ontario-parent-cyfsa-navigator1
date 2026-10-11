@@ -73,6 +73,30 @@ export function logAiDiagnostic(params: AiDiagnosticParams): void {
  * the returned error contains provider credentials; the provider's own status/type are only
  * logged server-side.
  */
+/**
+ * The Anthropic SDK (and most Node error classes) never assign `name` on its error subclasses, so
+ * `error.name` is always "Error" for `APIConnectionTimeoutError`, `APIConnectionError`, `APIError`,
+ * etc. The class name survives only on `constructor.name`, so classification must read that.
+ */
+export function providerErrorClass(error: any): string {
+  const ctorName = typeof error?.constructor?.name === "string" ? error.constructor.name : "";
+  if (ctorName && ctorName !== "Object") return ctorName;
+  return String(error?.name || "Error");
+}
+
+/** True for failures where the request never produced an HTTP status (timeouts, resets, DNS). */
+export function isProviderConnectionFailure(error: any): boolean {
+  const cls = providerErrorClass(error);
+  return cls === "APIConnectionError" || cls === "APIConnectionTimeoutError";
+}
+
+/** Node-level network cause (e.g. ECONNRESET, UND_ERR_SOCKET), when the SDK attached one. Never contains secrets. */
+export function providerNetworkCause(error: any): string | null {
+  const cause = error?.cause;
+  const code = cause?.code ?? cause?.name;
+  return typeof code === "string" && code.length <= 64 ? code : null;
+}
+
 export function providerFailure(
   error: any,
   provider: "claude" | "gemini",
@@ -82,8 +106,10 @@ export function providerFailure(
   const rawStatus = error?.status ?? error?.code;
   const status = typeof rawStatus === "number" ? rawStatus : undefined;
   const msg = String(error?.message || "").toLowerCase();
-  const errorName = String(error?.name || "Error");
+  const errorName = providerErrorClass(error);
   const errorType = error?.error?.error?.type || error?.error?.type || "unknown";
+  const networkCause = providerNetworkCause(error);
+  const isConnectionFailure = isProviderConnectionFailure(error);
 
   const isTimeout =
     errorName === "APIConnectionTimeoutError" ||
@@ -132,10 +158,12 @@ export function providerFailure(
   else if (isNotFound) classification = "INVALID_MODEL";
   else if (isBadReq) classification = "REQUEST_REJECTED";
   else if (status === 503 || status === 529 || msg.includes("overloaded")) classification = "PROVIDER_OUTAGE";
+  else if (isConnectionFailure) classification = "NETWORK_FAILURE";
 
   console.error(
     `[AI Engine] ${provider} request failed: status=${status ?? "none"} name=${errorName} ` +
-      `type=${errorType} classification=${classification} timeoutOrAbort=${isTimeout || isAbort}`
+      `type=${errorType} classification=${classification} timeoutOrAbort=${isTimeout || isAbort} ` +
+      `networkCause=${networkCause ?? "none"}`
   );
 
   let resultError: AnalyzerError;
@@ -165,7 +193,9 @@ export function providerFailure(
     // Timeout, connection drop, DNS, or 503/529 provider overload
     const userMessage = isTimeout
       ? "The AI analysis engine timed out while processing this document. Please retry — if the file is long, try a shorter excerpt."
-      : "The AI analysis engine is temporarily busy or unreachable. Please wait a moment and try again - your document is safe.";
+      : isConnectionFailure
+        ? "The connection to the AI analysis engine was interrupted before it finished. Your document is safe - please retry."
+        : "The AI analysis engine is temporarily busy or unreachable. Please wait a moment and try again - your document is safe.";
 
     resultError = new AnalyzerError(
       "AI_PROVIDER_TEMPORARILY_UNAVAILABLE",

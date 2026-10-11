@@ -155,7 +155,11 @@ const mockCases = vi.hoisted(() => ({
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class MockAnthropic {
-    messages = { create: mockCreateMessage };
+    messages = {
+      create: mockCreateMessage,
+      // Mirrors the SDK: stream(body, options).finalMessage() resolves the same response.
+      stream: (body: any, options: any) => ({ finalMessage: () => mockCreateMessage(body, options) }),
+    };
   },
 }));
 
