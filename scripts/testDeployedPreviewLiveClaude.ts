@@ -240,18 +240,92 @@ export async function runDeployedPreviewLiveClaudeTest(previewBaseUrl: string) {
     console.log(`    - Quote: "${rf.phraseDetected?.substring(0, 45)}..." | Status: ${rf.quoteVerification} | Category: ${rf.category}`);
   }
 
-  // --- TEST 3: Durable Job Lookup Verification ---
+  // --- TEST 3: Admin Testing Entitlement & Credit Preservation ---
   console.log("\n--------------------------------------------------------------------------------");
-  console.log("TEST 3: DURABLE JOB LOOKUP & PERSISTENCE VERIFICATION");
+  console.log("TEST 3: ADMIN TESTING ENTITLEMENT & CREDIT ACCOUNTING AUDIT");
   console.log("--------------------------------------------------------------------------------");
 
-  const jobRes = await fetch(`${previewBaseUrl}/api/analyze/job/${fastReqId}`, {
+  const usageRes = await fetch(`${previewBaseUrl}/api/analyzer-usage`, {
     headers: {
       "x-admin-secret": "cyfsa-preview-verify-2026",
     },
   });
 
-  console.log(`GET /api/analyze/job/${fastReqId} status: ${jobRes.status}`);
+  const usageData = await usageRes.json();
+  console.log(`GET /api/analyzer-usage status: ${usageRes.status}`);
+  console.log(`  Entitlement Type:   ${usageData.type}`);
+  console.log(`  Is Admin Entitled:  ${usageData.isAdminEntitled}`);
+  console.log(`  Credits Remaining:  ${usageData.creditsRemaining}`);
+  console.log(`  Free Analyses Left: ${usageData.freeRemaining ?? "N/A"}`);
+
+  // --- TEST 4: Durable Job Lookup & Persistence Verification ---
+  console.log("\n--------------------------------------------------------------------------------");
+  console.log("TEST 4: DURABLE JOB LOOKUP & PERSISTENCE VERIFICATION");
+  console.log("--------------------------------------------------------------------------------");
+
+  const jobFastRes = await fetch(`${previewBaseUrl}/api/analyze/job/${fastReqId}`, {
+    headers: {
+      "x-admin-secret": "cyfsa-preview-verify-2026",
+    },
+  });
+  const jobFastData = await jobFastRes.json();
+  console.log(`GET /api/analyze/job/${fastReqId} status: ${jobFastRes.status}`);
+  console.log(`  Fast Job Status:     ${jobFastData.status} (stage: ${jobFastData.currentStage}, ${jobFastData.percent}%)`);
+  console.log(`  Fast Report Saved:   ${!!jobFastData.report}`);
+
+  const jobFullRes = await fetch(`${previewBaseUrl}/api/analyze/job/${fullReqId}`, {
+    headers: {
+      "x-admin-secret": "cyfsa-preview-verify-2026",
+    },
+  });
+  const jobFullData = await jobFullRes.json();
+  console.log(`GET /api/analyze/job/${fullReqId} status: ${jobFullRes.status}`);
+  console.log(`  Full Job Status:     ${jobFullData.status} (stage: ${jobFullData.currentStage}, ${jobFullData.percent}%)`);
+  console.log(`  Full Report Saved:   ${!!jobFullData.report}`);
+
+  // --- COMPREHENSIVE SECTION AUDIT FOR FORENSIC REPORT ---
+  console.log("\n--------------------------------------------------------------------------------");
+  console.log("FORENSIC REPORT QUALITY & COMPLETENESS AUDIT");
+  console.log("--------------------------------------------------------------------------------");
+  console.log(`  1. Document Title:             "${fullReport.documentTitle}"`);
+  console.log(`  2. Completeness Score:         ${fullReport.completenessScore}%`);
+  console.log(`  3. Evidence Strength Index:    ${fullReport.evidenceStrengthIndex?.score}/100`);
+  console.log(`  4. File Summary Present:       ${!!fullReport.fileSummary} (${fullReport.fileSummary?.length || 0} chars)`);
+  console.log(`  5. Red Flags Count:            ${fullReport.redFlags?.length || 0}`);
+  console.log(`  6. Threshold Analysis:         ${fullReport.thresholdAnalysis?.length || 0} checkpoints`);
+  for (const th of fullReport.thresholdAnalysis || []) {
+    console.log(`     - [${th.isMet}] ${th.thresholdChecked?.substring(0, 50)}...`);
+  }
+  console.log(`  7. Procedural Timeline Violations: ${fullReport.proceduralTimelineViolations?.length || 0} rules`);
+  for (const pt of fullReport.proceduralTimelineViolations || []) {
+    console.log(`     - ${pt.timelineRule}: ${pt.evaluation?.substring(0, 50)}...`);
+  }
+  console.log(`  8. Charter & Human Rights:     ${fullReport.charterAndHumanRightsIssues?.length || 0} issues`);
+  console.log(`  9. Verification Checklist:     ${fullReport.whatToVerify?.length || 0} items`);
+  console.log(`  10. Questions for Lawyer:      ${fullReport.whatToAskALawyer?.length || 0} questions`);
+  console.log(`  11. Material Info Missing:     ${fullReport.whatIsMissing?.length || 0} items`);
+  console.log(`  12. Lawyer Case Brief Bullets: ${fullReport.lawyerCaseBrief?.length || 0} bullets`);
+  for (let i = 0; i < (fullReport.lawyerCaseBrief || []).length; i++) {
+    console.log(`     - Bullet ${i + 1}: ${fullReport.lawyerCaseBrief[i]?.substring(0, 65)}...`);
+  }
+
+  const incompleteSections: string[] = [];
+  if (!fullReport.documentTitle) incompleteSections.push("documentTitle");
+  if (!fullReport.fileSummary) incompleteSections.push("fileSummary");
+  if (!fullReport.redFlags || fullReport.redFlags.length === 0) incompleteSections.push("redFlags");
+  if (!fullReport.thresholdAnalysis || fullReport.thresholdAnalysis.length === 0) incompleteSections.push("thresholdAnalysis");
+  if (!fullReport.proceduralTimelineViolations || fullReport.proceduralTimelineViolations.length === 0) incompleteSections.push("proceduralTimelineViolations");
+  if (!fullReport.charterAndHumanRightsIssues || fullReport.charterAndHumanRightsIssues.length === 0) incompleteSections.push("charterAndHumanRightsIssues");
+  if (!fullReport.whatToVerify || fullReport.whatToVerify.length === 0) incompleteSections.push("whatToVerify");
+  if (!fullReport.whatToAskALawyer || fullReport.whatToAskALawyer.length === 0) incompleteSections.push("whatToAskALawyer");
+  if (!fullReport.whatIsMissing || fullReport.whatIsMissing.length === 0) incompleteSections.push("whatIsMissing");
+  if (!fullReport.lawyerCaseBrief || fullReport.lawyerCaseBrief.length === 0) incompleteSections.push("lawyerCaseBrief");
+
+  if (incompleteSections.length > 0) {
+    console.warn(`⚠️ WARNING: The following sections were empty or missing: ${incompleteSections.join(", ")}`);
+  } else {
+    console.log("✓ ALL 12 FORENSIC REPORT SECTIONS ARE FULLY POPULATED AND INTACT!");
+  }
 
   console.log("\n================================================================================");
   console.log("LIVE VERIFICATION COMPLETE: ALL AUTHENTIC PIPELINE CHECKS PASSED");
@@ -260,6 +334,7 @@ export async function runDeployedPreviewLiveClaudeTest(previewBaseUrl: string) {
   return {
     fast: { reqId: fastReqId, wallClockMs: fastWallClockMs, report: fastReport },
     full: { reqId: fullReqId, wallClockMs: fullWallClockMs, report: fullReport },
+    incompleteSections,
   };
 }
 

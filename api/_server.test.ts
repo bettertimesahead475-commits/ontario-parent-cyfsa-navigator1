@@ -748,7 +748,7 @@ describe("POST /api/analyze", () => {
     expect(mockCreateMessage).toHaveBeenCalledTimes(2);
     const tokenBudgets = mockCreateMessage.mock.calls.map(c => c[0].max_tokens);
     const models = mockCreateMessage.mock.calls.map(c => c[0].model);
-    expect(tokenBudgets).toEqual([10000, 8000]);
+    expect(tokenBudgets).toEqual([12000, 14000]);
     expect(models).toEqual(["claude-opus-5", "claude-opus-5"]);
     expect(res.body.modelMetadata?.engine).toBe("claude-opus-5");
   });

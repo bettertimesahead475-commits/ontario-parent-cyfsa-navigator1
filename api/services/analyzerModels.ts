@@ -48,13 +48,13 @@ export function resolveAnthropicWireModel(model: string): string {
 
 export const TOKEN_BUDGETS = {
   QUICK: 16000,
-  FORENSIC_PASS_1: 10000,
-  FORENSIC_PASS_2: 8000,
+  FORENSIC_PASS_1: 12000,
+  FORENSIC_PASS_2: 14000,
 } as const;
 
 export const MODEL_TIMEOUTS = {
   QUICK: 90000,
-  FORENSIC: 130000,
+  FORENSIC: 180000,
 } as const;
 
 // Pricing per million tokens (Anthropic API standard rates)
