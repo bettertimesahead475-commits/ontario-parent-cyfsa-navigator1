@@ -2930,7 +2930,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
     // Owner access is based exclusively on a server-verified Firebase identity.
     // Never trust a request body email or an arbitrary client-supplied admin header.
-    const identity = await verifyFirebaseToken(req.header("authorization"));
+    const identity = await verifyFirebaseIdentity(req.header("authorization"));
     if (!identity) {
       return res.status(401).json({ error: "Please sign in to continue.", code: "SIGN_IN_REQUIRED" });
     }
