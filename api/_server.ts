@@ -2928,15 +2928,27 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   // second, deeper look. It now receives that prior report and is explicitly told
   // not to restate what it already found, but to dig into what it missed.
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
-    const sessionInfo = await requireSession(req, res);
-    if (!sessionInfo) return;
-    if (!hasForensicInDepthAccess(sessionInfo.tier)) {
+    // Owner access is based exclusively on a server-verified Firebase identity.
+    // Never trust a request body email or an arbitrary client-supplied admin header.
+    const identity = await verifyFirebaseIdentity(req.header("authorization"));
+    if (!identity) {
+      return res.status(401).json({ error: "Please sign in to continue.", code: "SIGN_IN_REQUIRED" });
+    }
+    const owner = isVerifiedSiteOwner(identity);
+    const sessionInfo = owner ? null : await requireSession(req, res, identity);
+    if (!owner && !sessionInfo) return;
+    if (!owner && !hasForensicInDepthAccess(sessionInfo!.tier)) {
       res.status(403).json({
         error: "Forensic In-Depth Dual-Pass scanning requires Document Analyzer Premium ($49.99) or CYFSA Case Access ($149/mo). Your current plan includes Quick Document Review.",
         code: "FORENSIC_UPGRADE_REQUIRED",
-        currentTier: sessionInfo.tier,
+        currentTier: sessionInfo!.tier,
       });
       return;
+    }
+
+    // Validate input before any paid usage check or credit reservation.
+    if (typeof req.body?.documentText !== "string" || !req.body.documentText.trim()) {
+      return res.status(400).json({ error: "Document text is required for a deep scan.", code: "EMPTY_DOCUMENT" });
     }
 
     const idempotencyKey =
@@ -2946,22 +2958,24 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       req.body?.requestId ||
       null;
 
-    const check = await checkPaidUsage(sessionInfo.sessionId, sessionInfo.tier, "forensic", idempotencyKey);
-    if (!check.allowed) {
-      return res.status(402).json({
-        error: check.error,
-        code: check.code,
-        used: check.used,
-        usedCount: check.used,
-        limit: check.limit,
-        remaining: check.remaining,
-      });
+    if (sessionInfo) {
+      const check = await checkPaidUsage(sessionInfo.sessionId, sessionInfo.tier, "forensic", idempotencyKey);
+      if (!check.allowed) {
+        return res.status(402).json({
+          error: check.error,
+          code: check.code,
+          used: check.used,
+          usedCount: check.used,
+          limit: check.limit,
+          remaining: check.remaining,
+        });
+      }
     }
 
     const analysisRequestId =
       idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     let creditReservation: ReservationResult | null = null;
-    try {
+    if (sessionInfo) try {
       creditReservation = await reserveAnalysisCredit({
         sessionId: sessionInfo.sessionId,
         firebaseUid: sessionInfo.uid,
@@ -2979,7 +2993,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
     try {
       const startTime = Date.now();
-      const { documentText, documentName, category, model, priorAnalysis } = req.body || {};
+      const { documentText, documentName, category, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {
         return res.status(400).json({ error: "Document text is required for a deep scan." });
       }
@@ -3073,7 +3087,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         max_tokens: 16000
-      }, model || "claude-sonnet-5");
+      }, ANALYZER_MODELS.FORENSIC);
 
       const responseText = response.text;
       if (!responseText) {
@@ -3083,7 +3097,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       const report = extractJson(responseText);
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
-      try {
+      if (sessionInfo) try {
         await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey);
         if (creditReservation) {
           await finalizeAnalysisCredit({
@@ -3101,7 +3115,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       }
       res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
     } catch (error: any) {
-      if (creditReservation) {
+      if (creditReservation && sessionInfo) {
         try {
           await releaseAnalysisReservation({
             sessionId: sessionInfo.sessionId,
