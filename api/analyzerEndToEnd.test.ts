@@ -421,7 +421,7 @@ describe("Forensic / deep scan access", () => {
 
   it("returns forensic findings for an entitled user", async () => {
     mockCreateMessage.mockResolvedValueOnce(
-      claudeText(JSON.stringify({ gaps: ["g"], missingEvidence: ["m"], retorts: [{ claim: "c", objection: "o", action: "a" }] }))
+      claudeText(JSON.stringify({ gaps: ["g"], missingEvidence: ["m"], retorts: [{ claim: "c", objection: "o", action: "a" }], thresholdAnalysis: [], proceduralTimelineViolations: [], charterAndHumanRightsIssues: [], whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [], disclaimer: "This document is generated for informational/educational purposes only." }))
     );
     const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "text", priorAnalysis: CORE });
     expect(res.status).toBe(200);
