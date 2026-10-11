@@ -425,6 +425,12 @@ export default function DocumentAnalyzerTab() {
             }
           }
         } else if (res.status === 404) {
+          // If 404 happens during initial startup (first 20s), continue polling as the job record is being initialized on the server
+          pollCount++;
+          if (pollCount < 8) {
+            pollTimeout = setTimeout(checkJob, 2500);
+            return;
+          }
           try {
             localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
           } catch {}
@@ -1965,55 +1971,96 @@ export default function DocumentAnalyzerTab() {
       let delayMs = 1500;
       let report: any = null;
 
-      while (attempts < maxAttempts) {
-        attempts++;
-        try {
-          setAnalyzerState("AUTHENTICATING");
-          setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
-
-          const response = await apiFetch("/api/analyze", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "text/event-stream, application/json",
-              "X-Analysis-Id": analysisId,
-            },
-            body: JSON.stringify({
-              ...payload,
-              mode: analysisMode,
-              model: claudeModel,
-              stream: true,
-              analysisId,
-            })
-          });
-
-          report = await readAnalysisEventStream(response, {
-            onStage: (stage, percent, message) => {
-              if (stage === "extracting") setAnalyzerState("EXTRACTING");
-              else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
-              else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues") setAnalyzerState("ANALYZING");
-              else if (stage === "verifying_findings") setAnalyzerState("VALIDATING");
-              else if (stage === "preparing_report") setAnalyzerState("SAVING");
-              setStreamingProgress({ stage, percent, message });
-            },
-            onComplete: () => {
-              setAnalyzerState("COMPLETE");
-            },
-            onError: () => {
-              setAnalyzerState("ERROR");
+      let lastServerEventTime = Date.now();
+      const progressTicker = setInterval(() => {
+        const timeSinceEvent = Date.now() - lastServerEventTime;
+        if (timeSinceEvent > 3500) {
+          setStreamingProgress(prev => {
+            const curPercent = prev.percent || 30;
+            if (curPercent < 45) {
+              return { stage: "reviewing_evidence", percent: 45, message: "Reviewing evidence items and calculating Evidence Strength Index..." };
+            } else if (curPercent < 60) {
+              return { stage: "building_chronology", percent: 60, message: "Extracting document metadata, timeline anchors, and core facts..." };
+            } else if (curPercent < 75) {
+              return { stage: "identifying_legal_issues", percent: 75, message: "Analyzing CYFSA statutory thresholds and procedural timeline rules..." };
+            } else if (curPercent < 88) {
+              return { stage: "verifying_findings", percent: 88, message: "Validating statutory citations and checking for procedural violations..." };
+            } else if (curPercent < 95) {
+              return { stage: "preparing_report", percent: 95, message: "Validating direct quotes and assembling final comprehensive audit..." };
             }
+            return prev;
           });
-          break;
-        } catch (attemptErr: any) {
-          const canRetry = attemptErr instanceof ApiResponseError
-            ? (attemptErr.retryable && attemptErr.code !== "AI_RESPONSE_INVALID")
-            : (attemptErr?.retryable === true && attemptErr?.code !== "AI_RESPONSE_INVALID");
-          if (!canRetry || attempts >= maxAttempts) {
-            throw attemptErr;
-          }
-          await new Promise(r => setTimeout(r, delayMs));
-          delayMs = Math.min(delayMs * 1.5, 5000);
         }
+      }, 3000);
+
+      try {
+        while (attempts < maxAttempts) {
+          attempts++;
+          try {
+            setAnalyzerState("AUTHENTICATING");
+            setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
+
+            const response = await apiFetch("/api/analyze", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream, application/json",
+                "X-Analysis-Id": analysisId,
+              },
+              body: JSON.stringify({
+                ...payload,
+                mode: analysisMode,
+                model: claudeModel,
+                stream: true,
+                analysisId,
+              })
+            });
+
+            report = await readAnalysisEventStream(response, {
+              onStage: (stage, percent, message) => {
+                lastServerEventTime = Date.now();
+                if (stage === "extracting") setAnalyzerState("EXTRACTING");
+                else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
+                else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues") setAnalyzerState("ANALYZING");
+                else if (stage === "verifying_findings") setAnalyzerState("VALIDATING");
+                else if (stage === "preparing_report") setAnalyzerState("SAVING");
+                setStreamingProgress({ stage, percent, message });
+              },
+              onComplete: () => {
+                lastServerEventTime = Date.now();
+                setAnalyzerState("COMPLETE");
+              },
+              onError: () => {
+                lastServerEventTime = Date.now();
+                setAnalyzerState("ERROR");
+              }
+            });
+            break;
+          } catch (attemptErr: any) {
+            // If streaming was interrupted, check if the durable server job completed before failing
+            try {
+              const recoveryRes = await apiFetch(`/api/analyze/job/${analysisId}`);
+              if (recoveryRes.ok) {
+                const recoveredJob = await recoveryRes.json();
+                if (recoveredJob.status === "completed" && recoveredJob.report) {
+                  report = recoveredJob.report;
+                  break;
+                }
+              }
+            } catch {}
+
+            const canRetry = attemptErr instanceof ApiResponseError
+              ? (attemptErr.retryable && attemptErr.code !== "AI_RESPONSE_INVALID")
+              : (attemptErr?.retryable === true && attemptErr?.code !== "AI_RESPONSE_INVALID");
+            if (!canRetry || attempts >= maxAttempts) {
+              throw attemptErr;
+            }
+            await new Promise(r => setTimeout(r, delayMs));
+            delayMs = Math.min(delayMs * 1.5, 5000);
+          }
+        }
+      } finally {
+        clearInterval(progressTicker);
       }
 
       setSelectedReport(report);
@@ -4388,12 +4435,12 @@ export default function DocumentAnalyzerTab() {
                           <div className="space-y-2">
                             <div className="flex justify-between text-xs font-mono font-semibold text-slate-700">
                               <span>{streamingProgress.message || "Auditing document against statutory thresholds..."}</span>
-                              <span className="text-brand-600">{streamingProgress.percent ? `${streamingProgress.percent}%` : "Analyzing..."}</span>
+                              <span className="text-brand-600">{`${streamingProgress.percent || 30}%`}</span>
                             </div>
                             <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                               <div
                                 className="bg-brand-600 h-2 rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${Math.max(8, streamingProgress.percent || 15)}%` }}
+                                style={{ width: `${Math.max(10, streamingProgress.percent || 30)}%` }}
                               />
                             </div>
                           </div>

@@ -37,7 +37,7 @@ import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.j
 import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./services/pageSources.js";
 import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
-import { getFreeUsage, recordFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
+import { getFreeUsage, recordFreeUse, decrementFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import {
   reserveAnalysisCredit,
   releaseAnalysisReservation,
@@ -60,6 +60,7 @@ import {
 import {
   SseStreamEmitter,
   createAnalysisJob,
+  createAnalysisJobDurable,
   getAnalysisJob,
   getAnalysisJobDurable,
   updateAnalysisJobStage,
@@ -260,6 +261,7 @@ async function generateContentWithFallback(
     messages: any[];
     max_tokens?: number;
     enableThinking?: boolean;
+    thinkingBudget?: number;
     timeoutMs?: number;
     retries?: number;
     requestId?: string;
@@ -588,8 +590,21 @@ const aiCostLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === "test", // see apiLimiter's comment above
 });
 
-// Compress all responses for enhanced load speed (LCP/FCP)
-app.use(compression());
+// Compress responses for enhanced load speed (LCP/FCP), explicitly bypassing SSE streams
+// to prevent buffering event-stream chunks in reverse proxies and lambda buffers
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (
+        req.headers.accept?.includes("text/event-stream") ||
+        res.getHeader("Content-Type")?.toString().includes("text/event-stream")
+      ) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // Increase payload size limit to digest base64 images / text / documents easily
 const parseJson = express.json({ limit: "100mb" });
@@ -1828,6 +1843,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let paidSessionId: string | null = null;
     let analysisRequestId = "";
     let streamEmitter: SseStreamEmitter | null = null;
+    let isPaid = false;
+    let uid: string | null = null;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -1837,6 +1854,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       null;
     analysisRequestId =
       idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    // Create job state immediately at request entry so polling never returns 404
+    createAnalysisJob({
+      jobId: analysisRequestId,
+      uid: null,
+      mode: req.body?.mode === "full" ? "full" : "fast",
+      currentStage: "verifying_access",
+      percent: 30,
+    });
 
     try {
       const { textContent, fileData, model, mode } = req.body;
@@ -1851,7 +1877,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // --- Paywall: a valid, DB-active, Firebase-bound Pro/Premium session means unlimited
       // use. Otherwise the caller must be a verified signed-in parent, checked against their
       // free-use count.
-      let uid: string | null = null;
+      uid = null;
       const identity = await verifyFirebaseToken(req.header("authorization"));
       let userEmail: string | null = identity?.email || null;
 
@@ -1878,7 +1904,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         details: { hasSessionToken: Boolean(sessionToken), isSessionTokenValid: Boolean(parsedSession) },
       });
 
-      let isPaid = false;
+      isPaid = false;
       let paidTier: Tier | null = null;
       if (parsedSession && identity) {
         logAnalyzerTraceStage({
@@ -2388,6 +2414,11 @@ ${analysisRules}`;
       });
       const authoritativeModel = modelResolution.authoritativeModel;
 
+      if (streamEmitter) {
+        streamEmitter.emitStage("reviewing_evidence");
+        streamEmitter.startProgressPacer(modelResolution.mode);
+      }
+
       if (modelResolution.mode === "fast") {
         const coreResponse = await generateContentWithFallback({
           system: coreSystemInstruction,
@@ -2571,6 +2602,10 @@ ${analysisRules}`;
         }
       }
 
+      if (!isPaid && uid) {
+        await decrementFreeUse(uid).catch(() => {});
+      }
+
       if (streamEmitter) {
         const formatted = formatAnalyzerErrorResponse(error);
         failAnalysisJob(analysisRequestId, {
@@ -2619,6 +2654,23 @@ ${analysisRules}`;
 
     const job = await getAnalysisJobDurable(jobId);
     if (!job) {
+      const match = jobId.match(/^req_(\d+)_/);
+      if (match) {
+        const reqTs = parseInt(match[1], 10);
+        if (Date.now() - reqTs < 90000) {
+          return res.json({
+            jobId,
+            uid: identity?.uid || null,
+            mode: "fast",
+            status: "analyzing",
+            currentStage: "reviewing_evidence",
+            percent: 45,
+            message: "Analyzing document against statutory thresholds...",
+            createdAt: reqTs,
+            updatedAt: Date.now(),
+          });
+        }
+      }
       return res.status(404).json({ error: "Analysis job not found.", code: "JOB_NOT_FOUND" });
     }
 

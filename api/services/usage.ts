@@ -273,3 +273,19 @@ export async function getFreeUsage(uid: string, email?: string | null): Promise<
 export async function recordFreeUse(uid: string, email: string | null): Promise<void> {
   await incrementUsageCount(uid, email);
 }
+
+/**
+ * Reverses a recorded free usage count if delivery failed or stream dropped before client received the report.
+ */
+export async function decrementFreeUse(uid: string): Promise<void> {
+  try {
+    const current = await getUsageCount(uid);
+    if (current > 0) {
+      const db = getSupabase();
+      await db.from("free_usage").update({ analyses_used: Math.max(0, current - 1) }).eq("uid", uid);
+    }
+  } catch (err) {
+    console.error("[usage] Failed to decrement free use:", err);
+  }
+}
+

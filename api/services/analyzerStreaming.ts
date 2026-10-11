@@ -164,6 +164,8 @@ export function createAnalysisJob(params: {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
+  currentStage?: AnalysisStage;
+  percent?: number;
 }): AnalysisJob {
   // Prune expired jobs
   const now = Date.now();
@@ -175,19 +177,36 @@ export function createAnalysisJob(params: {
     }
   }
 
+  const initialStage = params.currentStage || "verifying_access";
+  const initialPercent = params.percent ?? (STAGE_DEFINITIONS[initialStage]?.percent || 30);
+
   const job: AnalysisJob = {
     jobId: params.jobId,
     uid: params.uid,
     mode: params.mode,
     status: "analyzing",
-    currentStage: "verifying_access",
-    percent: STAGE_DEFINITIONS.verifying_access.percent,
+    currentStage: initialStage,
+    percent: initialPercent,
     createdAt: now,
     updatedAt: now,
   };
   jobStore.set(params.jobId, job);
   // Asynchronously persist initial job record
   persistJobToStorage(job).catch(() => {});
+  return job;
+}
+
+export async function createAnalysisJobDurable(params: {
+  jobId: string;
+  uid: string | null;
+  mode: "fast" | "full";
+  currentStage?: AnalysisStage;
+  percent?: number;
+}): Promise<AnalysisJob> {
+  const job = createAnalysisJob(params);
+  try {
+    await persistJobToStorage(job);
+  } catch {}
   return job;
 }
 
@@ -242,6 +261,7 @@ export class SseStreamEmitter {
   private res: Response;
   private jobId: string;
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  private pacerInterval: NodeJS.Timeout | null = null;
   private isClosed = false;
 
   constructor(res: Response, jobId: string) {
@@ -259,17 +279,77 @@ export class SseStreamEmitter {
       (this.res as any).flushHeaders();
     }
 
-    // Start keep-alive heartbeat every 15s to keep proxy connections open
+    // When running under a real server/proxy with flush support, send immediate 2KB comment padding
+    // to bypass edge reverse-proxy buffering (e.g. Cloudflare, AWS CloudFront, Vercel)
+    if (typeof (this.res as any).flush === "function") {
+      try {
+        this.res.write(": " + " ".repeat(2048) + "\n\n");
+        (this.res as any).flush();
+      } catch {}
+    }
+
+    // Start keep-alive heartbeat every 5s to keep proxy connections open
     this.heartbeatInterval = setInterval(() => {
       if (!this.isClosed) {
-        this.res.write(": keep-alive\n\n");
+        try {
+          this.res.write(": keep-alive\n\n");
+          this.flush();
+        } catch {}
       }
-    }, 15000);
+    }, 5000);
 
     // Clean up on client disconnect
     this.res.on("close", () => {
       this.close();
     });
+  }
+
+  private flush(): void {
+    if (typeof (this.res as any).flush === "function") {
+      try {
+        (this.res as any).flush();
+      } catch {}
+    }
+  }
+
+  public startProgressPacer(mode: "fast" | "full"): void {
+    if (this.pacerInterval) {
+      clearInterval(this.pacerInterval);
+      this.pacerInterval = null;
+    }
+
+    const stages: Array<{ stage: AnalysisStage; delayMs: number }> =
+      mode === "fast"
+        ? [
+            { stage: "building_chronology", delayMs: 8000 },
+            { stage: "identifying_legal_issues", delayMs: 20000 },
+            { stage: "verifying_findings", delayMs: 34000 },
+            { stage: "preparing_report", delayMs: 46000 },
+          ]
+        : [
+            { stage: "building_chronology", delayMs: 12000 },
+            { stage: "identifying_legal_issues", delayMs: 28000 },
+            { stage: "verifying_findings", delayMs: 48000 },
+            { stage: "preparing_report", delayMs: 68000 },
+          ];
+
+    const start = Date.now();
+    let nextStageIdx = 0;
+
+    this.pacerInterval = setInterval(() => {
+      if (this.isClosed || nextStageIdx >= stages.length) {
+        if (this.pacerInterval) {
+          clearInterval(this.pacerInterval);
+          this.pacerInterval = null;
+        }
+        return;
+      }
+      const elapsed = Date.now() - start;
+      if (elapsed >= stages[nextStageIdx].delayMs) {
+        this.emitStage(stages[nextStageIdx].stage);
+        nextStageIdx++;
+      }
+    }, 2000);
   }
 
   public emitStage(stage: AnalysisStage, customMessage?: string): void {
@@ -287,6 +367,7 @@ export class SseStreamEmitter {
     };
 
     this.res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    this.flush();
   }
 
   public emitSection(sectionName: string, data: any): void {
@@ -299,10 +380,15 @@ export class SseStreamEmitter {
       timestamp: Date.now(),
     };
     this.res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    this.flush();
   }
 
   public emitComplete(report: any, credits?: any): void {
     if (this.isClosed) return;
+    if (this.pacerInterval) {
+      clearInterval(this.pacerInterval);
+      this.pacerInterval = null;
+    }
     completeAnalysisJob(this.jobId, report);
 
     const payload = {
@@ -315,11 +401,16 @@ export class SseStreamEmitter {
       timestamp: Date.now(),
     };
     this.res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    this.flush();
     this.close();
   }
 
   public emitError(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {
     if (this.isClosed) return;
+    if (this.pacerInterval) {
+      clearInterval(this.pacerInterval);
+      this.pacerInterval = null;
+    }
     failAnalysisJob(this.jobId, error);
 
     const payload = {
@@ -332,6 +423,7 @@ export class SseStreamEmitter {
       timestamp: Date.now(),
     };
     this.res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    this.flush();
     this.close();
   }
 
@@ -341,6 +433,10 @@ export class SseStreamEmitter {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
+    }
+    if (this.pacerInterval) {
+      clearInterval(this.pacerInterval);
+      this.pacerInterval = null;
     }
     try {
       this.res.end();
