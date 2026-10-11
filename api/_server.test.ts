@@ -969,10 +969,10 @@ describe("POST /api/deep-scan", () => {
     disclaimer: "disclaimer",
   };
 
-  it("rejects an unpaid request before even validating the body", async () => {
+  it("rejects unauthenticated deep-scan requests before validating the body", async () => {
     const res = await request(app).post("/api/deep-scan").send({ documentText: "   " });
-    expect(res.status).toBe(402);
-    expect(res.body.code).toBe("SESSION_REQUIRED");
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
   });
 
   it("rejects empty document text", async () => {
