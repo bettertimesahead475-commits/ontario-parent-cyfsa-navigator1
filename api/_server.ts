@@ -2995,7 +2995,7 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       const startTime = Date.now();
       const { documentText, documentName, category, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {
-        throw new AnalyzerError("INVALID_DOCUMENT", 400, "Document text is required for a deep scan.", false);
+        throw new AnalyzerError("AI_RESPONSE_INVALID", 400, "Document text is required for a deep scan.", false);
       }
 
       let priorFindingsBlock = "No prior analysis is available for this document — treat this as a first full pass.";
