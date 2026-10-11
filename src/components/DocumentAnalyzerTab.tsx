@@ -2421,7 +2421,7 @@ export default function DocumentAnalyzerTab() {
         }
         .threat-phrase {
           background-color: #f1f5f9;
-          font-family: monospace;
+          font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
           padding: 4px 8px;
           border-radius: 4px;
           font-weight: bold;
@@ -2948,17 +2948,17 @@ export default function DocumentAnalyzerTab() {
   ];
 
   return (
-    <div className="space-y-6 w-full max-w-full overflow-x-hidden break-words font-sans" id="document-analyzer-tab">
+    <div className="space-y-4 w-full max-w-full overflow-x-hidden break-words font-sans analyzer-reading-workspace" id="document-analyzer-tab">
       
       {/* Platform Sub-Header Banner */}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 border-b border-gray-100 pb-4">
         <div className="text-left">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="px-2.5 py-1 bg-brand-900 text-white rounded-lg text-xs font-mono font-bold tracking-wider uppercase flex items-center gap-1 shadow-xs">
-              <Library className="w-3.5 h-3.5" /> Case Data Locker
+            <span className="px-2.5 py-1 bg-brand-900 text-white rounded-lg text-xs font-sans font-bold tracking-wider uppercase flex items-center gap-1 shadow-xs">
+              <Library className="w-3.5 h-3.5" /> Your case documents
             </span>
-            <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-mono font-bold uppercase tracking-wider">
-              Fast Parallel Pipeline (&lt; 2 min)
+            <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-sans font-bold uppercase tracking-wider">
+              Document review in progress
             </span>
             {creditBalance && (
               creditBalance.isAdminEntitled ? (
@@ -3039,7 +3039,7 @@ export default function DocumentAnalyzerTab() {
           
           {/* Active Session status & manual save controller */}
           <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
-            <span className="text-[10px] text-slate-500 font-mono pl-1 shrink-0 flex items-center gap-1">
+            <span className="text-[10px] text-slate-500 font-sans pl-1 shrink-0 flex items-center gap-1">
               <span className={`w-1.5 h-1.5 rounded-full ${saveStatus ? "bg-brand-500 animate-bounce" : "bg-emerald-500 animate-pulse"}`} />
               {saveStatus ? saveStatus : "Auto-saved"}
             </span>
@@ -3134,7 +3134,7 @@ export default function DocumentAnalyzerTab() {
                 <FolderOpen className="w-4 h-4 text-brand-900 shrink-0" />
                 <h4 className="font-display font-bold text-gray-900 text-sm">Case Folders</h4>
               </div>
-              <span className="text-[10px] font-mono bg-slate-100 text-brand-950 px-2.5 py-0.5 rounded-full font-bold border border-slate-200">
+              <span className="text-[10px] font-sans bg-slate-100 text-brand-950 px-2.5 py-0.5 rounded-full font-bold border border-slate-200">
                 {organizedFiles.length} Cabinet Files
               </span>
             </div>
@@ -3164,7 +3164,7 @@ export default function DocumentAnalyzerTab() {
             </div>
               
               {customUploadError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-mono leading-normal flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-sans leading-normal flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div className="flex gap-1.5 items-start">
                     <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
                     <span>{customUploadError}</span>
@@ -3176,7 +3176,7 @@ export default function DocumentAnalyzerTab() {
               {bulkProgress && (
                 <div className="p-3 bg-brand-50 border border-brand-200 text-brand-900 text-xs rounded-lg flex items-center gap-2">
                   <div className="w-3.5 h-3.5 border-2 border-brand-500 border-t-transparent animate-spin rounded-full" />
-                  <span className="font-mono font-medium">{bulkProgress}</span>
+                  <span className="font-sans font-medium">{bulkProgress}</span>
                 </div>
               )}
 
@@ -3197,7 +3197,7 @@ export default function DocumentAnalyzerTab() {
                         <span className="text-xs font-semibold text-gray-800">{catFolder}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-200/60 rounded-full font-bold text-slate-700">
+                        <span className="text-[10px] font-sans px-2 py-0.5 bg-slate-200/60 rounded-full font-bold text-slate-700">
                           {folderFiles.length}
                         </span>
                         {isSelected ? <ChevronDown className="w-3.5 h-3.5 text-slate-500" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500" />}
@@ -3242,7 +3242,7 @@ export default function DocumentAnalyzerTab() {
                                   <span className="text-xs font-medium text-gray-800 block truncate leading-none">
                                     {item.name}
                                   </span>
-                                  <span className="text-[9px] font-mono text-slate-500 block mt-1">
+                                  <span className="text-[9px] font-sans text-slate-500 block mt-1">
                                     {(item.size / 1024).toFixed(1)} KB • {item.uploadedAt}
                                   </span>
                                 </div>
@@ -3290,7 +3290,7 @@ export default function DocumentAnalyzerTab() {
                 <Mic className="w-4 h-4 shrink-0 text-brand-600 animate-pulse" />
                 <span className="font-display font-bold text-xs">Record Live Meeting / Conversation</span>
               </div>
-              <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-800 font-mono text-[8px] font-bold uppercase shrink-0">
+              <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-800 font-sans text-[8px] font-bold uppercase shrink-0">
                 Auto-Analyze
               </span>
             </div>
@@ -3310,7 +3310,7 @@ export default function DocumentAnalyzerTab() {
             {!isTranscribing && isRecording ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-mono text-red-600 font-bold animate-pulse flex items-center gap-1 select-none">
+                  <span className="text-[9px] font-sans text-red-600 font-bold animate-pulse flex items-center gap-1 select-none">
                     <span className="w-2 h-2 rounded-full bg-red-600 animate-ping shrink-0" />
                     RECORDING MEETING: {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
                   </span>
@@ -3364,7 +3364,7 @@ export default function DocumentAnalyzerTab() {
 
             {transcript.trim() && !isRecording && !isTranscribing && (
               <div className="space-y-2 animate-fadeIn pt-1.5 border-t border-brand-100 text-left">
-                <span className="text-[9px] text-slate-600 font-mono font-bold block">EDIT RECORDED SPEECH TEXT BEFORE TRANSCRIPTION PDF GENERATION:</span>
+                <span className="text-[9px] text-slate-600 font-sans font-bold block">EDIT RECORDED SPEECH TEXT BEFORE TRANSCRIPTION PDF GENERATION:</span>
                 <textarea
                   value={transcript}
                   onChange={(e) => setTranscript(e.target.value)}
@@ -3382,7 +3382,7 @@ export default function DocumentAnalyzerTab() {
             )}
 
             {voiceError && (
-              <p className="text-[10px] text-red-600 font-mono italic leading-normal bg-red-50 p-2 rounded-lg border border-red-100 text-left">{voiceError}</p>
+              <p className="text-[10px] text-red-600 font-sans italic leading-normal bg-red-50 p-2 rounded-lg border border-red-100 text-left">{voiceError}</p>
             )}
           </div>
 
@@ -3396,7 +3396,7 @@ export default function DocumentAnalyzerTab() {
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-slate-700 shrink-0" />
                 <span className="font-display font-semibold text-xs text-slate-800">CYFSA & Family Law Glossary</span>
-                <span className="px-1.5 py-0.5 rounded-full bg-brand-50 border border-brand-100 text-brand-800 font-mono text-[9px] font-bold uppercase leading-none">
+                <span className="px-1.5 py-0.5 rounded-full bg-brand-50 border border-brand-100 text-brand-800 font-sans text-[9px] font-bold uppercase leading-none">
                   Auto-Check
                 </span>
               </div>
@@ -3446,15 +3446,15 @@ export default function DocumentAnalyzerTab() {
                                 {item.term}
                               </span>
                               {isMatched && (
-                                <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-mono text-[8px] font-semibold animate-pulse leading-none shrink-0">
+                                <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 font-sans text-[8px] font-semibold animate-pulse leading-none shrink-0">
                                   <span className="w-1 h-1 rounded-full bg-emerald-600 block shrink-0" />
                                   Active in Doc
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-500 block leading-normal mt-0.5">{item.abbreviation} • <span className="font-mono">{item.section}</span></span>
+                            <span className="text-[10px] text-slate-500 block leading-normal mt-0.5">{item.abbreviation} • <span className="font-sans">{item.section}</span></span>
                           </div>
-                          <span className="text-[10px] text-slate-500 font-mono">
+                          <span className="text-[10px] text-slate-500 font-sans">
                             {isExpanded ? "Collapse" : "Explain"}
                           </span>
                         </div>
@@ -3462,7 +3462,7 @@ export default function DocumentAnalyzerTab() {
                         {isExpanded && (
                           <div className="mt-2 text-[11px] leading-relaxed text-slate-600 border-t border-dashed border-slate-100 pt-2 animate-fadeIn space-y-1">
                             <p className="font-normal">{item.definition}</p>
-                            <div className="bg-slate-100 p-1.5 rounded-md font-mono text-[9px] text-[#475569] leading-tight">
+                            <div className="bg-slate-100 p-1.5 rounded-md font-sans text-[9px] text-[#475569] leading-tight">
                               <strong>Search triggers:</strong> {item.triggers.join(", ")}
                             </div>
                           </div>
@@ -3489,13 +3489,13 @@ export default function DocumentAnalyzerTab() {
                   {/* File Metadata Header */}
                   <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-3xs flex flex-wrap justify-between items-center gap-3">
                     <div className="min-w-0">
-                      <span className={`px-2.5 py-0.5 border text-[10px] font-semibold rounded-full font-mono uppercase inline-block ${getCategoryColor(activeSelectedFile.category)}`}>
+                      <span className={`px-2.5 py-0.5 border text-[10px] font-semibold rounded-full font-sans uppercase inline-block ${getCategoryColor(activeSelectedFile.category)}`}>
                         {activeSelectedFile.category}
                       </span>
                       <h3 className="font-display font-extrabold text-[#0f172a] text-lg mt-1 truncate">
                         {activeSelectedFile.name}
                       </h3>
-                      <p className="text-[10px] font-mono text-slate-500 mt-0.5">
+                      <p className="text-[10px] font-sans text-slate-500 mt-0.5">
                         Uploaded on {activeSelectedFile.uploadedAt} • Type: {activeSelectedFile.mimeType}
                       </p>
                     </div>
@@ -3503,14 +3503,14 @@ export default function DocumentAnalyzerTab() {
                     {/* Automatic Pipeline Stage Indicator & Retry button */}
                     <div className="flex items-center gap-2 shrink-0">
                       {(activeSelectedFile.analysisStatus === "analyzing" || isSingleAnalyzing || isRecoveringJob) && (
-                        <span className="px-3 py-1.5 bg-brand-50 text-brand-800 border border-brand-200 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5">
+                        <span className="px-3 py-1.5 bg-brand-50 text-brand-800 border border-brand-200 rounded-lg text-xs font-sans font-bold flex items-center gap-1.5">
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
                           <span>{streamingProgress.message || "Analyzing key issues & evidence strength..."}</span>
                         </span>
                       )}
 
                       {activeSelectedFile.analysisStatus === "completed" && (
-                        <span className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5">
+                        <span className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-sans font-bold flex items-center gap-1.5">
                           <Check className="w-4 h-4 text-emerald-600" />
                           <span>Fast Analysis Complete</span>
                         </span>
@@ -3555,7 +3555,7 @@ export default function DocumentAnalyzerTab() {
                       );
                     }
                     return (
-                      <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-mono flex items-start gap-2" id="single-analysis-error-banner">
+                      <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-xs font-sans flex items-start gap-2" id="single-analysis-error-banner">
                         <span className="font-bold shrink-0">⚠️ Audit failed:</span>
                         <span className="break-words">{errText}</span>
                       </div>
@@ -3565,13 +3565,13 @@ export default function DocumentAnalyzerTab() {
                   {/* Document content viewer with custom Court Transcript Rendering & Density Limits Check */}
                   <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-1.5 relative overflow-hidden" id="file-plain-viewer">
                     <div className="flex flex-wrap justify-between items-center pb-2 border-b border-gray-100 gap-2">
-                      <h5 className="font-mono text-[10px] text-slate-500 font-extrabold uppercase flex items-center gap-1">
+                      <h5 className="font-sans text-[10px] text-slate-500 font-extrabold uppercase flex items-center gap-1">
                         <FileText className="w-3.5 h-3.5 shrink-0" />
                         {activeSelectedFile.name.toLowerCase().includes("transcript") ? "VERBATIM COURT TRANSCRIPTION REPORT" : "File Plaintext Context"}
                       </h5>
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Word and Character Count Counter */}
-                        <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded text-[10px] font-mono text-slate-600">
+                        <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded text-[10px] font-sans text-slate-600">
                           <span>Characters: <strong>{activeSelectedFile.content.length.toLocaleString()}</strong></span>
                           <span className="text-slate-300">|</span>
                           <span>Words: <strong>{activeSelectedFile.content ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length.toLocaleString() : "0"}</strong></span>
@@ -3587,9 +3587,9 @@ export default function DocumentAnalyzerTab() {
                                     <head>
                                       <title>Print Certified Transcript - ${escapeHtml(activeSelectedFile.name)}</title>
                                       <style>
-                                        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+                                        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
                                         body {
-                                          font-family: 'JetBrains Mono', Courier, monospace;
+                                          font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
                                           padding: 50px;
                                           color: #1e293b;
                                           background: white;
@@ -3642,7 +3642,7 @@ export default function DocumentAnalyzerTab() {
                                 window.print();
                               }
                             }}
-                            className="text-[10px] font-mono bg-brand-50 hover:bg-brand-100 text-brand-700 hover:text-brand-800 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                            className="text-[10px] font-sans bg-brand-50 hover:bg-brand-100 text-brand-700 hover:text-brand-800 px-2 py-1 rounded font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
                           >
                             <Printer className="w-3 h-3 shrink-0" />
                             Print Transcript PDF
@@ -3654,7 +3654,7 @@ export default function DocumentAnalyzerTab() {
 
                     {/* Interactive Spot Search Bar for Parents */}
                     <div className="flex items-center gap-2 bg-brand-50/40 p-2 rounded-lg border border-brand-100/60 shadow-inner">
-                      <span className="text-[10px] font-mono font-bold text-brand-800 uppercase flex items-center gap-1 shrink-0">
+                      <span className="text-[10px] font-sans font-bold text-brand-800 uppercase flex items-center gap-1 shrink-0">
                         🔍 Dynamic Verification Spotter:
                       </span>
                       <input
@@ -3662,12 +3662,12 @@ export default function DocumentAnalyzerTab() {
                         placeholder="Scrolls/highlights matches. Click 'Locate Phrase' on any violation card below..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="bg-white border border-brand-200 rounded px-2 py-1 text-xs grow outline-brand-500 font-mono text-slate-700 placeholder:text-slate-500"
+                        className="bg-white border border-brand-200 rounded px-2 py-1 text-xs grow outline-brand-500 font-sans text-slate-700 placeholder:text-slate-500"
                       />
                       {searchQuery && (
                         <button
                           onClick={() => setSearchQuery("")}
-                          className="text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-mono px-2.5 py-1 rounded font-bold cursor-pointer transition-colors"
+                          className="text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-sans px-2.5 py-1 rounded font-bold cursor-pointer transition-colors"
                           title="Clear active highlight"
                         >
                           Reset
@@ -3748,11 +3748,11 @@ export default function DocumentAnalyzerTab() {
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <span className="bg-brand-500/20 text-brand-300 border border-brand-400/30 text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full tracking-wider">
+                            <span className="bg-brand-500/20 text-brand-300 border border-brand-400/30 text-[9px] uppercase font-sans font-bold px-2 py-0.5 rounded-full tracking-wider">
                               Advanced Verification Layer
                             </span>
                             {deepScanReports[activeSelectedFile.id] && (
-                              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full tracking-wider">
+                              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[9px] uppercase font-sans font-bold px-2 py-0.5 rounded-full tracking-wider">
                                 Completed
                               </span>
     
@@ -3794,7 +3794,7 @@ export default function DocumentAnalyzerTab() {
                       {/* Deep Scan Loading State */}
                       {isDeepScanning && deepScanFileId === activeSelectedFile.id && (
                         <div className="bg-slate-900/60 border border-brand-500/20 rounded-xl p-4 space-y-3 animate-pulse">
-                          <div className="flex items-center gap-2 text-xs text-brand-300 font-mono font-bold">
+                          <div className="flex items-center gap-2 text-xs text-brand-300 font-sans font-bold">
                             <Loader2 className="w-4 h-4 text-brand-400 animate-spin animate-infinite" />
                             <span>Tracing omissions, evaluating CYFSA thresholds, and constructing defense retorts...</span>
                           </div>
@@ -3879,11 +3879,11 @@ export default function DocumentAnalyzerTab() {
                               {(deepScanReports[activeSelectedFile.id].retorts || []).map((ret: any, i: number) => (
                                 <div key={i} className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-2 text-xs">
                                   <div className="border-b border-slate-800 pb-1.5">
-                                    <span className="text-[10px] font-mono text-rose-400 font-bold uppercase">Society Assert:</span>
+                                    <span className="text-[10px] font-sans text-rose-400 font-bold uppercase">Society Assert:</span>
                                     <p className="text-slate-300 italic mt-0.5 font-medium">"{ret.claim}"</p>
                                   </div>
                                   <div className="space-y-1">
-                                    <span className="text-[10px] font-mono text-brand-400 font-bold uppercase block">Legal Rebuttal Rule:</span>
+                                    <span className="text-[10px] font-sans text-brand-400 font-bold uppercase block">Legal Rebuttal Rule:</span>
                                     <p className="text-slate-200">{ret.objection}</p>
                                   </div>
                                   <div className="bg-brand-950/40 border border-brand-900/30 p-2 rounded-lg text-brand-200 text-[11px] leading-relaxed">
@@ -3907,7 +3907,7 @@ export default function DocumentAnalyzerTab() {
                       {/* Sub analysis title */}
                       <div className="flex justify-between items-center pb-4 border-b border-gray-100">
                         <div>
-                          <span className="text-[10px] font-mono font-bold uppercase text-brand-600 flex items-center gap-1 leading-none">
+                          <span className="text-[10px] font-sans font-bold uppercase text-brand-600 flex items-center gap-1 leading-none">
                             <FileCheck className="w-3.5 h-3.5 text-emerald-600" /> Audited Findings
                           </span>
                           <h4 className="font-display font-bold text-[#0f172a] text-base mt-1">
@@ -3916,7 +3916,7 @@ export default function DocumentAnalyzerTab() {
                         </div>
                         <div className="text-right flex items-center gap-2 p-2 bg-slate-50 border border-gray-100 rounded-xl shrink-0">
                           <div>
-                            <span className="text-[8px] font-mono tracking-wider block text-slate-500 font-bold">INTEGRITY WEIGHT</span>
+                            <span className="text-[8px] font-sans tracking-wider block text-slate-500 font-bold">INTEGRITY WEIGHT</span>
                             <span className="text-xs text-slate-500">Credibility Index</span>
                           </div>
                           <div className="w-9 h-9 rounded-full bg-brand-900 flex items-center justify-center font-display font-extrabold text-white text-xs">
@@ -3929,7 +3929,7 @@ export default function DocumentAnalyzerTab() {
                       {selectedReport.modelMetadata && (
                         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
                           <div className="flex items-center gap-2">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold tracking-tight border ${
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-sans font-bold tracking-tight border ${
                               selectedReport.modelMetadata.mode === "full"
                                 ? "bg-purple-100 text-purple-900 border-purple-200"
                                 : "bg-blue-100 text-blue-900 border-blue-200"
@@ -3941,11 +3941,11 @@ export default function DocumentAnalyzerTab() {
                               )}
                               {selectedReport.modelMetadata.engineName}
                             </span>
-                            <span className="font-mono text-[11px] text-slate-500">
+                            <span className="font-sans text-[11px] text-slate-500">
                               ({selectedReport.modelMetadata.model})
                             </span>
                           </div>
-                          <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono text-slate-600">
+                          <div className="flex flex-wrap items-center gap-4 text-[11px] font-sans text-slate-600">
                             <span className="flex items-center gap-1" title="Server Analysis Processing Time">
                               <Clock className="w-3 h-3 text-slate-400" />
                               {(selectedReport.modelMetadata.durationMs / 1000).toFixed(1)}s
@@ -4038,7 +4038,7 @@ export default function DocumentAnalyzerTab() {
                               <h5 className="font-display font-bold text-sm tracking-wide text-white uppercase">
                                 Lawyer Detailed Case Brief
                               </h5>
-                              <p className="text-[10px] text-brand-300 font-mono">
+                              <p className="text-[10px] text-brand-300 font-sans">
                                 Bullet Form Structure • Ready for Intake Sharing
                               </p>
                             </div>
@@ -4596,7 +4596,7 @@ export default function DocumentAnalyzerTab() {
                             <Scale className="w-6 h-6 text-brand-600 absolute inset-0 m-auto animate-pulse" />
                           </div>
                           <div className="space-y-2">
-                            <div className="flex justify-between text-xs font-mono font-semibold text-slate-700">
+                            <div className="flex justify-between text-xs font-sans font-semibold text-slate-700">
                               <span>{streamingProgress.message || "Auditing document against statutory thresholds..."}</span>
                               <span className="text-brand-600">{`${streamingProgress.percent || 30}%`}</span>
                             </div>
@@ -4660,7 +4660,7 @@ export default function DocumentAnalyzerTab() {
                             </div>
                           )}
                           {rateLimitCountdown !== null && rateLimitCountdown > 0 ? (
-                            <div className="text-xs text-amber-700 font-mono font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
+                            <div className="text-xs text-amber-700 font-sans font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
                               ⏳ Rate limit in effect. Retrying in {rateLimitCountdown}s...
                             </div>
                           ) : (
@@ -4702,7 +4702,7 @@ export default function DocumentAnalyzerTab() {
                       <FolderOpen className="w-40 h-40 text-brand-400" />
                     </div>
                     <div className="relative z-10 space-y-2">
-                      <span className="bg-brand-500/20 text-brand-300 border border-brand-400/30 text-[10px] uppercase font-mono font-bold px-2.5 py-0.5 rounded-full tracking-wider">
+                      <span className="bg-brand-500/20 text-brand-300 border border-brand-400/30 text-[10px] uppercase font-sans font-bold px-2.5 py-0.5 rounded-full tracking-wider">
                         Cabinet Executive Ledger
                       </span>
                       <h3 className="font-display font-black text-white text-2xl">
@@ -4871,13 +4871,13 @@ export default function DocumentAnalyzerTab() {
                             {/* File Card Top Row */}
                             <div className="flex flex-wrap justify-between items-start gap-3 border-b border-gray-100 pb-3">
                               <div>
-                                <span className={`px-2 py-0.5 border text-[9px] font-bold rounded font-mono uppercase ${getCategoryColor(file.category)}`}>
+                                <span className={`px-2 py-0.5 border text-[9px] font-bold rounded font-sans uppercase ${getCategoryColor(file.category)}`}>
                                   {file.category}
                                 </span>
                                 <h4 className="font-display font-bold text-gray-900 text-base mt-1 flex items-center gap-1.5">
                                   <span>{file.name}</span>
                                 </h4>
-                                <p className="text-[10px] font-mono text-slate-500 mt-0.5">
+                                <p className="text-[10px] font-sans text-slate-500 mt-0.5">
                                   Uploaded: {file.uploadedAt} • Size: {Math.round(file.content.length / 1024)} KB
                                 </p>
                               </div>
@@ -4885,19 +4885,19 @@ export default function DocumentAnalyzerTab() {
                               <div className="flex items-center gap-2">
                                 {/* Status badge */}
                                 {file.analysisStatus === "completed" ? (
-                                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-mono font-bold flex items-center gap-1">
+                                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1">
                                     <Check className="w-3.5 h-3.5" /> Audited & Verified
                                   </span>
                                 ) : file.analysisStatus === "analyzing" ? (
-                                  <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-mono font-bold flex items-center gap-1 animate-pulse">
+                                  <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1 animate-pulse">
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing (3-5s)...
                                   </span>
                                 ) : file.analysisStatus === "failed" ? (
-                                  <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-md text-xs font-mono font-bold flex items-center gap-1">
+                                  <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1">
                                     <AlertTriangle className="w-3.5 h-3.5" /> Scan Failed
                                   </span>
                                 ) : (
-                                  <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-md text-xs font-mono font-bold flex items-center gap-1">
+                                  <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1">
                                     <Clock className="w-3.5 h-3.5" /> Queued for Audit
                                   </span>
                                 )}
@@ -4965,11 +4965,11 @@ export default function DocumentAnalyzerTab() {
                                           fill="transparent"
                                         />
                                       </svg>
-                                      <span className="absolute text-xs font-mono font-bold text-gray-800">
+                                      <span className="absolute text-xs font-sans font-bold text-gray-800">
                                         {report.completenessScore}%
                                       </span>
                                     </div>
-                                    <span className="text-[10px] font-mono text-slate-500 uppercase font-bold leading-none">
+                                    <span className="text-[10px] font-sans text-slate-500 uppercase font-bold leading-none">
                                       Evidentiary Weight
                                     </span>
                                   </div>
@@ -5069,11 +5069,11 @@ export default function DocumentAnalyzerTab() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[9px] font-mono text-slate-500 uppercase font-bold">Focus:</span>
+                    <span className="text-[9px] font-sans text-slate-500 uppercase font-bold">Focus:</span>
                     <select
                       value={claudeFocus}
                       onChange={(e) => setClaudeFocus(e.target.value)}
-                      className="text-[10px] font-mono border border-slate-200 rounded px-2 py-1 bg-white outline-none cursor-pointer"
+                      className="text-[10px] font-sans border border-slate-200 rounded px-2 py-1 bg-white outline-none cursor-pointer"
                     >
                       <option value="legal-auditor">Statutory Compliance Audit</option>
                       <option value="family-advocate">Empathetic Family Advocacy</option>
@@ -5094,14 +5094,14 @@ export default function DocumentAnalyzerTab() {
                         {msg.citations && msg.citations.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">
                             {msg.citations.map((c, i) => (
-                              <span key={i} className="text-[9px] font-mono bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded border border-brand-100">
+                              <span key={i} className="text-[9px] font-sans bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded border border-brand-100">
                                 {c.name}
                               </span>
                             ))}
                           </div>
                         )}
                       </div>
-                      <span className="text-[8.5px] text-slate-400 mt-1 font-mono px-1">{msg.timestamp}</span>
+                      <span className="text-[8.5px] text-slate-400 mt-1 font-sans px-1">{msg.timestamp}</span>
                     </div>
                   ))}
                   {isRAGQuerying && (
@@ -5172,11 +5172,11 @@ export default function DocumentAnalyzerTab() {
                     <div key={brief.id} className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3 shadow-xs">
                       <div className="flex justify-between items-start gap-3 border-b border-gray-100 pb-3">
                         <div>
-                          <span className="text-[9px] font-mono font-bold uppercase text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-100">
+                          <span className="text-[9px] font-sans font-bold uppercase text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-100">
                             {brief.documentCategory}
                           </span>
                           <h4 className="font-display font-bold text-gray-900 text-sm mt-1">{brief.documentTitle}</h4>
-                          <span className="text-[10px] text-slate-400 font-mono block mt-0.5">Saved {brief.savedAt}</span>
+                          <span className="text-[10px] text-slate-400 font-sans block mt-0.5">Saved {brief.savedAt}</span>
                         </div>
                         <button
                           type="button"
