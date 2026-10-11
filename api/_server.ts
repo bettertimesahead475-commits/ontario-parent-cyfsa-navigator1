@@ -2737,14 +2737,14 @@ ${analysisRules}`;
       if (match) {
         const reqTs = parseInt(match[1], 10);
         if (Date.now() - reqTs < 90000) {
+          // Honest grace response: no job record exists yet, so report "pending" with no
+          // invented stage or percent. (This previously returned a fabricated
+          // "analyzing / 45%" status, which kept the UI spinning even when the analysis had
+          // been refused, e.g. FREE_LIMIT_REACHED, and no job was ever created.)
           return res.json({
             jobId,
-            uid: identity?.uid || null,
-            mode: "fast",
-            status: "analyzing",
-            currentStage: "reviewing_evidence",
-            percent: 45,
-            message: "Analyzing document against statutory thresholds...",
+            status: "pending",
+            message: "Waiting for the analysis request to start on the server.",
             createdAt: reqTs,
             updatedAt: Date.now(),
           });

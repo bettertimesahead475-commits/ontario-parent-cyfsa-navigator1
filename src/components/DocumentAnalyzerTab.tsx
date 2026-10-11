@@ -381,6 +381,18 @@ export default function DocumentAnalyzerTab() {
     let pollCount = 0;
     const maxPolls = 48; // 48 * 2.5s = 120s max recovery window
 
+    // Ends recovery with a visible, honest message instead of leaving the spinner running.
+    const endRecovery = (message: string) => {
+      setAnalyzerState("ERROR");
+      setSingleAnalysisError(message);
+      try {
+        localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+      } catch {}
+      setActiveJobId(null);
+    };
+    const notFoundMessage =
+      "We couldn't find this analysis on the server. It may have been stopped before it started (for example, if no analyses were left on your account). No credits were used. Please start the analysis again.";
+
     const checkJob = async () => {
       try {
         const res = await apiFetch(`/api/analyze/job/${activeJobId}`);
@@ -403,13 +415,24 @@ export default function DocumentAnalyzerTab() {
             } catch {}
             setActiveJobId(null);
             return;
+          } else if (job.status === "pending") {
+            // The server has not received or started this analysis yet. Show no invented progress.
+            pollCount++;
+            if (pollCount < 8) {
+              pollTimeout = setTimeout(checkJob, 2500);
+              return;
+            }
+            endRecovery(notFoundMessage);
+            return;
           } else if (job.status === "analyzing") {
             setAnalyzerState("ANALYZING");
-            setStreamingProgress({
-              stage: job.currentStage || "reviewing_evidence",
-              percent: job.percent || 45,
-              message: job.message || "Auditing document against statutory thresholds...",
-            });
+            if (typeof job.percent === "number") {
+              setStreamingProgress({
+                stage: job.currentStage || "reviewing_evidence",
+                percent: job.percent,
+                message: job.message || "Analyzing your document...",
+              });
+            }
             pollCount++;
             if (pollCount < maxPolls) {
               pollTimeout = setTimeout(checkJob, 2500);
@@ -423,21 +446,34 @@ export default function DocumentAnalyzerTab() {
               setActiveJobId(null);
               return;
             }
+          } else {
+            // Unknown status: never leave the spinner running on a response we don't understand.
+            endRecovery("Analysis status could not be confirmed. Your document is safe and no credits were used. Please start the analysis again.");
+            return;
           }
         } else if (res.status === 404) {
-          // If 404 happens during initial startup (first 20s), continue polling as the job record is being initialized on the server
+          // The job record may still be initializing on the server; allow a short grace window, then stop honestly.
           pollCount++;
           if (pollCount < 8) {
             pollTimeout = setTimeout(checkJob, 2500);
             return;
           }
-          try {
-            localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-          } catch {}
-          setActiveJobId(null);
+          endRecovery(notFoundMessage);
+        } else if (res.status === 401) {
+          endRecovery("Please sign in again to see this analysis. Your document is safe and no credits were used.");
+        } else {
+          endRecovery(`Analysis status could not be retrieved (error ${res.status}). Your document is safe and no credits were used. Please try again.`);
         }
       } catch (e) {
+        if (!isMounted) return;
         console.warn("Failed to check active analysis job:", e);
+        // Network hiccup: retry a few times, then stop with a clear message.
+        pollCount++;
+        if (pollCount < 8) {
+          pollTimeout = setTimeout(checkJob, 2500);
+          return;
+        }
+        endRecovery("We lost connection while checking your analysis. Your document is safe. Please check your connection and start the analysis again.");
       }
     };
 
@@ -1926,9 +1962,11 @@ export default function DocumentAnalyzerTab() {
     ));
 
     const analysisId = "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+    // Persist the job ID so it can be recovered after a page reload. Do NOT set activeJobId here:
+    // that starts the recovery poller alongside this live request, which overwrote real progress
+    // (e.g. during text extraction) with status-endpoint data and left the UI stuck at 45%.
     try {
       localStorage.setItem("OPA_ACTIVE_ANALYZER_JOB_ID", analysisId);
-      setActiveJobId(analysisId);
     } catch {}
 
     try {
