@@ -97,7 +97,8 @@ export interface AnalysisStreamCallbacks {
  */
 export async function readAnalysisEventStream(
   response: Response,
-  callbacks?: AnalysisStreamCallbacks
+  callbacks?: AnalysisStreamCallbacks,
+  options?: { inactivityTimeoutMs?: number; maxDurationMs?: number }
 ): Promise<any> {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("text/event-stream")) {
@@ -112,9 +113,42 @@ export async function readAnalysisEventStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let finalReport: any = null;
+  const inactivityTimeoutMs = options?.inactivityTimeoutMs ?? 40000;
+  const maxDurationMs = options?.maxDurationMs ?? 240000;
+  const startOverall = Date.now();
 
   while (true) {
-    const { done, value } = await reader.read();
+    if (Date.now() - startOverall > maxDurationMs) {
+      throw new ApiResponseError(
+        "Analysis exceeded maximum duration limit. Your document is safe — please retry.",
+        504,
+        "ANALYSIS_TIMEOUT",
+        true
+      );
+    }
+
+    let timeoutId: any;
+    const timeoutPromise = new Promise<{ done: boolean; value: undefined }>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          new ApiResponseError(
+            "Analysis stream connection stalled waiting for server response. Zero credits were consumed. Please check your connection and retry.",
+            504,
+            "STREAM_TIMEOUT",
+            true
+          )
+        );
+      }, inactivityTimeoutMs);
+    });
+
+    let readResult: ReadableStreamReadResult<Uint8Array>;
+    try {
+      readResult = await Promise.race([reader.read(), timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    const { done, value } = readResult;
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
