@@ -155,9 +155,14 @@ function paid() {
   };
 }
 
+const { COMPLETE_ANALYSIS, sectionResponder } = await import("./analyzerTestFixtures.js");
+// This file's title and red flag on top of a report that passes every section validator.
+const STREAM_REPORT = { ...COMPLETE_ANALYSIS, documentTitle: MINIMAL_ANALYSIS.documentTitle, redFlags: MINIMAL_ANALYSIS.redFlags };
+
 describe("Analyzer Streaming & Job Recovery Integration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCreateMessage.mockReset();
     process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
     process.env.SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "test-key";
@@ -214,11 +219,7 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
   });
 
   it("POST /api/analyze with stream: true emits SSE stream events with real stages", async () => {
-    mockCreateMessage.mockResolvedValueOnce({
-      content: [{ type: "text", text: JSON.stringify(MINIMAL_ANALYSIS) }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1500, output_tokens: 600 },
-    });
+    mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
 
     const sourceText = "The mother appeared agitated during the visit. Worker recorded no metrics.";
 
@@ -253,6 +254,12 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     expect(stagesObserved).toContain("reviewing_evidence");
     expect(stagesObserved).toContain("preparing_report");
 
+    // Each validated section is streamed as soon as it passes validation, and progress only moves forward.
+    const sectionEvents = events.filter((e) => e.type === "section").map((e) => e.section).sort();
+    expect(sectionEvents).toEqual(["chronology", "guidance", "overview", "redFlags"]);
+    const percents = stageEvents.map((e) => e.percent);
+    for (let i = 1; i < percents.length; i++) expect(percents[i]).toBeGreaterThanOrEqual(percents[i - 1]);
+
     const completeEvent = events.find((e) => e.type === "complete");
     expect(completeEvent).toBeDefined();
     expect(completeEvent.report).toBeDefined();
@@ -265,11 +272,7 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
   });
 
   it("POST /api/analyze verifies quotes and detects unverified phrases", async () => {
-    mockCreateMessage.mockResolvedValueOnce({
-      content: [{ type: "text", text: JSON.stringify(MINIMAL_ANALYSIS) }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1500, output_tokens: 600 },
-    });
+    mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
 
     // Notice: source document does NOT contain the red flag quote
     const nonMatchingSource = "Different document text completely unrelated to the visit.";

@@ -166,14 +166,11 @@ const PAID_TOKEN = "Bearer paid-user-token";
 const free = () => ({ Authorization: FREE_TOKEN });
 const paid = () => ({ Authorization: PAID_TOKEN, "x-ps-session": "paid-session" });
 
+const { COMPLETE_ANALYSIS, VERIFICATION_RESULT, sectionResponder, isVerificationRequest, claudeJson } = await import("./analyzerTestFixtures.js");
 const CORE = {
+  ...COMPLETE_ANALYSIS,
   documentTitle: "Affidavit of a worker",
-  documentType: "Affidavit",
-  metadata: {},
-  disclaimer: "disclaimer",
   completenessScore: 40,
-  evidenceStrengthIndex: { score: 35 },
-  fileSummary: "summary",
   redFlags: [
     {
       id: "rf1",
@@ -215,6 +212,7 @@ const claudeText = (text: string, stop_reason = "end_turn") => ({ content: [{ ty
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockCreateMessage.mockReset(); // no queued one-shot responses may leak between tests
   mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) => {
     if (header === FREE_TOKEN) return { uid: "free-uid", email: "free@example.com" };
     if (header === PAID_TOKEN) return { uid: "paid-uid", email: "paid@example.com" };
@@ -250,12 +248,13 @@ describe("analyzer access validation", () => {
   });
 
   it("runs a free analysis end to end and records the use only after success", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeText(JSON.stringify(CORE)));
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "a neighbour told me", mode: "fast" });
     expect(res.status).toBe(200);
     expect(res.body.documentTitle).toBe("Affidavit of a worker");
     expect(res.body.redFlags[0].locationInDocument).toBe("Page 2, Paragraph 4");
-    expect(res.body.evidenceStrengthIndex.score).toBe(35);
+    // The index is the sum of its components (10+8+7+8+6+5+4+2), never a free-standing number.
+    expect(res.body.evidenceStrengthIndex.score).toBe(50);
     expect(res.body.timing.mode).toBe("fast");
     expect(mockUsage.recordFreeUse).toHaveBeenCalledWith("free-uid", "free@example.com");
   });
@@ -290,7 +289,7 @@ describe("analyzer access validation", () => {
   });
 
   it("lets an active paid session analyze without reading or charging the free allowance", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeText(JSON.stringify(CORE)));
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
     const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(200);
     expect(mockUsage.getFreeUsage).not.toHaveBeenCalled();
@@ -308,7 +307,7 @@ describe("analyzer access validation", () => {
 
 describe("analysis provider responses", () => {
   it("reports a provider authentication failure as a provider problem, not 'please sign in'", async () => {
-    mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("invalid x-api-key"), { status: 401 }));
+    mockCreateMessage.mockRejectedValue(Object.assign(new Error("invalid x-api-key"), { status: 401 }));
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(503);
     expect(res.body.code).toBe("AI_PROVIDER_CONFIGURATION_ERROR");
@@ -317,14 +316,14 @@ describe("analysis provider responses", () => {
   });
 
   it("reports an unknown-model 404 as a provider configuration problem", async () => {
-    mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("model not found"), { status: 404 }));
+    mockCreateMessage.mockRejectedValue(Object.assign(new Error("model not found"), { status: 404 }));
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(503);
     expect(res.body.code).toBe("AI_PROVIDER_CONFIGURATION_ERROR");
   });
 
   it("reports a provider connection failure as temporarily unavailable and retryable", async () => {
-    mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("Connection error."), { name: "APIConnectionError" }));
+    mockCreateMessage.mockRejectedValue(Object.assign(new Error("Connection error."), { name: "APIConnectionError" }));
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(503);
     expect(res.body.code).toBe("AI_PROVIDER_TEMPORARILY_UNAVAILABLE");
@@ -332,7 +331,7 @@ describe("analysis provider responses", () => {
   });
 
   it("keeps the isRateLimit flag on 429 responses", async () => {
-    mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("rate limited"), { status: 429 }));
+    mockCreateMessage.mockRejectedValue(Object.assign(new Error("rate limited"), { status: 429 }));
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("AI_RATE_LIMITED");
@@ -340,7 +339,7 @@ describe("analysis provider responses", () => {
   });
 
   it("reports malformed model output as AI_RESPONSE_INVALID and does not consume the free use", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeText("this is not json"));
+    mockCreateMessage.mockResolvedValue(claudeText("this is not json"));
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("AI_RESPONSE_INVALID");
@@ -348,7 +347,7 @@ describe("analysis provider responses", () => {
   });
 
   it("reports truncated model output as incomplete", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeText('```json\n{"documentTitle": "x", "redFlags": [', "max_tokens"));
+    mockCreateMessage.mockResolvedValue(claudeText('```json\n{"documentTitle": "x", "redFlags": [', "max_tokens"));
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("AI_RESPONSE_INVALID");
@@ -356,7 +355,7 @@ describe("analysis provider responses", () => {
   });
 
   it("reports a model refusal clearly", async () => {
-    mockCreateMessage.mockResolvedValueOnce({ content: [], stop_reason: "refusal", usage: {} });
+    mockCreateMessage.mockResolvedValue({ content: [], stop_reason: "refusal", usage: {} });
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("AI_RESPONSE_INVALID");
@@ -364,13 +363,11 @@ describe("analysis provider responses", () => {
   });
 
   it("returns the merged full report when mode is not fast", async () => {
-    mockCreateMessage
-      .mockResolvedValueOnce(claudeText(JSON.stringify(CORE)))
-      .mockResolvedValueOnce(claudeText(JSON.stringify({ thresholdAnalysis: [{ thresholdChecked: "s.74" }], lawyerCaseBrief: ["b"] })));
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text" });
     expect(res.status).toBe(200);
     expect(res.body.redFlags).toHaveLength(1);
-    expect(res.body.thresholdAnalysis).toHaveLength(1);
+    expect(res.body.thresholdAnalysis).toHaveLength(4);
     expect(res.body.timing.mode).toBe("full");
   });
 });
@@ -488,7 +485,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       email: verifiedEmail,
       allUids: [firebaseLocalId, googleSub],
     });
-    mockCreateMessage.mockResolvedValueOnce(claudeText(JSON.stringify(CORE)));
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
 
     const res = await request(app)
       .post("/api/analyze")
@@ -592,7 +589,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       uid: "trace-uid-123",
       email: "trace@example.com",
     });
-    mockCreateMessage.mockResolvedValueOnce(claudeText(JSON.stringify(CORE)));
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
 
     await request(app)
       .post("/api/analyze")
@@ -612,12 +609,11 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
   });
 
   describe("Dual-Engine Forensic Upgrade: Claude Sonnet & Claude Opus", () => {
-    it("routes Quick Document Review to Claude Sonnet with accurate token metadata and cost accounting", async () => {
-      mockCreateMessage.mockResolvedValueOnce({
-        content: [{ type: "text", text: JSON.stringify(CORE) }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 3500, output_tokens: 1200 },
-      });
+    const withUsage = (report: any, usage: { input_tokens: number; output_tokens: number }) => async (body: any) =>
+      claudeJson(isVerificationRequest(body) ? VERIFICATION_RESULT : report, usage);
+
+    it("routes Quick Document Review to Claude Sonnet sections with accurate token metadata and cost accounting", async () => {
+      mockCreateMessage.mockImplementation(withUsage(CORE, { input_tokens: 3500, output_tokens: 1200 }));
 
       const res = await request(app)
         .post("/api/analyze")
@@ -625,33 +621,32 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         .send({ textContent: "Child protection affidavit excerpt...", mode: "fast" });
 
       expect(res.status).toBe(200);
-      expect(mockCreateMessage).toHaveBeenCalledTimes(1);
-      const call = mockCreateMessage.mock.calls[0][0];
-      expect(call.model).toBe("claude-sonnet-5");
-      expect(call.max_tokens).toBe(16000);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(4);
+      for (const call of mockCreateMessage.mock.calls) {
+        expect(call[0].model).toBe("claude-sonnet-5");
+        expect(call[0].max_tokens).toBeLessThanOrEqual(5000);
+      }
 
-      // Verify metadata
-      expect(res.body.modelMetadata).toBeDefined();
+      // Usage is summed across the four section requests.
       expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
       expect(res.body.modelMetadata.mode).toBe("fast");
-      expect(res.body.modelMetadata.usage.inputTokens).toBe(3500);
-      expect(res.body.modelMetadata.usage.outputTokens).toBe(1200);
-      expect(res.body.modelMetadata.usage.totalTokens).toBe(4700);
-      expect(res.body.modelMetadata.cost.totalCostUsd).toBeGreaterThan(0);
+      expect(res.body.modelMetadata.usage.inputTokens).toBe(4 * 3500);
+      expect(res.body.modelMetadata.usage.outputTokens).toBe(4 * 1200);
+      expect(res.body.modelMetadata.usage.totalTokens).toBe(4 * 4700);
+      expect(res.body.modelMetadata.cost.totalCostUsd).toBeCloseTo((4 * 3500 / 1e6) * 2 + (4 * 1200 / 1e6) * 10, 4);
       expect(res.body.modelMetadata.cost.totalCostCad).toBeGreaterThan(0);
     });
 
-    it("routes Forensic In-Depth to Claude Opus with dual passes and optimized token budgets", async () => {
-      mockCreateMessage.mockResolvedValueOnce({
-        content: [{ type: "text", text: JSON.stringify(CORE) }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 6000, output_tokens: 2500 },
-      });
-      mockCreateMessage.mockResolvedValueOnce({
-        content: [{ type: "text", text: JSON.stringify(SAMPLE_DEEP_DIVE) }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 6500, output_tokens: 3000 },
-      });
+    it("routes Forensic sections to Sonnet and verifies high-impact findings with Opus, costing each model separately", async () => {
+      const report = { ...CORE, ...SAMPLE_DEEP_DIVE, thresholdAnalysis: COMPLETE_ANALYSIS.thresholdAnalysis, proceduralTimelineViolations: COMPLETE_ANALYSIS.proceduralTimelineViolations, charterAndHumanRightsIssues: COMPLETE_ANALYSIS.charterAndHumanRightsIssues };
+      mockCreateMessage.mockImplementation(async (body: any) =>
+        isVerificationRequest(body)
+          ? claudeJson(
+              { findings: [{ id: "rf1", verdict: "OVERSTATED", recommendedSeverity: "Affects Evidentiary Weight", note: "Single hearsay source." }], thresholds: [], overallAssessment: "Mostly supported." },
+              { input_tokens: 5000, output_tokens: 1000 }
+            )
+          : claudeJson(report, { input_tokens: 1000, output_tokens: 500 })
+      );
 
       const res = await request(app)
         .post("/api/analyze")
@@ -659,42 +654,30 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         .send({ textContent: "Detailed child protection affidavit...", mode: "full" });
 
       expect(res.status).toBe(200);
-      expect(mockCreateMessage).toHaveBeenCalledTimes(2);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(7);
+      const verification = mockCreateMessage.mock.calls.filter(c => isVerificationRequest(c[0]));
+      expect(verification).toHaveLength(1);
+      expect(verification[0][0].model).toBe("claude-opus-5");
 
-      // Both passes must route to Claude Opus with optimized token budgets
-      const models = mockCreateMessage.mock.calls.map(c => c[0].model);
-      const tokenBudgets = mockCreateMessage.mock.calls.map(c => c[0].max_tokens);
-      expect(models).toEqual(["claude-opus-5", "claude-opus-5"]);
-      expect(tokenBudgets).toEqual([12000, 14000]);
-
-      // Verify merged forensic report
       expect(res.body.redFlags).toHaveLength(1);
-      expect(res.body.thresholdAnalysis).toHaveLength(1);
-      expect(res.body.proceduralTimelineViolations).toHaveLength(1);
+      expect(res.body.redFlags[0].forensicVerification).toMatchObject({ verdict: "OVERSTATED", verifiedBy: "claude-opus-5" });
+      expect(res.body.forensicVerification.status).toBe("completed");
+      expect(res.body.thresholdAnalysis).toHaveLength(4);
       expect(res.body.timing.mode).toBe("full");
 
-      // Verify aggregated Opus usage and cost accounting
-      expect(res.body.modelMetadata.engine).toBe("claude-opus-5");
       expect(res.body.modelMetadata.mode).toBe("full");
-      expect(res.body.modelMetadata.usage.inputTokens).toBe(12500);
-      expect(res.body.modelMetadata.usage.outputTokens).toBe(5500);
-      expect(res.body.modelMetadata.usage.totalTokens).toBe(18000);
-      // Opus cost should reflect $5/MTok input and $25/MTok output (Claude Opus 5 rates)
+      expect(res.body.modelMetadata.usage.inputTokens).toBe(6 * 1000 + 5000);
+      expect(res.body.modelMetadata.usage.outputTokens).toBe(6 * 500 + 1000);
+      // Sonnet 5 at $2/$10 for the six sections, Opus 5 at $5/$25 for verification.
       expect(res.body.modelMetadata.cost.totalCostUsd).toBeCloseTo(
-        (12500 / 1e6) * 5 + (5500 / 1e6) * 25,
-        3
+        (6000 / 1e6) * 2 + (3000 / 1e6) * 10 + (5000 / 1e6) * 5 + (1000 / 1e6) * 25,
+        4
       );
-      expect(res.body.modelMetadata.cost.totalCostCad).toBeGreaterThan(
-        res.body.modelMetadata.cost.totalCostUsd
-      );
+      expect(res.body.modelMetadata.cost.byModel["claude-opus-5"].input_tokens).toBe(5000);
     });
 
     it("prevents frontend from forcing unauthorized Opus access in Quick Review mode", async () => {
-      mockCreateMessage.mockResolvedValueOnce({
-        content: [{ type: "text", text: JSON.stringify(CORE) }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 2000, output_tokens: 800 },
-      });
+      mockCreateMessage.mockImplementation(sectionResponder(CORE));
 
       const res = await request(app)
         .post("/api/analyze")
@@ -706,9 +689,8 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         });
 
       expect(res.status).toBe(200);
-      expect(mockCreateMessage).toHaveBeenCalledTimes(1);
       // Server must have forced Sonnet instead of honoring client Opus override
-      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+      for (const call of mockCreateMessage.mock.calls) expect(call[0].model).toBe("claude-sonnet-5");
       expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
     });
 
@@ -732,31 +714,42 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
-    it("fails closed without silently substituting Sonnet when Opus engine fails", async () => {
-      mockCreateMessage.mockRejectedValueOnce(
-        Object.assign(new Error("Opus model overloaded or unavailable"), { status: 529 })
-      );
+    it("never substitutes another model when Opus verification fails, and says the findings were not second-reviewed", async () => {
+      mockCreateMessage.mockImplementation(async (body: any) => {
+        if (isVerificationRequest(body)) {
+          throw Object.assign(new Error("Opus model overloaded or unavailable"), { status: 529 });
+        }
+        return claudeJson(CORE);
+      });
 
       const res = await request(app)
         .post("/api/analyze")
         .set(paid())
         .send({ textContent: "Some court affidavit text", mode: "full" });
 
+      expect(res.status).toBe(200);
+      expect(res.body.forensicVerification.status).toBe("incomplete");
+      expect(res.body.forensicVerification.reason).toMatch(/not been second-reviewed/);
+      expect(res.body.redFlags[0].forensicVerification).toBeUndefined();
+      // Every verification attempt went to Opus; nothing silently substituted Sonnet for it.
+      const verification = mockCreateMessage.mock.calls.filter(c => isVerificationRequest(c[0]));
+      expect(verification.length).toBeGreaterThan(0);
+      for (const call of verification) expect(call[0].model).toBe("claude-opus-5");
+    });
+
+    it("fails the whole analysis with a retryable 503 when the provider is overloaded for a section", async () => {
+      mockCreateMessage.mockRejectedValue(Object.assign(new Error("overloaded"), { status: 529 }));
+      const res = await request(app)
+        .post("/api/analyze")
+        .set(paid())
+        .send({ textContent: "Some court affidavit text", mode: "full" });
       expect(res.status).toBe(503);
       expect(res.body.code).toBe("AI_PROVIDER_TEMPORARILY_UNAVAILABLE");
-      // Must NOT have silently substituted Sonnet: all calls made must be to Claude Opus
-      expect(mockCreateMessage.mock.calls.length).toBeGreaterThan(0);
-      for (const call of mockCreateMessage.mock.calls) {
-        expect(call[0].model).toBe("claude-opus-5");
-      }
+      expect(res.body.retryable).toBe(true);
     });
 
     it("processes TXT and DOCX files through the analyzer pipelines", async () => {
-      mockCreateMessage.mockResolvedValueOnce({
-        content: [{ type: "text", text: JSON.stringify(CORE) }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 1500, output_tokens: 500 },
-      });
+      mockCreateMessage.mockImplementation(sectionResponder(CORE));
 
       const txtBase64 = Buffer.from("Court filing narrative text...").toString("base64");
       const res = await request(app)
@@ -768,8 +761,8 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         });
 
       expect(res.status).toBe(200);
-      expect(mockCreateMessage).toHaveBeenCalledTimes(1);
-      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+      expect(mockCreateMessage).toHaveBeenCalledTimes(4);
+      expect(JSON.stringify(mockCreateMessage.mock.calls[0][0].messages)).toContain("Court filing narrative text...");
       expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
     });
   });
@@ -799,17 +792,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         email: "chris@cyfsanavigator.com",
       });
 
-      mockCreateMessage
-        .mockResolvedValueOnce({
-          content: [{ type: "text", text: JSON.stringify(CORE) }],
-          stop_reason: "end_turn",
-          usage: { input_tokens: 2000, output_tokens: 600 },
-        })
-        .mockResolvedValueOnce({
-          content: [{ type: "text", text: JSON.stringify(SAMPLE_DEEP_DIVE) }],
-          stop_reason: "end_turn",
-          usage: { input_tokens: 2500, output_tokens: 700 },
-        });
+      mockCreateMessage.mockImplementation(sectionResponder(CORE));
 
       const res = await request(app)
         .post("/api/analyze")
@@ -817,12 +800,28 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         .send({ textContent: "Owner test affidavit text", mode: "full" });
 
       expect(res.status).toBe(200);
-      expect(mockCreateMessage).toHaveBeenCalledTimes(2);
-      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-opus-5");
+      expect(mockCreateMessage).toHaveBeenCalledTimes(7);
+      expect(res.body.modelMetadata.verificationModel).toBe("claude-opus-5");
       expect(res.body.credits.tier).toBe("Admin Testing Access");
       expect(res.body.credits.quickReviewsRemaining).toBe(999);
       expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
       expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
+    });
+
+    it("does not grant owner access to an owner email that is not verified", async () => {
+      // e.g. a Firebase email/password account registered for an owner address without proving it
+      mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce({
+        uid: "impostor-uid",
+        email: "chris@cyfsanavigator.com",
+        emailVerified: false,
+      });
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer impostor-token")
+        .send({ textContent: "Owner test affidavit text", mode: "full" });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
     it("never bypasses paywall for non-admin users attempting Forensic mode without paid pass", async () => {

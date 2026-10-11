@@ -204,6 +204,7 @@ delete process.env.SMTP_PASS;
 delete process.env.LAWYER_INTAKE_TO;
 
 const { default: app } = await import("./_server.js");
+const { sectionResponder, requestedSection, isVerificationRequest, claudeText: fixtureText } = await import("./analyzerTestFixtures.js");
 
 function claudeTextResponse(text: string) {
   return { content: [{ type: "text", text }], stop_reason: "end_turn", usage: {} };
@@ -250,6 +251,8 @@ const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FI
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Drop any queued one-shot responses so they cannot leak into the next test.
+  mockCreateMessage.mockReset();
   resetCreditAccountingCachesForTesting();
   resetUsageCachesForTesting();
   mockAccess.verifySessionToken.mockImplementation((token: string) => (token === PAID_SESSION_TOKEN ? { jti: PAID_JTI } : null));
@@ -731,12 +734,17 @@ describe("POST /api/analyze", () => {
     expect(res.status).toBe(400);
   });
 
-  // /api/analyze issues two concurrent Claude calls (a "core" pass and a "deep-dive" pass —
-  // see the comment above documentContentBlock in _server.ts) instead of one, so every test
-  // below queues a resolved/rejected value for each of the two calls the endpoint actually
-  // makes, in the order they're constructed: core first, then deep-dive.
-  it("requests 16000 max_tokens on Quick Review (Sonnet) and falls back an unknown model to claude-3-5-sonnet-20241022", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+  // /api/analyze requests each report section separately (api/services/analyzerSections.ts):
+  // Quick Review = 4 Sonnet section requests; Forensic = 6 Sonnet sections + 1 Opus verification.
+  const QUICK_TITLES = [
+    "Document summary and Evidence Strength Index",
+    "Evidence findings",
+    "Chronology and contradictions",
+    "Preparation guidance and questions for counsel",
+  ];
+
+  it("runs Quick Review as four bounded Sonnet section requests and ignores a client model override", async () => {
+    mockCreateMessage.mockImplementation(sectionResponder());
     const res = await request(app)
       .post("/api/analyze")
       .set(paid())
@@ -744,38 +752,53 @@ describe("POST /api/analyze", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.documentTitle).toBe("Uploaded Document");
-    expect(mockCreateMessage).toHaveBeenCalledTimes(1);
-    expect(mockCreateMessage.mock.calls[0][0].max_tokens).toBe(16000);
-    expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
+    expect(mockCreateMessage).toHaveBeenCalledTimes(4);
+    const bodies = mockCreateMessage.mock.calls.map(c => c[0]);
+    expect(bodies.map(requestedSection).sort()).toEqual([...QUICK_TITLES].sort());
+    expect(new Set(bodies.map(b => b.model))).toEqual(new Set(["claude-sonnet-5"]));
+    // Bounded output per section instead of one 16k-token monolith that could be cut off.
+    for (const b of bodies) expect(b.max_tokens).toBeLessThanOrEqual(5000);
+    expect(res.body.whatToVerify.length).toBeGreaterThan(0);
   });
 
-  it("authoritatively routes Forensic In-Depth (mode: full) to Claude Opus on both concurrent calls", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+  it("routes Forensic sections to Sonnet and the independent verification pass to Opus", async () => {
+    mockCreateMessage.mockImplementation(sectionResponder());
     const res = await request(app)
       .post("/api/analyze")
       .set(paid())
       .send({ textContent: "some affidavit text", mode: "full", model: "claude-haiku-4-5-20251001" });
     expect(res.status).toBe(200);
-    expect(mockCreateMessage).toHaveBeenCalledTimes(2);
-    const tokenBudgets = mockCreateMessage.mock.calls.map(c => c[0].max_tokens);
-    const models = mockCreateMessage.mock.calls.map(c => c[0].model);
-    expect(tokenBudgets).toEqual([12000, 14000]);
-    expect(models).toEqual(["claude-opus-5", "claude-opus-5"]);
-    expect(res.body.modelMetadata?.engine).toBe("claude-opus-5");
+    expect(mockCreateMessage).toHaveBeenCalledTimes(7);
+    const bodies = mockCreateMessage.mock.calls.map(c => c[0]);
+    const verification = bodies.filter(isVerificationRequest);
+    expect(verification).toHaveLength(1);
+    expect(verification[0].model).toBe("claude-opus-5");
+    expect(bodies.filter(b => !isVerificationRequest(b)).every(b => b.model === "claude-sonnet-5")).toBe(true);
+    expect(res.body.forensicVerification.status).toBe("completed");
+    expect(res.body.modelMetadata.primaryModel).toBe("claude-sonnet-5");
+    expect(res.body.modelMetadata.verificationModel).toBe("claude-opus-5");
+    expect(res.body.thresholdAnalysis).toHaveLength(4);
   });
 
-  it("returns a clear error instead of fabricating a report when either response isn't valid JSON", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeTextResponse("not json at all"));
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+  it("returns a clear error instead of fabricating a report when a section never returns valid JSON", async () => {
+    const ok = sectionResponder();
+    mockCreateMessage.mockImplementation(async (body: any) =>
+      requestedSection(body) === "Evidence findings" ? fixtureText("not json at all") : ok(body)
+    );
     const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "some text" });
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("AI_RESPONSE_INVALID");
     expect(res.body.documentTitle).toBeUndefined();
   });
 
-  it("maps a rate-limit error from either concurrent call to HTTP 429", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
-    mockCreateMessage.mockRejectedValueOnce(Object.assign(new Error("rate limit exceeded"), { status: 429 }));
+  it("maps a rate-limit error from any section to HTTP 429", async () => {
+    const ok = sectionResponder();
+    mockCreateMessage.mockImplementation(async (body: any) => {
+      if (requestedSection(body) === "Evidence findings") {
+        throw Object.assign(new Error("rate limit exceeded"), { status: 429 });
+      }
+      return ok(body);
+    });
     const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "some text" });
     expect(res.status).toBe(429);
     expect(res.body.isRateLimit).toBe(true);
@@ -790,8 +813,7 @@ describe("POST /api/analyze", () => {
 
   it("allows a signed-in parent's first free analysis, then blocks the second", async () => {
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValue({ uid: "uid-1", email: "parent@example.com" });
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    mockCreateMessage.mockImplementation(sectionResponder());
     const res = await request(app)
       .post("/api/analyze")
       .set("Authorization", "Bearer valid-firebase-token")
@@ -1330,7 +1352,7 @@ describe("Tier Entitlement Boundaries & Anti-Bypass Security", () => {
 
   it("3. Free user is allowed Quick Document Review (mode: fast)", async () => {
     mockUsage.getFreeUsage.mockResolvedValueOnce(0);
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    mockCreateMessage.mockImplementation(sectionResponder());
     const res = await request(app)
       .post("/api/analyze")
       .set("Authorization", FREE_AUTH)
@@ -1340,7 +1362,7 @@ describe("Tier Entitlement Boundaries & Anti-Bypass Security", () => {
   });
 
   it("4. Basic Analyzer ($19.99) is allowed Quick Document Review (mode: fast)", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    mockCreateMessage.mockImplementation(sectionResponder());
     const res = await request(app)
       .post("/api/analyze")
       .set({ Authorization: "Bearer basic-token", "x-ps-session": BASIC_TOKEN })
@@ -1524,7 +1546,7 @@ describe("Server-Authoritative Usage Accounting & Idempotency", () => {
       remaining: 2,
       tier: "Basic",
     });
-    mockCreateMessage.mockRejectedValueOnce(new Error("Anthropic upstream service overload"));
+    mockCreateMessage.mockRejectedValue(new Error("Anthropic upstream service overload"));
 
     const res = await request(app)
       .post("/api/analyze")
@@ -1544,7 +1566,7 @@ describe("Server-Authoritative Usage Accounting & Idempotency", () => {
       remaining: 2,
       tier: "Basic",
     });
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_ANALYSIS));
+    mockCreateMessage.mockImplementation(sectionResponder());
 
     const res = await request(app)
       .post("/api/analyze")

@@ -239,6 +239,8 @@ const REALISTIC_ANALYSIS_RESPONSE = {
   ],
 };
 
+const { COMPLETE_ANALYSIS, sectionResponder } = await import("./analyzerTestFixtures.js");
+
 describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -258,11 +260,18 @@ describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
       return null;
     });
 
-    mockCreateMessage.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(REALISTIC_ANALYSIS_RESPONSE) }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1850, output_tokens: 920 },
-    });
+    mockCreateMessage.mockReset();
+    // Every section request picks its own keys from one complete report.
+    mockCreateMessage.mockImplementation(
+      sectionResponder({
+        ...COMPLETE_ANALYSIS,
+        ...REALISTIC_ANALYSIS_RESPONSE,
+        // The realistic fixture predates the Forensic section schema; take those from the complete one.
+        thresholdAnalysis: COMPLETE_ANALYSIS.thresholdAnalysis,
+        proceduralTimelineViolations: COMPLETE_ANALYSIS.proceduralTimelineViolations,
+        charterAndHumanRightsIssues: COMPLETE_ANALYSIS.charterAndHumanRightsIssues,
+      })
+    );
   });
 
   it("1. Performs complete real PDF analysis from upload through Claude with SSE streaming and quote verification", async () => {
@@ -270,7 +279,7 @@ describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
     expect(pdfBuffer.length).toBeGreaterThan(1000);
     const base64Pdf = pdfBuffer.toString("base64");
 
-    const analysisJobId = `real_pdf_job_${Date.now()}`;
+    const analysisJobId = `req_${Date.now()}_realpdf1`;
 
     const res = await request(app)
       .post("/api/analyze")
@@ -397,7 +406,7 @@ describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
 
   it("4. Failed analysis rolls back free use cleanly without double-decrement", async () => {
     // Simulate Claude failure on regular parent
-    mockCreateMessage.mockRejectedValueOnce(new Error("AI service temporary timeout"));
+    mockCreateMessage.mockRejectedValue(new Error("AI service temporary timeout"));
 
     const res = await request(app)
       .post("/api/analyze")
@@ -442,8 +451,37 @@ describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
     expect(res2.body.documentTitle).toBe(res1.body.documentTitle);
   });
 
+  it("5b. Resubmitting a completed analysis id returns the saved report without a second model run", async () => {
+    const analysisId = `req_${Date.now()}_dedupe1`;
+    const first = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer owner-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "Document text to analyze.", mode: "fast" });
+    expect(first.status).toBe(200);
+    const callsAfterFirst = mockCreateMessage.mock.calls.length;
+
+    const again = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer owner-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "Document text to analyze.", mode: "fast" });
+    expect(again.status).toBe(200);
+    expect(again.body.documentTitle).toBe(first.body.documentTitle);
+    expect(mockCreateMessage.mock.calls.length).toBe(callsAfterFirst); // no second (paid) run
+
+    // Another account cannot reuse (or read through) someone else's analysis id.
+    const other = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer regular-parent-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "Document text to analyze.", mode: "fast" });
+    expect(other.status).toBe(409);
+    expect(other.body.code).toBe("ANALYSIS_ID_CONFLICT");
+  });
+
   it("6. Job recovery via GET /api/analyze/job/:jobId is isolated by authenticated user", async () => {
-    const jobKey = `job_iso_${Date.now()}`;
+    const jobKey = `req_${Date.now()}_jobiso1`;
     const pdfBuffer = await createCourtAffidavitPdf();
 
     await request(app)
