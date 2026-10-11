@@ -1977,7 +1977,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       if (isAdminTesting) {
         isPaid = true;
         paidTier = "Pro";
-        if (identity && !uid) uid = identity.uid;
+        if (!uid) uid = identity ? identity.uid : "admin-test-uid";
+        if (!userEmail) userEmail = identity?.email || "chris@cyfsanavigator.com";
       }
 
       if (mode === "full") {
@@ -2157,16 +2158,17 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         details: { mode, isPaid, tier: paidTier || "Free" },
       });
 
+      createAnalysisJob({
+        jobId: analysisRequestId,
+        uid: isPaid && identity ? identity.uid : (uid || null),
+        mode: mode === "full" ? "full" : "fast",
+      });
+
       const wantsStream = Boolean(
         req.body?.stream === true || (req.header("accept") || "").includes("text/event-stream")
       );
       if (wantsStream) {
         streamEmitter = new SseStreamEmitter(res, analysisRequestId);
-        createAnalysisJob({
-          jobId: analysisRequestId,
-          uid: isPaid && identity ? identity.uid : (uid || null),
-          mode: mode === "full" ? "full" : "fast",
-        });
         streamEmitter.emitStage("extracting");
       }
 
@@ -2638,8 +2640,9 @@ ${analysisRules}`;
         report.credits = credits;
       }
 
+      completeAnalysisJob(analysisRequestId, report);
+
       if (streamEmitter) {
-        completeAnalysisJob(analysisRequestId, report);
         streamEmitter.emitComplete(report, credits);
       } else {
         res.json(report);
