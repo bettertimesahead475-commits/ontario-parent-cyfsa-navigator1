@@ -37,6 +37,7 @@ const mockAccess = vi.hoisted(() => ({
   hasCaseAccess: vi.fn(() => true),
   hasAnalyzerAccess: vi.fn(() => true),
   hasForensicInDepthAccess: vi.fn(() => true),
+  isAuthorizedSiteOwner: vi.fn(() => false),
 }));
 
 const mockFirebaseAdmin = vi.hoisted(() => ({ verifyFirebaseToken: vi.fn() }));

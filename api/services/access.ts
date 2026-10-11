@@ -75,6 +75,41 @@ export function hasForensicInDepthAccess(tier: string): boolean {
 
 export const PAYMENT_EMAIL = process.env.PAYMENT_EMAIL || "chris@cyfsanavigator.com";
 
+/**
+ * Determines whether a caller is the authorized site owner entitled to test the analyzer
+ * without repeated upgrade prompts or depleting parent credit allocations.
+ * Never bypasses authentication — requires a verified Firebase identity or the verified admin secret.
+ */
+export function isAuthorizedSiteOwner(email: string | null | undefined, adminSecretHeader?: string | null): boolean {
+  if (process.env.ADMIN_SECRET && adminSecretHeader && adminSecretHeader === process.env.ADMIN_SECRET) {
+    return true;
+  }
+  if (!email || typeof email !== "string") {
+    return false;
+  }
+  const normalized = email.trim().toLowerCase();
+
+  const configuredAdminAlert = process.env.ADMIN_ALERT_EMAIL?.trim().toLowerCase();
+  const configuredPaymentEmail = process.env.PAYMENT_EMAIL?.trim().toLowerCase();
+  const configuredIntake = process.env.LAWYER_INTAKE_TO?.trim().toLowerCase();
+  const configuredAdminEmails = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  const recognizedOwnerEmails = new Set<string>([
+    "chris@cyfsanavigator.com",
+    "donations.ontarioparentassist@gmail.com",
+    "chrispelkie@gmail.com",
+    ...(configuredAdminAlert ? [configuredAdminAlert] : []),
+    ...(configuredPaymentEmail ? [configuredPaymentEmail] : []),
+    ...(configuredIntake ? [configuredIntake] : []),
+    ...configuredAdminEmails,
+  ]);
+
+  return recognizedOwnerEmails.has(normalized);
+}
+
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L — easy to type off a phone
 const CODE_TTL_DAYS = 14; // an issued-but-unredeemed code expires after this long
 

@@ -458,6 +458,7 @@ export default function DocumentAnalyzerTab() {
     suspendedReason?: string | null;
     allowsForensic: boolean;
     isMonthly: boolean;
+    isAdminEntitled?: boolean;
   }
   const [creditBalance, setCreditBalance] = useState<CreditBalanceInfo | null>(null);
 
@@ -2909,7 +2910,12 @@ export default function DocumentAnalyzerTab() {
               Fast Parallel Pipeline (&lt; 2 min)
             </span>
             {creditBalance && (
-              creditBalance.isSuspended ? (
+              creditBalance.isAdminEntitled ? (
+                <span className="px-2.5 py-1 bg-purple-50 border border-purple-200 text-purple-800 rounded-lg text-xs font-sans font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
+                  <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
+                  Admin Testing Entitlement: Unlimited Analyses
+                </span>
+              ) : creditBalance.isSuspended ? (
                 <span className="px-2.5 py-1 bg-red-100 border border-red-300 text-red-900 rounded-lg text-xs font-sans font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
                   <AlertTriangle className="w-3.5 h-3.5 text-red-600" /> Account Suspended
                 </span>

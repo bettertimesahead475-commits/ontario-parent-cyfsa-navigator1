@@ -68,6 +68,12 @@ const mockAccess = vi.hoisted(() => ({
   hasCaseAccess: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
   hasAnalyzerAccess: vi.fn((tier: string) => ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
   hasForensicInDepthAccess: vi.fn((tier: string) => ["Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
+  isAuthorizedSiteOwner: vi.fn((email: string | null | undefined, secret?: string | null) => {
+    if (secret && secret === "test-admin-secret") return true;
+    if (!email) return false;
+    const norm = email.toLowerCase().trim();
+    return norm === "chris@cyfsanavigator.com" || norm === "donations.ontarioparentassist@gmail.com";
+  }),
 }));
 const mockFirebaseAdmin = vi.hoisted(() => ({ verifyFirebaseToken: vi.fn() }));
 const mockUsage = vi.hoisted(() => ({
@@ -168,6 +174,29 @@ const CORE = {
     },
   ],
 };
+const SAMPLE_DEEP_DIVE = {
+  thresholdAnalysis: [
+    {
+      thresholdChecked: "Child in Need of Protection grounds (CYFSA s. 74)",
+      isMet: "Inconclusive",
+      reasoning: "Allegations of domestic conflict lack corroborating police disclosure.",
+      primarySourceLaw: "CYFSA 2017, Section 74",
+    },
+  ],
+  proceduralTimelineViolations: [
+    {
+      timelineRule: "30-Day Adjournment Limit (CYFSA s. 94(1))",
+      documentAssertion: "Adjournment of 45 days requested without parent consent.",
+      evaluation: "Possible violation of s. 94(1) 30-day adjournment limit.",
+      citation: "CYFSA, S.O. 2017, c. 14, s. 94(1)",
+      locationInDocument: "Page 4, Para 12",
+      parentActionStep: "Instruct legal counsel to assert s. 94(1) rights at next appearance.",
+    },
+  ],
+  charterAndHumanRightsIssues: ["Section 7 Charter: Security of the person engaged."],
+  whatToVerify: ["Request complete CAS disclosure notes from July 14, 2026."],
+};
+
 const claudeText = (text: string, stop_reason = "end_turn") => ({ content: [{ type: "text", text }], stop_reason, usage: {} });
 
 beforeEach(() => {
@@ -179,8 +208,21 @@ beforeEach(() => {
   });
   mockAccess.verifySessionToken.mockImplementation((t: string) => (t === "paid-session" ? { jti: "jti-1" } : null));
   mockAccess.getActivePaidSession.mockResolvedValue({ id: "jti-1", firebaseUid: "paid-uid", tier: "Pro" });
+  mockAccess.isSessionBoundToIdentity.mockImplementation((session: any, identity: any) => {
+    if (!session || !identity) return false;
+    if (session.firebaseUid === identity.uid) return true;
+    if (Array.isArray(identity.allUids) && identity.allUids.includes(session.firebaseUid)) return true;
+    return false;
+  });
+  mockAccess.isAuthorizedSiteOwner.mockImplementation((email: string | null | undefined, secret?: string | null) => {
+    if (secret && secret === "test-admin-secret") return true;
+    if (!email) return false;
+    const norm = email.toLowerCase().trim();
+    return norm === "chris@cyfsanavigator.com" || norm === "donations.ontarioparentassist@gmail.com";
+  });
   mockUsage.getFreeUsage.mockResolvedValue(0);
   mockUsage.recordFreeUse.mockResolvedValue(undefined);
+  mockUsage.decrementFreeUse.mockResolvedValue(undefined);
   mockAccess.checkAndConsumeFreeToolUse.mockResolvedValue(false);
 });
 
@@ -556,34 +598,6 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
   });
 
   describe("Dual-Engine Forensic Upgrade: Claude Sonnet & Claude Opus", () => {
-    const SAMPLE_DEEP_DIVE = {
-      thresholdAnalysis: [
-        {
-          thresholdChecked: "Child in Need of Protection grounds (CYFSA s. 74)",
-          isMet: "Inconclusive",
-          reasoning: "Allegations of domestic conflict lack corroborating police disclosure.",
-          primarySourceLaw: "CYFSA 2017, Section 74",
-        },
-      ],
-      proceduralTimelineViolations: [
-        {
-          timelineRule: "30-Day Adjournment Limit (CYFSA s. 94(1))",
-          documentAssertion: "Adjournment of 45 days requested without parent consent.",
-          evaluation: "Possible violation of s. 94(1) 30-day adjournment limit.",
-          citation: "CYFSA, S.O. 2017, c. 14, s. 94(1)",
-          locationInDocument: "Page 4, Para 12",
-          parentActionStep: "Instruct legal counsel to assert s. 94(1) rights at next appearance.",
-        },
-      ],
-      charterAndHumanRightsIssues: ["Section 7 Charter: Security of the person engaged."],
-      whatToVerify: ["Request complete CAS disclosure notes from July 14, 2026."],
-      whatToAskALawyer: ["Does the 45-day adjournment violate CYFSA s. 94(1)?"],
-      whatIsMissing: ["Supervised access observation notes."],
-      lawyerCaseBrief: [
-        "ISSUE — Adjournment duration — DOCUMENT EVIDENCE — Page 4 Para 12 — SIGNIFICANCE — Exceeds 30 days — LIMITATION — Consent status unstated — VERIFY — Court endorsement record",
-      ],
-    };
-
     it("routes Quick Document Review to Claude Sonnet with accurate token metadata and cost accounting", async () => {
       mockCreateMessage.mockResolvedValueOnce({
         content: [{ type: "text", text: JSON.stringify(CORE) }],
@@ -743,6 +757,74 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(mockCreateMessage).toHaveBeenCalledTimes(1);
       expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-sonnet-5");
       expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+    });
+  });
+
+  describe("Admin-Only Testing Entitlement", () => {
+    it("GET /api/analyzer-usage grants testing entitlement to authorized site owner", async () => {
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+        uid: "owner-uid",
+        email: "chris@cyfsanavigator.com",
+      });
+
+      const res = await request(app)
+        .get("/api/analyzer-usage")
+        .set("Authorization", "Bearer owner-token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.type).toBe("admin");
+      expect(res.body.isAdminEntitled).toBe(true);
+      expect(res.body.creditsRemaining).toBe(999);
+      expect(res.body.quickReviewsRemaining).toBe(999);
+      expect(res.body.forensicAnalysesRemaining).toBe(999);
+    });
+
+    it("allows authorized site owner to run Forensic In-Depth analysis without paid session token", async () => {
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+        uid: "owner-uid",
+        email: "chris@cyfsanavigator.com",
+      });
+
+      mockCreateMessage
+        .mockResolvedValueOnce({
+          content: [{ type: "text", text: JSON.stringify(CORE) }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 2000, output_tokens: 600 },
+        })
+        .mockResolvedValueOnce({
+          content: [{ type: "text", text: JSON.stringify(SAMPLE_DEEP_DIVE) }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 2500, output_tokens: 700 },
+        });
+
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer owner-token")
+        .send({ textContent: "Owner test affidavit text", mode: "full" });
+
+      expect(res.status).toBe(200);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(2);
+      expect(mockCreateMessage.mock.calls[0][0].model).toBe("claude-opus-5");
+      expect(res.body.credits.tier).toBe("Admin Testing Access");
+      expect(res.body.credits.quickReviewsRemaining).toBe(999);
+      expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
+      expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
+    });
+
+    it("never bypasses paywall for non-admin users attempting Forensic mode without paid pass", async () => {
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({
+        uid: "normal-parent-uid",
+        email: "parent@example.com",
+      });
+
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer normal-token")
+        .send({ textContent: "Parent affidavit text", mode: "full" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
     });
   });
 });

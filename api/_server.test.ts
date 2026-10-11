@@ -79,6 +79,12 @@ const mockAccess = vi.hoisted(() => ({
   hasCaseAccess: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
   hasAnalyzerAccess: vi.fn((tier: string) => ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
   hasForensicInDepthAccess: vi.fn((tier: string) => ["Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
+  isAuthorizedSiteOwner: vi.fn((email: string | null | undefined, secret?: string | null) => {
+    if (secret && secret === "test-admin-secret") return true;
+    if (!email) return false;
+    const norm = email.toLowerCase().trim();
+    return norm === "chris@cyfsanavigator.com" || norm === "donations.ontarioparentassist@gmail.com";
+  }),
 }));
 
 const mockFirebaseAdmin = vi.hoisted(() => ({

@@ -15,7 +15,7 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, isSessionBoundToIdentity, getConfiguredProjectRef, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, isSessionBoundToIdentity, isAuthorizedSiteOwner, getConfiguredProjectRef, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
@@ -1294,6 +1294,40 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         details: { hasSessionToken: Boolean(sessionToken), isSessionTokenValid: Boolean(parsedSession) },
       });
 
+      const isAdminTesting = Boolean(
+        (identity && isAuthorizedSiteOwner(identity.email, req.header("x-admin-secret"))) ||
+        (req.header("x-admin-secret") && isAuthorizedSiteOwner(null, req.header("x-admin-secret")))
+      );
+
+      if (isAdminTesting) {
+        logAnalyzerTraceStage({
+          requestId: traceId,
+          stage: 7,
+          stageName: "final_access_decision",
+          httpStatus: 200,
+          errorCode: null,
+          dbProjectRef,
+          uidMatched: true,
+          details: { isAdminTesting: true },
+        });
+        return res.json({
+          type: "admin",
+          tier: "Admin Testing Access",
+          isAdminEntitled: true,
+          limit: 999,
+          remaining: 999,
+          creditsRemaining: 999,
+          creditsUsed: 0,
+          creditsLimit: 999,
+          quickReviewsRemaining: 999,
+          quickReviewsLimit: 999,
+          quickReviewsUsed: 0,
+          forensicAnalysesRemaining: 999,
+          forensicAnalysesLimit: 999,
+          forensicAnalysesUsed: 0,
+        });
+      }
+
       if (parsedSession && identity) {
         let session;
         try {
@@ -1845,6 +1879,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let streamEmitter: SseStreamEmitter | null = null;
     let isPaid = false;
     let uid: string | null = null;
+    let freeUseRecorded = false;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -1932,6 +1967,17 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           paidSessionId = session.id;
           if (session.email) userEmail = session.email;
         }
+      }
+
+      const isAdminTesting = Boolean(
+        (identity && isAuthorizedSiteOwner(identity.email, req.header("x-admin-secret"))) ||
+        (req.header("x-admin-secret") && isAuthorizedSiteOwner(null, req.header("x-admin-secret")))
+      );
+
+      if (isAdminTesting) {
+        isPaid = true;
+        paidTier = "Pro";
+        if (identity && !uid) uid = identity.uid;
       }
 
       if (mode === "full") {
@@ -2539,9 +2585,20 @@ ${analysisRules}`;
       }
 
       let credits: CreditStatus | null = null;
-      if (!isPaid && uid) {
+      if (isAdminTesting) {
+        credits = {
+          tier: "Admin Testing Access",
+          quickReviewsUsed: 0,
+          quickReviewsLimit: 999,
+          quickReviewsRemaining: 999,
+          forensicAnalysesUsed: 0,
+          forensicAnalysesLimit: 999,
+          forensicAnalysesRemaining: 999,
+        };
+      } else if (!isPaid && uid) {
         try {
           await recordFreeUse(uid, userEmail);
+          freeUseRecorded = true;
           const used = await getFreeUsage(uid);
           credits = {
             tier: "Free",
@@ -2602,7 +2659,7 @@ ${analysisRules}`;
         }
       }
 
-      if (!isPaid && uid) {
+      if (freeUseRecorded && uid) {
         await decrementFreeUse(uid).catch(() => {});
       }
 
