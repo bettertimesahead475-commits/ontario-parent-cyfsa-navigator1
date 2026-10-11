@@ -168,6 +168,22 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     expect(res.body.code).toBe("JOB_NOT_FOUND");
   });
 
+  it("GET /api/analyze/job/:jobId reports a recent, not-yet-created job as pending with no invented progress", async () => {
+    const recentId = `req_${Date.now()}_abc1234`;
+    const res = await request(app).get(`/api/analyze/job/${recentId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("pending");
+    expect(res.body.percent).toBeUndefined();
+    expect(res.body.currentStage).toBeUndefined();
+  });
+
+  it("GET /api/analyze/job/:jobId returns 404 for an old job id that never started", async () => {
+    const oldId = `req_${Date.now() - 5 * 60 * 1000}_abc1234`;
+    const res = await request(app).get(`/api/analyze/job/${oldId}`);
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("JOB_NOT_FOUND");
+  });
+
   it("GET /api/analyze/job/:jobId returns existing job status", async () => {
     const job = createAnalysisJob({
       jobId: "test-durable-job-123",
