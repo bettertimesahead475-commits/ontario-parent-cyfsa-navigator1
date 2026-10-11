@@ -42,10 +42,10 @@ const RequireAuth = lazy(() => import("./components/RequireAuth"));
 const MigrationNotice = lazy(() => import("./components/MigrationNotice"));
 import { sanitizeTelemetryEvent } from "./utils/telemetrySanitizer";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { auth } from "./utils/firebase";
+import { auth, signOutOfAccount } from "./utils/firebase";
 
 // Core icons represent core section identity
-import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart, Coins } from "lucide-react";
+import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart, Coins, LogOut } from "lucide-react";
 
 export default function App() {
   useGlobalResetListener();
@@ -108,6 +108,20 @@ export default function App() {
   useEffect(() => onAuthStateChanged(auth, setFirebaseUser), []);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOutOfAccount();
+      setMobileMenuOpen(false);
+      setLocation("/");
+    } catch (e) {
+      console.warn("Sign out failed", e);
+    } finally {
+      setSigningOut(false);
+    }
+  };
   const [terminologyOpen, setTerminologyOpen] = useState<boolean>(false);
   const [nonCriticalWidgetsReady, setNonCriticalWidgetsReady] = useState(false);
 
@@ -215,6 +229,18 @@ export default function App() {
                 <BookOpen className="w-3 h-3 text-brand-600 shrink-0" />
                 <span>CYFSA Glossary</span>
               </button>
+              {firebaseUser && (
+                <button
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  title={firebaseUser.email ? `Signed in as ${firebaseUser.email}` : "Signed in"}
+                  className="px-3 py-1.5 text-[10.5px] font-sans font-bold tracking-wider border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 uppercase rounded-full flex items-center gap-1.5 shadow-xs cursor-pointer transition-all disabled:opacity-60"
+                  id="header-sign-out-btn"
+                >
+                  <LogOut className="w-3 h-3 text-slate-500 shrink-0" />
+                  <span>{signingOut ? "Signing out..." : "Sign Out"}</span>
+                </button>
+              )}
             </div>
 
             {/* Right Helpline Widget */}
@@ -281,6 +307,18 @@ export default function App() {
               <BookOpen className="w-4 h-4 text-brand-600 shrink-0" />
               <span>📚 CYFSA Legal Glossary</span>
             </div>
+
+            {firebaseUser && (
+              <button
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 disabled:opacity-60"
+                id="mobile-sign-out-btn"
+              >
+                <LogOut className="w-4 h-4 text-slate-500 shrink-0" />
+                <span>{signingOut ? "Signing out..." : `Sign Out${firebaseUser.email ? ` (${firebaseUser.email})` : ""}`}</span>
+              </button>
+            )}
           </div>
         )}
       </header>

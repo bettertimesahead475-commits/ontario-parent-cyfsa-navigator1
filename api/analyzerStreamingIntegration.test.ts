@@ -37,10 +37,20 @@ const mockAccess = vi.hoisted(() => ({
   hasCaseAccess: vi.fn(() => true),
   hasAnalyzerAccess: vi.fn(() => true),
   hasForensicInDepthAccess: vi.fn(() => true),
-  isAuthorizedSiteOwner: vi.fn(() => false),
+  // Mirrors access.ts: the email allowlist only counts for a verified email.
+  isVerifiedSiteOwner: vi.fn((identity: any, secret?: string | null) =>
+    Boolean(mockAccess.isAuthorizedSiteOwner(null, secret)) ||
+    (identity?.emailVerified === true && Boolean(mockAccess.isAuthorizedSiteOwner(identity.email, null)))),
+  isAuthorizedSiteOwner: vi.fn((_email?: string | null, _secret?: string | null) => false),
 }));
 
-const mockFirebaseAdmin = vi.hoisted(() => ({ verifyFirebaseToken: vi.fn() }));
+const mockFirebaseAdmin = vi.hoisted(() => ({
+  verifyFirebaseToken: vi.fn(),
+  verifyFirebaseIdentity: vi.fn(async (header: any) => {
+    const r = await mockFirebaseAdmin.verifyFirebaseToken(header);
+    return r ? { emailVerified: true, ...r } : null;
+  }),
+}));
 const mockUsage = vi.hoisted(() => ({
   getFreeUsage: vi.fn(async () => 0),
   recordFreeUse: vi.fn(async () => {}),

@@ -15,8 +15,8 @@ import dotenv from "dotenv";
 import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, isSessionBoundToIdentity, isAuthorizedSiteOwner, getConfiguredProjectRef, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
-import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
+import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, isSessionBoundToIdentity, isVerifiedSiteOwner, getConfiguredProjectRef, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
+import { verifyFirebaseToken, verifyFirebaseIdentity } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
 import { registerDocumentRoutes } from "./documentRoutes.js";
@@ -1288,7 +1288,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     const traceId = (req.header("x-request-id") as string) || `usage_${Date.now()}`;
     const dbProjectRef = getConfiguredProjectRef();
     try {
-      const identity = await verifyFirebaseToken(req.header("authorization"));
+      const identity = await verifyFirebaseIdentity(req.header("authorization"));
       logAnalyzerTraceStage({
         requestId: traceId,
         stage: 1,
@@ -1311,10 +1311,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         details: { hasSessionToken: Boolean(sessionToken), isSessionTokenValid: Boolean(parsedSession) },
       });
 
-      const isAdminTesting = Boolean(
-        (identity && isAuthorizedSiteOwner(identity.email, req.header("x-admin-secret"))) ||
-        (req.header("x-admin-secret") && isAuthorizedSiteOwner(null, req.header("x-admin-secret")))
-      );
+      const isAdminTesting = isVerifiedSiteOwner(identity, req.header("x-admin-secret"));
 
       if (isAdminTesting) {
         logAnalyzerTraceStage({
@@ -1930,7 +1927,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // use. Otherwise the caller must be a verified signed-in parent, checked against their
       // free-use count.
       uid = null;
-      const identity = await verifyFirebaseToken(req.header("authorization"));
+      const identity = await verifyFirebaseIdentity(req.header("authorization"));
       let userEmail: string | null = identity?.email || null;
 
       logAnalyzerTraceStage({
@@ -1986,10 +1983,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         }
       }
 
-      const isAdminTesting = Boolean(
-        (identity && isAuthorizedSiteOwner(identity.email, req.header("x-admin-secret"))) ||
-        (req.header("x-admin-secret") && isAuthorizedSiteOwner(null, req.header("x-admin-secret")))
-      );
+      const isAdminTesting = isVerifiedSiteOwner(identity, req.header("x-admin-secret"));
 
       if (isAdminTesting) {
         isPaid = true;

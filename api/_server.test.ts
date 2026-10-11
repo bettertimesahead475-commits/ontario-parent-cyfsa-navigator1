@@ -79,6 +79,10 @@ const mockAccess = vi.hoisted(() => ({
   hasCaseAccess: vi.fn((tier: string) => ["Pro", "Community5", "Community10", "Community25"].includes(tier)),
   hasAnalyzerAccess: vi.fn((tier: string) => ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
   hasForensicInDepthAccess: vi.fn((tier: string) => ["Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier)),
+  // Mirrors access.ts: the email allowlist only counts for a verified email.
+  isVerifiedSiteOwner: vi.fn((identity: any, secret?: string | null) =>
+    Boolean(mockAccess.isAuthorizedSiteOwner(null, secret)) ||
+    (identity?.emailVerified === true && Boolean(mockAccess.isAuthorizedSiteOwner(identity.email, null)))),
   isAuthorizedSiteOwner: vi.fn((email: string | null | undefined, secret?: string | null) => {
     if (secret && secret === "test-admin-secret") return true;
     if (!email) return false;
@@ -89,6 +93,10 @@ const mockAccess = vi.hoisted(() => ({
 
 const mockFirebaseAdmin = vi.hoisted(() => ({
   verifyFirebaseToken: vi.fn(),
+  verifyFirebaseIdentity: vi.fn(async (header: any) => {
+    const r = await mockFirebaseAdmin.verifyFirebaseToken(header);
+    return r ? { emailVerified: true, ...r } : null;
+  }),
 }));
 
 const mockUsage = vi.hoisted(() => ({

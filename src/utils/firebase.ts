@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, User, signOut } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -31,3 +31,21 @@ export const signInMinimal = async (): Promise<User | null> => {
     throw error;
   }
 };
+
+/** localStorage pointer to the analysis job a reload should recover (see DocumentAnalyzerTab). */
+export const ACTIVE_ANALYZER_JOB_KEY = 'OPA_ACTIVE_ANALYZER_JOB_ID';
+
+/**
+ * Ends the Firebase (Google) session so a different account can sign in. Per-user data in
+ * localStorage is namespaced by uid (utils/storage.ts), so it stays locked to its owner; only the
+ * active-job pointer is cleared so the next account never tries to recover the previous one's job.
+ */
+export async function signOutOfAccount(): Promise<void> {
+  try {
+    localStorage.removeItem(ACTIVE_ANALYZER_JOB_KEY);
+  } catch {
+    /* storage unavailable (private mode) - nothing to clear */
+  }
+  await signOut(auth);
+  window.dispatchEvent(new CustomEvent('opa-user-profile-updated'));
+}
