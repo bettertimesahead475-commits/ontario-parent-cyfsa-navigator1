@@ -7,7 +7,7 @@ import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream } from "../utils/api";
+import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -52,6 +52,19 @@ import {
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
+
+/** Parent-facing names for the report sections the server validates and streams. */
+const REPORT_SECTION_LABELS: Record<string, string> = {
+  overview: "Document summary",
+  redFlags: "Evidence findings",
+  chronology: "Chronology & contradictions",
+  guidance: "Preparation guidance",
+  thresholds: "Statutory thresholds",
+  timeline: "Procedural timelines & Charter issues",
+};
+
+/** Failures the server confirmed (job failed => credit released). Unknown outcomes are excluded. */
+const UNCONFIRMED_OUTCOME_CODES = new Set(["RECOVERY_TIMEOUT", "NETWORK_ERROR", STREAM_INTERRUPTED]);
 
 // Escapes a value for safe interpolation into the raw HTML strings the print/export
 // views build (both as element text and inside HTML attributes like `class="..."`).
@@ -363,6 +376,24 @@ export default function DocumentAnalyzerTab() {
   );
   const [isSingleAnalyzing, setIsSingleAnalyzing] = useState<boolean>(false);
   const [singleAnalysisError, setSingleAnalysisError] = useState<string>("");
+  // Error code of the last failed run. Lets the UI say "nothing was charged" only when the server
+  // confirmed the failure (a failed job releases its credit), not when the outcome is unknown.
+  const [singleAnalysisErrorCode, setSingleAnalysisErrorCode] = useState<string | null>(null);
+  // Report sections the server has validated so far (real progress, from stream or job record).
+  const [completedSections, setCompletedSections] = useState<string[]>([]);
+  // True while a reloaded page follows an analysis that was started before the reload.
+  const [isRecoveringJob, setIsRecoveringJob] = useState<boolean>(false);
+  // Synchronous guard against a double click starting two analyses before state re-renders.
+  const analysisInFlightRef = useRef(false);
+  const stopWaitingRef = useRef(false);
+  const applyJobProgress = React.useCallback((job: AnalysisJobSnapshot) => {
+    setCompletedSections(Object.keys(job.sections || {}));
+    setStreamingProgress(prev => ({
+      stage: job.currentStage || prev.stage || "reviewing_evidence",
+      percent: typeof job.percent === "number" ? Math.max(prev.percent, job.percent) : prev.percent,
+      message: job.message || prev.message || "Analyzing your document...",
+    }));
+  }, []);
 
   // Countdown timer for rate-limit cooldown
   useEffect(() => {
@@ -373,80 +404,47 @@ export default function DocumentAnalyzerTab() {
     return () => clearInterval(timer);
   }, [rateLimitCountdown]);
 
-  // Check for existing in-progress or completed analysis job on mount/reconnect with active polling
+  // A reload (or a new tab) recovers the analysis that was running before it, from the server's
+  // persisted job record. It never starts or pays for a new analysis.
   useEffect(() => {
     if (!activeJobId) return;
-    let isMounted = true;
-    let pollTimeout: any = null;
-    let pollCount = 0;
-    const maxPolls = 48; // 48 * 2.5s = 120s max recovery window
-
-    const checkJob = async () => {
+    let cancelled = false;
+    const clearActiveJob = () => {
       try {
-        const res = await apiFetch(`/api/analyze/job/${activeJobId}`);
-        if (!isMounted) return;
-        if (res.ok) {
-          const job = await res.json();
-          if (job.status === "completed" && job.report) {
-            setSelectedReport(job.report);
-            setAnalyzerState("COMPLETE");
-            try {
-              localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-            } catch {}
-            setActiveJobId(null);
-            return;
-          } else if (job.status === "failed") {
-            setAnalyzerState("ERROR");
-            setSingleAnalysisError(job.error?.message || "Analysis could not complete. Zero credits deducted.");
-            try {
-              localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-            } catch {}
-            setActiveJobId(null);
-            return;
-          } else if (job.status === "analyzing") {
-            setAnalyzerState("ANALYZING");
-            setStreamingProgress({
-              stage: job.currentStage || "reviewing_evidence",
-              percent: job.percent || 45,
-              message: job.message || "Auditing document against statutory thresholds...",
-            });
-            pollCount++;
-            if (pollCount < maxPolls) {
-              pollTimeout = setTimeout(checkJob, 2500);
-              return;
-            } else {
-              setAnalyzerState("ERROR");
-              setSingleAnalysisError("Analysis is taking longer than expected. Your document is safe and zero credits were deducted.");
-              try {
-                localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-              } catch {}
-              setActiveJobId(null);
-              return;
-            }
-          }
-        } else if (res.status === 404) {
-          // If 404 happens during initial startup (first 20s), continue polling as the job record is being initialized on the server
-          pollCount++;
-          if (pollCount < 8) {
-            pollTimeout = setTimeout(checkJob, 2500);
-            return;
-          }
-          try {
-            localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-          } catch {}
-          setActiveJobId(null);
+        localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+      } catch {}
+      setActiveJobId(null);
+    };
+    setIsRecoveringJob(true);
+    setAnalyzerState("ANALYZING");
+    setStreamingProgress({ stage: "reviewing_evidence", percent: 0, message: "Reconnecting to your analysis on the server..." });
+    pollAnalysisJob(activeJobId, { isCancelled: () => cancelled, onProgress: applyJobProgress, fetcher: apiFetch })
+      .then(outcome => {
+        if (cancelled) return;
+        if (outcome.status === "completed") {
+          setSelectedReport(outcome.report);
+          setAnalyzerState("COMPLETE");
+        } else {
+          setAnalyzerState("ERROR");
+          setSingleAnalysisErrorCode(outcome.error.code);
+          setSingleAnalysisError(outcome.error.message || "The analysis could not be completed. Please start it again.");
         }
-      } catch (e) {
-        console.warn("Failed to check active analysis job:", e);
-      }
-    };
-
-    checkJob();
+        clearActiveJob();
+      })
+      .catch((err: any) => {
+        if (cancelled || err?.code === "CANCELLED") return;
+        setAnalyzerState("ERROR");
+        setSingleAnalysisErrorCode(err?.code || null);
+        setSingleAnalysisError(err?.message || "We couldn't check on your analysis. Your document is safe.");
+        clearActiveJob();
+      })
+      .finally(() => {
+        if (!cancelled) setIsRecoveringJob(false);
+      });
     return () => {
-      isMounted = false;
-      if (pollTimeout) clearTimeout(pollTimeout);
+      cancelled = true;
     };
-  }, [activeJobId, setSelectedReport]);
+  }, [activeJobId, setSelectedReport, applyJobProgress]);
 
   // Server-authoritative credit ledger balance
   interface CreditBalanceInfo {
@@ -1915,7 +1913,12 @@ export default function DocumentAnalyzerTab() {
 
   // Re-run single analysis on demand
   const triggerSingleAnalysis = async (file: OrganizedFile) => {
+    if (analysisInFlightRef.current || isRecoveringJob) return; // never two analyses at once
+    analysisInFlightRef.current = true;
+    stopWaitingRef.current = false;
     setIsSingleAnalyzing(true);
+    setCompletedSections([]);
+    setSingleAnalysisErrorCode(null);
     setSingleAnalysisError("");
     setSelectedReport(null);
     setAnalyzerState("UPLOADING");
@@ -1926,9 +1929,11 @@ export default function DocumentAnalyzerTab() {
     ));
 
     const analysisId = "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+    // Persist the job ID so it can be recovered after a page reload. Do NOT set activeJobId here:
+    // that starts the recovery poller alongside this live request, which overwrote real progress
+    // (e.g. during text extraction) with status-endpoint data and left the UI stuck at 45%.
     try {
       localStorage.setItem("OPA_ACTIVE_ANALYZER_JOB_ID", analysisId);
-      setActiveJobId(analysisId);
     } catch {}
 
     try {
@@ -1967,72 +1972,102 @@ export default function DocumentAnalyzerTab() {
           ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
       }
 
-      let attempts = 0;
-      const maxAttempts = 3;
-      let delayMs = 1500;
+      // One analysis per click. If the live connection drops, the analysis keeps running on the
+      // server, so we follow its job record instead of re-sending the request - a re-send could
+      // start (and charge for) a second analysis. A failure the server reports is shown with a
+      // Retry button rather than retried automatically for the same reason.
+      const followServerJob = async () => {
+        setStreamingProgress(prev => ({ ...prev, message: "Reconnecting to your analysis on the server..." }));
+        const outcome = await pollAnalysisJob(analysisId, {
+          onProgress: applyJobProgress,
+          isCancelled: () => stopWaitingRef.current,
+          fetcher: apiFetch,
+        });
+        if (outcome.status === "completed") return outcome.report;
+        throw new ApiResponseError(outcome.error.message, outcome.error.statusCode, outcome.error.code, outcome.error.retryable);
+      };
+
       let report: any = null;
+      setAnalyzerState("AUTHENTICATING");
+      setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
+      try {
+        // A refusal before the analysis starts (e.g. 503 access service, 429) has no job and no
+        // charge, so it is retried up to 3 times. Retries reuse analysisId: if the first attempt
+        // did start, the server answers 409 ANALYSIS_IN_PROGRESS (or returns the finished report)
+        // instead of running it twice.
+        const postAnalysis = () => apiFetch("/api/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream, application/json",
+            "X-Analysis-Id": analysisId,
+          },
+          body: JSON.stringify({
+            ...payload,
+            mode: analysisMode,
+            model: claudeModel,
+            stream: true,
+            analysisId,
+          })
+        });
+        let response = await postAnalysis();
+        for (let attempt = 1; ; attempt++) {
+          const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
+          if (isStream || response.ok || response.status === 409) break;
+          const body: any = await response.json().catch(() => null);
+          const status = response.status;
+          const retryable = typeof body?.retryable === "boolean" ? body.retryable : status >= 500 || status === 408;
+          if (!retryable || status === 429 || attempt >= 3) {
+            const fallbackMessage =
+              status === 502 || status === 504
+                ? "The server took too long to respond. Your document is safe - please try again in a moment."
+                : status >= 500
+                  ? `The server is temporarily unavailable (${status}). Your document is safe - please try again in a moment.`
+                  : `Server error (${status})`;
+            throw new ApiResponseError(
+              body?.error || fallbackMessage,
+              status,
+              typeof body?.code === "string" ? body.code : null,
+              retryable,
+              status === 429 || body?.isRateLimit === true
+            );
+          }
+          await new Promise(r => setTimeout(r, 1500 * attempt));
+          response = await postAnalysis();
+        }
 
-      while (attempts < maxAttempts) {
-        attempts++;
-        try {
-          setAnalyzerState("AUTHENTICATING");
-          setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
-
-          const response = await apiFetch("/api/analyze", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "text/event-stream, application/json",
-              "X-Analysis-Id": analysisId,
-            },
-            body: JSON.stringify({
-              ...payload,
-              mode: analysisMode,
-              model: claudeModel,
-              stream: true,
-              analysisId,
-            })
-          });
-
+        if (response.status === 409) {
+          const body = await response.json().catch(() => ({}));
+          if (body?.code !== "ANALYSIS_IN_PROGRESS") {
+            throw new ApiResponseError(body?.error || "This analysis could not be started.", 409, body?.code || null, false);
+          }
+          report = await followServerJob();
+        } else {
           report = await readAnalysisEventStream(response, {
             onStage: (stage, percent, message) => {
               if (stage === "extracting") setAnalyzerState("EXTRACTING");
               else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
-              else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues") setAnalyzerState("ANALYZING");
+              else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues" || stage === "building_chronology") setAnalyzerState("ANALYZING");
               else if (stage === "verifying_findings") setAnalyzerState("VALIDATING");
               else if (stage === "preparing_report") setAnalyzerState("SAVING");
-              setStreamingProgress({ stage, percent, message });
+              setStreamingProgress(prev => ({ stage, percent: Math.max(prev.percent, percent), message }));
             },
-            onComplete: () => {
-              setAnalyzerState("COMPLETE");
+            onSection: (section) => {
+              setCompletedSections(prev => (prev.includes(section) ? prev : [...prev, section]));
             },
             onError: () => {
               setAnalyzerState("ERROR");
             }
           });
-          break;
-        } catch (attemptErr: any) {
-          // If streaming was interrupted, check if the durable server job completed before failing
-          try {
-            const recoveryRes = await apiFetch(`/api/analyze/job/${analysisId}`);
-            if (recoveryRes.ok) {
-              const recoveredJob = await recoveryRes.json();
-              if (recoveredJob.status === "completed" && recoveredJob.report) {
-                report = recoveredJob.report;
-                break;
-              }
-            }
-          } catch {}
-
-          const canRetry = attemptErr instanceof ApiResponseError
-            ? (attemptErr.retryable && attemptErr.code !== "AI_RESPONSE_INVALID")
-            : (attemptErr?.retryable === true && attemptErr?.code !== "AI_RESPONSE_INVALID");
-          if (!canRetry || attempts >= maxAttempts) {
-            throw attemptErr;
-          }
-          await new Promise(r => setTimeout(r, delayMs));
-          delayMs = Math.min(delayMs * 1.5, 5000);
         }
+      } catch (streamErr: any) {
+        // fetch() rejecting (TypeError) means the network failed; the request may or may not have
+        // reached the server, so ask the server rather than guessing.
+        const interrupted =
+          (streamErr instanceof ApiResponseError && streamErr.code === STREAM_INTERRUPTED) ||
+          streamErr instanceof TypeError;
+        if (!interrupted) throw streamErr;
+        report = await followServerJob();
       }
 
       setSelectedReport(report);
@@ -2054,7 +2089,12 @@ export default function DocumentAnalyzerTab() {
       );
 
     } catch (err: any) {
+      if (err?.code === "CANCELLED") {
+        // The parent chose to stop waiting. The job id stays saved so a reload can still recover it.
+        return;
+      }
       setAnalyzerState("ERROR");
+      setSingleAnalysisErrorCode(err?.code || null);
       try {
         localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
         setActiveJobId(null);
@@ -2068,6 +2108,7 @@ export default function DocumentAnalyzerTab() {
         f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: errMsg } : f
       ));
     } finally {
+      analysisInFlightRef.current = false;
       setIsSingleAnalyzing(false);
       fetchCreditBalance();
     }
@@ -2278,8 +2319,13 @@ export default function DocumentAnalyzerTab() {
           padding: 24px;
           margin-bottom: 24px;
           background-color: #fff;
-          page-break-inside: avoid;
+          /* A section taller than one page must be allowed to flow; "avoid" here pushed long
+             sections to the next page and left blank pages. Findings, rows and headings below
+             stay unbroken instead. */
+          page-break-inside: auto;
         }
+        .data-table tr { page-break-inside: avoid; }
+        .section-title { page-break-after: avoid; }
         .section-title {
           font-size: 15px;
           font-weight: 800;
@@ -2642,7 +2688,11 @@ export default function DocumentAnalyzerTab() {
                   </div>
                   <div class="threat-body">
                     <strong>Quote Detected in File:</strong><br/>
-                    <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div><br/><br/>
+                    <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div>
+                    ${rf.quoteVerified === true ? `<div style="font-size:11px; color:#047857; margin-top:4px;">Found word-for-word in the document.</div>` : ""}
+                    ${rf.quoteVerified === false ? `<div style="font-size:11px; color:#92400e; margin-top:4px;"><strong>Not found word-for-word in the document</strong> - treat as a paraphrase and check the original wording.</div>` : ""}
+                    ${rf.forensicVerification ? `<div style="font-size:11px; color:#334155; margin-top:4px;"><strong>Independent second review: ${escapeHtml(rf.forensicVerification.verdict)}</strong>${rf.forensicVerification.note ? ` - ${escapeHtml(rf.forensicVerification.note)}` : ""}</div>` : ""}
+                    <br/><br/>
                     <strong>Educational Advisory:</strong> ${escapeHtml(rf.explanation)}<br/><br/>
                     <strong>Verification Requirement:</strong> ${escapeHtml(rf.verifyRequirement)}
                     ${rf.parentActionStep ? `
@@ -2656,6 +2706,36 @@ export default function DocumentAnalyzerTab() {
               `;
               }).join("")}
             </div>
+          </div>
+        ` : ""}
+
+        ${selectedReport.forensicVerification ? `
+          <div class="section-card">
+            <h3 class="section-title">Independent second review</h3>
+            <p style="font-size:12px; color:#334155;">
+              ${selectedReport.forensicVerification.status === "completed"
+                ? `Completed: ${selectedReport.forensicVerification.checkedFindings ?? 0} findings checked against the document by a second model. ${escapeHtml(selectedReport.forensicVerification.overallAssessment || "")}`
+                : escapeHtml(selectedReport.forensicVerification.reason || "Not completed. The findings were not second-reviewed.")}
+            </p>
+          </div>
+        ` : ""}
+
+        ${selectedReport.chronology && selectedReport.chronology.length > 0 ? `
+          <div class="section-card">
+            <h3 class="section-title">Chronology (as stated in the document)</h3>
+            <table class="data-table">
+              <thead><tr><th style="width:18%">Date</th><th>Event</th><th style="width:14%">Evidence</th><th style="width:18%">Source</th></tr></thead>
+              <tbody>
+                ${selectedReport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(e.evidenceClassification || "")}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : ""}
+
+        ${selectedReport.contradictions && selectedReport.contradictions.length > 0 ? `
+          <div class="section-card">
+            <h3 class="section-title">Internal contradictions</h3>
+            ${selectedReport.contradictions.map(c => `<p style="font-size:12px; margin:0 0 8px;">${escapeHtml(c.description)}${c.locations && c.locations.length ? ` <span style="color:#64748b;">(${escapeHtml(c.locations.join("; "))})</span>` : ""}${c.significance ? `<br/><span style="color:#475569;">${escapeHtml(c.significance)}</span>` : ""}</p>`).join("")}
           </div>
         ` : ""}
 
@@ -3422,7 +3502,7 @@ export default function DocumentAnalyzerTab() {
 
                     {/* Automatic Pipeline Stage Indicator & Retry button */}
                     <div className="flex items-center gap-2 shrink-0">
-                      {(activeSelectedFile.analysisStatus === "analyzing" || isSingleAnalyzing) && (
+                      {(activeSelectedFile.analysisStatus === "analyzing" || isSingleAnalyzing || isRecoveringJob) && (
                         <span className="px-3 py-1.5 bg-brand-50 text-brand-800 border border-brand-200 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5">
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
                           <span>{streamingProgress.message || "Analyzing key issues & evidence strength..."}</span>
@@ -3436,7 +3516,7 @@ export default function DocumentAnalyzerTab() {
                         </span>
                       )}
 
-                      {activeSelectedFile.analysisStatus === "failed" && (
+                      {activeSelectedFile.analysisStatus === "failed" && !isSingleAnalyzing && !isRecoveringJob && (
                         <button
                           onClick={() => triggerSingleAnalysis(activeSelectedFile)}
                           className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
@@ -4086,6 +4166,70 @@ export default function DocumentAnalyzerTab() {
                           </div>
                         </div>
                       )}
+                      {selectedReport.forensicVerification && (
+                        <div
+                          className={`rounded-xl border p-3.5 text-xs font-sans space-y-1 ${
+                            selectedReport.forensicVerification.status === "completed"
+                              ? "bg-emerald-50/60 border-emerald-200 text-emerald-950"
+                              : "bg-amber-50 border-amber-200 text-amber-950"
+                          }`}
+                          id="forensic-verification-summary"
+                        >
+                          <div className="font-bold">
+                            {selectedReport.forensicVerification.status === "completed"
+                              ? `Independent second review completed (${selectedReport.forensicVerification.checkedFindings ?? 0} findings checked)`
+                              : "Independent second review not completed"}
+                          </div>
+                          <p>{selectedReport.forensicVerification.overallAssessment || selectedReport.forensicVerification.reason}</p>
+                        </div>
+                      )}
+
+                      {((selectedReport.chronology?.length ?? 0) > 0 || (selectedReport.contradictions?.length ?? 0) > 0) && (
+                        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 text-xs font-sans" id="report-chronology">
+                          {(selectedReport.chronology?.length ?? 0) > 0 && (
+                            <div className="space-y-2">
+                              <h4 className="font-display font-bold text-slate-900 text-sm">Chronology (as stated in the document)</h4>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                  <thead>
+                                    <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                                      <th className="py-1.5 pr-3 font-bold">Date</th>
+                                      <th className="py-1.5 pr-3 font-bold">Event</th>
+                                      <th className="py-1.5 pr-3 font-bold">Evidence</th>
+                                      <th className="py-1.5 font-bold">Source</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {selectedReport.chronology!.map((entry, i) => (
+                                      <tr key={i} className="border-b border-slate-100 align-top">
+                                        <td className="py-1.5 pr-3 whitespace-nowrap font-semibold text-slate-800">{entry.date}</td>
+                                        <td className="py-1.5 pr-3 text-slate-700">{entry.event}</td>
+                                        <td className="py-1.5 pr-3 text-[10px] font-bold text-slate-600">{entry.evidenceClassification}</td>
+                                        <td className="py-1.5 text-slate-500">{entry.locationInDocument}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                          {(selectedReport.contradictions?.length ?? 0) > 0 && (
+                            <div className="space-y-2">
+                              <h4 className="font-display font-bold text-slate-900 text-sm">Internal contradictions</h4>
+                              <ul className="space-y-2">
+                                {selectedReport.contradictions!.map((c, i) => (
+                                  <li key={i} className="bg-amber-50/60 border border-amber-200 rounded-lg p-2.5 space-y-1">
+                                    <p className="text-slate-800">{c.description}</p>
+                                    {c.locations && c.locations.length > 0 && <p className="text-[10.5px] text-slate-500">Where: {c.locations.join("; ")}</p>}
+                                    {c.significance && <p className="text-[10.5px] text-slate-600">{c.significance}</p>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Red Flags & Hearsay */}
                       <FoldableSection 
                         title={
@@ -4119,11 +4263,34 @@ export default function DocumentAnalyzerTab() {
                                       Evidence: {flag.evidenceClassification}
                                     </span>
                                   )}
-                                  {factCheckEnabled && (
-                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
-                                      flag.legalReference && flag.legalReference !== "N/A" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
-                                    }`}>
-                                      {flag.legalReference && flag.legalReference !== "N/A" ? "VERIFIED" : "UNVERIFIED"}
+                                  {factCheckEnabled && (() => {
+                                    // "Confirmed" means the section is in CYFSA Navigator's confirmed statute
+                                    // reference list - not that an external legal database was checked.
+                                    const confirmed = flag.citationStatus === "CONFIRMED_REFERENCE";
+                                    const unverified = flag.citationStatus === "UNVERIFIED" || /unverified/i.test(flag.legalReference || "");
+                                    return (
+                                      <span
+                                        className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
+                                          confirmed ? "bg-emerald-100 text-emerald-800" : unverified ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700"
+                                        }`}
+                                        title={confirmed ? "Section is in the confirmed statute reference list" : "Confirm this citation with counsel"}
+                                      >
+                                        {confirmed ? "Citation in confirmed reference" : unverified ? "Citation unverified" : "No citation"}
+                                      </span>
+                                    );
+                                  })()}
+                                  {flag.forensicVerification && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase border ${
+                                        flag.forensicVerification.verdict === "SUPPORTED"
+                                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                          : flag.forensicVerification.verdict === "NEEDS_CONTEXT"
+                                            ? "bg-slate-50 text-slate-700 border-slate-200"
+                                            : "bg-amber-50 text-amber-800 border-amber-200"
+                                      }`}
+                                      title={flag.forensicVerification.note || ""}
+                                    >
+                                      Second review: {flag.forensicVerification.verdict.replace("_", " ")}
                                     </span>
                                   )}
                                 </div>
@@ -4155,6 +4322,25 @@ export default function DocumentAnalyzerTab() {
                                   <p className="italic text-slate-800 leading-relaxed font-sans bg-white p-3 border-l-4 border-amber-400 rounded-r-lg border-y border-r border-slate-200 text-xs shadow-2xs">
                                     "{flag.phraseDetected}"
                                   </p>
+                                  {flag.quoteVerified === true && (
+                                    <p className="text-[10.5px] font-sans text-emerald-700 flex items-center gap-1">
+                                      <Check className="w-3 h-3 shrink-0" /> Found word-for-word in your document.
+                                    </p>
+                                  )}
+                                  {flag.quoteVerified === false && (
+                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                                      ⚠️ Not found word-for-word in your document. Treat this as a paraphrase and check the original wording before relying on it.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
+                              {flag.forensicVerification?.note && (
+                                <div className="text-[11px] font-sans text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                  <strong>Independent second review:</strong> {flag.forensicVerification.note}
+                                  {flag.originalSeverity && flag.originalSeverity !== flag.severity && (
+                                    <span className="block mt-1 text-slate-500">Severity adjusted from "{flag.originalSeverity}" after review.</span>
+                                  )}
                                 </div>
                               )}
 
@@ -4403,7 +4589,7 @@ export default function DocumentAnalyzerTab() {
                     </div>
                   ) : (
                     <div className="bg-slate-50 border border-dashed border-gray-200 py-10 px-6 rounded-2xl text-center space-y-5">
-                      {isSingleAnalyzing || (activeSelectedFile.analysisStatus === "analyzing") ? (
+                      {isSingleAnalyzing || isRecoveringJob || (activeSelectedFile.analysisStatus === "analyzing") ? (
                         <div className="space-y-4 max-w-md mx-auto">
                           <div className="relative inline-block">
                             <div className="w-14 h-14 rounded-full border-4 border-brand-100 border-t-brand-600 animate-spin" />
@@ -4421,26 +4607,38 @@ export default function DocumentAnalyzerTab() {
                               />
                             </div>
                           </div>
+                          {completedSections.length > 0 && (
+                            <ul className="text-left text-[11px] font-sans text-slate-600 space-y-1 bg-white border border-slate-200 rounded-lg p-2.5" aria-label="Completed report sections">
+                              {completedSections.map(section => (
+                                <li key={section} className="flex items-center gap-1.5">
+                                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>{REPORT_SECTION_LABELS[section] || section} checked and validated</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                           <p className="text-[11px] text-slate-500 font-sans">
-                            🛡️ Zero credits deducted until analysis is verified and delivered to your screen.
+                            🛡️ A credit is only used when the analysis completes. If your connection drops, the finished report can still be recovered on this page.
                           </p>
                           <div className="pt-1 flex items-center justify-center">
                             <button
                               type="button"
                               onClick={() => {
+                                // Only stops this page waiting; the server may still finish. The job id
+                                // stays saved, so reopening the page recovers the result.
+                                stopWaitingRef.current = true;
                                 setIsSingleAnalyzing(false);
                                 setIsBulkAnalyzing(false);
                                 setAnalyzerState("ERROR");
-                                setSingleAnalysisError("Analysis cancelled by user. Zero credits were consumed.");
+                                setSingleAnalysisErrorCode("STOPPED_WAITING");
+                                setSingleAnalysisError("You stopped waiting. The analysis may still finish on the server - reopen this page in a few minutes to see the result before starting it again.");
                                 setOrganizedFiles(prev => prev.map(f =>
-                                  f.id === activeSelectedFile.id ? { ...f, analysisStatus: "failed", analysisError: "Analysis cancelled. Please retry." } : f
+                                  f.id === activeSelectedFile.id ? { ...f, analysisStatus: "failed", analysisError: "Stopped waiting. Reopen this page later to recover the result." } : f
                                 ));
-                                try { localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID"); } catch {}
-                                setActiveJobId(null);
                               }}
                               className="text-[11px] text-slate-500 hover:text-red-600 underline font-sans cursor-pointer transition-colors"
                             >
-                              Cancel & Retry
+                              Stop waiting
                             </button>
                           </div>
                         </div>
@@ -4455,10 +4653,12 @@ export default function DocumentAnalyzerTab() {
                               {activeSelectedFile.analysisError || singleAnalysisError || "The AI analysis engine is temporarily busy or unreachable. Your document is safe."}
                             </p>
                           </div>
-                          <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg p-2.5 text-xs font-medium flex items-center justify-center gap-1.5">
-                            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Zero credits consumed. Your balance has been preserved intact.</span>
-                          </div>
+                          {singleAnalysisErrorCode !== "STOPPED_WAITING" && !UNCONFIRMED_OUTCOME_CODES.has(singleAnalysisErrorCode || "") && (
+                            <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg p-2.5 text-xs font-medium flex items-center justify-center gap-1.5">
+                              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>This attempt did not use a credit.</span>
+                            </div>
+                          )}
                           {rateLimitCountdown !== null && rateLimitCountdown > 0 ? (
                             <div className="text-xs text-amber-700 font-mono font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
                               ⏳ Rate limit in effect. Retrying in {rateLimitCountdown}s...

@@ -91,6 +91,12 @@ export interface ResearchSummary {
 }
 
 // Analysis response types representing the Claude outputs
+export interface ForensicFindingVerification {
+  verdict: "SUPPORTED" | "OVERSTATED" | "UNSUPPORTED" | "MISQUOTED" | "NEEDS_CONTEXT";
+  note?: string;
+  verifiedBy?: string;
+}
+
 export interface AnalysisReport {
   analysisDate: string;
   documentTitle: string;
@@ -125,12 +131,22 @@ export interface AnalysisReport {
     locationInDocument?: string; // Exact page or section location where violation is found
     parentActionStep?: string; // Step-by-step visual instruction for parents to debunk this violation
     evidenceClassification?: AuthoritativeEvidenceClassification;
+    /** Server check of phraseDetected against the source text; false = not found verbatim. */
+    quoteVerified?: boolean;
+    quoteVerification?: string;
+    /** "UNVERIFIED" when the citation is outside the confirmed statute reference. */
+    citationStatus?: "CONFIRMED_REFERENCE" | "UNVERIFIED" | "NONE";
+    forensicVerification?: ForensicFindingVerification;
+    /** Severity before the independent verification pass calibrated it down. */
+    originalSeverity?: string;
   }[];
   thresholdAnalysis: {
     thresholdChecked: string;
-    isMet: "Yes" | "No" | "Inconclusive";
+    isMet: "Yes" | "No" | "Inconclusive" | "Not Determinable From This Document";
     reasoning: string;
     primarySourceLaw: string;
+    citationStatus?: "CONFIRMED_REFERENCE" | "UNVERIFIED" | "NONE";
+    forensicVerification?: ForensicFindingVerification;
   }[];
   proceduralTimelineViolations: {
     timelineRule: string;
@@ -145,6 +161,20 @@ export interface AnalysisReport {
   whatToAskALawyer: string[];
   whatIsMissing: string[];
   lawyerCaseBrief?: string[]; // Bullet form detailed lawyer case brief points
+  /** Dated events as the document states them, each with its source location. */
+  chronology?: { date: string; event: string; locationInDocument?: string; evidenceClassification?: string }[];
+  /** Internal inconsistencies within the document. */
+  contradictions?: { description: string; locations?: string[]; significance?: string }[];
+  /** Forensic In-Depth only: the independent second-model review of high-impact findings. */
+  forensicVerification?: {
+    status: "completed" | "incomplete";
+    model?: string;
+    checkedFindings?: number;
+    totalFindings?: number;
+    overallAssessment?: string;
+    reason?: string;
+  };
+  citationVerification?: { method: string };
   customAnalysisNotes?: string;
   timing?: {
     mode: "fast" | "full";

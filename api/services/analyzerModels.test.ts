@@ -3,6 +3,7 @@ import {
   ANALYZER_MODELS,
   CLAUDE_MODELS,
   TOKEN_BUDGETS,
+  buildThinkingRequestFields,
   MODEL_TIMEOUTS,
   calculateEstimatedCost,
   resolveServerAuthoritativeModel,
@@ -110,12 +111,12 @@ describe("analyzerModels service", () => {
         output_tokens: 2_000,
       });
 
-      // 10k input * $3/MTok = $0.030
-      // 2k output * $15/MTok = $0.030
-      // Total USD = $0.060
-      expect(estimate.inputCostUsd).toBeCloseTo(0.03, 3);
-      expect(estimate.outputCostUsd).toBeCloseTo(0.03, 3);
-      expect(estimate.totalCostUsd).toBeCloseTo(0.06, 3);
+      // 10k input * $2/MTok = $0.020
+      // 2k output * $10/MTok = $0.020
+      // Total USD = $0.040
+      expect(estimate.inputCostUsd).toBeCloseTo(0.02, 3);
+      expect(estimate.outputCostUsd).toBeCloseTo(0.02, 3);
+      expect(estimate.totalCostUsd).toBeCloseTo(0.04, 3);
       expect(estimate.totalCostCad).toBeGreaterThan(estimate.totalCostUsd);
     });
 
@@ -125,13 +126,13 @@ describe("analyzerModels service", () => {
         output_tokens: 4_000,
       });
 
-      // 20k input * $15/MTok = $0.30
-      // 4k output * $75/MTok = $0.30
-      // Total USD = $0.60
-      expect(estimate.inputCostUsd).toBeCloseTo(0.3, 3);
-      expect(estimate.outputCostUsd).toBeCloseTo(0.3, 3);
-      expect(estimate.totalCostUsd).toBeCloseTo(0.6, 3);
-      expect(estimate.totalCostCad).toBeCloseTo(0.6 * 1.38, 2);
+      // 20k input * $5/MTok = $0.10
+      // 4k output * $25/MTok = $0.10
+      // Total USD = $0.20
+      expect(estimate.inputCostUsd).toBeCloseTo(0.1, 3);
+      expect(estimate.outputCostUsd).toBeCloseTo(0.1, 3);
+      expect(estimate.totalCostUsd).toBeCloseTo(0.2, 3);
+      expect(estimate.totalCostCad).toBeCloseTo(0.2 * 1.38, 2);
     });
 
     it("handles zero or missing usage safely", () => {
@@ -140,6 +141,28 @@ describe("analyzerModels service", () => {
       expect(estimate.outputCostUsd).toBe(0);
       expect(estimate.totalCostUsd).toBe(0);
       expect(estimate.totalCostCad).toBe(0);
+    });
+  });
+
+  describe("Request shaping for thinking and effort", () => {
+    it("sends disabled thinking to models that accept it", () => {
+      expect(buildThinkingRequestFields("claude-sonnet-5", false)).toEqual({ thinking: { type: "disabled" } });
+      expect(buildThinkingRequestFields("claude-opus-5", false)).toEqual({ thinking: { type: "disabled" } });
+    });
+
+    it("never sends disabled thinking to the 5.5 family (it is a 400 there)", () => {
+      for (const model of ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]) {
+        const fields = buildThinkingRequestFields(model, false);
+        expect(fields.thinking).toBeUndefined();
+        expect(fields.output_config).toEqual({ effort: "low" });
+      }
+    });
+
+    it("uses budgeted thinking only on models that still accept budget_tokens", () => {
+      expect(buildThinkingRequestFields("claude-sonnet-5", true, 4096)).toEqual({
+        thinking: { type: "enabled", budget_tokens: 4096 },
+      });
+      expect(buildThinkingRequestFields("claude-opus-5-5", true, 4096)).toEqual({});
     });
   });
 });

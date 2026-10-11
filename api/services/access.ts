@@ -110,6 +110,21 @@ export function isAuthorizedSiteOwner(email: string | null | undefined, adminSec
   return recognizedOwnerEmails.has(normalized);
 }
 
+/**
+ * Owner check for a verified Firebase identity. The email allowlist is only trusted when the
+ * provider asserts the email is verified: Firebase email/password accounts can be registered for
+ * any address without proving ownership, so an unverified "owner" email must never unlock
+ * unlimited paid analysis. Google sign-in (the only sign-in the app offers) is always verified.
+ */
+export function isVerifiedSiteOwner(
+  identity: { email: string | null; emailVerified?: boolean } | null | undefined,
+  adminSecretHeader?: string | null
+): boolean {
+  if (isAuthorizedSiteOwner(null, adminSecretHeader)) return true;
+  if (!identity || identity.emailVerified !== true) return false;
+  return isAuthorizedSiteOwner(identity.email, null);
+}
+
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L — easy to type off a phone
 const CODE_TTL_DAYS = 14; // an issued-but-unredeemed code expires after this long
 

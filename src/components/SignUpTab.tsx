@@ -10,6 +10,7 @@ import { useLocation } from "wouter";
 import { jsPDF } from "jspdf";
 import { safeReadJson } from "../utils/api";
 import { getUserKey } from "../utils/storage";
+import { signOutOfAccount } from "../utils/firebase";
 
 interface UserProfile {
   fullName: string;
@@ -431,6 +432,9 @@ export default function SignUpTab() {
       } catch (e) {
         console.warn(e);
       }
+      // Also end the Google session - clearing the local profile alone left the Firebase account
+      // signed in, so a different account (e.g. the site owner's) could never sign in.
+      signOutOfAccount().catch((e) => console.warn("Sign out failed", e));
     }
   };
 

@@ -46,6 +46,41 @@ export function resolveAnthropicWireModel(model: string): string {
   return model || DEFAULT_QUICK_MODEL;
 }
 
+/**
+ * Models that reject `thinking: {type: "disabled"}` with a 400 (thinking is always on for them).
+ * Sending the disabled form to these models fails every request, so for them the caller must omit
+ * the `thinking` field and use `output_config.effort` to control spend instead.
+ */
+export const MODELS_REJECTING_DISABLED_THINKING = new Set<string>([
+  "claude-fable-5",
+  "claude-fable-5-1",
+  "claude-opus-5-5",
+  "claude-sonnet-5-5",
+  "claude-haiku-5-5",
+]);
+
+/**
+ * Builds the model-aware `thinking` / `output_config` request fields. Analyzer output is structured
+ * JSON, so thinking is off where the model allows it and effort is set to "low" on the always-on
+ * models to keep output tokens (and cost) close to the disabled-thinking baseline.
+ */
+export function buildThinkingRequestFields(
+  model: string,
+  enableThinking: boolean,
+  thinkingBudget?: number
+): { thinking?: Record<string, unknown>; output_config?: { effort: "low" } } {
+  if (enableThinking) {
+    if (MODELS_REJECTING_DISABLED_THINKING.has(model)) {
+      return {};
+    }
+    return { thinking: { type: "enabled", budget_tokens: thinkingBudget || 2048 } };
+  }
+  if (MODELS_REJECTING_DISABLED_THINKING.has(model)) {
+    return { output_config: { effort: "low" } };
+  }
+  return { thinking: { type: "disabled" } };
+}
+
 export const TOKEN_BUDGETS = {
   QUICK: 16000,
   FORENSIC_PASS_1: 12000,
@@ -58,31 +93,31 @@ export const MODEL_TIMEOUTS = {
 } as const;
 
 // Pricing per million tokens (Anthropic API standard rates)
-// Sonnet: $3.00 / MTok prompt, $15.00 / MTok completion
-// Opus: $15.00 / MTok prompt, $75.00 / MTok completion
+// Rates from the Claude API model table (cached 2026-10-06):
+//   Sonnet 5 / 5.5: $2 / $10 per MTok    Opus 5: $5 / $25    Opus 5.5: $4 / $20    Haiku 5.5: $0.10 / $0.50
 // CAD conversion constant: ~1.38 CAD per USD
 export const USD_TO_CAD_RATE = 1.38;
 
 export const MODEL_PRICING: Record<string, { inputCostPerMillionUsd: number; outputCostPerMillionUsd: number }> = {
   "claude-sonnet-5": {
-    inputCostPerMillionUsd: 3.0,
-    outputCostPerMillionUsd: 15.0,
+    inputCostPerMillionUsd: 2.0,
+    outputCostPerMillionUsd: 10.0,
   },
   "claude-sonnet-5-5": {
-    inputCostPerMillionUsd: 3.0,
-    outputCostPerMillionUsd: 15.0,
+    inputCostPerMillionUsd: 2.0,
+    outputCostPerMillionUsd: 10.0,
   },
   "claude-opus-5": {
-    inputCostPerMillionUsd: 15.0,
-    outputCostPerMillionUsd: 75.0,
+    inputCostPerMillionUsd: 5.0,
+    outputCostPerMillionUsd: 25.0,
   },
   "claude-opus-5-5": {
-    inputCostPerMillionUsd: 15.0,
-    outputCostPerMillionUsd: 75.0,
+    inputCostPerMillionUsd: 4.0,
+    outputCostPerMillionUsd: 20.0,
   },
   "claude-haiku-5-5": {
-    inputCostPerMillionUsd: 0.8,
-    outputCostPerMillionUsd: 4.0,
+    inputCostPerMillionUsd: 0.1,
+    outputCostPerMillionUsd: 0.5,
   },
   "claude-3-5-sonnet-20241022": {
     inputCostPerMillionUsd: 3.0,

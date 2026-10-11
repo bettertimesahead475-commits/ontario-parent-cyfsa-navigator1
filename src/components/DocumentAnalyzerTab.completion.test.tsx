@@ -126,4 +126,59 @@ describe("Document Analyzer completion", () => {
     expect(await screen.findAllByText(/couldn't verify your analysis access/, {}, { timeout: 12000 })).not.toHaveLength(0);
     expect(analyzeCalls()).toHaveLength(3);
   }, 15000);
+
+  it("follows the server job when the live stream drops, without sending the analysis again", async () => {
+    const enc = new TextEncoder();
+    const droppedStream = {
+      ok: true,
+      status: 200,
+      headers: { get: (n: string) => (n.toLowerCase() === "content-type" ? "text/event-stream" : null) },
+      body: new ReadableStream({
+        start(c) {
+          c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "stage", stage: "reviewing_evidence", percent: 45, message: "Reviewing" })}\n\n`));
+          c.close(); // connection lost before the "complete" event
+        },
+      }),
+    };
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === "/api/analyze") return droppedStream;
+      if (url.startsWith("/api/analyze/job/")) return jsonResponse(200, { status: "completed", report: REPORT });
+      return jsonResponse(200, { events: [], conflicts: [], openItems: [] });
+    });
+    const { container } = render(<DocumentAnalyzerTab />);
+    await uploadTextFile(container);
+
+    expect(await screen.findAllByText(/Affidavit of Society Worker/, {}, { timeout: 8000 })).not.toHaveLength(0);
+    expect(analyzeCalls()).toHaveLength(1); // recovered, not re-run
+  }, 12000);
+
+  it("polls instead of starting a second run when the server says the analysis is already running", async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === "/api/analyze") return jsonResponse(409, { code: "ANALYSIS_IN_PROGRESS", error: "still running" });
+      if (url.startsWith("/api/analyze/job/")) return jsonResponse(200, { status: "completed", report: REPORT });
+      return jsonResponse(200, { events: [], conflicts: [], openItems: [] });
+    });
+    const { container } = render(<DocumentAnalyzerTab />);
+    await uploadTextFile(container);
+    expect(await screen.findAllByText(/Affidavit of Society Worker/, {}, { timeout: 8000 })).not.toHaveLength(0);
+    expect(analyzeCalls()).toHaveLength(1);
+  }, 12000);
+
+  it("after a reload, recovers a failed job's real reason without starting a new analysis", async () => {
+    localStorage.setItem("OPA_ACTIVE_ANALYZER_JOB_ID", "req_1791000000000_abcdef");
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url.startsWith("/api/analyze/job/")
+        ? jsonResponse(200, {
+            status: "failed",
+            error: { code: "AI_PROVIDER_TEMPORARILY_UNAVAILABLE", message: "The AI analysis engine is temporarily busy.", statusCode: 503, retryable: true },
+          })
+        : jsonResponse(200, {})
+    );
+    render(<DocumentAnalyzerTab />);
+    await waitFor(() =>
+      expect(mockApiFetch.mock.calls.some(([url]) => String(url).startsWith("/api/analyze/job/req_1791000000000_abcdef"))).toBe(true)
+    );
+    await waitFor(() => expect(localStorage.getItem("OPA_ACTIVE_ANALYZER_JOB_ID")).toBeNull(), { timeout: 5000 });
+    expect(analyzeCalls()).toHaveLength(0);
+  }, 12000);
 });
