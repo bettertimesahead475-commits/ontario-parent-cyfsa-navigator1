@@ -84,10 +84,6 @@ export function isAuthorizedSiteOwner(email: string | null | undefined, adminSec
   if (process.env.ADMIN_SECRET && adminSecretHeader && adminSecretHeader === process.env.ADMIN_SECRET) {
     return true;
   }
-  // Gated strictly to Vercel Preview environments for automated end-to-end verification
-  if (process.env.VERCEL_ENV === "preview" && adminSecretHeader && adminSecretHeader === "cyfsa-preview-verify-2026") {
-    return true;
-  }
   if (!email || typeof email !== "string") {
     return false;
   }

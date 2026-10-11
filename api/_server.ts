@@ -2714,10 +2714,7 @@ ${analysisRules}`;
     const sessionToken = req.header("x-ps-session");
     const parsedSession = sessionToken ? verifySessionToken(sessionToken) : null;
     const adminSecret = req.header("x-admin-secret");
-    const isAdmin = Boolean(
-      (adminSecret && process.env.ADMIN_SECRET && adminSecret === process.env.ADMIN_SECRET) ||
-      (adminSecret && process.env.VERCEL_ENV === "preview" && adminSecret === "cyfsa-preview-verify-2026")
-    );
+    const isAdmin = Boolean(adminSecret && process.env.ADMIN_SECRET && adminSecret === process.env.ADMIN_SECRET);
 
     if (!identity && !parsedSession && !isAdmin) {
       return res.status(401).json({ error: "Please sign in to access analysis jobs.", code: "SIGN_IN_REQUIRED" });
