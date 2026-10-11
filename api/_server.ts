@@ -3087,7 +3087,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         system: systemInstruction,
         messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
         max_tokens: 16000
-      }, resolveServerAuthoritativeModel("full"));
+      }, ANALYZER_MODELS.FORENSIC);
 
       const responseText = response.text;
       if (!responseText) {
