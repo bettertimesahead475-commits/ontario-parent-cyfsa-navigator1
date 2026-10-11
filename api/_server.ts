@@ -3138,6 +3138,39 @@ OUTPUT — return strictly this JSON schema, nothing else:
         throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
           "The deep scan did not return a complete structured report. Please retry.", true);
       }
+      // Enforce the complete deep-scan contract before charging or returning any result.
+      // Do not coerce, fill, or fabricate missing evidence fields.
+      const requiredLists = [
+        "gaps", "missingEvidence", "retorts", "thresholdAnalysis",
+        "proceduralTimelineViolations", "charterAndHumanRightsIssues",
+        "whatToVerify", "whatToAskALawyer", "whatIsMissing", "lawyerCaseBrief"
+      ] as const;
+      const validList = (value: unknown): value is string[] =>
+        Array.isArray(value) && value.every(item => typeof item === "string");
+      const validObjectList = (value: unknown, fields: readonly string[]): boolean =>
+        Array.isArray(value) && value.every(item =>
+          item !== null && typeof item === "object" && !Array.isArray(item) &&
+          fields.every(field => typeof item[field] === "string")
+        );
+      const validForensicReport =
+        requiredLists.every(key => Array.isArray(report[key])) &&
+        ["gaps", "missingEvidence", "charterAndHumanRightsIssues",
+         "whatToVerify", "whatToAskALawyer", "whatIsMissing", "lawyerCaseBrief"]
+          .every(key => validList(report[key])) &&
+        validObjectList(report.retorts, ["claim", "objection", "action"]) &&
+        validObjectList(report.thresholdAnalysis,
+          ["thresholdChecked", "isMet", "reasoning", "primarySourceLaw"]) &&
+        validObjectList(report.proceduralTimelineViolations,
+          ["timelineRule", "documentAssertion", "evaluation", "citation",
+           "locationInDocument", "parentActionStep"]) &&
+        typeof report.disclaimer === "string" && report.disclaimer.includes("informational/educational purposes only");
+      if (!validForensicReport) {
+        console.warn("[deep scan] Schema validation rejected incomplete report", {
+          requestId: analysisRequestId, model: response.model, stopReason: response.stopReason
+        });
+        throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
+          "The deep scan returned an incomplete report. Your analysis was not completed; please retry.", true);
+      }
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
       if (sessionInfo) try {
