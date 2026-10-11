@@ -81,3 +81,53 @@ code, pre, kbd, samp, .font-code, .code-font {
     page-break-inside: avoid;
   }
 }
+
+/* Analyzer presentation only: keep all access, processing and report data unchanged. */
+#document-analyzer-tab {
+  font-family: "Plus Jakarta Sans", "Inter", "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  letter-spacing: 0;
+}
+#document-analyzer-tab .font-mono,
+#document-analyzer-tab pre,
+#document-analyzer-tab code {
+  font-family: inherit !important;
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#document-analyzer-tab h1,
+#document-analyzer-tab h2,
+#document-analyzer-tab h3,
+#document-analyzer-tab h4 {
+  font-family: inherit;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+}
+#document-analyzer-tab p,
+#document-analyzer-tab li,
+#document-analyzer-tab td,
+#document-analyzer-tab button,
+#document-analyzer-tab input,
+#document-analyzer-tab textarea,
+#document-analyzer-tab select {
+  font-family: inherit;
+  line-height: 1.55;
+}
+#document-analyzer-tab .text-\\[8px\\],
+#document-analyzer-tab .text-\\[9px\\],
+#document-analyzer-tab .text-\\[10px\\],
+#document-analyzer-tab .text-\\[11px\\] {
+  font-size: 12px;
+}
+#document-analyzer-tab .tracking-widest,
+#document-analyzer-tab .tracking-wider {
+  letter-spacing: 0.015em;
+}
+@media (min-width: 1024px) {
+  #document-analyzer-tab {
+    width: 100%;
+    max-width: none;
+  }
+}
