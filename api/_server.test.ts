@@ -966,7 +966,8 @@ describe("POST /api/deep-scan", () => {
     gaps: [],
     missingEvidence: [],
     retorts: [],
-    disclaimer: "disclaimer",
+    thresholdAnalysis: [], proceduralTimelineViolations: [], charterAndHumanRightsIssues: [], whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [],
+    disclaimer: "This document is generated for informational/educational purposes only. disclaimer",
   };
 
   it("rejects unauthenticated deep-scan requests before validating the body", async () => {
@@ -988,7 +989,7 @@ describe("POST /api/deep-scan", () => {
       .send({ documentText: "Some CAS worker observation notes.", documentName: "notes.txt", category: "Worker Notes" });
 
     expect(res.status).toBe(200);
-    expect(res.body.disclaimer).toBe("disclaimer");
+    expect(res.body.disclaimer).toContain("informational/educational purposes only");
     const callArgs = mockCreateMessage.mock.calls[0][0];
     expect(callArgs.max_tokens).toBe(16000);
   });
@@ -1070,7 +1071,7 @@ describe("Database-backed paid-session authorization (M-2 / Finding 3)", () => {
   });
 
   it("allows a fully valid, DB-active, uid-bound session through", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ gaps: [], missingEvidence: [], retorts: [], disclaimer: "d" }));
+    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ gaps: [], missingEvidence: [], retorts: [], thresholdAnalysis: [], proceduralTimelineViolations: [], charterAndHumanRightsIssues: [], whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [], disclaimer: "This document is generated for informational/educational purposes only." }));
     const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some text." });
     expect(res.status).toBe(200);
   });
@@ -1348,7 +1349,7 @@ describe("Tier Entitlement Boundaries & Anti-Bypass Security", () => {
     expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
   });
 
-  const MINIMAL_DEEP_SCAN_FIXTURE = { gaps: [], missingEvidence: [], retorts: [], disclaimer: "d" };
+  const MINIMAL_DEEP_SCAN_FIXTURE = { gaps: [], missingEvidence: [], retorts: [], thresholdAnalysis: [], proceduralTimelineViolations: [], charterAndHumanRightsIssues: [], whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [], disclaimer: "This document is generated for informational/educational purposes only." };
 
   it("3. Free user is allowed Quick Document Review (mode: fast)", async () => {
     mockUsage.getFreeUsage.mockResolvedValueOnce(0);
