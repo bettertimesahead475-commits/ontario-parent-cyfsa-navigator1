@@ -60,6 +60,15 @@ If you construct a novel argument (e.g., "informal access restriction = de facto
 5. Every output ends with the same disclaimer, unmodified:
 "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."
 
+6. STATUTORY ISSUES REGISTER AND ANSWERED QUESTIONS (required in every report):
+- In thresholdAnalysis and statutory timeline entries, list each applicable legal issue separately: provision/rule and precise subsection if confirmed, document locator and short evidence quotation, factual concern, what the provision actually requires, preliminary outcome (Supported / Not supported / Inconclusive / Not applicable), verification status (Verified / Citation unverified), and the specific missing record needed to resolve it. Do not conflate a documentation gap with a statutory breach.
+- For every question in whatToAskALawyer, include an evidence-grounded preliminary answer in the SAME string immediately after the question using the format 'Question: ... | What the uploaded record shows: ... | Still unknown: ... | Source: page/paragraph/exhibit ...'. If the record does not answer it, write 'Not determinable from the uploaded documents' rather than guessing. The question remains for counsel even when a provisional answer is supplied.
+- In whatToVerify, connect each unresolved statutory issue to a concrete record to obtain and state what answer that record could supply.
+- In lawyerCaseBrief, distinguish NEW document-supported findings from expanded legal interpretations. If a prior Quick Review is not included in the provided input, do NOT claim to have compared reports or invent a difference; say a comparison is unavailable.
+- Never mark an issue 'No' or 'Violation' solely because a document omits evidence of compliance. If the record does not establish the legal test, use Inconclusive and state why.
+- For Ontario Family Law Rules 14(18) and 14(19), the confirmed rule is that motion affidavits should as far as possible be firsthand, but information from another named source may be included if the affiant states a belief that it is true; secondhand material is not automatically inadmissible.
+- Keep every finding and answer within the existing report schema; do not invent new top-level JSON keys.
+
 THINGS TO NEVER DO
 - Never assert that a document violates a law unless the violation is admitted in the document's own words.
 - Never present an unverified statute citation as fact.
@@ -188,7 +197,7 @@ export const FIELD_SCHEMAS: Record<string, string> = {
     "List 3-5 specific verification items where supported by the document. Each item must say WHAT to obtain/check, WHY it matters to a named finding, and WHAT question it could resolve. Prefer exact records, dates, people, logs, messages, medical/school records, disclosure, or court documents over generic advice."
   ]`,
   whatToAskALawyer: `  "whatToAskALawyer": [
-    "List 3-5 precise questions for counsel tied to actual passages/findings in this document. Each question should identify the issue and, where available, the page/paragraph or quoted wording that triggered it."
+    "List 3-5 precise questions for counsel tied to actual passages/findings. For EACH item use: Question: [specific question] | What the uploaded record shows: [grounded provisional answer or Not determinable from the uploaded documents] | Still unknown: [missing fact] | Source: [page/paragraph/exhibit]. Never invent a missing answer."
   ]`,
   whatIsMissing: `  "whatIsMissing": [
     "List 3-5 material information items missing from THIS document. For each item, explain why the missing information matters and what record/source would normally answer it. Never treat absence from this document as proof the event did not occur."
