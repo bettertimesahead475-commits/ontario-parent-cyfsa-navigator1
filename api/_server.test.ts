@@ -857,8 +857,8 @@ describe("POST /api/case-timeline", () => {
       });
     expect(res.status).toBe(200);
     const callArgs = mockCreateMessage.mock.calls[0][0];
-    expect(callArgs.max_tokens).toBe(12000);
-    expect(mockCreateMessage).toHaveBeenCalledTimes(3);
+    expect(callArgs.max_tokens).toBe(16000);
+    expect(mockCreateMessage).toHaveBeenCalledTimes(1);
   });
 });
 
