@@ -857,7 +857,8 @@ describe("POST /api/case-timeline", () => {
       });
     expect(res.status).toBe(200);
     const callArgs = mockCreateMessage.mock.calls[0][0];
-    expect(callArgs.max_tokens).toBe(16000);
+    expect(callArgs.max_tokens).toBe(12000);
+    expect(mockCreateMessage).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -981,8 +982,8 @@ describe("POST /api/deep-scan", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns the structured deep-scan report on success, requesting 16000 max_tokens", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
+  it("returns the structured deep-scan report from three bounded sections", async () => {
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse(MINIMAL_DEEP_SCAN));
     const res = await request(app)
       .post("/api/deep-scan")
       .set(paid())
