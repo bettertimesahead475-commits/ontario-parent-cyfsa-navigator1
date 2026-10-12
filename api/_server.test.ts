@@ -858,6 +858,7 @@ describe("POST /api/case-timeline", () => {
     expect(res.status).toBe(200);
     const callArgs = mockCreateMessage.mock.calls[0][0];
     expect(callArgs.max_tokens).toBe(16000);
+    expect(mockCreateMessage).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -981,8 +982,8 @@ describe("POST /api/deep-scan", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns the structured deep-scan report on success, requesting 16000 max_tokens", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN));
+  it("returns the structured deep-scan report from three bounded sections", async () => {
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse(MINIMAL_DEEP_SCAN));
     const res = await request(app)
       .post("/api/deep-scan")
       .set(paid())
@@ -991,7 +992,7 @@ describe("POST /api/deep-scan", () => {
     expect(res.status).toBe(200);
     expect(res.body.disclaimer).toContain("informational/educational purposes only");
     const callArgs = mockCreateMessage.mock.calls[0][0];
-    expect(callArgs.max_tokens).toBe(16000);
+    expect(callArgs.max_tokens).toBe(12000);
   });
 
   it("tells the model there is no prior analysis when none is supplied", async () => {
@@ -1071,7 +1072,7 @@ describe("Database-backed paid-session authorization (M-2 / Finding 3)", () => {
   });
 
   it("allows a fully valid, DB-active, uid-bound session through", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse({ gaps: [], missingEvidence: [], retorts: [], thresholdAnalysis: [], proceduralTimelineViolations: [], charterAndHumanRightsIssues: [], whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [], disclaimer: "This document is generated for informational/educational purposes only." }));
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse({ gaps: [], missingEvidence: [], retorts: [], thresholdAnalysis: [], proceduralTimelineViolations: [], charterAndHumanRightsIssues: [], whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [], disclaimer: "This document is generated for informational/educational purposes only." }));
     const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some text." });
     expect(res.status).toBe(200);
   });
@@ -1409,7 +1410,7 @@ describe("Tier Entitlement Boundaries & Anti-Bypass Security", () => {
   });
 
   it("9. Premium Analyzer ($49.99) is allowed /api/deep-scan and full analysis but blocked from Case Workspace timeline", async () => {
-    mockCreateMessage.mockResolvedValueOnce(claudeJsonResponse(MINIMAL_DEEP_SCAN_FIXTURE));
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse(MINIMAL_DEEP_SCAN_FIXTURE));
     const deepScanRes = await request(app)
       .post("/api/deep-scan")
       .set({ Authorization: "Bearer premium-token", "x-ps-session": PREMIUM_TOKEN })

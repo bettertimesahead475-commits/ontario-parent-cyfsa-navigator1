@@ -2948,7 +2948,7 @@ export default function DocumentAnalyzerTab() {
   ];
 
   return (
-    <div className="space-y-4 w-full max-w-full overflow-x-hidden break-words font-sans analyzer-reading-workspace" id="document-analyzer-tab">
+    <div className="space-y-3 w-full max-w-full overflow-x-hidden break-words font-sans analyzer-reading-workspace" id="document-analyzer-tab">
       
       {/* Platform Sub-Header Banner */}
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 border-b border-gray-100 pb-4">
@@ -3121,10 +3121,10 @@ export default function DocumentAnalyzerTab() {
       </div>
 
       {/* Main workspace display grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="case-workspace">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 xl:gap-4 items-start" id="case-workspace">
         
         {/* LEFT COLUMN: MULTIPLE FILES UPLOADER & ORGANIZE FOLDERS */}
-        <div className="lg:col-span-5 space-y-4" id="organizer-sidebar">
+        <div className="lg:col-span-4 xl:col-span-3 space-y-3 min-w-0" id="organizer-sidebar">
           
           <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-4 text-left shadow-2xs">
             
@@ -3478,7 +3478,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
           {/* RIGHT COLUMN: WORKSPACE SWITCHER */}
-        <div className="lg:col-span-7" id="workspace-action-screen">
+        <div className="lg:col-span-8 xl:col-span-9 min-w-0" id="workspace-action-screen">
           
           {/* TAB 1: FILE ORGANIZER DETAILS & ACTIVE DOCUMENT AUDIT */}
           {activeTab === "organizer" && (

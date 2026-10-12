@@ -3083,57 +3083,55 @@ OUTPUT — return strictly this JSON schema, nothing else:
         Perform the deep scan described above, building on — not repeating — the prior first-pass findings.
       `;
 
-      const response = await generateContentWithFallback({
-        system: systemInstruction,
-        messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
-        max_tokens: 16000,
-        requestId: analysisRequestId,
-        stage: "forensic_deep_scan",
-        mode: "full"
-      }, ANALYZER_MODELS.FORENSIC);
-
-      const responseText = response.text;
-      if (!responseText) {
-        throw new AnalyzerError("AI_RESPONSE_INVALID", 422, "The deep scan returned an empty response. Please retry - your document is safe.", true);
-      }
-
-      // Do not accept a JSON object if the provider stopped at the output token limit:
-      // even syntactically valid JSON can contain an incomplete substantive assessment.
-      if (response.stopReason === "max_tokens") {
-        console.warn("[deep scan] Incomplete provider output", {
-          requestId: analysisRequestId, model: response.model,
-          stopReason: response.stopReason, outputLength: responseText.length,
-          usage: response.usage, durationMs: response.durationMs
-        });
-        throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
-          "The deep scan exceeded its response limit. Please analyze a shorter document or section.", false);
-      }
-
-      let report: any;
-      try {
-        report = extractJson(responseText);
-      } catch (parseError: any) {
-        console.warn("[deep scan] Provider response parse failure", {
-          requestId: analysisRequestId, model: response.model,
-          stopReason: response.stopReason, outputLength: responseText.length,
-          usage: response.usage, durationMs: response.durationMs,
-          errorCode: parseError?.code || "AI_RESPONSE_INVALID"
-        });
-        // Only attempt a bounded repair for a completed response, never for truncation.
-        // The repair model must not be asked to invent, fill, or rewrite substantive findings.
-        if (response.stopReason !== "end_turn" || responseText.length > 90000) throw parseError;
-        const repair = await generateContentWithFallback({
-          system: "You are a strict JSON syntax formatter. Return ONLY valid JSON. Correct formatting errors in the supplied content without adding, removing, summarizing, interpreting, or inventing any information. If the content cannot be represented completely and faithfully as JSON, respond with exactly: UNRECOVERABLE.",
-          messages: [{ role: "user", content: [{ type: "text", text: responseText }] }],
-          max_tokens: 16000,
-          retries: 1,
+      // Generate independent bounded sections instead of one 16k-token response.
+      // Each section uses the full source and prior findings, but returns only its
+      // assigned keys. No summarization, omission, or synthetic filler is allowed.
+      const forensicSections = [
+        ["gaps", "missingEvidence", "whatIsMissing", "whatToVerify"],
+        ["retorts", "thresholdAnalysis"],
+        ["proceduralTimelineViolations", "charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief"]
+      ] as const;
+      const sectionResults = await Promise.all(forensicSections.map(async (keys, index) => {
+        const sectionSystem = systemInstruction +
+          "\nSECTION-SPECIFIC OUTPUT: Return ONLY a JSON object with these exact keys: " +
+          keys.join(", ") +
+          ". Omit every other key, including disclaimer. Keep each finding grounded in the source. " +
+          "Use the field shapes from the full schema. Be precise and concise, without dropping material findings.";
+        const response = await generateContentWithFallback({
+          system: sectionSystem,
+          messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
+          max_tokens: 12000,
           requestId: analysisRequestId,
-          stage: "forensic_json_repair",
+          stage: "forensic_deep_scan_section_" + (index + 1),
           mode: "full"
         }, ANALYZER_MODELS.FORENSIC);
-        if (repair.stopReason === "max_tokens" || repair.text.trim() === "UNRECOVERABLE") throw parseError;
-        report = extractJson(repair.text);
-      }
+        if (!response.text || response.stopReason === "max_tokens") {
+          console.warn("[deep scan] Incomplete section", {
+            requestId: analysisRequestId, section: index + 1,
+            stopReason: response.stopReason, outputLength: response.text?.length ?? 0
+          });
+          throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
+            "A forensic report section exceeded its response limit. No analysis credit was consumed.", true);
+        }
+        let parsed: any;
+        try {
+          parsed = extractJson(response.text);
+        } catch (error) {
+          console.warn("[deep scan] Section JSON parse failed", {
+            requestId: analysisRequestId, section: index + 1, stopReason: response.stopReason
+          });
+          throw error;
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+            keys.some(key => !Array.isArray(parsed[key]))) {
+          throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
+            "A forensic report section was incomplete. No analysis credit was consumed.", true);
+        }
+        return Object.fromEntries(keys.map(key => [key, parsed[key]]));
+      }));
+      const report: any = Object.assign({}, ...sectionResults, {
+        disclaimer: "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."
+      });
       if (!report || typeof report !== "object" || Array.isArray(report)) {
         throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
           "The deep scan did not return a complete structured report. Please retry.", true);
@@ -3166,7 +3164,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         typeof report.disclaimer === "string" && report.disclaimer.includes("informational/educational purposes only");
       if (!validForensicReport) {
         console.warn("[deep scan] Schema validation rejected incomplete report", {
-          requestId: analysisRequestId, model: response.model, stopReason: response.stopReason
+          requestId: analysisRequestId, mode: "sectioned"
         });
         throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
           "The deep scan returned an incomplete report. Your analysis was not completed; please retry.", true);
