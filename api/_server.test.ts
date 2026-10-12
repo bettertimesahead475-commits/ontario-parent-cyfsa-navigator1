@@ -992,7 +992,7 @@ describe("POST /api/deep-scan", () => {
     expect(res.status).toBe(200);
     expect(res.body.disclaimer).toContain("informational/educational purposes only");
     const callArgs = mockCreateMessage.mock.calls[0][0];
-    expect(callArgs.max_tokens).toBe(16000);
+    expect(callArgs.max_tokens).toBe(12000);
   });
 
   it("tells the model there is no prior analysis when none is supplied", async () => {
