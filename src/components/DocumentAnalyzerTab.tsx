@@ -12,6 +12,7 @@ import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
 import FormattedReportText from "./FormattedReportText";
+import { CollapsibleSection } from "./analyzer/CollapsibleSection";
 import { 
   Upload, 
   FileText, 
@@ -241,7 +242,7 @@ export default function DocumentAnalyzerTab() {
   );
 
   const [openReportSections, setOpenReportSections] = useState({
-    redFlags: true,
+    redFlags: false,
     timeline: true,
     thresholds: true,
     verification: true,
@@ -757,6 +758,8 @@ export default function DocumentAnalyzerTab() {
   });
 
   // Sub-navigation: Organizer vs RAG Chat vs Saved Briefs
+  // Fast Scan (Quick Review) and Deep Scan are independent views of the same file.
+  const [scanView, setScanView] = useState<"fast" | "deep">("fast");
   const [activeTab, setActiveTab] = useState<"organizer" | "rag-chat" | "saved-briefs">(() => {
     return parsedProg?.activeTab || "organizer";
   });
@@ -3518,8 +3521,42 @@ export default function DocumentAnalyzerTab() {
           {activeTab === "organizer" && (
             <div className="h-full space-y-4">
               {activeSelectedFile ? (
-                <div className="space-y-4 text-left">
-                  
+                <div className="space-y-4 text-left" id="scan-panel" role="tabpanel" aria-labelledby={scanView === "fast" ? "scan-tab-fast" : "scan-tab-deep"}>
+
+                  {/* Scan view switch: Fast Scan and Deep Scan are separate views, each with its own PDF. */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
+                    <div role="tablist" aria-label="Scan type" className="flex gap-2">
+                      <button
+                        type="button"
+                        role="tab"
+                        id="scan-tab-fast"
+                        aria-controls="scan-panel"
+                        aria-selected={scanView === "fast"}
+                        onClick={() => setScanView("fast")}
+                        className={`rounded-lg px-4 py-2 text-xs font-bold cursor-pointer ${scanView === "fast" ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      >
+                        Fast Scan
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        id="scan-tab-deep"
+                        aria-controls="scan-panel"
+                        aria-selected={scanView === "deep"}
+                        onClick={() => setScanView("deep")}
+                        className={`rounded-lg px-4 py-2 text-xs font-bold cursor-pointer ${scanView === "deep" ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                      >
+                        Deep Scan
+                      </button>
+                    </div>
+                    {scanView === "fast" && selectedReport && (
+                      <button type="button" onClick={() => printAnalyzer("quick")} className="rounded-lg border border-slate-400 px-3 py-2 text-xs font-bold text-slate-800 hover:bg-slate-100 cursor-pointer">Export Fast Scan PDF</button>
+                    )}
+                    {scanView === "deep" && deepScanReports[activeSelectedFile.id] && (
+                      <button type="button" onClick={() => printAnalyzer("deep")} className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-bold text-white hover:bg-brand-500 cursor-pointer">Export Deep Scan PDF</button>
+                    )}
+                  </div>
+
                   {/* File Metadata Header */}
                   <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-3xs flex flex-wrap justify-between items-center gap-3">
                     <div className="min-w-0">
@@ -3773,7 +3810,7 @@ export default function DocumentAnalyzerTab() {
                     )}
 
                   {/* Intensive Deep Scan Dashboard */}
-                  {activeSelectedFile.analysisStatus === "completed" && (
+                  {scanView === "deep" && activeSelectedFile.analysisStatus === "completed" && (
                     <div className="bg-linear-to-br from-brand-950 via-slate-900 to-slate-950 text-white rounded-2xl p-5 border border-brand-800/45 space-y-4 shadow-lg relative overflow-hidden" id="deep-scan-dashboard">
                       <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
                         <Scale className="w-48 h-48 text-brand-400" />
@@ -3940,8 +3977,8 @@ export default function DocumentAnalyzerTab() {
                   )}
                   </div>
 
-                  {/* Detailed AI Audit Section */}
-                  {selectedReport ? (
+                  {/* Detailed AI Audit Section (Fast Scan view) */}
+                  {scanView === "fast" && (selectedReport ? (
                     <div className="bg-white rounded-2xl border border-[#e2e8f0] p-5 md:p-6 space-y-6 shadow-xs animate-fadeIn">
                       
                       {/* Sub analysis title */}
@@ -4516,7 +4553,7 @@ export default function DocumentAnalyzerTab() {
                                 )}
           
                                 <div className="text-slate-700 leading-relaxed text-xs">
-                                  <strong>Evaluation:</strong> <FormattedReportText text={violation.evaluation} />
+                                  <strong>Evaluation:</strong> <FormattedReportText content={violation.evaluation} />
                                 </div>
 
                                 {violation.locationInDocument && (
@@ -4531,7 +4568,7 @@ export default function DocumentAnalyzerTab() {
                                     <span>💡</span> Parent Action Plan:
                                   </div>
                                   <div className="text-xs leading-relaxed text-amber-950">
-                                    <FormattedReportText text={violation.parentActionStep || "Verify this schedule with the court register immediately."} />
+                                    <FormattedReportText content={violation.parentActionStep || "Verify this schedule with the court register immediately."} />
                                   </div>
                                 </div>
                               </div>
@@ -4556,7 +4593,7 @@ export default function DocumentAnalyzerTab() {
                                 </span>
                               </div>
                               <div className="text-xs text-slate-700 leading-relaxed">
-                                <FormattedReportText text={thresh.reasoning} />
+                                <FormattedReportText content={thresh.reasoning} />
                               </div>
                               <span className="text-[10px] text-brand-700 font-sans block font-semibold mt-1">Law: {thresh.primarySourceLaw}</span>
                             </div>
@@ -4564,68 +4601,59 @@ export default function DocumentAnalyzerTab() {
                         </div>
                       </div>
 
-                      {/* Charter & Human Rights Issues */}
-                      {selectedReport.charterAndHumanRightsIssues && selectedReport.charterAndHumanRightsIssues.length > 0 && (
-                        <div className="space-y-3 pt-2 border-t border-gray-100">
-                          <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
-                            <ShieldAlert className="w-4 h-4 text-purple-600" /> Charter & Human Rights Issues ({selectedReport.charterAndHumanRightsIssues.length})
-                          </h5>
-                          <div className="space-y-2">
-                            {selectedReport.charterAndHumanRightsIssues.map((issue, idx) => (
-                              <div key={idx} className="p-3 bg-purple-50/50 border border-purple-200/70 rounded-xl text-xs text-purple-950 flex items-start gap-2.5">
-                                <span className="text-purple-600 font-bold shrink-0 mt-0.5">⚖️</span>
-                                <div className="text-slate-800 leading-relaxed flex-1">
-                                  <FormattedReportText text={issue} />
+                      {/* Expandable finding sections: collapsed by default, with counts. Nothing is removed. */}
+                      <div className="space-y-3 pt-2 border-t border-gray-100">
+                        {selectedReport.charterAndHumanRightsIssues && selectedReport.charterAndHumanRightsIssues.length > 0 && (
+                          <CollapsibleSection title="Charter Rights" count={selectedReport.charterAndHumanRightsIssues.length}>
+                            <div className="space-y-2">
+                              {selectedReport.charterAndHumanRightsIssues.map((issue, idx) => (
+                                <div key={idx} className="p-3 bg-purple-50/50 border border-purple-200/70 rounded-xl text-xs text-purple-950 flex items-start gap-2.5">
+                                  <span className="text-purple-600 font-bold shrink-0 mt-0.5">⚖️</span>
+                                  <div className="text-slate-800 leading-relaxed flex-1">
+                                    <FormattedReportText content={issue} />
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Tri checklists */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">1. Verify Checks</h6>
+                              ))}
+                            </div>
+                          </CollapsibleSection>
+                        )}
+                        <CollapsibleSection title="Verification Checks" count={selectedReport.whatToVerify.length}>
                           <ul className="space-y-1.5">
                             {selectedReport.whatToVerify.map((item, i) => (
                               <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
                                 <span className="text-brand-600 font-bold shrink-0 mt-0.5">☐</span>
                                 <div className="flex-1">
-                                  <FormattedReportText text={item} />
+                                  <FormattedReportText content={item} />
                                 </div>
                               </li>
                             ))}
                           </ul>
-                        </div>
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">2. Elements Missing</h6>
+                        </CollapsibleSection>
+                        <CollapsibleSection title="Missing Elements" count={selectedReport.whatIsMissing.length}>
                           <ul className="space-y-1.5">
                             {selectedReport.whatIsMissing.map((item, i) => (
                               <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
                                 <span className="text-rose-500 font-bold shrink-0 mt-0.5">⚠</span>
                                 <div className="flex-1">
-                                  <FormattedReportText text={item} />
+                                  <FormattedReportText content={item} />
                                 </div>
                               </li>
                             ))}
                           </ul>
-                        </div>
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">3. Ask Attorney</h6>
+                        </CollapsibleSection>
+                        <CollapsibleSection title="Ask Your Lawyer" count={selectedReport.whatToAskALawyer.length}>
                           <ul className="space-y-1.5">
                             {selectedReport.whatToAskALawyer.map((item, i) => (
                               <li key={i} className="text-xs text-brand-900 bg-brand-50/40 p-2.5 rounded-lg border border-brand-100 leading-relaxed flex items-start gap-1.5">
                                 <strong className="shrink-0 mt-0.5">Q:</strong>
                                 <div className="flex-1">
-                                  <FormattedReportText text={item} />
+                                  <FormattedReportText content={item} />
                                 </div>
                               </li>
                             ))}
                           </ul>
-                        </div>
+                        </CollapsibleSection>
                       </div>
-
                     </div>
                   ) : (
                     <div className="bg-slate-50 border border-dashed border-gray-200 py-10 px-6 rounded-2xl text-center space-y-5">
@@ -4732,7 +4760,7 @@ export default function DocumentAnalyzerTab() {
                         </>
                       )}
                     </div>
-                  )}
+                  ))}
                 </div>
               ) : (
                 <div className="space-y-6" id="multi-case-ledger">
@@ -5020,7 +5048,7 @@ export default function DocumentAnalyzerTab() {
                                       <Sparkles className="w-3 h-3 text-brand-500" /> Executive File Summary:
                                     </span>
                                     <div className="text-xs text-slate-700 leading-relaxed font-sans font-normal italic">
-                                      <FormattedReportText text={report.fileSummary || "Analysis complete. This document documents case-level protection assertions, statutory deadlines, or evidentiary statements needing legal review."} />
+                                      <FormattedReportText content={report.fileSummary || "Analysis complete. This document documents case-level protection assertions, statutory deadlines, or evidentiary statements needing legal review."} />
                                     </div>
                                   </div>
                                 </div>
@@ -5073,7 +5101,7 @@ export default function DocumentAnalyzerTab() {
                                     <ul className="space-y-1.5 list-disc pl-4 text-xs text-slate-600 leading-normal">
                                       {report.lawyerCaseBrief.map((bullet: string, idx: number) => (
                                         <li key={idx} className="marker:text-slate-400 font-normal">
-                                          <FormattedReportText text={bullet} />
+                                          <FormattedReportText content={bullet} />
                                         </li>
                                       ))}
                                     </ul>
@@ -5230,7 +5258,7 @@ export default function DocumentAnalyzerTab() {
                       <ul className="space-y-1.5 list-disc pl-4 text-xs text-slate-600 leading-normal">
                         {brief.lawyerCaseBrief.map((bullet, idx) => (
                           <li key={idx}>
-                            <FormattedReportText text={bullet} />
+                            <FormattedReportText content={bullet} />
                           </li>
                         ))}
                       </ul>
