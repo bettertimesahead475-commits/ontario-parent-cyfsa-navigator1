@@ -3,8 +3,12 @@
 // decoupled from matter access and paid-analyzer/AI usage gating (there is no legitimate
 // reason to require either for reading which official forms exist and their public
 // version/template metadata). No mutation/admin ingestion routes are exposed here.
+import express from "express";
 import type { Express, Request, Response } from "express";
 import { LifecycleError } from "./services/lifecycleErrors.js";
+import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
+import { prepareOfficialFormExport } from "./services/officialFormExport.js";
+import type { ReviewedFormDraft, ReviewedField } from "./services/officialFormReviewedDraft.js";
 import {
   listActiveForms,
   getForm,
@@ -126,4 +130,76 @@ export function registerOfficialFormRoutes(app: Express) {
       handleError(e, res);
     }
   });
+
+  // Export readiness for a reviewed draft. Authenticated, read-only, and not persisted: it returns
+  // the filing-safety verdict and blockers. It never generates a document, because no verified
+  // template is stored server-side yet, so the gate always reports the template as missing here.
+  app.post("/api/official-forms/:formNumber/export-readiness", express.json({ limit: "256kb" }), async (req: Request, res: Response) => {
+    try {
+      const identity = await verifyFirebaseToken(req.header("authorization"));
+      if (!identity) {
+        return res.status(401).json({ code: "SIGN_IN_REQUIRED", error: "Please sign in to check export readiness." });
+      }
+      const formNumber = req.params.formNumber;
+      if (!KNOWN_FORM_NUMBERS.has(formNumber)) {
+        return res.status(404).json({ code: "UNKNOWN_FORM", error: "Unknown official form." });
+      }
+      const body = req.body ?? {};
+      const format = body.format;
+      if (format !== "DOCX" && format !== "PDF") {
+        return res.status(400).json({ code: "INVALID_FORMAT", error: "format must be DOCX or PDF." });
+      }
+      const draft = parseReviewedDraft(body.draft);
+      if (!draft || draft.formNumber !== formNumber) {
+        return res.status(400).json({ code: "INVALID_DRAFT", error: "A reviewed draft for this form is required." });
+      }
+      const result = prepareOfficialFormExport({
+        formNumber,
+        format,
+        templateBytes: null,
+        draft,
+        fieldMapValidated: false
+      });
+      res.json({
+        canExportAsOfficial: result.preflight.canExportAsOfficial,
+        canDescribeAsFilingReady: result.preflight.canDescribeAsFilingReady,
+        blockers: result.preflight.blockers,
+        warnings: result.preflight.warnings,
+        missingFields: result.missingFields
+      });
+    } catch (e: any) {
+      handleError(e, res);
+    }
+  });
+}
+
+const KNOWN_FORM_NUMBERS = new Set(["8B", "14A", "33B.1", "33C", "35.1A"]);
+const PROVENANCES = new Set(["USER_ENTERED", "MATTER_DERIVED", "MACHINE_SUGGESTED"]);
+const REVIEWS = new Set(["PENDING", "ACCEPTED", "REJECTED"]);
+
+/** Strict shape check for a client-submitted draft. Returns null for anything malformed. */
+function parseReviewedDraft(input: unknown): ReviewedFormDraft | null {
+  if (!input || typeof input !== "object") return null;
+  const d = input as Record<string, unknown>;
+  if (typeof d.formNumber !== "string" || typeof d.templateSha256Hex !== "string" || !Array.isArray(d.fields)) return null;
+  if (d.fields.length > 300) return null;
+  const fields: ReviewedField[] = [];
+  for (const raw of d.fields) {
+    if (!raw || typeof raw !== "object") return null;
+    const f = raw as Record<string, unknown>;
+    if (typeof f.fieldKey !== "string" || typeof f.value !== "string" || f.value.length > 4000) return null;
+    if (typeof f.provenance !== "string" || !PROVENANCES.has(f.provenance)) return null;
+    if (typeof f.review !== "string" || !REVIEWS.has(f.review)) return null;
+    if (typeof f.reviewedByUser !== "boolean") return null;
+    if (f.sourceReference !== undefined && typeof f.sourceReference !== "string") return null;
+    fields.push({
+      fieldKey: f.fieldKey,
+      value: f.value,
+      provenance: f.provenance as ReviewedField["provenance"],
+      sourceReference: f.sourceReference as string | undefined,
+      review: f.review as ReviewedField["review"],
+      reviewedByUser: f.reviewedByUser
+    });
+  }
+  return { formNumber: d.formNumber, templateSha256Hex: d.templateSha256Hex, fields };
 }

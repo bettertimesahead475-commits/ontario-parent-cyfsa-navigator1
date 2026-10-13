@@ -121,16 +121,24 @@ function parseFfDataBlock(block: string): {
     const checkBoxMatch = block.match(/<w:checkBox\b[\s\S]*?<\/w:checkBox>/i);
     const cbXml = checkBoxMatch ? checkBoxMatch[0] : block;
     const defaultVal = attrVal(cbXml, "default");
-    const checkedVal = attrVal(cbXml, "checked");
     const autoSize = hasTag(cbXml, "sizeAuto");
+    const defaultChecked = defaultVal === null ? null : defaultVal === "1" || defaultVal.toLowerCase() === "true";
+    // OOXML: a present <w:checked/> with no w:val means checked (ST_OnOff defaults to true). When the
+    // element is absent, the state is the checkbox default.
+    const checkedElement = /<w:checked\b[^>]*\/?>/i.exec(cbXml);
+    let currentlyChecked: boolean | null = defaultChecked;
+    if (checkedElement) {
+      const checkedVal = /\bw:val="([^"]*)"/.exec(checkedElement[0])?.[1] ?? null;
+      currentlyChecked = checkedVal === null ? true : checkedVal === "1" || checkedVal.toLowerCase() === "true";
+    }
     return {
       name,
       enabled,
       type: "checkbox",
       maxLength: null,
       checkbox: {
-        defaultChecked: defaultVal === null ? null : defaultVal === "1" || defaultVal.toLowerCase() === "true",
-        currentlyChecked: checkedVal === null ? null : checkedVal === "1" || checkedVal.toLowerCase() === "true",
+        defaultChecked,
+        currentlyChecked,
         autoSize
       },
       dropdown: null
