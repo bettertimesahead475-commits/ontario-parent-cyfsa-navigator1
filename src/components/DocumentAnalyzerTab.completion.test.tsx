@@ -182,3 +182,54 @@ describe("Document Analyzer completion", () => {
     expect(analyzeCalls()).toHaveLength(0);
   }, 12000);
 });
+
+describe("Document Analyzer results view", () => {
+  const FULL_REPORT = {
+    ...REPORT,
+    charterAndHumanRightsIssues: ["Section 7 liberty interest is engaged by the apprehension."],
+    whatToVerify: ["Confirm who the neighbour is and when they observed the event."],
+    whatIsMissing: ["No dated observation log from the source."],
+    whatToAskALawyer: ["Is a secondhand statement admissible at this stage?"],
+  };
+
+  async function openFastReport() {
+    mockApiFetch.mockImplementation(async (url: string) =>
+      url === "/api/analyze" ? jsonResponse(200, FULL_REPORT) : jsonResponse(200, { events: [], conflicts: [], openItems: [] })
+    );
+    const { container } = render(<DocumentAnalyzerTab />);
+    await uploadTextFile(container);
+    await waitFor(() => expect(analyzeCalls()).toHaveLength(1));
+    await screen.findAllByText(/Affidavit of Society Worker/, {}, { timeout: 5000 });
+  }
+
+  it("offers Fast Scan and Deep Scan as separate top-level tabs, with Fast Scan selected by default", async () => {
+    await openFastReport();
+    const fast = screen.getByRole("tab", { name: "Fast Scan" });
+    const deep = screen.getByRole("tab", { name: "Deep Scan" });
+    expect(fast.getAttribute("aria-selected")).toBe("true");
+    expect(deep.getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("button", { name: "Export Fast Scan PDF" })).toBeTruthy();
+  });
+
+  it("switches to Deep Scan and hides the Fast report content without deleting it", async () => {
+    await openFastReport();
+    fireEvent.click(screen.getByRole("tab", { name: "Deep Scan" }));
+    expect(screen.getByRole("tab", { name: "Deep Scan" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("button", { name: /Verification Checks/ })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Fast Scan" }));
+    expect(screen.getByRole("button", { name: /Verification Checks/ })).toBeTruthy();
+  });
+
+  it("collapses the four finding sections by default and expands them on demand", async () => {
+    await openFastReport();
+    for (const title of ["Charter Rights", "Verification Checks", "Missing Elements", "Ask Your Lawyer"]) {
+      const toggle = screen.getByRole("button", { name: new RegExp(title) });
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    }
+    // Content stays in the report; it is only hidden until expanded.
+    expect(document.body.textContent).toContain("No dated observation log from the source.");
+    fireEvent.click(screen.getByRole("button", { name: /Missing Elements/ }));
+    expect(screen.getByRole("button", { name: /Missing Elements/ }).getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
