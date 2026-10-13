@@ -81,6 +81,7 @@ import {
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
 import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
+import { generateInteractiveFindings } from "./services/analyzerFindings.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -2298,7 +2299,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         generate: generateContentWithFallback,
         deadlineAt: aiDeadlineAt,
         requestId: analysisRequestId,
+        interactiveFindings: process.env.ANALYZER_INTERACTIVE_FINDINGS !== "off",
         onSectionComplete: async (key, value, completed, total) => {
+          // Structured findings are delivered with the final report, not as streamed sections.
+          if (key === "charter" || key === "verification" || key === "missing" || key === "lawyerQuestions") return;
           const span = isForensic ? 50 : 60; // the verification pass owns the last part in Forensic
           const percent = 35 + Math.round((completed / total) * span);
           const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
@@ -3091,6 +3095,27 @@ OUTPUT — return strictly this JSON schema, nothing else:
         ["retorts", "thresholdAnalysis"],
         ["proceduralTimelineViolations", "charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief"]
       ] as const;
+      // Structured, clickable findings run alongside the legacy sections. They are additive and
+      // soft-failing: if they cannot be produced the legacy arrays below are still returned.
+      const priorFlags = Array.isArray(priorAnalysis?.redFlags) ? priorAnalysis.redFlags : [];
+      const findingsPromise: Promise<any | null> =
+        process.env.ANALYZER_INTERACTIVE_FINDINGS === "off"
+          ? Promise.resolve(null)
+          : generateInteractiveFindings(
+              {
+                mode: "full",
+                documentText: String(documentText || ""),
+                sourceDocument: typeof documentName === "string" ? documentName : undefined,
+                model: ANALYZER_MODELS.FORENSIC,
+                generate: generateContentWithFallback,
+                deadlineAt: Date.now() + 230_000,
+                requestId: analysisRequestId,
+              },
+              priorFlags
+            ).then((r) => r.findings).catch((err) => {
+              console.error("[deep scan] interactive findings failed (non-fatal):", String(err?.message || err).slice(0, 200));
+              return null;
+            });
       const sectionResults = await Promise.all(forensicSections.map(async (keys, index) => {
         const sectionSystem = systemInstruction +
           "\nSECTION-SPECIFIC OUTPUT: Return ONLY a JSON object with these exact keys: " +
@@ -3187,7 +3212,8 @@ OUTPUT — return strictly this JSON schema, nothing else:
       } catch (usageErr) {
         console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
       }
-      res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
+      const interactiveFindings = await findingsPromise;
+      res.json({ ...report, ...(interactiveFindings ? { interactiveFindings } : {}), timing: { durationMs }, ...(credits ? { credits } : {}) });
     } catch (error: any) {
       if (creditReservation && sessionInfo) {
         try {

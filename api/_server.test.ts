@@ -250,6 +250,7 @@ const PAID_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-paid-user";
 const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FIREBASE_TOKEN });
 
 beforeEach(() => {
+  process.env.ANALYZER_INTERACTIVE_FINDINGS = "off"; // base-pipeline suite; findings are covered separately
   vi.clearAllMocks();
   // Drop any queued one-shot responses so they cannot leak into the next test.
   mockCreateMessage.mockReset();
