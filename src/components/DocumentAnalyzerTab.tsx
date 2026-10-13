@@ -242,7 +242,7 @@ export default function DocumentAnalyzerTab() {
   );
 
   const [openReportSections, setOpenReportSections] = useState({
-    redFlags: true,
+    redFlags: false,
     timeline: true,
     thresholds: true,
     verification: true,
@@ -3521,8 +3521,8 @@ export default function DocumentAnalyzerTab() {
           {activeTab === "organizer" && (
             <div className="h-full space-y-4">
               {activeSelectedFile ? (
-                <div className="space-y-4 text-left">
-                  
+                <div className="space-y-4 text-left" id="scan-panel" role="tabpanel" aria-labelledby={scanView === "fast" ? "scan-tab-fast" : "scan-tab-deep"}>
+
                   {/* Scan view switch: Fast Scan and Deep Scan are separate views, each with its own PDF. */}
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2">
                     <div role="tablist" aria-label="Scan type" className="flex gap-2">
@@ -3530,6 +3530,7 @@ export default function DocumentAnalyzerTab() {
                         type="button"
                         role="tab"
                         id="scan-tab-fast"
+                        aria-controls="scan-panel"
                         aria-selected={scanView === "fast"}
                         onClick={() => setScanView("fast")}
                         className={`rounded-lg px-4 py-2 text-xs font-bold cursor-pointer ${scanView === "fast" ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
@@ -3540,6 +3541,7 @@ export default function DocumentAnalyzerTab() {
                         type="button"
                         role="tab"
                         id="scan-tab-deep"
+                        aria-controls="scan-panel"
                         aria-selected={scanView === "deep"}
                         onClick={() => setScanView("deep")}
                         className={`rounded-lg px-4 py-2 text-xs font-bold cursor-pointer ${scanView === "deep" ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}

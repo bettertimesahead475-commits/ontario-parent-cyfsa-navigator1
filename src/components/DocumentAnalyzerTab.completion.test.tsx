@@ -208,6 +208,8 @@ describe("Document Analyzer results view", () => {
     const deep = screen.getByRole("tab", { name: "Deep Scan" });
     expect(fast.getAttribute("aria-selected")).toBe("true");
     expect(deep.getAttribute("aria-selected")).toBe("false");
+    expect(fast.getAttribute("aria-controls")).toBe("scan-panel");
+    expect(document.getElementById("scan-panel")?.getAttribute("aria-labelledby")).toBe("scan-tab-fast");
     expect(screen.getByRole("button", { name: "Export Fast Scan PDF" })).toBeTruthy();
   });
 
