@@ -489,12 +489,24 @@ export default function DocumentAnalyzerTab() {
     }
   });
 
+  // Preserve the original Quick Review before Deep Scan augments the active report.
+  const [quickReviewSnapshots, setQuickReviewSnapshots] = useState<{ [fileId: string]: any }>(() => {
+    try { return JSON.parse(localStorage.getItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS") || "{}"); }
+    catch { return {}; }
+  });
+
   const triggerDeepScan = async (file: OrganizedFile) => {
     if (!file.content || !file.content.trim()) {
       setDeepScanError("This file has no extracted text to scan yet.");
       return;
     }
 
+    if (file.analysisReport && !deepScanReports[file.id] && !quickReviewSnapshots[file.id]) {
+      const snapshots = { ...quickReviewSnapshots, [file.id]: file.analysisReport };
+      setQuickReviewSnapshots(snapshots);
+      try { localStorage.setItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS", JSON.stringify(snapshots)); }
+      catch (error) { console.warn("Unable to persist Quick Review snapshot", error); }
+    }
     setIsDeepScanning(true);
     setDeepScanFileId(file.id);
     setDeepScanError(null);
@@ -2243,7 +2255,11 @@ export default function DocumentAnalyzerTab() {
     return () => window.removeEventListener("trigger-print-pdf", handleFooterPrint);
   }, [activeTab, ragChatMessages, selectedReport, organizedFiles, selectedFileId]);
 
-  const printAnalyzer = () => {
+  const printAnalyzer = (reportMode: "combined" | "quick" | "deep" = "combined") => {
+    const quickReport = activeSelectedFile && (quickReviewSnapshots[activeSelectedFile.id] || activeSelectedFile.analysisReport);
+    const deepReport = activeSelectedFile && deepScanReports[activeSelectedFile.id];
+    if (reportMode === "deep" && !deepReport) { alert("No completed Deep Scan is available for this document."); return; }
+    if (reportMode === "quick" && !quickReport) { alert("No Quick Review is available for this document."); return; }
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       alert("Please allow popups to save/print the RAG consultation history or analysis reports.");
@@ -2252,6 +2268,8 @@ export default function DocumentAnalyzerTab() {
 
     let title = "Document Audit & Case File Explorer";
     let bodyContent = "";
+    // Quick Review exports use the original snapshot, not the merged on-screen report.
+    const reportForExport = reportMode === "quick" ? quickReport : selectedReport;
 
     const sharedStyle = `
       <style>
@@ -2275,9 +2293,16 @@ export default function DocumentAnalyzerTab() {
           cursor: pointer;
           margin-bottom: 25px;
         }
+        @page { size: A4; margin: 13mm 12mm; }
         @media print {
           .no-print-btn { display: none !important; }
-          body { margin: 20px; }
+          body { margin: 0; line-height: 1.35; font-size: 10px; }
+          .section-card { padding: 10px !important; margin-bottom: 10px !important; break-inside: auto !important; }
+          .data-table { width: 100%; table-layout: fixed; }
+          .data-table td, .data-table th { overflow-wrap: anywhere; padding: 5px !important; font-size: 9px; vertical-align: top; }
+          .data-table tr { break-inside: auto !important; }
+          .finding { break-inside: avoid; margin: 5px 0; overflow-wrap: anywhere; }
+          .section-title { break-after: avoid; margin-bottom: 8px !important; }
         }
         .header-container {
           border-bottom: 3px double #4f46e5;
@@ -2543,9 +2568,18 @@ export default function DocumentAnalyzerTab() {
           </ul>
         </div>
       `;
-    } else if (activeTab === "organizer" && selectedReport) {
-      title = `Admissibility Audit - ${escapeHtml(selectedReport.documentTitle || activeSelectedFile?.name || "Report")}`;
-      const evidenceIndex = selectedReport.evidenceStrengthIndex || {
+    } else if (activeTab === "organizer" && reportMode === "deep" && deepReport) {
+      title = `Forensic Deep Scan - ${activeSelectedFile?.name || "Document"}`;
+      const renderValue = (value: unknown): string => {
+        if (value === null || value === undefined) return "Not provided in this report";
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return escapeHtml(String(value));
+        if (Array.isArray(value)) return value.map((item, index) => `<div class="finding"><strong>${index + 1}.</strong> ${renderValue(item)}</div>`).join("");
+        return Object.entries(value as Record<string, unknown>).map(([key, entry]) => `<div class="finding"><strong>${escapeHtml(key.replace(/([A-Z])/g, " $1"))}:</strong> ${renderValue(entry)}</div>`).join("");
+      };
+      bodyContent = `<header class="header-container"><span class="platform-label">CYFSA Navigator • Forensic Deep Scan</span><h1 class="title-main">${escapeHtml(title)}</h1><p>Separate forensic findings. This report is not the original Quick Review.</p></header>${Object.entries(deepReport).filter(([key]) => !["timestamp", "documentText"].includes(key)).map(([key, value]) => `<section class="section-card"><h2 class="section-title">${escapeHtml(key.replace(/([A-Z])/g, " $1"))}</h2>${renderValue(value)}</section>`).join("")}`;
+    } else if (activeTab === "organizer" && reportForExport) {
+      title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || activeSelectedFile?.name || "Report")}`;
+      const evidenceIndex = reportForExport.evidenceStrengthIndex || {
         score: 0,
         components: {},
         limitations: "Evidence Strength Index data was not present in this report. Re-run the analysis with the current analyzer."
@@ -2557,7 +2591,7 @@ export default function DocumentAnalyzerTab() {
         evidenceScore >= 50 ? "#d97706" :
         "#dc2626";
 
-      const completenessScore = Number(selectedReport.completenessScore) || 0;
+      const completenessScore = Number(reportForExport.completenessScore) || 0;
       const components = evidenceIndex.components || {};
 
       const evidenceComponents = [
@@ -2578,11 +2612,11 @@ export default function DocumentAnalyzerTab() {
 
           <div class="meta-bar">
             Document Checked:
-            <strong>${escapeHtml(selectedReport.documentTitle || activeSelectedFile?.name || "N/A")}</strong>
+            <strong>${escapeHtml(reportForExport.documentTitle || activeSelectedFile?.name || "N/A")}</strong>
             • Type:
-            <strong>${escapeHtml(selectedReport.documentType || "Casework Correspondence")}</strong>
+            <strong>${escapeHtml(reportForExport.documentType || "Casework Correspondence")}</strong>
             • Date of Audit:
-            <strong>${escapeHtml(selectedReport.analysisDate || "Current")}</strong>
+            <strong>${escapeHtml(reportForExport.analysisDate || "Current")}</strong>
           </div>
         </div>
 
@@ -2668,14 +2702,14 @@ export default function DocumentAnalyzerTab() {
           ` : ""}
         </div>
 
-        ${selectedReport.redFlags && selectedReport.redFlags.length > 0 ? `
+        ${reportForExport.redFlags && reportForExport.redFlags.length > 0 ? `
           <div class="section-card">
             <h3 class="section-title">⚠️ Hearsay & Subjective Opinion Red Flags</h3>
             <p style="font-size: 12.5px; color: #64748b; margin-bottom: 15px;">
               The following assertions or opinions extracted from this file carry an inherent risk of being unsworn out-of-court narratives. Direct parental counters are compiled inline to assist your counsel.
             </p>
             <div style="margin-top: 10px;">
-              ${selectedReport.redFlags.map(rf => {
+              ${reportForExport.redFlags.map(rf => {
                 // Severity drives a CSS class (threat-CRITICAL/WARNING/NOTICE) as well as
                 // display text — whitelist it for the class so an unexpected AI-returned
                 // value can't be used to break out of the class attribute.
@@ -2709,37 +2743,37 @@ export default function DocumentAnalyzerTab() {
           </div>
         ` : ""}
 
-        ${selectedReport.forensicVerification ? `
+        ${reportForExport.forensicVerification ? `
           <div class="section-card">
             <h3 class="section-title">Independent second review</h3>
             <p style="font-size:12px; color:#334155;">
-              ${selectedReport.forensicVerification.status === "completed"
-                ? `Completed: ${selectedReport.forensicVerification.checkedFindings ?? 0} findings checked against the document by a second model. ${escapeHtml(selectedReport.forensicVerification.overallAssessment || "")}`
-                : escapeHtml(selectedReport.forensicVerification.reason || "Not completed. The findings were not second-reviewed.")}
+              ${reportForExport.forensicVerification.status === "completed"
+                ? `Completed: ${reportForExport.forensicVerification.checkedFindings ?? 0} findings checked against the document by a second model. ${escapeHtml(reportForExport.forensicVerification.overallAssessment || "")}`
+                : escapeHtml(reportForExport.forensicVerification.reason || "Not completed. The findings were not second-reviewed.")}
             </p>
           </div>
         ` : ""}
 
-        ${selectedReport.chronology && selectedReport.chronology.length > 0 ? `
+        ${reportForExport.chronology && reportForExport.chronology.length > 0 ? `
           <div class="section-card">
             <h3 class="section-title">Chronology (as stated in the document)</h3>
             <table class="data-table">
               <thead><tr><th style="width:18%">Date</th><th>Event</th><th style="width:14%">Evidence</th><th style="width:18%">Source</th></tr></thead>
               <tbody>
-                ${selectedReport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(e.evidenceClassification || "")}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
+                ${reportForExport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(e.evidenceClassification || "")}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
               </tbody>
             </table>
           </div>
         ` : ""}
 
-        ${selectedReport.contradictions && selectedReport.contradictions.length > 0 ? `
+        ${reportForExport.contradictions && reportForExport.contradictions.length > 0 ? `
           <div class="section-card">
             <h3 class="section-title">Internal contradictions</h3>
-            ${selectedReport.contradictions.map(c => `<p style="font-size:12px; margin:0 0 8px;">${escapeHtml(c.description)}${c.locations && c.locations.length ? ` <span style="color:#64748b;">(${escapeHtml(c.locations.join("; "))})</span>` : ""}${c.significance ? `<br/><span style="color:#475569;">${escapeHtml(c.significance)}</span>` : ""}</p>`).join("")}
+            ${reportForExport.contradictions.map(c => `<p style="font-size:12px; margin:0 0 8px;">${escapeHtml(c.description)}${c.locations && c.locations.length ? ` <span style="color:#64748b;">(${escapeHtml(c.locations.join("; "))})</span>` : ""}${c.significance ? `<br/><span style="color:#475569;">${escapeHtml(c.significance)}</span>` : ""}</p>`).join("")}
           </div>
         ` : ""}
 
-        ${selectedReport.thresholdAnalysis && selectedReport.thresholdAnalysis.length > 0 ? `
+        ${reportForExport.thresholdAnalysis && reportForExport.thresholdAnalysis.length > 0 ? `
           <div class="section-card">
             <h3 class="section-title">⚖️ Statutory Protection Threshold Appraisals</h3>
             <table class="data-table">
@@ -2752,7 +2786,7 @@ export default function DocumentAnalyzerTab() {
                 </tr>
               </thead>
               <tbody>
-                ${selectedReport.thresholdAnalysis.map(th => `
+                ${reportForExport.thresholdAnalysis.map(th => `
                   <tr>
                     <td><strong>${escapeHtml(th.thresholdChecked)}</strong></td>
                     <td>
@@ -2769,7 +2803,7 @@ export default function DocumentAnalyzerTab() {
           </div>
         ` : ""}
 
-        ${selectedReport.proceduralTimelineViolations && selectedReport.proceduralTimelineViolations.length > 0 ? `
+        ${reportForExport.proceduralTimelineViolations && reportForExport.proceduralTimelineViolations.length > 0 ? `
           <div class="section-card">
             <h3 class="section-title">⏳ Statutory Timelines & Procedural Violations</h3>
             <table class="data-table">
@@ -2782,7 +2816,7 @@ export default function DocumentAnalyzerTab() {
                 </tr>
               </thead>
               <tbody>
-                ${selectedReport.proceduralTimelineViolations.map(vi => `
+                ${reportForExport.proceduralTimelineViolations.map(vi => `
                   <tr>
                     <td><strong>${escapeHtml(vi.timelineRule)}</strong></td>
                     <td>${escapeHtml(vi.documentAssertion)}</td>
@@ -2798,40 +2832,40 @@ export default function DocumentAnalyzerTab() {
           </div>
         ` : ""}
 
-        ${selectedReport.charterAndHumanRightsIssues && selectedReport.charterAndHumanRightsIssues.length > 0 ? `
+        ${reportForExport.charterAndHumanRightsIssues && reportForExport.charterAndHumanRightsIssues.length > 0 ? `
           <div class="section-card">
             <h3 class="section-title">✊ Human & Charter Rights Observations</h3>
             <ul class="bullet-list">
-              ${selectedReport.charterAndHumanRightsIssues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
+              ${reportForExport.charterAndHumanRightsIssues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
             </ul>
           </div>
         ` : ""}
 
         <div class="section-card">
           <h3 class="section-title">📋 Practical Verification & Next Steps Guide</h3>
-          ${selectedReport.whatToVerify && selectedReport.whatToVerify.length > 0 ? `
+          ${reportForExport.whatToVerify && reportForExport.whatToVerify.length > 0 ? `
             <div style="margin-bottom: 15px;">
               <strong style="font-size: 13px; color: #0f172a;">Information to Verify & Double-Check:</strong>
               <ul class="bullet-list" style="margin-top: 5px;">
-                ${selectedReport.whatToVerify.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
+                ${reportForExport.whatToVerify.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
 
-          ${selectedReport.whatToAskALawyer && selectedReport.whatToAskALawyer.length > 0 ? `
+          ${reportForExport.whatToAskALawyer && reportForExport.whatToAskALawyer.length > 0 ? `
             <div style="margin-bottom: 15px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
               <strong style="font-size: 13px; color: #4338ca;">Specific Questions for Your Retained Lawyer:</strong>
               <ul class="bullet-list" style="margin-top: 5px; color: #4338ca;">
-                ${selectedReport.whatToAskALawyer.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
+                ${reportForExport.whatToAskALawyer.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
 
-          ${selectedReport.whatIsMissing && selectedReport.whatIsMissing.length > 0 ? `
+          ${reportForExport.whatIsMissing && reportForExport.whatIsMissing.length > 0 ? `
             <div style="border-top: 1px solid #f1f5f9; padding-top: 15px;">
               <strong style="font-size: 13px; color: #b45309;">Inconsistencies or Missing Casework Elements:</strong>
               <ul class="bullet-list" style="margin-top: 5px; color: #78350f;">
-                ${selectedReport.whatIsMissing.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
+                ${reportForExport.whatIsMissing.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
               </ul>
             </div>
           ` : ""}
@@ -3833,6 +3867,12 @@ export default function DocumentAnalyzerTab() {
                         )
                       )}
 
+                      {deepScanReports[activeSelectedFile.id] && (
+                        <div className="flex flex-wrap gap-2 py-2">
+                          <button type="button" onClick={() => printAnalyzer("quick")} className="rounded-lg border border-slate-500 px-3 py-2 text-xs font-bold text-white hover:bg-slate-700">Export Quick Review PDF</button>
+                          <button type="button" onClick={() => printAnalyzer("deep")} className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-bold text-white hover:bg-brand-500">Export Deep Scan PDF</button>
+                        </div>
+                      )}
                       {/* Deep Scan Report Content */}
                       {deepScanReports[activeSelectedFile.id] && !isDeepScanning && (
                         <div className="space-y-4 pt-2 border-t border-slate-800 animate-fadeIn text-left">
