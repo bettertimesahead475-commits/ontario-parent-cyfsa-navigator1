@@ -52,6 +52,10 @@ import {
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
+import { mergeInteractiveFindings } from "../../shared/legalFindings";
+import { printBrandedDocument } from "../utils/printExport";
+import { InteractiveFindingsTabs } from "./report/InteractiveFindingsTabs";
+import { buildFindingsExportHtml, buildLawyerQuestionListHtml, FINDINGS_EXPORT_STYLES } from "../utils/findingsExport";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -539,12 +543,20 @@ export default function DocumentAnalyzerTab() {
       // Merge Deep Scan findings into active report state
       setOrganizedFiles(prev => prev.map(f => {
         if (f.id === file.id) {
-          const mergedReport = { ...(f.analysisReport || {}), ...report };
+          const mergedReport: any = { ...(f.analysisReport || {}), ...report };
+          const mergedFindings = mergeInteractiveFindings((f.analysisReport as any)?.interactiveFindings, (report as any).interactiveFindings);
+          if (mergedFindings) mergedReport.interactiveFindings = mergedFindings;
           return { ...f, analysisReport: mergedReport };
         }
         return f;
       }));
-      setSelectedReport(prev => prev ? { ...prev, ...report } : report);
+      setSelectedReport(prev => {
+        if (!prev) return report;
+        const merged: any = { ...prev, ...report };
+        const mf = mergeInteractiveFindings((prev as any).interactiveFindings, (report as any).interactiveFindings);
+        if (mf) merged.interactiveFindings = mf;
+        return merged;
+      });
     } catch (err: any) {
       console.error("[deep scan] request failed:", err);
       setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
@@ -2255,6 +2267,13 @@ export default function DocumentAnalyzerTab() {
     return () => window.removeEventListener("trigger-print-pdf", handleFooterPrint);
   }, [activeTab, ragChatMessages, selectedReport, organizedFiles, selectedFileId]);
 
+  const printLawyerQuestionList = (report: Record<string, any>) => {
+    printBrandedDocument(
+      "Questions for my lawyer",
+      `<style>${FINDINGS_EXPORT_STYLES}</style>` + buildLawyerQuestionListHtml(report)
+    );
+  };
+
   const printAnalyzer = (reportMode: "combined" | "quick" | "deep" = "combined") => {
     const quickReport = activeSelectedFile && (quickReviewSnapshots[activeSelectedFile.id] || activeSelectedFile.analysisReport);
     const deepReport = activeSelectedFile && deepScanReports[activeSelectedFile.id];
@@ -2576,7 +2595,7 @@ export default function DocumentAnalyzerTab() {
         if (Array.isArray(value)) return value.map((item, index) => `<div class="finding"><strong>${index + 1}.</strong> ${renderValue(item)}</div>`).join("");
         return Object.entries(value as Record<string, unknown>).map(([key, entry]) => `<div class="finding"><strong>${escapeHtml(key.replace(/([A-Z])/g, " $1"))}:</strong> ${renderValue(entry)}</div>`).join("");
       };
-      bodyContent = `<header class="header-container"><span class="platform-label">CYFSA Navigator • Forensic Deep Scan</span><h1 class="title-main">${escapeHtml(title)}</h1><p>Separate forensic findings. This report is not the original Quick Review.</p></header>${Object.entries(deepReport).filter(([key]) => !["timestamp", "documentText"].includes(key)).map(([key, value]) => `<section class="section-card"><h2 class="section-title">${escapeHtml(key.replace(/([A-Z])/g, " $1"))}</h2>${renderValue(value)}</section>`).join("")}`;
+      bodyContent = `<header class="header-container"><span class="platform-label">CYFSA Navigator • Forensic Deep Scan</span><h1 class="title-main">${escapeHtml(title)}</h1><p>Separate forensic findings. This report is not the original Quick Review.</p></header>${Object.entries(deepReport).filter(([key]) => !["timestamp", "documentText", "interactiveFindings"].includes(key)).map(([key, value]) => `<section class="section-card"><h2 class="section-title">${escapeHtml(key.replace(/([A-Z])/g, " $1"))}</h2>${renderValue(value)}</section>`).join("")}<style>${FINDINGS_EXPORT_STYLES}</style>${buildFindingsExportHtml(deepReport as any)}`;
     } else if (activeTab === "organizer" && reportForExport) {
       title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || activeSelectedFile?.name || "Report")}`;
       const evidenceIndex = reportForExport.evidenceStrengthIndex || {
@@ -2832,44 +2851,8 @@ export default function DocumentAnalyzerTab() {
           </div>
         ` : ""}
 
-        ${reportForExport.charterAndHumanRightsIssues && reportForExport.charterAndHumanRightsIssues.length > 0 ? `
-          <div class="section-card">
-            <h3 class="section-title">✊ Human & Charter Rights Observations</h3>
-            <ul class="bullet-list">
-              ${reportForExport.charterAndHumanRightsIssues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
-            </ul>
-          </div>
-        ` : ""}
-
-        <div class="section-card">
-          <h3 class="section-title">📋 Practical Verification & Next Steps Guide</h3>
-          ${reportForExport.whatToVerify && reportForExport.whatToVerify.length > 0 ? `
-            <div style="margin-bottom: 15px;">
-              <strong style="font-size: 13px; color: #0f172a;">Information to Verify & Double-Check:</strong>
-              <ul class="bullet-list" style="margin-top: 5px;">
-                ${reportForExport.whatToVerify.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
-              </ul>
-            </div>
-          ` : ""}
-
-          ${reportForExport.whatToAskALawyer && reportForExport.whatToAskALawyer.length > 0 ? `
-            <div style="margin-bottom: 15px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-              <strong style="font-size: 13px; color: #4338ca;">Specific Questions for Your Retained Lawyer:</strong>
-              <ul class="bullet-list" style="margin-top: 5px; color: #4338ca;">
-                ${reportForExport.whatToAskALawyer.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
-              </ul>
-            </div>
-          ` : ""}
-
-          ${reportForExport.whatIsMissing && reportForExport.whatIsMissing.length > 0 ? `
-            <div style="border-top: 1px solid #f1f5f9; padding-top: 15px;">
-              <strong style="font-size: 13px; color: #b45309;">Inconsistencies or Missing Casework Elements:</strong>
-              <ul class="bullet-list" style="margin-top: 5px; color: #78350f;">
-                ${reportForExport.whatIsMissing.map(item => `<li>${escapeHtml(item)}</li>`).join("")}
-              </ul>
-            </div>
-          ` : ""}
-        </div>
+        <style>${FINDINGS_EXPORT_STYLES}</style>
+        ${buildFindingsExportHtml(reportForExport as any)}
       `;
     } else {
       title = "Case File Index & Organized Cabinet Repository";
@@ -4564,67 +4547,14 @@ export default function DocumentAnalyzerTab() {
                         </div>
                       </div>
 
-                      {/* Charter & Human Rights Issues */}
-                      {selectedReport.charterAndHumanRightsIssues && selectedReport.charterAndHumanRightsIssues.length > 0 && (
-                        <div className="space-y-3 pt-2 border-t border-gray-100">
-                          <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
-                            <ShieldAlert className="w-4 h-4 text-purple-600" /> Charter & Human Rights Issues ({selectedReport.charterAndHumanRightsIssues.length})
-                          </h5>
-                          <div className="space-y-2">
-                            {selectedReport.charterAndHumanRightsIssues.map((issue, idx) => (
-                              <div key={idx} className="p-3 bg-purple-50/50 border border-purple-200/70 rounded-xl text-xs text-purple-950 flex items-start gap-2.5">
-                                <span className="text-purple-600 font-bold shrink-0 mt-0.5">⚖️</span>
-                                <div className="text-slate-800 leading-relaxed flex-1">
-                                  <FormattedReportText text={issue} />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Tri checklists */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">1. Verify Checks</h6>
-                          <ul className="space-y-1.5">
-                            {selectedReport.whatToVerify.map((item, i) => (
-                              <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
-                                <span className="text-brand-600 font-bold shrink-0 mt-0.5">☐</span>
-                                <div className="flex-1">
-                                  <FormattedReportText text={item} />
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">2. Elements Missing</h6>
-                          <ul className="space-y-1.5">
-                            {selectedReport.whatIsMissing.map((item, i) => (
-                              <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
-                                <span className="text-rose-500 font-bold shrink-0 mt-0.5">⚠</span>
-                                <div className="flex-1">
-                                  <FormattedReportText text={item} />
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">3. Ask Attorney</h6>
-                          <ul className="space-y-1.5">
-                            {selectedReport.whatToAskALawyer.map((item, i) => (
-                              <li key={i} className="text-xs text-brand-900 bg-brand-50/40 p-2.5 rounded-lg border border-brand-100 leading-relaxed flex items-start gap-1.5">
-                                <strong className="shrink-0 mt-0.5">Q:</strong>
-                                <div className="flex-1">
-                                  <FormattedReportText text={item} />
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
+                      {/* Charter, verification, missing elements and lawyer questions: interactive tabs.
+                          Exports are built from the report data, never from the selected tab. */}
+                      <InteractiveFindingsTabs
+                        key={activeSelectedFile.id}
+                        report={selectedReport as any}
+                        scope={`f${String(activeSelectedFile.id).replace(/[^a-zA-Z0-9]/g, "")}`}
+                        onPrintQuestions={() => printLawyerQuestionList(selectedReport as any)}
+                      />
 
                     </div>
                   ) : (

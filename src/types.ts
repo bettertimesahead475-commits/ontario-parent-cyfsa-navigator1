@@ -159,6 +159,8 @@ export interface AnalysisReport {
   charterAndHumanRightsIssues: string[];
   whatToVerify: string[];
   whatToAskALawyer: string[];
+  /** Structured, clickable findings (Charter, verification, missing, lawyer questions). Absent on reports saved earlier. */
+  interactiveFindings?: import("../shared/legalFindings").InteractiveFindings;
   whatIsMissing: string[];
   lawyerCaseBrief?: string[]; // Bullet form detailed lawyer case brief points
   /** Dated events as the document states them, each with its source location. */

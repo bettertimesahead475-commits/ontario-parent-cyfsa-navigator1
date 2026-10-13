@@ -16,6 +16,8 @@
  * verification pass on a stronger model (Claude Opus) over the high-impact findings only.
  */
 
+import { startFindingsWaveA, finishFindings, type FindingsRunOptions } from "./analyzerFindings.js";
+import type { FindingSectionKey } from "../../shared/legalFindings.js";
 import { AnalyzerError } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
 import type { AnalysisStage } from "./analyzerStreaming.js";
@@ -555,9 +557,12 @@ export interface SectionRunOptions {
   /** Absolute epoch-ms deadline for all AI work; every attempt's timeout is clamped to it. */
   deadlineAt: number;
   requestId: string;
-  onSectionComplete?: (key: SectionKey, value: Record<string, any>, completed: number, total: number) => Promise<void> | void;
+  onSectionComplete?: (key: SectionKey | FindingSectionKey, value: Record<string, any>, completed: number, total: number) => Promise<void> | void;
   onVerificationStart?: () => void;
   now?: () => number;
+  /** Structured Charter / verification / missing / lawyer-question findings. On by default; soft-fails. */
+  interactiveFindings?: boolean;
+  sourceDocument?: string;
 }
 
 export interface SectionRunResult {
@@ -658,6 +663,22 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   let completed = 0;
   const report: Record<string, any> = {};
 
+  // Wave A of the structured findings needs only the document, so it runs alongside the base sections.
+  // It never throws: a failed part is recorded as UNAVAILABLE and the legacy report is unaffected.
+  const findingsOpts: FindingsRunOptions = {
+    mode: opts.mode,
+    documentText: opts.documentText,
+    sourceDocument: opts.sourceDocument,
+    model: opts.primaryModel,
+    generate: opts.generate,
+    deadlineAt: opts.deadlineAt,
+    requestId: opts.requestId,
+    now: opts.now,
+    onSection: (k, v) => opts.onSectionComplete?.(k, { [k]: v }, completed, keys.length),
+  };
+  const waveA = opts.interactiveFindings === false ? null : startFindingsWaveA(findingsOpts);
+  waveA?.promise.catch(() => undefined);
+
   // allSettled-style: wait for every section so a failure never leaves requests running unobserved.
   const outcomes = await Promise.all(
     keys.map(async (key) => {
@@ -675,9 +696,22 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
     })
   );
   const failure = outcomes.find((o) => o !== null);
-  if (failure) throw failure;
+  if (failure) {
+    await waveA?.promise.catch(() => undefined); // do not leave requests running unobserved
+    throw failure;
+  }
 
   applyReportGuards(report, opts.documentText);
+
+  if (waveA) {
+    try {
+      const res = await finishFindings(findingsOpts, waveA, Array.isArray(report.redFlags) ? report.redFlags : []);
+      report.interactiveFindings = res.findings;
+      for (const [m, u] of Object.entries(res.usageByModel)) addUsage(usageByModel, m, u);
+    } catch (err) {
+      console.error(JSON.stringify({ event: "findings_failed", requestId: opts.requestId, message: String((err as any)?.message || err).slice(0, 200) }));
+    }
+  }
 
   if (opts.mode === "full" && opts.verificationModel) {
     opts.onVerificationStart?.();

@@ -211,6 +211,7 @@ const SAMPLE_DEEP_DIVE = {
 const claudeText = (text: string, stop_reason = "end_turn") => ({ content: [{ type: "text", text }], stop_reason, usage: {} });
 
 beforeEach(() => {
+  process.env.ANALYZER_INTERACTIVE_FINDINGS = "off"; // base-pipeline suite; findings are covered separately
   vi.clearAllMocks();
   mockCreateMessage.mockReset(); // no queued one-shot responses may leak between tests
   mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) => {
