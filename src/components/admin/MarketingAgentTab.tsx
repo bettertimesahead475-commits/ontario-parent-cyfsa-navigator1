@@ -61,7 +61,15 @@ interface Post {
   last_error: string | null;
   metrics: Record<string, number> | null;
   created_at: string;
+  updated_at?: string;
+  campaign_id?: string | null;
+  title?: string | null;
+  intended_audience?: string | null;
+  content_category?: string | null;
+  verification_notes?: string | null;
 }
+
+interface Campaign { id: string; name: string; objective: string | null; theme: string | null; status: "active" | "paused" | "archived"; }
 
 // --- Admin API client -------------------------------------------------------
 
@@ -163,19 +171,22 @@ function SecretGate({ onUnlock }: { onUnlock: () => void }) {
 
 // --- Main console -----------------------------------------------------------
 
-type View = "channels" | "generate" | "queue" | "schedule" | "analytics" | "log";
+type View = "overview" | "channels" | "generate" | "queue" | "schedule" | "history" | "campaigns" | "analytics" | "log";
 
 export default function MarketingAgentTab() {
   const [unlocked, setUnlocked] = useState<boolean>(() => Boolean(getSecret()));
-  const [view, setView] = useState<View>("channels");
+  const [view, setView] = useState<View>("overview");
 
   if (!unlocked) return <SecretGate onUnlock={() => setUnlocked(true)} />;
 
   const tabs: { id: View; label: string; icon: React.ReactNode }[] = [
+    { id: "overview", label: "Overview", icon: <BarChart3 className="w-4 h-4" /> },
     { id: "channels", label: "Channels", icon: <Plug className="w-4 h-4" /> },
+    { id: "campaigns", label: "Campaigns", icon: <Megaphone className="w-4 h-4" /> },
     { id: "generate", label: "Generate", icon: <Sparkles className="w-4 h-4" /> },
     { id: "queue", label: "Approval Queue", icon: <ListChecks className="w-4 h-4" /> },
     { id: "schedule", label: "Scheduled", icon: <Calendar className="w-4 h-4" /> },
+    { id: "history", label: "Published & Failed", icon: <Send className="w-4 h-4" /> },
     { id: "analytics", label: "Analytics", icon: <BarChart3 className="w-4 h-4" /> },
     { id: "log", label: "Activity Log", icon: <Clock className="w-4 h-4" /> },
   ];
@@ -214,10 +225,13 @@ export default function MarketingAgentTab() {
         ))}
       </div>
 
+      {view === "overview" && <OverviewPanel onNavigate={setView} />}
       {view === "channels" && <ChannelsPanel />}
+      {view === "campaigns" && <CampaignsPanel />}
       {view === "generate" && <GeneratePanel onGenerated={() => setView("queue")} />}
       {view === "queue" && <QueuePanel />}
       {view === "schedule" && <SchedulePanel />}
+      {view === "history" && <HistoryPanel />}
       {view === "analytics" && <AnalyticsPanel />}
       {view === "log" && <LogPanel />}
     </div>
@@ -291,9 +305,15 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
   const [linkUrl, setLinkUrl] = useState("https://cyfsanavigator.com");
   const [selected, setSelected] = useState<Platform[]>(["facebook", "linkedin"]);
   const [variants, setVariants] = useState(1);
+  const [campaignId, setCampaignId] = useState("");
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => { try { const d = await adminApi("/campaigns"); setCampaigns((d.campaigns || []).filter((c: Campaign) => c.status === "active")); } catch { /* optional */ } })();
+  }, []);
 
   const toggle = (p: Platform) => setSelected((cur) => cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]);
 
@@ -302,7 +322,7 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
     try {
       const d = await adminApi("/generate", {
         method: "POST",
-        body: JSON.stringify({ platforms: selected, topic, objective, callToAction, linkUrl, variantsPerPlatform: variants }),
+        body: JSON.stringify({ platforms: selected, topic, objective, callToAction, linkUrl, variantsPerPlatform: variants, campaignId: campaignId || undefined }),
       });
       setResult(`Generated ${d.created?.length ?? 0} draft(s) with ${d.model}. They're in the Approval Queue for review.`);
       setTopic("");
@@ -336,6 +356,11 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }) {
           <button key={p} onClick={() => toggle(p)} className={`px-3 py-1.5 rounded-full text-xs font-semibold capitalize border ${selected.includes(p) ? "bg-brand-600 text-white border-brand-600" : "bg-white text-slate-600 border-slate-200"}`}>{p}</button>
         ))}
       </div>
+      <label className="block text-xs font-semibold text-slate-700 mb-1">Campaign (optional)</label>
+      <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg text-sm mb-3 block">
+        <option value="">No campaign</option>
+        {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
       <label className="block text-xs font-semibold text-slate-700 mb-1">Variants per platform</label>
       <select value={variants} onChange={(e) => setVariants(Number(e.target.value))} className="px-3 py-2 border border-slate-300 rounded-lg text-sm mb-4">
         <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option>
@@ -414,7 +439,12 @@ function PostCard({ post, onReload, onError }: { post: Post; onReload: () => voi
       ) : (
         <p className="text-sm text-slate-800 whitespace-pre-wrap mb-2">{post.content}</p>
       )}
+      {post.title && <p className="text-xs font-semibold text-slate-700 mb-1">{post.title}</p>}
+      {post.intended_audience && <p className="text-[11px] text-slate-500 mb-1">Audience: {post.intended_audience}</p>}
       {post.hashtags?.length ? <p className="text-xs text-blue-600 mb-2">{post.hashtags.map((h) => `#${h}`).join(" ")}</p> : null}
+      {post.verification_notes && (
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 mb-2">Verify before approval: {post.verification_notes}</p>
+      )}
       {post.link_url ? <p className="text-[11px] text-slate-500 mb-2 break-all">🔗 <span className="font-mono">{post.link_url}</span></p> : null}
       {post.rejection_reason && <p className="text-xs text-rose-600 mb-2">Rejected: {post.rejection_reason}</p>}
       {post.last_error && <p className="text-xs text-red-600 mb-2">Last error: {post.last_error}</p>}
@@ -446,7 +476,7 @@ function PostCard({ post, onReload, onError }: { post: Post; onReload: () => voi
                 <ActBtn onClick={() => call(() => adminApi(`/posts/${post.id}/publish`, { method: "POST" }))} busy={busy} icon={<Send className="w-3.5 h-3.5" />} label="Publish now" primary />
               </>
             )}
-            {post.status === "rejected" && <ActBtn onClick={() => call(() => adminApi(`/posts/${post.id}/submit`, { method: "POST" }).catch(async () => { await adminApi(`/posts/${post.id}`, { method: "PATCH", body: JSON.stringify({}) }); }))} busy={busy} icon={<RefreshCw className="w-3.5 h-3.5" />} label="Back to draft" />}
+            {post.status === "rejected" && <ActBtn onClick={() => call(() => adminApi(`/posts/${post.id}/draft`, { method: "POST" }))} busy={busy} icon={<RefreshCw className="w-3.5 h-3.5" />} label="Back to draft" />}
             {post.status !== "published" && <ActBtn onClick={() => setEditing(true)} busy={busy} icon={<ListChecks className="w-3.5 h-3.5" />} label="Edit" />}
             {post.status !== "published" && post.status !== "canceled" && <ActBtn onClick={() => call(() => adminApi(`/posts/${post.id}/cancel`, { method: "POST" }))} busy={busy} icon={<Trash2 className="w-3.5 h-3.5" />} label="Cancel" />}
           </>
@@ -508,6 +538,10 @@ function SchedulePanel() {
                 <Badge className="bg-indigo-100 text-indigo-800 border-transparent"><Clock className="w-3 h-3" />{p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : "—"}</Badge>
               </div>
               <p className="text-sm text-slate-800 whitespace-pre-wrap">{p.content}</p>
+              <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100">
+                <ScheduleAction postId={p.id} path="unschedule" label="Unschedule" onDone={load} />
+                <ScheduleAction postId={p.id} path="cancel" label="Cancel post" onDone={load} />
+              </div>
             </div>
           ))}
         </div>
@@ -580,6 +614,229 @@ function LogPanel() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ScheduleAction({ postId, path, label, onDone }: { postId: string; path: string; label: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true); setErr(null);
+    try { await adminApi(`/posts/${postId}/${path}`, { method: "POST" }); onDone(); }
+    catch (e: any) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <ActBtn onClick={run} busy={busy} icon={<Trash2 className="w-3.5 h-3.5" />} label={label} />
+      {err && <p className="text-[11px] text-red-600 mt-1">{err}</p>}
+    </div>
+  );
+}
+
+// --- Overview ---------------------------------------------------------------
+// Real counts from the database and platform metrics only. Anything the agent
+// cannot measure is listed as unavailable, never shown as zero.
+
+function OverviewPanel({ onNavigate }: { onNavigate: (v: View) => void }) {
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    setError(null);
+    try { setData(await adminApi("/overview")); } catch (e: any) { setError(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (error) return <ErrorBox msg={error} />;
+  if (!data) return <Loading />;
+
+  const kpis: [string, number, View][] = [
+    ["Drafts", data.counts.draft, "queue"],
+    ["Pending approval", data.counts.pending_approval, "queue"],
+    ["Approved", data.counts.approved, "queue"],
+    ["Scheduled", data.counts.scheduled, "schedule"],
+    ["Published", data.counts.published, "history"],
+    ["Failed", data.counts.failed, "history"],
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {kpis.map(([label, val, target]) => (
+          <button key={label} onClick={() => onNavigate(target)} className="bg-white border border-slate-200 rounded-xl p-4 text-left hover:border-brand-300">
+            <div className="text-2xl font-black text-slate-900">{val}</div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-500 mt-1">{label}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <h3 className="text-sm font-bold text-slate-900 mb-2">Channels</h3>
+          <div className="flex flex-wrap gap-2">
+            {data.channels.map((c: any) => (
+              <div key={c.platform}>
+                <Badge className={STATUS_STYLES[c.status as ChannelStatus]?.cls || "bg-slate-100 text-slate-600 border-slate-200"}>
+                  <span className="capitalize">{c.platform}</span>: {STATUS_STYLES[c.status as ChannelStatus]?.label || c.status}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <h3 className="text-sm font-bold text-slate-900 mb-2">Campaigns</h3>
+          <p className="text-sm text-slate-600">Active {data.campaigns.active} · Paused {data.campaigns.paused} · Archived {data.campaigns.archived}</p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <h3 className="text-sm font-bold text-slate-900 mb-2">Failed jobs</h3>
+        {data.failedJobs.length === 0 ? <p className="text-sm text-slate-500">No failed publications.</p> : (
+          <ul className="space-y-2">
+            {data.failedJobs.map((j: any) => (
+              <li key={j.id} className="text-xs text-slate-700"><span className="font-semibold capitalize">{j.platform}</span> · {j.last_error || "No error message recorded."}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-4">
+        <h3 className="text-sm font-bold text-slate-900 mb-1">Engagement on published posts</h3>
+        <p className="text-xs text-slate-500 mb-2">From platform-reported metrics for {data.engagement.publishedCount} published post(s). Zero means the platform reported zero.</p>
+        <p className="text-sm text-slate-700">
+          Impressions {data.engagement.totals.impressions ?? 0} · Likes {data.engagement.totals.likes ?? 0} · Comments {data.engagement.totals.comments ?? 0} · Shares {data.engagement.totals.shares ?? 0}
+        </p>
+      </div>
+
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+        <h3 className="text-sm font-bold text-slate-900 mb-2">Not measured yet</h3>
+        <ul className="space-y-1">
+          {data.unavailable.map((u: any) => (
+            <li key={u.metric} className="text-xs text-slate-600"><span className="font-semibold">{u.metric}:</span> {u.reason}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// --- Campaigns --------------------------------------------------------------
+
+function CampaignsPanel() {
+  const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [objective, setObjective] = useState("");
+  const [theme, setTheme] = useState("");
+
+  const load = useCallback(async () => {
+    setError(null);
+    try { const d = await adminApi("/campaigns"); setCampaigns(d.campaigns); }
+    catch (e: any) { setError(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const create = async () => {
+    setError(null);
+    try {
+      await adminApi("/campaigns", { method: "POST", body: JSON.stringify({ name, objective, theme }) });
+      setName(""); setObjective(""); setTheme(""); await load();
+    } catch (e: any) { setError(e.message); }
+  };
+  const setStatus = async (c: Campaign, status: Campaign["status"]) => {
+    setError(null);
+    try { await adminApi(`/campaigns/${c.id}`, { method: "PATCH", body: JSON.stringify({ status }) }); await load(); }
+    catch (e: any) { setError(e.message); }
+  };
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      {error && <ErrorBox msg={error} />}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+        <h3 className="text-sm font-bold text-slate-900">New campaign</h3>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Campaign name *" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+        <input value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="Goal (for example: grow guide readership)" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+        <input value={theme} onChange={(e) => setTheme(e.target.value)} placeholder="Theme (optional)" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+        <ActBtn onClick={create} busy={!name.trim()} icon={<CheckCircle2 className="w-3.5 h-3.5" />} label="Create campaign" primary />
+      </div>
+      {!campaigns ? <Loading /> : campaigns.length === 0 ? <Empty msg="No campaigns yet." /> : (
+        <div className="space-y-2">
+          {campaigns.map((c) => (
+            <div key={c.id} className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-slate-900">{c.name}</div>
+                {c.objective && <div className="text-xs text-slate-500">{c.objective}</div>}
+              </div>
+              <Badge className="bg-slate-100 text-slate-700 border-slate-200 capitalize">{c.status}</Badge>
+              {c.status !== "active" && <ActBtn onClick={() => setStatus(c, "active")} busy={false} icon={<CheckCircle2 className="w-3.5 h-3.5" />} label="Activate" />}
+              {c.status === "active" && <ActBtn onClick={() => setStatus(c, "paused")} busy={false} icon={<Clock className="w-3.5 h-3.5" />} label="Pause" />}
+              {c.status !== "archived" && <ActBtn onClick={() => setStatus(c, "archived")} busy={false} icon={<Trash2 className="w-3.5 h-3.5" />} label="Archive" />}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Published & Failed -----------------------------------------------------
+
+function HistoryPanel() {
+  const [published, setPublished] = useState<Post[] | null>(null);
+  const [failed, setFailed] = useState<Post[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const [p, f] = await Promise.all([adminApi("/posts?status=published"), adminApi("/posts?status=failed")]);
+      setPublished(p.posts); setFailed(f.posts);
+    } catch (e: any) { setError(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const retry = async (id: string) => {
+    setError(null);
+    try { await adminApi(`/posts/${id}/publish`, { method: "POST" }); await load(); }
+    catch (e: any) { setError(e.message); }
+  };
+
+  return (
+    <div className="space-y-6">
+      {error && <ErrorBox msg={error} />}
+      <section>
+        <h3 className="text-sm font-bold text-slate-900 mb-2">Failed publications</h3>
+        {!failed ? <Loading /> : failed.length === 0 ? <Empty msg="No failed publications." /> : (
+          <div className="space-y-2">
+            {failed.map((p) => (
+              <div key={p.id} className="bg-white border border-red-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-1"><Badge className="bg-slate-100 text-slate-700 border-slate-200 capitalize">{p.platform}</Badge><Badge className="bg-red-100 text-red-800 border-transparent">failed</Badge></div>
+                <p className="text-xs text-red-700 mb-2">{p.last_error || "No error message recorded."}</p>
+                <p className="text-sm text-slate-800 whitespace-pre-wrap mb-2">{p.content}</p>
+                <ActBtn onClick={() => retry(p.id)} busy={false} icon={<RefreshCw className="w-3.5 h-3.5" />} label="Retry publish now" primary />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      <section>
+        <h3 className="text-sm font-bold text-slate-900 mb-2">Published</h3>
+        {!published ? <Loading /> : published.length === 0 ? <Empty msg="Nothing published yet." /> : (
+          <div className="space-y-2">
+            {published.map((p) => (
+              <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-1 text-xs text-slate-500">
+                  <Badge className="bg-slate-100 text-slate-700 border-slate-200 capitalize">{p.platform}</Badge>
+                  <span>{p.updated_at ? new Date(p.updated_at).toLocaleString() : ""}</span>
+                  {p.external_url && <a className="text-brand-700 underline ml-auto" href={p.external_url} target="_blank" rel="noopener noreferrer">View on platform</a>}
+                </div>
+                <p className="text-sm text-slate-800 whitespace-pre-wrap">{p.content}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

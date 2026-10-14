@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import express, { type Request, type Response, type NextFunction } from "express";
+import { timingSafeEqual } from "node:crypto";
 import { isPlatform, PLATFORMS, type Platform } from "./types.js";
 import { generateMarketingPosts } from "./ai.js";
 import { buildUtmUrl, slugifyCampaign } from "./utm.js";
@@ -22,6 +23,7 @@ import { runScheduler, refreshAllChannelStates } from "./scheduler.js";
 import { publishPost } from "./publisher.js";
 import {
   canTransition,
+  countPostsByStatus,
   createCampaign,
   createPost,
   getAnalyticsSummary,
@@ -31,6 +33,7 @@ import {
   listPosts,
   logAgentAction,
   transitionPost,
+  updateCampaign,
   updatePost,
   upsertChannelState,
   type MarketingPost,
@@ -41,11 +44,18 @@ export const marketingRouter = express.Router();
 
 // --- Auth -------------------------------------------------------------------
 
+// Constant-time comparison so the secret cannot be guessed byte-by-byte by timing.
+export function secretMatches(provided: unknown, expected: string | undefined): boolean {
+  if (typeof provided !== "string" || !expected) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 function adminOk(req: Request): boolean {
-  return Boolean(process.env.ADMIN_SECRET) && req.headers["x-admin-secret"] === process.env.ADMIN_SECRET;
+  return secretMatches(req.headers["x-admin-secret"], process.env.ADMIN_SECRET);
 }
 function cronOk(req: Request): boolean {
-  return Boolean(process.env.CRON_SECRET) && req.headers["authorization"] === `Bearer ${process.env.CRON_SECRET}`;
+  return secretMatches(req.headers["authorization"], process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : undefined);
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
@@ -58,6 +68,16 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
 function actor(req: Request): string {
   const a = req.body?.actor;
   return typeof a === "string" && a.trim() ? a.trim().slice(0, 120) : "admin";
+}
+
+function isHttpUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 function handleError(err: any, res: Response, context: string) {
@@ -111,6 +131,10 @@ marketingRouter.post("/generate", requireAdmin, async (req: Request, res: Respon
     const requested: Platform[] = Array.isArray(platforms) ? platforms.filter(isPlatform) : [];
     if (!requested.length) return res.status(400).json({ error: `platforms must include at least one of: ${PLATFORMS.join(", ")}.` });
     if (!topic || typeof topic !== "string") return res.status(400).json({ error: "topic is required." });
+    if (topic.length > 2000) return res.status(400).json({ error: "topic must be 2000 characters or fewer." });
+    if (linkUrl !== undefined && linkUrl !== null && linkUrl !== "" && !isHttpUrl(linkUrl)) {
+      return res.status(400).json({ error: "linkUrl must be an http(s) URL." });
+    }
 
     const { drafts, model: usedModel } = await generateMarketingPosts({
       platforms: requested,
@@ -138,12 +162,19 @@ marketingRouter.post("/generate", requireAdmin, async (req: Request, res: Respon
         campaign_id: campaignId || null,
         ai_generated: true,
         ai_model: usedModel,
+        title: d.title,
+        intended_audience: d.intendedAudience,
+        objective: objective || null,
+        call_to_action: callToAction || null,
+        content_category: d.category,
+        verification_notes: d.verificationNotes,
         generation_context: { topic, objective, callToAction, campaignSlug },
         created_by: actor(req),
         status: "draft",
       });
       created.push(post);
     }
+    // Drafts carry a verification checklist: the model's claims are never treated as verified.
 
     await logAgentAction({
       action: "generate",
@@ -214,16 +245,43 @@ marketingRouter.patch("/posts/:id", requireAdmin, async (req: Request, res: Resp
     if (post.status === "published" || post.status === "publishing") {
       return res.status(409).json({ error: `A ${post.status} post cannot be edited.` });
     }
-    const { content, hashtags, mediaUrl, linkUrl, campaignId, scheduledFor } = req.body || {};
+    if (post.status === "canceled") return res.status(409).json({ error: "A canceled post cannot be edited." });
+    const { content, hashtags, mediaUrl, linkUrl, campaignId, scheduledFor, title, intendedAudience, verificationNotes } = req.body || {};
+    if (typeof content === "string" && content.length > 10000) return res.status(400).json({ error: "content must be 10000 characters or fewer." });
+    if (linkUrl && !isHttpUrl(linkUrl)) return res.status(400).json({ error: "linkUrl must be an http(s) URL." });
+    if (scheduledFor && isNaN(new Date(scheduledFor).getTime())) return res.status(400).json({ error: "scheduledFor is not a valid timestamp." });
+
     const patch: Partial<MarketingPost> = {};
     if (typeof content === "string") patch.content = content;
-    if (Array.isArray(hashtags)) patch.hashtags = hashtags;
+    if (Array.isArray(hashtags)) patch.hashtags = hashtags.map(String).slice(0, 10);
     if (mediaUrl !== undefined) patch.media_url = mediaUrl || null;
     if (linkUrl !== undefined) patch.link_url = linkUrl || null;
     if (campaignId !== undefined) patch.campaign_id = campaignId || null;
     if (scheduledFor !== undefined) patch.scheduled_for = scheduledFor || null;
+    if (typeof title === "string") patch.title = title.slice(0, 200);
+    if (typeof intendedAudience === "string") patch.intended_audience = intendedAudience.slice(0, 300);
+    if (typeof verificationNotes === "string") patch.verification_notes = verificationNotes.slice(0, 2000);
+
+    const contentChanged = ["content", "hashtags", "media_url", "link_url"].some((k) => k in patch);
+    if (contentChanged && post.status !== "draft") {
+      // Approval covered the previous text. Revert to draft and clear approval/schedule.
+      if (!canTransition(post.status, "draft")) {
+        return res.status(409).json({ error: `Cannot edit a '${post.status}' post.` });
+      }
+      const reverted = await transitionPost(post.id, post.status, "draft", {
+        ...patch,
+        approved_by: null,
+        approved_at: null,
+        scheduled_for: null,
+        rejection_reason: null,
+      });
+      if (!reverted) return res.status(409).json({ error: "Post changed status concurrently; try again." });
+      await logAgentAction({ action: "edit", status: "info", postId: post.id, platform: post.platform, detail: `Content changed; approval reset (was '${post.status}').` });
+      return res.json({ post: reverted, approvalReset: true });
+    }
+
     const updated = await updatePost(req.params.id, patch);
-    res.json({ post: updated });
+    res.json({ post: updated, approvalReset: false });
   } catch (err) {
     handleError(err, res, "edit post");
   }
@@ -308,6 +366,24 @@ marketingRouter.post("/posts/:id/schedule", requireAdmin, async (req, res) => {
   }
 });
 
+// Rejected posts return to draft so they can be edited and resubmitted.
+marketingRouter.post("/posts/:id/draft", requireAdmin, async (req, res) => {
+  try {
+    await doTransition(req, res, "draft", "return-to-draft", () => ({ rejection_reason: null }));
+  } catch (err) {
+    handleError(err, res, "return post to draft");
+  }
+});
+
+// Removes a scheduled post from the queue without discarding its approval.
+marketingRouter.post("/posts/:id/unschedule", requireAdmin, async (req, res) => {
+  try {
+    await doTransition(req, res, "approved", "unschedule", () => ({ scheduled_for: null }));
+  } catch (err) {
+    handleError(err, res, "unschedule post");
+  }
+});
+
 marketingRouter.post("/posts/:id/cancel", requireAdmin, async (req, res) => {
   try {
     await doTransition(req, res, "canceled", "cancel");
@@ -348,6 +424,63 @@ marketingRouter.post("/campaigns", requireAdmin, async (req, res) => {
     res.json({ campaign });
   } catch (err) {
     handleError(err, res, "create campaign");
+  }
+});
+
+marketingRouter.patch("/campaigns/:id", requireAdmin, async (req, res) => {
+  try {
+    const { name, objective, theme, status } = req.body || {};
+    if (name !== undefined && (typeof name !== "string" || !name.trim())) return res.status(400).json({ error: "name must be a non-empty string." });
+    if (status !== undefined && !["active", "paused", "archived"].includes(status)) {
+      return res.status(400).json({ error: "status must be one of: active, paused, archived." });
+    }
+    const campaign = await updateCampaign(req.params.id, {
+      name: typeof name === "string" ? name.trim().slice(0, 200) : undefined,
+      objective: typeof objective === "string" ? objective.slice(0, 1000) : undefined,
+      theme: typeof theme === "string" ? theme.slice(0, 200) : undefined,
+      status,
+    });
+    if (!campaign) return res.status(404).json({ error: "Campaign not found." });
+    await logAgentAction({ action: "campaign.update", status: "info", detail: `Campaign '${campaign.name}' -> ${campaign.status}.` });
+    res.json({ campaign });
+  } catch (err) {
+    handleError(err, res, "update campaign");
+  }
+});
+
+// --- Overview ---------------------------------------------------------------
+// Real counts only. Anything the agent cannot measure is listed under
+// `unavailable` with a reason, never shown as zero.
+
+marketingRouter.get("/overview", requireAdmin, async (_req, res) => {
+  try {
+    const [counts, failed, campaigns, channels, analytics] = await Promise.all([
+      countPostsByStatus(),
+      listPosts({ status: "failed", limit: 20 }),
+      listCampaigns(),
+      Promise.all(getAllAdapters().map((a) => a.getStatus())),
+      getAnalyticsSummary(),
+    ]);
+    res.json({
+      counts,
+      pendingApproval: counts.pending_approval,
+      failedJobs: failed.map((p) => ({ id: p.id, platform: p.platform, last_error: p.last_error, updated_at: p.updated_at })),
+      campaigns: {
+        active: campaigns.filter((c) => c.status === "active").length,
+        paused: campaigns.filter((c) => c.status === "paused").length,
+        archived: campaigns.filter((c) => c.status === "archived").length,
+      },
+      channels: channels.map((c) => ({ platform: c.platform, status: c.status })),
+      engagement: analytics,
+      unavailable: [
+        { metric: "Website traffic, unique visitors, landing-page engagement", reason: "No analytics source is connected to the Marketing Agent yet." },
+        { metric: "Signups and analyzer-start conversion", reason: "Not read from the product database by this dashboard yet." },
+        { metric: "Referral sources and free-to-paid conversion", reason: "No attribution source is connected yet." },
+        { metric: "Email engagement and qualified partnership leads", reason: "Not connected to the Marketing Agent yet." },
+      ],
+    });
+  } catch (err) {
+    handleError(err, res, "load overview");
   }
 });
 

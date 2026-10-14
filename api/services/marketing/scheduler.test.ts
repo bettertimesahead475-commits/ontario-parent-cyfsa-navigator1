@@ -10,6 +10,8 @@ const { mockPublishPost, mockRefreshMetricsFor, store } = vi.hoisted(() => ({
   store: {
     listDuePosts: vi.fn(),
     listPublishedPosts: vi.fn(),
+    listStuckPublishing: vi.fn(),
+    transitionPost: vi.fn(),
     logAgentAction: vi.fn(),
     upsertChannelState: vi.fn(),
   },
@@ -26,6 +28,7 @@ const { runScheduler } = await import("./scheduler.js");
 beforeEach(() => {
   vi.clearAllMocks();
   store.listPublishedPosts.mockResolvedValue([]);
+  store.listStuckPublishing.mockResolvedValue([]);
   store.logAgentAction.mockResolvedValue(undefined);
 });
 
@@ -74,5 +77,25 @@ describe("runScheduler", () => {
     const r = await runScheduler({ refreshMetrics: false });
     expect(r.failed).toHaveLength(1);
     expect(r.failed[0].detail).toContain("unexpected");
+  });
+});
+
+describe("stuck publishing recovery", () => {
+  it("moves an abandoned 'publishing' post to failed, never back to scheduled", async () => {
+    store.listDuePosts.mockResolvedValue([]);
+    store.listStuckPublishing.mockResolvedValue([{ id: "s1", platform: "x" }]);
+    store.transitionPost.mockResolvedValue({ id: "s1", status: "failed" });
+    const result = await runScheduler({ refreshMetrics: false });
+    expect(store.transitionPost).toHaveBeenCalledWith("s1", "publishing", "failed", expect.objectContaining({ last_error: expect.stringMatching(/Check the platform/) }));
+    expect(store.transitionPost).not.toHaveBeenCalledWith("s1", "publishing", "scheduled", expect.anything());
+    expect(result.stuck).toHaveLength(1);
+  });
+
+  it("queries only posts older than the stuck threshold", async () => {
+    store.listDuePosts.mockResolvedValue([]);
+    const before = Date.now();
+    await runScheduler({ refreshMetrics: false });
+    const cutoff = store.listStuckPublishing.mock.calls[0][0] as Date;
+    expect(before - cutoff.getTime()).toBeGreaterThanOrEqual(15 * 60 * 1000 - 50);
   });
 });

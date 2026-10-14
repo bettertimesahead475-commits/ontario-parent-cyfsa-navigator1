@@ -65,7 +65,15 @@ export interface DraftPost {
   platform: Platform;
   content: string;
   hashtags: string[];
+  title: string | null;
+  intendedAudience: string | null;
+  category: string | null;
+  verificationNotes: string;
 }
+
+/** Every AI draft carries this note: the model's wording is unverified until a human checks it. */
+export const DEFAULT_VERIFICATION_NOTE =
+  "AI-drafted. Any legal statement, statute, or procedure in this text must be checked against the official source before approval.";
 
 // Minimal, resilient JSON extraction (mirrors _server.ts's extractJson intent).
 function extractJson(text: string): any {
@@ -136,7 +144,15 @@ ${platformSpecs}
 
 Return STRICT JSON — an array of objects, no prose, no markdown fences:
 [
-  { "platform": "<one of: ${opts.platforms.join(", ")}>", "content": "the post text (without hashtags)", "hashtags": ["Relevant", "Hashtags", "WithoutHashSymbol"] }
+  {
+    "platform": "<one of: ${opts.platforms.join(", ")}>",
+    "title": "short internal title",
+    "intendedAudience": "who this is for, e.g. parents facing a CYFSA matter",
+    "category": "one of: ontario-cyfsa-education, procedures, document-organization, legal-appointments, court-documents, parent-rights, evidence, tutorials, analyzer-demo, product-update, partnerships, community-resources",
+    "verificationNotes": "any legal statement in this post that needs checking, or 'No legal statements.'",
+    "content": "the post text (without hashtags)",
+    "hashtags": ["Relevant", "Hashtags", "WithoutHashSymbol"]
+  }
 ]
 
 Keep hashtags relevant and non-misleading (e.g. OntarioParents, CYFSA, KnowYourRights, ChildProtection, LegalAidOntario). Do not include a hashtag that implies a guarantee or outcome. Remember: educational only, no legal advice, no fabricated numbers or testimonials.`;
@@ -173,7 +189,12 @@ Keep hashtags relevant and non-misleading (e.g. OntarioParents, CYFSA, KnowYourR
     // Hard-enforce the platform length cap even if the model overshot.
     const a = getAdapter(platform);
     const capped = a.maxContentLength > 0 ? content.slice(0, a.maxContentLength) : content;
-    drafts.push({ platform, content: capped, hashtags });
+    const title = typeof item?.title === "string" ? item.title.trim().slice(0, 200) : null;
+    const intendedAudience = typeof item?.intendedAudience === "string" ? item.intendedAudience.trim().slice(0, 300) : null;
+    const category = typeof item?.category === "string" ? item.category.trim().slice(0, 60) : null;
+    const modelNotes = typeof item?.verificationNotes === "string" ? item.verificationNotes.trim().slice(0, 1000) : "";
+    const verificationNotes = [DEFAULT_VERIFICATION_NOTE, modelNotes].filter(Boolean).join(" ");
+    drafts.push({ platform, content: capped, hashtags, title, intendedAudience, category, verificationNotes });
   }
 
   if (!drafts.length) {
