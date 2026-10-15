@@ -1,17 +1,65 @@
 // ---------------------------------------------------------------------------
 // Facebook Page adapter — posts to a Facebook Page via the Graph API.
 //
-// Requires a Page ID and a long-lived Page access token with pages_manage_posts
-// + pages_read_engagement. Those permissions require Facebook App Review, so
-// until the app is approved this adapter will honestly report
-// `waiting_for_platform_approval` when a live call is rejected for permissions.
+// Credential source, in order:
+//   1. The Page connected through the admin OAuth flow (encrypted in
+//      marketing_connections). This is the supported path.
+//   2. Legacy environment variables FACEBOOK_PAGE_ID / FACEBOOK_PAGE_ACCESS_TOKEN,
+//      kept so an existing deployment keeps working. Prefer the OAuth path.
+//
+// Meta permissions required: pages_show_list, pages_manage_posts,
+// pages_read_engagement. Granting these to accounts other than app roles
+// requires Meta App Review (Advanced Access). Until then the adapter reports
+// `waiting_for_platform_approval` when Meta rejects a call for permissions.
 // ---------------------------------------------------------------------------
 
 import { BaseAdapter, classifyPlatformError, httpJson, platformErrorMessage, readEnv } from "./base.js";
-import type { ChannelState, MetricsResult, Platform, PublishInput, PublishResult } from "../types.js";
+import type { ChannelState, MetricsResult, Platform, PublishInput, PublishResult, PublishFailureStatus } from "../types.js";
+import { loadFacebookCredentials, markFacebookExpired } from "../connections.js";
+import { graphBase } from "../facebookOAuth.js";
 
-const GRAPH_VERSION = "v21.0";
-const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
+interface PageCredentials {
+  pageId: string;
+  token: string;
+  source: "connection" | "env";
+}
+
+// Flat shape, not a discriminated union: this project compiles without
+// strictNullChecks, which does not narrow unions (same convention as types.ts).
+interface CredentialResult {
+  ok: boolean;
+  creds?: PageCredentials;
+  status?: PublishFailureStatus;
+  error?: string;
+}
+
+/** Resolves usable Page credentials. Never throws: a storage problem becomes an honest error state. */
+export async function resolveFacebookCredentials(): Promise<CredentialResult> {
+  try {
+    const conn = await loadFacebookCredentials();
+    if (conn.ok) return { ok: true, creds: { pageId: conn.pageId, token: conn.token, source: "connection" } };
+    if (conn.reason === "expired") return { ok: false, status: "error", error: `${conn.message} Reconnect the Facebook Page in the Marketing Agent.` };
+  } catch (e: any) {
+    // Database not configured (503): there is no stored connection yet, so fall
+    // through to the env path and report waiting. Any other failure is a real
+    // error and must not be presented as "not connected".
+    const legacy = legacyEnv();
+    if (legacy) return { ok: true, creds: { ...legacy, source: "env" } };
+    if (e?.statusCode === 503) {
+      return { ok: false, status: "waiting_for_credentials", error: "Facebook Page is not connected. Connect it from the Marketing Agent." };
+    }
+    return { ok: false, status: "error", error: `Facebook connection could not be read: ${e?.message || "unknown error"}` };
+  }
+  const legacy = legacyEnv();
+  if (legacy) return { ok: true, creds: { ...legacy, source: "env" } };
+  return { ok: false, status: "waiting_for_credentials", error: "Facebook Page is not connected. Connect it from the Marketing Agent." };
+}
+
+function legacyEnv(): { pageId: string; token: string } | null {
+  const pageId = readEnv("FACEBOOK_PAGE_ID");
+  const token = readEnv("FACEBOOK_PAGE_ACCESS_TOKEN");
+  return pageId && token ? { pageId, token } : null;
+}
 
 export class FacebookAdapter extends BaseAdapter {
   readonly platform: Platform = "facebook";
@@ -19,22 +67,23 @@ export class FacebookAdapter extends BaseAdapter {
   readonly requiredEnv = ["FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"];
   readonly maxContentLength = 63206;
 
-  private cfg() {
-    return {
-      pageId: readEnv("FACEBOOK_PAGE_ID")!,
-      token: readEnv("FACEBOOK_PAGE_ACCESS_TOKEN")!,
-    };
-  }
-
   async getStatus(): Promise<ChannelState> {
-    const missing = this.missingEnv();
-    if (missing.length > 0) return super.getStatus();
+    const resolved = await resolveFacebookCredentials();
+    if (!resolved.ok) {
+      return {
+        platform: this.platform,
+        displayName: this.displayName,
+        status: resolved.status,
+        credentialsPresent: false,
+        detail: resolved.error,
+        missingEnv: resolved.status === "waiting_for_credentials" ? this.requiredEnv : [],
+        lastError: resolved.status === "waiting_for_credentials" ? null : resolved.error,
+      };
+    }
 
-    const { pageId, token } = this.cfg();
+    const { pageId, token } = resolved.creds;
     try {
-      const { ok, status, body } = await httpJson(
-        `${GRAPH}/${encodeURIComponent(pageId)}?fields=name,id&access_token=${encodeURIComponent(token)}`
-      );
+      const { ok, status, body } = await httpJson(`${graphBase()}/${encodeURIComponent(pageId)}?fields=name,id&access_token=${encodeURIComponent(token)}`);
       if (ok && body?.id) {
         return {
           platform: this.platform,
@@ -45,6 +94,18 @@ export class FacebookAdapter extends BaseAdapter {
           credentialsPresent: true,
           detail: `Connected to Facebook Page "${body.name}".`,
           missingEnv: [],
+        };
+      }
+      if (body?.error?.code === 190) {
+        await markFacebookExpired(`${platformErrorMessage(status, body)}. Reconnect the Facebook Page.`).catch(() => undefined);
+        return {
+          platform: this.platform,
+          displayName: this.displayName,
+          status: "error",
+          credentialsPresent: true,
+          detail: "Facebook connection expired. Reconnect the Facebook Page.",
+          missingEnv: [],
+          lastError: platformErrorMessage(status, body),
         };
       }
       const mapped = classifyPlatformError(status, body);
@@ -73,14 +134,48 @@ export class FacebookAdapter extends BaseAdapter {
     }
   }
 
+  async publish(input: PublishInput): Promise<PublishResult> {
+    const resolved = await resolveFacebookCredentials();
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        status: resolved.status,
+        error: resolved.error,
+        missingEnv: resolved.status === "waiting_for_credentials" ? this.requiredEnv : undefined,
+      };
+    }
+    const validationError = this.validateInput(input);
+    if (validationError) return { ok: false, status: "error", error: validationError };
+    return this.postToGraph(input, resolved.creds);
+  }
+
+  async fetchMetrics(externalPostId: string): Promise<MetricsResult> {
+    const resolved = await resolveFacebookCredentials();
+    if (!resolved.ok) return { ok: false, status: resolved.status, error: resolved.error };
+    return this.fetchFromGraph(externalPostId, resolved.creds);
+  }
+
+  // Base-class hooks. publish()/fetchMetrics() above resolve credentials first, so
+  // these are only reached if a caller bypasses them; they fail closed.
   protected async doPublish(input: PublishInput): Promise<PublishResult> {
-    const { pageId, token } = this.cfg();
+    const resolved = await resolveFacebookCredentials();
+    if (!resolved.ok) return { ok: false, status: resolved.status, error: resolved.error };
+    return this.postToGraph(input, resolved.creds);
+  }
+
+  protected async doFetchMetrics(externalPostId: string): Promise<MetricsResult> {
+    const resolved = await resolveFacebookCredentials();
+    if (!resolved.ok) return { ok: false, status: resolved.status, error: resolved.error };
+    return this.fetchFromGraph(externalPostId, resolved.creds);
+  }
+
+  private async postToGraph(input: PublishInput, creds: PageCredentials): Promise<PublishResult> {
     const message = this.composeMessage(input);
 
     // A post with a photo uses the /photos edge; a text/link post uses /feed.
     const isPhoto = Boolean(input.mediaUrl);
-    const endpoint = isPhoto ? `${GRAPH}/${pageId}/photos` : `${GRAPH}/${pageId}/feed`;
-    const params = new URLSearchParams({ access_token: token });
+    const endpoint = isPhoto ? `${graphBase()}/${creds.pageId}/photos` : `${graphBase()}/${creds.pageId}/feed`;
+    const params = new URLSearchParams({ access_token: creds.token });
     if (isPhoto) {
       params.set("url", input.mediaUrl!);
       params.set("caption", message);
@@ -104,6 +199,10 @@ export class FacebookAdapter extends BaseAdapter {
         raw: body,
       };
     }
+    if (body?.error?.code === 190) {
+      await markFacebookExpired(platformErrorMessage(status, body)).catch(() => undefined);
+      return { ok: false, status: "error", error: "Facebook connection expired. Reconnect the Facebook Page, then retry this post." };
+    }
     return {
       ok: false,
       status: classifyPlatformError(status, body),
@@ -112,11 +211,10 @@ export class FacebookAdapter extends BaseAdapter {
     };
   }
 
-  protected async doFetchMetrics(externalPostId: string): Promise<MetricsResult> {
-    const { token } = this.cfg();
+  private async fetchFromGraph(externalPostId: string, creds: PageCredentials): Promise<MetricsResult> {
     const fields = "likes.summary(true),comments.summary(true),shares";
     const { ok, status, body } = await httpJson(
-      `${GRAPH}/${encodeURIComponent(externalPostId)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`
+      `${graphBase()}/${encodeURIComponent(externalPostId)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(creds.token)}`
     );
     if (ok) {
       return {
