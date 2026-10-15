@@ -31,7 +31,7 @@ begin
   new.updated_at = now();
   return new;
 end;
-$ language plpgsql
+$$ language plpgsql
 set search_path = pg_catalog, public;
 
 -- ---------------------------------------------------------------------------
