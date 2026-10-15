@@ -16,6 +16,22 @@ Production's ledger does not contain the marketing migration, so the marketing s
 
 **Known production issue to resolve during rollout:** `vercel.json` on `main` schedules `/api/admin/marketing/run-scheduler` every 5 minutes. The current production build already includes that route, but production has no marketing tables, so each run is expected to fail with a database error. The runtime logs do not show response status codes, so this is **unverified**. Applying Step 3 removes the cause.
 
+## 1a. Preview and environment blockers (verified 2026-10-14/15)
+
+- **Preview protection:** preview deployment `dpl_EXW88KgomEWQARazQ8MPKhJnRh2G` is READY but returns Vercel Authentication (deployment protection) to anonymous requests. The project API reports password and SSO protection as disabled, so the enforcing setting is at the team or deployment level and was not readable. Owner action: check Project Settings → Deployment Protection (and the team default for preview deployments). To run the smoke test, either create a protection-bypass secret for this preview and pass it as `VERCEL_BYPASS_TOKEN`, or disable protection for this preview.
+- **Admin secret:** `ADMIN_SECRET` exists for Preview and Production. It is a sensitive variable, so its value cannot be read through the API. Use the existing variable: the owner supplies its value out-of-band as `ADMIN_SECRET` when running `scripts/marketing-smoke.sh`. Do not paste it into chat or commit it.
+- **`CRON_SECRET` is not in the Preview or Production variable names returned by the API.** Without it, the marketing scheduler returns 401 to Vercel Cron, and the existing `check-payments` and `monitoring/run` crons also reject their calls (both check the same secret). Owner action: confirm whether `CRON_SECRET` is set in Production; if not, add it (approval required) before merging.
+- **Preview database binding:** Preview has its own `SUPABASE_URL` (sensitive, value unreadable), which overrides the shared one. Owner action: confirm that it points to staging `nxfhvebzzobegubefcda`, and that Production's `SUPABASE_URL` points to `qboidsfpjuxeqtfotryj`.
+
+Smoke test (read-only, prints status codes only):
+
+```bash
+PREVIEW_URL=https://<preview-host> ADMIN_SECRET=<from Vercel> CRON_SECRET=<from Vercel> \
+VERCEL_BYPASS_TOKEN=<only if protected> scripts/marketing-smoke.sh
+```
+
+Local verification without credentials (built server, throwaway secrets, no database): all auth gates return 401; validation returns 400 before any AI or database call; missing dependencies return controlled 503 errors; the scheduler returns 503 with a clear message when Supabase is absent. Overview and analytics need a database to return 200.
+
 ## 2. Pre-flight checks (read-only)
 
 1. Re-run `list_migrations` on `qboidsfpjuxeqtfotryj`. If `20261005` or `20261014` appear, stop and reconcile before continuing.
