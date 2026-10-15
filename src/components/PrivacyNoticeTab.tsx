@@ -130,26 +130,30 @@ export default function PrivacyNoticeTab() {
             9. Facebook Marketing Integration
           </h2>
           <p>
-            This section covers CYFSA Navigator's connection to its own Facebook Page, which administrators use to publish approved educational posts. It does not use parents' personal Facebook accounts. Until that connection is enabled, no Facebook Page data is collected.
+            This section covers CYFSA Navigator's own Facebook Page, which administrators use to publish approved educational posts. It does not use parents' personal Facebook accounts.
           </p>
+          <div role="note" className="p-4 bg-brand-50 border-l-4 border-brand-600 rounded-r-xl text-brand-950 text-xs md:text-sm font-medium">
+            <strong>Current status:</strong> no Facebook Page is connected to the production site, and no Facebook account or Page credential is stored there. The connection feature described below is in development and is not deployed. This section will be updated when it is deployed.
+          </div>
+          <p><strong>Planned, when the connection is deployed:</strong></p>
           <ul className="list-disc pl-6 space-y-2 text-slate-700">
             <li>
-              <strong>Permissions requested:</strong> <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_show_list</code> to list the Pages an administrator manages; <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_manage_posts</code> to publish and schedule approved posts; <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_read_engagement</code> to read engagement counts for those posts.
+              <strong>Permissions requested:</strong> <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_show_list</code> to list the Pages an administrator manages; <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_manage_posts</code> to publish approved posts; <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_read_engagement</code> to read engagement counts for those posts. Facebook may restrict these permissions until its review process is complete.
             </li>
             <li>
-              <strong>Data accessed:</strong> the names and IDs of Pages the administrator can post to, a Page access token for the chosen Page, the Page's name and ID, Facebook post IDs and publication status for approved posts, and engagement counts returned for those posts.
+              <strong>Data accessed:</strong> the names and IDs of Pages the administrator can post to, a Page access token for the chosen Page, the Page's name and ID, Facebook post IDs and status for approved posts, and engagement counts Facebook returns for those posts.
             </li>
             <li>
               <strong>Use:</strong> publishing posts an administrator has approved, showing their status to administrators, and reporting engagement to administrators. We do not sell this information, and we do not use it to build profiles of individuals.
             </li>
             <li>
-              <strong>Token storage:</strong> the Page access token is encrypted on our servers before it is stored, using a server-side key. It is not returned to the browser. The encryption key is kept separate from the database.
+              <strong>Token storage:</strong> the planned design encrypts the Page access token before storage, using a server-side key, and does not return it to the browser.
             </li>
             <li>
-              <strong>Consent and disconnection:</strong> an administrator authorizes the connection through Facebook's own consent screen and chooses the Page. An administrator can disconnect the Page at any time from the Marketing Agent. Removing the app in Facebook settings also withdraws the permissions.
+              <strong>Consent and disconnection:</strong> an administrator would authorize the connection through Facebook's consent screen and choose the Page. An administrator would be able to disconnect the Page from the Marketing Agent. Removing the app in Facebook settings withdraws the permissions.
             </li>
             <li>
-              <strong>Retention and deletion:</strong> stored tokens and Page details are deleted on disconnection or on request. Published post records and audit logs are kept as described in our <a href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-semibold">Data Deletion Instructions</a>.
+              <strong>Deletion:</strong> requests are handled manually by email, as described in our <a href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-semibold">Data Deletion Instructions</a>. CYFSA Navigator does not currently delete this information automatically, and does not call Facebook to revoke permissions.
             </li>
           </ul>
         </section>
