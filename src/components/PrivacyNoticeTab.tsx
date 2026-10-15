@@ -124,6 +124,36 @@ export default function PrivacyNoticeTab() {
           </div>
         </section>
 
+        {/* Facebook marketing integration */}
+        <section aria-labelledby="facebook-heading" className="space-y-3">
+          <h2 id="facebook-heading" className="text-xl font-bold text-slate-900 border-b pb-2">
+            9. Facebook Marketing Integration
+          </h2>
+          <p>
+            This section covers CYFSA Navigator's connection to its own Facebook Page, which administrators use to publish approved educational posts. It does not use parents' personal Facebook accounts. Until that connection is enabled, no Facebook Page data is collected.
+          </p>
+          <ul className="list-disc pl-6 space-y-2 text-slate-700">
+            <li>
+              <strong>Permissions requested:</strong> <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_show_list</code> to list the Pages an administrator manages; <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_manage_posts</code> to publish and schedule approved posts; <code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">pages_read_engagement</code> to read engagement counts for those posts.
+            </li>
+            <li>
+              <strong>Data accessed:</strong> the names and IDs of Pages the administrator can post to, a Page access token for the chosen Page, the Page's name and ID, Facebook post IDs and publication status for approved posts, and engagement counts returned for those posts.
+            </li>
+            <li>
+              <strong>Use:</strong> publishing posts an administrator has approved, showing their status to administrators, and reporting engagement to administrators. We do not sell this information, and we do not use it to build profiles of individuals.
+            </li>
+            <li>
+              <strong>Token storage:</strong> the Page access token is encrypted on our servers before it is stored, using a server-side key. It is not returned to the browser. The encryption key is kept separate from the database.
+            </li>
+            <li>
+              <strong>Consent and disconnection:</strong> an administrator authorizes the connection through Facebook's own consent screen and chooses the Page. An administrator can disconnect the Page at any time from the Marketing Agent. Removing the app in Facebook settings also withdraws the permissions.
+            </li>
+            <li>
+              <strong>Retention and deletion:</strong> stored tokens and Page details are deleted on disconnection or on request. Published post records and audit logs are kept as described in our <a href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-semibold">Data Deletion Instructions</a>.
+            </li>
+          </ul>
+        </section>
+
         {/* Security & Legal Preservation */}
         <section aria-labelledby="legal-heading" className="space-y-3">
           <h2 id="legal-heading" className="text-xl font-bold text-slate-900 border-b pb-2">
