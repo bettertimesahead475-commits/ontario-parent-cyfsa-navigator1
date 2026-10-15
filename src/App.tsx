@@ -37,6 +37,7 @@ const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWo
 const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorkspace"));
 const AcceptInvitation = lazy(() => import("./components/AcceptInvitation"));
 const PrivacyNoticeTab = lazy(() => import("./components/PrivacyNoticeTab"));
+const DataDeletionPage = lazy(() => import("./components/DataDeletionPage"));
 const CaseActionWorkspace = lazy(() => import("./components/CaseActionWorkspace"));
 const RequireAuth = lazy(() => import("./components/RequireAuth"));
 const MigrationNotice = lazy(() => import("./components/MigrationNotice"));
@@ -472,6 +473,10 @@ export default function App() {
             <PrivacyNoticeTab />
           </Route>
 
+          <Route path="/data-deletion">
+            <DataDeletionPage />
+          </Route>
+
           {/* Fallback route */}
           <Route><Redirect to="/" /></Route>
 
@@ -594,7 +599,7 @@ export default function App() {
             <div className="space-y-1 text-center sm:text-right font-sans text-xs">
               <span className="block text-slate-600 font-bold">Jurisdiction: Ontario Court of Justice, Canada</span>
               <span className="block text-slate-500 mt-0.5">
-                Primary sources updated: Q2 2026 · <Link href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Privacy Policy</Link>
+                Primary sources updated: Q2 2026 · <Link href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Privacy Policy</Link> · <Link href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Data Deletion</Link>
               </span>
             </div>
           </div>
