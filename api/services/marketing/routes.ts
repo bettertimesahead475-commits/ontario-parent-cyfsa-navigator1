@@ -22,6 +22,20 @@ import { getAllAdapters } from "./adapters/registry.js";
 import { runScheduler, refreshAllChannelStates } from "./scheduler.js";
 import { publishPost } from "./publisher.js";
 import {
+  disconnectFacebook,
+  getFacebookConnectionView,
+  savePendingPages,
+  selectPendingPage,
+} from "./connections.js";
+import { signOAuthState, verifyOAuthState } from "./secrets.js";
+import {
+  buildAuthorizationUrl,
+  exchangeCodeForUserToken,
+  exchangeForLongLivedUserToken,
+  listManagedPages,
+  publicAppUrl,
+} from "./facebookOAuth.js";
+import {
   canTransition,
   countPostsByStatus,
   createCampaign,
@@ -500,6 +514,75 @@ marketingRouter.get("/log", requireAdmin, async (req, res) => {
     res.json({ log: await listAgentLog(limit) });
   } catch (err) {
     handleError(err, res, "load agent log");
+  }
+});
+
+// --- Facebook Page connection (Meta OAuth) ----------------------------------
+// Flow: connect (admin) -> Meta consent -> callback (state-checked, no admin
+// header because Meta redirects the browser) -> owner selects a Page -> stored.
+// Tokens never leave the server. Responses contain Page names and IDs only.
+
+const ADMIN_UI = "/admin/marketing";
+
+marketingRouter.get("/facebook/connect", requireAdmin, (_req: Request, res: Response) => {
+  try {
+    const authorizationUrl = buildAuthorizationUrl(signOAuthState());
+    res.json({ authorizationUrl });
+  } catch (err) {
+    handleError(err, res, "start Facebook connection");
+  }
+});
+
+// Public by design: Meta calls this with the browser. Access is granted only by
+// a valid, unexpired, server-signed state. Errors redirect back to the admin
+// console without detail that could help an attacker.
+marketingRouter.get("/facebook/callback", async (req: Request, res: Response) => {
+  const back = (result: string) => res.redirect(302, `${publicAppUrl()}${ADMIN_UI}?facebook=${result}`);
+  try {
+    if (typeof req.query.error === "string") return back("denied");
+    if (!verifyOAuthState(req.query.state)) return back("invalid_state");
+    if (typeof req.query.code !== "string" || !req.query.code) return back("missing_code");
+
+    const shortToken = await exchangeCodeForUserToken(req.query.code);
+    const longToken = await exchangeForLongLivedUserToken(shortToken);
+    const pages = await listManagedPages(longToken);
+    if (pages.length === 0) return back("no_pages");
+
+    await savePendingPages(pages, "admin");
+    return back("select_page");
+  } catch (err: any) {
+    console.error("[marketing] facebook callback failed", err?.message || err);
+    return back("failed");
+  }
+});
+
+marketingRouter.get("/facebook/connection", requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    res.json({ connection: await getFacebookConnectionView() });
+  } catch (err) {
+    handleError(err, res, "load Facebook connection");
+  }
+});
+
+marketingRouter.post("/facebook/select", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const pageId = req.body?.pageId;
+    if (typeof pageId !== "string" || !/^\d{1,32}$/.test(pageId)) {
+      return res.status(400).json({ error: "pageId must be the numeric Facebook Page ID from the list." });
+    }
+    const page = await selectPendingPage(pageId, actor(req));
+    res.json({ page });
+  } catch (err) {
+    handleError(err, res, "select Facebook Page");
+  }
+});
+
+marketingRouter.post("/facebook/disconnect", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    await disconnectFacebook(actor(req));
+    res.json({ connection: await getFacebookConnectionView() });
+  } catch (err) {
+    handleError(err, res, "disconnect Facebook Page");
   }
 });
 

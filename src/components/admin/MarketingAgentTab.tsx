@@ -268,6 +268,7 @@ function ChannelsPanel() {
           {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Re-check
         </button>
       </div>
+      <FacebookConnectionCard />
       {error && <ErrorBox msg={error} />}
       {!channels ? <Loading /> : (
         <div className="grid sm:grid-cols-2 gap-4">
@@ -290,6 +291,118 @@ function ChannelsPanel() {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Facebook Page connection ----------------------------------------------
+// Connect, choose a Page, see which Page is live, reconnect when Facebook has
+// expired the token, and disconnect. The browser only ever receives Page names
+// and IDs; tokens stay on the server.
+
+interface FacebookConnection {
+  status: "pending_selection" | "connected" | "expired" | "disconnected";
+  pageId: string | null;
+  pageName: string | null;
+  connectedAt: string | null;
+  lastError: string | null;
+  pendingPages: { id: string; name: string }[];
+}
+
+const FACEBOOK_NOTICES: Record<string, string> = {
+  select_page: "Facebook authorised. Choose the Page to publish to.",
+  denied: "Facebook connection was cancelled. Nothing was connected.",
+  invalid_state: "That Facebook link had expired or was not valid. Start the connection again.",
+  missing_code: "Facebook did not return an authorisation code. Try again.",
+  no_pages: "No Facebook Page was found that you can post to. Check your Page role, then try again.",
+  failed: "Facebook could not complete the connection. Check the activity log, then try again.",
+};
+
+function FacebookConnectionCard() {
+  const [conn, setConn] = useState<FacebookConnection | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [chosen, setChosen] = useState("");
+
+  const load = useCallback(async () => {
+    try { const d = await adminApi("/facebook/connection"); setConn(d.connection); }
+    catch (e: any) { setError(e.message); }
+  }, []);
+
+  useEffect(() => {
+    load();
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const result = params.get("facebook");
+      if (result) {
+        setNotice(FACEBOOK_NOTICES[result] || "Facebook returned an unexpected result.");
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    } catch { /* ignore: URL parsing is best-effort */ }
+  }, [load]);
+
+  const run = async (fn: () => Promise<any>) => {
+    setBusy(true); setError(null);
+    try { await fn(); await load(); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const connect = () => run(async () => {
+    const d = await adminApi("/facebook/connect");
+    window.location.assign(d.authorizationUrl);
+  });
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <span className="font-bold text-slate-900">Facebook Page</span>
+        {conn && (
+          <Badge className={
+            conn.status === "connected" ? STATUS_STYLES.connected.cls
+              : conn.status === "expired" ? STATUS_STYLES.error.cls
+              : STATUS_STYLES.waiting_for_credentials.cls
+          }>
+            {conn.status === "connected" ? "Connected" : conn.status === "expired" ? "Reconnect required" : conn.status === "pending_selection" ? "Choose a Page" : "Not connected"}
+          </Badge>
+        )}
+      </div>
+
+      {notice && <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 mb-2 text-xs text-slate-700">{notice}</div>}
+      {error && <ErrorBox msg={error} />}
+
+      {!conn ? <Loading /> : conn.status === "connected" ? (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sm text-slate-700">Publishing to <span className="font-semibold">{conn.pageName}</span>. Approved posts publish here only after you approve them.</p>
+          <ActBtn onClick={() => run(() => adminApi("/facebook/disconnect", { method: "POST" }))} busy={busy} icon={<XCircle className="w-3.5 h-3.5" />} label="Disconnect Page" />
+        </div>
+      ) : conn.status === "pending_selection" ? (
+        <div className="space-y-2">
+          <p className="text-sm text-slate-700">Select the Page to connect. Only Pages you can post to are listed.</p>
+          {conn.pendingPages.map((p) => (
+            <label key={p.id} className="flex items-center gap-2 text-sm text-slate-800">
+              <input type="radio" name="fb-page" value={p.id} checked={chosen === p.id} onChange={() => setChosen(p.id)} />
+              {p.name}
+            </label>
+          ))}
+          <div className="flex gap-2">
+            <ActBtn onClick={() => run(async () => { await adminApi("/facebook/select", { method: "POST", body: JSON.stringify({ pageId: chosen }) }); setChosen(""); })} busy={busy || !chosen} icon={<CheckCircle2 className="w-3.5 h-3.5" />} label="Use this Page" primary />
+            <ActBtn onClick={() => run(() => adminApi("/facebook/disconnect", { method: "POST" }))} busy={busy} icon={<XCircle className="w-3.5 h-3.5" />} label="Cancel" />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {conn.status === "expired" && (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+              Facebook no longer accepts the stored connection{conn.pageName ? ` for ${conn.pageName}` : ""}. Posts will not publish until you reconnect. {conn.lastError ? `Detail: ${conn.lastError}` : ""}
+            </p>
+          )}
+          <p className="text-sm text-slate-700">Authorise your Facebook account to choose a Page you manage. CYFSA Navigator never shows or stores your Facebook password.</p>
+          <ActBtn onClick={connect} busy={busy} icon={<Plug className="w-3.5 h-3.5" />} label={conn.status === "expired" ? "Reconnect Facebook" : "Connect Facebook Page"} primary />
+          <p className="text-[11px] text-slate-500">Requires Facebook permissions pages_show_list, pages_manage_posts and pages_read_engagement. Until Meta approves them for public use, only app admins, developers and testers can complete this step.</p>
         </div>
       )}
     </div>
