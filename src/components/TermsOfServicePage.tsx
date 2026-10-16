@@ -7,9 +7,11 @@ const IS_DRAFT = true;
 const CONTACT_EMAIL = 'chris@cyfsanavigator.com';
 
 const OPEN_DECISIONS = [
-  'Operator identity: confirm the legal name and business form (sole proprietor or incorporated company). The repository names Chris Pelkie as the privacy contact but does not record a registered business name.',
+  'Operator identity: confirm that CYFSA Navigator is a sole proprietorship operated by Chris Pelkie, the business name to show, and whether a mailing address is published on request. No personal address or telephone number is published.',
+  'Privacy contact: confirm that Chris Pelkie is the designated privacy contact and accountable person. This is an owner designation, not an independent or certified Data Protection Officer.',
+  'Platform-wide privacy notice: the Privacy Policy currently describes professional-access data only. A notice covering document uploads, AI providers, payments, sign-in, and hosting needs to be published before these Terms take effect.',
   'Effective date: set when the owner approves publication.',
-  'Refund eligibility and timing for one-time and monthly payments.',
+  'Refunds for unused credits, unused monthly periods, and payments not yet activated. The owner has set that completed analyses are non-refundable, subject to consumer-protection law.',
   'Liability cap: the proposed amount and whether to keep it.',
   'Monthly Case Access: whether a monthly period ends at its expiry date. The code has no automatic renewal or recurring charge.',
   'Account termination: notice period and appeal process.',
@@ -57,7 +59,7 @@ export default function TermsOfServicePage() {
       <div className="space-y-8 text-slate-800 leading-relaxed text-sm md:text-base">
         <Section id="about" title="1. Who we are and what these Terms cover">
           <p>
-            These Terms of Service (the "Terms") govern your use of CYFSA Navigator at cyfsanavigator.com (the "Platform"). CYFSA Navigator is operated by Chris Pelkie from Ontario, Canada. In these Terms, "we", "us", and "our" mean the operator of the Platform, and "you" means the person using it.
+            These Terms of Service (the "Terms") govern your use of CYFSA Navigator at cyfsanavigator.com (the "Platform"). CYFSA Navigator is a sole proprietorship operated by Chris Pelkie from Ontario, Canada <span data-owner-decision="operator-identity">[owner to confirm the business name]</span>. In these Terms, "we", "us", and "our" mean the operator of the Platform, and "you" means the person using it.
           </p>
           <p>
             By creating an account, uploading a document, or purchasing access, you agree to these Terms. If you do not agree, do not use the Platform.
@@ -112,7 +114,7 @@ export default function TermsOfServicePage() {
             <li>analysis results are saved in private storage so that you can view them. Results are also held in memory for a limited time while they are being prepared.</li>
           </ul>
           <p>
-            We do not currently delete uploaded documents or saved analysis records automatically. Please see our <a href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-semibold">Privacy Policy</a> for how we handle personal information, and our <a href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-semibold">Data Deletion Instructions</a> to request deletion. We cannot promise that any document or result is kept confidential or permanently deleted, and third-party providers have their own terms and retention practices.
+            We do not currently delete uploaded documents or saved analysis records automatically. To ask us to delete them, email {CONTACT_EMAIL} (see section 13). Our <a href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-semibold">Data Deletion Instructions</a> cover Facebook-related information only. We cannot promise that any document or result is kept confidential or permanently deleted, and third-party providers have their own terms and retention practices.
           </p>
         </Section>
 
@@ -145,13 +147,16 @@ export default function TermsOfServicePage() {
           </p>
           <p><strong>Paid access.</strong> Paid access is sold in these forms:</p>
           <ul className="list-disc pl-6 space-y-2 text-slate-700">
-            <li><strong>Document Analyzer Basic</strong> ($19.99 CAD, one-time): up to three Quick Document Reviews. Does not include the Case Workspace.</li>
-            <li><strong>Document Analyzer Premium</strong> ($49.99 CAD, one-time): includes up to five Forensic In-Depth Analyses, subject to the limits shown at purchase.</li>
-            <li><strong>Individual / Family CYFSA Case Access</strong> ($149 CAD per month): full platform access for one family, with up to five Forensic In-Depth Analyses per monthly billing cycle.</li>
+            <li><strong>Document Analyzer Basic</strong> ($19.99 CAD, one-time): 3 analysis credits, used for Quick Document Reviews. Does not include the Case Workspace.</li>
+            <li><strong>Document Analyzer Premium</strong> ($49.99 CAD, one-time): 5 analysis credits, usable for Quick Document Reviews or Forensic In-Depth Analyses.</li>
+            <li><strong>Individual / Family CYFSA Case Access</strong> ($149 CAD per month): full platform access for one family, with 5 analysis credits per monthly billing cycle, usable for Quick Document Reviews or Forensic In-Depth Analyses.</li>
             <li><strong>Sponsored Case Access</strong> (Community 5, Community 10, Community 25, and Regional / Enterprise): arranged separately with the sponsoring organization, under terms agreed with that organization.</li>
           </ul>
           <p>
             Prices are shown in Canadian dollars at the time of purchase. We may change prices for future purchases, but not for access you have already paid for.
+          </p>
+          <p>
+            <strong>Buying credits and using credits are different.</strong> Buying a package adds analysis credits to your access. A credit is used only when an analysis has been completed successfully and its report is ready to be made available to you. Each analysis uses one credit, whether it is a Quick Document Review or a Forensic In-Depth Analysis. If an analysis fails before it completes, no credit is used, and a free use counted for that analysis is restored.
           </p>
           <p>
             <strong>How to pay.</strong> The Platform accepts payment by Interac e-Transfer only. You send the transfer to our payment address and include the reference number shown on the checkout page in the message or memo. The Platform does not collect or store card numbers or banking passwords.
@@ -168,7 +173,7 @@ export default function TermsOfServicePage() {
             <strong>Recurring access.</strong> Monthly Case Access does not renew automatically, and we do not charge a card or any stored payment method on a schedule. Each monthly period requires a new payment. How a monthly period ends is subject to owner decision (see the review notice).
           </p>
           <p>
-            <strong>Refunds.</strong> <span data-owner-decision="refunds">[Refund eligibility and timing are pending owner approval. This section must be completed before publication.]</span>
+            <strong>Refunds.</strong> Completed analyses are non-refundable, subject to applicable Ontario and Canadian consumer-protection laws. This policy does not limit any refund, correction, or other remedy required by law. <span data-owner-decision="refunds">[Owner decision pending: refund eligibility and timing for unused credits, unused monthly periods, and payments not yet activated.]</span>
           </p>
           <p>
             <strong>Payment disputes.</strong> If a payment is disputed, we may suspend the related access while the dispute is reviewed. Please contact us first at {CONTACT_EMAIL} so we can try to resolve it.
@@ -177,7 +182,7 @@ export default function TermsOfServicePage() {
 
         <Section id="privacy" title="7. Privacy and data protection">
           <p>
-            Our <a href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-semibold">Privacy Policy</a> explains what personal information we collect, how we use it, who we share it with, and how we handle professional access. Our <a href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-semibold">Data Deletion Instructions</a> explain how to ask us to delete information. These Terms are read together with those pages. If there is any inconsistency about how personal information is handled, the Privacy Policy controls.
+            Our <a href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-semibold">Privacy Policy</a> currently describes how we handle personal information about professional access to a matter. <span data-owner-decision="privacy-notice">[Owner decision pending: a Platform-wide privacy notice covering document uploads, AI providers, payments, sign-in, and hosting must be published before these Terms take effect.]</span> Until then, sections 4 and 6 of these Terms describe how uploads, AI processing, and payment information are handled. Our <a href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-semibold">Data Deletion Instructions</a> cover Facebook-related information only.
           </p>
           <p>
             You can also contact us at {CONTACT_EMAIL} about privacy questions. Applicable privacy laws may give you additional rights, and we will respond to requests as those laws require.
@@ -233,9 +238,17 @@ export default function TermsOfServicePage() {
           </p>
         </Section>
 
-        <Section id="contact" title="13. Contact">
+        <Section id="contact" title="13. Contact and privacy contact">
           <p>
             For questions about these Terms, privacy requests, or payment issues, email <a className="text-brand-700 underline font-mono" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+          </p>
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-sm space-y-1" data-owner-decision="privacy-contact">
+            <div><strong>Privacy contact:</strong> Chris Pelkie, operator of CYFSA Navigator (sole proprietorship, Ontario, Canada)</div>
+            <div><strong>Email:</strong> <a className="text-brand-700 underline font-mono" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></div>
+            <div><strong>Mailing address:</strong> available on written request</div>
+          </div>
+          <p>
+            Chris Pelkie is the designated privacy contact and the person accountable for the Platform's privacy practices. This is an owner designation. CYFSA Navigator has not appointed an independent or legally certified Data Protection Officer.
           </p>
         </Section>
       </div>
