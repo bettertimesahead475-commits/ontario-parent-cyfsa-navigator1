@@ -829,7 +829,9 @@ export default function DocumentAnalyzerTab() {
             const report = file.analysisReport;
             reportText += `>>> ANALYSIS AUDIT REPORT: ${report.documentTitle || file.name}\n`;
             reportText += `Document Type : ${report.documentType || "N/A"}\n`;
-            reportText += `Completeness / Reliability Score: ${report.completenessScore}/100\n\n`;
+            reportText += report.documentAuthority
+              ? `Information Completeness: Not scored for court orders and endorsements\n\n`
+              : `Information Completeness: ${report.completenessScore}/100\n\n`;
 
             // Red Flags
             reportText += `  * RED FLAGS IDENTIFIED (${report.redFlags?.length || 0}):\n`;
@@ -2592,6 +2594,12 @@ export default function DocumentAnalyzerTab() {
         "#dc2626";
 
       const completenessScore = Number(reportForExport.completenessScore) || 0;
+      // Court orders and endorsements are not scored (see documentAuthority). Show the notice instead of a number.
+      const courtRecordNotice = reportForExport.documentAuthority ? "Not scored for court orders and endorsements" : "";
+      const evidenceScoreHtml = courtRecordNotice
+        ? `<span style="font-size:16px; color:#475569; font-weight:bold;">${courtRecordNotice}</span>`
+        : `${evidenceScore}<span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>`;
+      const completenessScoreHtml = courtRecordNotice || `${completenessScore}/100`;
       const components = evidenceIndex.components || {};
 
       const evidenceComponents = [
@@ -2630,8 +2638,7 @@ export default function DocumentAnalyzerTab() {
               </span>
 
               <div style="font-size:32px; font-weight:800; color:${evidenceScoreColor}; margin-top:5px;">
-                ${evidenceScore}
-                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
+                ${evidenceScoreHtml}
               </div>
             </div>
 
@@ -2685,7 +2692,7 @@ export default function DocumentAnalyzerTab() {
             </strong>
 
             <span style="font-size:12px; color:#475569;">
-              ${completenessScore}/100
+              ${completenessScoreHtml}
             </span>
 
             <div style="font-size:11px; color:#64748b; margin-top:4px;">
@@ -3956,11 +3963,11 @@ export default function DocumentAnalyzerTab() {
                         </div>
                         <div className="text-right flex items-center gap-2 p-2 bg-slate-50 border border-gray-100 rounded-xl shrink-0">
                           <div>
-                            <span className="text-[8px] font-sans tracking-wider block text-slate-500 font-bold">INTEGRITY WEIGHT</span>
-                            <span className="text-xs text-slate-500">Credibility Index</span>
+                            <span className="text-[8px] font-sans tracking-wider block text-slate-500 font-bold">{selectedReport.documentAuthority ? "NOT SCORED" : "INFORMATION COMPLETENESS"}</span>
+                            <span className="text-xs text-slate-500">{selectedReport.documentAuthority ? "Court record" : "Share of relevant information present"}</span>
                           </div>
                           <div className="w-9 h-9 rounded-full bg-brand-900 flex items-center justify-center font-display font-extrabold text-white text-xs">
-                            {selectedReport.completenessScore}%
+                            {selectedReport.documentAuthority ? "n/a" : `${selectedReport.completenessScore}%`}
                           </div>
                         </div>
                       </div>
@@ -3981,25 +3988,12 @@ export default function DocumentAnalyzerTab() {
                               )}
                               {selectedReport.modelMetadata.engineName}
                             </span>
-                            <span className="font-sans text-[11px] text-slate-500">
-                              ({selectedReport.modelMetadata.model})
-                            </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-4 text-[11px] font-sans text-slate-600">
                             <span className="flex items-center gap-1" title="Server Analysis Processing Time">
                               <Clock className="w-3 h-3 text-slate-400" />
                               {(selectedReport.modelMetadata.durationMs / 1000).toFixed(1)}s
                             </span>
-                            {selectedReport.modelMetadata.usage && (
-                              <span title={`Input: ${selectedReport.modelMetadata.usage.inputTokens.toLocaleString()} | Output: ${selectedReport.modelMetadata.usage.outputTokens.toLocaleString()}`}>
-                                Tokens: <strong>{selectedReport.modelMetadata.usage.totalTokens.toLocaleString()}</strong>
-                              </span>
-                            )}
-                            {selectedReport.modelMetadata.cost && (
-                              <span className="text-emerald-700 font-semibold" title={`USD $${selectedReport.modelMetadata.cost.totalCostUsd.toFixed(4)}`}>
-                                Est. CAD: ${selectedReport.modelMetadata.cost.totalCostCad.toFixed(3)}
-                              </span>
-                            )}
                           </div>
                         </div>
                       )}
@@ -4999,18 +4993,18 @@ export default function DocumentAnalyzerTab() {
                                           }
                                           strokeWidth="4"
                                           strokeDasharray={2 * Math.PI * 20}
-                                          strokeDashoffset={2 * Math.PI * 20 * (1 - report.completenessScore / 100)}
+                                          strokeDashoffset={2 * Math.PI * 20 * (1 - (report.completenessScore ?? 0) / 100)}
                                           strokeLinecap="round"
                                           stroke="currentColor"
                                           fill="transparent"
                                         />
                                       </svg>
                                       <span className="absolute text-xs font-sans font-bold text-gray-800">
-                                        {report.completenessScore}%
+                                        {report.documentAuthority ? "n/a" : `${report.completenessScore}%`}
                                       </span>
                                     </div>
                                     <span className="text-[10px] font-sans text-slate-500 uppercase font-bold leading-none">
-                                      Evidentiary Weight
+                                      {report.documentAuthority ? "Court record" : "Information Completeness"}
                                     </span>
                                   </div>
 

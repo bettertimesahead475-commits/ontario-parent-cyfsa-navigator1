@@ -69,6 +69,13 @@ If you construct a novel argument (e.g., "informal access restriction = de facto
 - For Ontario Family Law Rules 14(18) and 14(19), the confirmed rule is that motion affidavits should as far as possible be firsthand, but information from another named source may be included if the affiant states a belief that it is true; secondhand material is not automatically inadmissible.
 - Keep every finding and answer within the existing report schema; do not invent new top-level JSON keys.
 
+7. COURT ORDERS AND JUDICIAL ENDORSEMENTS (when the document is a court order, endorsement, or judgment):
+- A court order has legal authority, subject to its terms and current status. Report what the court ordered, whether it is interim, final, varied, stayed, or superseded (only when the document shows it), and what the judge found.
+- Judge's findings and reasons are JUDICIAL_FINDING, not OPINION. Describe what the judge found and on what stated basis.
+- Allegations the order only summarizes are PARTY_ALLEGATION. They are not findings unless the judge adopted them.
+- Affidavits or records the order refers to but that are not in the upload are REFERENCED_DOCUMENT_NOT_PROVIDED. Absence of the referenced record is not a procedural defect, not proof of unreliable evidence, and not hearsay. Hearsay can be assessed only after the underlying affidavit has been examined.
+- Do not produce an Evidence Strength Index or Information Completeness score that reads as a credibility or validity percentage for a court order. Leave the numbers as they are required by the schema; the system does not display them for court records.
+
 THINGS TO NEVER DO
 - Never assert that a document violates a law unless the violation is admitted in the document's own words.
 - Never present an unverified statute citation as fact.
@@ -119,7 +126,7 @@ export const FIELD_SCHEMAS: Record<string, string> = {
        "id": "rf1",
        "severity": "Affects Evidentiary Weight", // Allowed: "Affects Evidentiary Weight", "Worth Raising With Counsel", or "CRITICAL". CRITICAL requires an explicit documented admission of a material procedural failure AND verified statutory authority; otherwise do not use CRITICAL.
        "category": "Hearsay", // "Hearsay", "Unsupported Claim", "Procedural Defect", "Authority Overreach", "Rights Omission", etc.
-       "evidenceClassification": "HEARSAY", // Must be strictly one of: "DIRECT", "DOCUMENTARY", "CORROBORATED", "HEARSAY", "INFERENCE", "OPINION", "UNSUPPORTED", "UNCLEAR"
+       "evidenceClassification": "HEARSAY", // Must be strictly one of: "DIRECT", "DOCUMENTARY", "CORROBORATED", "HEARSAY", "INFERENCE", "OPINION", "UNSUPPORTED", "UNCLEAR", "COURT_ORDER", "JUDICIAL_ENDORSEMENT", "JUDICIAL_FINDING", "PARTY_ALLEGATION", "REFERENCED_DOCUMENT_NOT_PROVIDED". See Rule 7 for court records.
        "phraseDetected": "The exact sentence in the text representing the red flag",
        "explanation": "Write 3-5 clear sentences: (1) what the quoted passage actually says, (2) why it affects evidentiary weight or procedure, (3) what evidence in this document supports or weakens the point, and (4) what cannot be concluded from this document alone. Do not use generic legal filler.",
        "verifyRequirement": "Give a specific verification checklist naming the record, witness, date, log, message, medical/school record, disclosure item, or other evidence that would confirm or challenge this exact point. Avoid vague phrases such as 'get more evidence'.",
