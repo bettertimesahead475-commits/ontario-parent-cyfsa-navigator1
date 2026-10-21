@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PARENTAL_RIGHTS } from "../../shared/parentalRights.js";
 import { RIGHT_TRIGGERS, buildSectionedReport, matchRight, reportTextForTriggers } from "../../shared/reportSections.js";
+import { RIGHT_CONDITIONS } from "../../shared/parentalRights.js";
 
 const JUDICIAL_ENDORSEMENT = {
   documentType: "Court Endorsement",
@@ -27,6 +28,13 @@ const JUDICIAL_ENDORSEMENT = {
 const GROCERY_NOTE = { documentType: "Note", fileSummary: "A shopping list for the week.", redFlags: [] };
 
 describe("right triggers", () => {
+  it("has conditions and exceptions for every verified right", () => {
+    for (const r of PARENTAL_RIGHTS) {
+      expect(RIGHT_CONDITIONS[r.id]?.conditions.length, r.id).toBeGreaterThan(0);
+      expect(RIGHT_CONDITIONS[r.id]?.exceptions.length, r.id).toBeGreaterThan(0);
+    }
+  });
+
   it("has a trigger list for every verified right, and no trigger for an unknown id", () => {
     for (const r of PARENTAL_RIGHTS) expect(RIGHT_TRIGGERS[r.id], r.id).toBeDefined();
     for (const id of Object.keys(RIGHT_TRIGGERS)) expect(PARENTAL_RIGHTS.some((r) => r.id === id), id).toBe(true);
@@ -53,10 +61,14 @@ describe("Section 5 rights in the sectioned report", () => {
     expect(ids).not.toContain("R-five-day-hearing"); // no place-of-safety removal in this report
   });
 
-  it("states that a right may apply and does not claim a breach", () => {
+  it("labels a keyword match as a candidate with its conditions not established", () => {
     const sectioned = buildSectionedReport(JUDICIAL_ENDORSEMENT);
     const right = sectioned.findings.find((f) => f.id === "R-adjournment-limit")!;
-    expect(right.whatHappened).toMatch(/may apply\. It does not show that it was breached/);
+    expect(right.title).toMatch(/^Possibly relevant:/);
+    expect(right.whatHappened).toMatch(/Candidate only\. .* does not show the conditions below are met\./);
+    expect(right.legalTestResult).toBe("Conditions not established");
+    expect(right.whatIsUnknown).toContain("The adjournment is for more than 30 days.");
+    expect(right.whatIsUnknown).toContain("All parties present");
     expect(JSON.stringify(sectioned)).not.toMatch(/\bviolat|\bbreach(ed)? of|unlawful/i);
   });
 

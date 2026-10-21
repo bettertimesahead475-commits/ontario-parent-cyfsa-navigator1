@@ -5,7 +5,7 @@
  * A right is never added to every report. Each one needs a trigger term that appears in the report,
  * and that term is shown to the parent so the reason is visible.
  */
-import { PARENTAL_RIGHTS, type ParentalRightEntry } from "./parentalRights";
+import { PARENTAL_RIGHTS, RIGHT_CONDITIONS, type ParentalRightEntry } from "./parentalRights";
 import { adaptLegacyReport, type ReportContract, type ReportFinding } from "./reportContract";
 
 /** Terms that make a right relevant. Each term must appear in the report text. */
@@ -69,26 +69,32 @@ export function withApplicableRights(contract: ReportContract, text: string, doc
   for (const entry of PARENTAL_RIGHTS) {
     const term = matchRight(entry, text);
     if (!term) continue;
+    const cond = RIGHT_CONDITIONS[entry.id];
     added.push({
       id: `R-${entry.id}`,
       sectionId: "S05",
       legacyId: null,
       kind: "ANALYSIS",
-      title: entry.title,
-      whatHappened: `This report mentions "${term}", so this provision may apply. It does not show that it was breached.`,
+      title: `Possibly relevant: ${entry.title}`,
+      whatHappened: `Candidate only. This report mentions "${term}". That word does not show the conditions below are met.`,
       whyItMatters: entry.plainEnglish,
       whatLawSays: `${entry.section}: "${entry.quote}"`,
-      whatIsUnknown: entry.limitations,
+      whatIsUnknown: [
+        "Conditions not yet established from the records:",
+        ...cond.conditions.map((c) => `- ${c}`),
+        "Exceptions or limits to check:",
+        ...cond.exceptions.map((c) => `- ${c}`),
+      ].join("\n"),
       whatYouCanDo: entry.verifyInDocuments,
       evidenceClassification: null,
       severity: null,
-      legalTestResult: null,
-      concern: "NOT_APPLICABLE",
+      legalTestResult: "Conditions not established",
+      concern: "NOT_INDEPENDENTLY_VERIFIED",
       quote: "NOT_CHECKED",
       sources: [{ documentId, locator: entry.section, quote: "" }],
       authorities: [{ citation: entry.section, status: "VERIFIED_IN_REPOSITORY_REFERENCE" }],
       uncertainty:
-        "Checked against the repository copy of the CYFSA consolidation dated 2026-06-24. Confirm against the current official text before relying on it.",
+        "A keyword match is a research signal only. Checked against the repository copy of the CYFSA consolidation dated 2026-06-24, not the official e-Laws text (not reachable in this session).",
       supportingFindingIds: [],
       contraryFindingIds: [],
       relatedFindingIds: [],
@@ -105,7 +111,7 @@ export function withApplicableRights(contract: ReportContract, text: string, doc
     findings: [...contract.findings, ...added],
     sections: contract.sections.map((s) =>
       s.id === "S05"
-        ? { ...s, status: "POPULATED", note: "Includes statutory provisions that may apply to this document.", findingIds: [...s.findingIds, ...added.map((f) => f.id)] }
+        ? { ...s, status: "POPULATED", note: "Includes provisions that may be relevant. Each lists the conditions the records have not yet established.", findingIds: [...s.findingIds, ...added.map((f) => f.id)] }
         : s
     ),
   };
