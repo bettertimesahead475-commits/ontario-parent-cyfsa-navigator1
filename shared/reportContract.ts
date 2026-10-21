@@ -473,7 +473,9 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
     S05: "No rights or timeline items were produced.",
     S06: isCourtRecord
       ? "Not scored. Court orders and endorsements are not given an evidence-strength or completeness score."
-      : "Items about how reliable the evidence is. No evidence-strength score was produced.",
+      : typeof esi?.score === "number"
+        ? "Items about how reliable the evidence is. The analyzer reported a heuristic evidence-strength score; it is not a verified measure of reliability."
+        : "Items about how reliable the evidence is. No evidence-strength score was produced.",
     S07: "The analyzer found no contradictions.",
     S08: "The analyzer listed no missing records.",
     S09: "No threshold checks were produced (Quick Review does not run them).",
