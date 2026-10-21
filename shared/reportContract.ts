@@ -398,6 +398,8 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
     const description = text(c?.description);
     if (!description) continue;
     const locations = strings(c.locations);
+    // A contradiction needs two source passages. With fewer, it is kept but not treated as confirmed.
+    const twoSources = locations.length >= 2;
     add(
       makeFinding({
         sectionId: "S07",
@@ -405,7 +407,10 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
         title: "Possible contradiction",
         whatHappened: description,
         whyItMatters: text(c.significance),
-        concern: "POSSIBLE_CONCERN",
+        concern: twoSources ? "POSSIBLE_CONCERN" : "NOT_INDEPENDENTLY_VERIFIED",
+        uncertainty: twoSources
+          ? ""
+          : "Only one source location was given. A second passage is needed before this can be treated as a conflict.",
         sources: locations.length
           ? locations.map((loc) => ({ documentId, locator: loc, quote: "" }))
           : [{ documentId, locator: "Location not given", quote: "" }],

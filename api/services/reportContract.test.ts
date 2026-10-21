@@ -184,6 +184,25 @@ describe("legacy adapter: source and authority preservation", () => {
   });
 });
 
+describe("contradictions need two source passages", () => {
+  it("treats a contradiction with two locations as a possible concern", () => {
+    const c = adaptLegacyReport(ORDINARY_AFFIDAVIT);
+    const f = c.findings.find((x) => x.kind === "CONTRADICTION")!;
+    expect(f.concern).toBe("POSSIBLE_CONCERN");
+    expect(f.sources.map((s) => s.locator)).toEqual(["Page 1", "Page 3"]);
+  });
+
+  it("keeps a contradiction with one location but does not treat it as confirmed", () => {
+    const c = adaptLegacyReport({
+      documentType: "Worker Summary",
+      contradictions: [{ description: "Dates differ.", locations: ["Page 1"], significance: "Possible error." }],
+    });
+    const f = c.findings.find((x) => x.kind === "CONTRADICTION")!;
+    expect(f.concern).toBe("NOT_INDEPENDENTLY_VERIFIED");
+    expect(f.uncertainty).toMatch(/second passage is needed/);
+  });
+});
+
 describe("court records and missing records", () => {
   it("puts the court document in S04, with no evidence score in S06", () => {
     const c = adaptLegacyReport(COURT_ENDORSEMENT);
