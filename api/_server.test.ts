@@ -775,8 +775,8 @@ describe("POST /api/analyze", () => {
     expect(verification[0].model).toBe("claude-opus-5");
     expect(bodies.filter(b => !isVerificationRequest(b)).every(b => b.model === "claude-sonnet-5")).toBe(true);
     expect(res.body.forensicVerification.status).toBe("completed");
-    expect(res.body.modelMetadata.primaryModel).toBe("claude-sonnet-5");
-    expect(res.body.modelMetadata.verificationModel).toBe("claude-opus-5");
+    expect(Object.keys(res.body.modelMetadata).sort()).toEqual(["durationMs", "engineName", "mode", "modeName"]);
+    expect(res.body.forensicVerification.model).toBeUndefined();
     expect(res.body.thresholdAnalysis).toHaveLength(4);
   });
 

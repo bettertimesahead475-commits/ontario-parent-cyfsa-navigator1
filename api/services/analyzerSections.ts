@@ -68,6 +68,13 @@ export const EVIDENCE_CLASSIFICATIONS = [
   "OPINION",
   "UNSUPPORTED",
   "UNCLEAR",
+  // Legal-document and finding labels. A judge's finding is not an ordinary opinion, and a
+  // referenced record that was not uploaded is not evidence that it is unreliable.
+  "COURT_ORDER",
+  "JUDICIAL_ENDORSEMENT",
+  "JUDICIAL_FINDING",
+  "PARTY_ALLEGATION",
+  "REFERENCED_DOCUMENT_NOT_PROVIDED",
 ] as const;
 
 const SEVERITIES = ["Affects Evidentiary Weight", "Worth Raising With Counsel", "CRITICAL"] as const;
@@ -297,7 +304,7 @@ const CHRONOLOGY_SCHEMA = `"chronology": [
     "date": "Date exactly as written in the document (e.g. 'March 3, 2026'), or 'Undated' with the nearest sequence marker",
     "event": "One sentence describing what the document says happened. Attribute it (e.g. 'Worker states...') rather than presenting it as established fact.",
     "locationInDocument": "Page X, Paragraph Y",
-    "evidenceClassification": "One of: DIRECT, DOCUMENTARY, CORROBORATED, HEARSAY, INFERENCE, OPINION, UNSUPPORTED, UNCLEAR"
+    "evidenceClassification": "One of: DIRECT, DOCUMENTARY, CORROBORATED, HEARSAY, INFERENCE, OPINION, UNSUPPORTED, UNCLEAR, COURT_ORDER, JUDICIAL_ENDORSEMENT, JUDICIAL_FINDING, PARTY_ALLEGATION, REFERENCED_DOCUMENT_NOT_PROVIDED"
   }
 ],
 "contradictions": [
@@ -513,6 +520,78 @@ export function guardCitation(text: string): { text: string; status: "CONFIRMED_
 }
 
 /** Applies quote verification and citation guards across an assembled report (mutates and returns it). */
+// Court records are recognised from the model's documentType label. A label alone is not enough
+// to certify authenticity, so the policy below only changes how the report presents the record.
+const JUDICIAL_RECORD_TYPE =
+  /\b(court order|endorsement|judgment|judicial (?:order|decision|endorsement)|(?:interim|final|temporary|consent|continuing) order)\b|^\s*order\b/i;
+const JUDGE_FINDING_TEXT = /\b(the court|the judge|justice\b|I find|finds that|found that|is satisfied|ordered that|orders that)/i;
+const MISSING_RECORD_TEXT = /\baffidavit\b|\b(referenced|referred to) (?:document|record|affidavit|exhibit)s?\b|\bnot (?:attached|provided|included|uploaded)\b/i;
+
+export function isJudicialRecordType(documentType: unknown): boolean {
+  const type = str(documentType);
+  return JUDICIAL_RECORD_TYPE.test(type);
+}
+
+function classifyJudicialRecordItem(current: string, text: string): string {
+  if (current === "OPINION" && JUDGE_FINDING_TEXT.test(text)) return "JUDICIAL_FINDING";
+  if (["HEARSAY", "UNSUPPORTED", "UNCLEAR"].includes(current) && MISSING_RECORD_TEXT.test(text)) {
+    return "REFERENCED_DOCUMENT_NOT_PROVIDED";
+  }
+  return current;
+}
+
+/**
+ * Court orders and judicial endorsements are not scored as credibility or completeness. Their
+ * authority does not depend on how many supporting affidavits were uploaded, so the numeric
+ * scores are withdrawn and the record is labelled as such. Ordinary documents are left unchanged.
+ */
+export function applyDocumentAuthorityPolicy(report: Record<string, any>): Record<string, any> {
+  if (!isJudicialRecordType(report.documentType)) return report;
+  const recordKind = /endorse/i.test(str(report.documentType)) ? "JUDICIAL_ENDORSEMENT" : "COURT_ORDER";
+
+  for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
+    const classification = classifyJudicialRecordItem(
+      flag.evidenceClassification,
+      `${flag.phraseDetected} ${flag.explanation}`
+    );
+    if (classification === "REFERENCED_DOCUMENT_NOT_PROVIDED" && classification !== flag.evidenceClassification) {
+      // A record that was referred to but not uploaded is a gap to obtain, not a confirmed defect.
+      flag.category = "Referenced Record Not Provided";
+      flag.severity = "Affects Evidentiary Weight";
+      delete flag.originalSeverity;
+    }
+    flag.evidenceClassification = classification;
+  }
+  for (const entry of Array.isArray(report.chronology) ? report.chronology : []) {
+    entry.evidenceClassification = classifyJudicialRecordItem(entry.evidenceClassification, entry.event);
+  }
+
+  report.documentAuthority = {
+    recordKind,
+    scoring: "NOT_CREDIBILITY_SCORED",
+    authenticity:
+      "Not verified by this tool. Compare the copy with the court-issued original (court file number, seal or stamp, judge's signature, date) before relying on it.",
+    status:
+      "Whether the order is interim, final, varied, stayed or superseded cannot be determined from this document alone unless the document states it.",
+    statement:
+      "A court order has legal authority, subject to its terms and current status. This tool does not score the order's validity, and it does not decide whether the facts mentioned in the order are true.",
+  };
+  if (report.evidenceStrengthIndex && typeof report.evidenceStrengthIndex === "object") {
+    report.evidenceStrengthIndex = {
+      ...report.evidenceStrengthIndex,
+      score: null,
+      components: {},
+      scoringApplicable: false,
+      limitations:
+        "Not scored for court orders and endorsements. A low score would wrongly suggest the order is less valid because supporting records were not uploaded.",
+    };
+  }
+  report.completenessScore = null;
+  report.completenessScoreMethod =
+    "Not scored for court orders and endorsements. Missing supporting records are listed separately and are not treated as defects in the order.";
+  return report;
+}
+
 export function applyReportGuards(report: Record<string, any>, sourceText: string): Record<string, any> {
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
     const status = verifyQuoteAgainstSource(sourceText, flag.phraseDetected);
@@ -539,6 +618,7 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
   report.citationVerification = {
     method: "Checked against CYFSA Navigator's confirmed statute reference list. No external legal database was queried.",
   };
+  applyDocumentAuthorityPolicy(report);
   return report;
 }
 

@@ -612,8 +612,18 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
     const withUsage = (report: any, usage: { input_tokens: number; output_tokens: number }) => async (body: any) =>
       claudeJson(isVerificationRequest(body) ? VERIFICATION_RESULT : report, usage);
 
+    // Token counts and estimated cost are internal: they are written to the [ANALYZER_RUN] log only.
+    const analyzerRunLog = (spy: { mock: { calls: unknown[][] } }) => {
+      const line = spy.mock.calls.map((c) => c[0]).find((s) => typeof s === "string" && s.includes("[ANALYZER_RUN]"));
+      return JSON.parse(String(line));
+    };
+    const expectCustomerMetadataOnly = (meta: Record<string, unknown>) => {
+      expect(Object.keys(meta).sort()).toEqual(["durationMs", "engineName", "mode", "modeName"]);
+    };
+
     it("routes Quick Document Review to Claude Sonnet sections with accurate token metadata and cost accounting", async () => {
       mockCreateMessage.mockImplementation(withUsage(CORE, { input_tokens: 3500, output_tokens: 1200 }));
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       const res = await request(app)
         .post("/api/analyze")
@@ -627,14 +637,16 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         expect(call[0].max_tokens).toBeLessThanOrEqual(5000);
       }
 
-      // Usage is summed across the four section requests.
-      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
       expect(res.body.modelMetadata.mode).toBe("fast");
-      expect(res.body.modelMetadata.usage.inputTokens).toBe(4 * 3500);
-      expect(res.body.modelMetadata.usage.outputTokens).toBe(4 * 1200);
-      expect(res.body.modelMetadata.usage.totalTokens).toBe(4 * 4700);
-      expect(res.body.modelMetadata.cost.totalCostUsd).toBeCloseTo((4 * 3500 / 1e6) * 2 + (4 * 1200 / 1e6) * 10, 4);
-      expect(res.body.modelMetadata.cost.totalCostCad).toBeGreaterThan(0);
+      expectCustomerMetadataOnly(res.body.modelMetadata);
+      expect(JSON.stringify(res.body.modelMetadata)).not.toMatch(/claude-|usage|cost|token/i);
+
+      // Usage is summed across the four section requests and logged for internal cost review.
+      const runLog = analyzerRunLog(logSpy);
+      expect(runLog).toMatchObject({ inputTokens: 4 * 3500, outputTokens: 4 * 1200, costIsEstimate: true });
+      expect(runLog.costUsd).toBeCloseTo((4 * 3500 / 1e6) * 2 + (4 * 1200 / 1e6) * 10, 4);
+      expect(runLog.costCad).toBeGreaterThan(0);
+      logSpy.mockRestore();
     });
 
     it("routes Forensic sections to Sonnet and verifies high-impact findings with Opus, costing each model separately", async () => {
@@ -660,20 +672,15 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(verification[0][0].model).toBe("claude-opus-5");
 
       expect(res.body.redFlags).toHaveLength(1);
-      expect(res.body.redFlags[0].forensicVerification).toMatchObject({ verdict: "OVERSTATED", verifiedBy: "claude-opus-5" });
+      expect(res.body.redFlags[0].forensicVerification).toMatchObject({ verdict: "OVERSTATED" });
+      expect(res.body.redFlags[0].forensicVerification).not.toHaveProperty("verifiedBy");
       expect(res.body.forensicVerification.status).toBe("completed");
       expect(res.body.thresholdAnalysis).toHaveLength(4);
       expect(res.body.timing.mode).toBe("full");
 
       expect(res.body.modelMetadata.mode).toBe("full");
-      expect(res.body.modelMetadata.usage.inputTokens).toBe(6 * 1000 + 5000);
-      expect(res.body.modelMetadata.usage.outputTokens).toBe(6 * 500 + 1000);
-      // Sonnet 5 at $2/$10 for the six sections, Opus 5 at $5/$25 for verification.
-      expect(res.body.modelMetadata.cost.totalCostUsd).toBeCloseTo(
-        (6000 / 1e6) * 2 + (3000 / 1e6) * 10 + (5000 / 1e6) * 5 + (1000 / 1e6) * 25,
-        4
-      );
-      expect(res.body.modelMetadata.cost.byModel["claude-opus-5"].input_tokens).toBe(5000);
+      expectCustomerMetadataOnly(res.body.modelMetadata);
+      expect(JSON.stringify(res.body.modelMetadata)).not.toMatch(/claude-|usage|cost|token/i);
     });
 
     it("prevents frontend from forcing unauthorized Opus access in Quick Review mode", async () => {
@@ -691,7 +698,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.status).toBe(200);
       // Server must have forced Sonnet instead of honoring client Opus override
       for (const call of mockCreateMessage.mock.calls) expect(call[0].model).toBe("claude-sonnet-5");
-      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+      expectCustomerMetadataOnly(res.body.modelMetadata);
     });
 
     it("rejects unpaid user from obtaining Forensic Opus mode with 403 FORENSIC_UPGRADE_REQUIRED", async () => {
@@ -763,7 +770,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.status).toBe(200);
       expect(mockCreateMessage).toHaveBeenCalledTimes(4);
       expect(JSON.stringify(mockCreateMessage.mock.calls[0][0].messages)).toContain("Court filing narrative text...");
-      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+      expectCustomerMetadataOnly(res.body.modelMetadata);
     });
   });
 
@@ -801,7 +808,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
 
       expect(res.status).toBe(200);
       expect(mockCreateMessage).toHaveBeenCalledTimes(7);
-      expect(res.body.modelMetadata.verificationModel).toBe("claude-opus-5");
+      expect(res.body.forensicVerification.status).toBe("completed");
       expect(res.body.credits.tier).toBe("Admin Testing Access");
       expect(res.body.credits.quickReviewsRemaining).toBe(999);
       expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
