@@ -1,5 +1,7 @@
 # Pending Migration Readiness (Phase 6, corrected)
 
+> Superseded for sequencing by `MIGRATION_SEQUENCE_CORRECTED.md`. The evidence-schema blocker is addressed by `EVIDENCE_SCHEMA_PROPOSAL.md`.
+
 Status: **Not ready to apply.** Nothing was applied. The production database was not accessed. Verification used a disposable local PostgreSQL 16 cluster (scratch databases `replay_b` through `replay_f`, Supabase roles `anon`, `authenticated`, `service_role` simulated). That cluster has no Supabase auth schema, no Supabase-managed roles beyond those three, and no production data.
 
 This replaces the earlier draft of this file. Items that the earlier draft left open are now resolved, or are listed below as blockers.

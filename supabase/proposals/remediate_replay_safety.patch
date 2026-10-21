@@ -1,0 +1,20 @@
+--- a/supabase/migrations_pending_approval/remediate_navigator_matter_access_grants_lifecycle.sql
++++ b/supabase/migrations_pending_approval/remediate_navigator_matter_access_grants_lifecycle.sql
+@@ -131,7 +131,7 @@
+ revoke all on function public.accept_matter_grant(text, text) from public, anon, authenticated;
+ grant execute on function public.accept_matter_grant(text, text) to service_role;
+ 
+-create function public.revoke_matter_grant(
++create or replace function public.revoke_matter_grant(
+   p_firebase_uid text,
+   p_grant_id uuid
+ )
+@@ -222,7 +222,7 @@
+ -- returns exactly 'navigator_matter_access_lifecycle_v2'. That keeps new code from ever invoking
+ -- the legacy accept_matter_grant, which could commit an OWNER downgrade before its return value
+ -- could be inspected. It takes no arguments, reads no table and returns a constant.
+-create function public.navigator_matter_access_lifecycle_contract()
++create or replace function public.navigator_matter_access_lifecycle_contract()
+ returns text
+ language sql
+ immutable
