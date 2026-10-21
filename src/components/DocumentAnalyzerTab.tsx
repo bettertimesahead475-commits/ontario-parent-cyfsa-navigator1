@@ -53,7 +53,8 @@ import {
 import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
-import { REPORT_SECTIONS_UI_ENABLED } from "../config/featureFlags";
+import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED } from "../config/featureFlags";
+import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 
 /** Parent-facing names for the report sections the server validates and streams. */
@@ -4032,6 +4033,9 @@ export default function DocumentAnalyzerTab() {
                           </div>
                           <ReportSections report={selectedReport} />
                         </>
+                      )}
+                      {COURT_PREP_UI_ENABLED && (
+                        <CourtPrepWorkspace report={selectedReport} documentTitle={selectedReport.documentTitle || "Analysis report"} />
                       )}
 
                       {/* Redaction Toggle & Preview */}
