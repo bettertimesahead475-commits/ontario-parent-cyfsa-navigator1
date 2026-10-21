@@ -52,6 +52,9 @@ import {
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
+import { ReportSections } from "./ReportSections";
+import { REPORT_SECTIONS_UI_ENABLED } from "../config/featureFlags";
+import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -3989,6 +3992,33 @@ export default function DocumentAnalyzerTab() {
                             </span>
                           </div>
                         </div>
+                      )}
+
+                      {/* 16-section report (feature-flagged). The existing report above is unchanged. */}
+                      {REPORT_SECTIONS_UI_ENABLED && (
+                        <>
+                          <div className="flex flex-wrap gap-2 mt-4">
+                            {(["parent", "professional"] as const).map((audience) => (
+                              <button
+                                key={audience}
+                                type="button"
+                                className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2"
+                                onClick={() => {
+                                  const html = renderReportSectionsHtml(selectedReport, audience, selectedReport.documentTitle || "Analysis report");
+                                  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+                                  const link = document.createElement("a");
+                                  link.href = url;
+                                  link.download = audience === "parent" ? "cyfsa-report-parent.html" : "cyfsa-report-professional.html";
+                                  link.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                              >
+                                {audience === "parent" ? "Download parent report (HTML)" : "Download professional report (HTML)"}
+                              </button>
+                            ))}
+                          </div>
+                          <ReportSections report={selectedReport} />
+                        </>
                       )}
 
                       {/* Redaction Toggle & Preview */}
