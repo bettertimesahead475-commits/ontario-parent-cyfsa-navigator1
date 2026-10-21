@@ -420,9 +420,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
 
   // S06 Evidence strength. Not scored for court records.
   const esi: Loose | null = report.evidenceStrengthIndex && typeof report.evidenceStrengthIndex === "object" ? report.evidenceStrengthIndex : null;
-  if (isCourtRecord) {
-    generated.add("S06");
-  } else if (esi || typeof report.completenessScore === "number") {
+  if (!isCourtRecord && (esi || typeof report.completenessScore === "number")) {
     const components = esi?.components && typeof esi.components === "object" ? Object.keys(esi.components).length : 0;
     add(
       makeFinding({
@@ -475,7 +473,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
     S05: "No rights or timeline items were produced.",
     S06: isCourtRecord
       ? "Not scored. Court orders and endorsements are not given an evidence-strength or completeness score."
-      : "No evidence-strength data was produced.",
+      : "Items about how reliable the evidence is. No evidence-strength score was produced.",
     S07: "The analyzer found no contradictions.",
     S08: "The analyzer listed no missing records.",
     S09: "No threshold checks were produced (Quick Review does not run them).",
@@ -489,6 +487,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
   };
   const sectionFor = (id: ReportSectionId): SectionStatus => {
     if (id === "S04" && !isCourtRecord) return "NOT_APPLICABLE";
+    if (id === "S06" && isCourtRecord && !generated.has("S06")) return "NOT_APPLICABLE";
     if (id === "S10" || id === "S11" || id === "S14" || id === "S15") return "NOT_GENERATED";
     return generated.has(id) ? "POPULATED" : "EMPTY";
   };
