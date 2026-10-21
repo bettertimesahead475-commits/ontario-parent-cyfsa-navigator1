@@ -125,3 +125,59 @@ export const NOT_YET_VERIFIED = [
   "Appeal time limits under CYFSA s. 121 — the consolidation is in the repository but was not checked for this entry.",
   "Case law on any of the above — no verified case-law source is connected yet.",
 ];
+
+/**
+ * Legal conditions and exceptions for each entry, taken from the quoted text of the provision.
+ * A keyword match in a report only makes a right a candidate. A right is established only when each
+ * condition is shown by the records, and no exception applies.
+ */
+export interface RightConditions {
+  /** Conditions the provision sets, in the words of the provision as far as possible. */
+  conditions: string[];
+  /** Exceptions or other provisions the text expressly names. */
+  exceptions: string[];
+}
+
+export const RIGHT_CONDITIONS: Record<string, RightConditions> = {
+  "parent-is-a-party": {
+    conditions: ["A proceeding under Part V of the CYFSA exists.", "The person is the child's parent."],
+    exceptions: ["Whether a person is the child's parent can depend on facts this section does not decide."],
+  },
+  "five-day-hearing": {
+    conditions: [
+      "The child was brought to a place of safety under s. 81, s. 83(1)(a)(ii), or s. 136(5).",
+      "The matter is to be brought before the court under s. 90(1).",
+    ],
+    exceptions: ["The provision covers the listed removals only."],
+  },
+  "adjournment-limit": {
+    conditions: ["A hearing under Part V is adjourned.", "The adjournment is for more than 30 days."],
+    exceptions: [
+      "All parties present and the person caring for the child during the adjournment consent.",
+      "A party not present at the hearing does not object, and the court is aware of that.",
+    ],
+  },
+  "plan-for-child": {
+    conditions: ["The court is about to make an order under s. 101, 102, 114, or 116."],
+    exceptions: ["The provision applies only before the listed orders."],
+  },
+  "parent-rights-in-care": {
+    conditions: ["The child is in care.", "The parent has a right in question (for example, to direct education and upbringing)."],
+    exceptions: ["Subject to s. 94(7) and ss. 110 and 111 (custody during adjournment, interim and extended society care)."],
+  },
+  "evidence-admissibility": {
+    conditions: [
+      "A proceeding under Part V.",
+      "The statement or report is relevant to the proceeding, as the court considers.",
+    ],
+    exceptions: ["Admissible does not mean reliable. Weight is for the judge."],
+  },
+  "need-for-protection-grounds": {
+    conditions: ["An application asks the court to find a child in need of protection.", "One listed situation in s. 74(2) is shown on the evidence."],
+    exceptions: ["Naming a family in an application is not a finding."],
+  },
+  "appeal-by-parent": {
+    conditions: ["An order was made under Part V.", "The appellant is a parent of the child."],
+    exceptions: ["Time limits and procedure are set elsewhere (s. 121 and the court rules)."],
+  },
+};
