@@ -17,7 +17,9 @@ Target: production project `cyfsa-navigator live` (`qboidsfpjuxeqtfotryj`). Read
 
 **Supabase Auth has 0 users.** The app authenticates with Firebase (1 Firebase-linked account in production). So `auth.uid()` is NULL for every request. Every policy that compares to `auth.uid()` matches nothing.
 
-**Grant-level exposure is current.** The advisor reports the same 20 tables as GraphQL-visible to `anon` and 20 to `authenticated`. This is confirmed by the grants, not inferred from history.
+**Grant-level exposure is current, and broader than the advisor reports.** The advisor reports the same 20 tables as GraphQL-visible to `anon` and 20 to `authenticated`. A read-only snapshot of `information_schema.role_table_grants` shows that `anon` and `authenticated` each hold **all seven table privileges** (SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER) on every one of the 20 tables.
+
+**Correction (P0): `anon` can TRUNCATE all 20 tables.** RLS does not apply to TRUNCATE in PostgreSQL. A request made with the public anon key could empty any of these tables, regardless of policies. This was not in the earlier version of this report, which only examined SELECT, INSERT, UPDATE and DELETE. Read-only verification: `has_table_privilege('anon', 'public.document_walkthroughs', 'TRUNCATE')` returns true. The same grant appears in the snapshot for every listed table.
 
 **Row-level exposure is limited to one table.** Under `anon`, one table returns rows: `document_walkthroughs` (3 rows, `walkthroughs_public` policy `USING (true)`).
 
@@ -57,23 +59,7 @@ Plus, not in the advisor list, the `navigator_*` tables (`navigator_matters`, `n
 
 ## Remediation (proposed, not applied)
 
-Grant-level remediation (removes the advisor finding). Requires that no non-app client uses the anon key. The repository shows none: browser code has no Supabase client, and the server uses the service-role key. External consumers have not been ruled out.
-
-```sql
--- PROPOSAL ONLY. Do not apply without owner approval.
-revoke select on public.access_codes, public.analysis_results, public.audit_log,
-  public.case_exports, public.cases, public.cyfsa_300rule_access_codes,
-  public.documents, public.free_tool_usage, public.free_usage,
-  public.gmail_processed_messages, public.lawyer_leads, public.lawyer_profiles,
-  public.parent_profiles, public.payments, public.reflection_conversations,
-  public.stale_payment_alerts, public.submissions, public.timeline_events,
-  public.users
-  from anon, authenticated;
-```
-
-`document_walkthroughs`: keep `anon` SELECT only if the owner confirms the content is meant to be public. Otherwise revoke it too. Revoke `authenticated` SELECT on it either way, since no Firebase user reads it directly.
-
-Rollback: `grant select on <table> to anon, authenticated;` for each table. Revoking grants does not change data or RLS.
+Grant-level remediation: **use `supabase/proposals/revoke_api_role_grants.sql`** (revokes all seven privileges from `anon` and `authenticated` on the 19 tables, and keeps only `anon` SELECT on `document_walkthroughs`). Rollback: `supabase/proposals/revoke_api_role_grants.rollback.sql`, which restores the observed ALL grants exactly. The earlier snippet that revoked only SELECT is superseded, because it left TRUNCATE in place. Tested on a disposable database with `supabase/proposals/revoke_api_role_grants.test.sh` (all checks pass). Not applied to production.
 
 Policy remediation (recommended, not urgent):
 
