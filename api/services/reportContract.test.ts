@@ -203,6 +203,30 @@ describe("contradictions need two source passages", () => {
   });
 });
 
+describe("section status matches its content", () => {
+  it("marks Section 6 not applicable, not populated, for a court document with no evidence items", () => {
+    const c = adaptLegacyReport({ documentType: "Court Endorsement", documentAuthority: { recordKind: "JUDICIAL_ENDORSEMENT" }, redFlags: [] });
+    const s6 = c.sections.find((s) => s.id === "S06")!;
+    expect(s6.status).toBe("NOT_APPLICABLE");
+    expect(s6.findingIds).toEqual([]);
+  });
+
+  it("never marks a section populated with no findings", () => {
+    const reports = [ORDINARY_AFFIDAVIT, COURT_ENDORSEMENT, {}];
+    for (const r of reports) {
+      for (const s of adaptLegacyReport(r).sections) {
+        if (s.status === "POPULATED") expect(s.findingIds.length, s.id).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("does not describe Section 6 as having no evidence items when it lists some", () => {
+    const s6 = adaptLegacyReport(ORDINARY_AFFIDAVIT).sections.find((s) => s.id === "S06")!;
+    expect(s6.findingIds.length).toBeGreaterThan(0);
+    expect(s6.note).not.toMatch(/No evidence-strength data was produced\.$/);
+  });
+});
+
 describe("court records and missing records", () => {
   it("puts the court document in S04, with no evidence score in S06", () => {
     const c = adaptLegacyReport(COURT_ENDORSEMENT);
