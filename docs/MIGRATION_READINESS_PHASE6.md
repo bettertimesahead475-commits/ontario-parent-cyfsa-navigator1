@@ -1,92 +1,114 @@
-# Pending Migration Readiness (Phase 6)
+# Pending Migration Readiness (Phase 6, corrected)
 
-Status: **Not ready for approval.** No migration has been applied. The target database was not accessed. Everything below comes from reading the SQL files in `supabase/migrations_pending_approval/` (38 files) and grepping them for table, reference, and function definitions.
+Status: **Not ready to apply.** Nothing was applied. The production database was not accessed. Verification used a disposable local PostgreSQL 16 cluster (scratch databases `replay_b` through `replay_f`, Supabase roles `anon`, `authenticated`, `service_role` simulated). That cluster has no Supabase auth schema, no Supabase-managed roles beyond those three, and no production data.
 
-## 1. Blockers found by static reading
+This replaces the earlier draft of this file. Items that the earlier draft left open are now resolved, or are listed below as blockers.
 
-1. **Duplicate table definitions.** Ten tables are created by two different files. Applying both fails on the second `CREATE TABLE`, or it silently diverges if one file uses `IF NOT EXISTS`.
+## 1. Duplicate table definitions: resolved by comparison
 
-   | Table | Files |
-   |---|---|
-   | navigator_events | `create_navigator_m2a_intelligence_foundation.sql`, `phase7b_reconciled_event_foundation.sql` |
-   | navigator_evidence_items | `create_navigator_page_evidence_foundation.sql`, `phase7b_reconciled_evidence_foundation.sql` |
-   | navigator_legal_sources | `create_navigator_legal_authority_foundation.sql`, `phase7b_reconciled_legal_authority_foundation.sql` |
-   | navigator_legal_source_versions | same pair as above |
-   | navigator_legal_provisions | same pair as above |
-   | navigator_legal_provision_versions | `create_navigator_legal_corpus_versioning.sql`, `phase7b_reconciled_legal_corpus_versioning.sql` |
-   | navigator_matter_legal_research_candidates | `create_navigator_stage9b_matter_research.sql`, `phase7b_reconciled_stage9b_candidates.sql` |
-   | navigator_matter_research_runs / _run_results | `create_navigator_stage9d1_research_foundation.sql`, `phase7b_reconciled_stage9d_research.sql` |
-   | professional_work_product_versions | `create_professional_work_product_versions.sql`, `phase7b_reconciled_professional_work_product_versions.sql` |
+Seven `phase7b_reconciled_*` files duplicate tables that the `create_navigator_*` and `create_professional_work_product_versions.sql` files also create. The Phase 7B1 design (`INTEGRATION_PHASE_7B1_MIGRATION_DESIGN.md`) and Phase 7A plan (`INTEGRATION_PHASE_7A_DATABASE_REMEDIATION_PLAN.md`) both name the reconciled files as the replacements, and list the originals under "DO NOT DEPLOY AS-IS".
 
-   The `phase7b_reconciled_*` set looks like a reconciled replacement for the `create_navigator_*` set. Nothing in the directory says which set is authoritative. **Owner decision required:** pick one set per table and delete or archive the other. Do not apply both.
+| Table | Authoritative file | Evidence |
+|---|---|---|
+| navigator_events | `phase7b_reconciled_event_foundation.sql` | Adds the date-range CHECK and `UNIQUE(id, matter_id)`. Applies cleanly on PG16. |
+| navigator_legal_sources, _source_versions, _provisions | `phase7b_reconciled_legal_authority_foundation.sql` | Keeps composite co-ownership keys. Applies cleanly on PG16. |
+| navigator_legal_provision_versions | `phase7b_reconciled_legal_corpus_versioning.sql` | Adds `UNIQUE(provision_id, legal_source_version_id)` and SHA-256 check. Applies cleanly on PG16. |
+| navigator_matter_legal_research_candidates | `phase7b_reconciled_stage9b_candidates.sql` | Same-matter FKs for evidence and events. Applies cleanly on PG16. |
+| navigator_matter_research_runs, _run_results; professional_reviews check | `phase7b_reconciled_stage9d_research.sql` | Applies cleanly on PG16 after `create_professional_reviews.sql`. |
+| professional_work_product_versions | `phase7b_reconciled_professional_work_product_versions.sql` | Adds explicit transaction and server-only grants. |
+| **navigator_evidence_items** | **None. Blocker.** | See section 2. |
 
-2. **Alphabetical filename order breaks dependencies.** `create_lawyer_directory_foundation.sql` references `professional_profiles`, which is created by `create_professional_profiles.sql`. "lawyer" sorts before "professional", so a plain alphabetical run fails. The same kind of problem applies to any file that references a later-sorted file. A real apply order must be written down, not inferred from names.
+Verified on PG16: applying the originals and the reconciled files in one database fails at whichever comes second, with `relation already exists`.
 
-3. **Redefined functions.** `accept_matter_grant`, `create_matter_grant`, and `revoke_matter_grant` are each defined in up to three files: `create_navigator_matter_access_grants.sql`, `create_navigator_matter_access_lifecycle_audit_v3.sql`, `create_navigator_matter_access_lifecycle_recipient_v4.sql`, and `remediate_navigator_matter_access_grants_lifecycle.sql`. `create or replace` means the last file applied wins. Only the recipient-bound v4 path plus the 7B remediation should remain live. Confirm that before approval. The earlier `accept_matter_grant` path must not be reachable.
+## 2. P0 blocker: the reconciled evidence table cannot support the runtime
 
-4. **Missing from the directory.** `create_accounts_foundation.sql` defines `accounts`, which every other file references. It is itself pending. Nothing applied to production can reference `accounts` until it is applied, so it must be applied first.
+`phase7b_reconciled_evidence_foundation.sql` creates `navigator_evidence_items` with four columns (`id`, `matter_id`, `classification`, timestamps). The runtime reads and writes far more. Verified on PG16 after applying the reconciled chain:
 
-## 2. Dependency order (provisional; confirm against the stage docs)
+- Missing: `exact_quote`, `page_id`, `page_number`, `normalized_statement`, `document_id`, `quote_verification`, `review_state`.
+- Missing table: `navigator_document_pages`. It is created only in `create_navigator_page_evidence_foundation.sql`, which Phase 7A marks "DO NOT DEPLOY AS-IS".
 
-Dependencies below are from `REFERENCES` clauses and function bodies. The stage `*.md` files in the repo root may define an intended order. I did not verify this yet.
+Code that depends on these: `api/services/pageSources.ts` (quote verification, page binding), `api/services/professionalWorkspace.ts` (reads `navigator_document_pages`), `api/services/professionalOutputs.ts`, `api/services/litigationWorkProduct.ts`, `api/services/caseActionWorkspace.ts`, `shared/evidenceReview.ts`.
+
+Consequence if the reconciled chain is applied as-is: the evidence and page-provenance features fail at runtime with missing-column errors. Nothing in the test suite catches this, because the database suites are skipped.
+
+**Required before approval:** an owner-approved evidence schema that keeps the original page, quote and review columns, adds the reconciled `CHECK` and `UNIQUE(id, matter_id)`, and includes `navigator_document_pages` and its extraction-run link. I did not draft this file, because it is a schema decision with legal-provenance consequences.
+
+## 3. Matter-access chain: correct order, and two non-replay-safe statements
+
+Verified order on PG16 (all OK on a fresh database):
 
 1. `create_accounts_foundation.sql`
-2. `create_navigator_matters_foundation.sql` (needs `accounts`, `navigator_cases`; `navigator_cases` comes from case ownership, so case ownership must come first)
-3. `create_case_ownership_foundation.sql` and `create_navigator_case_ownership_foundation.sql` (these two overlap and need reconciling; see 1 above)
-4. `create_navigator_page_evidence_foundation.sql` (needs matters, document versions, extraction runs)
-5. `create_navigator_evidence_review.sql` (needs evidence items, accounts)
-6. Legal authority, then legal corpus versioning
-7. M2A, M2C, M2D, M2E intelligence (M2C and M2D need claims and entities; M2E needs gap findings)
-8. Stage 9A/9B/9D research (needs legal provisions, events, candidates)
-9. `create_professional_profiles.sql`, then `create_lawyer_directory_foundation.sql`, then `create_professional_reviews.sql`, `create_professional_work_product_versions.sql`
-10. Matter access: grants, then event log, then lifecycle v3, then recipient v4, then 7B remediation (only the last definition of each function should stay)
-11. `create_navigator_paid_sessions.sql` needs `access_codes`. Nothing in this directory creates `access_codes`. **It must already exist in production or be added to this set.**
-12. `create_paid_access_credit_ledger_and_enforcement.sql` needs paid sessions
-13. `enable_rls_free_usage_gmail_stale.sql` and `expand_tier_constraints_for_analyzer_and_community.sql` have no dependency on the new tables. They touch existing tables. Review them separately, since they change existing production behavior.
-14. `read_navigator_owned_matter.sql` depends on matters and must come after that set.
+2. `create_navigator_case_ownership_foundation.sql`
+3. `create_navigator_matters_foundation.sql`
+4. `create_navigator_matter_access_grants.sql`
+5. `create_navigator_matter_access_event_log.sql`
+6. `remediate_navigator_matter_access_grants_lifecycle.sql`
+7. `create_navigator_matter_access_lifecycle_audit_v3.sql` (aborts with `PREREQUISITE_MISSING` if step 6 is missing)
+8. `create_navigator_matter_access_lifecycle_recipient_v4.sql`
 
-## 3. Missing or unverified
+Alphabetical order is wrong. Running v3 before the remediation fails with `PREREQUISITE_MISSING`.
 
-- `access_codes`: referenced, not defined here. Check production.
-- `navigator_cases`, `documents`, `document_versions`: referenced. Two overlapping case-ownership files define similar tables. Check which exists in production.
-- `free_usage`, `gmail_processed_messages`, `stale_payment_alerts`: RLS enabled here, but I did not confirm they exist in production or that enabling RLS will not break existing server code paths that use the anon key. Server code must use service_role for these.
-- No file in this directory has a rollback. Every migration is forward-only. A rollback plan is required for each one before approval.
+**Replay defect (verified):** after step 8, re-running the remediation file fails with `function "revoke_matter_grant" already exists`. The cause is line 134, `create function public.revoke_matter_grant(`, which duplicates v3's definition, and line 225, `create function public.navigator_matter_access_lifecycle_contract()`, which duplicates an earlier definition. The file is wrapped in `begin`/`commit`, so a failed replay rolls back cleanly.
 
-## 4. Security checks that must pass before approval
+**Proposed patch (not applied, because the remediation file is part of the frozen, owner-reviewed set):**
 
-- Every new table has RLS enabled. Client policies should be deny-all, with access through service_role or security-definer RPCs. Confirm this per file, not from the general pattern.
-- Each `security definer` function sets `search_path` explicitly. Confirm with `grep -i "security definer" -A3`. I have not checked this file by file.
-- Professional tables are not granted to `anon` or `authenticated`. `create_professional_profiles.sql` does this. Check the others.
-- `navigator_matter_access_events` is append-only: an update or delete guard exists. Test it on a disposable branch.
-- Professional verification stays server-side. `adminVerifyProfile` checks the server-side admin role. Confirm no column is writable by the client.
-- Matter sharing stays disabled. Access grants can be created only after the feature flag is enabled, and that flag stays off.
+```diff
+-create function public.revoke_matter_grant(
++create or replace function public.revoke_matter_grant(
+...
+-create function public.navigator_matter_access_lifecycle_contract()
++create or replace function public.navigator_matter_access_lifecycle_contract()
+```
 
-## 5. Tests required before approval
+Verified on a scratchpad copy only: with both lines changed, the remediation applies, v3 and v4 apply after it, and a second run of the patched remediation succeeds.
 
-- Apply the full ordered set to a **disposable Supabase branch** (not production). Record the exact result for each file.
-- Run the `.pg.test.ts` suites against that branch. They are currently skipped (444 skipped tests in the suite). Those skips must be resolved, not reported as passing.
-- For each RLS table: an `anon` client and an `authenticated` client with no grants must both get zero rows and be unable to write.
-- Grant lifecycle: create, accept with unverified email (must fail), accept with wrong token digest (must fail), accept with correct token (succeeds once), revoke, expired grant. Replays must fail.
-- Event log: update and delete attempts must fail.
-- Re-running the set must fail cleanly or be idempotent. Record which.
+## 4. Dependencies: accounts, access_codes, navigator_cases, professional_profiles
 
-## 6. Rollback strategy (proposed, not implemented)
+- **accounts:** defined only in `create_accounts_foundation.sql`. Referenced by 14 or more pending files. Required first. The earlier live-verification doc says it is already live; the Phase 7A live check says the seven prerequisite tables are absent. These disagree, so production state is unknown.
+- **access_codes:** not defined anywhere in the repo, including the applied history (one file). `create_navigator_paid_sessions.sql` has a foreign key to it. The live-verification doc lists it as present. It must be confirmed present in production before paid-session migrations are applied.
+- **navigator_cases:** created by `create_navigator_case_ownership_foundation.sql`. `create_case_ownership_foundation.sql` creates a different, legacy `cases` table and a `create_case_with_owner` function that is SECURITY INVOKER. The two files overlap in concept. The navigator version is the one the matters foundation references.
+- **professional_profiles:** created by `create_professional_profiles.sql`, which depends on `accounts`. `create_lawyer_directory_foundation.sql` depends on it. The directory file must run after it.
 
-- Take a logical backup of the target schema before applying anything.
-- Apply to a branch first. Only promote after the tests above pass on the branch.
-- For each file, write a matching `down` script. Drop tables only if they are empty and no code path references them. Otherwise the rollback is a feature-flag disable plus a data export.
-- Feature flags for the Parent and Professional portals stay off during application. Turning them on is a separate, owner-approved step.
+## 5. SECURITY DEFINER functions
 
-## 7. What this report does not establish
+Eleven pending files define SECURITY DEFINER functions. Verified per function with line numbers:
 
-- It does not say the migrations are correct. It says they are not yet safe to apply.
-- No database was read. Production state is unknown.
-- The stage documents were not checked for an intended apply order.
-- No migration was executed, and no flag was turned on.
+- Every function in the final chain sets `search_path` (`public, pg_temp` or `pg_catalog, pg_temp`).
+- `create_navigator_matter_access_grants.sql` defines `accept_matter_grant` as SECURITY DEFINER without `search_path`. It is replaced later in the chain (remediation, which sets it). This is only a risk if that file is applied alone, so it must never be run without the rest of the chain.
+- `create_navigator_matter_access_lifecycle_audit_v3.sql` defines `create_matter_grant` without `search_path`. Replaced by v4 (`create or replace`, with `search_path`).
+- `create_case_with_owner` is SECURITY INVOKER. The earlier scan flagged it because a comment mentioned SECURITY DEFINER. It is not a defect.
 
-## 8. Owner decisions needed
+Not verified: the authorization logic inside each function, grant behaviour for every function, and whether `public` is revoked for every function. Those need the chain applied to a disposable database and tested, which is listed in section 7.
 
-1. Which of the two overlapping file sets is authoritative for each duplicated table.
-2. Whether `access_codes` and the other production-only objects already exist.
-3. Whether to split enabling RLS on existing tables into its own change.
-4. Approval to create a disposable Supabase branch for the test run.
+## 6. Recommended sequence (proposed, not applied)
+
+1. `create_accounts_foundation.sql` (after confirming production state read-only)
+2. `create_navigator_case_ownership_foundation.sql`
+3. `create_navigator_matters_foundation.sql`
+4. **Evidence schema: blocked, see section 2**
+5. `phase7b_reconciled_event_foundation.sql`
+6. `phase7b_reconciled_legal_authority_foundation.sql`
+7. `phase7b_reconciled_legal_corpus_versioning.sql`
+8. `phase7b_reconciled_stage9b_candidates.sql` (needs evidence and events)
+9. `create_professional_reviews.sql`, then `phase7b_reconciled_professional_work_product_versions.sql`, then `phase7b_reconciled_stage9d_research.sql`
+10. `create_professional_profiles.sql`, then `create_lawyer_directory_foundation.sql`
+11. `create_navigator_matter_access_grants.sql`, `create_navigator_matter_access_event_log.sql`, remediation (patched), v3, v4
+12. `create_navigator_paid_sessions.sql` (only after `access_codes` is confirmed in production)
+13. `create_paid_access_credit_ledger_and_enforcement.sql`
+
+Not sequenced, and not reviewed here: `enable_rls_free_usage_gmail_stale.sql` and `expand_tier_constraints_for_analyzer_and_community.sql`. They change existing tables in production, so they need their own approval.
+
+## 7. Tests required before any approval
+
+- Apply the sequence above to a disposable Supabase branch, not production. Record each file's result.
+- Run the `.pg.test.ts` suites against that branch. They are skipped in CI unless `ADMIN_URL` is set.
+- For each new table: `anon` and `authenticated` clients get zero rows and cannot write.
+- Grant lifecycle: create, accept with unverified email (fails), wrong token digest (fails), correct token once (succeeds), replay (fails), revoke, expiry.
+- Event log: update and delete fail.
+
+## 8. Rollback
+
+- Take a logical backup before any apply.
+- Apply to a branch first; promote only after section 7 passes there.
+- None of the files has a down script. Writing one per file is required before approval.
+- Feature flags stay off during apply.
