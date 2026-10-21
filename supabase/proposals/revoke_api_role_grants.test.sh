@@ -23,6 +23,13 @@ expect "$(counts)" "20 20 20 20" "before revoke (observed default)"
 expect "$(counts)" "0 1 0 0" "after revoke (walkthroughs keeps anon SELECT only)"
 "${P[@]}" -At -c "select has_table_privilege('anon','public.access_codes','TRUNCATE') or has_table_privilege('anon','public.access_codes','INSERT') as anon_writes" | grep -qx f && echo "PASS anon has no write or truncate on access_codes" || { echo "FAIL anon write on access_codes"; exit 1; }
 
+# Post-change verification (the same script intended for production) must report every table as expected.
+verify_out="$("${P[@]}" -At -f "$here/revoke_api_role_grants.verify.sql")"
+if grep -Eq '\|f$|^unexpected_grantee' <<<"$verify_out"; then echo "FAIL verify.sql reports an unexpected row"; echo "$verify_out"; exit 1; fi
+rows=$(grep -cE '\|t$' <<<"$verify_out")
+[[ "$rows" == "20" ]] || { echo "FAIL verify.sql: expected 20 ok rows, got $rows"; exit 1; }
+echo "PASS verify.sql: 20 of 20 tables in the expected state, no unexpected grantees"
+
 # Rollback restores the observed state.
 "${P[@]}" -f "$here/revoke_api_role_grants.rollback.sql"
 expect "$(counts)" "20 20 20 20" "after rollback (restored)"
