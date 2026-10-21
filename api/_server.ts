@@ -38,7 +38,7 @@ import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./servic
 import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, decrementFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
-import { toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
+import { stripVerifierIdentity, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
   releaseAnalysisReservation,
@@ -2355,6 +2355,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           durationMs,
         }),
       };
+      stripVerifierIdentity(report);
 
       console.log(JSON.stringify({
         tag: "[ANALYZER_RUN]",
@@ -3013,6 +3014,7 @@ NON-NEGOTIABLE RULES:
 1. Ground every finding in the document text. Quote or cite exact lines/pages where possible.
 2. Verify citations: CYFSA s.74(2) (protection grounds), s.94(1) (30-day adjournment limit), s.125(1) (duty to report), Bill 188 (2024), Bill 33 (2025). Unverified sections must state '⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.' Never cite s.94(5) for hearing timelines (s.94(5) is placement with relative).
 3. Do not repeat existing first-pass red flags. Focus on statutory omissions, timeline defects, hearsay chain issues, missing foundation, and strategic retorts.
+3a. If the document is a court order, endorsement, or judgment: a judge's findings are findings, not opinions. Do not call a supporting record that was referred to but not uploaded a defect, and do not treat it as proof that the record is unreliable. Do not state or imply that the order is less valid because records are missing. Say what the order itself states and list the referenced records to obtain.
 4. Output strict JSON matching the schema below. End with the exact disclaimer.
 
 OUTPUT — return strictly this JSON schema, nothing else:

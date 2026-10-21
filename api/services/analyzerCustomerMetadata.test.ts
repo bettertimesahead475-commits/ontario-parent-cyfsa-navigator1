@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toCustomerModelMetadata } from "./analyzerCustomerMetadata.js";
+import { stripVerifierIdentity, toCustomerModelMetadata } from "./analyzerCustomerMetadata.js";
 
 describe("customer model metadata", () => {
   it("returns only the display fields a parent needs", () => {
@@ -28,5 +28,20 @@ describe("customer model metadata", () => {
     const serialized = JSON.stringify(toCustomerModelMetadata(input));
     expect(serialized).not.toMatch(/claude-/);
     expect(serialized).not.toMatch(/usage|cost|tokens/i);
+  });
+});
+
+describe("verifier identity", () => {
+  it("removes the verifying model ID but keeps the verdicts and notes", () => {
+    const report = {
+      forensicVerification: { status: "completed", model: "claude-opus-5", checkedFindings: 1 },
+      redFlags: [{ id: "rf1", forensicVerification: { verdict: "OVERSTATED", note: "Single source.", verifiedBy: "claude-opus-5" } }],
+      thresholdAnalysis: [{ thresholdChecked: "s. 74", forensicVerification: { verdict: "NEEDS_CONTEXT", verifiedBy: "claude-opus-5" } }],
+    };
+    stripVerifierIdentity(report);
+    expect(report.forensicVerification).toEqual({ status: "completed", checkedFindings: 1 });
+    expect(report.redFlags[0].forensicVerification).toEqual({ verdict: "OVERSTATED", note: "Single source." });
+    expect(report.thresholdAnalysis[0].forensicVerification).toEqual({ verdict: "NEEDS_CONTEXT" });
+    expect(JSON.stringify(report)).not.toMatch(/claude-/);
   });
 });

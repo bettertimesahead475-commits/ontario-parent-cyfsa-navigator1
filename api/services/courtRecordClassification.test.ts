@@ -5,7 +5,9 @@ import {
   isJudicialRecordType,
   EVIDENCE_CLASSIFICATIONS,
 } from "./analyzerSections.js";
-import { COMPLETE_ANALYSIS } from "../analyzerTestFixtures.js";
+import { vi } from "vitest";
+import { COMPLETE_ANALYSIS, VERIFICATION_RESULT, isVerificationRequest } from "../analyzerTestFixtures.js";
+import { runSectionedAnalysis, type GenerateFn } from "./analyzerSections.js";
 
 // Sanitized regression fixture. It reproduces the failure modes from the prior judicial-endorsement
 // report: a court endorsement scored as if it were a credibility claim, judge's findings tagged as
@@ -114,6 +116,16 @@ describe("court record classification: regression (sanitized judicial endorsemen
     expect(missing.evidenceClassification).toBe("REFERENCED_DOCUMENT_NOT_PROVIDED");
   });
 
+  it("does not present a missing referenced record as a confirmed procedural defect", () => {
+    const report = endorsementReport();
+    report.redFlags[1].category = "Procedural Defect";
+    report.redFlags[1].severity = "CRITICAL";
+    applyDocumentAuthorityPolicy(report);
+    const missing = report.redFlags.find((f: any) => f.id === "rf2");
+    expect(missing.category).toBe("Referenced Record Not Provided");
+    expect(missing.severity).toBe("Affects Evidentiary Weight");
+  });
+
   it("reclassifies a judge's finding in the chronology when it is tagged as an opinion", () => {
     const report = endorsementReport();
     report.chronology[0].event = "The court found that the applicant's concerns were supported.";
@@ -152,3 +164,51 @@ describe("court record classification: regression (sanitized judicial endorsemen
 });
 
 const DOC_AFFIDAVIT = "A neighbour told me the child was left alone on the evening of the event.";
+
+describe("court record through the full sectioned pipeline (Quick Review and Forensic)", () => {
+  const ok = (obj: unknown) => ({ text: JSON.stringify(obj), usage: { input_tokens: 10, output_tokens: 5 }, model: "m", durationMs: 1, stopReason: "end_turn" });
+  const endorsementSections = () => {
+    const r = endorsementReport();
+    return { ...COMPLETE_ANALYSIS, ...r, redFlags: r.redFlags, chronology: r.chronology };
+  };
+  const run = (mode: "fast" | "full") => {
+    const generate: GenerateFn = vi.fn(async (params: any) => ok(isVerificationRequest(params) ? VERIFICATION_RESULT : endorsementSections()));
+    return runSectionedAnalysis({
+      mode,
+      documentText: ENDORSEMENT_TEXT,
+      primaryModel: "claude-sonnet-5",
+      verificationModel: mode === "full" ? "claude-opus-5" : undefined,
+      generate,
+      deadlineAt: Date.now() + 200_000,
+      requestId: "req_court_record",
+    });
+  };
+
+  for (const mode of ["fast", "full"] as const) {
+    it(`withdraws scores and applies the court-record policy in ${mode} mode`, async () => {
+      const { report } = await run(mode);
+      expect(report.documentAuthority?.scoring).toBe("NOT_CREDIBILITY_SCORED");
+      expect(report.evidenceStrengthIndex.score).toBeNull();
+      expect(report.completenessScore).toBeNull();
+      expect(report.redFlags.find((f: any) => f.id === "rf1").evidenceClassification).toBe("JUDICIAL_FINDING");
+      expect(report.redFlags.find((f: any) => f.id === "rf2").evidenceClassification).toBe("REFERENCED_DOCUMENT_NOT_PROVIDED");
+    });
+  }
+
+  it("keeps ordinary affidavits scored in Quick Review", async () => {
+    const generate: GenerateFn = vi.fn(async () =>
+      ok({ ...COMPLETE_ANALYSIS, documentType: "Affidavit", redFlags: [], chronology: [] })
+    );
+    const { report } = await runSectionedAnalysis({
+      mode: "fast",
+      documentText: "Affidavit text.",
+      primaryModel: "claude-sonnet-5",
+      generate,
+      deadlineAt: Date.now() + 200_000,
+      requestId: "req_affidavit",
+    });
+    expect(report.documentAuthority).toBeUndefined();
+    expect(report.evidenceStrengthIndex.score).toBe(50);
+    expect(report.completenessScore).toBe(50);
+  });
+});

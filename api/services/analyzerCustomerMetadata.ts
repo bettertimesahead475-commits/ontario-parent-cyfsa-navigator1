@@ -21,3 +21,20 @@ export function toCustomerModelMetadata(input: CustomerModelMetadata): CustomerM
     durationMs: input.durationMs,
   };
 }
+
+/**
+ * Removes the verifying model's identifier from a report. The verdicts, notes, and status are kept
+ * because the parent UI shows them; the provider model ID is operating data and is not.
+ */
+export function stripVerifierIdentity(report: Record<string, any>): Record<string, any> {
+  if (report.forensicVerification && typeof report.forensicVerification === "object") {
+    delete report.forensicVerification.model;
+  }
+  const findings = [...(Array.isArray(report.redFlags) ? report.redFlags : []), ...(Array.isArray(report.thresholdAnalysis) ? report.thresholdAnalysis : [])];
+  for (const finding of findings) {
+    if (finding?.forensicVerification && typeof finding.forensicVerification === "object") {
+      delete finding.forensicVerification.verifiedBy;
+    }
+  }
+  return report;
+}

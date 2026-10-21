@@ -776,7 +776,7 @@ describe("POST /api/analyze", () => {
     expect(bodies.filter(b => !isVerificationRequest(b)).every(b => b.model === "claude-sonnet-5")).toBe(true);
     expect(res.body.forensicVerification.status).toBe("completed");
     expect(Object.keys(res.body.modelMetadata).sort()).toEqual(["durationMs", "engineName", "mode", "modeName"]);
-    expect(res.body.forensicVerification.model).toBe("claude-opus-5");
+    expect(res.body.forensicVerification.model).toBeUndefined();
     expect(res.body.thresholdAnalysis).toHaveLength(4);
   });
 

@@ -672,7 +672,8 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(verification[0][0].model).toBe("claude-opus-5");
 
       expect(res.body.redFlags).toHaveLength(1);
-      expect(res.body.redFlags[0].forensicVerification).toMatchObject({ verdict: "OVERSTATED", verifiedBy: "claude-opus-5" });
+      expect(res.body.redFlags[0].forensicVerification).toMatchObject({ verdict: "OVERSTATED" });
+      expect(res.body.redFlags[0].forensicVerification).not.toHaveProperty("verifiedBy");
       expect(res.body.forensicVerification.status).toBe("completed");
       expect(res.body.thresholdAnalysis).toHaveLength(4);
       expect(res.body.timing.mode).toBe("full");

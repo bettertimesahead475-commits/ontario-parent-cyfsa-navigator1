@@ -550,10 +550,17 @@ export function applyDocumentAuthorityPolicy(report: Record<string, any>): Recor
   const recordKind = /endorse/i.test(str(report.documentType)) ? "JUDICIAL_ENDORSEMENT" : "COURT_ORDER";
 
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
-    flag.evidenceClassification = classifyJudicialRecordItem(
+    const classification = classifyJudicialRecordItem(
       flag.evidenceClassification,
       `${flag.phraseDetected} ${flag.explanation}`
     );
+    if (classification === "REFERENCED_DOCUMENT_NOT_PROVIDED" && classification !== flag.evidenceClassification) {
+      // A record that was referred to but not uploaded is a gap to obtain, not a confirmed defect.
+      flag.category = "Referenced Record Not Provided";
+      flag.severity = "Affects Evidentiary Weight";
+      delete flag.originalSeverity;
+    }
+    flag.evidenceClassification = classification;
   }
   for (const entry of Array.isArray(report.chronology) ? report.chronology : []) {
     entry.evidenceClassification = classifyJudicialRecordItem(entry.evidenceClassification, entry.event);

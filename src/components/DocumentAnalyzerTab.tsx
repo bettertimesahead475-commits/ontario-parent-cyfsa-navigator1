@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
+import { evidenceLabel } from "../utils/evidenceLabels";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -2767,7 +2768,7 @@ export default function DocumentAnalyzerTab() {
             <table class="data-table">
               <thead><tr><th style="width:18%">Date</th><th>Event</th><th style="width:14%">Evidence</th><th style="width:18%">Source</th></tr></thead>
               <tbody>
-                ${reportForExport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(e.evidenceClassification || "")}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
+                ${reportForExport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(evidenceLabel(e.evidenceClassification))}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
               </tbody>
             </table>
           </div>
@@ -4238,7 +4239,7 @@ export default function DocumentAnalyzerTab() {
                                       <tr key={i} className="border-b border-slate-100 align-top">
                                         <td className="py-1.5 pr-3 whitespace-nowrap font-semibold text-slate-800">{entry.date}</td>
                                         <td className="py-1.5 pr-3 text-slate-700">{entry.event}</td>
-                                        <td className="py-1.5 pr-3 text-[10px] font-bold text-slate-600">{entry.evidenceClassification}</td>
+                                        <td className="py-1.5 pr-3 text-[10px] font-bold text-slate-600">{evidenceLabel(entry.evidenceClassification)}</td>
                                         <td className="py-1.5 text-slate-500">{entry.locationInDocument}</td>
                                       </tr>
                                     ))}
@@ -4294,7 +4295,7 @@ export default function DocumentAnalyzerTab() {
                                   </span>
                                   {flag.evidenceClassification && (
                                     <span className="px-2 py-0.5 rounded-md text-[10px] font-sans font-bold bg-slate-100 text-slate-800 border border-slate-200 uppercase tracking-wide">
-                                      Evidence: {flag.evidenceClassification}
+                                      Evidence: {evidenceLabel(flag.evidenceClassification)}
                                     </span>
                                   )}
                                   {factCheckEnabled && (() => {
