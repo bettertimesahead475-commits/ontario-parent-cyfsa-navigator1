@@ -203,6 +203,30 @@ describe("contradictions need two source passages", () => {
   });
 });
 
+describe("section status matches its content", () => {
+  it("marks Section 6 not applicable, not populated, for a court document with no evidence items", () => {
+    const c = adaptLegacyReport({ documentType: "Court Endorsement", documentAuthority: { recordKind: "JUDICIAL_ENDORSEMENT" }, redFlags: [] });
+    const s6 = c.sections.find((s) => s.id === "S06")!;
+    expect(s6.status).toBe("NOT_APPLICABLE");
+    expect(s6.findingIds).toEqual([]);
+  });
+
+  it("never marks a section populated with no findings", () => {
+    const reports = [ORDINARY_AFFIDAVIT, COURT_ENDORSEMENT, {}];
+    for (const r of reports) {
+      for (const s of adaptLegacyReport(r).sections) {
+        if (s.status === "POPULATED") expect(s.findingIds.length, s.id).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("does not describe Section 6 as having no evidence items when it lists some", () => {
+    const s6 = adaptLegacyReport(ORDINARY_AFFIDAVIT).sections.find((s) => s.id === "S06")!;
+    expect(s6.findingIds.length).toBeGreaterThan(0);
+    expect(s6.note).not.toMatch(/No evidence-strength data was produced\.$/);
+  });
+});
+
 describe("court records and missing records", () => {
   it("puts the court document in S04, with no evidence score in S06", () => {
     const c = adaptLegacyReport(COURT_ENDORSEMENT);
@@ -322,5 +346,79 @@ describe("parent and professional parity", () => {
       .flatMap((s) => s.findings)
       .map((f) => f.concernLabel);
     expect(parentLabels.join(" ")).not.toMatch(/POSSIBLE_CONCERN|MISSING_INFORMATION|NOT_INDEPENDENTLY/);
+  });
+});
+
+describe("Section 6 status, findings, and note agree across document types", () => {
+  const COURT_ORDER_WITH_HEARSAY = {
+    ...COURT_ENDORSEMENT,
+    documentType: "Court Order",
+    documentAuthority: { ...COURT_ENDORSEMENT.documentAuthority, recordKind: "JUDICIAL_ORDER" },
+    redFlags: [
+      {
+        id: "hs1",
+        category: "Hearsay",
+        severity: "Affects Evidentiary Weight",
+        evidenceClassification: "HEARSAY",
+        phraseDetected: "a neighbour said the child was left alone",
+        explanation: "Second-hand account recorded in the order.",
+        verifyRequirement: "Identify the source.",
+        legalReference: "",
+      },
+    ],
+  };
+  const AFFIDAVIT_WITHOUT_SCORE = { documentType: "Affidavit", fileSummary: "A short statement.", redFlags: [], evidenceStrengthIndex: null, completenessScore: null };
+  const CONTRADICTORY = {
+    documentType: "Affidavit",
+    fileSummary: "Two accounts of the same visit disagree.",
+    evidenceStrengthIndex: { score: 30, components: {}, limitations: "Heuristic only." },
+    completenessScore: 40,
+    redFlags: [
+      {
+        id: "ct1",
+        category: "Contradiction",
+        severity: "Affects Evidentiary Weight",
+        evidenceClassification: "CONTRADICTION",
+        phraseDetected: "I was home all evening",
+        explanation: "Conflicts with the earlier statement about the visit.",
+        verifyRequirement: "Compare with the other account.",
+        legalReference: "",
+      },
+    ],
+  };
+  const CASES: Record<string, unknown> = {
+    ordinaryAffidavitWithScore: ORDINARY_AFFIDAVIT,
+    affidavitWithoutScore: AFFIDAVIT_WITHOUT_SCORE,
+    courtEndorsement: COURT_ENDORSEMENT,
+    courtOrderWithHearsayFlag: COURT_ORDER_WITH_HEARSAY,
+    emptyReport: {},
+    contradictoryEvidence: CONTRADICTORY,
+  };
+
+  for (const [name, report] of Object.entries(CASES)) {
+    it(`keeps Section 6 consistent for ${name}`, () => {
+      const s6 = adaptLegacyReport(report).sections.find((s) => s.id === "S06")!;
+      if (s6.status === "POPULATED") expect(s6.findingIds.length, "populated needs findings").toBeGreaterThan(0);
+      else expect(s6.findingIds, "no findings unless populated").toEqual([]);
+      if (s6.note.includes("No evidence-strength score was produced")) {
+        expect((report as { evidenceStrengthIndex?: { score?: unknown } }).evidenceStrengthIndex?.score ?? null, "note denies a score that exists").toBeNull();
+      }
+    });
+  }
+
+  it("keeps a real evidence-strength score visible in Section 6's note", () => {
+    const s6 = adaptLegacyReport(ORDINARY_AFFIDAVIT).sections.find((s) => s.id === "S06")!;
+    expect(s6.note).not.toMatch(/No evidence-strength score was produced/);
+  });
+
+  it("does not hide a hearsay finding in a court order", () => {
+    const s6 = adaptLegacyReport(COURT_ORDER_WITH_HEARSAY).sections.find((s) => s.id === "S06")!;
+    expect(s6.status).toBe("POPULATED");
+    expect(s6.findingIds.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the contradiction visible without a verified score", () => {
+    const c = adaptLegacyReport(CONTRADICTORY);
+    expect(c.sections.find((s) => s.id === "S06")!.status).toBe("POPULATED");
   });
 });
