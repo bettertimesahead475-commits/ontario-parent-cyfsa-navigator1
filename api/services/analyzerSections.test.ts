@@ -32,6 +32,7 @@ const base = (generate: GenerateFn, extra: Partial<Parameters<typeof runSectione
   generate,
   deadlineAt: Date.now() + 200_000,
   requestId: "req_test",
+  interactiveFindings: false, // these tests cover the base sections; findings have their own suite
   ...extra,
 });
 
