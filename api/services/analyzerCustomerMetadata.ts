@@ -22,6 +22,10 @@ export function toCustomerModelMetadata(input: CustomerModelMetadata): CustomerM
   };
 }
 
+function relabelVerifier(value: unknown): unknown {
+  return value ? "Independent second review" : value;
+}
+
 // Reports saved before the allowlist above still hold provider IDs, token counts and cost.
 // Anything that returns a stored report must pass it through here as well.
 export function redactCustomerReport<T extends Record<string, any>>(report: T): T {
@@ -43,9 +47,14 @@ export function redactCustomerReport<T extends Record<string, any>>(report: T): 
   for (const key of ["redFlags", "thresholdAnalysis", "chronology", "contradictions", "gaps"]) {
     if (!Array.isArray(out[key])) continue;
     out[key] = out[key].map((item: any) => {
-      if (!item || typeof item !== "object" || !("verifiedBy" in item)) return item;
-      const verifiedBy = item.verifiedBy ? "Independent second review" : item.verifiedBy;
-      return { ...item, verifiedBy };
+      if (!item || typeof item !== "object") return item;
+      let next = item;
+      if ("verifiedBy" in item) next = { ...next, verifiedBy: relabelVerifier(item.verifiedBy) };
+      const nested = item.forensicVerification;
+      if (nested && typeof nested === "object" && "verifiedBy" in nested) {
+        next = { ...next, forensicVerification: { ...nested, verifiedBy: relabelVerifier(nested.verifiedBy) } };
+      }
+      return next;
     });
   }
   return out as T;

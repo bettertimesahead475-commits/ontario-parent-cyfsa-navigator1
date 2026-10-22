@@ -54,6 +54,20 @@ describe("redactCustomerReport", () => {
     expect(redacted.redFlags[1]).toEqual({ category: "Other" });
   });
 
+  it("relabels a verifier ID stored in the nested forensicVerification of a legacy finding", () => {
+    const legacy = {
+      thresholdAnalysis: [
+        { thresholdChecked: "CYFSA s. 74", forensicVerification: { verdict: "OVERSTATED", verifiedBy: "claude-opus-5" } },
+      ],
+    };
+    const serialized = JSON.stringify(redactCustomerReport(legacy));
+    expect(serialized).not.toMatch(/claude-/);
+    expect(redactCustomerReport(legacy).thresholdAnalysis[0].forensicVerification).toEqual({
+      verdict: "OVERSTATED",
+      verifiedBy: "Independent second review",
+    });
+  });
+
   it("leaves a report without internal fields unchanged in content", () => {
     const report = { documentTitle: "Plain", redFlags: [] };
     expect(redactCustomerReport(report)).toEqual(report);
