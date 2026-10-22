@@ -180,24 +180,12 @@ export interface AnalysisReport {
     mode: "fast" | "full";
     durationMs: number;
   };
+  // Customer-facing only. Token usage, provider model IDs and API cost are never sent to the client.
   modelMetadata?: {
-    engine: string;
-    model: string;
     engineName: string;
     mode: "fast" | "full";
     modeName: string;
     durationMs: number;
-    usage?: {
-      inputTokens: number;
-      outputTokens: number;
-      totalTokens: number;
-    };
-    cost?: {
-      inputCostUsd: number;
-      outputCostUsd: number;
-      totalCostUsd: number;
-      totalCostCad: number;
-    };
   };
   credits?: any;
 }

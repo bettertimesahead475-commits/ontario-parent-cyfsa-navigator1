@@ -627,14 +627,14 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         expect(call[0].max_tokens).toBeLessThanOrEqual(5000);
       }
 
-      // Usage is summed across the four section requests.
-      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+      // Token usage and API cost are internal. The customer sees only the display allowlist.
       expect(res.body.modelMetadata.mode).toBe("fast");
-      expect(res.body.modelMetadata.usage.inputTokens).toBe(4 * 3500);
-      expect(res.body.modelMetadata.usage.outputTokens).toBe(4 * 1200);
-      expect(res.body.modelMetadata.usage.totalTokens).toBe(4 * 4700);
-      expect(res.body.modelMetadata.cost.totalCostUsd).toBeCloseTo((4 * 3500 / 1e6) * 2 + (4 * 1200 / 1e6) * 10, 4);
-      expect(res.body.modelMetadata.cost.totalCostCad).toBeGreaterThan(0);
+      expect(Object.keys(res.body.modelMetadata).sort()).toEqual(["durationMs", "engineName", "mode", "modeName"]);
+      expect(res.body.modelMetadata.engine).toBeUndefined();
+      expect(res.body.modelMetadata.usage).toBeUndefined();
+      expect(res.body.modelMetadata.cost).toBeUndefined();
+      // Nothing in the whole customer response may expose provider IDs, tokens or cost.
+      expect(JSON.stringify(res.body)).not.toMatch(/claude-|totalCost|inputTokens|outputTokens|costUsd|costCad|Est\. CAD/);
     });
 
     it("routes Forensic sections to Sonnet and verifies high-impact findings with Opus, costing each model separately", async () => {
@@ -660,20 +660,15 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(verification[0][0].model).toBe("claude-opus-5");
 
       expect(res.body.redFlags).toHaveLength(1);
-      expect(res.body.redFlags[0].forensicVerification).toMatchObject({ verdict: "OVERSTATED", verifiedBy: "claude-opus-5" });
+      expect(res.body.redFlags[0].forensicVerification).toMatchObject({ verdict: "OVERSTATED", verifiedBy: "Independent second review" });
       expect(res.body.forensicVerification.status).toBe("completed");
       expect(res.body.thresholdAnalysis).toHaveLength(4);
       expect(res.body.timing.mode).toBe("full");
 
       expect(res.body.modelMetadata.mode).toBe("full");
-      expect(res.body.modelMetadata.usage.inputTokens).toBe(6 * 1000 + 5000);
-      expect(res.body.modelMetadata.usage.outputTokens).toBe(6 * 500 + 1000);
-      // Sonnet 5 at $2/$10 for the six sections, Opus 5 at $5/$25 for verification.
-      expect(res.body.modelMetadata.cost.totalCostUsd).toBeCloseTo(
-        (6000 / 1e6) * 2 + (3000 / 1e6) * 10 + (5000 / 1e6) * 5 + (1000 / 1e6) * 25,
-        4
-      );
-      expect(res.body.modelMetadata.cost.byModel["claude-opus-5"].input_tokens).toBe(5000);
+      expect(Object.keys(res.body.modelMetadata).sort()).toEqual(["durationMs", "engineName", "mode", "modeName"]);
+      expect(res.body.modelMetadata.usage).toBeUndefined();
+      expect(res.body.modelMetadata.cost).toBeUndefined();
     });
 
     it("prevents frontend from forcing unauthorized Opus access in Quick Review mode", async () => {
@@ -691,7 +686,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.status).toBe(200);
       // Server must have forced Sonnet instead of honoring client Opus override
       for (const call of mockCreateMessage.mock.calls) expect(call[0].model).toBe("claude-sonnet-5");
-      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+      expect(res.body.modelMetadata.engine).toBeUndefined();
     });
 
     it("rejects unpaid user from obtaining Forensic Opus mode with 403 FORENSIC_UPGRADE_REQUIRED", async () => {
@@ -763,7 +758,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.status).toBe(200);
       expect(mockCreateMessage).toHaveBeenCalledTimes(4);
       expect(JSON.stringify(mockCreateMessage.mock.calls[0][0].messages)).toContain("Court filing narrative text...");
-      expect(res.body.modelMetadata.engine).toBe("claude-sonnet-5");
+      expect(res.body.modelMetadata.engine).toBeUndefined();
     });
   });
 
@@ -801,7 +796,8 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
 
       expect(res.status).toBe(200);
       expect(mockCreateMessage).toHaveBeenCalledTimes(7);
-      expect(res.body.modelMetadata.verificationModel).toBe("claude-opus-5");
+      expect(res.body.modelMetadata.verificationModel).toBeUndefined();
+      expect(res.body.forensicVerification.model).toBeUndefined();
       expect(res.body.credits.tier).toBe("Admin Testing Access");
       expect(res.body.credits.quickReviewsRemaining).toBe(999);
       expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();

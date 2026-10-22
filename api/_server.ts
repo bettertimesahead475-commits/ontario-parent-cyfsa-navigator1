@@ -38,6 +38,7 @@ import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./servic
 import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, decrementFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
+import { toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
   releaseAnalysisReservation,
@@ -2306,7 +2307,6 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         tier: paidTier,
         clientRequestedModel: model,
       });
-      const authoritativeModel = modelResolution.authoritativeModel;
       const isForensic = modelResolution.mode === "full";
       const primaryModel = modelResolution.primaryModel;
       const verificationModel = isForensic ? modelResolution.verificationModel : undefined;
@@ -2353,24 +2353,18 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const durationMs = Date.now() - startTime;
       let inputTokens = 0;
       let outputTokens = 0;
-      const costByModel: Record<string, any> = {};
       let totalCostUsd = 0;
       let totalCostCad = 0;
       for (const [usedModel, usage] of Object.entries(run.usageByModel)) {
         inputTokens += usage.input_tokens;
         outputTokens += usage.output_tokens;
         const c = calculateEstimatedCost(usedModel, usage);
-        costByModel[usedModel] = { ...usage, ...c };
         totalCostUsd += c.totalCostUsd;
         totalCostCad += c.totalCostCad;
       }
+      // Internal only: totals go to the [ANALYZER_RUN] log and never to the customer response.
       const roundedUsd = Number(totalCostUsd.toFixed(5));
-      const cost = {
-        ...calculateEstimatedCost(primaryModel, { input_tokens: 0, output_tokens: 0 }),
-        totalCostUsd: roundedUsd,
-        totalCostCad: Number(totalCostCad.toFixed(4)),
-        byModel: costByModel,
-      };
+      const roundedCad = Number(totalCostCad.toFixed(4));
 
       report = {
         ...run.report,
@@ -2380,23 +2374,12 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           totalRequestMs: Date.now() - requestStartedAt,
           sectionMs: run.sectionTimingsMs,
         },
-        modelMetadata: {
-          engine: authoritativeModel,
-          model: authoritativeModel,
-          primaryModel,
-          verificationModel: verificationModel || null,
+        modelMetadata: toCustomerModelMetadata({
           engineName: modelResolution.engineDisplayName,
           mode: modelResolution.mode,
           modeName: modelResolution.modeDisplayName,
           durationMs,
-          sectionAttempts: run.attempts,
-          usage: {
-            inputTokens,
-            outputTokens,
-            totalTokens: inputTokens + outputTokens,
-          },
-          cost,
-        },
+        }),
       };
 
       console.log(JSON.stringify({
@@ -2413,6 +2396,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         inputTokens,
         outputTokens,
         costUsd: roundedUsd,
+        costCad: roundedCad,
+        costIsEstimate: true,
         outcome: "success",
       }));
 
