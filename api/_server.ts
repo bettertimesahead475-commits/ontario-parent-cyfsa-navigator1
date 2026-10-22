@@ -3086,17 +3086,29 @@ OUTPUT — return strictly this JSON schema, nothing else:
       // Generate independent bounded sections instead of one 16k-token response.
       // Each section uses the full source and prior findings, but returns only its
       // assigned keys. No summarization, omission, or synthetic filler is allowed.
+      // proceduralTimelineViolations has the heaviest per-item schema (six fields per item,
+      // including citations). Packed with three other keys it overflowed its 12k-token cap in
+      // production, so it gets a section of its own.
       const forensicSections = [
         ["gaps", "missingEvidence", "whatIsMissing", "whatToVerify"],
         ["retorts", "thresholdAnalysis"],
-        ["proceduralTimelineViolations", "charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief"]
+        ["proceduralTimelineViolations"],
+        ["charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief"]
       ] as const;
-      const sectionResults = await Promise.all(forensicSections.map(async (keys, index) => {
+      const FORENSIC_SECTION_ATTEMPTS = 2;
+      const generateForensicSection = async (
+        keys: readonly string[],
+        index: number,
+        attempt: number
+      ): Promise<Record<string, unknown>> => {
         const sectionSystem = systemInstruction +
           "\nSECTION-SPECIFIC OUTPUT: Return ONLY a JSON object with these exact keys: " +
           keys.join(", ") +
           ". Omit every other key, including disclaimer. Keep each finding grounded in the source. " +
-          "Use the field shapes from the full schema. Be precise and concise, without dropping material findings.";
+          "Use the field shapes from the full schema. Be precise and concise, without dropping material findings." +
+          (attempt > 1
+            ? " Your previous attempt for this section was cut off or malformed. Keep every item short and complete, with no dropped findings."
+            : "");
         const response = await generateContentWithFallback({
           system: sectionSystem,
           messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
@@ -3128,6 +3140,21 @@ OUTPUT — return strictly this JSON schema, nothing else:
             "A forensic report section was incomplete. No analysis credit was consumed.", true);
         }
         return Object.fromEntries(keys.map(key => [key, parsed[key]]));
+      };
+      // One bounded retry per section, only for truncated or malformed output. A section that
+      // already succeeded is never regenerated, and transport retries stay in generateContentWithFallback.
+      const sectionResults = await Promise.all(forensicSections.map(async (keys, index) => {
+        for (let attempt = 1; ; attempt++) {
+          try {
+            return await generateForensicSection(keys, index, attempt);
+          } catch (error) {
+            const retryable = error instanceof AnalyzerError && error.code === "AI_RESPONSE_INVALID";
+            if (!retryable || attempt >= FORENSIC_SECTION_ATTEMPTS) throw error;
+            console.warn("[deep scan] Retrying section after invalid output", {
+              requestId: analysisRequestId, section: index + 1, attempt
+            });
+          }
+        }
       }));
       const report: any = Object.assign({}, ...sectionResults, {
         disclaimer: "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."

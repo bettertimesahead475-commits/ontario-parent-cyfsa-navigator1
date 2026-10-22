@@ -13,7 +13,7 @@
 //     prompt sent to Claude (the chat previously had no memory).
 //   - /api/transcribe-audio must degrade to a 200 fallback response on
 //     transcription failure rather than surfacing an error to the caller.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { PDFDocument } from 'pdf-lib';
 import { resetCreditAccountingCachesForTesting } from "./services/creditAccounting.js";
@@ -1026,6 +1026,83 @@ describe("POST /api/deep-scan", () => {
     const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.body.gaps).toBeUndefined();
+  });
+
+  describe("section truncation and retry", () => {
+    afterEach(() => {
+      mockCreateMessage.mockReset();
+    });
+
+    // Answers each deep-scan section from the keys it asks for. `plan` lists, per section (by its
+    // first key), the bad outputs to return before a valid one. Counts attempts per section.
+    function sectionDeepScanResponder(plan: Record<string, Array<"max_tokens" | "malformed">>) {
+      const attempts: Record<string, number> = {};
+      const prompts: Record<string, string[]> = {};
+      const responder = async (body: any) => {
+        const system = String(body.system ?? "");
+        const match = system.match(/exact keys: ([^.]+)\./);
+        const keys = match ? match[1].split(",").map((key) => key.trim()) : Object.keys(MINIMAL_DEEP_SCAN);
+        const label = keys[0];
+        attempts[label] = (attempts[label] ?? 0) + 1;
+        (prompts[label] ??= []).push(system);
+        const failure = (plan[label] ?? [])[attempts[label] - 1];
+        if (failure === "max_tokens") {
+          return { content: [{ type: "text", text: `{"${label}": [` }], stop_reason: "max_tokens", usage: {} };
+        }
+        if (failure === "malformed") return claudeTextResponse("not json at all");
+        return claudeJsonResponse(Object.fromEntries(keys.map((key) => [key, []])));
+      };
+      return { responder, attempts, prompts };
+    }
+
+    it("re-requests only the section that hit max_tokens, and completes the full report", async () => {
+      const { responder, attempts, prompts } = sectionDeepScanResponder({ proceduralTimelineViolations: ["max_tokens"] });
+      mockCreateMessage.mockImplementation(responder);
+      const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
+
+      expect(res.status).toBe(200);
+      expect(res.body.disclaimer).toContain("informational/educational purposes only");
+      expect(attempts.proceduralTimelineViolations).toBe(2);
+      // Sections that succeeded on the first attempt are not regenerated.
+      expect(attempts.gaps).toBe(1);
+      expect(attempts.retorts).toBe(1);
+      expect(attempts.charterAndHumanRightsIssues).toBe(1);
+      // The retry asks for shorter output without dropping findings.
+      expect(prompts.proceduralTimelineViolations[1]).toContain("cut off or malformed");
+    });
+
+    it("retries a malformed section once and completes", async () => {
+      const { responder, attempts } = sectionDeepScanResponder({ retorts: ["malformed"] });
+      mockCreateMessage.mockImplementation(responder);
+      const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
+
+      expect(res.status).toBe(200);
+      expect(attempts.retorts).toBe(2);
+      expect(attempts.gaps).toBe(1);
+    });
+
+    it("fails closed and charges nothing when a section keeps truncating", async () => {
+      const { responder, attempts } = sectionDeepScanResponder({
+        proceduralTimelineViolations: ["max_tokens", "max_tokens"],
+      });
+      mockCreateMessage.mockImplementation(responder);
+      const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
+
+      expect(res.status).toBe(422);
+      expect(attempts.proceduralTimelineViolations).toBe(2);
+      // No partial report is returned as complete, and no analysis credit is consumed.
+      expect(res.body.gaps).toBeUndefined();
+      expect(res.body.disclaimer).toBeUndefined();
+      expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
+    });
+
+    it("does not retry an error that is not a truncation or malformed output", async () => {
+      mockCreateMessage.mockRejectedValue(Object.assign(new Error("rate limit exceeded"), { status: 429 }));
+      const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
+
+      expect(res.status).toBe(429);
+      expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
+    });
   });
 
   it("maps a rate-limit error from the model to HTTP 429", async () => {
