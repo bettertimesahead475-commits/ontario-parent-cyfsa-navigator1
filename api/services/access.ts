@@ -528,15 +528,57 @@ export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool):
 }
 
 // --- Step 1: parent requests access before paying --------------------------
+// A repeated click or network retry from the same verified account for the same package
+// reuses the still-pending request instead of creating another one. Without this, every
+// retry adds a new pending payment that looks like a separate purchase to the owner.
+const DUPLICATE_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function paymentRequestInstructions(referenceNumber: string, amount: number): string {
+  return `Send an Interac e-transfer for $${amount} CAD to ${PAYMENT_EMAIL}. Put "${referenceNumber}" in the message/memo field so your payment can be matched. Once it's confirmed, you'll receive an access code.`;
+}
+
 export async function requestAccess(
   email: string,
   tier: Tier,
   clientInfo?: { uid?: string | null; clientIp?: string | null; userAgent?: string | null }
 ) {
   const db = getSupabase();
-  const referenceNumber = generateReferenceNumber();
   const amount = ALL_TIER_PRICES[tier] ?? TIER_PRICES.Pro;
   const normalizedEmail = email.toLowerCase().trim();
+
+  if (clientInfo?.uid) {
+    // Uids come from a verified Firebase token and are alphanumeric. Reject anything else
+    // before it reaches a LIKE pattern.
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(clientInfo.uid)) {
+      throw Object.assign(new Error("Invalid account identifier."), { statusCode: 400 });
+    }
+    const since = new Date(Date.now() - DUPLICATE_REQUEST_WINDOW_MS).toISOString();
+    const { data: candidates, error: lookupErr } = await db
+      .from("payments")
+      .select("reference_number, amount, notes")
+      .eq("status", "pending")
+      .eq("plan", tier)
+      .gte("submitted_at", since)
+      .like("notes", `%;uid:${clientInfo.uid}%`)
+      .order("submitted_at", { ascending: false });
+    if (lookupErr) throw Object.assign(new Error(`Failed to check existing requests: ${lookupErr.message}`), { statusCode: 500 });
+    // Exact match on the uid field, not a substring match, so one uid can never match another.
+    const existing = (candidates || []).find((row: any) =>
+      String(row.notes || "").split(";").includes(`uid:${clientInfo.uid}`)
+    );
+    if (existing) {
+      const existingAmount = Number(existing.amount);
+      return {
+        referenceNumber: existing.reference_number as string,
+        amount: existingAmount,
+        payTo: PAYMENT_EMAIL,
+        instructions: paymentRequestInstructions(existing.reference_number, existingAmount),
+        reused: true,
+      };
+    }
+  }
+
+  const referenceNumber = generateReferenceNumber();
 
   let notes = `email:${normalizedEmail}`;
   if (clientInfo?.uid) notes += `;uid:${clientInfo.uid}`;
@@ -581,7 +623,8 @@ export async function requestAccess(
     referenceNumber,
     amount,
     payTo: PAYMENT_EMAIL,
-    instructions: `Send an Interac e-transfer for $${amount} CAD to ${PAYMENT_EMAIL}. Put "${referenceNumber}" in the message/memo field so your payment can be matched. Once it's confirmed, you'll receive an access code.`,
+    instructions: paymentRequestInstructions(referenceNumber, amount),
+    reused: false,
   };
 }
 
@@ -826,7 +869,17 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     code_hash: hashCode(code),
     expires_at: new Date(Date.now() + CODE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
   });
-  if (codeErr) throw Object.assign(new Error(`Payment was marked approved but code generation failed: ${codeErr.message}`), { statusCode: 500 });
+  if (codeErr) {
+    // Release the claim so the payment stays retryable. Leaving it "approved" with no code
+    // would mean the parent is charged for a package they can never receive.
+    const { error: releaseErr } = await db
+      .from("payments")
+      .update({ status: "pending", approved_at: null })
+      .eq("reference_number", referenceNumber)
+      .eq("status", "approved");
+    if (releaseErr) console.error("[approvePayment] failed to release claim", { referenceNumber, message: releaseErr.message });
+    throw Object.assign(new Error(`Code generation failed; the payment was left pending for retry: ${codeErr.message}`), { statusCode: 500 });
+  }
 
   // Plaintext code is only ever visible right here - it's never stored anywhere, so this
   // email IS the delivery mechanism, not a courtesy copy. The manual
