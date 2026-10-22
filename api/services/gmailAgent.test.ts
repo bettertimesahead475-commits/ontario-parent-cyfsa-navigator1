@@ -32,6 +32,7 @@ vi.mock("googleapis", () => ({
 const mockAccess = vi.hoisted(() => ({
   getSupabase: vi.fn(),
   approvePayment: vi.fn(),
+  activateTrustBasedPayment: vi.fn(),
   PAYMENT_EMAIL: "chris@cyfsanavigator.com",
 }));
 vi.mock("./access.js", () => mockAccess);
@@ -159,6 +160,56 @@ describe("scanForPayments - unmatched message alerting", () => {
     expect(mockSendMail.mock.calls[0][0].text).toContain("PS-GOOD1");
     expect(inserted[0].outcome).toBe("matched_pending_manual_approval");
     expect(inserted[0].alerted_at).not.toBeNull();
+  });
+
+  // SECURITY REGRESSION TEST: a spoofable email match must never reach the code-issuing
+  // activation path. The email text, sender name and PS-XXXXX pattern are attacker-controlled.
+  it("never activates access (no code issued) on an email match, even for a valid-looking payment", async () => {
+    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-spoof" }] } });
+    mockGmailApi.users.messages.get.mockResolvedValue({
+      data: gmailMessage("msg-spoof", "Interac: PS-SPOOF, $149.00 has been deposited."),
+    });
+
+    const inserted: any[] = [];
+    mockAccess.getSupabase.mockReturnValue(
+      fakeSupabase({
+        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
+        payments: { list: () => ({ data: [], error: null }) },
+      })
+    );
+
+    const result = await scanForPayments();
+
+    expect(mockAccess.activateTrustBasedPayment).not.toHaveBeenCalled();
+    expect(mockAccess.approvePayment).not.toHaveBeenCalled();
+    expect(result.matchedPendingApproval).toHaveLength(1);
+    expect(inserted[0].outcome).toBe("matched_pending_manual_approval");
+    expect(mockSendMail.mock.calls[0][0].text).toContain("NO access was granted");
+  });
+
+  // A match is only ever an alert, so if the alert itself fails (SMTP down) the message must
+  // stay unprocessed and unlabelled, letting the next cron run retry it.
+  it("leaves a matched message unprocessed when the owner alert fails, so it is retried", async () => {
+    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-retry" }] } });
+    mockGmailApi.users.messages.get.mockResolvedValue({
+      data: gmailMessage("msg-retry", "Interac: PS-RETRY, $149.00 has been deposited."),
+    });
+    mockSendMail.mockRejectedValueOnce(new Error("smtp unavailable"));
+
+    const inserted: any[] = [];
+    mockAccess.getSupabase.mockReturnValue(
+      fakeSupabase({
+        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
+        payments: { list: () => ({ data: [], error: null }) },
+      })
+    );
+
+    const result = await scanForPayments();
+
+    expect(inserted).toHaveLength(0);
+    expect(mockGmailApi.users.messages.modify).not.toHaveBeenCalled();
+    expect(result.errors[0].error).toContain("will retry");
+    expect(mockAccess.activateTrustBasedPayment).not.toHaveBeenCalled();
   });
 
   it("still records and reports a genuine processing error (e.g. Gmail API failure) without approving anything", async () => {
