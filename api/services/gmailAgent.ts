@@ -370,11 +370,18 @@ export async function scanForPayments(): Promise<ScanResult> {
           `  body: {"referenceNumber":"${referenceNumber}","amountReceived":${amount}}`
       );
 
+      // The alert is the only signal for this match, so a message whose alert did not send
+      // must stay unprocessed. The next cron run retries it instead of consuming it silently.
+      if (!alertSent) {
+        result.errors.push({ messageId, error: `alert not sent for ${referenceNumber}; will retry` });
+        continue;
+      }
+
       await db.from("gmail_processed_messages").insert({
         message_id: messageId,
         matched_reference: referenceNumber,
         outcome: "matched_pending_manual_approval",
-        alerted_at: alertSent ? new Date().toISOString() : null,
+        alerted_at: new Date().toISOString(),
       });
 
       await gmail.users.messages.modify({ userId: "me", id: messageId, requestBody: { addLabelIds: [labelId!] } });

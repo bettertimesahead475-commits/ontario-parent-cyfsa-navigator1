@@ -187,6 +187,31 @@ describe("scanForPayments - unmatched message alerting", () => {
     expect(mockSendMail.mock.calls[0][0].text).toContain("NO access was granted");
   });
 
+  // A match is only ever an alert, so if the alert itself fails (SMTP down) the message must
+  // stay unprocessed and unlabelled, letting the next cron run retry it.
+  it("leaves a matched message unprocessed when the owner alert fails, so it is retried", async () => {
+    mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-retry" }] } });
+    mockGmailApi.users.messages.get.mockResolvedValue({
+      data: gmailMessage("msg-retry", "Interac: PS-RETRY, $149.00 has been deposited."),
+    });
+    mockSendMail.mockRejectedValueOnce(new Error("smtp unavailable"));
+
+    const inserted: any[] = [];
+    mockAccess.getSupabase.mockReturnValue(
+      fakeSupabase({
+        gmail_processed_messages: { maybeSingle: () => ({ data: null }), insert: (row) => (inserted.push(row), { error: null }) },
+        payments: { list: () => ({ data: [], error: null }) },
+      })
+    );
+
+    const result = await scanForPayments();
+
+    expect(inserted).toHaveLength(0);
+    expect(mockGmailApi.users.messages.modify).not.toHaveBeenCalled();
+    expect(result.errors[0].error).toContain("will retry");
+    expect(mockAccess.activateTrustBasedPayment).not.toHaveBeenCalled();
+  });
+
   it("still records and reports a genuine processing error (e.g. Gmail API failure) without approving anything", async () => {
     mockGmailApi.users.messages.list.mockResolvedValue({ data: { messages: [{ id: "msg-3" }] } });
     mockGmailApi.users.messages.get.mockRejectedValueOnce(new Error("Gmail API rate limit exceeded"));
