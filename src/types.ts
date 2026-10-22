@@ -102,7 +102,15 @@ export interface AnalysisReport {
   documentTitle: string;
   documentType: string;
   disclaimer: string;
-  completenessScore: number; // 0 to 100 educational score
+  completenessScore: number | null; // 0 to 100 educational score; null for court orders and endorsements
+  // Present on court orders and endorsements. Their numeric scores are withdrawn (see applyDocumentAuthorityPolicy).
+  documentAuthority?: {
+    recordKind: "COURT_ORDER" | "JUDICIAL_ENDORSEMENT";
+    scoring: "NOT_CREDIBILITY_SCORED";
+    authenticity: string;
+    status: string;
+    statement: string;
+  };
   fileSummary?: string; // Concise executive summary of the document
   metadata?: {
     fileNumber?: string;
@@ -112,7 +120,8 @@ export interface AnalysisReport {
     hearingDate?: string;
   };
   evidenceStrengthIndex?: {
-    score: number;
+    score: number | null;
+    scoringApplicable?: boolean;
     scale?: string;
     label?: string;
     method?: string;
@@ -180,24 +189,12 @@ export interface AnalysisReport {
     mode: "fast" | "full";
     durationMs: number;
   };
+  // Customer-facing only. Token usage, provider model IDs and API cost are never sent to the client.
   modelMetadata?: {
-    engine: string;
-    model: string;
     engineName: string;
     mode: "fast" | "full";
     modeName: string;
     durationMs: number;
-    usage?: {
-      inputTokens: number;
-      outputTokens: number;
-      totalTokens: number;
-    };
-    cost?: {
-      inputCostUsd: number;
-      outputCostUsd: number;
-      totalCostUsd: number;
-      totalCostCad: number;
-    };
   };
   credits?: any;
 }
