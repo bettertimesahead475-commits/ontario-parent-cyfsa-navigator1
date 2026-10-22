@@ -21,3 +21,32 @@ export function toCustomerModelMetadata(input: CustomerModelMetadata): CustomerM
     durationMs: input.durationMs,
   };
 }
+
+// Reports saved before the allowlist above still hold provider IDs, token counts and cost.
+// Anything that returns a stored report must pass it through here as well.
+export function redactCustomerReport<T extends Record<string, any>>(report: T): T {
+  if (!report || typeof report !== "object") return report;
+  const out: Record<string, any> = { ...report };
+  if (out.modelMetadata && typeof out.modelMetadata === "object") {
+    const m = out.modelMetadata;
+    out.modelMetadata = toCustomerModelMetadata({
+      engineName: m.engineName,
+      mode: m.mode,
+      modeName: m.modeName,
+      durationMs: m.durationMs,
+    });
+  }
+  if (out.forensicVerification && typeof out.forensicVerification === "object") {
+    const { model: _model, ...rest } = out.forensicVerification;
+    out.forensicVerification = rest;
+  }
+  for (const key of ["redFlags", "thresholdAnalysis", "chronology", "contradictions", "gaps"]) {
+    if (!Array.isArray(out[key])) continue;
+    out[key] = out[key].map((item: any) => {
+      if (!item || typeof item !== "object" || !("verifiedBy" in item)) return item;
+      const verifiedBy = item.verifiedBy ? "Independent second review" : item.verifiedBy;
+      return { ...item, verifiedBy };
+    });
+  }
+  return out as T;
+}

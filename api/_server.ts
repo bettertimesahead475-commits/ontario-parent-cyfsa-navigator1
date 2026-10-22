@@ -38,7 +38,7 @@ import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./servic
 import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, decrementFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
-import { toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
+import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
   releaseAnalysisReservation,
@@ -1973,7 +1973,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             });
           }
           if (existingJob.status === "completed" && existingJob.report) {
-            return res.json(existingJob.report);
+            return res.json(redactCustomerReport(existingJob.report));
           }
           if (existingJob.status === "analyzing" && Date.now() - existingJob.updatedAt < 6 * 60 * 1000) {
             return res.status(409).json({
@@ -2572,7 +2572,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       return res.status(403).json({ error: "Access denied. You cannot access another user's analysis job.", code: "FORBIDDEN" });
     }
 
-    res.json(job);
+    res.json(job.report ? { ...job, report: redactCustomerReport(job.report) } : job);
   });
 
   // API: Cross-Document Case Timeline

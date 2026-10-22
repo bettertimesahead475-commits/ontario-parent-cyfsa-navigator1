@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toCustomerModelMetadata } from "./analyzerCustomerMetadata.js";
+import { redactCustomerReport, toCustomerModelMetadata } from "./analyzerCustomerMetadata.js";
 
 describe("customer model metadata", () => {
   it("returns only the display fields a parent needs", () => {
@@ -28,5 +28,34 @@ describe("customer model metadata", () => {
     const serialized = JSON.stringify(toCustomerModelMetadata(input));
     expect(serialized).not.toMatch(/claude-/);
     expect(serialized).not.toMatch(/usage|cost|tokens/i);
+  });
+});
+
+describe("redactCustomerReport", () => {
+  it("strips provider IDs, tokens and cost from a report saved before the allowlist", () => {
+    const legacy = {
+      documentTitle: "Notice",
+      modelMetadata: {
+        engine: "claude-sonnet-5", model: "claude-sonnet-5", primaryModel: "claude-sonnet-5",
+        verificationModel: "claude-opus-5", engineName: "Claude Sonnet", mode: "full",
+        modeName: "Forensic Deep Scan", durationMs: 9000, sectionAttempts: {},
+        usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+        cost: { totalCostUsd: 0.5, totalCostCad: 0.7, byModel: {} },
+      },
+      forensicVerification: { status: "completed", model: "claude-opus-5", checkedFindings: 2 },
+      redFlags: [{ category: "Hearsay", verifiedBy: "claude-opus-5" }, { category: "Other" }],
+    };
+    const redacted = redactCustomerReport(legacy);
+    const serialized = JSON.stringify(redacted);
+    expect(serialized).not.toMatch(/claude-|usage|cost|tokens|sectionAttempts|primaryModel/i);
+    expect(Object.keys(redacted.modelMetadata).sort()).toEqual(["durationMs", "engineName", "mode", "modeName"]);
+    expect(redacted.forensicVerification).toEqual({ status: "completed", checkedFindings: 2 });
+    expect(redacted.redFlags[0].verifiedBy).toBe("Independent second review");
+    expect(redacted.redFlags[1]).toEqual({ category: "Other" });
+  });
+
+  it("leaves a report without internal fields unchanged in content", () => {
+    const report = { documentTitle: "Plain", redFlags: [] };
+    expect(redactCustomerReport(report)).toEqual(report);
   });
 });
