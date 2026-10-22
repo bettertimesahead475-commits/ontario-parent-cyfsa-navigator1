@@ -1035,7 +1035,7 @@ describe("POST /api/deep-scan", () => {
 
     // Answers each deep-scan section from the keys it asks for. `plan` lists, per section (by its
     // first key), the bad outputs to return before a valid one. Counts attempts per section.
-    function sectionDeepScanResponder(plan: Record<string, Array<"max_tokens" | "malformed">>) {
+    function sectionDeepScanResponder(plan: Record<string, Array<"max_tokens" | "malformed" | "bad_item" | "refusal">>) {
       const attempts: Record<string, number> = {};
       const prompts: Record<string, string[]> = {};
       const responder = async (body: any) => {
@@ -1050,6 +1050,11 @@ describe("POST /api/deep-scan", () => {
           return { content: [{ type: "text", text: `{"${label}": [` }], stop_reason: "max_tokens", usage: {} };
         }
         if (failure === "malformed") return claudeTextResponse("not json at all");
+        if (failure === "refusal") return { content: [], stop_reason: "refusal", usage: {} };
+        // Valid JSON, but the first item is missing its required fields.
+        if (failure === "bad_item") {
+          return claudeJsonResponse(Object.fromEntries(keys.map((key) => [key, key === label ? [{ claim: "x" }] : []])));
+        }
         return claudeJsonResponse(Object.fromEntries(keys.map((key) => [key, []])));
       };
       return { responder, attempts, prompts };
@@ -1079,6 +1084,26 @@ describe("POST /api/deep-scan", () => {
       expect(res.status).toBe(200);
       expect(attempts.retorts).toBe(2);
       expect(attempts.gaps).toBe(1);
+    });
+
+    it("retries a section whose items violate the schema, instead of failing after all sections finish", async () => {
+      const { responder, attempts } = sectionDeepScanResponder({ retorts: ["bad_item"] });
+      mockCreateMessage.mockImplementation(responder);
+      const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
+
+      expect(res.status).toBe(200);
+      expect(attempts.retorts).toBe(2);
+    });
+
+    it("does not re-send a document the model refused", async () => {
+      const { responder, attempts } = sectionDeepScanResponder({ gaps: ["refusal"] });
+      mockCreateMessage.mockImplementation(responder);
+      const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "Some document text." });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toContain("declined to analyze");
+      expect(attempts.gaps).toBe(1);
+      expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
     });
 
     it("fails closed and charges nothing when a section keeps truncating", async () => {

@@ -269,6 +269,37 @@ async function transcribeAudioWithGemini(base64Data: string, mimeType: string): 
 // Text analysis uses Claude (Sonnet for Quick Review, Opus for Forensic In-Depth).
 // Gemini remains dedicated to OCR and audio transcription.
 
+// Returned to the customer when the model refuses. A refusal is not malformed output, so the
+// per-section retry must not re-send the document.
+const ANALYSIS_REFUSAL_MESSAGE =
+  "The analysis service declined to analyze this content. Your document is safe and this attempt was not counted against your analyses.";
+
+// Item shapes for the forensic keys that hold objects. Other forensic keys hold string lists.
+// Checked per section so a schema-violating item is retried in that section, not discovered
+// after every section has finished.
+const FORENSIC_OBJECT_LIST_FIELDS: Record<string, readonly string[]> = {
+  retorts: ["claim", "objection", "action"],
+  thresholdAnalysis: ["thresholdChecked", "isMet", "reasoning", "primarySourceLaw"],
+  proceduralTimelineViolations: [
+    "timelineRule", "documentAssertion", "evaluation", "citation", "locationInDocument", "parentActionStep",
+  ],
+};
+
+function forensicSectionIsValid(section: unknown, keys: readonly string[]): boolean {
+  if (!section || typeof section !== "object" || Array.isArray(section)) return false;
+  const record = section as Record<string, unknown>;
+  return keys.every((key) => {
+    const value = record[key];
+    if (!Array.isArray(value)) return false;
+    const fields = FORENSIC_OBJECT_LIST_FIELDS[key];
+    if (!fields) return value.every((item) => typeof item === "string");
+    return value.every((item) =>
+      item !== null && typeof item === "object" && !Array.isArray(item) &&
+      fields.every((field) => typeof (item as Record<string, unknown>)[field] === "string")
+    );
+  });
+}
+
 async function generateContentWithFallback(
   params: {
     system?: string;
@@ -416,12 +447,7 @@ async function generateContentWithFallback(
       `usage=${JSON.stringify(usage)}`
   );
   if (stopReason === "refusal") {
-    throw new AnalyzerError(
-      "AI_RESPONSE_INVALID",
-      422,
-      "The analysis service declined to analyze this content. Your document is safe and this attempt was not counted against your analyses.",
-      false
-    );
+    throw new AnalyzerError("AI_RESPONSE_INVALID", 422, ANALYSIS_REFUSAL_MESSAGE, false);
   }
   const textOut = (response.content || [])
     .filter((block: any) => block.type === "text")
@@ -3134,8 +3160,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
           });
           throw error;
         }
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
-            keys.some(key => !Array.isArray(parsed[key]))) {
+        if (!forensicSectionIsValid(parsed, keys)) {
           throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
             "A forensic report section was incomplete. No analysis credit was consumed.", true);
         }
@@ -3148,7 +3173,8 @@ OUTPUT — return strictly this JSON schema, nothing else:
           try {
             return await generateForensicSection(keys, index, attempt);
           } catch (error) {
-            const retryable = error instanceof AnalyzerError && error.code === "AI_RESPONSE_INVALID";
+            const retryable = error instanceof AnalyzerError && error.code === "AI_RESPONSE_INVALID" &&
+              error.userMessage !== ANALYSIS_REFUSAL_MESSAGE;
             if (!retryable || attempt >= FORENSIC_SECTION_ATTEMPTS) throw error;
             console.warn("[deep scan] Retrying section after invalid output", {
               requestId: analysisRequestId, section: index + 1, attempt
