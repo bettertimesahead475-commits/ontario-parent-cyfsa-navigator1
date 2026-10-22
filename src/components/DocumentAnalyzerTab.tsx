@@ -3981,25 +3981,12 @@ export default function DocumentAnalyzerTab() {
                               )}
                               {selectedReport.modelMetadata.engineName}
                             </span>
-                            <span className="font-sans text-[11px] text-slate-500">
-                              ({selectedReport.modelMetadata.model})
-                            </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-4 text-[11px] font-sans text-slate-600">
                             <span className="flex items-center gap-1" title="Server Analysis Processing Time">
                               <Clock className="w-3 h-3 text-slate-400" />
                               {(selectedReport.modelMetadata.durationMs / 1000).toFixed(1)}s
                             </span>
-                            {selectedReport.modelMetadata.usage && (
-                              <span title={`Input: ${selectedReport.modelMetadata.usage.inputTokens.toLocaleString()} | Output: ${selectedReport.modelMetadata.usage.outputTokens.toLocaleString()}`}>
-                                Tokens: <strong>{selectedReport.modelMetadata.usage.totalTokens.toLocaleString()}</strong>
-                              </span>
-                            )}
-                            {selectedReport.modelMetadata.cost && (
-                              <span className="text-emerald-700 font-semibold" title={`USD $${selectedReport.modelMetadata.cost.totalCostUsd.toFixed(4)}`}>
-                                Est. CAD: ${selectedReport.modelMetadata.cost.totalCostCad.toFixed(3)}
-                              </span>
-                            )}
                           </div>
                         </div>
                       )}

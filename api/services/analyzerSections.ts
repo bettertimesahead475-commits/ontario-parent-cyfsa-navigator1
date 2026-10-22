@@ -746,7 +746,7 @@ export function mergeVerification(report: Record<string, any>, parsed: any, mode
     const v = byId.get(flag.id);
     if (!v) continue;
     const verdict = (VERDICTS as readonly string[]).includes(str(v.verdict).toUpperCase()) ? str(v.verdict).toUpperCase() : "NEEDS_CONTEXT";
-    flag.forensicVerification = { verdict, note: str(v.note), verifiedBy: model };
+    flag.forensicVerification = { verdict, note: str(v.note), verifiedBy: VERIFIER_LABEL };
     // Verification may calibrate severity down, never up: escalation needs the generating rules.
     const rec = SEVERITIES.find((s) => s.toLowerCase() === str(v.recommendedSeverity).toLowerCase());
     if (rec && SEVERITY_RANK[rec] < SEVERITY_RANK[flag.severity]) {
@@ -763,11 +763,14 @@ export function mergeVerification(report: Record<string, any>, parsed: any, mode
     const v = thresholdVerdicts.get(str(t.thresholdChecked).toLowerCase());
     if (!v) continue;
     const verdict = (VERDICTS as readonly string[]).includes(str(v.verdict).toUpperCase()) ? str(v.verdict).toUpperCase() : "NEEDS_CONTEXT";
-    t.forensicVerification = { verdict, note: str(v.note), verifiedBy: model };
+    t.forensicVerification = { verdict, note: str(v.note), verifiedBy: VERIFIER_LABEL };
     checked++;
   }
   return checked;
 }
+
+// Customer-facing label for the second review. Provider model identifiers are never sent to customers.
+const VERIFIER_LABEL = "Independent second review";
 
 async function runForensicVerification(
   report: Record<string, any>,
@@ -779,7 +782,7 @@ async function runForensicVerification(
   const started = now();
   const findingCount = (report.redFlags || []).length + (report.thresholdAnalysis || []).length;
   if (findingCount === 0) {
-    return { status: "completed", model, checkedFindings: 0, overallAssessment: "There were no findings to verify.", durationMs: 0 };
+    return { status: "completed", checkedFindings: 0, overallAssessment: "There were no findings to verify.", durationMs: 0 };
   }
   let reason = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -811,7 +814,6 @@ async function runForensicVerification(
       const checked = mergeVerification(report, parsed, model);
       return {
         status: "completed",
-        model,
         checkedFindings: checked,
         totalFindings: findingCount,
         overallAssessment: str(parsed.overallAssessment),
@@ -829,7 +831,6 @@ async function runForensicVerification(
   // the report says so plainly instead of implying the findings were verified.
   return {
     status: "incomplete",
-    model,
     checkedFindings: 0,
     totalFindings: findingCount,
     reason: `Independent verification could not be completed: ${reason}. The findings below have not been second-reviewed.`,
