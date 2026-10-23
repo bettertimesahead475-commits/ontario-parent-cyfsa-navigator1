@@ -92,7 +92,7 @@ export function withApplicableRights(contract: ReportContract, text: string, doc
       concern: "NOT_INDEPENDENTLY_VERIFIED",
       quote: "NOT_CHECKED",
       sources: [{ documentId, locator: entry.section, quote: "" }],
-      authorities: [{ citation: entry.section, status: "CHECKED_AGAINST_REFERENCE_COPY" }],
+      authorities: [{ citation: entry.section, status: "CONFIRMED_SECTION_NUMBER" }],
       uncertainty:
         "A keyword match is a research signal only. Checked against the copy of the CYFSA held by this app (consolidation dated 2026-06-24), not the official e-Laws text.",
       supportingFindingIds: [],

@@ -2551,7 +2551,7 @@ export default function DocumentAnalyzerTab() {
           <div class="meta-bar">
             System Agent: <strong>Claude 3.5 Sonnet RAG</strong>
             • Active Case Vault Size: <strong>${organizedFiles.length} files organized</strong>
-            • Statute reference copy: consolidation dated 2026-06-24 (not an official legal verification)
+            • Statute entries in this report were not checked against the official text
           </div>
         </div>
 
@@ -2963,7 +2963,7 @@ export default function DocumentAnalyzerTab() {
           </div>
 
           <div class="footer-signature">
-            Statute reference copy: consolidation dated 2026-06-24. Check current text on e-Laws. • Saved dynamically via OPA PDF Legal Desk.
+            Statute entries in this report were not checked against the official text. Confirm them on e-Laws or with counsel. • Saved dynamically via OPA PDF Legal Desk.
           </div>
 
           <script>
@@ -4093,7 +4093,7 @@ export default function DocumentAnalyzerTab() {
                             <span>⚖️</span> Citations & Analysis
                           </p>
                           <p className="text-[11px] text-emerald-800 leading-normal">
-                            Where a cited section is in the app's bundled copy of the <strong>Ontario Child, Youth and Family Services Act (CYFSA), 2017</strong> or another bundled source, the button opens that text. Other citations are not checked by the app. Confirm every citation with counsel.
+                            The statute buttons open the app's own entries for those sections. The app does not check these entries against the official statute, and other citations are not checked at all. Confirm every citation with counsel.
                           </p>
                         </div>
                       </div>
