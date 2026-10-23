@@ -42,13 +42,16 @@ function FindingBlock({ finding }: { finding: ParentFindingView }) {
 }
 
 /** Parent-facing view of the analyzer's own findings. Shown only when the parent report flag is on. */
-/** Renders nothing unless the parent report flag is on. The caller passes the flag so the gate can be tested directly. */
+/**
+ * The only exported way to show the parent report panel. It renders nothing unless the parent report flag is on.
+ * The caller passes the flag so the gate can be tested directly.
+ */
 export function ParentReportSection({ report, enabled }: Props & { enabled: boolean }) {
   if (!enabled) return null;
   return <ParentReportPanel report={report} />;
 }
 
-export function ParentReportPanel({ report }: Props) {
+function ParentReportPanel({ report }: Props) {
   const view = useMemo(() => buildParentReportView(report as Record<string, unknown>), [report]);
   return (
     <section aria-labelledby="parent-report-heading" className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
-import { ParentReportPanel, ParentReportSection } from "./ParentReportPanel";
+import { ParentReportSection } from "./ParentReportPanel";
 
 const REPORT = {
   documentType: "Court Affidavit",
@@ -33,7 +33,7 @@ describe("ParentReportPanel", () => {
   afterEach(cleanup);
 
   it("shows the seven parent summary sections in order", () => {
-    render(<ParentReportPanel report={REPORT} />);
+    render(<ParentReportSection report={REPORT} enabled />);
     const headings = Array.from(document.querySelectorAll("section h3"))
       .map((h) => h.textContent ?? "")
       .filter((t) => /^\d\. /.test(t));
@@ -43,27 +43,28 @@ describe("ParentReportPanel", () => {
   });
 
   it("states the evidence label and the unverified citation on a finding, without the raw enum", () => {
-    render(<ParentReportPanel report={REPORT} />);
-    const summary = screen.getByText("Hearsay Reliance");
+    render(<ParentReportSection report={REPORT} enabled />);
+    const summary = screen.getByText("Point 1");
+    expect(screen.queryByText("Hearsay Reliance")).toBeNull();
     expect(summary.closest("details")?.textContent).toMatch(/Second-hand \(hearsay\)/);
     expect(summary.closest("details")?.textContent).not.toMatch(/HEARSAY/);
     expect(summary.closest("details")?.textContent).toMatch(/[Uu]nverified/);
   });
 
   it("shows the Deep Scan gaps, evidence to gather, and retorts", () => {
-    const { container } = render(<ParentReportPanel report={REPORT} />);
+    const { container } = render(<ParentReportSection report={REPORT} enabled />);
     expect(container.textContent).toMatch(/five-day deadline/);
     expect(container.textContent).toMatch(/The hearing notice/);
     expect(container.textContent).toMatch(/parent missed the visit/);
   });
 
   it("says there is no finding when the analyzer raised none", () => {
-    render(<ParentReportPanel report={{ ...REPORT, redFlags: [] }} />);
+    render(<ParentReportSection enabled report={{ ...REPORT, redFlags: [] }} />);
     expect(screen.getByText(/raised no points/)).toBeTruthy();
   });
 
   it("does not present the title as proof of legal effect", () => {
-    const { container } = render(<ParentReportPanel report={{ ...REPORT, documentType: "Final Court Order" }} />);
+    const { container } = render(<ParentReportSection enabled report={{ ...REPORT, documentType: "Final Court Order" }} />);
     expect(container.textContent).not.toMatch(/has legal effect/);
     expect(container.textContent).toMatch(/title alone does not show/);
   });
