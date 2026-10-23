@@ -174,8 +174,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     }
   });
 
-  it("keeps the order caveat even when a filing word leads the title (fails closed)", () => {
-    for (const documentType of ["Motion for Final Order", "Motion Order", "Application Order", "Final Judgement"]) {
+  it("keeps the order caveat for underscore, camel-case, and numbered titles (fails closed)", () => {
+    for (const documentType of ["Motion for Final Order", "Motion Order", "Application Order", "Final Judgement", "Final_Order_2026", "FinalOrder", "Order2026", "Ruling_1", "Judgement_Final"]) {
       const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
       const view = buildParentReportView({ ...withoutAuthority, documentType });
       const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
@@ -417,5 +417,24 @@ describe("readability", () => {
   it("counts long sentences so reviewers can see reading burden", () => {
     const long = Array.from({ length: 25 }, (_, i) => `word${i}`).join(" ") + ".";
     expect(readability(long).longSentences).toBe(1);
+  });
+});
+
+describe("analyzer argument fields stay out of the parent view", () => {
+  it("shows neither the retort objection nor the contradiction significance", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      retorts: [{ claim: "The worker was there.", objection: "The log contradicts this.", action: "Ask for the log." }],
+      contradictions: [{ description: "Two dates.", locations: ["Page 3", "Page 5"], significance: "May affect credibility." }],
+    });
+    const body = view.summary.map((part: { body: string }) => part.body).join(" ") + view.retortChecks.join(" ");
+    expect(body).not.toMatch(/log contradicts|May affect credibility/);
+    expect(body).toMatch(/Question to check/);
+  });
+
+  it("frames rights issues as items for a lawyer to check, not as findings", () => {
+    const view = buildParentReportView({ ...REPORT, charterAndHumanRightsIssues: ["Right to counsel may be at issue."] });
+    const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("4."))?.body ?? "";
+    expect(body).toMatch(/Raised for a lawyer to check, not a finding/);
   });
 });

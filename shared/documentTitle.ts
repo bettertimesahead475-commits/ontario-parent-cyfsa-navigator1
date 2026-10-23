@@ -3,10 +3,11 @@
  * document, so that the parent is told the report does not show whether it is final, signed, entered, served,
  * or in effect.
  *
- * This check fails closed: any order-type word triggers the caveat, whatever the title starts with. A
- * filing title such as "Motion Order" still gets the caveat, because a wrong "no caveat" is the riskier error.
+ * This check fails closed: an order-type word anywhere in the title triggers the caveat, including inside
+ * "Final_Order", "FinalOrder" or "Order2026". A wrong "no caveat" is the riskier error, so substring matching
+ * is used on purpose. It over-warns on a few words such as "Recorder"; that is accepted.
  */
-const ORDER_TYPE_WORD = /\b(orders?|endorse(?:ment|d|s)?|judg(?:e)?ments?|decisions?|rulings?)\b/i;
+const ORDER_TYPE_WORD = /(order|endorse|judg(?:e)?ment|decision|ruling)/i;
 
 export function titleSuggestsCourtOrder(documentType: string): boolean {
   return ORDER_TYPE_WORD.test(documentType);
