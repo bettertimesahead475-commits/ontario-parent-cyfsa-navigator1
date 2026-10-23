@@ -6,6 +6,8 @@
  * the same underlying report.
  */
 
+import { titleSuggestsCourtOrder } from "../../shared/documentTitle";
+
 export interface ParentFindingView {
   id: string;
   heading: string;
@@ -242,11 +244,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
   // A title such as "Final Court Order" or "Draft Order" does not show whether the document was signed, entered,
   // served, or is in effect, so the parent view says that instead of asserting it.
   const documentType = text(report.documentType);
-  // A title that leads with a non-order word (application, motion, affidavit...) is not treated as an order.
-  // Any other title that names an order, endorsement, judgment or decision gets the caveat.
-  // Only a title that leads with a plainly non-order document word is exempt. "Notice of Final Order" is not.
-  const NON_ORDER_LEAD = /^\s*(application|motion|request|affidavit|letter|form|statement)\b/i;
-  const titleSuggestsCourtOrder = /\b(order|endorsement|judgment|decision)s?\b/i.test(documentType) && !NON_ORDER_LEAD.test(documentType);
+  const titleCaveat = titleSuggestsCourtOrder(documentType);
   // Only explicit analyzer authority of a known court-record kind counts. Any other value falls back to the title caveat.
   const authority = report.documentAuthority && typeof report.documentAuthority === "object" ? report.documentAuthority : null;
   const hasAuthorityRecord = authority !== null && ["COURT_ORDER", "JUDICIAL_ENDORSEMENT"].includes(text(authority.recordKind));
@@ -261,7 +259,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
       heading: "3. What does this mean for you?",
       body: hasAuthorityRecord
         ? "The analyzer recorded this as a court record. This report does not confirm whether it is final, signed, entered, served, or still in effect. Confirm that with counsel and the court file. This report does not decide whether the facts it mentions are true."
-        : titleSuggestsCourtOrder
+        : titleCaveat
           ? "The title suggests a court order, endorsement, or draft. The title alone does not show whether it is final, signed, entered, served, or in effect, and this report cannot confirm those from the text. Confirm with counsel and the court file before relying on any of its terms."
           : "This report shows what the document says and what is still unclear. It does not decide who is right.",
     },
