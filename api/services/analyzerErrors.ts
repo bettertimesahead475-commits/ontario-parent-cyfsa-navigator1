@@ -345,3 +345,25 @@ export function formatAnalyzerErrorResponse(error: any): {
     retryable: true,
   };
 }
+
+// Diagnostic text from a provider or SDK error can carry keys, bearer tokens, or document fragments.
+// It is only ever written to server logs, and only after this redaction.
+const DIAGNOSTIC_SECRET_PATTERNS: RegExp[] = [
+  /sk-[A-Za-z0-9_-]{8,}/g,
+  /AIza[0-9A-Za-z_-]{20,}/g,
+  /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
+  /(api[_-]?key|token|secret|authorization)["'\s:=]+[^\s"',;]+/gi,
+];
+
+export function redactDiagnostic(input: unknown, maxLength = 240): string {
+  let text = String(input ?? "");
+  for (const pattern of DIAGNOSTIC_SECRET_PATTERNS) text = text.replace(pattern, "[redacted]");
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+/** Server-log only. The customer never receives this text. */
+export function logAnalyzerDiagnostic(stage: string, err: unknown): void {
+  const name = (err as { name?: unknown } | null)?.name;
+  console.warn(`[analyzer] ${stage} failed (${redactDiagnostic(name ?? "error", 40)}): ${redactDiagnostic((err as Error | null)?.message ?? err)}`);
+}

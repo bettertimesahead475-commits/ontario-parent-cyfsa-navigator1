@@ -12,7 +12,7 @@ import {
   FORENSIC_SECTIONS,
   type GenerateFn,
 } from "./analyzerSections.js";
-import { AnalyzerError } from "./analyzerErrors.js";
+import { AnalyzerError, redactDiagnostic } from "./analyzerErrors.js";
 import { COMPLETE_ANALYSIS, VERIFICATION_RESULT, isVerificationRequest, requestedSection } from "../analyzerTestFixtures.js";
 
 const DOC = "The worker states that a neighbour told me the child was left alone on March 3, 2026.";
@@ -172,6 +172,28 @@ describe("runSectionedAnalysis", () => {
     expect(usageByModel["claude-opus-5"]).toBeDefined();
   });
 
+  it("never puts a raw provider error into the customer's second-review reason", async () => {
+    const leak = "upstream 500 for key sk-LIVESECRET123456 body: Sam Example was left alone";
+    const generate = vi.fn(async (params: any) => {
+      if (isVerificationRequest(params)) throw new Error(leak);
+      return ok(requestedSection(params) ? COMPLETE_ANALYSIS : COMPLETE_ANALYSIS);
+    }) as unknown as GenerateFn;
+    const { report } = await runSectionedAnalysis(base(generate, { mode: "full", verificationModel: "claude-opus-5" }));
+    expect(report.forensicVerification.status).toBe("incomplete");
+    expect(report.forensicVerification.reason).not.toMatch(/sk-LIVESECRET|Sam Example|upstream/);
+    expect(JSON.stringify(report)).not.toMatch(/sk-LIVESECRET|Sam Example was left alone/);
+  });
+
+  it("never puts a raw section provider error into the customer-facing failure", async () => {
+    const leak = "socket hang up while sending sk-LIVESECRET123456 with document text";
+    const generate = vi.fn(async () => {
+      throw new Error(leak);
+    }) as unknown as GenerateFn;
+    const err = await runSectionedAnalysis(base(generate)).catch((e) => e);
+    expect(err).toBeInstanceOf(AnalyzerError);
+    expect(err.userMessage).not.toMatch(/sk-LIVESECRET|socket hang up|document text/);
+  });
+
   it("labels verification incomplete instead of claiming it, when there is no time left for it", async () => {
     let t = 0;
     const generate = responder();
@@ -227,5 +249,12 @@ describe("deterministic guards", () => {
     expect(prompt).toContain('"whatToVerify"');
     expect(prompt).not.toContain('"redFlags"');
     expect(prompt).toContain(`<document>\nDOCUMENT TEXT CONTENT:\n${DOC}\n</document>`);
+  });
+});
+
+describe("diagnostic redaction", () => {
+  it("removes keys, bearer tokens, and email addresses from log text", () => {
+    const out = redactDiagnostic("sk-ABCDEFGH12345 Bearer abc.def token=xyz parent@example.com");
+    expect(out).not.toMatch(/sk-ABCDEFGH|abc\.def|xyz|parent@example/);
   });
 });
