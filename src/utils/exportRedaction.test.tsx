@@ -118,3 +118,19 @@ describe("title caveat and classification in exports", () => {
     expect(html).not.toContain(NAME);
   });
 });
+
+describe("legal references in redacted copies", () => {
+  it("removes a planted name placed in legalReference and citation prose", () => {
+    const report: any = withPlantedIdentifiers();
+    report.redFlags[0].legalReference = `${NAME} statute citation unverified`;
+    report.redFlags[0].citation = `${NAME} CYFSA s. 74(2)`;
+    const html = renderReportSectionsHtml(report, "parent", "T", { redact: true });
+    expect(html).not.toContain(NAME);
+  });
+
+  it("keeps a short citation such as CYFSA s. 74(2)", () => {
+    const out: any = redactForExport({ legalReference: "CYFSA s. 74(2)", citation: "s. 88" });
+    expect(out.legalReference).toBe("CYFSA s. 74(2)");
+    expect(out.citation).toBe("s. 88");
+  });
+});
