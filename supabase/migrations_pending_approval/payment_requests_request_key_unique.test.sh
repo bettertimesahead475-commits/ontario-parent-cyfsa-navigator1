@@ -26,5 +26,8 @@ psql_q "$HERE/payment_requests_request_key_unique.test.sql"
 echo "PASS: migration + assertions"
 psql_q "$HERE/payment_requests_request_key_unique.rollback.sql"
 echo "PASS: rollback"
+kept=$($P "$PGBIN/psql -h $WORK -p $PORT -U postgres -d postgres -tAc \"select count(*) from information_schema.columns where table_name='payments' and column_name='firebase_uid'\"")
+[ "$(echo $kept)" = "1" ] || { echo "FAIL: rollback removed firebase_uid"; exit 1; }
+echo "PASS: rollback keeps firebase_uid"
 psql_q "$HERE/payment_requests_request_key_unique.sql"
 echo "PASS: re-apply after rollback"
