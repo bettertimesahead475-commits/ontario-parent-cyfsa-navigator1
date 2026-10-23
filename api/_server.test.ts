@@ -376,7 +376,9 @@ describe("POST /api/request-access", () => {
     mockAccess.requestAccess.mockRejectedValueOnce(Object.assign(new Error("db down"), { statusCode: 503 }));
     const res = await request(app).post("/api/request-access").send({ tier: "Pro" });
     expect(res.status).toBe(503);
-    expect(res.body.error).toBe("db down");
+    // A server error's raw text is never shown to the customer.
+    expect(res.body.error).toBe("We could not create the access request. Please try again.");
+    expect(res.body.error).not.toContain("db down");
   });
 });
 

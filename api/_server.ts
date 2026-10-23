@@ -16,6 +16,7 @@ import compression from "compression";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { requestAccess, approvePayment, verifyAccessCode, verifySessionToken, getActivePaidSession, getSupabase, revokeSession, revokeAllSessionsForUid, checkAndConsumeFreeToolUse, isSessionBoundToIdentity, isVerifiedSiteOwner, getConfiguredProjectRef, TIER_PRICES, isAnalyzerTier, isCaseAccessTier, hasCaseAccess, hasAnalyzerAccess, hasForensicInDepthAccess, type Tier, type FreeTool } from "./services/access.js";
+import { logServerError, publicErrorMessage } from "./services/publicErrors.js";
 import { verifyFirebaseToken, verifyFirebaseIdentity } from "./services/firebaseAdmin.js";
 import { createCase } from "./services/cases.js";
 import { registerLifecycleRoutes } from "./lifecycleRoutes.js";
@@ -762,8 +763,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       });
       res.json(result);
     } catch (err: any) {
-      console.error("[/api/request-access]", err);
-      res.status(err.statusCode || 500).json({ error: err.message || "Failed to create access request.", ...(err.code ? { code: err.code } : {}) });
+      logServerError("/api/request-access", err);
+      res.status(err.statusCode || 500).json({ error: publicErrorMessage(err, "We could not create the access request. Please try again."), ...(err.code && (err.statusCode || 500) < 500 ? { code: err.code } : {}) });
     }
   });
 
@@ -1545,8 +1546,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const result = await verifyAccessCode(identity, email, code);
       res.json({ success: true, tier: result.tier, token: result.token, email: result.email });
     } catch (err: any) {
-      console.error("[/api/activate-code]", err);
-      res.status(err.statusCode || 500).json({ error: err.message || "Activation failed." });
+      logServerError("/api/activate-code", err);
+      res.status(err.statusCode || 500).json({ error: publicErrorMessage(err, "Activation could not be completed. Please try again.") });
     }
   });
 
@@ -3465,7 +3466,8 @@ OUTPUT — return strictly this JSON schema, nothing else:
         emailSent,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      logServerError("/api/lawyer-intake", err);
+      res.status(500).json({ error: "Your inquiry could not be sent. Please try again, or contact the lawyer directly." });
     }
   });
 
