@@ -74,8 +74,20 @@ function findingHtml(f: ReportFinding, audience: ExportAudience): string {
   return `<div class="finding"><h3>${escapeHtml(f.title)} ${tags}</h3><dl>${answers}</dl>${sources}${pro}</div>`;
 }
 
-export function renderReportSectionsHtml(report: unknown, audience: ExportAudience = "parent", documentTitle = "Analysis report"): string {
-  const contract: ReportContract = buildSectionedReport(report);
+export interface ReportSectionsHtmlOptions {
+  /** When true, identifying metadata (names, file numbers, dates) is left out of the export. */
+  redact?: boolean;
+}
+
+export function renderReportSectionsHtml(
+  report: unknown,
+  audience: ExportAudience = "parent",
+  documentTitle = "Analysis report",
+  options: ReportSectionsHtmlOptions = {}
+): string {
+  // Identifying metadata is removed before the contract is built, so no exported section can carry it.
+  const source = options.redact && report && typeof report === "object" ? { ...report, metadata: {} } : report;
+  const contract: ReportContract = buildSectionedReport(source);
   const toc = contract.sections
     .map((s) => `<li><a href="#report-${s.id}">${s.number}. ${escapeHtml(s.title)}</a></li>`)
     .join("");

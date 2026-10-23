@@ -108,7 +108,7 @@ const INTENTS: { pattern: RegExp; handle: Handler }[] = [
       const r = listFindings(bySection(c, "S04"), "This document is not a court order or endorsement, so no court order is listed.");
       return {
         basis: "YOUR_RECORDS",
-        answer: `A court order has legal effect unless it is changed or ends. This tool does not check whether a copy is genuine or current.\n${r.text}`,
+        answer: `This report does not show whether the order is final, signed, entered, served, or in effect, and it does not check whether a copy is genuine or current. Confirm that with counsel and the court file.\n${r.text}`,
         sources: r.sources,
       };
     },
@@ -123,7 +123,10 @@ const INTENTS: { pattern: RegExp; handle: Handler }[] = [
   {
     pattern: /hearsay|second[- ]hand|direct evidence|documentary|opinion|inference|unsupported|corroborat|admissib/i,
     handle: (q) => {
-      const term = GLOSSARY.find((g) => q.toLowerCase().includes(g.term.toLowerCase().split(" ")[0]));
+      // Prefer the most specific match, so "Is my affidavit hearsay?" does not return the Affidavit entry.
+      const lowered = q.toLowerCase();
+      const matches = GLOSSARY.filter((g) => lowered.includes(g.term.toLowerCase().split(" ")[0]));
+      const term = matches.sort((a, b) => b.term.length - a.term.length)[0];
       const fallback = /admissib/i.test(q)
         ? { term: "Admissible", meaning: "Allowed to be considered by the court. Admissible does not mean reliable; the judge decides how much weight it gets." }
         : undefined;

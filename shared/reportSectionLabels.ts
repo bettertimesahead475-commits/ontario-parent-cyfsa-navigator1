@@ -25,7 +25,7 @@ export const QUOTE_LABEL: Record<QuoteStatus, string> = {
 };
 
 export const AUTHORITY_LABEL: Record<AuthorityStatus, string> = {
-  VERIFIED_IN_REPOSITORY_REFERENCE: "Statute text verified against the repository copy",
+  VERIFIED_IN_REPOSITORY_REFERENCE: "Matches the copy of the CYFSA held by this app (consolidation dated 2026-06-24). Not checked against the official e-Laws text.",
   CITATION_UNVERIFIED: "Citation unverified: confirm with counsel",
   NOT_CHECKED: "Citation not checked",
 };
@@ -88,7 +88,7 @@ export const GLOSSARY: { term: string; meaning: string }[] = [
   { term: "Adjournment", meaning: "A postponement of a hearing to a later date." },
   { term: "Interim order", meaning: "A temporary order that stays in place until a final decision is made." },
   { term: "Endorsement", meaning: "A judge's short written decision or note on a court file, often with reasons." },
-  { term: "Place of safety", meaning: "A place where a child is taken when removed without a court order, under the CYFSA." },
+  { term: "Place of safety", meaning: "Under the CYFSA, a foster home, a hospital, a person's home that meets the Act's conditions, or a place designated by a Director. It does not include temporary detention, open custody or secure custody. A child may be taken there under a warrant or without one." },
   { term: "Disclosure", meaning: "Sharing records and information with the other side before a hearing." },
   { term: "Party", meaning: "A person with formal standing in the case, who can take a full part in it." },
   { term: "Statute", meaning: "A law passed by a legislature, such as the Child, Youth and Family Services Act (CYFSA)." },

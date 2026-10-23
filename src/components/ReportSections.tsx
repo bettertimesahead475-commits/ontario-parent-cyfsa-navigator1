@@ -144,7 +144,7 @@ export function ReportSections({ report, audience = "parent" }: Props) {
         </ul>
         {courtRecord && (
           <p role="note" className="mt-2 rounded bg-amber-50 p-2 text-amber-900">
-            This is a court document. It is not scored for credibility or completeness. A court order has legal effect unless it is changed or ends.
+            This is a court document. It is not scored for credibility or completeness. This report does not show whether it is final, signed, entered, served, or in effect. Confirm that with counsel and the court file.
           </p>
         )}
       </div>

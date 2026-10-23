@@ -151,10 +151,13 @@ export const RIGHT_CONDITIONS: Record<string, RightConditions> = {
     exceptions: ["The provision covers the listed removals only."],
   },
   "adjournment-limit": {
-    conditions: ["A hearing under Part V is adjourned.", "The adjournment is for more than 30 days."],
+    conditions: [
+      "A hearing under Part V is adjourned.",
+      "The adjournment is for more than 30 days.",
+      "The court is not aware that a party who is not present at the hearing objects (s. 94(1)(b)).",
+    ],
     exceptions: [
-      "All parties present and the person caring for the child during the adjournment consent.",
-      "A party not present at the hearing does not object, and the court is aware of that.",
+      "All parties present and the person caring for the child during the adjournment consent (s. 94(1)(a)).",
     ],
   },
   "plan-for-child": {

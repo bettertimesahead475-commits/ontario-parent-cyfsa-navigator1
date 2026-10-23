@@ -4006,7 +4006,7 @@ export default function DocumentAnalyzerTab() {
                                 type="button"
                                 className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2"
                                 onClick={() => {
-                                  const html = renderReportSectionsHtml(selectedReport, audience, selectedReport.documentTitle || "Analysis report");
+                                  const html = renderReportSectionsHtml(selectedReport, audience, selectedReport.documentTitle || "Analysis report", { redact: redactionEnabled });
                                   const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
                                   const link = document.createElement("a");
                                   link.href = url;
