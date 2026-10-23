@@ -712,7 +712,7 @@ export default function DocumentAnalyzerTab() {
     
     return {
       title: citation,
-      subtitle: "Statute Reference Copy",
+      subtitle: "Statute reference",
       exactText: "Section provisions governed under S.O. 2017, c. 14 (Child, Youth and Family Services Act) or associated family litigation guidelines.",
       explanation: "This section maps directly to the regulatory powers, children's safety classifications, or parent rights within the jurisdiction of Ontario. Utilize the live portal link to inspect full sub-clause logs."
     };
@@ -4090,10 +4090,10 @@ export default function DocumentAnalyzerTab() {
                         <Scale className="w-4 h-4 text-emerald-600 shrink-0 mt-1" />
                         <div className="space-y-1">
                           <p className="font-bold text-emerald-900 flex items-center gap-1.5">
-                            <span>⚖️</span> Citations & Source-Backed Analysis
+                            <span>⚖️</span> Citations & Analysis
                           </p>
                           <p className="text-[11px] text-emerald-800 leading-normal">
-                            Every single objection, red flag, timeline defect, and compliance evaluation extracted during this analysis is checked against the app's copy of the <strong>Ontario Child, Youth and Family Services Act (CYFSA), 2017</strong>, the <strong>Ontario Evidence Act</strong>, or <strong>Constitutional Charter Protections</strong>. Use the buttons provided inline to verify legal source sections.
+                            Where a cited section is in the app's bundled copy of the <strong>Ontario Child, Youth and Family Services Act (CYFSA), 2017</strong> or another bundled source, the button opens that text. Other citations are not checked by the app. Confirm every citation with counsel.
                           </p>
                         </div>
                       </div>
@@ -4389,7 +4389,7 @@ export default function DocumentAnalyzerTab() {
                                 <button
                                   onClick={() => openLegislativeReference(flag.legalReference)}
                                   className="font-sans text-brand-700 hover:text-brand-900 font-bold text-xs bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                  title="Click to open Verified Source reference modal"
+                                  title="Open the statute reference for this citation"
                                 >
                                   <Scale className="w-3.5 h-3.5 text-brand-600" /> Verify Law: {flag.legalReference} ↗
                                 </button>
@@ -4538,7 +4538,7 @@ export default function DocumentAnalyzerTab() {
                                   <button
                                     onClick={() => openLegislativeReference(violation.citation)}
                                     className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                    title="Click to open Verified Source reference modal"
+                                    title="Open the statute reference for this citation"
                                   >
                                     <Scale className="w-3 h-3 text-amber-600" /> Verify: {violation.citation} ↗
                                   </button>
