@@ -159,8 +159,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
       const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
       const view = buildParentReportView({ ...withoutAuthority, documentType });
       const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
-      expect(body, documentType).not.toMatch(/court order or endorsement has legal effect/);
-      expect(body, documentType).toMatch(/draft or proposed order/);
+      expect(body, documentType).not.toMatch(/has legal effect/);
+      expect(body, documentType).toMatch(/cannot confirm/);
     }
   });
 
@@ -288,12 +288,13 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(view.secondReviewNotice).toMatch(/overall assessment: Several points rely on second-hand accounts/);
   });
 
-  it("treats a signed or final court order as a court record", () => {
+  it("does not establish from a title that a signed or final court order is in effect", () => {
     for (const documentType of ["Final Court Order", "Signed Court Order"]) {
       const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
       const view = buildParentReportView({ ...withoutAuthority, documentType });
-      expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body, documentType)
-        .toMatch(/court order or endorsement has legal effect/);
+      const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+      expect(body, documentType).not.toMatch(/has legal effect/);
+      expect(body, documentType).toMatch(/title alone does not show/);
     }
   });
 
@@ -331,11 +332,19 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(prepare).toMatch(/request the notice/);
   });
 
-  it("treats a court endorsement as a court record from documentType alone", () => {
+  it("does not establish legal effect for an endorsement from its title alone", () => {
     const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
     const view = buildParentReportView(withoutAuthority);
-    expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body)
-      .toMatch(/court order or endorsement has legal effect/);
+    const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+    expect(body).not.toMatch(/has legal effect/);
+    expect(body).toMatch(/cannot confirm/);
+  });
+
+  it("uses explicit analyzer authority, not the title, to call a document a court record", () => {
+    const view = buildParentReportView({ ...REPORT, documentType: "Letter from the society" });
+    const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+    expect(body).toMatch(/recorded this as a court record/);
+    expect(body).toMatch(/does not confirm whether it is final, signed, entered, served, or still in effect/);
   });
 });
 

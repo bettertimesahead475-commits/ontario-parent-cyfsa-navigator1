@@ -219,15 +219,12 @@ export function buildParentReportView(report: Loose): ParentReportView {
   const retortChecks = (Array.isArray(report.retorts) ? report.retorts : []).map(retortLine).filter(Boolean);
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
-  // documentAuthority is not part of the live analyzer schema, so classify from documentType.
-  // Draft and proposed orders are not operative, so they never get the legal-effect wording.
+  // Legal status comes only from explicit analyzer evidence (documentAuthority), never from the title.
+  // A title such as "Final Court Order" or "Draft Order" does not show whether the document was signed, entered,
+  // served, or is in effect, so the parent view says that instead of asserting it.
   const documentType = text(report.documentType);
-  // Only a draft or proposed order is treated as unsigned. Other draft documents get the generic wording.
-  const isDraft = /\b(draft|proposed)\b/i.test(documentType) && /\border/i.test(documentType);
-  // Only a final order or endorsement has legal effect. Applications and motions that ask for an order do not.
-  // Leading words may be any mix of court, signed, final, and similar qualifiers, in any order.
-  const isFinalOrderType = /^((court|signed|final|interim|temporary|consent|entered|certified|judicial|supervision|custody|extended)\s+)*(order|endorsement)s?\b/i.test(documentType);
-  const isCourtRecord = !isDraft && (Boolean(report.documentAuthority) || isFinalOrderType);
+  const titleSuggestsCourtOrder = /\b(order|endorsement)\b/i.test(documentType) && !/\b(application|motion|request)\b/i.test(documentType);
+  const hasAuthorityRecord = Boolean(report.documentAuthority && typeof report.documentAuthority === "object");
 
   const summary = [
     { heading: "1. What is this document?", body: text(report.documentType) || "Document type not identified." },
@@ -237,10 +234,10 @@ export function buildParentReportView(report: Loose): ParentReportView {
     },
     {
       heading: "3. What does this mean for you?",
-      body: isCourtRecord
-        ? "A court order or endorsement has legal effect unless it is changed or ends. This report does not decide whether the facts it mentions are true."
-        : isDraft
-          ? "This is a draft or proposed order, not a signed order. Confirm whether a final order was made before relying on any of its terms."
+      body: hasAuthorityRecord
+        ? "The analyzer recorded this as a court record. This report does not confirm whether it is final, signed, entered, served, or still in effect. Confirm that with counsel and the court file. This report does not decide whether the facts it mentions are true."
+        : titleSuggestsCourtOrder
+          ? "The title suggests a court order, endorsement, or draft. The title alone does not show whether it is final, signed, entered, served, or in effect, and this report cannot confirm those from the text. Confirm with counsel and the court file before relying on any of its terms."
           : "This report shows what the document says and what is still unclear. It does not decide who is right.",
     },
     {
