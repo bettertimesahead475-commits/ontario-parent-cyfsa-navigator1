@@ -528,18 +528,94 @@ export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool):
 }
 
 // --- Step 1: parent requests access before paying --------------------------
+// A repeated click or network retry from the same verified account for the same package
+// reuses the still-pending request instead of creating another one. Without this, every
+// retry adds a new pending payment that looks like a separate purchase to the owner.
+function paymentRequestInstructions(referenceNumber: string, amount: number): string {
+  return `Send an Interac e-transfer for $${amount} CAD to ${PAYMENT_EMAIL}. Put "${referenceNumber}" in the message/memo field so your payment can be matched. Once it's confirmed, you'll receive an access code.`;
+}
+
+type PaymentRequestRow = {
+  reference_number: string;
+  amount: number | string;
+  plan: string;
+  status: string;
+  notes: string | null;
+};
+
+// A request key identifies one checkout attempt. The database enforces that a key produces at most
+// one payment row (unique on firebase_uid + request_key, every status). So a retry of an attempt
+// gets its existing reference, and a deliberate new purchase carries a new key and gets its own row.
+async function findKeyedRequest(
+  db: ReturnType<typeof getSupabase>,
+  uid: string,
+  requestKey: string
+): Promise<PaymentRequestRow | null> {
+  const { data, error } = await db
+    .from("payments")
+    .select("reference_number, amount, plan, status, notes")
+    .eq("firebase_uid", uid)
+    .eq("request_key", requestKey)
+    .maybeSingle();
+  if (error) throw Object.assign(new Error(`Failed to check existing requests: ${error.message}`), { statusCode: 500 });
+  return (data as PaymentRequestRow | null) ?? null;
+}
+
+// Returns the existing request only when it is still a valid retry: pending, same tier, same
+// verified email, and priced at today's amount. Anything else means this attempt was already used,
+// so the client must start a new checkout attempt rather than receive a stale or wrong reference.
+function reuseKeyedRequest(row: PaymentRequestRow, tier: Tier, normalizedEmail: string, amount: number) {
+  const parts = String(row.notes || "").split(";");
+  const valid = row.status === "pending" && row.plan === tier
+    && parts.includes(`email:${normalizedEmail}`) && Number(row.amount) === amount;
+  if (!valid) {
+    throw Object.assign(
+      new Error("This checkout attempt was already used. Start a new checkout to get a payment reference."),
+      { statusCode: 409, code: "REQUEST_KEY_USED" }
+    );
+  }
+  const existingAmount = Number(row.amount);
+  return {
+    referenceNumber: row.reference_number,
+    amount: existingAmount,
+    payTo: PAYMENT_EMAIL,
+    instructions: paymentRequestInstructions(row.reference_number, existingAmount),
+    reused: true,
+  };
+}
+
 export async function requestAccess(
   email: string,
   tier: Tier,
-  clientInfo?: { uid?: string | null; clientIp?: string | null; userAgent?: string | null }
+  clientInfo?: { uid?: string | null; clientIp?: string | null; userAgent?: string | null; requestKey?: string | null }
 ) {
   const db = getSupabase();
-  const referenceNumber = generateReferenceNumber();
   const amount = ALL_TIER_PRICES[tier] ?? TIER_PRICES.Pro;
   const normalizedEmail = email.toLowerCase().trim();
 
+  // Uids come from a verified Firebase token and are alphanumeric. Reject anything else before
+  // it reaches a column or a notes field.
+  if (clientInfo?.uid && !/^[A-Za-z0-9_-]{1,128}$/.test(clientInfo.uid)) {
+    throw Object.assign(new Error("Invalid account identifier."), { statusCode: 400 });
+  }
+  if (clientInfo?.requestKey && !/^[A-Za-z0-9-]{8,64}$/.test(clientInfo.requestKey)) {
+    throw Object.assign(new Error("Invalid request key."), { statusCode: 400, code: "INVALID_REQUEST_KEY" });
+  }
+  // Only a request with a verified account AND a key is idempotent. Without both, every call is a new request.
+  const keyed = Boolean(clientInfo?.uid && clientInfo.requestKey);
+  const uid = clientInfo?.uid ?? null;
+  const requestKey = clientInfo?.requestKey ?? null;
+
+  if (keyed) {
+    const existing = await findKeyedRequest(db, uid as string, requestKey as string);
+    if (existing) return reuseKeyedRequest(existing, tier, normalizedEmail, amount);
+  }
+
+  const referenceNumber = generateReferenceNumber();
+
   let notes = `email:${normalizedEmail}`;
-  if (clientInfo?.uid) notes += `;uid:${clientInfo.uid}`;
+  if (uid) notes += `;uid:${uid}`;
+  if (requestKey) notes += `;key:${requestKey}`;
   if (clientInfo?.clientIp) notes += `;ip:${clientInfo.clientIp}`;
   if (clientInfo?.userAgent) notes += `;ua:${encodeURIComponent(clientInfo.userAgent.slice(0, 100))}`;
 
@@ -553,13 +629,26 @@ export async function requestAccess(
     status: "pending",
     notes,
   };
-  if (clientInfo?.uid) rowPayload.firebase_uid = clientInfo.uid;
+  if (uid) rowPayload.firebase_uid = uid;
+  if (requestKey) rowPayload.request_key = requestKey;
   if (clientInfo?.clientIp) rowPayload.client_ip = clientInfo.clientIp;
   if (clientInfo?.userAgent) rowPayload.user_agent = clientInfo.userAgent;
 
   const { error } = await db.from("payments").insert(rowPayload);
   if (error) {
-    // If insert failed due to unknown columns, fallback to base columns
+    // Two concurrent submissions of one attempt: the unique index rejects the second. Return the
+    // row the first one created, so both callers get the same reference.
+    if (keyed && error.code === "23505") {
+      const existing = await findKeyedRequest(db, uid as string, requestKey as string);
+      if (existing) return reuseKeyedRequest(existing, tier, normalizedEmail, amount);
+      throw Object.assign(new Error("This checkout attempt was already used. Start a new checkout to get a payment reference."), { statusCode: 409, code: "REQUEST_KEY_USED" });
+    }
+    // A keyed request must never fall back to a row without its key: that row would not be idempotent.
+    // A missing column here means the migration has not been applied, so fail closed.
+    if (keyed && (error.code === "42703" || error.message?.includes("column"))) {
+      throw Object.assign(new Error("Payment request storage is not ready. Please try again later."), { statusCode: 503, code: "PAYMENT_STORAGE_NOT_READY" });
+    }
+    // Unkeyed requests: retry with base columns only when the optional identity columns are missing.
     if (error.message?.includes("column") || error.code === "42703") {
       const { error: fallbackErr } = await db.from("payments").insert({
         plan: tier,
@@ -581,7 +670,8 @@ export async function requestAccess(
     referenceNumber,
     amount,
     payTo: PAYMENT_EMAIL,
-    instructions: `Send an Interac e-transfer for $${amount} CAD to ${PAYMENT_EMAIL}. Put "${referenceNumber}" in the message/memo field so your payment can be matched. Once it's confirmed, you'll receive an access code.`,
+    instructions: paymentRequestInstructions(referenceNumber, amount),
+    reused: false,
   };
 }
 
@@ -826,7 +916,29 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     code_hash: hashCode(code),
     expires_at: new Date(Date.now() + CODE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
   });
-  if (codeErr) throw Object.assign(new Error(`Payment was marked approved but code generation failed: ${codeErr.message}`), { statusCode: 500 });
+  if (codeErr) {
+    // Release the claim so the payment stays retryable. Leaving it "approved" with no code
+    // would mean the parent is charged for a package they can never receive. One retry covers
+    // a transient failure. If the release also fails, the row is still "approved" with no code,
+    // and the caller must be told that plainly so it can be recovered by hand.
+    const releaseClaim = () => db
+      .from("payments")
+      .update({ status: "pending", approved_at: null })
+      .eq("reference_number", referenceNumber)
+      .eq("status", "approved");
+    let { error: releaseErr } = await releaseClaim();
+    if (releaseErr) ({ error: releaseErr } = await releaseClaim());
+    if (releaseErr) {
+      console.error("[approvePayment] approved without a code; manual recovery needed", {
+        referenceNumber, codeError: codeErr.message, releaseError: releaseErr.message,
+      });
+      throw Object.assign(
+        new Error(`Payment ${referenceNumber} is marked approved but no access code was issued, and the release failed. Manual recovery is required; do not ask the parent to pay again.`),
+        { statusCode: 500, code: "APPROVED_WITHOUT_CODE" }
+      );
+    }
+    throw Object.assign(new Error(`Code generation failed; the payment was left pending for retry: ${codeErr.message}`), { statusCode: 500 });
+  }
 
   // Plaintext code is only ever visible right here - it's never stored anywhere, so this
   // email IS the delivery mechanism, not a courtesy copy. The manual

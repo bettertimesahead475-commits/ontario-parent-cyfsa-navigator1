@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { AccessTier } from "../types";
 import {
   Check,
@@ -33,6 +33,9 @@ interface PricingTabProps {
   currentTier: AccessTier;
   onChangeTier: (tier: AccessTier) => void;
   userEmail?: string;
+  // True only when Firebase has an authenticated user. A locally stored profile email is not enough
+  // to start checkout, because the server requires a verified Firebase token.
+  firebaseSignedIn?: boolean;
 }
 
 const FALLBACK_TIER_PRICES: Record<string, number> = {
@@ -51,7 +54,7 @@ const PAYMENT_EMAIL = "chris@cyfsanavigator.com";
 type PurchasableTier = "Pro" | "Premium" | "Basic" | "Community5" | "Community10" | "Community25";
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
 
-export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }: PricingTabProps) {
+export default function PricingTab({ currentTier, onChangeTier, userEmail = "", firebaseSignedIn = false }: PricingTabProps) {
   const [, setLocation] = useLocation();
   const [selectedTier, setSelectedTier] = useState<PurchasableTier | null>(null);
   const [stage, setStage] = useState<CheckoutStage>("idle");
@@ -100,7 +103,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
 
   // Handle pending plan stored prior to signup/login
   useEffect(() => {
-    if (!userEmail) return;
+    if (!firebaseSignedIn || !userEmail) return;
     try {
       const pending = localStorage.getItem("cyfsa_pending_plan") as PurchasableTier | null;
       if (pending && (pending === "Pro" || pending === "Premium" || pending === "Basic" || pending.startsWith("Community"))) {
@@ -110,16 +113,21 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
         setStage("email");
       }
     } catch {}
-  }, [userEmail]);
+  }, [userEmail, firebaseSignedIn]);
+
+  // One key per checkout attempt. Retries of the same attempt reuse it, so the server returns the
+  // same reference. A new attempt, including a deliberate repeat purchase, gets a new key.
+  const checkoutKeyRef = useRef<string | null>(null);
 
   const triggerCheckout = (tier: PurchasableTier) => {
+    checkoutKeyRef.current = null;
     setSelectedTier(tier);
     setReferenceNumber("");
     setCodeInput("");
     setErrorMessage("");
     setCopiedMemo(false);
     setCopiedEmail(false);
-    if (!userEmail) {
+    if (!firebaseSignedIn) {
       try {
         localStorage.setItem("cyfsa_pending_plan", tier);
       } catch {}
@@ -158,6 +166,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
       setErrorMessage("Enter a valid email address first.");
       return;
     }
+    if (!checkoutKeyRef.current) {
+      const random = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      checkoutKeyRef.current = random;
+    }
     setStage("verifying");
     setErrorMessage("");
     try {
@@ -166,10 +178,14 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email, tier: selectedTier }),
+        body: JSON.stringify({ email, tier: selectedTier, requestKey: checkoutKeyRef.current }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed.");
+      if (!res.ok) {
+        // This checkout attempt already produced a request. The next click must start a new attempt.
+        if (data.code === "REQUEST_KEY_USED") checkoutKeyRef.current = null;
+        throw new Error(data.error || "Request failed.");
+      }
       setReferenceNumber(data.referenceNumber);
       setStage("awaiting-code");
     } catch (err: any) {
@@ -1175,7 +1191,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             {/* STAGE: Email / Sign-in required */}
             {stage === "email" && (
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                {!userEmail ? (
+                {!firebaseSignedIn ? (
                   <div className="space-y-4">
                     <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 space-y-1">
                       <p className="font-bold flex items-center gap-1.5">
@@ -1197,27 +1213,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                       <span>{isSigningIn ? "Signing in..." : "Sign in with Google"}</span>
                     </button>
 
-                    <div className="text-center text-[11px] text-slate-500">
-                      <span>or confirm email address to proceed:</span>
-                    </div>
-
-                    <input
-                      type="email"
-                      placeholder="you@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full text-xs border border-slate-200 bg-slate-50 text-slate-800 p-3 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-
                     {errorMessage && <p className="text-xs text-red-600 font-semibold">{errorMessage}</p>}
-
-                    <button
-                      type="button"
-                      onClick={handleRequestAccess}
-                      className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer uppercase tracking-wider"
-                    >
-                      Generate Payment Reference
-                    </button>
                   </div>
                 ) : (
                   <div className="space-y-4">

@@ -378,7 +378,7 @@ export default function App() {
           </Route>
 
           <Route path="/pricing">
-            <PricingTab currentTier={currentTier} onChangeTier={setCurrentTier} userEmail={firebaseUser?.email || userProfile?.email || ""} />
+            <PricingTab currentTier={currentTier} onChangeTier={setCurrentTier} userEmail={firebaseUser?.email || userProfile?.email || ""} firebaseSignedIn={Boolean(firebaseUser?.email)} />
           </Route>
 
           <Route path="/upgrade">

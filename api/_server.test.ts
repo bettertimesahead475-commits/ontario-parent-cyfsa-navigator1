@@ -318,28 +318,63 @@ describe("GET /api/access-pricing", () => {
 });
 
 describe("POST /api/request-access", () => {
-  it("rejects a missing/invalid email", async () => {
-    const res = await request(app).post("/api/request-access").send({ email: "not-an-email", tier: "Pro" });
+  // Identity comes only from a verified Firebase token. These tests cover the rule that a
+  // purchase request is never created for an unauthenticated, unverified, or mismatched caller.
+  it("rejects a tier that isn't a valid plan", async () => {
+    const res = await request(app).post("/api/request-access").send({ tier: "Gold" });
     expect(res.status).toBe(400);
     expect(mockAccess.requestAccess).not.toHaveBeenCalled();
   });
 
-  it("rejects a tier that isn't Pro or Premium", async () => {
-    const res = await request(app).post("/api/request-access").send({ email: "a@b.com", tier: "Gold" });
-    expect(res.status).toBe(400);
+  it("rejects an unauthenticated request before creating any payment record", async () => {
+    mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce(null);
+    const res = await request(app).post("/api/request-access").send({ email: "a@b.com", tier: "Pro" });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    expect(mockAccess.requestAccess).not.toHaveBeenCalled();
   });
 
-  it("returns the service result for a valid request", async () => {
-    mockAccess.requestAccess.mockResolvedValueOnce({ referenceNumber: "PS-ABCDE", amount: 19 });
-    const res = await request(app).post("/api/request-access").send({ email: "a@b.com", tier: "Pro" });
+  it("rejects a signed-in account whose email is not verified", async () => {
+    mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce({ uid: "uid-1", email: "a@b.com", emailVerified: false });
+    const res = await request(app).post("/api/request-access").send({ tier: "Pro" });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
+    expect(mockAccess.requestAccess).not.toHaveBeenCalled();
+  });
+
+  it("rejects a body email that does not match the verified account", async () => {
+    mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce({ uid: "uid-1", email: "owner@b.com", emailVerified: true });
+    const res = await request(app).post("/api/request-access").send({ email: "someone-else@b.com", tier: "Pro" });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("EMAIL_MISMATCH");
+    expect(mockAccess.requestAccess).not.toHaveBeenCalled();
+  });
+
+  it("uses the verified account email and uid, not the body, for a valid request", async () => {
+    mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce({ uid: "uid-1", email: "owner@b.com", emailVerified: true });
+    mockAccess.requestAccess.mockResolvedValueOnce({ referenceNumber: "PS-ABCDE", amount: 49.99 });
+    const res = await request(app).post("/api/request-access").send({ tier: "Pro" });
     expect(res.status).toBe(200);
     expect(res.body.referenceNumber).toBe("PS-ABCDE");
-    expect(mockAccess.requestAccess).toHaveBeenCalledWith("a@b.com", "Pro");
+    expect(mockAccess.requestAccess).toHaveBeenCalledWith(
+      "owner@b.com",
+      "Pro",
+      expect.objectContaining({ uid: "uid-1" })
+    );
+  });
+
+  it("rejects a malformed checkout key before creating anything", async () => {
+    mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce({ uid: "uid-1", email: "a@b.com", emailVerified: true });
+    const res = await request(app).post("/api/request-access").send({ tier: "Pro", requestKey: "bad key!" });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("INVALID_REQUEST_KEY");
+    expect(mockAccess.requestAccess).not.toHaveBeenCalled();
   });
 
   it("propagates the service's status code on failure", async () => {
+    mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce({ uid: "uid-1", email: "a@b.com", emailVerified: true });
     mockAccess.requestAccess.mockRejectedValueOnce(Object.assign(new Error("db down"), { statusCode: 503 }));
-    const res = await request(app).post("/api/request-access").send({ email: "a@b.com", tier: "Pro" });
+    const res = await request(app).post("/api/request-access").send({ tier: "Pro" });
     expect(res.status).toBe(503);
     expect(res.body.error).toBe("db down");
   });
