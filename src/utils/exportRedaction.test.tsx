@@ -142,3 +142,16 @@ describe("citation grammar", () => {
     expect(out.citation).not.toMatch(/Zed/);
   });
 });
+
+describe("citation parentheses and notes caveat", () => {
+  it("does not keep a name inside a citation's parentheses", () => {
+    const out: any = redactForExport({ legalReference: "CYFSA s. 74(Zed)", citation: "s. 74(zqname)" });
+    expect(out.legalReference).not.toMatch(/Zed/);
+    expect(out.citation).not.toMatch(/zqname/i);
+  });
+
+  it("keeps the title caveat in a redacted court-prep copy when the title names an order", () => {
+    const prep = buildCourtPrep(withPlantedIdentifiers());
+    expect(buildPrepNotes(prep, {}, "Final Order 2026", { redact: true })).toMatch(/title alone does not show/);
+  });
+});

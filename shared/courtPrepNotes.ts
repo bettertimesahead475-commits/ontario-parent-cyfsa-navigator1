@@ -22,8 +22,8 @@ export function buildPrepNotes(
   const documentTitle = redact ? "Analysis report" : documentTitleInput;
   const lines: string[] = [];
   if (redact) lines.push(REDACTED_COPY_NOTICE, "");
-  // The title caveat is shown in the unredacted notes too. A title never shows whether a document is in effect.
-  if (!redact && titleSuggestsCourtOrder(documentTitle)) {
+  // The caveat is read from the title as given, before redaction, so the redacted copy keeps it too.
+  if (titleSuggestsCourtOrder(documentTitleInput)) {
     lines.push("Note: the title names an order or decision. The title alone does not show that it is final, signed, entered, served, or in effect.", "");
   }
   const rule = "------------------------------------------------------------";
