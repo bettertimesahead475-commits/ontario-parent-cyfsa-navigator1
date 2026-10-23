@@ -22,7 +22,6 @@ const STRUCTURAL_KEYS = new Set([
   "disputedByFindingIds",
   "kind",
   "type",
-  "severity",
   "concern",
   "status",
   "classification",
@@ -36,15 +35,16 @@ const STRUCTURAL_KEYS = new Set([
   "legalReference",
   "citation",
   "primarySourceLaw",
-  "thresholdChecked",
-  "isMet",
-  "timelineRule",
   "schemaVersion",
   "authorities",
 ]);
 
 function redactNode(node: unknown, key: string | undefined): unknown {
-  if (typeof node === "string") return key !== undefined && STRUCTURAL_KEYS.has(key) ? node : REDACTED_TEXT;
+  // An empty string is not free text. Replacing it would make an unanswered field look answered.
+  if (typeof node === "string") {
+    if (node === "") return node;
+    return key !== undefined && STRUCTURAL_KEYS.has(key) ? node : REDACTED_TEXT;
+  }
   if (Array.isArray(node)) return node.map((item) => redactNode(item, key));
   if (node && typeof node === "object") {
     const out: Record<string, unknown> = {};

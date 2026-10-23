@@ -72,10 +72,33 @@ describe("redactForExport", () => {
     expect(JSON.stringify(report)).toBe(before);
   });
 
-  it("keeps legal references and enum values", () => {
+  it("keeps legal references but not analyzer severity text", () => {
     const out: any = redactForExport({ legalReference: "CYFSA s. 88", severity: "CRITICAL", explanation: "Name" });
     expect(out.legalReference).toBe("CYFSA s. 88");
-    expect(out.severity).toBe("CRITICAL");
+    expect(out.severity).not.toBe("CRITICAL");
     expect(out.explanation).not.toBe("Name");
+  });
+});
+
+describe("redaction keeps only enums and ids", () => {
+  it("removes a planted name from severity, threshold, test-result, and timeline fields", () => {
+    const report: any = withPlantedIdentifiers();
+    report.redFlags[0].severity = `Severe, ${NAME} absent`;
+    report.thresholdAnalysis = [{ thresholdChecked: `Grounds for ${NAME}`, isMet: `Yes, ${NAME} absent`, reasoning: "x", primarySourceLaw: "CYFSA s. 74" }];
+    report.proceduralTimelineViolations = [{ timelineRule: `Five days for ${NAME}`, evaluation: "x", citation: "CYFSA s. 88" }];
+    const html = renderReportSectionsHtml(report, "professional", "T", { redact: true });
+    expect(html).not.toContain(NAME);
+    expect(html).toContain("CYFSA s. 74");
+  });
+
+  it("keeps an empty parent answer empty, so it does not look written", () => {
+    const out: any = redactForExport({ parentAccount: "", other: "text" });
+    expect(out.parentAccount).toBe("");
+    expect(out.other).not.toBe("text");
+  });
+
+  it("shows the title caveat in the unredacted court-prep notes", () => {
+    const prep = buildCourtPrep(withPlantedIdentifiers());
+    expect(buildPrepNotes(prep, {}, "Final Order", { redact: false })).toMatch(/title alone does not show/);
   });
 });

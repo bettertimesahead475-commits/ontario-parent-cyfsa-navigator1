@@ -5,6 +5,7 @@
 import { COURT_PREP_LIMITS, EVENT_TYPE_LABEL, checkResponse, type FactualResponse, type buildCourtPrep } from "./courtPrep";
 import { COURT_FORMS, FORM_SAFEGUARDS, COURT_FORM_INDEX_URL } from "./courtPrepForms";
 import { REDACTED_COPY_NOTICE, redactForExport } from "./exportRedaction";
+import { titleSuggestsCourtOrder } from "./documentTitle";
 
 type Prep = ReturnType<typeof buildCourtPrep>;
 
@@ -21,6 +22,10 @@ export function buildPrepNotes(
   const documentTitle = redact ? "Analysis report" : documentTitleInput;
   const lines: string[] = [];
   if (redact) lines.push(REDACTED_COPY_NOTICE, "");
+  // The title caveat is shown in the unredacted notes too. A title never shows whether a document is in effect.
+  if (!redact && titleSuggestsCourtOrder(documentTitle)) {
+    lines.push("Note: the title names an order or decision. The title alone does not show that it is final, signed, entered, served, or in effect.", "");
+  }
   const rule = "------------------------------------------------------------";
   lines.push(`Court preparation notes: ${documentTitle}`, rule, ...COURT_PREP_LIMITS, "");
 
