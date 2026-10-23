@@ -1197,27 +1197,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
                       <span>{isSigningIn ? "Signing in..." : "Sign in with Google"}</span>
                     </button>
 
-                    <div className="text-center text-[11px] text-slate-500">
-                      <span>or confirm email address to proceed:</span>
-                    </div>
-
-                    <input
-                      type="email"
-                      placeholder="you@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full text-xs border border-slate-200 bg-slate-50 text-slate-800 p-3 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
-                    />
-
                     {errorMessage && <p className="text-xs text-red-600 font-semibold">{errorMessage}</p>}
-
-                    <button
-                      type="button"
-                      onClick={handleRequestAccess}
-                      className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer uppercase tracking-wider"
-                    >
-                      Generate Payment Reference
-                    </button>
                   </div>
                 ) : (
                   <div className="space-y-4">

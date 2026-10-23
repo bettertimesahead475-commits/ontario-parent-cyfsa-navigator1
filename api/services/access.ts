@@ -871,13 +871,25 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
   });
   if (codeErr) {
     // Release the claim so the payment stays retryable. Leaving it "approved" with no code
-    // would mean the parent is charged for a package they can never receive.
-    const { error: releaseErr } = await db
+    // would mean the parent is charged for a package they can never receive. One retry covers
+    // a transient failure. If the release also fails, the row is still "approved" with no code,
+    // and the caller must be told that plainly so it can be recovered by hand.
+    const releaseClaim = () => db
       .from("payments")
       .update({ status: "pending", approved_at: null })
       .eq("reference_number", referenceNumber)
       .eq("status", "approved");
-    if (releaseErr) console.error("[approvePayment] failed to release claim", { referenceNumber, message: releaseErr.message });
+    let { error: releaseErr } = await releaseClaim();
+    if (releaseErr) ({ error: releaseErr } = await releaseClaim());
+    if (releaseErr) {
+      console.error("[approvePayment] approved without a code; manual recovery needed", {
+        referenceNumber, codeError: codeErr.message, releaseError: releaseErr.message,
+      });
+      throw Object.assign(
+        new Error(`Payment ${referenceNumber} is marked approved but no access code was issued, and the release failed. Manual recovery is required; do not ask the parent to pay again.`),
+        { statusCode: 500, code: "APPROVED_WITHOUT_CODE" }
+      );
+    }
     throw Object.assign(new Error(`Code generation failed; the payment was left pending for retry: ${codeErr.message}`), { statusCode: 500 });
   }
 

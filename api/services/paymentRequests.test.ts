@@ -25,7 +25,7 @@ type Row = Record<string, any>;
 
 // A chainable query double. Filters accumulate; the query runs when awaited, or when
 // maybeSingle() is requested. update() applies to the rows its filters match.
-function createFakeDb(opts: { failCodeInsert?: boolean } = {}) {
+function createFakeDb(opts: { failCodeInsert?: boolean; failRelease?: boolean } = {}) {
   const tables: Record<string, Row[]> = { payments: [], access_codes: [], navigator_paid_sessions: [] };
 
   function builder(table: string) {
@@ -53,6 +53,9 @@ function createFakeDb(opts: { failCodeInsert?: boolean } = {}) {
         return { data: [insertRow], error: null };
       }
       if (op === "update") {
+        if (opts.failRelease && patch && patch.status === "pending") {
+          return { data: null, error: { message: "simulated release outage" } };
+        }
         const rows = matches();
         rows.forEach((r) => Object.assign(r, patch));
         return { data: rows.map((r) => ({ reference_number: r.reference_number })), error: null };
@@ -225,5 +228,18 @@ describe("approvePayment - rollback and single issuance", () => {
     await approvePayment("PS-TWICE", 49.99);
     await expect(approvePayment("PS-TWICE", 49.99)).rejects.toMatchObject({ statusCode: 404 });
     expect(db._tables.access_codes).toHaveLength(1);
+  });
+  it("says plainly that the payment is approved without a code when the release also fails", async () => {
+    db = createFakeDb({ failCodeInsert: true, failRelease: true });
+    currentDb.ref = db;
+    resetSupabaseClientForTesting();
+    await seedPending("PS-STUCK1");
+
+    await expect(approvePayment("PS-STUCK1", 49.99)).rejects.toMatchObject({
+      statusCode: 500,
+      code: "APPROVED_WITHOUT_CODE",
+    });
+    expect(db._tables.payments[0].status).toBe("approved");
+    expect(db._tables.access_codes).toHaveLength(0);
   });
 });
