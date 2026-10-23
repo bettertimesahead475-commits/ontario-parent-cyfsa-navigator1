@@ -54,4 +54,20 @@ where table_schema = 'public' and grantee not in ('postgres', 'service_role', 'a
     'lawyer_leads','lawyer_profiles','parent_profiles','payments','reflection_conversations',
     'stale_payment_alerts','submissions','timeline_events','users');
 
+-- PUBLIC grants never appear in information_schema.role_table_grants, so read pg_class.relacl
+-- directly. Emits a row only when a table or the sequence is granted to PUBLIC; emits nothing when clean.
+select 'unexpected_public' as object,
+  string_agg(c.relname || ':' || a.privilege_type, ',' order by c.relname, a.privilege_type) as anon_privs,
+  '' as auth_privs,
+  'f' as ok
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+cross join lateral aclexplode(coalesce(c.relacl, acldefault((case when c.relkind = 'S' then 's' else 'r' end)::"char", c.relowner))) a
+where n.nspname = 'public' and a.grantee = 0
+  and c.relname in ('access_codes','analysis_results','audit_log','case_exports','cases','cyfsa_300rule_access_codes',
+    'document_walkthroughs','documents','free_tool_usage','free_usage','gmail_processed_messages',
+    'lawyer_leads','lawyer_profiles','parent_profiles','payments','reflection_conversations',
+    'stale_payment_alerts','submissions','timeline_events','users','navigator_matter_access_events_event_sequence_seq')
+having count(*) > 0;
+
 commit;
