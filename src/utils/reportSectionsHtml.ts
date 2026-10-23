@@ -7,6 +7,7 @@
 import { buildSectionedReport } from "../../shared/reportSections";
 import type { ReportContract, ReportFinding } from "../../shared/reportContract";
 import { titleSuggestsCourtOrder } from "../../shared/documentTitle";
+import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 import {
   AUTHORITY_LABEL,
   CONCERN_LABEL,
@@ -86,8 +87,9 @@ export function renderReportSectionsHtml(
   documentTitle = "Analysis report",
   options: ReportSectionsHtmlOptions = {}
 ): string {
-  // Identifying metadata is removed before the contract is built, so no exported section can carry it.
-  const source = options.redact && report && typeof report === "object" ? { ...report, metadata: {} } : report;
+  // Every free-text string is removed before the contract is built, so no exported section can carry it.
+  // The title caveat is read from the original report, because the redacted copy no longer has the title text.
+  const source = options.redact ? redactForExport(report) : report;
   // The document title is written by the model and can name the child or the parties, so it is not shown when redacting.
   const shownTitle = options.redact ? "Analysis report" : documentTitle;
   const contract: ReportContract = buildSectionedReport(source);
@@ -109,7 +111,7 @@ export function renderReportSectionsHtml(
     .join("");
   const glossary = GLOSSARY.map((g) => `<dt>${escapeHtml(g.term)}</dt><dd>${escapeHtml(g.meaning)}</dd>`).join("");
   const courtRecord = contract.findings.some((f) => f.kind === "COURT_ORDER" || f.kind === "JUDICIAL_ENDORSEMENT");
-  const documentType = String((source as { documentType?: unknown } | null)?.documentType ?? "");
+  const documentType = String((report as { documentType?: unknown } | null)?.documentType ?? "");
   const courtNote = courtRecord
     ? `<p><strong>This is a court document.</strong> It is not scored for credibility or completeness. This export does not show whether it is final, signed, entered, served, or in effect.</p>`
     : titleSuggestsCourtOrder(documentType)
@@ -127,6 +129,7 @@ export function renderReportSectionsHtml(
 <body>
 <h1>${escapeHtml(shownTitle)}</h1>
 <p>${escapeHtml(LEGAL_INFORMATION_NOTICE)}</p>
+${options.redact ? `<p role="note"><strong>${escapeHtml(REDACTED_COPY_NOTICE)}</strong></p>` : ""}
 ${courtNote}
 <h2>Contents</h2>
 <ol>${toc}</ol>

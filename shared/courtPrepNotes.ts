@@ -4,11 +4,23 @@
  */
 import { COURT_PREP_LIMITS, EVENT_TYPE_LABEL, checkResponse, type FactualResponse, type buildCourtPrep } from "./courtPrep";
 import { COURT_FORMS, FORM_SAFEGUARDS, COURT_FORM_INDEX_URL } from "./courtPrepForms";
+import { REDACTED_COPY_NOTICE, redactForExport } from "./exportRedaction";
 
 type Prep = ReturnType<typeof buildCourtPrep>;
 
-export function buildPrepNotes(prep: Prep, responses: Record<string, FactualResponse>, documentTitle: string): string {
+export function buildPrepNotes(
+  prepInput: Prep,
+  responsesInput: Record<string, FactualResponse>,
+  documentTitleInput: string,
+  options: { redact?: boolean } = {}
+): string {
+  // Redaction is enforced here, so every caller that asks for a redacted copy gets one. The title is replaced too.
+  const redact = options.redact === true;
+  const prep = redact ? redactForExport(prepInput) : prepInput;
+  const responses = redact ? redactForExport(responsesInput) : responsesInput;
+  const documentTitle = redact ? "Analysis report" : documentTitleInput;
   const lines: string[] = [];
+  if (redact) lines.push(REDACTED_COPY_NOTICE, "");
   const rule = "------------------------------------------------------------";
   lines.push(`Court preparation notes: ${documentTitle}`, rule, ...COURT_PREP_LIMITS, "");
 

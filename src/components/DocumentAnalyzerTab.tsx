@@ -4023,7 +4023,7 @@ export default function DocumentAnalyzerTab() {
                         </>
                       )}
                       {COURT_PREP_UI_ENABLED && (
-                        <CourtPrepWorkspace report={selectedReport} documentTitle={selectedReport.documentTitle || "Analysis report"} />
+                        <CourtPrepWorkspace report={selectedReport} documentTitle={selectedReport.documentTitle || "Analysis report"} redact={redactionEnabled} />
                       )}
                       {PARENT_QA_UI_ENABLED && <EducationalQa report={selectedReport} />}
 
