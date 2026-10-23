@@ -314,6 +314,23 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(view.findings[0].evidenceLabel).not.toMatch(/^HEARSAY$/);
   });
 
+  it("carries Deep Scan gaps, evidence to gather, and retorts into the parent view", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      gaps: ["The first pass did not check whether the hearing was held within five days."],
+      missingEvidence: ["The hearing notice with its date."],
+      retorts: [{ claim: "The parent missed the appointment.", objection: "The record shows no notice of the appointment.", action: "Ask counsel to request the notice." }],
+    });
+    const concerns = view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body ?? "";
+    const prepare = view.summary.find((part: { heading: string }) => part.heading.startsWith("6."))?.body ?? "";
+    expect(view.gaps).toHaveLength(1);
+    expect(concerns).toMatch(/five days/);
+    expect(view.evidenceToGather).toHaveLength(1);
+    expect(prepare).toMatch(/hearing notice with its date/);
+    expect(view.retortChecks[0]).toMatch(/missed the appointment/);
+    expect(prepare).toMatch(/request the notice/);
+  });
+
   it("treats a court endorsement as a court record from documentType alone", () => {
     const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
     const view = buildParentReportView(withoutAuthority);
