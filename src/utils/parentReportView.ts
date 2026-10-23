@@ -101,15 +101,24 @@ function secondReviewNotice(report: Loose): string {
   return parts.filter(Boolean).join(" ");
 }
 
-const CHRONOLOGY_EVIDENCE_LABELS: Record<string, string> = {
-  HEARSAY: "Second-hand (hearsay), not seen or heard directly by the author",
-  INFERENCE: "An inference, not stated directly in the document",
-  UNSUPPORTED: "Not supported by anything in the document",
+const EVIDENCE_LABELS: Record<string, string> = {
+  HEARSAY: "Second-hand (hearsay)",
+  INFERENCE: "Inference, not stated directly",
+  UNSUPPORTED: "Not supported by the document",
 };
+
+/** Plain-language evidence label. An analyzer enum is never shown raw to a parent. */
+function evidenceLabel(classification: unknown): string {
+  const key = text(classification).toUpperCase();
+  if (!key) return "";
+  if (EVIDENCE_LABELS[key]) return EVIDENCE_LABELS[key];
+  const words = key.toLowerCase().replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 function chronologyLine(entry: Loose): string {
   const where = text(entry.locationInDocument);
-  const label = CHRONOLOGY_EVIDENCE_LABELS[text(entry.evidenceClassification).toUpperCase()] ?? "";
+  const label = evidenceLabel(entry.evidenceClassification);
   return [text(entry.date), text(entry.event), where ? `(${where})` : "", label ? `Evidence: ${label}.` : ""].filter(Boolean).join(" ");
 }
 
@@ -159,7 +168,7 @@ function findingView(flag: Loose, index: number): ParentFindingView {
   return {
     id: text(flag.id) || `finding-${index + 1}`,
     heading: text(flag.category) || `Point ${index + 1}`,
-    evidenceLabel: text(flag.evidenceClassification),
+    evidenceLabel: evidenceLabel(flag.evidenceClassification),
     severityLabel: severityLabel(flag.severity),
     whatHappened: quote
       ? flag.quoteVerified === true
@@ -195,9 +204,11 @@ export function buildParentReportView(report: Loose): ParentReportView {
   // documentAuthority is not part of the live analyzer schema, so classify from documentType.
   // Draft and proposed orders are not operative, so they never get the legal-effect wording.
   const documentType = text(report.documentType);
-  const isDraft = /\b(draft|proposed)\b/i.test(documentType);
+  // Only a draft or proposed order is treated as unsigned. Other draft documents get the generic wording.
+  const isDraft = /\b(draft|proposed)\b/i.test(documentType) && /\border/i.test(documentType);
   // Only a final order or endorsement has legal effect. Applications and motions that ask for an order do not.
-  const isFinalOrderType = /^(court\s+)?((final|interim|temporary|consent)\s+)?(order|endorsement)s?\b/i.test(documentType);
+  // Leading words may be any mix of court, signed, final, and similar qualifiers, in any order.
+  const isFinalOrderType = /^((court|signed|final|interim|temporary|consent|entered|certified|judicial|supervision|custody|extended)\s+)*(order|endorsement)s?\b/i.test(documentType);
   const isCourtRecord = !isDraft && (Boolean(report.documentAuthority) || isFinalOrderType);
 
   const summary = [

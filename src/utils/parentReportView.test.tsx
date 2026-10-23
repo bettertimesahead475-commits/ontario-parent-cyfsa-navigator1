@@ -44,7 +44,7 @@ describe("buildParentReportView", () => {
   it("keeps every finding and never drops one", () => {
     const view = buildParentReportView(REPORT);
     expect(view.findings).toHaveLength(REPORT.redFlags.length);
-    expect(view.findings[0].evidenceLabel).toBe("JUDICIAL_FINDING");
+    expect(view.findings[0].evidenceLabel).toBe("Judicial finding");
   });
 
   it("states that court decisions are not attached, rather than inventing them", () => {
@@ -286,6 +286,32 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
       forensicVerification: { status: "completed", checkedFindings: 3, totalFindings: 3, overallAssessment: "Several points rely on second-hand accounts." },
     });
     expect(view.secondReviewNotice).toMatch(/overall assessment: Several points rely on second-hand accounts/);
+  });
+
+  it("treats a signed or final court order as a court record", () => {
+    for (const documentType of ["Final Court Order", "Signed Court Order"]) {
+      const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+      const view = buildParentReportView({ ...withoutAuthority, documentType });
+      expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body, documentType)
+        .toMatch(/court order or endorsement has legal effect/);
+    }
+  });
+
+  it("uses the generic wording for a draft document that is not an order", () => {
+    const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+    const view = buildParentReportView({ ...withoutAuthority, documentType: "Draft Affidavit" });
+    const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+    expect(body).not.toMatch(/draft or proposed order/);
+    expect(body).not.toMatch(/legal effect/);
+  });
+
+  it("shows a plain-language evidence label on a finding, not the analyzer enum", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      redFlags: [{ ...REPORT.redFlags[0], evidenceClassification: "HEARSAY" }],
+    });
+    expect(view.findings[0].evidenceLabel).toBe("Second-hand (hearsay)");
+    expect(view.findings[0].evidenceLabel).not.toMatch(/^HEARSAY$/);
   });
 
   it("treats a court endorsement as a court record from documentType alone", () => {
