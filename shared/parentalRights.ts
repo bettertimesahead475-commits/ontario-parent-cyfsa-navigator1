@@ -28,7 +28,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
   {
     id: "parent-is-a-party",
     title: "You are a party to the case",
-    section: "CYFSA s. 79(1), para. 3",
+    section: "CYFSA s. 79(1)",
     quote: "The following are parties to a proceeding under this Part:",
     plainEnglish:
       "The law lists who the parties are in a child protection case. A child's parent is one of them, so you have a formal place in the case.",
@@ -38,26 +38,26 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
   },
   {
     id: "five-day-hearing",
-    title: "A five-day deadline applies after a place-of-safety removal, unless a listed outcome happens",
+    title: "Within five days after a place-of-safety removal, one of the listed steps must happen",
     section: "CYFSA s. 88",
     quote:
       "As soon as practicable, but in any event within five days after a child is brought to a place of safety under section 81",
     plainEnglish:
-      "If a child is taken to a place of safety under the listed sections, the matter must go to court within five days. One of these may happen instead, within the same five days. The child may be returned to the person who last had charge of them. The child may also be returned to the person entitled to custody under an enforceable order. The child may be returned to the authority named in an extra-provincial order. A temporary care agreement may be made. An agreement may be made under section 77 for a 16 or 17 year old.",
+      "If a child is taken to a place of safety under the listed sections, within five days one of these must happen. The matter is brought before a court for a hearing. Or the child is returned to the person who last had charge of them, or to the person entitled to custody under an enforceable order. Or the child is returned to the child welfare authority named in an extra-provincial order. Or a temporary care agreement is made. For a 16 or 17 year old, an agreement is made under section 77.",
     appliesWhen: "Only where a child was brought to a place of safety under section 81, subclause 83(1)(a)(ii), or subsection 136(5).",
     verifyInDocuments: "Note the date the child was taken and the date of the first court appearance. Check whether any of the other listed outcomes happened within the five days. Ask counsel to confirm the calculation.",
-    limitations: "The provision covers the listed removals. A missed court date is not automatically a breach: one of the listed alternatives may have happened. It does not apply to every change in where a child lives.",
+    limitations: "The provision covers the listed removals only. Whether a breach occurred is for counsel to assess. It does not apply to every change in where a child lives.",
   },
   {
     id: "adjournment-limit",
-    title: "Adjournments are limited to 30 days unless the parties agree",
+    title: "Adjournments are limited to 30 days unless all parties present and the caregiver consent",
     section: "CYFSA s. 94(1)",
     quote: "The court shall not adjourn a hearing for more than 30 days,",
     plainEnglish:
-      "The court cannot postpone a hearing for more than 30 days unless everyone present and the child's caregiver agree. The court also cannot allow a longer delay if it knows that a party who is not present objects.",
+      "The court cannot postpone a hearing for more than 30 days unless everyone present and the child's caregiver agree. It also cannot allow a longer delay if it knows a party who is absent objects.",
     appliesWhen: "Whenever a hearing under Part V is put off to a later date.",
     verifyInDocuments: "List each adjournment date and the stated reason. Check whether the record says who agreed to a longer delay.",
-    limitations: "Consent must come from everyone present and the child's caregiver. Whether an absent party objected must be checked on the actual record.",
+    limitations: "Consent must come from all the parties present and the person caring for the child during the adjournment. Whether an absent party objected must be checked on the actual record.",
   },
   {
     id: "plan-for-child",
@@ -77,10 +77,10 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     section: "CYFSA s. 14",
     quote: "the parent of a child in care retains any right that the parent may have,",
     plainEnglish:
-      "When a child is in care, a parent keeps any right the parent already had. For example, a parent who already directed the child's education and upbringing may keep doing so, in line with the child's culture and beliefs. A parent who did not already have that authority does not gain it from this provision. Some court custody orders are exceptions.",
+      "When a child is in care, a parent keeps any right they already had, with some exceptions. For example, a parent may keep directing the child's education and upbringing, in line with the child's creed, community identity and cultural identity. This does not give a parent a right they did not already have.",
     appliesWhen: "While the child is in care, and subject to the exceptions named at the start of the section.",
     verifyInDocuments: "Note any decisions about the child's education, upbringing, or medical treatment, and who made them.",
-    limitations: "The section starts with exceptions for some court custody orders. Those exceptions must be checked before relying on this.",
+    limitations: "The exceptions are custody during an adjournment (s. 94(7)), and interim and extended society care (ss. 110 and 111). Check those before relying on this.",
   },
   {
     id: "evidence-admissibility",
@@ -89,7 +89,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     quote:
       "any oral or written statement or report that the court considers relevant to the proceeding, including a transcript, exhibit or finding or the reasons for a decision in an earlier civil or criminal proceeding, is admissible into evidence.",
     plainEnglish:
-      "A judge can admit many statements and reports in these cases. This can happen even when the usual rules would be stricter. Second-hand information is not automatically excluded. The judge decides how much weight it gets.",
+      "A judge can admit many statements and reports in these cases. This can happen even when the usual rules would be stricter. Second-hand information is not automatically excluded. The provision does not say how much weight a statement gets. That is a separate question for the judge.",
     appliesWhen: "In any proceeding under Part V, for statements the court considers relevant.",
     verifyInDocuments: "For each second-hand statement, note who said it and whether that person's own account is in the record. The weight a judge gives it is a separate question.",
     limitations: "Admissible does not mean reliable. Weight, reliability, and the parent's answer to the statement are for the judge to decide.",
@@ -100,10 +100,10 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     section: "CYFSA s. 74(2)",
     quote: "A child is in need of protection where,",
     plainEnglish:
-      "A child is found in need of protection only if one listed situation is shown. One example is physical harm, or a risk of it, caused by the person caring for the child. Naming a family in an application is not a finding.",
+      "A child is in need of protection only if one listed situation is shown. One example: the child has been physically harmed by the person caring for them, or because that person failed to adequately care for or protect the child, or a pattern of neglect. Another: the child is likely to be harmed in these ways.",
     appliesWhen: "In any application asking the court to find a child in need of protection.",
     verifyInDocuments: "For each allegation, identify which listed situation the society says applies, and what record supports it.",
-    limitations: "The list has several parts. Each must be checked against the facts. Being named in an application is not a finding.",
+    limitations: "The list has several parts. Each must be checked against the facts and the record.",
   },
   {
     id: "appeal-by-parent",
@@ -111,10 +111,10 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     section: "CYFSA s. 121(1)(b)",
     quote: "any parent of the child;",
     plainEnglish:
-      "A parent is one of the people who can appeal an order made under this Part. Time limits and procedure are set elsewhere in the Act.",
+      "A parent is one of the people who can appeal an order made under this Part. This section does not set the appeal deadline. Confirm the deadline with counsel and the court rules right away.",
     appliesWhen: "For orders made under Part V, subject to the rules in section 121 and the court rules. Does not apply to an assessment order under s. 98: s. 121(2) excludes it from this authorization.",
     verifyInDocuments: "Note the date of each order. Ask counsel about the appeal deadline right away.",
-    limitations: "This entry does not give the appeal deadline, and it does not cover s. 98 assessment orders. Confirm both from section 121 and the rules.",
+    limitations: "This entry does not give the appeal deadline, and it does not cover s. 98 assessment orders (s. 121(2)). No extension of the time for appeal is granted where the child has been placed for adoption (s. 121(5)).",
   },
 ];
 
@@ -122,7 +122,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
 export const NOT_YET_VERIFIED = [
   "Family Law Rules (disclosure, affidavit form, and response timelines) — no verified copy in the repository.",
   "Charter of Rights and Freedoms provisions cited in analysis — no verified copy in the repository.",
-  "Appeal time limits under CYFSA s. 121 — the consolidation is in the repository but was not checked for this entry.",
+  "Appeal deadlines and appeal court rules for CYFSA s. 121 — s. 121 does not set the deadline, and the court rules are not in the repository.",
   "Case law on any of the above — no verified case-law source is connected yet.",
 ];
 
@@ -151,10 +151,13 @@ export const RIGHT_CONDITIONS: Record<string, RightConditions> = {
     exceptions: ["The provision covers the listed removals only."],
   },
   "adjournment-limit": {
-    conditions: ["A hearing under Part V is adjourned.", "The adjournment is for more than 30 days."],
+    conditions: [
+      "A hearing under Part V is adjourned.",
+      "The adjournment is for more than 30 days.",
+      "The court is not aware that a party who is not present at the hearing objects (s. 94(1)(b)).",
+    ],
     exceptions: [
-      "All parties present and the person caring for the child during the adjournment consent.",
-      "A party not present at the hearing does not object, and the court is aware of that.",
+      "All parties present and the person caring for the child during the adjournment consent (s. 94(1)(a)).",
     ],
   },
   "plan-for-child": {

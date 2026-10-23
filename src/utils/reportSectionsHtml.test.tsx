@@ -76,4 +76,12 @@ describe("16-section HTML export", () => {
     expect(html).toContain("viewport");
     expect(html).toContain("@media print");
   });
+
+  it("leaves identifying metadata out of the export when redaction is on", () => {
+    const report = { ...ALL_REPORT_FIXTURES.casAffidavit, metadata: { respondentName: "Jane Example", childNames: "Sam Example", fileNumber: "FN-12345" } };
+    const on = renderReportSectionsHtml(report, "parent", "Test", { redact: true });
+    const off = renderReportSectionsHtml(report, "parent", "Test");
+    expect(on).not.toMatch(/Jane Example|Sam Example|FN-12345/);
+    expect(off).toMatch(/FN-12345/);
+  });
 });
