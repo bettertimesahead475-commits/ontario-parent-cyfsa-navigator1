@@ -21,7 +21,16 @@ const STATUS_TEXT: Record<string, string> = {
   WRITTEN_WITHOUT_RECORDS: "Written, no records selected yet",
 };
 
-export function CourtPrepWorkspace({ report, documentTitle = "Analysis report" }: { report: unknown; documentTitle?: string }) {
+export function CourtPrepWorkspace({
+  report,
+  documentTitle = "Analysis report",
+  redact = false,
+}: {
+  report: unknown;
+  documentTitle?: string;
+  /** When true, the downloaded notes are a redacted copy. The on-screen workspace is not changed. */
+  redact?: boolean;
+}) {
   const prep = useMemo(() => buildCourtPrep(report), [report]);
   // Parent entries live in component state only: not saved to a server and not written to browser storage.
   const [responses, setResponses] = useState<Record<string, FactualResponse>>({});
@@ -34,7 +43,7 @@ export function CourtPrepWorkspace({ report, documentTitle = "Analysis report" }
   };
 
   const download = () => {
-    const text = buildPrepNotes(prep, responses, documentTitle);
+    const text = buildPrepNotes(prep, responses, documentTitle, { redact });
     const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
     const link = document.createElement("a");
     link.href = url;

@@ -1,0 +1,81 @@
+import { describe, expect, it } from "vitest";
+import { buildCourtPrep } from "../../shared/courtPrep";
+import { buildPrepNotes } from "../../shared/courtPrepNotes";
+import { redactForExport } from "../../shared/exportRedaction";
+import { ALL_REPORT_FIXTURES } from "../../shared/reportFixtures";
+import { renderReportSectionsHtml } from "./reportSectionsHtml";
+
+const NAME = "Zed Plaintiffname";
+const FILE_NO = "FN-12345";
+
+/** A fixture with a planted name and file number in every free-text place the exports read. */
+function withPlantedIdentifiers(): any {
+  const report: any = JSON.parse(JSON.stringify(ALL_REPORT_FIXTURES.casAffidavit));
+  report.documentType = `Affidavit of ${NAME} ${FILE_NO}`;
+  report.fileSummary = `${NAME} says the child was left alone.`;
+  report.metadata = { ...(report.metadata ?? {}), fileNumber: FILE_NO, parties: [NAME] };
+  for (const flag of report.redFlags ?? []) {
+    flag.phraseDetected = `${NAME} was left alone`;
+    flag.explanation = `${NAME} is the only source`;
+  }
+  return report;
+}
+
+describe("redacted HTML export", () => {
+  it("removes a planted name and file number from every free-text field", () => {
+    const html = renderReportSectionsHtml(withPlantedIdentifiers(), "parent", `Title ${NAME} ${FILE_NO}`, { redact: true });
+    expect(html).not.toContain(NAME);
+    expect(html).not.toContain(FILE_NO);
+  });
+
+  it("states that the redacted copy is not guaranteed to be anonymous", () => {
+    const html = renderReportSectionsHtml(withPlantedIdentifiers(), "parent", "T", { redact: true });
+    expect(html).toContain("not guaranteed to be anonymous");
+  });
+
+  it("the unredacted export keeps the same text, so the test above is meaningful", () => {
+    const html = renderReportSectionsHtml(withPlantedIdentifiers(), "parent", `Title ${NAME}`, { redact: false });
+    expect(html).toContain(NAME);
+    expect(html).not.toContain("not guaranteed to be anonymous");
+  });
+
+  it("keeps the title caveat in the redacted copy when the original title names an order", () => {
+    const report = withPlantedIdentifiers();
+    report.documentType = "Final Court Order";
+    const html = renderReportSectionsHtml(report, "parent", "T", { redact: true });
+    expect(html).toContain("The title names an order or decision");
+  });
+});
+
+describe("redacted court-preparation notes", () => {
+  it("removes a planted name from the title, the timeline, and the parent's own words", () => {
+    const report = withPlantedIdentifiers();
+    const prep = buildCourtPrep(report);
+    const responses: any = { someAllegation: { allegationFindingId: "someAllegation", parentAccount: `${NAME} was at work.`, supportingEntryIds: [], contraryEntryIds: [], unverifiedPoints: [], questionsForCounsel: [`Ask ${NAME}.`] } };
+    const text = buildPrepNotes(prep, responses, `Title ${NAME}`, { redact: true });
+    expect(text).not.toContain(NAME);
+    expect(text).toContain("not guaranteed to be anonymous");
+  });
+
+  it("the unredacted notes keep the title, so the test above is meaningful", () => {
+    const prep = buildCourtPrep(withPlantedIdentifiers());
+    const text = buildPrepNotes(prep, {}, `Title ${NAME}`, { redact: false });
+    expect(text).toContain(NAME);
+  });
+});
+
+describe("redactForExport", () => {
+  it("does not modify its input", () => {
+    const report = withPlantedIdentifiers();
+    const before = JSON.stringify(report);
+    redactForExport(report);
+    expect(JSON.stringify(report)).toBe(before);
+  });
+
+  it("keeps legal references and enum values", () => {
+    const out: any = redactForExport({ legalReference: "CYFSA s. 88", severity: "CRITICAL", explanation: "Name" });
+    expect(out.legalReference).toBe("CYFSA s. 88");
+    expect(out.severity).toBe("CRITICAL");
+    expect(out.explanation).not.toBe("Name");
+  });
+});
