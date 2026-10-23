@@ -729,28 +729,33 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
   // API 1b: Request access before paying — creates a pending payment record
   // and a reference number the parent puts in their Interac e-transfer memo.
-  // Body: { email: string, tier: Tier }
+  // Identity comes only from a verified Firebase ID token. The body's email is
+  // a claim that must match the verified account; it is never trusted on its own.
+  // Body: { tier: Tier, email?: string }
   app.post("/api/request-access", async (req: Request, res: Response) => {
     try {
       const { email, tier } = req.body || {};
-      if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-        return res.status(400).json({ error: "A valid email is required." });
-      }
       const validTiers = ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"];
       if (!validTiers.includes(tier)) {
         return res.status(400).json({ error: 'tier must be a valid plan tier ("Basic", "Premium", "Pro", "Community5", "Community10", or "Community25").' });
       }
-      const identity = await verifyFirebaseToken(req.header("authorization"));
+      const identity = await verifyFirebaseIdentity(req.header("authorization"));
+      if (!identity?.uid) {
+        return res.status(401).json({ error: "Sign in to request access.", code: "SIGN_IN_REQUIRED" });
+      }
+      if (!identity.emailVerified || !identity.email) {
+        return res.status(403).json({ error: "Verify your email address before requesting access.", code: "EMAIL_NOT_VERIFIED" });
+      }
+      if (email !== undefined && String(email).trim().toLowerCase() !== identity.email.toLowerCase()) {
+        return res.status(400).json({ error: "The email must match your signed-in account.", code: "EMAIL_MISMATCH" });
+      }
       const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || null;
       const userAgent = (req.headers["user-agent"] as string) || null;
-      const hasMetadata = Boolean(identity?.uid || req.headers["x-forwarded-for"] || req.headers["user-agent"]);
-      const result = hasMetadata
-        ? await requestAccess(email, tier as Tier, {
-            uid: identity?.uid || null,
-            clientIp,
-            userAgent,
-          })
-        : await requestAccess(email, tier as Tier);
+      const result = await requestAccess(identity.email, tier as Tier, {
+        uid: identity.uid,
+        clientIp,
+        userAgent,
+      });
       res.json(result);
     } catch (err: any) {
       console.error("[/api/request-access]", err);
