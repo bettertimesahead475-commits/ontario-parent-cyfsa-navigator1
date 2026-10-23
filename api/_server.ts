@@ -734,7 +734,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   // Body: { tier: Tier, email?: string }
   app.post("/api/request-access", async (req: Request, res: Response) => {
     try {
-      const { email, tier } = req.body || {};
+      const { email, tier, requestKey } = req.body || {};
+      if (requestKey !== undefined && (typeof requestKey !== "string" || !/^[A-Za-z0-9-]{8,64}$/.test(requestKey))) {
+        return res.status(400).json({ error: "requestKey is not valid.", code: "INVALID_REQUEST_KEY" });
+      }
       const validTiers = ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"];
       if (!validTiers.includes(tier)) {
         return res.status(400).json({ error: 'tier must be a valid plan tier ("Basic", "Premium", "Pro", "Community5", "Community10", or "Community25").' });
@@ -755,6 +758,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         uid: identity.uid,
         clientIp,
         userAgent,
+        requestKey: typeof requestKey === "string" ? requestKey : null,
       });
       res.json(result);
     } catch (err: any) {

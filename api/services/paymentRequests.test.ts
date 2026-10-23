@@ -145,11 +145,26 @@ describe("requestAccess - idempotency and identity", () => {
   });
 
   it("returns the same pending reference on a repeated click instead of creating a second request", async () => {
-    const first = await requestAccess("owner@example.com", "Pro", { uid: UID_A });
-    const second = await requestAccess("owner@example.com", "Pro", { uid: UID_A });
+    const first = await requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" });
+    const second = await requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" });
     expect(second.referenceNumber).toBe(first.referenceNumber);
     expect(second.reused).toBe(true);
     expect(db._tables.payments).toHaveLength(1);
+  });
+
+  it("treats a new checkout attempt as a new purchase, even for the same account and package", async () => {
+    const first = await requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" });
+    const repeat = await requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0002" });
+    expect(repeat.reused).toBe(false);
+    expect(repeat.referenceNumber).not.toBe(first.referenceNumber);
+    expect(db._tables.payments).toHaveLength(2);
+  });
+
+  it("does not reuse without a checkout key, so only a keyed retry is treated as the same purchase", async () => {
+    await requestAccess("owner@example.com", "Pro", { uid: UID_A });
+    const again = await requestAccess("owner@example.com", "Pro", { uid: UID_A });
+    expect(again.reused).toBe(false);
+    expect(db._tables.payments).toHaveLength(2);
   });
 
   it("does not reuse a request across different accounts", async () => {

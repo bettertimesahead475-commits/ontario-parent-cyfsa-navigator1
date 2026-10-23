@@ -540,18 +540,20 @@ function paymentRequestInstructions(referenceNumber: string, amount: number): st
 export async function requestAccess(
   email: string,
   tier: Tier,
-  clientInfo?: { uid?: string | null; clientIp?: string | null; userAgent?: string | null }
+  clientInfo?: { uid?: string | null; clientIp?: string | null; userAgent?: string | null; requestKey?: string | null }
 ) {
   const db = getSupabase();
   const amount = ALL_TIER_PRICES[tier] ?? TIER_PRICES.Pro;
   const normalizedEmail = email.toLowerCase().trim();
 
-  if (clientInfo?.uid) {
-    // Uids come from a verified Firebase token and are alphanumeric. Reject anything else
-    // before it reaches a LIKE pattern.
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(clientInfo.uid)) {
-      throw Object.assign(new Error("Invalid account identifier."), { statusCode: 400 });
-    }
+  // Uids come from a verified Firebase token and are alphanumeric. Reject anything else before
+  // it reaches a LIKE pattern or a notes field.
+  if (clientInfo?.uid && !/^[A-Za-z0-9_-]{1,128}$/.test(clientInfo.uid)) {
+    throw Object.assign(new Error("Invalid account identifier."), { statusCode: 400 });
+  }
+  // Reuse only for a retry of the same checkout attempt: same verified account, same key.
+  // A deliberate repeat purchase carries a new key and gets its own reference.
+  if (clientInfo?.uid && clientInfo.requestKey) {
     const since = new Date(Date.now() - DUPLICATE_REQUEST_WINDOW_MS).toISOString();
     const { data: candidates, error: lookupErr } = await db
       .from("payments")
@@ -570,7 +572,7 @@ export async function requestAccess(
       // Reuse only a request priced at today's price. A stale amount would make the buyer pay
       // the wrong figure, and approval would reject a correct transfer.
       return parts.includes(`uid:${clientInfo.uid}`) && parts.includes(`email:${normalizedEmail}`)
-        && Number(row.amount) === amount;
+        && parts.includes(`key:${clientInfo.requestKey}`) && Number(row.amount) === amount;
     });
     if (existing) {
       const existingAmount = Number(existing.amount);
@@ -588,6 +590,7 @@ export async function requestAccess(
 
   let notes = `email:${normalizedEmail}`;
   if (clientInfo?.uid) notes += `;uid:${clientInfo.uid}`;
+  if (clientInfo?.requestKey) notes += `;key:${clientInfo.requestKey}`;
   if (clientInfo?.clientIp) notes += `;ip:${clientInfo.clientIp}`;
   if (clientInfo?.userAgent) notes += `;ua:${encodeURIComponent(clientInfo.userAgent.slice(0, 100))}`;
 

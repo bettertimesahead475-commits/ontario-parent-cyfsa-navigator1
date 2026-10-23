@@ -363,6 +363,14 @@ describe("POST /api/request-access", () => {
     );
   });
 
+  it("rejects a malformed checkout key before creating anything", async () => {
+    mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce({ uid: "uid-1", email: "a@b.com", emailVerified: true });
+    const res = await request(app).post("/api/request-access").send({ tier: "Pro", requestKey: "bad key!" });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("INVALID_REQUEST_KEY");
+    expect(mockAccess.requestAccess).not.toHaveBeenCalled();
+  });
+
   it("propagates the service's status code on failure", async () => {
     mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce({ uid: "uid-1", email: "a@b.com", emailVerified: true });
     mockAccess.requestAccess.mockRejectedValueOnce(Object.assign(new Error("db down"), { statusCode: 503 }));

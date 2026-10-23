@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { AccessTier } from "../types";
 import {
   Check,
@@ -115,7 +115,12 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
     } catch {}
   }, [userEmail, firebaseSignedIn]);
 
+  // One key per checkout attempt. Retries of the same attempt reuse it, so the server returns the
+  // same reference. A new attempt, including a deliberate repeat purchase, gets a new key.
+  const checkoutKeyRef = useRef<string | null>(null);
+
   const triggerCheckout = (tier: PurchasableTier) => {
+    checkoutKeyRef.current = null;
     setSelectedTier(tier);
     setReferenceNumber("");
     setCodeInput("");
@@ -161,6 +166,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
       setErrorMessage("Enter a valid email address first.");
       return;
     }
+    if (!checkoutKeyRef.current) {
+      const random = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      checkoutKeyRef.current = random;
+    }
     setStage("verifying");
     setErrorMessage("");
     try {
@@ -169,7 +178,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email, tier: selectedTier }),
+        body: JSON.stringify({ email, tier: selectedTier, requestKey: checkoutKeyRef.current }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed.");
