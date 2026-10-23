@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
-import { ParentReportPanel } from "./ParentReportPanel";
+import { ParentReportPanel, ParentReportSection } from "./ParentReportPanel";
 
 const REPORT = {
   documentType: "Court Affidavit",
@@ -66,5 +66,20 @@ describe("ParentReportPanel", () => {
     const { container } = render(<ParentReportPanel report={{ ...REPORT, documentType: "Final Court Order" }} />);
     expect(container.textContent).not.toMatch(/has legal effect/);
     expect(container.textContent).toMatch(/title alone does not show/);
+  });
+});
+
+describe("ParentReportSection gate", () => {
+  afterEach(cleanup);
+
+  it("renders nothing when the parent report flag is off", () => {
+    const { container } = render(<ParentReportSection report={REPORT} enabled={false} />);
+    expect(container.innerHTML).toBe("");
+    expect(screen.queryByText(/seven|Summary/i)).toBeNull();
+  });
+
+  it("renders the panel when the flag is on", () => {
+    render(<ParentReportSection report={REPORT} enabled={true} />);
+    expect(screen.getByText(/1\. What is this document\?/)).toBeTruthy();
   });
 });

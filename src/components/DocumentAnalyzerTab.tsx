@@ -54,7 +54,7 @@ import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
 import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED } from "../config/featureFlags";
-import { ParentReportPanel } from "./ParentReportPanel";
+import { ParentReportSection } from "./ParentReportPanel";
 import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
@@ -4026,7 +4026,7 @@ export default function DocumentAnalyzerTab() {
                       {COURT_PREP_UI_ENABLED && (
                         <CourtPrepWorkspace report={selectedReport} documentTitle={selectedReport.documentTitle || "Analysis report"} />
                       )}
-                      {PARENT_REPORT_UI_ENABLED && <ParentReportPanel report={selectedReport} />}
+                      <ParentReportSection report={selectedReport} enabled={PARENT_REPORT_UI_ENABLED} />
                       {PARENT_QA_UI_ENABLED && <EducationalQa report={selectedReport} />}
 
                       {/* Redaction Toggle & Preview */}
