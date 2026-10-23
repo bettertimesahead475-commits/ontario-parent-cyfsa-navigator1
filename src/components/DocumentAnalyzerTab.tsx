@@ -58,6 +58,7 @@ import { ParentReportSection } from "./ParentReportPanel";
 import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
+import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -793,6 +794,8 @@ export default function DocumentAnalyzerTab() {
   const exportSummaryLog = () => {
     try {
       const generatedAt = new Date().toLocaleString("en-US");
+      // A redacted copy keeps no file names, chat text or free text from the reports.
+      const redacting = redactionEnabled;
       let reportText = "";
 
       reportText += "================================================================================\n";
@@ -804,6 +807,7 @@ export default function DocumentAnalyzerTab() {
       reportText += `Analyzed Files : ${organizedFiles.filter(f => f.analysisReport).length}\n`;
       reportText += `Chat History   : ${ragChatMessages.length} message(s)\n\n`;
       
+      if (redacting) reportText += REDACTED_COPY_NOTICE + "\n\n";
       reportText += "Disclaimer: This report is for educational purposes only under the Ontario Child,\n";
       reportText += "Youth and Family Services Act (CYFSA), 2017, and does not constitute formal legal\n";
       reportText += "advice. Please consult with a licensed Ontario family defense lawyer.\n\n";
@@ -824,7 +828,7 @@ export default function DocumentAnalyzerTab() {
 
         sortedFiles.forEach((file, index) => {
           reportText += `[FILE ${index + 1}/${sortedFiles.length}] -----------------------------------------------------\n`;
-          reportText += `File Name       : ${file.name}\n`;
+          reportText += `File Name       : ${redacting ? `Document ${index + 1}` : file.name}\n`;
           reportText += `Category        : ${file.category}\n`;
           reportText += `Uploaded At     : ${file.uploadedAt}\n`;
           reportText += `Size            : ${(file.size / 1024).toFixed(1)} KB\n`;
@@ -832,8 +836,8 @@ export default function DocumentAnalyzerTab() {
           reportText += `Analysis Status : ${file.analysisStatus.toUpperCase()}\n\n`;
 
           if (file.analysisReport) {
-            const report = file.analysisReport;
-            reportText += `>>> ANALYSIS AUDIT REPORT: ${report.documentTitle || file.name}\n`;
+            const report = redacting ? redactForExport(file.analysisReport) : file.analysisReport;
+            reportText += `>>> ANALYSIS AUDIT REPORT: ${redacting ? "Analysis report" : report.documentTitle || file.name}\n`;
             reportText += `Document Type : ${report.documentType || "N/A"}\n`;
             reportText += `Completeness / Reliability Score: ${report.completenessScore}/100\n\n`;
 
@@ -862,7 +866,7 @@ export default function DocumentAnalyzerTab() {
             if (report.thresholdAnalysis && report.thresholdAnalysis.length > 0) {
               report.thresholdAnalysis.forEach((th) => {
                 reportText += `    - ${th.thresholdChecked}\n`;
-                reportText += `      Status      : ${th.isMet.toUpperCase()}\n`;
+                reportText += `      Analyzer preliminary read (not a legal finding): ${th.isMet}\n`;
                 reportText += `      Citation    : ${th.primarySourceLaw}\n`;
                 reportText += `      Reasoning   : ${th.reasoning}\n\n`;
               });
@@ -934,7 +938,9 @@ export default function DocumentAnalyzerTab() {
       reportText += "SECTION 2: CHRONOLOGICAL CASE ASSISTANT CHAT LOGS\n";
       reportText += "================================================================================\n\n";
 
-      if (ragChatMessages.length === 0) {
+      if (redacting) {
+        reportText += "Consultation messages are not included in a redacted copy.\n\n";
+      } else if (ragChatMessages.length === 0) {
         reportText += "No chat session messages have been recorded yet.\n\n";
       } else {
         ragChatMessages.forEach((msg, index) => {
@@ -2263,7 +2269,10 @@ export default function DocumentAnalyzerTab() {
 
   const printAnalyzer = (reportMode: "combined" | "quick" | "deep" = "combined") => {
     const quickReport = activeSelectedFile && (quickReviewSnapshots[activeSelectedFile.id] || activeSelectedFile.analysisReport);
-    const deepReport = activeSelectedFile && deepScanReports[activeSelectedFile.id];
+    const rawDeepReport = activeSelectedFile && deepScanReports[activeSelectedFile.id];
+    // A redacted copy removes free text and names before anything is written, and keeps no chat text.
+    const deepReport = redactionEnabled && rawDeepReport ? redactForExport(rawDeepReport) : rawDeepReport;
+    const displayFileName = redactionEnabled ? "Analysis report" : activeSelectedFile?.name;
     if (reportMode === "deep" && !deepReport) { alert("No completed Deep Scan is available for this document."); return; }
     if (reportMode === "quick" && !quickReport) { alert("No Quick Review is available for this document."); return; }
     const printWindow = window.open("", "_blank");
@@ -2275,7 +2284,10 @@ export default function DocumentAnalyzerTab() {
     let title = "Document Audit & Case File Explorer";
     let bodyContent = "";
     // Quick Review exports use the original snapshot, not the merged on-screen report.
-    const reportForExport = reportMode === "quick" ? quickReport : selectedReport;
+    const sourceReport = reportMode === "quick" ? quickReport : selectedReport;
+    const reportForExport = redactionEnabled && sourceReport
+      ? { ...redactForExport(sourceReport), documentTitle: "Analysis report" }
+      : sourceReport;
 
     const sharedStyle = `
       <style>
@@ -2529,17 +2541,18 @@ export default function DocumentAnalyzerTab() {
         <div class="header-container">
           <span class="platform-label">CYFSA Navigator • Case Education Library</span>
           <h1 class="title-main">RAG Multi-File Case Consultation Transcript</h1>
+          ${redactionEnabled ? `<p>${escapeHtml(REDACTED_COPY_NOTICE)}</p>` : ""}
           <div class="meta-bar">
             System Agent: <strong>Claude 3.5 Sonnet RAG</strong>
             • Active Case Vault Size: <strong>${organizedFiles.length} files organized</strong>
-            • Verified Statutory Base: Q2 2026 e-Laws Compliant
+            • Statute reference copy: consolidation dated 2026-06-24 (not an official legal verification)
           </div>
         </div>
 
         <div class="section-card">
           <h3 class="section-title">🔍 Consultation Session Log</h3>
           <div style="margin-top: 15px;">
-            ${ragChatMessages.map(msg => {
+            ${redactionEnabled ? "<p>The consultation transcript is not included in a redacted copy.</p>" : ragChatMessages.map(msg => {
               const author = msg.sender === "user" ? "Client (Parent)" : "CYFSA AI Statutory Assistant";
               // Escape first, then apply the bold/citation markup so the <strong>/<span> tags
               // this intentionally inserts don't themselves get escaped away.
@@ -2563,7 +2576,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">🔗 Official Verification Citations (Live e-Laws Links)</h3>
+          <h3 class="section-title">🔗 Statute Links (check against e-Laws)</h3>
           <p style="font-size:12px; color:#475569; margin-bottom:12px;">The statutory references scanned by the consultation pipeline resolve directly to real, physically accessible Ontario Government e-Laws pages:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             <li><strong>CYFSA Section 74 (Child Protection Thresholds):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK123" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK123</a></li>
@@ -2575,7 +2588,7 @@ export default function DocumentAnalyzerTab() {
         </div>
       `;
     } else if (activeTab === "organizer" && reportMode === "deep" && deepReport) {
-      title = `Forensic Deep Scan - ${activeSelectedFile?.name || "Document"}`;
+      title = `Forensic Deep Scan - ${displayFileName || "Document"}`;
       const renderValue = (value: unknown): string => {
         if (value === null || value === undefined) return "Not provided in this report";
         if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return escapeHtml(String(value));
@@ -2584,7 +2597,7 @@ export default function DocumentAnalyzerTab() {
       };
       bodyContent = `<header class="header-container"><span class="platform-label">CYFSA Navigator • Forensic Deep Scan</span><h1 class="title-main">${escapeHtml(title)}</h1><p>Separate forensic findings. This report is not the original Quick Review.</p></header>${Object.entries(deepReport).filter(([key]) => !["timestamp", "documentText"].includes(key)).map(([key, value]) => `<section class="section-card"><h2 class="section-title">${escapeHtml(key.replace(/([A-Z])/g, " $1"))}</h2>${renderValue(value)}</section>`).join("")}`;
     } else if (activeTab === "organizer" && reportForExport) {
-      title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || activeSelectedFile?.name || "Report")}`;
+      title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || displayFileName || "Report")}`;
       const evidenceIndex = reportForExport.evidenceStrengthIndex || {
         score: 0,
         components: {},
@@ -2618,7 +2631,7 @@ export default function DocumentAnalyzerTab() {
 
           <div class="meta-bar">
             Document Checked:
-            <strong>${escapeHtml(reportForExport.documentTitle || activeSelectedFile?.name || "N/A")}</strong>
+            <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "N/A")}</strong>
             • Type:
             <strong>${escapeHtml(reportForExport.documentType || "Casework Correspondence")}</strong>
             • Date of Audit:
@@ -2786,7 +2799,7 @@ export default function DocumentAnalyzerTab() {
               <thead>
                 <tr>
                   <th style="width: 30%">Apprehension Threshold Rule</th>
-                  <th style="width: 15%">Threshold Met?</th>
+                  <th style="width: 15%">Analyzer preliminary read (not a legal finding)</th>
                   <th style="width: 35%">Fact-Centered Appraisal</th>
                   <th style="width: 20%">Source law Authority</th>
                 </tr>
@@ -2905,10 +2918,10 @@ export default function DocumentAnalyzerTab() {
               </tr>
             </thead>
             <tbody>
-              ${organizedFiles.map(f => `
+              ${organizedFiles.map((f, fileIndex) => `
                 <tr>
                   <td><strong>${escapeHtml(f.category)}</strong></td>
-                  <td><code>${escapeHtml(f.name)}</code></td>
+                  <td><code>${escapeHtml(redactionEnabled ? `Document ${fileIndex + 1}` : f.name)}</code></td>
                   <td>${(f.size / 1024).toFixed(1)} KB</td>
                   <td>
                     <span style="font-weight: bold; color: ${f.analysisStatus === 'completed' ? '#166534' : f.analysisStatus === 'analyzing' ? '#2563eb' : '#64748b'}">
@@ -4577,7 +4590,7 @@ export default function DocumentAnalyzerTab() {
                               <div className="flex justify-between items-center text-[10px] font-sans text-slate-600 font-semibold uppercase">
                                 <span>{thresh.thresholdChecked}</span>
                                 <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
-                                  Met: {thresh.isMet}
+                                  Analyzer preliminary read (not a legal finding): {thresh.isMet}
                                 </span>
                               </div>
                               <div className="text-xs text-slate-700 leading-relaxed">
