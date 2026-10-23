@@ -120,8 +120,75 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
 
 /** Provisions that are NOT yet verified in this repository. Not yet shown to parents; if used, present them as gaps, not as rules. */
 export const NOT_YET_VERIFIED = [
-  "Family Law Rules (disclosure, affidavit form, and response timelines) — no verified copy in the repository.",
-  "Charter of Rights and Freedoms provisions cited in analysis — no verified copy in the repository.",
-  "Appeal deadlines and appeal court rules for CYFSA s. 121 — s. 121 does not set the deadline, and the court rules are not in the repository.",
+  "Family Law Rules (disclosure, affidavit form, and response timelines) — no verified copy available to this app.",
+  "Charter of Rights and Freedoms provisions cited in analysis — no verified copy available to this app.",
+  "Appeal deadlines and appeal court rules for CYFSA s. 121 — s. 121 does not set the deadline, and the court rules are not available to this app.",
   "Case law on any of the above — no verified case-law source is connected yet.",
 ];
+
+/**
+ * Legal conditions and exceptions for each entry, taken from the quoted text of the provision.
+ * A keyword match in a report only makes a right a candidate. A right is established only when each
+ * condition is shown by the records, and no exception applies.
+ */
+export interface RightConditions {
+  /** Conditions the provision sets, in the words of the provision as far as possible. */
+  conditions: string[];
+  /** Exceptions or other provisions the text expressly names. */
+  exceptions: string[];
+}
+
+export const RIGHT_CONDITIONS: Record<string, RightConditions> = {
+  "parent-is-a-party": {
+    conditions: ["A proceeding under Part V of the CYFSA exists.", "The person is the child's parent."],
+    exceptions: ["Whether a person is the child's parent can depend on facts this section does not decide."],
+  },
+  "five-day-hearing": {
+    conditions: [
+      "The child was brought to a place of safety under s. 81, s. 83(1)(a)(ii), or s. 136(5).",
+      "One of the outcomes in s. 88(a) to (e) happens within five days of the placement.",
+    ],
+    exceptions: ["The provision covers the listed removals only."],
+  },
+  "adjournment-limit": {
+    conditions: [
+      "A hearing under Part V is adjourned.",
+      "The adjournment is for more than 30 days.",
+      "Check that the court is not aware that a party who is not present objects. If it is aware, a longer adjournment is not allowed (s. 94(1)(b)).",
+    ],
+    exceptions: [
+      "All parties present and the person caring for the child during the adjournment consent (s. 94(1)(a)).",
+    ],
+  },
+  "plan-for-child": {
+    conditions: ["The court is about to make an order under s. 101, 102, 114, or 116."],
+    exceptions: ["The provision applies only before the listed orders."],
+  },
+  "parent-rights-in-care": {
+    conditions: [
+      "The child is in care.",
+      "The parent has a right in question (for example, to direct education and upbringing).",
+      "For consent to treatment, the parent is the child's substitute decision-maker under s. 20 of the Health Care Consent Act, 1996 (s. 14(b)).",
+    ],
+    exceptions: ["Subject to s. 94(7) and ss. 110 and 111 (custody during adjournment, interim and extended society care)."],
+  },
+  "evidence-admissibility": {
+    conditions: [
+      "A proceeding under Part V.",
+      "The statement or report is relevant to the proceeding, as the court considers.",
+    ],
+    exceptions: ["Admissible does not mean reliable. Weight is for the judge."],
+  },
+  "need-for-protection-grounds": {
+    conditions: ["An application asks the court to find a child in need of protection.", "One listed situation in s. 74(2) is shown on the evidence."],
+    exceptions: ["Naming a family in an application is not a finding."],
+  },
+  "appeal-by-parent": {
+    conditions: ["An order was made under Part V.", "The appellant is a parent of the child."],
+    exceptions: [
+      "Does not apply to an assessment order under s. 98 (s. 121(2)).",
+      "No extension of the appeal time is granted where the child has been placed for adoption (s. 121(5)).",
+      "Section 121 does not set the appeal deadline. Confirm it with counsel and the court rules.",
+    ],
+  },
+};

@@ -52,6 +52,11 @@ import {
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
+import { ReportSections } from "./ReportSections";
+import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED } from "../config/featureFlags";
+import { EducationalQa } from "./EducationalQa";
+import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
+import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -3990,6 +3995,37 @@ export default function DocumentAnalyzerTab() {
                           </div>
                         </div>
                       )}
+
+                      {/* 16-section report (feature-flagged). The existing report above is unchanged. */}
+                      {REPORT_SECTIONS_UI_ENABLED && (
+                        <>
+                          <div className="flex flex-wrap gap-2 mt-4">
+                            {(["parent", "professional"] as const).map((audience) => (
+                              <button
+                                key={audience}
+                                type="button"
+                                className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2"
+                                onClick={() => {
+                                  const html = renderReportSectionsHtml(selectedReport, audience, selectedReport.documentTitle || "Analysis report", { redact: redactionEnabled });
+                                  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+                                  const link = document.createElement("a");
+                                  link.href = url;
+                                  link.download = audience === "parent" ? "cyfsa-report-parent.html" : "cyfsa-report-professional.html";
+                                  link.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                              >
+                                {audience === "parent" ? "Download parent report (HTML)" : "Download professional report (HTML)"}
+                              </button>
+                            ))}
+                          </div>
+                          <ReportSections report={selectedReport} />
+                        </>
+                      )}
+                      {COURT_PREP_UI_ENABLED && (
+                        <CourtPrepWorkspace report={selectedReport} documentTitle={selectedReport.documentTitle || "Analysis report"} redact={redactionEnabled} />
+                      )}
+                      {PARENT_QA_UI_ENABLED && <EducationalQa report={selectedReport} />}
 
                       {/* Redaction Toggle & Preview */}
                       <div className="space-y-3">
