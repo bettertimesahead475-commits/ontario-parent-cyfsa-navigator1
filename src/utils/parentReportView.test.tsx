@@ -91,6 +91,18 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(view.thresholdChecks[0]).toMatch(/unverified/);
   });
 
+  it("carries the chronology and contradictions into the parent view", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      chronology: [{ date: "2026-03-02", event: "Child placed in care", locationInDocument: "Page 2" }],
+      contradictions: [{ description: "The affidavit gives two different dates for the visit.", locations: ["Page 3", "Page 5"], significance: "May affect credibility." }],
+    });
+    expect(view.chronology).toHaveLength(1);
+    expect(view.contradictions).toHaveLength(1);
+    expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("2."))?.body).toMatch(/Child placed in care/);
+    expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body).toMatch(/two different dates/);
+  });
+
   it("marks a legacy citation with no verification status as unverified", () => {
     const view = buildParentReportView({
       ...REPORT,
