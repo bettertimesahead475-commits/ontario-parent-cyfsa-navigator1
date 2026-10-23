@@ -64,7 +64,9 @@ function thresholdLine(check: Loose): string {
   const name = text(check.thresholdChecked);
   const result = text(check.isMet);
   const reasoning = text(check.reasoning);
-  return [name, result ? `Result: ${result}.` : "", reasoning].filter(Boolean).join(" ");
+  const source = text(check.primarySourceLaw);
+  const unverified = check.citationStatus === "UNVERIFIED" ? "The statute reference for this check is unverified; confirm it with counsel." : "";
+  return [name, result ? `Result: ${result}.` : "", reasoning, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
 }
 
 function timelineLine(check: Loose): string {

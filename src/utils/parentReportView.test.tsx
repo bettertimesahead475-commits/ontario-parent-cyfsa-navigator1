@@ -82,6 +82,15 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(view.timelineChecks).toHaveLength(1);
   });
 
+  it("keeps an unverified source warning on a threshold check", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      thresholdAnalysis: [{ thresholdChecked: "Place of safety, s. 81", isMet: "Inconclusive", reasoning: "Not shown.", primarySourceLaw: "CYFSA s. 81(2)", citationStatus: "UNVERIFIED" }],
+    });
+    expect(view.thresholdChecks[0]).toMatch(/CYFSA s\. 81\(2\)/);
+    expect(view.thresholdChecks[0]).toMatch(/unverified/);
+  });
+
   it("marks a legacy citation with no verification status as unverified", () => {
     const view = buildParentReportView({
       ...REPORT,
