@@ -165,6 +165,22 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     }
   });
 
+  it("keeps the title caveat for noun titles that name an order or decision", () => {
+    for (const documentType of ["Statement of Decision", "Notice of Decision", "Summary Judgment", "Report and Order", "Form 25 Final Order"]) {
+      const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+      const view = buildParentReportView({ ...withoutAuthority, documentType });
+      const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+      expect(body, documentType).toMatch(/cannot confirm/);
+    }
+  });
+
+  it("does not add the order caveat to a filing that leads with a non-order word", () => {
+    const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+    const view = buildParentReportView({ ...withoutAuthority, documentType: "Motion for Final Order" });
+    const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+    expect(body).not.toMatch(/cannot confirm/);
+  });
+
   it("carries a red-flag second-review verdict and note into the parent view", () => {
     const view = buildParentReportView({
       ...REPORT,
