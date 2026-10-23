@@ -43,25 +43,25 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     quote:
       "As soon as practicable, but in any event within five days after a child is brought to a place of safety under section 81",
     plainEnglish:
-      "If a child is taken to a place of safety under the listed sections, within five days one of these must happen. The matter is brought before a court for a hearing. Or the child is returned to the person who last had charge of them, or to the person entitled to custody under an enforceable order. Or the child is returned to the child welfare authority named in an extra-provincial order. Or a temporary care agreement is made. For a 16 or 17 year old, an agreement is made under section 77.",
+      "If a child is taken to a place of safety under the listed sections, as soon as practicable and within five days one of these must happen. The matter is brought before a court for a hearing. Or the child is returned to the person who last had charge of them, or to the person entitled to custody under an enforceable order. Or the child is returned to the child welfare authority, or other person, named in an extra-provincial order. Or a temporary care agreement is made. Or, for a 16 or 17 year old, an agreement is made under section 77.",
     appliesWhen: "Only where a child was brought to a place of safety under section 81, subclause 83(1)(a)(ii), or subsection 136(5).",
     verifyInDocuments: "Note the date the child was taken and the date of the first court appearance. Check whether any of the other listed outcomes happened within the five days. Ask counsel to confirm the calculation.",
     limitations: "The provision covers the listed removals only. Whether a breach occurred is for counsel to assess. It does not apply to every change in where a child lives.",
   },
   {
     id: "adjournment-limit",
-    title: "Adjournments are limited to 30 days unless all parties present and the caregiver consent",
+    title: "Adjournments over 30 days need consent from all parties present and the caregiver, and are barred if an absent party objects",
     section: "CYFSA s. 94(1)",
     quote: "The court shall not adjourn a hearing for more than 30 days,",
     plainEnglish:
-      "The court cannot postpone a hearing for more than 30 days unless everyone present and the child's caregiver agree. It also cannot allow a longer delay if it knows a party who is absent objects.",
+      "The court cannot postpone a hearing for more than 30 days unless all the parties present and the person caring for the child during the adjournment consent. It also cannot allow a longer delay if it knows a party who is absent objects.",
     appliesWhen: "Whenever a hearing under Part V is put off to a later date.",
     verifyInDocuments: "List each adjournment date and the stated reason. Check whether the record says who agreed to a longer delay.",
     limitations: "Consent must come from all the parties present and the person caring for the child during the adjournment. Whether an absent party objected must be checked on the actual record.",
   },
   {
     id: "plan-for-child",
-    title: "The society must prepare a written plan before certain orders",
+    title: "Before certain orders, the court must obtain and consider a written plan from the society",
     section: "CYFSA s. 100",
     quote:
       "The court shall, before making an order under section 101, 102, 114 or 116, obtain and consider a plan for the child’s care prepared in writing by the society",
@@ -77,9 +77,9 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     section: "CYFSA s. 14",
     quote: "the parent of a child in care retains any right that the parent may have,",
     plainEnglish:
-      "When a child is in care, a parent keeps any right they already had, with some exceptions. For example, a parent may keep directing the child's education and upbringing, in line with the child's creed, community identity and cultural identity. This does not give a parent a right they did not already have.",
+      "When a child is in care, a parent keeps any right they already had, with some exceptions. A parent may keep directing the child's education and upbringing, in line with the child's creed, community identity and cultural identity. A parent who is the child's substitute decision-maker may also consent to treatment. This does not give a parent a right they did not already have.",
     appliesWhen: "While the child is in care, and subject to the exceptions named at the start of the section.",
-    verifyInDocuments: "Note any decisions about the child's education, upbringing, or medical treatment, and who made them.",
+    verifyInDocuments: "Note any decisions about the child's education, upbringing, or treatment, and who made them, and whether the parent was the substitute decision-maker.",
     limitations: "The exceptions are custody during an adjournment (s. 94(7)), and interim and extended society care (ss. 110 and 111). Check those before relying on this.",
   },
   {
@@ -96,7 +96,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
   },
   {
     id: "need-for-protection-grounds",
-    title: "The court must find grounds before a child is found in need of protection",
+    title: "A child is in need of protection only where one of the listed situations is shown",
     section: "CYFSA s. 74(2)",
     quote: "A child is in need of protection where,",
     plainEnglish:
