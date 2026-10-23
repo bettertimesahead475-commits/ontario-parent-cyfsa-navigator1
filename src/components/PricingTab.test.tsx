@@ -105,7 +105,7 @@ describe('PricingTab Branding & Payment Instructions', () => {
   });
 
   it('opens checkout modal when clicking Get Access', async () => {
-    render(<PricingTab currentTier="Basic" onChangeTier={vi.fn()} userEmail="parent@example.com" />);
+    render(<PricingTab currentTier="Basic" onChangeTier={vi.fn()} userEmail="parent@example.com" firebaseSignedIn />);
 
     const getAccessBtn = screen.getByRole('button', { name: /Get Access \(\$19\.99\)/i });
     fireEvent.click(getAccessBtn);
@@ -114,6 +114,15 @@ describe('PricingTab Branding & Payment Instructions', () => {
     expect(screen.getByRole('dialog')).toBeDefined();
     expect(screen.getByText(/Interac e-Transfer Checkout/i)).toBeDefined();
     expect(screen.getByText(/Create Payment Instructions/i)).toBeDefined();
+  });
+
+  it('requires Firebase sign-in before payment instructions, even when a profile email is stored', () => {
+    render(<PricingTab currentTier="Basic" onChangeTier={vi.fn()} userEmail="parent@example.com" firebaseSignedIn={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Get Access \(\$19\.99\)/i }));
+
+    expect(screen.getAllByText(/Sign in with Google/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Create Payment Instructions/i)).toBeNull();
   });
 
   it('accurately describes automated payment notification and activation process without obsolete manual approval claims', () => {

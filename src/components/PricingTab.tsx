@@ -33,6 +33,9 @@ interface PricingTabProps {
   currentTier: AccessTier;
   onChangeTier: (tier: AccessTier) => void;
   userEmail?: string;
+  // True only when Firebase has an authenticated user. A locally stored profile email is not enough
+  // to start checkout, because the server requires a verified Firebase token.
+  firebaseSignedIn?: boolean;
 }
 
 const FALLBACK_TIER_PRICES: Record<string, number> = {
@@ -51,7 +54,7 @@ const PAYMENT_EMAIL = "chris@cyfsanavigator.com";
 type PurchasableTier = "Pro" | "Premium" | "Basic" | "Community5" | "Community10" | "Community25";
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
 
-export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }: PricingTabProps) {
+export default function PricingTab({ currentTier, onChangeTier, userEmail = "", firebaseSignedIn = false }: PricingTabProps) {
   const [, setLocation] = useLocation();
   const [selectedTier, setSelectedTier] = useState<PurchasableTier | null>(null);
   const [stage, setStage] = useState<CheckoutStage>("idle");
@@ -100,7 +103,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
 
   // Handle pending plan stored prior to signup/login
   useEffect(() => {
-    if (!userEmail) return;
+    if (!firebaseSignedIn || !userEmail) return;
     try {
       const pending = localStorage.getItem("cyfsa_pending_plan") as PurchasableTier | null;
       if (pending && (pending === "Pro" || pending === "Premium" || pending === "Basic" || pending.startsWith("Community"))) {
@@ -110,7 +113,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
         setStage("email");
       }
     } catch {}
-  }, [userEmail]);
+  }, [userEmail, firebaseSignedIn]);
 
   const triggerCheckout = (tier: PurchasableTier) => {
     setSelectedTier(tier);
@@ -119,7 +122,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
     setErrorMessage("");
     setCopiedMemo(false);
     setCopiedEmail(false);
-    if (!userEmail) {
+    if (!firebaseSignedIn) {
       try {
         localStorage.setItem("cyfsa_pending_plan", tier);
       } catch {}
@@ -1175,7 +1178,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "" }
             {/* STAGE: Email / Sign-in required */}
             {stage === "email" && (
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                {!userEmail ? (
+                {!firebaseSignedIn ? (
                   <div className="space-y-4">
                     <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 space-y-1">
                       <p className="font-bold flex items-center gap-1.5">
