@@ -174,25 +174,27 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     }
   });
 
-  it("does not add the order caveat to a filing that leads with a non-order word", () => {
-    const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
-    const view = buildParentReportView({ ...withoutAuthority, documentType: "Motion for Final Order" });
-    const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
-    expect(body).not.toMatch(/cannot confirm/);
+  it("keeps the order caveat even when a filing word leads the title (fails closed)", () => {
+    for (const documentType of ["Motion for Final Order", "Motion Order", "Application Order", "Final Judgement"]) {
+      const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+      const view = buildParentReportView({ ...withoutAuthority, documentType });
+      const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+      expect(body, documentType).toMatch(/cannot confirm/);
+    }
   });
 
-  it("carries a red-flag second-review verdict and note into the parent view", () => {
+  it("shows that a red-flag point was second-reviewed, but not the verdict or note", () => {
     const view = buildParentReportView({
       ...REPORT,
       redFlags: [{ ...REPORT.redFlags[0], forensicVerification: { verdict: "UNSUPPORTED", note: "The quoted finding does not appear in the reasons.", verifiedBy: "Second review" } }],
     });
-    expect(view.findings[0].secondReview).toMatch(/did not find the record supports/);
-    expect(view.findings[0].secondReview).toMatch(/does not appear in the reasons/);
+    expect(view.findings[0].secondReview).toMatch(/went through an independent second review/);
+    expect(view.findings[0].secondReview).not.toMatch(/did not find|does not appear|UNSUPPORTED/);
   });
 
-  it("leaves the second-review field empty when no second review ran", () => {
+  it("says a red-flag point has not been second-reviewed when no review ran", () => {
     const view = buildParentReportView(REPORT);
-    expect(view.findings[0].secondReview).toBe("");
+    expect(view.findings[0].secondReview).toMatch(/has not been second-reviewed/);
   });
 
   it("carries a threshold second-review verdict and note into the threshold line", () => {
@@ -208,8 +210,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     });
     expect(view.thresholdChecks[0]).not.toMatch(/Result:|Met\b|The record describes/);
     expect(view.thresholdChecks[0]).toMatch(/Question to check/);
-    expect(view.thresholdChecks[0]).toMatch(/found this overstated/);
-    expect(view.thresholdChecks[0]).toMatch(/concern, not a confirmed risk/);
+    expect(view.thresholdChecks[0]).toMatch(/went through an independent second review/);
+    expect(view.thresholdChecks[0]).not.toMatch(/overstated|concern, not a confirmed risk/);
   });
 
   it("states the s. 94(1) objection rule without presenting an absent party's silence as an exception", () => {
@@ -300,12 +302,12 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(view.chronology[0]).toMatch(/Page 2/);
   });
 
-  it("carries the completed review's overall assessment into the parent view", () => {
+  it("does not carry the verifier's overall assessment into the parent view", () => {
     const view = buildParentReportView({
       ...REPORT,
       forensicVerification: { status: "completed", checkedFindings: 3, totalFindings: 3, overallAssessment: "Several points rely on second-hand accounts." },
     });
-    expect(view.secondReviewNotice).toMatch(/overall assessment: Several points rely on second-hand accounts/);
+    expect(view.secondReviewNotice).not.toMatch(/Several points rely on second-hand accounts|overall assessment/);
   });
 
   it("does not establish from a title that a signed or final court order is in effect", () => {

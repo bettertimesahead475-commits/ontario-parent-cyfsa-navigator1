@@ -67,29 +67,18 @@ function citationStatus(flag: Loose): string {
   return text(flag.legalReference) ? UNVERIFIED_CITATION : "No statute cited for this point.";
 }
 
-function severityLabel(severity: unknown): string {
-  const s = text(severity);
-  if (s === "CRITICAL") return "Serious concern to check";
-  if (s === "Worth Raising With Counsel") return "Worth raising with a lawyer";
-  if (s === "Affects Evidentiary Weight") return "May affect how much weight this gets";
-  // An unrecognised value must not silently get the weight-only label.
-  return s ? "Severity not classified; ask a lawyer" : "";
-}
+// Analyzer severity is an assessment of how serious a point is. It is not shown to parents.
+const CHECK_QUESTION = "Does the document support this point? Check the quoted wording and where it appears.";
 
-const SECOND_REVIEW_WORDING: Record<string, string> = {
-  SUPPORTED: "An independent second review found the record supports this.",
-  OVERSTATED: "An independent second review found this overstated.",
-  UNSUPPORTED: "An independent second review did not find the record supports this.",
-  MISQUOTED: "An independent second review found the quotation does not match the record.",
-  NEEDS_CONTEXT: "An independent second review says this needs more context.",
-};
-
-/** Carries the second-review verdict and its note. A rejected point must not read as settled. */
+/**
+ * Only whether a point went through the second review is shown. Its verdict and note are assessments of the
+ * point, so they are not shown to parents. A lawyer can see them.
+ */
 function secondReviewLine(item: Loose): string {
-  const review = item.forensicVerification && typeof item.forensicVerification === "object" ? item.forensicVerification : {};
-  const wording = SECOND_REVIEW_WORDING[text(review.verdict).toUpperCase()] ?? "";
-  const note = text(review.note);
-  return [wording, note].filter(Boolean).join(" ");
+  const review = item.forensicVerification;
+  return review && typeof review === "object"
+    ? "This point went through an independent second review. Ask your lawyer what that review found."
+    : "This point has not been second-reviewed.";
 }
 
 /** Report-level second-review status. Findings the review never reached must not look reviewed. */
@@ -106,9 +95,7 @@ function secondReviewNotice(report: Loose): string {
   if (Number.isFinite(checked) && Number.isFinite(total) && checked < total) {
     parts.push(`The independent second review checked ${checked} of ${total} findings. The others have no second-review result.`);
   }
-  // The analyzer's overall assessment qualifies the findings even when every finding was checked.
-  const assessment = text(review.overallAssessment);
-  if (assessment) parts.push(`The independent second review's overall assessment: ${assessment}`);
+  // The verifier's overall assessment is not shown: it is an assessment of the findings, not a parent-facing fact.
   return parts.filter(Boolean).join(" ");
 }
 
@@ -196,13 +183,13 @@ function lawWithStatus(flag: Loose): string {
 }
 
 function findingView(flag: Loose, index: number): ParentFindingView {
-  const explanation = text(flag.explanation);
   const quote = text(flag.phraseDetected);
   return {
     id: text(flag.id) || `finding-${index + 1}`,
-    heading: text(flag.category) || `Point ${index + 1}`,
+    // The analyzer's category is a breach-type label, so it is not used as a heading.
+    heading: `Point ${index + 1}`,
     evidenceLabel: evidenceLabel(flag.evidenceClassification),
-    severityLabel: severityLabel(flag.severity),
+    severityLabel: "",
     whatHappened: quote
       ? flag.quoteVerified === true
         ? `The record says: "${quote}"`
@@ -210,7 +197,8 @@ function findingView(flag: Loose, index: number): ParentFindingView {
           ? `The analyzer quoted this point, but the exact wording could not be matched to the document, so treat it as a paraphrase: "${quote}"`
           : `The analyzer quoted this point. Its exact wording has not been checked against the document, so treat it as a paraphrase until it is: "${quote}"`
       : "The record quote for this point was not found.",
-    whyItMatters: explanation,
+    // The analyzer's explanation is its reasoning about the point. The parent gets a question to check instead.
+    whyItMatters: CHECK_QUESTION,
     whatTheLawSays: lawWithStatus(flag),
     whatCourtsHaveSaid: CASE_LAW_LIMITATION,
     whatIsUnknown: text(flag.verifyRequirement),
