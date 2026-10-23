@@ -174,6 +174,22 @@ describe("requestAccess - idempotency and identity", () => {
     expect(db._tables.payments.find((p: Row) => p.reference_number === changed.referenceNumber).notes).toContain("email:new@example.com");
   });
 
+  it("does not reuse a pending request whose amount is no longer the current price", async () => {
+    db._tables.payments.push({
+      reference_number: "PS-OLDPRC",
+      plan: "Pro",
+      amount: 19.99,
+      status: "pending",
+      notes: `email:owner@example.com;uid:${UID_A}`,
+      payment_email: PAYMENT_EMAIL,
+      submitted_at: new Date().toISOString(),
+    });
+    const result = await requestAccess("owner@example.com", "Pro", { uid: UID_A });
+    expect(result.reused).toBe(false);
+    expect(result.referenceNumber).not.toBe("PS-OLDPRC");
+    expect(result.amount).not.toBe(19.99);
+  });
+
   it("matches the uid exactly, so a uid that is a prefix of another never reuses its request", async () => {
     await requestAccess("short@example.com", "Pro", { uid: "uidAlpha12" });
     const other = await requestAccess("long@example.com", "Pro", { uid: UID_A });

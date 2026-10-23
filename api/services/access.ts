@@ -567,7 +567,10 @@ export async function requestAccess(
     // carry the account's current verified email. If the verified email changed, make a new one.
     const existing = (candidates || []).find((row: any) => {
       const parts = String(row.notes || "").split(";");
-      return parts.includes(`uid:${clientInfo.uid}`) && parts.includes(`email:${normalizedEmail}`);
+      // Reuse only a request priced at today's price. A stale amount would make the buyer pay
+      // the wrong figure, and approval would reject a correct transfer.
+      return parts.includes(`uid:${clientInfo.uid}`) && parts.includes(`email:${normalizedEmail}`)
+        && Number(row.amount) === amount;
     });
     if (existing) {
       const existingAmount = Number(existing.amount);
