@@ -30,6 +30,8 @@ export interface ParentReportView {
   findings: ParentFindingView[];
   thresholdChecks: string[];
   timelineChecks: string[];
+  /** Set when the analyzer's second review was incomplete or covered fewer findings than the report has. */
+  secondReviewNotice: string;
   chronology: string[];
   contradictions: string[];
   missingRecords: string[];
@@ -80,12 +82,28 @@ function secondReviewLine(item: Loose): string {
   return [wording, note].filter(Boolean).join(" ");
 }
 
+/** Report-level second-review status. Findings the review never reached must not look reviewed. */
+function secondReviewNotice(report: Loose): string {
+  const review = report.forensicVerification;
+  if (!review || typeof review !== "object") return "";
+  if (review.status === "incomplete") {
+    return ["Not every finding was independently second-reviewed.", text(review.reason)].filter(Boolean).join(" ");
+  }
+  const checked = Number(review.checkedFindings);
+  const total = Number(review.totalFindings);
+  if (Number.isFinite(checked) && Number.isFinite(total) && checked < total) {
+    return `The independent second review checked ${checked} of ${total} findings. The others have no second-review result.`;
+  }
+  return "";
+}
+
 function thresholdLine(check: Loose): string {
   const name = text(check.thresholdChecked);
   const result = text(check.isMet);
   const reasoning = text(check.reasoning);
   const source = text(check.primarySourceLaw);
-  const unverified = check.citationStatus === "UNVERIFIED" ? "The statute reference for this check is unverified; confirm it with counsel." : "";
+  // A source with no recorded verification status is unverified, the same as for red flags and timeline checks.
+  const unverified = source && check.citationStatus !== "CONFIRMED_REFERENCE" ? "The statute reference for this check is unverified; confirm it with counsel." : "";
   const review = secondReviewLine(check);
   return [name, result ? `Result: ${result}.` : "", reasoning, review, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
 }
@@ -101,9 +119,26 @@ function contradictionLine(item: Loose): string {
 }
 
 function timelineLine(check: Loose): string {
+  const citation = text(check.citation);
   // Only a cited provision can be unverified. A citation with no recorded status is treated as unverified too.
-  const citedUnverified = text(check.citation) !== "" && citationStatus({ citationStatus: check.citationStatus, legalReference: check.citation }) === UNVERIFIED_CITATION;
-  return [text(check.timelineRule), text(check.evaluation), citedUnverified ? UNVERIFIED_CITATION : ""].filter(Boolean).join(" ");
+  const unverified =
+    citation && !/unverified/i.test(citation) && citationStatus({ citationStatus: check.citationStatus, legalReference: citation }) === UNVERIFIED_CITATION
+      ? UNVERIFIED_CITATION
+      : "";
+  const assertion = text(check.documentAssertion);
+  const where = text(check.locationInDocument);
+  const nextStep = text(check.parentActionStep);
+  return [
+    text(check.timelineRule),
+    assertion ? `The document says: ${assertion}` : "",
+    text(check.evaluation),
+    where ? `Location: ${where}.` : "",
+    citation ? `Source: ${citation}` : "",
+    unverified,
+    nextStep ? `Next step: ${nextStep}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function findingView(flag: Loose, index: number): ParentFindingView {
@@ -142,6 +177,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
   const timelines = (Array.isArray(report.proceduralTimelineViolations) ? report.proceduralTimelineViolations : []).map(timelineLine).filter(Boolean);
   const chronology = (Array.isArray(report.chronology) ? report.chronology : []).map(chronologyLine).filter(Boolean);
   const contradictions = (Array.isArray(report.contradictions) ? report.contradictions : []).map(contradictionLine).filter(Boolean);
+  const notice = secondReviewNotice(report);
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
   // documentAuthority is not part of the live analyzer schema, so classify from documentType.
@@ -173,8 +209,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
     },
     {
       heading: "5. Is anything missing or concerning?",
-      body: [...missing, ...thresholds, ...timelines, ...contradictions].length
-        ? [...missing, ...thresholds, ...timelines, ...contradictions].join(" ")
+      body: [notice, ...missing, ...thresholds, ...timelines, ...contradictions].filter(Boolean).length
+        ? [notice, ...missing, ...thresholds, ...timelines, ...contradictions].filter(Boolean).join(" ")
         : "No missing records were identified from this document alone.",
     },
     {
@@ -192,6 +228,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
     findings: redFlags.map((flag, i) => findingView(flag, i)),
     thresholdChecks: thresholds,
     timelineChecks: timelines,
+    secondReviewNotice: notice,
     chronology,
     contradictions,
     missingRecords: missing,

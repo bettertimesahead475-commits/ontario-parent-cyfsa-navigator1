@@ -202,6 +202,66 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(adjournment?.plainEnglish).not.toMatch(/does not object/);
   });
 
+  it("tells the parent when the second review was incomplete, using the analyzer's reason", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      forensicVerification: { status: "incomplete", reason: "Second review timed out; no findings were checked." },
+    });
+    expect(view.secondReviewNotice).toMatch(/Not every finding was independently second-reviewed/);
+    expect(view.secondReviewNotice).toMatch(/timed out/);
+    expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body).toMatch(/timed out/);
+  });
+
+  it("says how many findings a partial second review covered", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      forensicVerification: { status: "completed", checkedFindings: 2, totalFindings: 3 },
+    });
+    expect(view.secondReviewNotice).toMatch(/checked 2 of 3 findings/);
+  });
+
+  it("shows no second-review notice when the review covered every finding", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      forensicVerification: { status: "completed", checkedFindings: 3, totalFindings: 3 },
+    });
+    expect(view.secondReviewNotice).toBe("");
+  });
+
+  it("keeps the document assertion, location, citation, and next step on a timeline checkpoint", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      proceduralTimelineViolations: [{
+        timelineRule: "Hearing within five days",
+        documentAssertion: "The order says the hearing was set for day nine.",
+        evaluation: "The hearing date is outside the five-day window.",
+        citation: "CYFSA s. 88",
+        citationStatus: "CONFIRMED_REFERENCE",
+        locationInDocument: "Page 4",
+        parentActionStep: "Ask counsel whether an alternative outcome happened.",
+      }],
+    });
+    const line = view.timelineChecks[0];
+    expect(line).toMatch(/The order says the hearing was set for day nine/);
+    expect(line).toMatch(/Page 4/);
+    expect(line).toMatch(/CYFSA s\. 88/);
+    expect(line).toMatch(/Ask counsel whether an alternative outcome happened/);
+  });
+
+  it("treats a threshold source with no verification status as unverified", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      thresholdAnalysis: [{ thresholdChecked: "Place of safety, s. 81", isMet: "Inconclusive", reasoning: "Not shown.", primarySourceLaw: "CYFSA s. 81(2)" }],
+    });
+    expect(view.thresholdChecks[0]).toMatch(/unverified/);
+  });
+
+  it("does not describe the s. 88 five-day rule as a mandatory court hearing in its title", () => {
+    const entry = PARENTAL_RIGHTS.find((item) => item.id === "five-day-hearing");
+    expect(entry?.title).not.toMatch(/must go before a court/);
+    expect(entry?.title).toMatch(/unless a listed outcome/);
+  });
+
   it("treats a court endorsement as a court record from documentType alone", () => {
     const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
     const view = buildParentReportView(withoutAuthority);
