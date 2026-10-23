@@ -68,6 +68,8 @@ function citationStatus(flag: Loose): string {
 }
 
 // Analyzer severity is an assessment of how serious a point is. It is not shown to parents.
+const RETORT_QUESTION = "Is this claim supported by the document? Check the passages it relies on.";
+const CONTRADICTION_QUESTION = "Which passage is correct? Check both locations in the document.";
 const CHECK_QUESTION = "Does the document support this point? Check the quoted wording and where it appears.";
 
 /**
@@ -139,16 +141,17 @@ function thresholdLine(check: Loose): string {
 
 function retortLine(item: Loose): string {
   const claim = text(item.claim);
-  const objection = text(item.objection);
   const action = text(item.action);
-  return [claim ? `Claim: "${claim}".` : "", objection ? `Why it may be weak: ${objection}` : "", action ? `Next step: ${action}` : ""]
+  // The analyzer's objection is its own argument about the claim. The parent gets a question to check instead.
+  return [claim ? `Claim: "${claim}".` : "", `Question to check: ${RETORT_QUESTION}`, action ? `Next step: ${action}` : ""]
     .filter(Boolean)
     .join(" ");
 }
 
 function contradictionLine(item: Loose): string {
   const places = list(item.locations).join("; ");
-  return [text(item.description), places ? `Locations: ${places}.` : "", text(item.significance)].filter(Boolean).join(" ");
+  // The analyzer's significance is its assessment of the conflict, so it is not shown. The parent checks both passages.
+  return [text(item.description), places ? `Locations: ${places}.` : "", `Question to check: ${CONTRADICTION_QUESTION}`].filter(Boolean).join(" ");
 }
 
 function timelineLine(check: Loose): string {
@@ -255,7 +258,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
       heading: "4. What rights or legal protections may apply?",
       // Fast Analysis does not run the rights section, and normalization turns that absence into an empty list.
       // An empty list therefore means "not checked here", not "no rights issues".
-      body: list(report.charterAndHumanRightsIssues).join(" ")
+      // These are issues the analysis raised for a lawyer to check. They are not findings that a right was breached.
+      body: list(report.charterAndHumanRightsIssues).map((issue) => `Raised for a lawyer to check, not a finding: ${issue}`).join(" ")
         || "No rights issues are listed in this report. A full analysis is needed before anyone can say whether rights apply.",
     },
     {
