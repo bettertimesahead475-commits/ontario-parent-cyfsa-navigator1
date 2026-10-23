@@ -124,9 +124,11 @@ const INTENTS: { pattern: RegExp; handle: Handler }[] = [
     pattern: /hearsay|second[- ]hand|direct evidence|documentary|opinion|inference|unsupported|corroborat|admissib/i,
     handle: (q) => {
       // Prefer the most specific match, so "Is my affidavit hearsay?" does not return the Affidavit entry.
-      const lowered = q.toLowerCase();
-      const matches = GLOSSARY.filter((g) => lowered.includes(g.term.toLowerCase().split(" ")[0]));
-      const term = matches.sort((a, b) => b.term.length - a.term.length)[0];
+      // Match the keyword the question actually asked about, as a whole word, not a substring of another word.
+      const keyword = (q.match(/hearsay|second[- ]hand|direct evidence|documentary|opinion|inference|unsupported|corroborat|admissib/i) ?? [""])[0].toLowerCase();
+      const term = keyword
+        ? GLOSSARY.find((g) => g.term.toLowerCase().split(/\W+/).some((w) => w && keyword.startsWith(w)) && keyword.length > 0)
+        : undefined;
       const fallback = /admissib/i.test(q)
         ? { term: "Admissible", meaning: "Allowed to be considered by the court. Admissible does not mean reliable; the judge decides how much weight it gets." }
         : undefined;

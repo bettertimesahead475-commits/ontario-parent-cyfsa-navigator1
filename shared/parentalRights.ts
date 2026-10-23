@@ -120,9 +120,9 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
 
 /** Provisions that are NOT yet verified in this repository. Shown to parents as gaps, not as rules. */
 export const NOT_YET_VERIFIED = [
-  "Family Law Rules (disclosure, affidavit form, and response timelines) — no verified copy in the repository.",
-  "Charter of Rights and Freedoms provisions cited in analysis — no verified copy in the repository.",
-  "Appeal deadlines and appeal court rules for CYFSA s. 121 — s. 121 does not set the deadline, and the court rules are not in the repository.",
+  "Family Law Rules (disclosure, affidavit form, and response timelines) — no verified copy available to this app.",
+  "Charter of Rights and Freedoms provisions cited in analysis — no verified copy available to this app.",
+  "Appeal deadlines and appeal court rules for CYFSA s. 121 — s. 121 does not set the deadline, and the court rules are not available to this app.",
   "Case law on any of the above — no verified case-law source is connected yet.",
 ];
 
@@ -146,7 +146,7 @@ export const RIGHT_CONDITIONS: Record<string, RightConditions> = {
   "five-day-hearing": {
     conditions: [
       "The child was brought to a place of safety under s. 81, s. 83(1)(a)(ii), or s. 136(5).",
-      "The matter is to be brought before the court under s. 90(1).",
+      "One of the outcomes in s. 88(a) to (e) happens within five days of the placement.",
     ],
     exceptions: ["The provision covers the listed removals only."],
   },
@@ -154,7 +154,7 @@ export const RIGHT_CONDITIONS: Record<string, RightConditions> = {
     conditions: [
       "A hearing under Part V is adjourned.",
       "The adjournment is for more than 30 days.",
-      "The court is not aware that a party who is not present at the hearing objects (s. 94(1)(b)).",
+      "Check that the court is not aware that a party who is not present objects. If it is aware, a longer adjournment is not allowed (s. 94(1)(b)).",
     ],
     exceptions: [
       "All parties present and the person caring for the child during the adjournment consent (s. 94(1)(a)).",
@@ -165,7 +165,11 @@ export const RIGHT_CONDITIONS: Record<string, RightConditions> = {
     exceptions: ["The provision applies only before the listed orders."],
   },
   "parent-rights-in-care": {
-    conditions: ["The child is in care.", "The parent has a right in question (for example, to direct education and upbringing)."],
+    conditions: [
+      "The child is in care.",
+      "The parent has a right in question (for example, to direct education and upbringing).",
+      "For consent to treatment, the parent is the child's substitute decision-maker under s. 20 of the Health Care Consent Act, 1996 (s. 14(b)).",
+    ],
     exceptions: ["Subject to s. 94(7) and ss. 110 and 111 (custody during adjournment, interim and extended society care)."],
   },
   "evidence-admissibility": {
@@ -181,6 +185,10 @@ export const RIGHT_CONDITIONS: Record<string, RightConditions> = {
   },
   "appeal-by-parent": {
     conditions: ["An order was made under Part V.", "The appellant is a parent of the child."],
-    exceptions: ["Time limits and procedure are set elsewhere (s. 121 and the court rules)."],
+    exceptions: [
+      "Does not apply to an assessment order under s. 98 (s. 121(2)).",
+      "No extension of the appeal time is granted where the child has been placed for adoption (s. 121(5)).",
+      "Section 121 does not set the appeal deadline. Confirm it with counsel and the court rules.",
+    ],
   },
 };

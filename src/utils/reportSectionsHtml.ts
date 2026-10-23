@@ -87,6 +87,8 @@ export function renderReportSectionsHtml(
 ): string {
   // Identifying metadata is removed before the contract is built, so no exported section can carry it.
   const source = options.redact && report && typeof report === "object" ? { ...report, metadata: {} } : report;
+  // The document title is written by the model and can name the child or the parties, so it is not shown when redacting.
+  const shownTitle = options.redact ? "Analysis report" : documentTitle;
   const contract: ReportContract = buildSectionedReport(source);
   const toc = contract.sections
     .map((s) => `<li><a href="#report-${s.id}">${s.number}. ${escapeHtml(s.title)}</a></li>`)
@@ -114,11 +116,11 @@ export function renderReportSectionsHtml(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(documentTitle)}</title>
+<title>${escapeHtml(shownTitle)}</title>
 <style>${PRINT_CSS}</style>
 </head>
 <body>
-<h1>${escapeHtml(documentTitle)}</h1>
+<h1>${escapeHtml(shownTitle)}</h1>
 <p>${escapeHtml(LEGAL_INFORMATION_NOTICE)}</p>
 ${courtNote}
 <h2>Contents</h2>

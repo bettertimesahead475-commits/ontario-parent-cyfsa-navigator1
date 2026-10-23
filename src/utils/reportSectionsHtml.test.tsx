@@ -84,4 +84,10 @@ describe("16-section HTML export", () => {
     expect(on).not.toMatch(/Jane Example|Sam Example|FN-12345/);
     expect(off).toMatch(/FN-12345/);
   });
+
+  it("does not show the document title in the redacted export", () => {
+    const report = { ...ALL_REPORT_FIXTURES.casAffidavit, documentTitle: "Affidavit of Jane Example FN-12345" };
+    const on = renderReportSectionsHtml(report, "parent", "Affidavit of Jane Example FN-12345", { redact: true });
+    expect(on).not.toMatch(/Jane Example|FN-12345/);
+  });
 });
