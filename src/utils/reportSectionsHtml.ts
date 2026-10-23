@@ -6,6 +6,7 @@
  */
 import { buildSectionedReport } from "../../shared/reportSections";
 import type { ReportContract, ReportFinding } from "../../shared/reportContract";
+import { titleSuggestsCourtOrder } from "../../shared/documentTitle";
 import {
   AUTHORITY_LABEL,
   CONCERN_LABEL,
@@ -107,9 +108,13 @@ export function renderReportSectionsHtml(
     })
     .join("");
   const glossary = GLOSSARY.map((g) => `<dt>${escapeHtml(g.term)}</dt><dd>${escapeHtml(g.meaning)}</dd>`).join("");
-  const courtNote = contract.findings.some((f) => f.kind === "COURT_ORDER" || f.kind === "JUDICIAL_ENDORSEMENT")
-    ? `<p><strong>This is a court document.</strong> It is not scored for credibility or completeness.</p>`
-    : "";
+  const courtRecord = contract.findings.some((f) => f.kind === "COURT_ORDER" || f.kind === "JUDICIAL_ENDORSEMENT");
+  const documentType = String((source as { documentType?: unknown } | null)?.documentType ?? "");
+  const courtNote = courtRecord
+    ? `<p><strong>This is a court document.</strong> It is not scored for credibility or completeness. This export does not show whether it is final, signed, entered, served, or in effect.</p>`
+    : titleSuggestsCourtOrder(documentType)
+      ? `<p><strong>The title names an order or decision.</strong> A title does not show that a document is final, signed, entered, served, or in effect. This export does not show that either.</p>`
+      : "";
 
   return `<!doctype html>
 <html lang="en">
