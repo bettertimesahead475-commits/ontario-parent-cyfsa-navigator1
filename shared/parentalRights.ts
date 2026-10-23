@@ -38,7 +38,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
   },
   {
     id: "five-day-hearing",
-    title: "The child must go before a court quickly after a place-of-safety removal",
+    title: "A five-day deadline applies after a place-of-safety removal, unless a listed outcome happens",
     section: "CYFSA s. 88",
     quote:
       "As soon as practicable, but in any event within five days after a child is brought to a place of safety under section 81",
