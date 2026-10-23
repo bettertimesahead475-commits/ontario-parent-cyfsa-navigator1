@@ -54,10 +54,10 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     section: "CYFSA s. 94(1)",
     quote: "The court shall not adjourn a hearing for more than 30 days,",
     plainEnglish:
-      "The court cannot postpone a hearing for more than 30 days in most cases. A longer delay needs agreement from everyone present and the child's caregiver, unless an absent party does not object.",
+      "The court cannot postpone a hearing for more than 30 days unless everyone present and the child's caregiver agree. The court also cannot allow a longer delay if it knows that a party who is not present objects.",
     appliesWhen: "Whenever a hearing under Part V is put off to a later date.",
     verifyInDocuments: "List each adjournment date and the stated reason. Check whether the record says who agreed to a longer delay.",
-    limitations: "The exceptions in the text (consent, and absent parties who do not object) must be checked on the actual record.",
+    limitations: "Consent must come from everyone present and the child's caregiver. Whether an absent party objected must be checked on the actual record.",
   },
   {
     id: "plan-for-child",
