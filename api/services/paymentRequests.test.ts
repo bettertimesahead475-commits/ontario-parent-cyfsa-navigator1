@@ -166,6 +166,14 @@ describe("requestAccess - idempotency and identity", () => {
     expect(db._tables.payments).toHaveLength(2);
   });
 
+  it("does not reuse a pending request when the account's verified email has changed", async () => {
+    const original = await requestAccess("old@example.com", "Pro", { uid: UID_A });
+    const changed = await requestAccess("new@example.com", "Pro", { uid: UID_A });
+    expect(changed.reused).toBe(false);
+    expect(changed.referenceNumber).not.toBe(original.referenceNumber);
+    expect(db._tables.payments.find((p: Row) => p.reference_number === changed.referenceNumber).notes).toContain("email:new@example.com");
+  });
+
   it("matches the uid exactly, so a uid that is a prefix of another never reuses its request", async () => {
     await requestAccess("short@example.com", "Pro", { uid: "uidAlpha12" });
     const other = await requestAccess("long@example.com", "Pro", { uid: UID_A });

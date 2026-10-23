@@ -563,9 +563,12 @@ export async function requestAccess(
       .order("submitted_at", { ascending: false });
     if (lookupErr) throw Object.assign(new Error(`Failed to check existing requests: ${lookupErr.message}`), { statusCode: 500 });
     // Exact match on the uid field, not a substring match, so one uid can never match another.
-    const existing = (candidates || []).find((row: any) =>
-      String(row.notes || "").split(";").includes(`uid:${clientInfo.uid}`)
-    );
+    // The stored email is what approval later sends the code to, so a reused request must
+    // carry the account's current verified email. If the verified email changed, make a new one.
+    const existing = (candidates || []).find((row: any) => {
+      const parts = String(row.notes || "").split(";");
+      return parts.includes(`uid:${clientInfo.uid}`) && parts.includes(`email:${normalizedEmail}`);
+    });
     if (existing) {
       const existingAmount = Number(existing.amount);
       return {
