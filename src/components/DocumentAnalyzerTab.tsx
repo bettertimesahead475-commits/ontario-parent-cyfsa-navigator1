@@ -712,7 +712,7 @@ export default function DocumentAnalyzerTab() {
     
     return {
       title: citation,
-      subtitle: "Verified Statutory Reference Node",
+      subtitle: "Statute Reference Copy",
       exactText: "Section provisions governed under S.O. 2017, c. 14 (Child, Youth and Family Services Act) or associated family litigation guidelines.",
       explanation: "This section maps directly to the regulatory powers, children's safety classifications, or parent rights within the jurisdiction of Ontario. Utilize the live portal link to inspect full sub-clause logs."
     };
@@ -2265,7 +2265,7 @@ export default function DocumentAnalyzerTab() {
     };
     window.addEventListener("trigger-print-pdf", handleFooterPrint);
     return () => window.removeEventListener("trigger-print-pdf", handleFooterPrint);
-  }, [activeTab, ragChatMessages, selectedReport, organizedFiles, selectedFileId, redactionEnabled]);
+  }, [activeTab, ragChatMessages, selectedReport, organizedFiles, selectedFileId, redactionEnabled, deepScanReports, quickReviewSnapshots]);
 
   const printAnalyzer = (reportMode: "combined" | "quick" | "deep" = "combined") => {
     const quickReport = activeSelectedFile && (quickReviewSnapshots[activeSelectedFile.id] || activeSelectedFile.analysisReport);
@@ -3700,6 +3700,8 @@ export default function DocumentAnalyzerTab() {
                                   </html>
                                 `);
                                 printWindow.document.close();
+                              } else if (redactionEnabled) {
+                                alert("Your browser blocked the print window. Allow pop-ups to print the redacted copy.");
                               } else {
                                 window.print();
                               }
@@ -4088,10 +4090,10 @@ export default function DocumentAnalyzerTab() {
                         <Scale className="w-4 h-4 text-emerald-600 shrink-0 mt-1" />
                         <div className="space-y-1">
                           <p className="font-bold text-emerald-900 flex items-center gap-1.5">
-                            <span>⚖️</span> Verified Citations & Source-Backed Analysis
+                            <span>⚖️</span> Citations & Source-Backed Analysis
                           </p>
                           <p className="text-[11px] text-emerald-800 leading-normal">
-                            Every single objection, red flag, timeline defect, and compliance evaluation extracted during this analysis is strictly verified and backed by the official <strong>Ontario Child, Youth and Family Services Act (CYFSA), 2017</strong>, the <strong>Ontario Evidence Act</strong>, or <strong>Constitutional Charter Protections</strong>. Use the buttons provided inline to verify legal source sections.
+                            Every single objection, red flag, timeline defect, and compliance evaluation extracted during this analysis is checked against the app's copy of the <strong>Ontario Child, Youth and Family Services Act (CYFSA), 2017</strong>, the <strong>Ontario Evidence Act</strong>, or <strong>Constitutional Charter Protections</strong>. Use the buttons provided inline to verify legal source sections.
                           </p>
                         </div>
                       </div>
@@ -4976,7 +4978,7 @@ export default function DocumentAnalyzerTab() {
                                 {/* Status badge */}
                                 {file.analysisStatus === "completed" ? (
                                   <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1">
-                                    <Check className="w-3.5 h-3.5" /> Audited & Verified
+                                    <Check className="w-3.5 h-3.5" /> Audited
                                   </span>
                                 ) : file.analysisStatus === "analyzing" ? (
                                   <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1 animate-pulse">

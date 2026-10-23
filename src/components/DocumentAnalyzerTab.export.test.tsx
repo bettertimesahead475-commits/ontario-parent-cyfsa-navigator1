@@ -281,6 +281,16 @@ describe("redaction on the remaining export sinks and the on-screen toggle", () 
     expect(html).toContain("The document text is not included in a redacted copy.");
   });
 
+  it("does not print the live page when the print window is blocked and redaction is on", async () => {
+    seed({ redact: true, fileName: "ZQNAME-transcript.txt" });
+    vi.mocked(window.open).mockImplementation(() => null);
+    const livePrint = vi.spyOn(window, "print").mockImplementation(() => {});
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Print Transcript PDF/i }));
+    expect(livePrint).not.toHaveBeenCalled();
+    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining("blocked the print window"));
+  });
+
   it("keeps the certified transcript text when redaction is off", async () => {
     seed({ redact: false, fileName: "ZQNAME-transcript.txt" });
     render(<DocumentAnalyzerTab />);
