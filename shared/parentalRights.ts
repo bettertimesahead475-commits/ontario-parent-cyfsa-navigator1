@@ -77,7 +77,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     section: "CYFSA s. 14",
     quote: "the parent of a child in care retains any right that the parent may have,",
     plainEnglish:
-      "When a child is in care, you still keep some rights. You can still direct the child's education and upbringing, in line with the child's culture and beliefs. Some court custody orders are exceptions.",
+      "When a child is in care, a parent keeps any right the parent already had. For example, a parent who already directed the child's education and upbringing may keep doing so, in line with the child's culture and beliefs. A parent who did not already have that authority does not gain it from this provision. Some court custody orders are exceptions.",
     appliesWhen: "While the child is in care, and subject to the exceptions named at the start of the section.",
     verifyInDocuments: "Note any decisions about the child's education, upbringing, or medical treatment, and who made them.",
     limitations: "The section starts with exceptions for some court custody orders. Those exceptions must be checked before relying on this.",

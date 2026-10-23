@@ -26,6 +26,8 @@ export interface ParentFindingView {
 export interface ParentReportView {
   summary: { heading: string; body: string }[];
   findings: ParentFindingView[];
+  thresholdChecks: string[];
+  timelineChecks: string[];
   missingRecords: string[];
   questionsForCourt: string[];
 }
@@ -47,8 +49,8 @@ function list(value: unknown): string[] {
 function citationStatus(flag: Loose): string {
   if (flag.citationStatus === "CONFIRMED_REFERENCE") return "Statute reference confirmed against the reference list.";
   if (flag.citationStatus === "UNVERIFIED") return UNVERIFIED_CITATION;
-  const legal = text(flag.legalReference);
-  return legal ? legal : "No statute cited for this point.";
+  // A citation with no recorded verification status is unverified, never confirmed.
+  return text(flag.legalReference) ? UNVERIFIED_CITATION : "No statute cited for this point.";
 }
 
 function severityLabel(severity: unknown): string {
@@ -56,6 +58,17 @@ function severityLabel(severity: unknown): string {
   if (s === "CRITICAL") return "Serious concern to check";
   if (s === "Worth Raising With Counsel") return "Worth raising with a lawyer";
   return s ? "May affect how much weight this gets" : "";
+}
+
+function thresholdLine(check: Loose): string {
+  const name = text(check.thresholdChecked);
+  const result = text(check.isMet);
+  const reasoning = text(check.reasoning);
+  return [name, result ? `Result: ${result}.` : "", reasoning].filter(Boolean).join(" ");
+}
+
+function timelineLine(check: Loose): string {
+  return [text(check.timelineRule), text(check.evaluation)].filter(Boolean).join(" ");
 }
 
 function findingView(flag: Loose, index: number): ParentFindingView {
@@ -88,6 +101,9 @@ function findingView(flag: Loose, index: number): ParentFindingView {
 export function buildParentReportView(report: Loose): ParentReportView {
   const redFlags = Array.isArray(report.redFlags) ? report.redFlags : [];
   const missing = list(report.whatIsMissing);
+  // Threshold checks and timeline checks are analyzer findings too. Carry them into the view, not drop them.
+  const thresholds = (Array.isArray(report.thresholdAnalysis) ? report.thresholdAnalysis : []).map(thresholdLine).filter(Boolean);
+  const timelines = (Array.isArray(report.proceduralTimelineViolations) ? report.proceduralTimelineViolations : []).map(timelineLine).filter(Boolean);
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
   // documentAuthority is not part of the live analyzer schema, so classify from documentType.
@@ -111,7 +127,9 @@ export function buildParentReportView(report: Loose): ParentReportView {
     },
     {
       heading: "5. Is anything missing or concerning?",
-      body: missing.length ? missing.join(" ") : "No missing records were identified from this document alone.",
+      body: [...missing, ...thresholds, ...timelines].length
+        ? [...missing, ...thresholds, ...timelines].join(" ")
+        : "No missing records were identified from this document alone.",
     },
     {
       heading: "6. What can you do to prepare?",
@@ -126,6 +144,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
   return {
     summary,
     findings: redFlags.map((flag, i) => findingView(flag, i)),
+    thresholdChecks: thresholds,
+    timelineChecks: timelines,
     missingRecords: missing,
     questionsForCourt: questions,
   };
