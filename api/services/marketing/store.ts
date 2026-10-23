@@ -30,10 +30,13 @@ const STATUS_FLOW: Record<PostStatus, PostStatus[]> = {
   draft: ["pending_approval", "canceled"],
   pending_approval: ["approved", "rejected", "draft", "canceled"],
   approved: ["scheduled", "publishing", "canceled", "draft"],
-  scheduled: ["publishing", "approved", "canceled"],
-  publishing: ["published", "failed", "scheduled"], // failed/scheduled lets a failed publish be retried
+  // scheduled -> draft and failed -> draft exist so a content edit can revert approval.
+  scheduled: ["publishing", "approved", "canceled", "draft"],
+  // publishing -> approved is the "credentials missing, put it back" path.
+  publishing: ["published", "failed", "scheduled", "approved"],
   published: [],
-  failed: ["scheduled", "approved", "canceled"],
+  // failed -> publishing lets an admin retry a failed post with "Publish now".
+  failed: ["scheduled", "approved", "publishing", "canceled", "draft"],
   rejected: ["draft", "canceled"],
   canceled: [],
 };
@@ -54,6 +57,12 @@ export interface MarketingPost {
   hashtags: string[] | null;
   ai_generated: boolean;
   ai_model: string | null;
+  title: string | null;
+  intended_audience: string | null;
+  objective: string | null;
+  call_to_action: string | null;
+  content_category: string | null;
+  verification_notes: string | null;
   generation_context: Record<string, unknown> | null;
   scheduled_for: string | null;
   published_at: string | null;
@@ -87,6 +96,12 @@ export async function createPost(input: NewPost): Promise<MarketingPost> {
     hashtags: input.hashtags ?? null,
     ai_generated: input.ai_generated ?? false,
     ai_model: input.ai_model ?? null,
+    title: input.title ?? null,
+    intended_audience: input.intended_audience ?? null,
+    objective: input.objective ?? null,
+    call_to_action: input.call_to_action ?? null,
+    content_category: input.content_category ?? null,
+    verification_notes: input.verification_notes ?? null,
     generation_context: input.generation_context ?? null,
     scheduled_for: input.scheduled_for ?? null,
     created_by: input.created_by ?? null,
@@ -220,6 +235,47 @@ export async function listCampaigns(): Promise<Campaign[]> {
   const { data, error } = await db.from("marketing_campaigns").select("*").order("created_at", { ascending: false });
   if (error) throw Object.assign(new Error(`Failed to list campaigns: ${error.message}`), { statusCode: 500 });
   return (data as Campaign[]) ?? [];
+}
+
+export async function updateCampaign(id: string, patch: Partial<Campaign>): Promise<Campaign | null> {
+  const db = getSupabase();
+  const allowed: Partial<Campaign> = {};
+  if (patch.name !== undefined) allowed.name = patch.name;
+  if (patch.objective !== undefined) allowed.objective = patch.objective;
+  if (patch.theme !== undefined) allowed.theme = patch.theme;
+  if (patch.status !== undefined) allowed.status = patch.status;
+  const { data, error } = await db.from("marketing_campaigns").update(allowed).eq("id", id).select("*").maybeSingle();
+  if (error) throw Object.assign(new Error(`Failed to update campaign: ${error.message}`), { statusCode: 500 });
+  return (data as Campaign) ?? null;
+}
+
+/**
+ * Posts left in 'publishing' longer than `olderThan` — i.e. a worker died mid-publish.
+ * The scheduler moves these to 'failed' for a human to verify on the platform
+ * before any retry, because the external post may already exist.
+ */
+export async function listStuckPublishing(olderThan: Date): Promise<MarketingPost[]> {
+  const db = getSupabase();
+  const { data, error } = await db
+    .from("marketing_posts")
+    .select("*")
+    .eq("status", "publishing")
+    .lte("updated_at", olderThan.toISOString())
+    .limit(50);
+  if (error) throw Object.assign(new Error(`Failed to list stuck posts: ${error.message}`), { statusCode: 500 });
+  return (data as MarketingPost[]) ?? [];
+}
+
+/** Count of posts per status, for the admin overview. Counts only — no content. */
+export async function countPostsByStatus(): Promise<Record<PostStatus, number>> {
+  const db = getSupabase();
+  const { data, error } = await db.from("marketing_posts").select("status").limit(10000);
+  if (error) throw Object.assign(new Error(`Failed to count posts: ${error.message}`), { statusCode: 500 });
+  const counts = Object.fromEntries((Object.keys(STATUS_FLOW) as PostStatus[]).map((s) => [s, 0])) as Record<PostStatus, number>;
+  for (const row of (data as { status: PostStatus }[]) ?? []) {
+    if (row.status in counts) counts[row.status] += 1;
+  }
+  return counts;
 }
 
 // --- Channels --------------------------------------------------------------

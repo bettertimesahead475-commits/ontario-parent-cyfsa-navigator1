@@ -19,9 +19,15 @@ import { getAllAdapters } from "./adapters/registry.js";
 import {
   listDuePosts,
   listPublishedPosts,
+  listStuckPublishing,
   logAgentAction,
+  transitionPost,
   upsertChannelState,
 } from "./store.js";
+
+// A publish normally finishes in seconds. Anything still 'publishing' after this
+// window means the worker died mid-call.
+export const STUCK_PUBLISH_MS = 15 * 60 * 1000;
 
 export interface SchedulerResult {
   ranAt: string;
@@ -31,6 +37,7 @@ export interface SchedulerResult {
   failed: { postId: string; platform: string; detail: string }[];
   skipped: { postId: string; platform: string; detail: string }[];
   metricsRefreshed: number;
+  stuck: { postId: string; platform: string; detail: string }[];
 }
 
 export async function runScheduler(opts: { refreshMetrics?: boolean } = {}): Promise<SchedulerResult> {
@@ -42,7 +49,22 @@ export async function runScheduler(opts: { refreshMetrics?: boolean } = {}): Pro
     failed: [],
     skipped: [],
     metricsRefreshed: 0,
+    stuck: [],
   };
+
+  // --- 0. Recover posts abandoned mid-publish ---
+  // Moved to 'failed', never back to 'scheduled': the external post may already
+  // exist, so a human must verify on the platform before retrying.
+  const stuckPosts = await listStuckPublishing(new Date(Date.now() - STUCK_PUBLISH_MS));
+  for (const post of stuckPosts) {
+    const detail =
+      "Publish attempt did not finish (possible worker interruption). Check the platform before retrying, so it is not posted twice.";
+    const moved = await transitionPost(post.id, "publishing", "failed", { last_error: detail });
+    if (moved) {
+      result.stuck.push({ postId: post.id, platform: post.platform, detail });
+      await logAgentAction({ action: "scheduler.stuck", status: "error", postId: post.id, platform: post.platform, detail });
+    }
+  }
 
   // --- 1. Publish due posts ---
   const due = await listDuePosts(new Date());

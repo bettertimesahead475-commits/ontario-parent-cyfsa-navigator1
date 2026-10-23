@@ -46,3 +46,21 @@ describe("canTransition — the content lifecycle", () => {
     expect(canTransition("draft", "draft")).toBe(true);
   });
 });
+
+describe("canTransition — recovery and review paths", () => {
+  it("allows a waiting-for-credentials publish to return to approved", () => {
+    expect(canTransition("publishing", "approved")).toBe(true);
+  });
+  it("allows a failed post to be retried through publishing", () => {
+    expect(canTransition("failed", "publishing")).toBe(true);
+  });
+  it("sends a content-edited scheduled or failed post back to draft", () => {
+    expect(canTransition("scheduled", "draft")).toBe(true);
+    expect(canTransition("failed", "draft")).toBe(true);
+  });
+  it("never lets a published post move anywhere", () => {
+    for (const to of ["draft", "approved", "publishing", "failed"] as PostStatus[]) {
+      expect(canTransition("published", to)).toBe(false);
+    }
+  });
+});
