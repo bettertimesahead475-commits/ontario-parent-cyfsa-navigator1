@@ -30,6 +30,12 @@ export interface ParentReportView {
   findings: ParentFindingView[];
   thresholdChecks: string[];
   timelineChecks: string[];
+  /** Deep Scan only: omissions the first pass did not flag. */
+  gaps: string[];
+  /** Deep Scan only: defense points, each with the claim, why it is weak, and the next step. */
+  retortChecks: string[];
+  /** Deep Scan only: evidence the parent should gather. */
+  evidenceToGather: string[];
   /** Set when the analyzer's second review was incomplete or covered fewer findings than the report has. */
   secondReviewNotice: string;
   chronology: string[];
@@ -134,6 +140,15 @@ function thresholdLine(check: Loose): string {
 }
 
 
+function retortLine(item: Loose): string {
+  const claim = text(item.claim);
+  const objection = text(item.objection);
+  const action = text(item.action);
+  return [claim ? `Claim: "${claim}".` : "", objection ? `Why it may be weak: ${objection}` : "", action ? `Next step: ${action}` : ""]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function contradictionLine(item: Loose): string {
   const places = list(item.locations).join("; ");
   return [text(item.description), places ? `Locations: ${places}.` : "", text(item.significance)].filter(Boolean).join(" ");
@@ -199,6 +214,9 @@ export function buildParentReportView(report: Loose): ParentReportView {
   const chronology = (Array.isArray(report.chronology) ? report.chronology : []).map(chronologyLine).filter(Boolean);
   const contradictions = (Array.isArray(report.contradictions) ? report.contradictions : []).map(contradictionLine).filter(Boolean);
   const notice = secondReviewNotice(report);
+  const gaps = list(report.gaps);
+  const evidenceToGather = list(report.missingEvidence);
+  const retortChecks = (Array.isArray(report.retorts) ? report.retorts : []).map(retortLine).filter(Boolean);
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
   // documentAuthority is not part of the live analyzer schema, so classify from documentType.
@@ -234,13 +252,15 @@ export function buildParentReportView(report: Loose): ParentReportView {
     },
     {
       heading: "5. Is anything missing or concerning?",
-      body: [notice, ...missing, ...thresholds, ...timelines, ...contradictions].filter(Boolean).length
-        ? [notice, ...missing, ...thresholds, ...timelines, ...contradictions].filter(Boolean).join(" ")
+      body: [notice, ...gaps, ...missing, ...thresholds, ...timelines, ...contradictions].filter(Boolean).length
+        ? [notice, ...gaps, ...missing, ...thresholds, ...timelines, ...contradictions].filter(Boolean).join(" ")
         : "No missing records were identified from this document alone.",
     },
     {
       heading: "6. What can you do to prepare?",
-      body: verify.length ? verify.join(" ") : "Gather the records this document refers to, and keep them in date order.",
+      body: [...evidenceToGather, ...verify, ...retortChecks].filter(Boolean).length
+        ? [...evidenceToGather, ...verify, ...retortChecks].filter(Boolean).join(" ")
+        : "Gather the records this document refers to, and keep them in date order.",
     },
     {
       heading: "7. What should you check before your next court date?",
@@ -253,6 +273,9 @@ export function buildParentReportView(report: Loose): ParentReportView {
     findings: redFlags.map((flag, i) => findingView(flag, i)),
     thresholdChecks: thresholds,
     timelineChecks: timelines,
+    gaps,
+    retortChecks,
+    evidenceToGather,
     secondReviewNotice: notice,
     chronology,
     contradictions,
