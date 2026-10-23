@@ -36,7 +36,8 @@ const STRUCTURAL_KEYS = new Set([
 // Legal references are kept only when the value is a short citation such as "CYFSA s. 74(2)".
 // Any other prose stored under a citation key is free text and is removed.
 const CITATION_KEYS = new Set(["legalReference", "citation", "primarySourceLaw"]);
-const CITATION_PATTERN = /^(CYFSA\s+)?s\.\s*\d+[\w()]*(\s*(and|or|,)\s*\(?\w+\)?)*$/i;
+// A single section reference only. Connectives and trailing words are not allowed, so no name can follow a citation.
+const CITATION_PATTERN = /^(CYFSA\s+)?s\.\s*\d+(\([a-z0-9]+\))*$/i;
 
 function redactNode(node: unknown, key: string | undefined): unknown {
   // An empty string is not free text. Replacing it would make an unanswered field look answered.
