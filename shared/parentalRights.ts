@@ -44,7 +44,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
       "As soon as practicable, but in any event within five days after a child is brought to a place of safety under section 81",
     plainEnglish:
       "If a child is taken to a place of safety under the listed sections, the matter must go to court within five days. One of these may happen instead, within the same five days. The child may be returned to the person who last had charge of them. The child may also be returned to the person entitled to custody under an enforceable order. The child may be returned to the authority named in an extra-provincial order. A temporary care agreement may be made. An agreement may be made under section 77 for a 16 or 17 year old.",
-    appliesWhen: "Only where a child was brought to a place of safety under the sections the quote names.",
+    appliesWhen: "Only where a child was brought to a place of safety under section 81, subclause 83(1)(a)(ii), or subsection 136(5).",
     verifyInDocuments: "Note the date the child was taken and the date of the first court appearance. Check whether any of the other listed outcomes happened within the five days. Ask counsel to confirm the calculation.",
     limitations: "The provision covers the listed removals. A missed court date is not automatically a breach: one of the listed alternatives may have happened. It does not apply to every change in where a child lives.",
   },
