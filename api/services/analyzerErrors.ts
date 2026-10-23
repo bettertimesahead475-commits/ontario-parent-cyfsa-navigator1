@@ -348,17 +348,26 @@ export function formatAnalyzerErrorResponse(error: any): {
 
 // Diagnostic text from a provider or SDK error can carry keys, bearer tokens, or document fragments.
 // It is only ever written to server logs, and only after this redaction.
-const DIAGNOSTIC_SECRET_PATTERNS: RegExp[] = [
-  /sk-[A-Za-z0-9_-]{8,}/g,
-  /AIza[0-9A-Za-z_-]{20,}/g,
-  /Bearer\s+[A-Za-z0-9._~+/=-]+/gi,
-  /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
-  /(api[_-]?key|token|secret|authorization)["'\s:=]+[^\s"',;]+/gi,
+const DIAGNOSTIC_SECRET_PATTERNS: Array<[RegExp, string]> = [
+  [/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/g, "[redacted]"],
+  [/\bAKIA[0-9A-Z]{16}\b/g, "[redacted]"],
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]"],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "[redacted]"],
+  [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[redacted]"],
+  [/\bsk-[A-Za-z0-9_-]{8,}/g, "[redacted]"],
+  [/AIza[0-9A-Za-z_-]{20,}/g, "[redacted]"],
+  [/\bBearer\s+\S+/gi, "Bearer [redacted]"],
+  [/\bBasic\s+[A-Za-z0-9+/=]+/gi, "Basic [redacted]"],
+  // Quoted JSON values, including values with spaces: "apiKey": "abc def".
+  [/([A-Za-z_]*(?:api[_-]?key|apikey|token|secret|password|passwd|authorization|key)["']?\s*[:=]\s*)"[^"]*"/gi, '$1"[redacted]"'],
+  // Unquoted labelled values: token=xyz, password: hunter2, ?key=abc.
+  [/([A-Za-z_]*(?:api[_-]?key|apikey|token|secret|password|passwd|authorization|key)["']?\s*[:=]\s*)[^\s"',;&]+/gi, "$1[redacted]"],
+  [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted]"],
 ];
 
 export function redactDiagnostic(input: unknown, maxLength = 240): string {
   let text = String(input ?? "");
-  for (const pattern of DIAGNOSTIC_SECRET_PATTERNS) text = text.replace(pattern, "[redacted]");
+  for (const [pattern, replacement] of DIAGNOSTIC_SECRET_PATTERNS) text = text.replace(pattern, replacement);
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 

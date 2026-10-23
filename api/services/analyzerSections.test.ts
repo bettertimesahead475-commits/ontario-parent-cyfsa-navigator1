@@ -257,4 +257,18 @@ describe("diagnostic redaction", () => {
     const out = redactDiagnostic("sk-ABCDEFGH12345 Bearer abc.def token=xyz parent@example.com");
     expect(out).not.toMatch(/sk-ABCDEFGH|abc\.def|xyz|parent@example/);
   });
+  it.each([
+    ["Stripe live key", "sk_live_51HxAbCdEfGhIj"],
+    ["AWS access key", "AKIAIOSFODNN7EXAMPLE"],
+    ["GitHub token", "ghp_abcdefghijklmnopqrstuvwxyz0123"],
+    ["Slack token", "xoxb-1234567890-abcdefghij"],
+    ["bare JWT", "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZSJ9.abcSIGNATURE"],
+    ["quoted apiKey with spaces", '{"apiKey": "abc def ghi"}'],
+    ["password value", '{"password":"hunter2"}'],
+    ["key in a URL", "https://api.example.test/v1?key=mySecretValue123"],
+    ["Basic credential", "Authorization: Basic dXNlcjpwYXNzd29yZA=="],
+  ])("removes a %s from log text", (_label, secret) => {
+    const out = redactDiagnostic(`upstream said ${secret} here`);
+    expect(out).not.toMatch(/sk_live_51|AKIAIOSFODNN7|ghp_abc|xoxb-|eyJhbGci|abc def|hunter2|mySecretValue|dXNlcjpwYXNz/);
+  });
 });
