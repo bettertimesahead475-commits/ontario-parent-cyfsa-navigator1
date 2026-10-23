@@ -79,17 +79,27 @@ const CHAT = [
 
 const ALL_TOKENS = ["ZQNAME", "ZQTITLE", "ZQMETA", "ZQQUOTE", "ZQFREE", "ZQDEEP", "ZQCHAT", "ZQCITE"];
 
-function seed({ redact, activeTab = "organizer" }: { redact: boolean; activeTab?: string }) {
+function seed({
+  redact,
+  activeTab = "organizer",
+  fileName = FILE_NAME,
+  report = REPORT,
+}: {
+  redact: boolean;
+  activeTab?: string;
+  fileName?: string;
+  report?: Record<string, unknown>;
+}) {
   const file = {
     id: FILE_ID,
-    name: FILE_NAME,
+    name: fileName,
     size: 2048,
     mimeType: "text/plain",
     category: "Court Filings",
     uploadedAt: "2026-10-01T09:00:00Z",
     content: "ZQFREE document text",
     analysisStatus: "completed",
-    analysisReport: REPORT,
+    analysisReport: report,
   };
   localStorage.setItem(
     "OPA_DOC_ANALYZER_PROGRESS",
@@ -98,7 +108,7 @@ function seed({ redact, activeTab = "organizer" }: { redact: boolean; activeTab?
       selectedFileId: FILE_ID,
       activeFolder: "Court Filings",
       ragChatMessages: CHAT,
-      selectedReport: REPORT,
+      selectedReport: report,
       activeTab,
       savedBriefs: [],
     })
@@ -257,5 +267,91 @@ describe("analyzer print export (printAnalyzer)", () => {
     const html = printedHtml[printedHtml.length - 1];
     expect(html).not.toContain("ZQQUOTE");
     expect(html).not.toContain("ZQFREE");
+  });
+});
+
+describe("redaction on the remaining export sinks and the on-screen toggle", () => {
+  it("removes the file name and document text from the certified transcript print", async () => {
+    seed({ redact: true, fileName: "ZQNAME-transcript.txt" });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Print Transcript PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).not.toContain("ZQNAME");
+    expect(html).not.toContain("ZQFREE");
+    expect(html).toContain("The document text is not included in a redacted copy.");
+  });
+
+  it("keeps the certified transcript text when redaction is off", async () => {
+    seed({ redact: false, fileName: "ZQNAME-transcript.txt" });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Print Transcript PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("ZQNAME");
+    expect(html).toContain("ZQFREE document text");
+  });
+
+  it("does not copy the lawyer case brief while redaction is on", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    seed({ redact: true, report: { ...REPORT, lawyerCaseBrief: ["ZQFREE brief point"] } });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Copy Brief Text/i }));
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("copies the lawyer case brief when redaction is off", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    seed({ redact: false, report: { ...REPORT, lawyerCaseBrief: ["ZQFREE brief point"] } });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Copy Brief Text/i }));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("ZQFREE brief point"));
+  });
+
+  it("keeps the true second-review status in a redacted print and drops its free text", async () => {
+    seed({
+      redact: true,
+      report: {
+        ...REPORT,
+        forensicVerification: { status: "completed", checkedFindings: 3, overallAssessment: "ZQFREE second review note" },
+      } as typeof REPORT,
+    });
+    render(<DocumentAnalyzerTab />);
+    const html = await printedPage();
+    expect(html).toContain("Completed: 3 findings checked");
+    expect(html).not.toContain("Not completed.");
+    expect(html).not.toContain("ZQFREE");
+  });
+
+  it("does not print the upload date in a redacted summary log", async () => {
+    seed({ redact: true });
+    render(<DocumentAnalyzerTab />);
+    const text = await summaryText();
+    expect(text).not.toContain("2026-10-01");
+    expect(text).toContain("[date removed from redacted copy]");
+  });
+
+  it("prints the upload date in a summary log when redaction is off", async () => {
+    seed({ redact: false });
+    render(<DocumentAnalyzerTab />);
+    const text = await summaryText();
+    expect(text).toContain("2026-10-01T09:00:00Z");
+  });
+
+  it("applies the redaction setting to a print started after the toggle was changed on screen", async () => {
+    seed({ redact: false });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("switch"));
+    const html = await printedPage();
+    expect(html).not.toContain("ZQFREE");
+    expect(html).not.toContain("ZQNAME");
+  });
+
+  it("no longer says the statute references are verified", async () => {
+    seed({ redact: false });
+    render(<DocumentAnalyzerTab />);
+    const html = await printedPage();
+    expect(html).not.toContain("verified current");
+    expect(html).not.toContain("physically accessible");
   });
 });

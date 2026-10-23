@@ -830,7 +830,7 @@ export default function DocumentAnalyzerTab() {
           reportText += `[FILE ${index + 1}/${sortedFiles.length}] -----------------------------------------------------\n`;
           reportText += `File Name       : ${redacting ? `Document ${index + 1}` : file.name}\n`;
           reportText += `Category        : ${file.category}\n`;
-          reportText += `Uploaded At     : ${file.uploadedAt}\n`;
+          reportText += `Uploaded At     : ${redacting ? "[date removed from redacted copy]" : file.uploadedAt}\n`;
           reportText += `Size            : ${(file.size / 1024).toFixed(1)} KB\n`;
           reportText += `Mime Type       : ${file.mimeType}\n`;
           reportText += `Analysis Status : ${file.analysisStatus.toUpperCase()}\n\n`;
@@ -2265,7 +2265,7 @@ export default function DocumentAnalyzerTab() {
     };
     window.addEventListener("trigger-print-pdf", handleFooterPrint);
     return () => window.removeEventListener("trigger-print-pdf", handleFooterPrint);
-  }, [activeTab, ragChatMessages, selectedReport, organizedFiles, selectedFileId]);
+  }, [activeTab, ragChatMessages, selectedReport, organizedFiles, selectedFileId, redactionEnabled]);
 
   const printAnalyzer = (reportMode: "combined" | "quick" | "deep" = "combined") => {
     const quickReport = activeSelectedFile && (quickReviewSnapshots[activeSelectedFile.id] || activeSelectedFile.analysisReport);
@@ -2285,8 +2285,15 @@ export default function DocumentAnalyzerTab() {
     let bodyContent = "";
     // Quick Review exports use the original snapshot, not the merged on-screen report.
     const sourceReport = reportMode === "quick" ? quickReport : selectedReport;
-    const reportForExport = redactionEnabled && sourceReport
-      ? { ...redactForExport(sourceReport), documentTitle: "Analysis report" }
+    const redactedReport = sourceReport && redactionEnabled ? redactForExport(sourceReport) : null;
+    const reportForExport = redactedReport && sourceReport
+      ? {
+          ...redactedReport,
+          documentTitle: "Analysis report",
+          forensicVerification: redactedReport.forensicVerification && sourceReport.forensicVerification
+            ? { ...redactedReport.forensicVerification, status: sourceReport.forensicVerification.status }
+            : redactedReport.forensicVerification,
+        }
       : sourceReport;
 
     const sharedStyle = `
@@ -2576,7 +2583,7 @@ export default function DocumentAnalyzerTab() {
 
         <div class="section-card">
           <h3 class="section-title">🔗 Statute Links (check against e-Laws)</h3>
-          <p style="font-size:12px; color:#475569; margin-bottom:12px;">The statutory references scanned by the consultation pipeline resolve directly to real, physically accessible Ontario Government e-Laws pages:</p>
+          <p style="font-size:12px; color:#475569; margin-bottom:12px;">The statutory references scanned by the consultation pipeline point to Ontario Government e-Laws pages. Check the current text there before relying on it:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             <li><strong>CYFSA Section 74 (Child Protection Thresholds):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK123" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK123</a></li>
             <li><strong>CYFSA Section 94 (30-Day Adjournment Limit / Temporary Care Order):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
@@ -2634,7 +2641,7 @@ export default function DocumentAnalyzerTab() {
             • Type:
             <strong>${escapeHtml(reportForExport.documentType || "Casework Correspondence")}</strong>
             • Date of Audit:
-            <strong>${escapeHtml(reportForExport.analysisDate || "Current")}</strong>
+            <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Current")}</strong>
           </div>
         </div>
 
@@ -2927,7 +2934,7 @@ export default function DocumentAnalyzerTab() {
                       ${escapeHtml(f.analysisStatus.toUpperCase())}
                     </span>
                   </td>
-                  <td>${escapeHtml(f.uploadedAt)}</td>
+                  <td>${escapeHtml(redactionEnabled ? "[removed]" : f.uploadedAt)}</td>
                 </tr>
               `).join("")}
               ${organizedFiles.length === 0 ? `<tr><td colspan="5" style="text-align: center; color: #64748b;">No documents uploaded to case file cabinet yet.</td></tr>` : ""}
@@ -2956,7 +2963,7 @@ export default function DocumentAnalyzerTab() {
           </div>
 
           <div class="footer-signature">
-            Primary databases verified current through Q2 2026 • Saved dynamically via OPA PDF Legal Desk.
+            Statute reference copy: consolidation dated 2026-06-24. Check current text on e-Laws. • Saved dynamically via OPA PDF Legal Desk.
           </div>
 
           <script>
@@ -3640,7 +3647,7 @@ export default function DocumentAnalyzerTab() {
                                 printWindow.document.write(`
                                   <html>
                                     <head>
-                                      <title>Print Certified Transcript - ${escapeHtml(activeSelectedFile.name)}</title>
+                                      <title>Print Certified Transcript - ${escapeHtml(redactionEnabled ? "Document" : activeSelectedFile.name)}</title>
                                       <style>
                                         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
                                         body {
@@ -3686,7 +3693,7 @@ export default function DocumentAnalyzerTab() {
                                     <body>
                                       <div class="transcript">
                                         <div class="margin-line"></div>
-                                        <pre>${escapeHtml(activeSelectedFile.content)}</pre>
+                                        <pre>${escapeHtml(redactionEnabled ? "The document text is not included in a redacted copy." : activeSelectedFile.content)}</pre>
                                       </div>
                                       <script>window.print();</script>
                                     </body>
@@ -4145,10 +4152,13 @@ export default function DocumentAnalyzerTab() {
                             })}
                           </div>
 
+                          {redactionEnabled && (
+                            <p className="text-[10.5px] text-slate-400">Copy and download are off while redaction is on, because the brief contains case text.</p>
+                          )}
                           <div className="flex flex-wrap gap-2.5 pt-4 border-t border-slate-800/85">
                             <button
                               onClick={() => {
-                                const textToCopy = selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
+                                const textToCopy = redactionEnabled ? undefined : selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
                                 if (textToCopy) {
                                   navigator.clipboard.writeText(textToCopy).then(
                                     () => alert("Success: Lawyer Case Brief copied to clipboard!"),
@@ -4165,7 +4175,7 @@ export default function DocumentAnalyzerTab() {
 
                             <button
                               onClick={() => {
-                                const textToCopy = selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
+                                const textToCopy = redactionEnabled ? undefined : selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
                                 if (textToCopy) {
                                   const blob = new Blob([textToCopy], { type: "text/plain" });
                                   const url = URL.createObjectURL(blob);
