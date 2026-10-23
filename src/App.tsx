@@ -46,11 +46,20 @@ import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { auth, signOutOfAccount } from "./utils/firebase";
 
 // Core icons represent core section identity
-import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart, Coins, LogOut } from "lucide-react";
+import { Scale, BookOpen, Clock, Heart, Sparkles, FileSpreadsheet, Headphones, Users, ChevronRight, Menu, X, AlertCircle, Settings, Smartphone, Check, Printer, Shield, User, FolderHeart, Coins, LogOut, ArrowUp } from "lucide-react";
 
 export default function App() {
   useGlobalResetListener();
   const [location, setLocation] = useLocation();
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  useEffect(() => {
+    const updateBackToTop = () => setShowBackToTop(window.scrollY > 400);
+    updateBackToTop();
+    window.addEventListener("scroll", updateBackToTop, { passive: true });
+    return () => window.removeEventListener("scroll", updateBackToTop);
+  }, []);
+
 
   useEffect(() => {
     const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
@@ -617,6 +626,20 @@ export default function App() {
         </Suspense>
       )}
       
+      {/* Accessible return-to-top control, shown only after scrolling. */}
+      {showBackToTop && (
+        <button
+          type="button"
+          aria-label="Back to top of page"
+          title="Back to top"
+          onClick={() => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })}
+          className="fixed bottom-24 right-6 z-[97] no-print flex h-12 w-12 items-center justify-center rounded-full bg-brand-600 text-white shadow-lg transition hover:bg-brand-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+          id="back-to-top-btn"
+        >
+          <ArrowUp className="h-5 w-5" aria-hidden="true" />
+        </button>
+      )}
+
       {/* Symmetrical Floating Glossary Access (Bottom Left) */}
       <button
         onClick={() => setTerminologyOpen(true)}
