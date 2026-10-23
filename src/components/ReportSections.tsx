@@ -127,7 +127,8 @@ export function ReportSections({ report, audience = "parent" }: Props) {
   const courtRecord = contract.findings.some((f) => f.kind === "COURT_ORDER" || f.kind === "JUDICIAL_ENDORSEMENT");
   // A title alone never shows legal effect, so a title that names an order gets the same caveat.
   const documentType = String((report as { documentType?: unknown } | null)?.documentType ?? "");
-  const titleCaveat = !courtRecord && titleSuggestsCourtOrder(documentType);
+  const shownTitle = String((report as { documentTitle?: unknown } | null)?.documentTitle ?? "");
+  const titleCaveat = !courtRecord && (titleSuggestsCourtOrder(documentType) || titleSuggestsCourtOrder(shownTitle));
   const possibleConcerns = contract.findings.filter((f) => f.concern === "POSSIBLE_CONCERN").length;
   const missingItems = contract.findings.filter((f) => f.concern === "MISSING_INFORMATION").length;
   const rightsCount = contract.findings.filter((f) => f.id.startsWith("R-")).length;

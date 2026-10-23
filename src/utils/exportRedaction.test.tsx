@@ -102,3 +102,19 @@ describe("redaction keeps only enums and ids", () => {
     expect(buildPrepNotes(prep, {}, "Final Order", { redact: false })).toMatch(/title alone does not show/);
   });
 });
+
+describe("title caveat and classification in exports", () => {
+  it("shows the caveat when the shown title names an order, even if documentType does not", () => {
+    const report: any = withPlantedIdentifiers();
+    report.documentType = "Child Protection Application";
+    const html = renderReportSectionsHtml(report, "parent", "Final Order 2026", { redact: false });
+    expect(html).toContain("The title names an order or decision");
+  });
+
+  it("does not export free text stored under evidenceClassification in a redacted copy", () => {
+    const report: any = withPlantedIdentifiers();
+    report.redFlags[0].evidenceClassification = `Hearsay from ${NAME}`;
+    const html = renderReportSectionsHtml(report, "professional", "T", { redact: true });
+    expect(html).not.toContain(NAME);
+  });
+});

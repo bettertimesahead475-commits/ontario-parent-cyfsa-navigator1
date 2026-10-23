@@ -111,10 +111,12 @@ export function renderReportSectionsHtml(
     .join("");
   const glossary = GLOSSARY.map((g) => `<dt>${escapeHtml(g.term)}</dt><dd>${escapeHtml(g.meaning)}</dd>`).join("");
   const courtRecord = contract.findings.some((f) => f.kind === "COURT_ORDER" || f.kind === "JUDICIAL_ENDORSEMENT");
+  // The caveat is read from the title that is shown (the argument, before redaction) and from documentType; either one fails closed.
   const documentType = String((report as { documentType?: unknown } | null)?.documentType ?? "");
+  const orderTitle = titleSuggestsCourtOrder(documentType) || titleSuggestsCourtOrder(documentTitle);
   const courtNote = courtRecord
     ? `<p><strong>This is a court document.</strong> It is not scored for credibility or completeness. This export does not show whether it is final, signed, entered, served, or in effect.</p>`
-    : titleSuggestsCourtOrder(documentType)
+    : orderTitle
       ? `<p><strong>The title names an order or decision.</strong> A title does not show that a document is final, signed, entered, served, or in effect. This export does not show that either.</p>`
       : "";
 
