@@ -232,7 +232,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
   const retortChecks = (Array.isArray(report.retorts) ? report.retorts : []).map(retortLine).filter(Boolean);
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
-  // Legal status comes only from explicit analyzer evidence (documentAuthority), never from the title.
+  // Legal status is never taken from the title. No analyzer output in this codebase sets documentAuthority yet,
+  // so the title caveat applies in practice; the authority branch is ready for when the analyzer provides it.
   // A title such as "Final Court Order" or "Draft Order" does not show whether the document was signed, entered,
   // served, or is in effect, so the parent view says that instead of asserting it.
   const documentType = text(report.documentType);

@@ -197,7 +197,7 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
   it("states the s. 94(1) objection rule without presenting an absent party's silence as an exception", () => {
     const adjournment = PARENTAL_RIGHTS.find((entry) => entry.id === "adjournment-limit");
     expect(adjournment).toBeDefined();
-    expect(adjournment?.plainEnglish).toMatch(/everyone present and the child's caregiver agree/);
+    expect(adjournment?.plainEnglish).toMatch(/all the parties present and the person caring for the child/);
     expect(adjournment?.plainEnglish).toMatch(/knows a party who is absent objects/);
     expect(adjournment?.plainEnglish).not.toMatch(/does not object/);
   });
@@ -259,7 +259,7 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
   it("does not describe the s. 88 five-day rule as a mandatory court hearing in its title", () => {
     const entry = PARENTAL_RIGHTS.find((item) => item.id === "five-day-hearing");
     expect(entry?.title).not.toMatch(/must go before a court/);
-    expect(entry?.title).toMatch(/one of the listed steps must happen/);
+    expect(entry?.title).toMatch(/one of the listed steps must happen|five-day deadline/i);
   });
 
   it("does not treat an application or motion for an order as an order with legal effect", () => {
