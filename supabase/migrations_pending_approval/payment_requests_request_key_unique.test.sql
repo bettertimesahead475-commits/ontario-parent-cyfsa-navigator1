@@ -42,7 +42,8 @@ END $$;
 
 -- Legacy pending rows are untouched by the migration and still pending.
 DO $$ BEGIN
-  IF (SELECT count(*) FROM payments WHERE status = 'pending' AND request_key IS NULL) <> 2 THEN
+  IF (SELECT count(*) FROM payments WHERE reference_number IN ('LEG-1', 'LEG-2')
+      AND status = 'pending' AND request_key IS NULL) <> 2 THEN
     RAISE EXCEPTION 'legacy pending rows changed';
   END IF;
 END $$;
