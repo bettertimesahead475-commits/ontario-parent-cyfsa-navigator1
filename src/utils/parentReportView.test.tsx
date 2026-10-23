@@ -262,6 +262,32 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(entry?.title).toMatch(/unless a listed outcome/);
   });
 
+  it("does not treat an application or motion for an order as an order with legal effect", () => {
+    for (const documentType of ["Application for a Supervision Order", "Motion Seeking an Order"]) {
+      const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+      const view = buildParentReportView({ ...withoutAuthority, documentType });
+      const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+      expect(body, documentType).not.toMatch(/court order or endorsement has legal effect/);
+    }
+  });
+
+  it("states the evidence classification on a chronology entry", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      chronology: [{ date: "2026-03-02", event: "Worker says the parent was intoxicated", locationInDocument: "Page 2", evidenceClassification: "HEARSAY" }],
+    });
+    expect(view.chronology[0]).toMatch(/hearsay/i);
+    expect(view.chronology[0]).toMatch(/Page 2/);
+  });
+
+  it("carries the completed review's overall assessment into the parent view", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      forensicVerification: { status: "completed", checkedFindings: 3, totalFindings: 3, overallAssessment: "Several points rely on second-hand accounts." },
+    });
+    expect(view.secondReviewNotice).toMatch(/overall assessment: Several points rely on second-hand accounts/);
+  });
+
   it("treats a court endorsement as a court record from documentType alone", () => {
     const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
     const view = buildParentReportView(withoutAuthority);
