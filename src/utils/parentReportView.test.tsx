@@ -86,6 +86,13 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(rights?.body).toMatch(/full analysis/);
   });
 
+  it("does not present a court affidavit as an order or endorsement with legal effect", () => {
+    const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+    const view = buildParentReportView({ ...withoutAuthority, documentType: "Court Affidavit" });
+    expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body)
+      .not.toMatch(/court order or endorsement has legal effect/);
+  });
+
   it("treats a court endorsement as a court record from documentType alone", () => {
     const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
     const view = buildParentReportView(withoutAuthority);

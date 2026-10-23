@@ -91,7 +91,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
   // documentAuthority is not part of the live analyzer schema, so classify from documentType.
-  const isCourtRecord = Boolean(report.documentAuthority) || /court|endorsement|order/i.test(text(report.documentType));
+  const isCourtRecord = Boolean(report.documentAuthority) || /\b(order|endorsement)\b/i.test(text(report.documentType));
 
   const summary = [
     { heading: "1. What is this document?", body: text(report.documentType) || "Document type not identified." },
