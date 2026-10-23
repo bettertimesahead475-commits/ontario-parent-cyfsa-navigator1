@@ -2541,7 +2541,6 @@ export default function DocumentAnalyzerTab() {
         <div class="header-container">
           <span class="platform-label">CYFSA Navigator • Case Education Library</span>
           <h1 class="title-main">RAG Multi-File Case Consultation Transcript</h1>
-          ${redactionEnabled ? `<p>${escapeHtml(REDACTED_COPY_NOTICE)}</p>` : ""}
           <div class="meta-bar">
             System Agent: <strong>Claude 3.5 Sonnet RAG</strong>
             • Active Case Vault Size: <strong>${organizedFiles.length} files organized</strong>
@@ -2938,6 +2937,8 @@ export default function DocumentAnalyzerTab() {
       `;
     }
 
+    // Every redacted copy states that it is not guaranteed to be anonymous, whichever report is printed.
+    const redactionNotice = redactionEnabled ? `<p class="redaction-notice" style="font-size:11px; color:#92400e; border:1px solid #fcd34d; padding:8px; border-radius:6px;">${escapeHtml(REDACTED_COPY_NOTICE)}</p>` : "";
     const htmlContent = `
       <html>
         <head>
@@ -2947,6 +2948,7 @@ export default function DocumentAnalyzerTab() {
         <body>
           <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
 
+          ${redactionNotice}
           ${bodyContent}
 
           <div class="legal-notice">
