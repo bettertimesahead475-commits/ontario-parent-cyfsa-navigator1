@@ -28,6 +28,8 @@ export interface ParentReportView {
   findings: ParentFindingView[];
   thresholdChecks: string[];
   timelineChecks: string[];
+  chronology: string[];
+  contradictions: string[];
   missingRecords: string[];
   questionsForCourt: string[];
 }
@@ -69,6 +71,16 @@ function thresholdLine(check: Loose): string {
   return [name, result ? `Result: ${result}.` : "", reasoning, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
 }
 
+function chronologyLine(entry: Loose): string {
+  const where = text(entry.locationInDocument);
+  return [text(entry.date), text(entry.event), where ? `(${where})` : ""].filter(Boolean).join(" ");
+}
+
+function contradictionLine(item: Loose): string {
+  const places = list(item.locations).join("; ");
+  return [text(item.description), places ? `Locations: ${places}.` : "", text(item.significance)].filter(Boolean).join(" ");
+}
+
 function timelineLine(check: Loose): string {
   return [text(check.timelineRule), text(check.evaluation)].filter(Boolean).join(" ");
 }
@@ -106,6 +118,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
   // Threshold checks and timeline checks are analyzer findings too. Carry them into the view, not drop them.
   const thresholds = (Array.isArray(report.thresholdAnalysis) ? report.thresholdAnalysis : []).map(thresholdLine).filter(Boolean);
   const timelines = (Array.isArray(report.proceduralTimelineViolations) ? report.proceduralTimelineViolations : []).map(timelineLine).filter(Boolean);
+  const chronology = (Array.isArray(report.chronology) ? report.chronology : []).map(chronologyLine).filter(Boolean);
+  const contradictions = (Array.isArray(report.contradictions) ? report.contradictions : []).map(contradictionLine).filter(Boolean);
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
   // documentAuthority is not part of the live analyzer schema, so classify from documentType.
@@ -113,7 +127,10 @@ export function buildParentReportView(report: Loose): ParentReportView {
 
   const summary = [
     { heading: "1. What is this document?", body: text(report.documentType) || "Document type not identified." },
-    { heading: "2. What happened?", body: text(report.fileSummary) || "No summary was produced for this document." },
+    {
+      heading: "2. What happened?",
+      body: [text(report.fileSummary) || "No summary was produced for this document.", ...chronology].join(" "),
+    },
     {
       heading: "3. What does this mean for you?",
       body: isCourtRecord
@@ -129,8 +146,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
     },
     {
       heading: "5. Is anything missing or concerning?",
-      body: [...missing, ...thresholds, ...timelines].length
-        ? [...missing, ...thresholds, ...timelines].join(" ")
+      body: [...missing, ...thresholds, ...timelines, ...contradictions].length
+        ? [...missing, ...thresholds, ...timelines, ...contradictions].join(" ")
         : "No missing records were identified from this document alone.",
     },
     {
@@ -148,6 +165,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
     findings: redFlags.map((flag, i) => findingView(flag, i)),
     thresholdChecks: thresholds,
     timelineChecks: timelines,
+    chronology,
+    contradictions,
     missingRecords: missing,
     questionsForCourt: questions,
   };
