@@ -6,6 +6,7 @@
  */
 import { buildSectionedReport } from "../../shared/reportSections";
 import type { ReportContract, ReportFinding } from "../../shared/reportContract";
+import { titleSuggestsCourtOrder } from "../../shared/documentTitle";
 import {
   AUTHORITY_LABEL,
   CONCERN_LABEL,
@@ -87,6 +88,8 @@ export function renderReportSectionsHtml(
 ): string {
   // Identifying metadata is removed before the contract is built, so no exported section can carry it.
   const source = options.redact && report && typeof report === "object" ? { ...report, metadata: {} } : report;
+  // The document title is written by the model and can name the child or the parties, so it is not shown when redacting.
+  const shownTitle = options.redact ? "Analysis report" : documentTitle;
   const contract: ReportContract = buildSectionedReport(source);
   const toc = contract.sections
     .map((s) => `<li><a href="#report-${s.id}">${s.number}. ${escapeHtml(s.title)}</a></li>`)
@@ -105,20 +108,24 @@ export function renderReportSectionsHtml(
     })
     .join("");
   const glossary = GLOSSARY.map((g) => `<dt>${escapeHtml(g.term)}</dt><dd>${escapeHtml(g.meaning)}</dd>`).join("");
-  const courtNote = contract.findings.some((f) => f.kind === "COURT_ORDER" || f.kind === "JUDICIAL_ENDORSEMENT")
-    ? `<p><strong>This is a court document.</strong> It is not scored for credibility or completeness.</p>`
-    : "";
+  const courtRecord = contract.findings.some((f) => f.kind === "COURT_ORDER" || f.kind === "JUDICIAL_ENDORSEMENT");
+  const documentType = String((source as { documentType?: unknown } | null)?.documentType ?? "");
+  const courtNote = courtRecord
+    ? `<p><strong>This is a court document.</strong> It is not scored for credibility or completeness. This export does not show whether it is final, signed, entered, served, or in effect.</p>`
+    : titleSuggestsCourtOrder(documentType)
+      ? `<p><strong>The title names an order or decision.</strong> A title does not show that a document is final, signed, entered, served, or in effect. This export does not show that either.</p>`
+      : "";
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(documentTitle)}</title>
+<title>${escapeHtml(shownTitle)}</title>
 <style>${PRINT_CSS}</style>
 </head>
 <body>
-<h1>${escapeHtml(documentTitle)}</h1>
+<h1>${escapeHtml(shownTitle)}</h1>
 <p>${escapeHtml(LEGAL_INFORMATION_NOTICE)}</p>
 ${courtNote}
 <h2>Contents</h2>

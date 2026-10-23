@@ -78,7 +78,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     });
     const concerns = view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body ?? "";
     expect(concerns).toMatch(/Child in need of protection/);
-    expect(concerns).toMatch(/No hearing date appears/);
+    expect(concerns).toMatch(/Question to check/);
+    expect(concerns).not.toMatch(/No hearing date appears|Inconclusive/);
     expect(view.thresholdChecks).toHaveLength(1);
     expect(view.timelineChecks).toHaveLength(1);
   });
@@ -142,7 +143,7 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
       ...REPORT,
       proceduralTimelineViolations: [{ timelineRule: "Hearing within five days", evaluation: "No hearing date appears.", citation: "CYFSA s. 81(2)", citationStatus: "UNVERIFIED" }],
     });
-    expect(view.timelineChecks[0]).toMatch(/No hearing date appears/);
+    expect(view.timelineChecks[0]).toMatch(/Question to check/);
     expect(view.timelineChecks[0]).toMatch(/[Uu]nverified/);
   });
 
@@ -162,6 +163,22 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
       expect(body, documentType).not.toMatch(/has legal effect/);
       expect(body, documentType).toMatch(/cannot confirm/);
     }
+  });
+
+  it("keeps the title caveat for noun titles that name an order or decision", () => {
+    for (const documentType of ["Statement of Decision", "Notice of Decision", "Summary Judgment", "Report and Order", "Form 25 Final Order"]) {
+      const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+      const view = buildParentReportView({ ...withoutAuthority, documentType });
+      const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+      expect(body, documentType).toMatch(/cannot confirm/);
+    }
+  });
+
+  it("does not add the order caveat to a filing that leads with a non-order word", () => {
+    const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+    const view = buildParentReportView({ ...withoutAuthority, documentType: "Motion for Final Order" });
+    const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+    expect(body).not.toMatch(/cannot confirm/);
   });
 
   it("carries a red-flag second-review verdict and note into the parent view", () => {
@@ -189,7 +206,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
         forensicVerification: { verdict: "OVERSTATED", note: "The record shows a concern, not a confirmed risk." },
       }],
     });
-    expect(view.thresholdChecks[0]).toMatch(/Result: Met/);
+    expect(view.thresholdChecks[0]).not.toMatch(/Result:|Met\b|The record describes/);
+    expect(view.thresholdChecks[0]).toMatch(/Question to check/);
     expect(view.thresholdChecks[0]).toMatch(/found this overstated/);
     expect(view.thresholdChecks[0]).toMatch(/concern, not a confirmed risk/);
   });
@@ -246,6 +264,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(line).toMatch(/Page 4/);
     expect(line).toMatch(/CYFSA s\. 88/);
     expect(line).toMatch(/Ask counsel whether an alternative outcome happened/);
+    // The analyzer's breach-type evaluation is not presented to parents as a finding.
+    expect(line).not.toMatch(/outside the five-day window/);
   });
 
   it("treats a threshold source with no verification status as unverified", () => {

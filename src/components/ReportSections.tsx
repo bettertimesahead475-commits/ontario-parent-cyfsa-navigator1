@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { buildSectionedReport } from "../../shared/reportSections";
 import { presentForParent, type ReportContract, type ReportFinding, type ReportSection } from "../../shared/reportContract";
+import { titleSuggestsCourtOrder } from "../../shared/documentTitle";
 import {
   AUTHORITY_LABEL,
   CONCERN_LABEL,
@@ -124,6 +125,9 @@ export function ReportSections({ report, audience = "parent" }: Props) {
   const order = useMemo(() => presentForParent(contract).map((s) => s.id), [contract]);
   const sections = order.map((id) => contract.sections.find((s) => s.id === id)!);
   const courtRecord = contract.findings.some((f) => f.kind === "COURT_ORDER" || f.kind === "JUDICIAL_ENDORSEMENT");
+  // A title alone never shows legal effect, so a title that names an order gets the same caveat.
+  const documentType = String((report as { documentType?: unknown } | null)?.documentType ?? "");
+  const titleCaveat = !courtRecord && titleSuggestsCourtOrder(documentType);
   const possibleConcerns = contract.findings.filter((f) => f.concern === "POSSIBLE_CONCERN").length;
   const missingItems = contract.findings.filter((f) => f.concern === "MISSING_INFORMATION").length;
   const rightsCount = contract.findings.filter((f) => f.id.startsWith("R-")).length;
@@ -142,9 +146,12 @@ export function ReportSections({ report, audience = "parent" }: Props) {
           <li>{missingItems} items of missing information.</li>
           <li>{rightsCount} statutory provisions that may apply.</li>
         </ul>
-        {courtRecord && (
+        {(courtRecord || titleCaveat) && (
           <p role="note" className="mt-2 rounded bg-amber-50 p-2 text-amber-900">
-            This is a court document. It is not scored for credibility or completeness. This report does not show whether it is final, signed, entered, served, or in effect. Confirm that with counsel and the court file.
+            {courtRecord
+              ? "This is a court document. It is not scored for credibility or completeness."
+              : "The title names an order or decision. A title does not show that a document is final, signed, entered, served, or in effect."}{" "}
+            This report does not show whether it is final, signed, entered, served, or in effect. Confirm that with counsel and the court file.
           </p>
         )}
       </div>

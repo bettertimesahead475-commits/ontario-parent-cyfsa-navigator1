@@ -184,6 +184,23 @@ describe("legacy adapter: source and authority preservation", () => {
   });
 });
 
+describe("legal effect wording and statute status", () => {
+  it("does not copy analyzer wording about legal effect into the court-record finding", () => {
+    const c = adaptLegacyReport(COURT_ENDORSEMENT);
+    const court = c.findings.find((f) => f.kind === "JUDICIAL_ENDORSEMENT")!;
+    expect(court.whyItMatters).not.toMatch(/legal authority/);
+    expect(court.whyItMatters).toMatch(/does not show its legal effect/);
+  });
+
+  it("attaches the unverified warning to statute text with no confirmed status", () => {
+    const c = adaptLegacyReport(ORDINARY_AFFIDAVIT);
+    const unverified = c.findings.find((x) => x.legacyId === "rf1")!;
+    const confirmed = c.findings.find((x) => x.legacyId === "rf2")!;
+    expect(unverified.whatLawSays).toMatch(/unverified/i);
+    expect(confirmed.whatLawSays).not.toMatch(/Citation unverified/);
+  });
+});
+
 describe("contradictions need two source passages", () => {
   it("treats a contradiction with two locations as a possible concern", () => {
     const c = adaptLegacyReport(ORDINARY_AFFIDAVIT);

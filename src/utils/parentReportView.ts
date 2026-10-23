@@ -6,6 +6,8 @@
  * the same underlying report.
  */
 
+import { titleSuggestsCourtOrder } from "../../shared/documentTitle";
+
 export interface ParentFindingView {
   id: string;
   heading: string;
@@ -59,7 +61,7 @@ function list(value: unknown): string[] {
 }
 
 function citationStatus(flag: Loose): string {
-  if (flag.citationStatus === "CONFIRMED_REFERENCE") return "Statute reference confirmed against the reference list.";
+  if (flag.citationStatus === "CONFIRMED_REFERENCE") return "Listed as a confirmed reference in the analyzer's internal list; not checked against the statute text in this report.";
   if (flag.citationStatus === "UNVERIFIED") return UNVERIFIED_CITATION;
   // A citation with no recorded verification status is unverified, never confirmed.
   return text(flag.legalReference) ? UNVERIFIED_CITATION : "No statute cited for this point.";
@@ -131,15 +133,20 @@ function chronologyLine(entry: Loose): string {
   return [text(entry.date), text(entry.event), where ? `(${where})` : "", label ? `Evidence: ${label}.` : ""].filter(Boolean).join(" ");
 }
 
+/**
+ * The analyzer's met, not met, or inconclusive result and its reasoning are not shown to parents. They are an
+ * assessment of whether a statutory test is satisfied, so the parent gets the test and a question to check instead.
+ */
+const THRESHOLD_QUESTION = "does the file show the facts this test needs? Look for direct proof in the documents.";
+const TIMELINE_QUESTION = "did this step happen within the time the rule sets? Check the dates in the documents.";
+
 function thresholdLine(check: Loose): string {
   const name = text(check.thresholdChecked);
-  const result = text(check.isMet);
-  const reasoning = text(check.reasoning);
   const source = text(check.primarySourceLaw);
   // A source with no recorded verification status is unverified, the same as for red flags and timeline checks.
   const unverified = source && check.citationStatus !== "CONFIRMED_REFERENCE" ? "The statute reference for this check is unverified; confirm it with counsel." : "";
   const review = secondReviewLine(check);
-  return [name, result ? `Result: ${result}.` : "", reasoning, review, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
+  return [name, `Question to check: ${THRESHOLD_QUESTION}`, review, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
 }
 
 
@@ -170,7 +177,7 @@ function timelineLine(check: Loose): string {
   return [
     text(check.timelineRule),
     assertion ? `The document says: ${assertion}` : "",
-    text(check.evaluation),
+    `Question to check: ${TIMELINE_QUESTION}`,
     where ? `Location: ${where}.` : "",
     citation ? `Source: ${citation}` : "",
     unverified,
@@ -237,10 +244,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
   // A title such as "Final Court Order" or "Draft Order" does not show whether the document was signed, entered,
   // served, or is in effect, so the parent view says that instead of asserting it.
   const documentType = text(report.documentType);
-  // A title that leads with a non-order word (application, motion, affidavit...) is not treated as an order.
-  // Any other title that names an order, endorsement, judgment or decision gets the caveat.
-  const NON_ORDER_LEAD = /^\s*(application|motion|request|notice|affidavit|letter|form|statement|report|summary)\b/i;
-  const titleSuggestsCourtOrder = /\b(order|endorsement|judgment|decision)s?\b/i.test(documentType) && !NON_ORDER_LEAD.test(documentType);
+  const titleCaveat = titleSuggestsCourtOrder(documentType);
   // Only explicit analyzer authority of a known court-record kind counts. Any other value falls back to the title caveat.
   const authority = report.documentAuthority && typeof report.documentAuthority === "object" ? report.documentAuthority : null;
   const hasAuthorityRecord = authority !== null && ["COURT_ORDER", "JUDICIAL_ENDORSEMENT"].includes(text(authority.recordKind));
@@ -255,7 +259,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
       heading: "3. What does this mean for you?",
       body: hasAuthorityRecord
         ? "The analyzer recorded this as a court record. This report does not confirm whether it is final, signed, entered, served, or still in effect. Confirm that with counsel and the court file. This report does not decide whether the facts it mentions are true."
-        : titleSuggestsCourtOrder
+        : titleCaveat
           ? "The title suggests a court order, endorsement, or draft. The title alone does not show whether it is final, signed, entered, served, or in effect, and this report cannot confirm those from the text. Confirm with counsel and the court file before relying on any of its terms."
           : "This report shows what the document says and what is still unclear. It does not decide who is right.",
     },

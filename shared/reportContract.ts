@@ -147,6 +147,15 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+const UNVERIFIED_LAW = "Citation unverified. Confirm the exact section with a lawyer before relying on it.";
+
+/** The statute text, with the unverified warning attached unless the analyzer's internal list confirms it. */
+function lawWithStatus(flag: Loose): string {
+  const law = text(flag.legalReference);
+  if (!law) return "";
+  return text(flag.citationStatus) === "CONFIRMED_REFERENCE" || /unverified/i.test(law) ? law : `${law} ${UNVERIFIED_LAW}`;
+}
+
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.map(text).filter(Boolean) : [];
 }
@@ -290,8 +299,9 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
         kind: auth.recordKind === "JUDICIAL_ENDORSEMENT" ? "JUDICIAL_ENDORSEMENT" : "COURT_ORDER",
         title: "The court document itself",
         whatHappened: docType,
-        whyItMatters: text(auth.statement),
-        whatIsUnknown: text(auth.authenticity) + (text(auth.status) ? ` ${text(auth.status)}` : ""),
+        // Analyzer-supplied wording about legal effect is not copied: effect is not established by this report.
+        whyItMatters: "This is a court document. This report does not show its legal effect.",
+        whatIsUnknown: "Whether it is final, signed, entered, served, or in effect. Confirm with counsel and the court file.",
         concern: "NOT_APPLICABLE",
         sources: [{ documentId, locator: "Whole document", quote: "" }],
         uncertainty: "Authenticity and current status are not verified by this tool.",
@@ -337,7 +347,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
         title: category || `Point ${i + 1}`,
         whatHappened: text(flag.phraseDetected) ? `The record says: ${text(flag.phraseDetected)}` : "",
         whyItMatters: text(flag.explanation),
-        whatLawSays: text(flag.legalReference),
+        whatLawSays: lawWithStatus(flag),
         whatIsUnknown: text(flag.verifyRequirement),
         whatYouCanDo: text(flag.parentActionStep),
         evidenceClassification: classification,
