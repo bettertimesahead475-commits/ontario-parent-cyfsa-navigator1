@@ -134,3 +134,11 @@ describe("legal references in redacted copies", () => {
     expect(out.citation).toBe("s. 88");
   });
 });
+
+describe("citation grammar", () => {
+  it("does not keep a name that follows a citation", () => {
+    const out: any = redactForExport({ legalReference: "s. 74 and Zed Plaintiffname", citation: "CYFSA s. 74(2) or Zed Plaintiffname" });
+    expect(out.legalReference).not.toMatch(/Zed/);
+    expect(out.citation).not.toMatch(/Zed/);
+  });
+});
