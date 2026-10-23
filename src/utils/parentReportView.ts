@@ -239,7 +239,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
   const documentType = text(report.documentType);
   // A title that leads with a non-order word (application, motion, affidavit...) is not treated as an order.
   // Any other title that names an order, endorsement, judgment or decision gets the caveat.
-  const NON_ORDER_LEAD = /^\s*(application|motion|request|notice|affidavit|letter|form|statement|report|summary)\b/i;
+  // Only a title that leads with a plainly non-order document word is exempt. "Notice of Final Order" is not.
+  const NON_ORDER_LEAD = /^\s*(application|motion|request|affidavit|letter|form|statement)\b/i;
   const titleSuggestsCourtOrder = /\b(order|endorsement|judgment|decision)s?\b/i.test(documentType) && !NON_ORDER_LEAD.test(documentType);
   // Only explicit analyzer authority of a known court-record kind counts. Any other value falls back to the title caveat.
   const authority = report.documentAuthority && typeof report.documentAuthority === "object" ? report.documentAuthority : null;

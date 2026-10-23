@@ -50,7 +50,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
   },
   {
     id: "adjournment-limit",
-    title: "Adjournments over 30 days need consent from all parties present and the caregiver, and are barred if an absent party objects",
+    title: "Adjournments over 30 days need consent from all parties present and the caregiver, and are barred if the court is aware that an absent party objects",
     section: "CYFSA s. 94(1)",
     quote: "The court shall not adjourn a hearing for more than 30 days,",
     plainEnglish:
