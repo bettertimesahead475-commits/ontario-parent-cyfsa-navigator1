@@ -54,6 +54,7 @@ import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
 import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED } from "../config/featureFlags";
+import { containsTrigger } from "../../shared/glossaryMatch";
 import { ParentReportSection } from "./ParentReportPanel";
 import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
@@ -3464,7 +3465,7 @@ export default function DocumentAnalyzerTab() {
                     item.definition.toLowerCase().includes(glossarySearch.toLowerCase()) ||
                     item.abbreviation.toLowerCase().includes(glossarySearch.toLowerCase())
                   ).map((item) => {
-                    const isMatched = activeSelectedFile && activeSelectedFile.content && item.triggers.some(trig => activeSelectedFile.content.toLowerCase().includes(trig));
+                    const isMatched = activeSelectedFile && activeSelectedFile.content && item.triggers.some(trig => containsTrigger(activeSelectedFile.content, trig));
                     const isExpanded = expandedTerm === item.term;
 
                     return (
