@@ -30,17 +30,21 @@ const STRUCTURAL_KEYS = new Set([
   "verdict",
   "eventType",
   "verifiedBy",
-  "legalReference",
-  "citation",
-  "primarySourceLaw",
   "schemaVersion",
-  "authorities",
 ]);
+
+// Legal references are kept only when the value is a short citation such as "CYFSA s. 74(2)".
+// Any other prose stored under a citation key is free text and is removed.
+const CITATION_KEYS = new Set(["legalReference", "citation", "primarySourceLaw"]);
+const CITATION_PATTERN = /^(CYFSA\s+)?s\.\s*\d+[\w()]*(\s*(and|or|,)\s*\(?\w+\)?)*$/i;
 
 function redactNode(node: unknown, key: string | undefined): unknown {
   // An empty string is not free text. Replacing it would make an unanswered field look answered.
   if (typeof node === "string") {
     if (node === "") return node;
+    if (key !== undefined && CITATION_KEYS.has(key)) {
+      return node.length <= 60 && CITATION_PATTERN.test(node.trim()) ? node : REDACTED_TEXT;
+    }
     return key !== undefined && STRUCTURAL_KEYS.has(key) ? node : REDACTED_TEXT;
   }
   if (Array.isArray(node)) return node.map((item) => redactNode(item, key));
