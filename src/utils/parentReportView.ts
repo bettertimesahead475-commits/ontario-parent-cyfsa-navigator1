@@ -18,6 +18,8 @@ export interface ParentFindingView {
   /** Verified case law is not attached by this layer yet. Shown as a limitation, never invented. */
   whatCourtsHaveSaid: string;
   whatIsUnknown: string;
+  /** Result of the independent second review, when the analyzer ran one. Empty when it did not. */
+  secondReview: string;
   whatYouCanDo: string;
   /** Expandable detail: the exact quotation and where it appears. */
   evidenceDetail: { quote: string; location: string; citationStatus: string };
@@ -62,13 +64,30 @@ function severityLabel(severity: unknown): string {
   return s ? "May affect how much weight this gets" : "";
 }
 
+const SECOND_REVIEW_WORDING: Record<string, string> = {
+  SUPPORTED: "An independent second review found the record supports this.",
+  OVERSTATED: "An independent second review found this overstated.",
+  UNSUPPORTED: "An independent second review did not find the record supports this.",
+  MISQUOTED: "An independent second review found the quotation does not match the record.",
+  NEEDS_CONTEXT: "An independent second review says this needs more context.",
+};
+
+/** Carries the second-review verdict and its note. A rejected point must not read as settled. */
+function secondReviewLine(item: Loose): string {
+  const review = item.forensicVerification && typeof item.forensicVerification === "object" ? item.forensicVerification : {};
+  const wording = SECOND_REVIEW_WORDING[text(review.verdict).toUpperCase()] ?? "";
+  const note = text(review.note);
+  return [wording, note].filter(Boolean).join(" ");
+}
+
 function thresholdLine(check: Loose): string {
   const name = text(check.thresholdChecked);
   const result = text(check.isMet);
   const reasoning = text(check.reasoning);
   const source = text(check.primarySourceLaw);
   const unverified = check.citationStatus === "UNVERIFIED" ? "The statute reference for this check is unverified; confirm it with counsel." : "";
-  return [name, result ? `Result: ${result}.` : "", reasoning, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
+  const review = secondReviewLine(check);
+  return [name, result ? `Result: ${result}.` : "", reasoning, review, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
 }
 
 function chronologyLine(entry: Loose): string {
@@ -82,7 +101,9 @@ function contradictionLine(item: Loose): string {
 }
 
 function timelineLine(check: Loose): string {
-  return [text(check.timelineRule), text(check.evaluation)].filter(Boolean).join(" ");
+  // Only a cited provision can be unverified. A citation with no recorded status is treated as unverified too.
+  const citedUnverified = text(check.citation) !== "" && citationStatus({ citationStatus: check.citationStatus, legalReference: check.citation }) === UNVERIFIED_CITATION;
+  return [text(check.timelineRule), text(check.evaluation), citedUnverified ? UNVERIFIED_CITATION : ""].filter(Boolean).join(" ");
 }
 
 function findingView(flag: Loose, index: number): ParentFindingView {
@@ -102,6 +123,7 @@ function findingView(flag: Loose, index: number): ParentFindingView {
     whatTheLawSays: text(flag.legalReference) || "No statute is cited for this point.",
     whatCourtsHaveSaid: CASE_LAW_LIMITATION,
     whatIsUnknown: text(flag.verifyRequirement),
+    secondReview: secondReviewLine(flag),
     whatYouCanDo: text(flag.parentActionStep),
     evidenceDetail: {
       quote,
@@ -123,7 +145,10 @@ export function buildParentReportView(report: Loose): ParentReportView {
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
   // documentAuthority is not part of the live analyzer schema, so classify from documentType.
-  const isCourtRecord = Boolean(report.documentAuthority) || /\b(order|endorsement)\b/i.test(text(report.documentType));
+  // Draft and proposed orders are not operative, so they never get the legal-effect wording.
+  const documentType = text(report.documentType);
+  const isDraft = /\b(draft|proposed)\b/i.test(documentType);
+  const isCourtRecord = !isDraft && (Boolean(report.documentAuthority) || /\b(order|endorsement)\b/i.test(documentType));
 
   const summary = [
     { heading: "1. What is this document?", body: text(report.documentType) || "Document type not identified." },
@@ -135,7 +160,9 @@ export function buildParentReportView(report: Loose): ParentReportView {
       heading: "3. What does this mean for you?",
       body: isCourtRecord
         ? "A court order or endorsement has legal effect unless it is changed or ends. This report does not decide whether the facts it mentions are true."
-        : "This report shows what the document says and what is still unclear. It does not decide who is right.",
+        : isDraft
+          ? "This is a draft or proposed order, not a signed order. Confirm whether a final order was made before relying on any of its terms."
+          : "This report shows what the document says and what is still unclear. It does not decide who is right.",
     },
     {
       heading: "4. What rights or legal protections may apply?",

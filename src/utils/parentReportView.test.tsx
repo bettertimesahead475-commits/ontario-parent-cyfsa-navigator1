@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildParentReportView, readability } from "./parentReportView";
+import { PARENTAL_RIGHTS } from "../../shared/parentalRights";
 
 // Sanitized fixture: no real names, file numbers, or document text.
 const REPORT = {
@@ -134,6 +135,71 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     const view = buildParentReportView({ ...withoutAuthority, documentType: "Court Affidavit" });
     expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body)
       .not.toMatch(/court order or endorsement has legal effect/);
+  });
+
+  it("keeps the unverified warning on a timeline checkpoint that cites an unverified provision", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      proceduralTimelineViolations: [{ timelineRule: "Hearing within five days", evaluation: "No hearing date appears.", citation: "CYFSA s. 81(2)", citationStatus: "UNVERIFIED" }],
+    });
+    expect(view.timelineChecks[0]).toMatch(/No hearing date appears/);
+    expect(view.timelineChecks[0]).toMatch(/[Uu]nverified/);
+  });
+
+  it("does not add an unverified warning to a timeline checkpoint with a confirmed citation", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      proceduralTimelineViolations: [{ timelineRule: "Hearing within five days", evaluation: "No hearing date appears.", citation: "CYFSA s. 88", citationStatus: "CONFIRMED_REFERENCE" }],
+    });
+    expect(view.timelineChecks[0]).not.toMatch(/[Uu]nverified/);
+  });
+
+  it("does not treat a draft or proposed order as an order with legal effect", () => {
+    for (const documentType of ["Draft Order", "Proposed Order", "Unofficial Draft Order"]) {
+      const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+      const view = buildParentReportView({ ...withoutAuthority, documentType });
+      const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
+      expect(body, documentType).not.toMatch(/court order or endorsement has legal effect/);
+      expect(body, documentType).toMatch(/draft or proposed order/);
+    }
+  });
+
+  it("carries a red-flag second-review verdict and note into the parent view", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      redFlags: [{ ...REPORT.redFlags[0], forensicVerification: { verdict: "UNSUPPORTED", note: "The quoted finding does not appear in the reasons.", verifiedBy: "Second review" } }],
+    });
+    expect(view.findings[0].secondReview).toMatch(/did not find the record supports/);
+    expect(view.findings[0].secondReview).toMatch(/does not appear in the reasons/);
+  });
+
+  it("leaves the second-review field empty when no second review ran", () => {
+    const view = buildParentReportView(REPORT);
+    expect(view.findings[0].secondReview).toBe("");
+  });
+
+  it("carries a threshold second-review verdict and note into the threshold line", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      thresholdAnalysis: [{
+        thresholdChecked: "Child in need of protection",
+        isMet: "Met",
+        reasoning: "The record describes a risk of harm.",
+        primarySourceLaw: "CYFSA s. 74",
+        forensicVerification: { verdict: "OVERSTATED", note: "The record shows a concern, not a confirmed risk." },
+      }],
+    });
+    expect(view.thresholdChecks[0]).toMatch(/Result: Met/);
+    expect(view.thresholdChecks[0]).toMatch(/found this overstated/);
+    expect(view.thresholdChecks[0]).toMatch(/concern, not a confirmed risk/);
+  });
+
+  it("states the s. 94(1) objection rule without presenting an absent party's silence as an exception", () => {
+    const adjournment = PARENTAL_RIGHTS.find((entry) => entry.id === "adjournment-limit");
+    expect(adjournment).toBeDefined();
+    expect(adjournment?.plainEnglish).toMatch(/everyone present and the child's caregiver agree/);
+    expect(adjournment?.plainEnglish).toMatch(/knows that a party who is not present objects/);
+    expect(adjournment?.plainEnglish).not.toMatch(/does not object/);
   });
 
   it("treats a court endorsement as a court record from documentType alone", () => {
