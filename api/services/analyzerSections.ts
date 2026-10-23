@@ -16,7 +16,7 @@
  * verification pass on a stronger model (Claude Opus) over the high-impact findings only.
  */
 
-import { AnalyzerError } from "./analyzerErrors.js";
+import { AnalyzerError, logAnalyzerDiagnostic } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
 import type { AnalysisStage } from "./analyzerStreaming.js";
 import { verifyQuote } from "./pageSources.js";
@@ -612,7 +612,9 @@ async function runOneSection(
       // Permanent provider failures (bad key, invalid model, rejected request) are never retried.
       if (err instanceof AnalyzerError && !err.retryable) throw err;
       lastProviderError = err instanceof AnalyzerError ? err : null;
-      lastProblem = err?.message || "provider request failed";
+      // The raw provider message is logged (redacted) and never placed in customer text.
+      logAnalyzerDiagnostic(`section ${key} attempt ${attempt}`, err);
+      lastProblem = "the AI service did not return a usable response";
       if (attempt === 1) await new Promise((r) => setTimeout(r, 750 + Math.floor(Math.random() * 500)));
       continue;
     }
@@ -824,7 +826,9 @@ async function runForensicVerification(
         reason = err.userMessage;
         break;
       }
-      reason = err?.message || "the verification request failed";
+      // The raw provider message is logged (redacted) and never placed in customer text.
+      logAnalyzerDiagnostic("forensic verification", err);
+      reason = "the verification request could not be completed";
     }
   }
   // Verification is an added check on findings that already passed validation; when it cannot run,
