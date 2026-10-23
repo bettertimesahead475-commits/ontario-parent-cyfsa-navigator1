@@ -181,7 +181,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
         body: JSON.stringify({ email, tier: selectedTier, requestKey: checkoutKeyRef.current }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed.");
+      if (!res.ok) {
+        // This checkout attempt already produced a request. The next click must start a new attempt.
+        if (data.code === "REQUEST_KEY_USED") checkoutKeyRef.current = null;
+        throw new Error(data.error || "Request failed.");
+      }
       setReferenceNumber(data.referenceNumber);
       setStage("awaiting-code");
     } catch (err: any) {

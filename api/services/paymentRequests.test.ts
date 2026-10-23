@@ -25,7 +25,7 @@ type Row = Record<string, any>;
 
 // A chainable query double. Filters accumulate; the query runs when awaited, or when
 // maybeSingle() is requested. update() applies to the rows its filters match.
-function createFakeDb(opts: { failCodeInsert?: boolean; failRelease?: boolean } = {}) {
+function createFakeDb(opts: { failCodeInsert?: boolean; failRelease?: boolean; missingIdentityColumns?: boolean } = {}) {
   const tables: Record<string, Row[]> = { payments: [], access_codes: [], navigator_paid_sessions: [] };
 
   function builder(table: string) {
@@ -48,6 +48,14 @@ function createFakeDb(opts: { failCodeInsert?: boolean; failRelease?: boolean } 
           return { data: null, error: { message: "simulated code insert outage" } };
         }
         // Mirror the table's column default so the 24-hour window filter sees a real timestamp.
+        if (table === "payments" && opts.missingIdentityColumns && ("firebase_uid" in insertRow || "request_key" in insertRow)) {
+          return { data: null, error: { code: "42703", message: "column \"request_key\" of relation \"payments\" does not exist" } };
+        }
+        // Mirror the partial unique index on (firebase_uid, request_key) where request_key is set.
+        if (table === "payments" && insertRow && insertRow.request_key) {
+          const clash = tables[table].some((r) => r.firebase_uid === insertRow.firebase_uid && r.request_key === insertRow.request_key);
+          if (clash) return { data: null, error: { code: "23505", message: "duplicate key value violates unique constraint payments_firebase_uid_request_key_uidx" } };
+        }
         const defaults = table === "payments" ? { submitted_at: new Date().toISOString() } : {};
         tables[table].push({ ...defaults, ...insertRow });
         return { data: [insertRow], error: null };
@@ -135,11 +143,12 @@ afterEach(() => {
 });
 
 describe("requestAccess - idempotency and identity", () => {
-  it("creates one pending request stamped with the verified uid", async () => {
-    const result = await requestAccess("owner@example.com", "Pro", { uid: UID_A });
+  it("creates one pending request stamped with the verified uid and checkout key", async () => {
+    const result = await requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" });
     expect(result.reused).toBe(false);
     expect(db._tables.payments).toHaveLength(1);
-    expect(db._tables.payments[0].notes).toContain(`uid:${UID_A}`);
+    expect(db._tables.payments[0].firebase_uid).toBe(UID_A);
+    expect(db._tables.payments[0].request_key).toBe("attempt-0001");
     expect(db._tables.payments[0].status).toBe("pending");
     expect(result.instructions).toContain(result.referenceNumber);
   });
@@ -149,6 +158,16 @@ describe("requestAccess - idempotency and identity", () => {
     const second = await requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" });
     expect(second.referenceNumber).toBe(first.referenceNumber);
     expect(second.reused).toBe(true);
+    expect(db._tables.payments).toHaveLength(1);
+  });
+
+  it("returns one reference when two submissions of the same attempt race", async () => {
+    const [a, b] = await Promise.all([
+      requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-race" }),
+      requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-race" }),
+    ]);
+    expect(b.referenceNumber).toBe(a.referenceNumber);
+    expect([a.reused, b.reused].sort()).toEqual([false, true]);
     expect(db._tables.payments).toHaveLength(1);
   });
 
@@ -167,62 +186,80 @@ describe("requestAccess - idempotency and identity", () => {
     expect(db._tables.payments).toHaveLength(2);
   });
 
-  it("does not reuse a request across different accounts", async () => {
-    const a = await requestAccess("a@example.com", "Pro", { uid: UID_A });
-    const b = await requestAccess("b@example.com", "Pro", { uid: UID_B });
+  it("does not reuse a request across different accounts, even with the same key", async () => {
+    const a = await requestAccess("a@example.com", "Pro", { uid: UID_A, requestKey: "attempt-same" });
+    const b = await requestAccess("b@example.com", "Pro", { uid: UID_B, requestKey: "attempt-same" });
     expect(b.referenceNumber).not.toBe(a.referenceNumber);
     expect(db._tables.payments).toHaveLength(2);
   });
 
-  it("does not reuse a request for a different package", async () => {
+  it("does not reuse an unkeyed request for a different package", async () => {
     await requestAccess("owner@example.com", "Pro", { uid: UID_A });
     const other = await requestAccess("owner@example.com", "Premium", { uid: UID_A });
     expect(other.reused).toBe(false);
     expect(db._tables.payments).toHaveLength(2);
   });
 
-  it("does not reuse a pending request when the account's verified email has changed", async () => {
-    const original = await requestAccess("old@example.com", "Pro", { uid: UID_A });
-    const changed = await requestAccess("new@example.com", "Pro", { uid: UID_A });
-    expect(changed.reused).toBe(false);
-    expect(changed.referenceNumber).not.toBe(original.referenceNumber);
-    expect(db._tables.payments.find((p: Row) => p.reference_number === changed.referenceNumber).notes).toContain("email:new@example.com");
+  it("refuses a used key whose verified email has since changed, instead of reusing it", async () => {
+    await requestAccess("old@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" });
+    await expect(
+      requestAccess("new@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" })
+    ).rejects.toMatchObject({ statusCode: 409, code: "REQUEST_KEY_USED" });
+    expect(db._tables.payments).toHaveLength(1);
   });
 
-  it("does not reuse a pending request whose amount is no longer the current price", async () => {
+  it("refuses a used key whose stored amount is no longer the current price", async () => {
     db._tables.payments.push({
       reference_number: "PS-OLDPRC",
       plan: "Pro",
       amount: 19.99,
       status: "pending",
-      notes: `email:owner@example.com;uid:${UID_A}`,
+      notes: `email:owner@example.com;uid:${UID_A};key:attempt-0001`,
       payment_email: PAYMENT_EMAIL,
+      firebase_uid: UID_A,
+      request_key: "attempt-0001",
       submitted_at: new Date().toISOString(),
     });
-    const result = await requestAccess("owner@example.com", "Pro", { uid: UID_A });
-    expect(result.reused).toBe(false);
-    expect(result.referenceNumber).not.toBe("PS-OLDPRC");
-    expect(result.amount).not.toBe(19.99);
+    await expect(
+      requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" })
+    ).rejects.toMatchObject({ statusCode: 409, code: "REQUEST_KEY_USED" });
+    expect(db._tables.payments).toHaveLength(1);
+  });
+
+  it("refuses a key that was already approved, so a replay cannot create a second request", async () => {
+    await requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" });
+    db._tables.payments[0].status = "approved";
+    await expect(
+      requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" })
+    ).rejects.toMatchObject({ statusCode: 409, code: "REQUEST_KEY_USED" });
+    expect(db._tables.payments).toHaveLength(1);
+  });
+
+  it("does not leave a keyed request without its key when the migration is not applied", async () => {
+    db = createFakeDb({ missingIdentityColumns: true });
+    currentDb.ref = db;
+    resetSupabaseClientForTesting();
+    await expect(
+      requestAccess("owner@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" })
+    ).rejects.toMatchObject({ statusCode: 503, code: "PAYMENT_STORAGE_NOT_READY" });
+    expect(db._tables.payments).toHaveLength(0);
   });
 
   it("matches the uid exactly, so a uid that is a prefix of another never reuses its request", async () => {
-    await requestAccess("short@example.com", "Pro", { uid: "uidAlpha12" });
-    const other = await requestAccess("long@example.com", "Pro", { uid: UID_A });
+    await requestAccess("short@example.com", "Pro", { uid: "uidAlpha12", requestKey: "attempt-0001" });
+    const other = await requestAccess("long@example.com", "Pro", { uid: UID_A, requestKey: "attempt-0001" });
     expect(other.reused).toBe(false);
   });
 
-  it("creates a new request once the previous one is older than 24 hours", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
-    const first = await requestAccess("owner@example.com", "Pro", { uid: UID_A });
-    vi.setSystemTime(new Date("2026-10-11T12:01:00Z"));
-    const later = await requestAccess("owner@example.com", "Pro", { uid: UID_A });
-    expect(later.reused).toBe(false);
-    expect(later.referenceNumber).not.toBe(first.referenceNumber);
+  it("rejects a uid that is not a plain identifier, before it reaches a query", async () => {
+    await expect(requestAccess("x@example.com", "Pro", { uid: "a%b" })).rejects.toMatchObject({ statusCode: 400 });
+    expect(db._tables.payments).toHaveLength(0);
   });
 
-  it("rejects a uid that is not a plain identifier, before it reaches a query pattern", async () => {
-    await expect(requestAccess("x@example.com", "Pro", { uid: "a%b" })).rejects.toMatchObject({ statusCode: 400 });
+  it("rejects a malformed request key", async () => {
+    await expect(
+      requestAccess("x@example.com", "Pro", { uid: UID_A, requestKey: "short" })
+    ).rejects.toMatchObject({ statusCode: 400, code: "INVALID_REQUEST_KEY" });
     expect(db._tables.payments).toHaveLength(0);
   });
 });

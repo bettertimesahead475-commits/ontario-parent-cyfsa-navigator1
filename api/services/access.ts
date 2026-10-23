@@ -531,10 +531,57 @@ export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool):
 // A repeated click or network retry from the same verified account for the same package
 // reuses the still-pending request instead of creating another one. Without this, every
 // retry adds a new pending payment that looks like a separate purchase to the owner.
-const DUPLICATE_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 function paymentRequestInstructions(referenceNumber: string, amount: number): string {
   return `Send an Interac e-transfer for $${amount} CAD to ${PAYMENT_EMAIL}. Put "${referenceNumber}" in the message/memo field so your payment can be matched. Once it's confirmed, you'll receive an access code.`;
+}
+
+type PaymentRequestRow = {
+  reference_number: string;
+  amount: number | string;
+  plan: string;
+  status: string;
+  notes: string | null;
+};
+
+// A request key identifies one checkout attempt. The database enforces that a key produces at most
+// one payment row (unique on firebase_uid + request_key, every status). So a retry of an attempt
+// gets its existing reference, and a deliberate new purchase carries a new key and gets its own row.
+async function findKeyedRequest(
+  db: ReturnType<typeof getSupabase>,
+  uid: string,
+  requestKey: string
+): Promise<PaymentRequestRow | null> {
+  const { data, error } = await db
+    .from("payments")
+    .select("reference_number, amount, plan, status, notes")
+    .eq("firebase_uid", uid)
+    .eq("request_key", requestKey)
+    .maybeSingle();
+  if (error) throw Object.assign(new Error(`Failed to check existing requests: ${error.message}`), { statusCode: 500 });
+  return (data as PaymentRequestRow | null) ?? null;
+}
+
+// Returns the existing request only when it is still a valid retry: pending, same tier, same
+// verified email, and priced at today's amount. Anything else means this attempt was already used,
+// so the client must start a new checkout attempt rather than receive a stale or wrong reference.
+function reuseKeyedRequest(row: PaymentRequestRow, tier: Tier, normalizedEmail: string, amount: number) {
+  const parts = String(row.notes || "").split(";");
+  const valid = row.status === "pending" && row.plan === tier
+    && parts.includes(`email:${normalizedEmail}`) && Number(row.amount) === amount;
+  if (!valid) {
+    throw Object.assign(
+      new Error("This checkout attempt was already used. Start a new checkout to get a payment reference."),
+      { statusCode: 409, code: "REQUEST_KEY_USED" }
+    );
+  }
+  const existingAmount = Number(row.amount);
+  return {
+    referenceNumber: row.reference_number,
+    amount: existingAmount,
+    payTo: PAYMENT_EMAIL,
+    instructions: paymentRequestInstructions(row.reference_number, existingAmount),
+    reused: true,
+  };
 }
 
 export async function requestAccess(
@@ -547,50 +594,28 @@ export async function requestAccess(
   const normalizedEmail = email.toLowerCase().trim();
 
   // Uids come from a verified Firebase token and are alphanumeric. Reject anything else before
-  // it reaches a LIKE pattern or a notes field.
+  // it reaches a column or a notes field.
   if (clientInfo?.uid && !/^[A-Za-z0-9_-]{1,128}$/.test(clientInfo.uid)) {
     throw Object.assign(new Error("Invalid account identifier."), { statusCode: 400 });
   }
-  // Reuse only for a retry of the same checkout attempt: same verified account, same key.
-  // A deliberate repeat purchase carries a new key and gets its own reference.
-  if (clientInfo?.uid && clientInfo.requestKey) {
-    const since = new Date(Date.now() - DUPLICATE_REQUEST_WINDOW_MS).toISOString();
-    const { data: candidates, error: lookupErr } = await db
-      .from("payments")
-      .select("reference_number, amount, notes")
-      .eq("status", "pending")
-      .eq("plan", tier)
-      .gte("submitted_at", since)
-      .like("notes", `%;uid:${clientInfo.uid}%`)
-      .order("submitted_at", { ascending: false });
-    if (lookupErr) throw Object.assign(new Error(`Failed to check existing requests: ${lookupErr.message}`), { statusCode: 500 });
-    // Exact match on the uid field, not a substring match, so one uid can never match another.
-    // The stored email is what approval later sends the code to, so a reused request must
-    // carry the account's current verified email. If the verified email changed, make a new one.
-    const existing = (candidates || []).find((row: any) => {
-      const parts = String(row.notes || "").split(";");
-      // Reuse only a request priced at today's price. A stale amount would make the buyer pay
-      // the wrong figure, and approval would reject a correct transfer.
-      return parts.includes(`uid:${clientInfo.uid}`) && parts.includes(`email:${normalizedEmail}`)
-        && parts.includes(`key:${clientInfo.requestKey}`) && Number(row.amount) === amount;
-    });
-    if (existing) {
-      const existingAmount = Number(existing.amount);
-      return {
-        referenceNumber: existing.reference_number as string,
-        amount: existingAmount,
-        payTo: PAYMENT_EMAIL,
-        instructions: paymentRequestInstructions(existing.reference_number, existingAmount),
-        reused: true,
-      };
-    }
+  if (clientInfo?.requestKey && !/^[A-Za-z0-9-]{8,64}$/.test(clientInfo.requestKey)) {
+    throw Object.assign(new Error("Invalid request key."), { statusCode: 400, code: "INVALID_REQUEST_KEY" });
+  }
+  // Only a request with a verified account AND a key is idempotent. Without both, every call is a new request.
+  const keyed = Boolean(clientInfo?.uid && clientInfo.requestKey);
+  const uid = clientInfo?.uid ?? null;
+  const requestKey = clientInfo?.requestKey ?? null;
+
+  if (keyed) {
+    const existing = await findKeyedRequest(db, uid as string, requestKey as string);
+    if (existing) return reuseKeyedRequest(existing, tier, normalizedEmail, amount);
   }
 
   const referenceNumber = generateReferenceNumber();
 
   let notes = `email:${normalizedEmail}`;
-  if (clientInfo?.uid) notes += `;uid:${clientInfo.uid}`;
-  if (clientInfo?.requestKey) notes += `;key:${clientInfo.requestKey}`;
+  if (uid) notes += `;uid:${uid}`;
+  if (requestKey) notes += `;key:${requestKey}`;
   if (clientInfo?.clientIp) notes += `;ip:${clientInfo.clientIp}`;
   if (clientInfo?.userAgent) notes += `;ua:${encodeURIComponent(clientInfo.userAgent.slice(0, 100))}`;
 
@@ -604,13 +629,26 @@ export async function requestAccess(
     status: "pending",
     notes,
   };
-  if (clientInfo?.uid) rowPayload.firebase_uid = clientInfo.uid;
+  if (uid) rowPayload.firebase_uid = uid;
+  if (requestKey) rowPayload.request_key = requestKey;
   if (clientInfo?.clientIp) rowPayload.client_ip = clientInfo.clientIp;
   if (clientInfo?.userAgent) rowPayload.user_agent = clientInfo.userAgent;
 
   const { error } = await db.from("payments").insert(rowPayload);
   if (error) {
-    // If insert failed due to unknown columns, fallback to base columns
+    // Two concurrent submissions of one attempt: the unique index rejects the second. Return the
+    // row the first one created, so both callers get the same reference.
+    if (keyed && error.code === "23505") {
+      const existing = await findKeyedRequest(db, uid as string, requestKey as string);
+      if (existing) return reuseKeyedRequest(existing, tier, normalizedEmail, amount);
+      throw Object.assign(new Error("This checkout attempt was already used. Start a new checkout to get a payment reference."), { statusCode: 409, code: "REQUEST_KEY_USED" });
+    }
+    // A keyed request must never fall back to a row without its key: that row would not be idempotent.
+    // A missing column here means the migration has not been applied, so fail closed.
+    if (keyed && (error.code === "42703" || error.message?.includes("column"))) {
+      throw Object.assign(new Error("Payment request storage is not ready. Please try again later."), { statusCode: 503, code: "PAYMENT_STORAGE_NOT_READY" });
+    }
+    // Unkeyed requests: retry with base columns only when the optional identity columns are missing.
     if (error.message?.includes("column") || error.code === "42703") {
       const { error: fallbackErr } = await db.from("payments").insert({
         plan: tier,

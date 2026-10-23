@@ -763,7 +763,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       res.json(result);
     } catch (err: any) {
       console.error("[/api/request-access]", err);
-      res.status(err.statusCode || 500).json({ error: err.message || "Failed to create access request." });
+      res.status(err.statusCode || 500).json({ error: err.message || "Failed to create access request.", ...(err.code ? { code: err.code } : {}) });
     }
   });
 
