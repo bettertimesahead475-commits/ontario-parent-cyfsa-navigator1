@@ -1,5 +1,5 @@
 /**
- * Source-grounded parental-rights education for the Parent Portal.
+ * Source-grounded parental-rights education. Not yet imported by any screen.
  *
  * Every `quote` is copied verbatim from the official CYFSA consolidation kept in
  * legal-reference/CYFSA_full_text_2026-06-24_consolidation.txt. A test checks each quote against
@@ -77,14 +77,14 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     section: "CYFSA s. 14",
     quote: "the parent of a child in care retains any right that the parent may have,",
     plainEnglish:
-      "When a child is in care, a parent keeps any right they already had, with some exceptions. A parent may keep directing the child's education and upbringing, in line with the child's creed, community identity and cultural identity. A parent who is the child's substitute decision-maker may also consent to treatment. This does not give a parent a right they did not already have.",
+      "When a child is in care, a parent keeps any right they already had, with some exceptions. A parent may keep directing the child's education and upbringing, in line with the child's creed, community identity and cultural identity. A parent who is the child's substitute decision-maker may also consent to treatment for an incapable child (Health Care Consent Act, 1996, s. 20). This does not give a parent a right they did not already have.",
     appliesWhen: "While the child is in care, and subject to the exceptions named at the start of the section.",
     verifyInDocuments: "Note any decisions about the child's education, upbringing, or treatment, and who made them, and whether the parent was the substitute decision-maker.",
-    limitations: "The exceptions are custody during an adjournment (s. 94(7)), and interim and extended society care (ss. 110 and 111). Check those before relying on this.",
+    limitations: "The exceptions are custody during an adjournment (s. 94(7)), and interim and extended society care (ss. 110 and 111). Check those before relying on this. The treatment-consent right depends on the Health Care Consent Act, 1996, s. 20, which is cross-referenced in s. 14(b) but is not in this app's copy of the CYFSA.",
   },
   {
     id: "evidence-admissibility",
-    title: "Some written statements can be admitted in child protection cases",
+    title: "Any oral or written statement or report the court considers relevant can be admitted",
     section: "CYFSA s. 93(1)(b)",
     quote:
       "any oral or written statement or report that the court considers relevant to the proceeding, including a transcript, exhibit or finding or the reasons for a decision in an earlier civil or criminal proceeding, is admissible into evidence.",
@@ -118,7 +118,7 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
   },
 ];
 
-/** Provisions that are NOT yet verified in this repository. Shown to parents as gaps, not as rules. */
+/** Provisions that are NOT yet verified in this repository. Not yet shown to parents; if used, present them as gaps, not as rules. */
 export const NOT_YET_VERIFIED = [
   "Family Law Rules (disclosure, affidavit form, and response timelines) — no verified copy available to this app.",
   "Charter of Rights and Freedoms provisions cited in analysis — no verified copy available to this app.",

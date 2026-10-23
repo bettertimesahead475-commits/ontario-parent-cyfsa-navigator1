@@ -78,7 +78,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     });
     const concerns = view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body ?? "";
     expect(concerns).toMatch(/Child in need of protection/);
-    expect(concerns).toMatch(/No hearing date appears/);
+    expect(concerns).toMatch(/Question to check/);
+    expect(concerns).not.toMatch(/No hearing date appears|Inconclusive/);
     expect(view.thresholdChecks).toHaveLength(1);
     expect(view.timelineChecks).toHaveLength(1);
   });
@@ -142,7 +143,7 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
       ...REPORT,
       proceduralTimelineViolations: [{ timelineRule: "Hearing within five days", evaluation: "No hearing date appears.", citation: "CYFSA s. 81(2)", citationStatus: "UNVERIFIED" }],
     });
-    expect(view.timelineChecks[0]).toMatch(/No hearing date appears/);
+    expect(view.timelineChecks[0]).toMatch(/Question to check/);
     expect(view.timelineChecks[0]).toMatch(/[Uu]nverified/);
   });
 
@@ -189,7 +190,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
         forensicVerification: { verdict: "OVERSTATED", note: "The record shows a concern, not a confirmed risk." },
       }],
     });
-    expect(view.thresholdChecks[0]).toMatch(/Result: Met/);
+    expect(view.thresholdChecks[0]).not.toMatch(/Result:|Met\b|The record describes/);
+    expect(view.thresholdChecks[0]).toMatch(/Question to check/);
     expect(view.thresholdChecks[0]).toMatch(/found this overstated/);
     expect(view.thresholdChecks[0]).toMatch(/concern, not a confirmed risk/);
   });
@@ -246,6 +248,8 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     expect(line).toMatch(/Page 4/);
     expect(line).toMatch(/CYFSA s\. 88/);
     expect(line).toMatch(/Ask counsel whether an alternative outcome happened/);
+    // The analyzer's breach-type evaluation is not presented to parents as a finding.
+    expect(line).not.toMatch(/outside the five-day window/);
   });
 
   it("treats a threshold source with no verification status as unverified", () => {
