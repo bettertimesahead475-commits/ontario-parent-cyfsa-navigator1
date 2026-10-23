@@ -69,6 +69,28 @@ describe("buildParentReportView", () => {
 });
 
 describe("buildParentReportView - accuracy of parent-facing claims", () => {
+  it("carries threshold checks and timeline violations into the parent view, not only red flags", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      thresholdAnalysis: [{ thresholdChecked: "Child in need of protection", isMet: "Inconclusive", reasoning: "The file does not show the harm alleged.", primarySourceLaw: "CYFSA s. 74" }],
+      proceduralTimelineViolations: [{ timelineRule: "Hearing within five days", documentAssertion: "", evaluation: "No hearing date appears in the upload.", citation: "CYFSA s. 88" }],
+    });
+    const concerns = view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body ?? "";
+    expect(concerns).toMatch(/Child in need of protection/);
+    expect(concerns).toMatch(/No hearing date appears/);
+    expect(view.thresholdChecks).toHaveLength(1);
+    expect(view.timelineChecks).toHaveLength(1);
+  });
+
+  it("marks a legacy citation with no verification status as unverified", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      redFlags: [{ ...REPORT.redFlags[0], citationStatus: undefined, legalReference: "CYFSA s. 74(2)" }],
+    });
+    expect(view.findings[0].evidenceDetail.citationStatus).not.toBe("CYFSA s. 74(2)");
+    expect(view.findings[0].evidenceDetail.citationStatus).toMatch(/[Uu]nverified/);
+  });
+
   it("labels an unverified quotation as a paraphrase rather than the record's words", () => {
     const view = buildParentReportView({
       ...REPORT,
