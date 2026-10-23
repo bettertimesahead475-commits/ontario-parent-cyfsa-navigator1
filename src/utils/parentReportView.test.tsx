@@ -198,18 +198,18 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     const adjournment = PARENTAL_RIGHTS.find((entry) => entry.id === "adjournment-limit");
     expect(adjournment).toBeDefined();
     expect(adjournment?.plainEnglish).toMatch(/everyone present and the child's caregiver agree/);
-    expect(adjournment?.plainEnglish).toMatch(/knows that a party who is not present objects/);
+    expect(adjournment?.plainEnglish).toMatch(/knows a party who is absent objects/);
     expect(adjournment?.plainEnglish).not.toMatch(/does not object/);
   });
 
-  it("tells the parent when the second review was incomplete, using the analyzer's reason", () => {
+  it("tells the parent when the second review was incomplete, without showing the analyzer's raw reason", () => {
     const view = buildParentReportView({
       ...REPORT,
       forensicVerification: { status: "incomplete", reason: "Second review timed out; no findings were checked." },
     });
     expect(view.secondReviewNotice).toMatch(/Not every finding was independently second-reviewed/);
-    expect(view.secondReviewNotice).toMatch(/timed out/);
-    expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body).toMatch(/timed out/);
+    expect(view.secondReviewNotice).not.toMatch(/timed out/);
+    expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body).toMatch(/could not be completed/);
   });
 
   it("says how many findings a partial second review covered", () => {
@@ -259,7 +259,7 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
   it("does not describe the s. 88 five-day rule as a mandatory court hearing in its title", () => {
     const entry = PARENTAL_RIGHTS.find((item) => item.id === "five-day-hearing");
     expect(entry?.title).not.toMatch(/must go before a court/);
-    expect(entry?.title).toMatch(/unless a listed outcome/);
+    expect(entry?.title).toMatch(/one of the listed steps must happen/);
   });
 
   it("does not treat an application or motion for an order as an order with legal effect", () => {
@@ -345,6 +345,29 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     const body = view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body ?? "";
     expect(body).toMatch(/recorded this as a court record/);
     expect(body).toMatch(/does not confirm whether it is final, signed, entered, served, or still in effect/);
+  });
+  it("keeps the unverified warning on the statute line itself, not only in the detail", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      redFlags: [{ ...REPORT.redFlags[0], legalReference: "CYFSA s. 74(2)", citationStatus: "UNVERIFIED" }],
+    });
+    expect(view.findings[0].whatTheLawSays).toMatch(/CYFSA s\. 74\(2\)/);
+    expect(view.findings[0].whatTheLawSays).toMatch(/[Uu]nverified/);
+  });
+
+  it("does not say a quote could not be matched when no check was recorded", () => {
+    const withoutCheck: Record<string, unknown> = { ...REPORT.redFlags[0] };
+    delete withoutCheck.quoteVerified;
+    const view = buildParentReportView({ ...REPORT, redFlags: [withoutCheck] });
+    expect(view.findings[0].whatHappened).not.toMatch(/could not be matched/);
+    expect(view.findings[0].whatHappened).toMatch(/has not been checked/);
+  });
+
+  it("does not present a missing-records reassurance when no analysis listed any", () => {
+    const view = buildParentReportView({ ...REPORT, whatIsMissing: [], gaps: [], missingEvidence: [] });
+    const concerns = view.summary.find((part: { heading: string }) => part.heading.startsWith("5."))?.body ?? "";
+    expect(concerns).not.toMatch(/No missing records were identified/);
+    expect(concerns).toMatch(/does not show that none exist/);
   });
 });
 

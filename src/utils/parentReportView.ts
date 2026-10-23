@@ -69,7 +69,9 @@ function severityLabel(severity: unknown): string {
   const s = text(severity);
   if (s === "CRITICAL") return "Serious concern to check";
   if (s === "Worth Raising With Counsel") return "Worth raising with a lawyer";
-  return s ? "May affect how much weight this gets" : "";
+  if (s === "Affects Evidentiary Weight") return "May affect how much weight this gets";
+  // An unrecognised value must not silently get the weight-only label.
+  return s ? "Severity not classified; ask a lawyer" : "";
 }
 
 const SECOND_REVIEW_WORDING: Record<string, string> = {
@@ -93,8 +95,9 @@ function secondReviewNotice(report: Loose): string {
   const review = report.forensicVerification;
   if (!review || typeof review !== "object") return "";
   const parts: string[] = [];
+  // The analyzer's free-text reason is not shown: on a failed review it can contain a provider error message.
   if (review.status === "incomplete") {
-    parts.push("Not every finding was independently second-reviewed.", text(review.reason));
+    parts.push("Not every finding was independently second-reviewed. The independent verification could not be completed for every finding.");
   }
   const checked = Number(review.checkedFindings);
   const total = Number(review.totalFindings);
@@ -177,6 +180,14 @@ function timelineLine(check: Loose): string {
     .join(" ");
 }
 
+/** The statute line carries its verification status, so an unverified citation is not read as settled. */
+function lawWithStatus(flag: Loose): string {
+  const law = text(flag.legalReference);
+  if (!law) return "No statute is cited for this point.";
+  const unverified = citationStatus(flag) === UNVERIFIED_CITATION && !/unverified/i.test(law);
+  return unverified ? `${law} ${UNVERIFIED_CITATION}` : law;
+}
+
 function findingView(flag: Loose, index: number): ParentFindingView {
   const explanation = text(flag.explanation);
   const quote = text(flag.phraseDetected);
@@ -188,10 +199,12 @@ function findingView(flag: Loose, index: number): ParentFindingView {
     whatHappened: quote
       ? flag.quoteVerified === true
         ? `The record says: "${quote}"`
-        : `The analyzer quoted this point, but the exact wording could not be matched to the document, so treat it as a paraphrase: "${quote}"`
+        : flag.quoteVerified === false
+          ? `The analyzer quoted this point, but the exact wording could not be matched to the document, so treat it as a paraphrase: "${quote}"`
+          : `The analyzer quoted this point. Its exact wording has not been checked against the document, so treat it as a paraphrase until it is: "${quote}"`
       : "The record quote for this point was not found.",
     whyItMatters: explanation,
-    whatTheLawSays: text(flag.legalReference) || "No statute is cited for this point.",
+    whatTheLawSays: lawWithStatus(flag),
     whatCourtsHaveSaid: CASE_LAW_LIMITATION,
     whatIsUnknown: text(flag.verifyRequirement),
     secondReview: secondReviewLine(flag),
@@ -223,8 +236,13 @@ export function buildParentReportView(report: Loose): ParentReportView {
   // A title such as "Final Court Order" or "Draft Order" does not show whether the document was signed, entered,
   // served, or is in effect, so the parent view says that instead of asserting it.
   const documentType = text(report.documentType);
-  const titleSuggestsCourtOrder = /\b(order|endorsement)\b/i.test(documentType) && !/\b(application|motion|request)\b/i.test(documentType);
-  const hasAuthorityRecord = Boolean(report.documentAuthority && typeof report.documentAuthority === "object");
+  // A title that leads with a non-order word (application, motion, affidavit...) is not treated as an order.
+  // Any other title that names an order, endorsement, judgment or decision gets the caveat.
+  const NON_ORDER_LEAD = /^\s*(application|motion|request|notice|affidavit|letter|form|statement|report|summary)\b/i;
+  const titleSuggestsCourtOrder = /\b(order|endorsement|judgment|decision)s?\b/i.test(documentType) && !NON_ORDER_LEAD.test(documentType);
+  // Only explicit analyzer authority of a known court-record kind counts. Any other value falls back to the title caveat.
+  const authority = report.documentAuthority && typeof report.documentAuthority === "object" ? report.documentAuthority : null;
+  const hasAuthorityRecord = authority !== null && ["COURT_ORDER", "JUDICIAL_ENDORSEMENT"].includes(text(authority.recordKind));
 
   const summary = [
     { heading: "1. What is this document?", body: text(report.documentType) || "Document type not identified." },
@@ -251,7 +269,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
       heading: "5. Is anything missing or concerning?",
       body: [notice, ...gaps, ...missing, ...thresholds, ...timelines, ...contradictions].filter(Boolean).length
         ? [notice, ...gaps, ...missing, ...thresholds, ...timelines, ...contradictions].filter(Boolean).join(" ")
-        : "No missing records were identified from this document alone.",
+        : "This analysis listed no missing records. That does not show that none exist; a lawyer should check the file.",
     },
     {
       heading: "6. What can you do to prepare?",
