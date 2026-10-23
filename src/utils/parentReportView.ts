@@ -86,15 +86,31 @@ function secondReviewLine(item: Loose): string {
 function secondReviewNotice(report: Loose): string {
   const review = report.forensicVerification;
   if (!review || typeof review !== "object") return "";
+  const parts: string[] = [];
   if (review.status === "incomplete") {
-    return ["Not every finding was independently second-reviewed.", text(review.reason)].filter(Boolean).join(" ");
+    parts.push("Not every finding was independently second-reviewed.", text(review.reason));
   }
   const checked = Number(review.checkedFindings);
   const total = Number(review.totalFindings);
   if (Number.isFinite(checked) && Number.isFinite(total) && checked < total) {
-    return `The independent second review checked ${checked} of ${total} findings. The others have no second-review result.`;
+    parts.push(`The independent second review checked ${checked} of ${total} findings. The others have no second-review result.`);
   }
-  return "";
+  // The analyzer's overall assessment qualifies the findings even when every finding was checked.
+  const assessment = text(review.overallAssessment);
+  if (assessment) parts.push(`The independent second review's overall assessment: ${assessment}`);
+  return parts.filter(Boolean).join(" ");
+}
+
+const CHRONOLOGY_EVIDENCE_LABELS: Record<string, string> = {
+  HEARSAY: "Second-hand (hearsay), not seen or heard directly by the author",
+  INFERENCE: "An inference, not stated directly in the document",
+  UNSUPPORTED: "Not supported by anything in the document",
+};
+
+function chronologyLine(entry: Loose): string {
+  const where = text(entry.locationInDocument);
+  const label = CHRONOLOGY_EVIDENCE_LABELS[text(entry.evidenceClassification).toUpperCase()] ?? "";
+  return [text(entry.date), text(entry.event), where ? `(${where})` : "", label ? `Evidence: ${label}.` : ""].filter(Boolean).join(" ");
 }
 
 function thresholdLine(check: Loose): string {
@@ -108,10 +124,6 @@ function thresholdLine(check: Loose): string {
   return [name, result ? `Result: ${result}.` : "", reasoning, review, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
 }
 
-function chronologyLine(entry: Loose): string {
-  const where = text(entry.locationInDocument);
-  return [text(entry.date), text(entry.event), where ? `(${where})` : ""].filter(Boolean).join(" ");
-}
 
 function contradictionLine(item: Loose): string {
   const places = list(item.locations).join("; ");
@@ -184,7 +196,9 @@ export function buildParentReportView(report: Loose): ParentReportView {
   // Draft and proposed orders are not operative, so they never get the legal-effect wording.
   const documentType = text(report.documentType);
   const isDraft = /\b(draft|proposed)\b/i.test(documentType);
-  const isCourtRecord = !isDraft && (Boolean(report.documentAuthority) || /\b(order|endorsement)\b/i.test(documentType));
+  // Only a final order or endorsement has legal effect. Applications and motions that ask for an order do not.
+  const isFinalOrderType = /^(court\s+)?((final|interim|temporary|consent)\s+)?(order|endorsement)s?\b/i.test(documentType);
+  const isCourtRecord = !isDraft && (Boolean(report.documentAuthority) || isFinalOrderType);
 
   const summary = [
     { heading: "1. What is this document?", body: text(report.documentType) || "Document type not identified." },
