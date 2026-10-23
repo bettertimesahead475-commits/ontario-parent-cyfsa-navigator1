@@ -68,6 +68,32 @@ describe("buildParentReportView", () => {
   });
 });
 
+describe("buildParentReportView - accuracy of parent-facing claims", () => {
+  it("labels an unverified quotation as a paraphrase rather than the record's words", () => {
+    const view = buildParentReportView({
+      ...REPORT,
+      redFlags: [{ ...REPORT.redFlags[0], quoteVerified: false }],
+    });
+    const whatHappened = view.findings[0].whatHappened;
+    expect(whatHappened).not.toMatch(/^The record says/);
+    expect(whatHappened).toMatch(/paraphrase/);
+  });
+
+  it("does not say no rights were identified when the rights section was never run", () => {
+    const view = buildParentReportView({ ...REPORT, charterAndHumanRightsIssues: [] });
+    const rights = view.summary.find((part: { heading: string }) => part.heading.startsWith("4."));
+    expect(rights?.body).not.toMatch(/No specific rights were identified/);
+    expect(rights?.body).toMatch(/full analysis/);
+  });
+
+  it("treats a court endorsement as a court record from documentType alone", () => {
+    const { documentAuthority: _omitted, ...withoutAuthority } = REPORT;
+    const view = buildParentReportView(withoutAuthority);
+    expect(view.summary.find((part: { heading: string }) => part.heading.startsWith("3."))?.body)
+      .toMatch(/court order or endorsement has legal effect/);
+  });
+});
+
 describe("readability", () => {
   it("passes a short, plain-language summary with no unexplained terms", () => {
     const plain =

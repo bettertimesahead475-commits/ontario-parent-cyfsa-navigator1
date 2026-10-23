@@ -66,7 +66,11 @@ function findingView(flag: Loose, index: number): ParentFindingView {
     heading: text(flag.category) || `Point ${index + 1}`,
     evidenceLabel: text(flag.evidenceClassification),
     severityLabel: severityLabel(flag.severity),
-    whatHappened: quote ? `The record says: "${quote}"` : "The record quote for this point was not found.",
+    whatHappened: quote
+      ? flag.quoteVerified === true
+        ? `The record says: "${quote}"`
+        : `The analyzer quoted this point, but the exact wording could not be matched to the document, so treat it as a paraphrase: "${quote}"`
+      : "The record quote for this point was not found.",
     whyItMatters: explanation,
     whatTheLawSays: text(flag.legalReference) || "No statute is cited for this point.",
     whatCourtsHaveSaid: CASE_LAW_LIMITATION,
@@ -86,7 +90,8 @@ export function buildParentReportView(report: Loose): ParentReportView {
   const missing = list(report.whatIsMissing);
   const questions = list(report.whatToAskALawyer);
   const verify = list(report.whatToVerify);
-  const isCourtRecord = Boolean(report.documentAuthority);
+  // documentAuthority is not part of the live analyzer schema, so classify from documentType.
+  const isCourtRecord = Boolean(report.documentAuthority) || /court|endorsement|order/i.test(text(report.documentType));
 
   const summary = [
     { heading: "1. What is this document?", body: text(report.documentType) || "Document type not identified." },
@@ -99,7 +104,10 @@ export function buildParentReportView(report: Loose): ParentReportView {
     },
     {
       heading: "4. What rights or legal protections may apply?",
-      body: list(report.charterAndHumanRightsIssues).join(" ") || "No specific rights were identified in this document.",
+      // Fast Analysis does not run the rights section, and normalization turns that absence into an empty list.
+      // An empty list therefore means "not checked here", not "no rights issues".
+      body: list(report.charterAndHumanRightsIssues).join(" ")
+        || "No rights issues are listed in this report. A full analysis is needed before anyone can say whether rights apply.",
     },
     {
       heading: "5. Is anything missing or concerning?",

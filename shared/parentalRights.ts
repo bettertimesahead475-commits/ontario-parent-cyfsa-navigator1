@@ -32,8 +32,8 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     quote: "The following are parties to a proceeding under this Part:",
     plainEnglish:
       "The law lists who the parties are in a child protection case. A child's parent is one of them, so you have a formal place in the case.",
-    appliesWhen: "In any child protection proceeding under Part V of the CYFSA where the parent is named.",
-    verifyInDocuments: "Check that you are named as a party in the application and the court papers.",
+    appliesWhen: "In any child protection proceeding under Part V of the CYFSA where the person is the child's parent. Being named in the papers is a document check, not a condition.",
+    verifyInDocuments: "Check that you are named as a party in the application and the court papers. If you are a parent and are not named, raise it with counsel.",
     limitations: "Whether a specific person counts as the child's parent can depend on facts this section does not decide.",
   },
   {
@@ -112,9 +112,9 @@ export const PARENTAL_RIGHTS: ParentalRightEntry[] = [
     quote: "any parent of the child;",
     plainEnglish:
       "A parent is one of the people who can appeal an order made under this Part. Time limits and procedure are set elsewhere in the Act.",
-    appliesWhen: "For orders made under Part V, subject to the rules in section 121 and the court rules.",
+    appliesWhen: "For orders made under Part V, subject to the rules in section 121 and the court rules. Does not apply to an assessment order under s. 98: s. 121(2) excludes it from this authorization.",
     verifyInDocuments: "Note the date of each order. Ask counsel about the appeal deadline right away.",
-    limitations: "This entry does not give the appeal deadline. The time limits must be confirmed from section 121 and the rules.",
+    limitations: "This entry does not give the appeal deadline, and it does not cover s. 98 assessment orders. Confirm both from section 121 and the rules.",
   },
 ];
 
