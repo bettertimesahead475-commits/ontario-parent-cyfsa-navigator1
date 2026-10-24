@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachParentAttribution, buildCaseModelFromExtraction, buildSelectedView, listSelectionOptions } from "./parentExtraction.js";
+import { attachParentAttribution, buildCaseModelFromExtraction, buildSelectedView, hasParentView, listSelectionOptions } from "./parentExtraction.js";
 import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_FIELD, PARENT_ATTRIBUTION_SCHEMA, sectionForClient } from "./parentAnalysisSchema.js";
 
 // Synthetic documents. Both parents are named in every document.
@@ -240,11 +240,36 @@ describe("attribution gates (review fixes)", () => {
     expect(caseModel.roles.every(r => r.proceedingId === "PROC-1" || r.proceedingId === "PROC-2")).toBe(true);
   });
 
-  it("rejects a quotation that appears more than once, since it cannot point to one place", () => {
-    const doc = `${DOC_PROC1}\nParagraph 30. Parent A left the child alone overnight on two occasions.`;
-    const { caseModel, rejected } = buildCaseModelFromExtraction(rawBlock, doc, "doc-1");
-    expect(caseModel.allegations.map(a => a.id)).toEqual([]);
+  it("rejects a short quotation that appears more than once, since it cannot point to one place", () => {
+    const raw = structuredClone(rawBlock);
+    raw.allegations[0].quote = "Parent A left the child alone";
+    const doc = `${DOC_PROC1}\nParagraph 30. Parent A left the child alone again.`;
+    const { caseModel, rejected } = buildCaseModelFromExtraction(raw, doc, "doc-1");
+    expect(caseModel.allegations).toEqual([]);
     expect(rejected).toContainEqual({ kind: "allegation", id: "ALG-1", reason: "QUOTE_NOT_VERIFIED" });
+  });
+
+  it("accepts a long quotation that is repeated in the document, such as an allegation restated in an affidavit", () => {
+    const doc = `${DOC_PROC1}\nParagraph 30. Parent A left the child alone overnight on two occasions.`;
+    const { caseModel } = buildCaseModelFromExtraction(rawBlock, doc, "doc-1");
+    expect(caseModel.allegations.map(a => a.id)).toEqual(["ALG-1"]);
+  });
+
+  it("does not let a generic word or pronoun verify a subject", () => {
+    const raw = structuredClone(rawBlock);
+    raw.parties[1].aliases = ["mother", "she", "Pat"];
+    raw.allegations[0].quote = "Parent A left the child alone overnight on two occasions.";
+    raw.allegations[0].subjectPartyIds = ["P-B"];
+    const doc = `${DOC_PROC1}\nShe said the mother was away.`;
+    const { caseModel } = buildCaseModelFromExtraction(raw, doc, "doc-1");
+    expect(caseModel.allegations[0].subjectPartyIds).toEqual([]);
+  });
+
+  it("matches a file number written with a different dash", () => {
+    const raw = structuredClone(rawBlock);
+    const doc = DOC_PROC1.replace("FC-24-0001", "FC\u201324\u20130001");
+    const { caseModel } = buildCaseModelFromExtraction(raw, doc, "doc-1");
+    expect(caseModel.proceedings.find(p => p.id === "PROC-1")?.fileNumber).toBe("FC-24-0001");
   });
 
   it("rejects a very short quotation such as a bare name", () => {
@@ -368,5 +393,16 @@ describe("attribution scenarios through the extraction pipeline", () => {
     expect(roles("PROC-1", "P-B")).toEqual(["PROPOSED_CAREGIVER"]);
     expect(roles("PROC-2", "P-A")).toEqual(["PROPOSED_CAREGIVER"]);
     expect(roles("PROC-2", "P-B")).toEqual(["RESPONDENT"]);
+  });
+});
+
+describe("hasParentView", () => {
+  it("is false for a missing, empty, or garbage model and true for a usable one", () => {
+    expect(hasParentView({})).toBe(false);
+    expect(hasParentView({ parentAttribution: { caseModel: { parties: [], proceedings: [], roles: [], allegations: [], orders: [] } } })).toBe(false);
+    const garbage = buildCaseModelFromExtraction({ parties: [{ nope: true }], roles: [{}] }, DOC_PROC1, "doc-1");
+    expect(hasParentView({ parentAttribution: { caseModel: garbage.caseModel } })).toBe(false);
+    const usable = buildCaseModelFromExtraction(rawBlock, DOC_PROC1, "doc-1");
+    expect(hasParentView({ parentAttribution: { caseModel: usable.caseModel } })).toBe(true);
   });
 });

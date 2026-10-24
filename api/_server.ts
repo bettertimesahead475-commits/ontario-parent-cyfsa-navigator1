@@ -87,7 +87,7 @@ import {
 import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
 import { forensicBillingKey } from "./services/billingKey.js";
 import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_FIELD, PARENT_ATTRIBUTION_RULES, PARENT_ATTRIBUTION_SCHEMA, sectionForClient } from "./services/parentAnalysisSchema.js";
-import { attachParentAttribution, buildSelectedView, listSelectionOptions } from "./services/parentExtraction.js";
+import { attachParentAttribution, buildSelectedView, hasParentView, listSelectionOptions } from "./services/parentExtraction.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -1942,6 +1942,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let isPaid = false;
     let uid: string | null = null;
     let freeUseRecorded = false;
+    // Set when recording usage fails. The report is still returned, but no parent view is stored for it.
+    let usageRecordFailed = false;
     // True only once this request has created the job record. Only then may it mark that job failed, so an
     // error in a request that merely reuses someone else's id can never change that person's job.
     let jobCreatedHere = false;
@@ -1958,6 +1960,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     // never a usage key, so one id cannot be shared across accounts or used to skip the usage count.
     const usageKeyFor = (sessionId: string | null | undefined): string | null =>
       sessionId && isValidAnalysisJobId(idempotencyKey) ? `analyze:${sessionId}:${idempotencyKey}` : null;
+    // Credit accounting id for this request, scoped to the paid session. Another account that reuses this id gets its
+    // own reservation, so its failure can never release or reuse someone else's reserved credit.
+    const creditIdFor = (sessionId: string): string => `analyze:${sessionId}:${analysisRequestId}`;
     const requestStartedAt = Date.now();
     // No job record is created until access has been granted (below). A record created here used
     // to stay "analyzing" forever, with no owner, whenever the request was then refused (e.g. 402
@@ -2176,7 +2181,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           sessionId: paidSessionId,
           firebaseUid: identity.uid,
           tier: paidTier,
-          requestId: analysisRequestId,
+          requestId: creditIdFor(paidSessionId),
           analysisType: mode === "full" ? "forensic" : "quick",
           documentName: req.body?.documentName || req.body?.fileData?.name || "document",
         });
@@ -2463,6 +2468,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         } catch (usageErr) {
           // A parent's completed analysis must never be withheld because our own
           // usage bookkeeping failed - log it and let the real result through.
+          usageRecordFailed = true;
           console.error("[document analysis] Failed to record free-tier usage (non-fatal):", usageErr);
         }
       } else if (isPaid && paidSessionId && paidTier) {
@@ -2473,7 +2479,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             await finalizeAnalysisCredit({
               sessionId: paidSessionId,
               firebaseUid: identity.uid,
-              requestId: analysisRequestId,
+              requestId: creditIdFor(paidSessionId),
               reservationId: creditReservation.reservationId,
               tier: paidTier,
               documentName: req.body?.documentName || req.body?.fileData?.name,
@@ -2481,6 +2487,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           }
           credits = await getPaidUsageStatus(paidSessionId, paidTier);
         } catch (usageErr) {
+          usageRecordFailed = true;
           console.error("[document analysis] Failed to record paid usage (non-fatal):", usageErr);
         }
       }
@@ -2493,7 +2500,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // still recover it after a refresh (the instance may freeze once the response ends).
       if (isParentAnalysisEnabled()) {
         attachParentAttribution(report, targetText, analysisRequestId);
-        if (report.parentAttribution?.caseModel) {
+        if (!usageRecordFailed && hasParentView(report)) {
           // The Quick Review job is stored under the request id, so the parent view reads from it. The id is
           // offered only if the stored record is confirmed; otherwise the report says it is unavailable.
           report.parentViewJobId = analysisRequestId;
@@ -2522,7 +2529,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         try {
           await releaseAnalysisReservation({
             sessionId: paidSessionId,
-            requestId: analysisRequestId,
+            requestId: creditIdFor(paidSessionId),
             reservationId: creditReservation.reservationId,
             reason: error?.message || "analysis_failed",
           });
@@ -3332,7 +3339,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       // model is present. A client-chosen id can never overwrite another job. A storage failure never changes the
       // report; the response says plainly that the parent view is unavailable.
       let storedJobId: string | null = null;
-      if (parentOn && !usageRecordFailed && report.parentAttribution?.caseModel) {
+      if (parentOn && !usageRecordFailed && hasParentView(report)) {
         const candidateId = generateAnalysisJobId();
         try {
           await storeCompletedJobStrict({ jobId: candidateId, uid: identity.uid, mode: "full", report });

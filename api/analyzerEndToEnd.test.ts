@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { LifecycleError } from "./services/lifecycleErrors.js";
+import { createFakeDb } from "./testSupport/fakeCreditDb.js";
 
 const { mockCreateMessage, mockGenerateContent } = vi.hoisted(() => ({
   mockCreateMessage: vi.fn(),
@@ -1055,9 +1056,14 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
       .post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID)
       .send({ textContent: DOC, mode: "fast" });
     expect(res.status).toBe(200);
-    // The verified model is in the completed report; the raw, unverified block must not survive in any section.
     expect(res.body.parentAttribution.caseModel).toBeDefined();
-    expect(res.body.parentAttribution.rejected.length).toBeGreaterThan(0);
+    // The model really returned the block (the prompt asked for it), but the recorded sections must not hold it.
+    expect(mockCreateMessage.mock.calls.some(call => JSON.stringify(call[0]).includes("parentAttribution"))).toBe(true);
+    const job = await request(app).get(`/api/analyze/job/${CLIENT_JOB_ID}`).set(free());
+    expect(job.status).toBe(200);
+    expect(Object.keys(job.body.sections ?? {}).length).toBeGreaterThan(0);
+    expect(JSON.stringify(job.body.sections)).not.toContain("parentAttribution");
+    expect(JSON.stringify(job.body.sections)).not.toContain("P-A");
   });
 
   it("Quick Review: the parent view id is returned only after the record is confirmed stored", async () => {
@@ -1188,5 +1194,96 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
     expect(recordKeys[0]).toBe(`analyze:${PAID_SESSION}:${CLIENT_JOB_ID}`);
     expect(recordKeys[1]).toBeNull();
     expect(recordKeys).not.toContain("shared-key");
+  });
+
+  it("Quick Review (paid): a losing request with a reused id never releases the owner's in-flight credit", async () => {
+    mockCreateMessage.mockImplementation(responder);
+    const B_SESSION = `b-${PAID_SESSION}`;
+    mockAccess.verifySessionToken.mockImplementation((t: string) => (t === PAID_SESSION || t === B_SESSION ? { jti: t } : null));
+    mockAccess.getActivePaidSession.mockImplementation(async (id: string) =>
+      id === PAID_SESSION ? { id, firebaseUid: "paid-uid", tier: "Pro" } : id === B_SESSION ? { id, firebaseUid: "b-uid", tier: "Pro" } : null);
+    mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) => {
+      if (header === PAID_TOKEN) return { uid: "paid-uid", email: "paid@example.com" };
+      if (header === "Bearer b-token") return { uid: "b-uid", email: "b@example.com" };
+      return null;
+    });
+    const fakeDb = createFakeDb([
+      { id: PAID_SESSION, tier: "Pro", credits_granted: 5, credits_consumed: 0, is_suspended: false },
+      { id: B_SESSION, tier: "Pro", credits_granted: 5, credits_consumed: 0, is_suspended: false },
+    ]);
+    mockAccess.getSupabase.mockReturnValue(Object.assign(fakeDb, { storage: fakeStorage().db.storage }));
+
+    // B passes its first ownership check, then waits. A then starts and is held mid-analysis with its credit reserved.
+    let releaseB!: () => void;
+    const gateB = new Promise<void>(resolve => { releaseB = resolve; });
+    mockUsage.checkPaidUsage.mockImplementationOnce((async () => {
+      await gateB;
+      return { allowed: true, used: 0, limit: Infinity, remaining: null, tier: "Pro" };
+    }) as never);
+    const bRequest = request(app)
+      .post("/api/analyze").set({ Authorization: "Bearer b-token", "x-ps-session": B_SESSION }).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: "second account text", mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    let releaseModel!: () => void;
+    const gateModel = new Promise<void>(resolve => { releaseModel = resolve; });
+    mockCreateMessage.mockImplementationOnce((async (body: any) => {
+      await gateModel;
+      return responder(body);
+    }) as never);
+    const aRequest = request(app)
+      .post("/api/analyze").set(myPaid()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 250));
+
+    releaseB();
+    const b = await bRequest;
+    expect(b.status).toBe(409);
+    expect(b.body.code).toBe("ANALYSIS_ID_CONFLICT");
+
+    // B has failed and released its own reservation. A's reservation must still be held.
+    const aRow = fakeDb._reservations.find(row => row.session_id === PAID_SESSION);
+    expect(aRow?.status).toBe("reserved");
+    for (const row of fakeDb._reservations.filter(r => r.session_id === B_SESSION)) {
+      expect(row.status).toBe("released");
+      expect(row.request_id).not.toBe(aRow?.request_id);
+    }
+
+    releaseModel();
+    const a = await aRequest;
+    expect(a.status).toBe(200);
+    expect(fakeDb._reservations.find(row => row.session_id === PAID_SESSION)?.status).toBe("finalized");
+  });
+
+  it("Forensic: a parent block with no usable records is not offered as a parent view", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    mockCreateMessage.mockImplementation(async (body: any) =>
+      isVerificationRequest(body)
+        ? claudeJson(VERIFICATION_RESULT)
+        : claudeJson(JSON.stringify(body).includes("parentAttribution")
+          ? { ...FORENSIC_BODY, parentAttribution: { parties: [{ nope: true }], roles: [{}] } }
+          : FORENSIC_BODY));
+    const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("Quick Review: a failed usage record returns the report but offers no parent view", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    mockUsage.recordFreeUse.mockRejectedValueOnce(new Error("database unavailable"));
+    const res = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.documentTitle).toBe("Affidavit of a worker");
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(upload.mock.calls.some(call => String(call[0]).startsWith(CLIENT_JOB_ID) && String(call[1]).includes("parentViewJobId"))).toBe(false);
   });
 });

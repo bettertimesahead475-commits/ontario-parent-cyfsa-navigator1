@@ -54,6 +54,23 @@ export const EXTRACTION_LIMITS = {
 
 /** A quotation shorter than this cannot tie a record to a specific statement, so it is not accepted. */
 export const MIN_QUOTE_LENGTH = 20;
+/**
+ * A quotation that appears more than once in the document (a repeated paragraph in a notice and its affidavit) is
+ * accepted only when it is long enough to be a specific statement. Its page and paragraph are then the model's
+ * word, since the text does not pin down one place.
+ */
+export const MIN_REPEATED_QUOTE_LENGTH = 40;
+
+/** Words that name a role or a pronoun, not a person. They never count as a name for attributing a subject. */
+const GENERIC_NAMES = new Set([
+  "mother", "father", "parent", "mom", "dad", "mum", "child", "children", "respondent", "applicant", "worker",
+  "society", "caregiver", "he", "she", "her", "him", "his", "they", "them", "the child", "the mother", "the father",
+]);
+const MIN_NAME_LENGTH = 4;
+const usableName = (name: string): boolean => {
+  const normalized = normalizeAlias(name);
+  return normalized.length >= MIN_NAME_LENGTH && !GENERIC_NAMES.has(normalized);
+};
 
 export interface RejectedRecord {
   kind: "party" | "proceeding" | "allegation" | "order" | "role";
@@ -83,9 +100,9 @@ const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T)
 function verifiedSource(raw: Raw, documentText: string, documentId: string): SourceLocator | null {
   const quote = text(raw.quote);
   if (quote.length < MIN_QUOTE_LENGTH) return null;
-  // AMBIGUOUS means the quotation appears more than once, so it cannot point to one place in the document.
   const status = verifyQuoteAgainstSource(documentText, quote);
-  if (!isVerbatimQuoteStatus(status) || status === "AMBIGUOUS") return null;
+  if (!isVerbatimQuoteStatus(status)) return null;
+  if (status === "AMBIGUOUS" && quote.length < MIN_REPEATED_QUOTE_LENGTH) return null;
   return { documentId, page: pageOf(raw.page), paragraph: text(raw.paragraph, 40) || null, quote };
 }
 
@@ -95,10 +112,12 @@ const WORD_CHAR = /[\p{L}\p{N}]/u;
  * True when the name appears in the text as a whole word or phrase. Used so that a subject or role is kept only
  * when the text itself names that person. A name appearing inside another word does not count.
  */
+const foldDashes = (value: string): string => value.replace(/[\u2010-\u2015\u2212]/g, "-");
+
 export function namesAppearIn(textToSearch: string, name: string): boolean {
-  const needle = normalizeAlias(name);
+  const needle = foldDashes(normalizeAlias(name));
   if (!needle) return false;
-  const haystack = normalizeAlias(textToSearch);
+  const haystack = foldDashes(normalizeAlias(textToSearch));
   for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + 1)) {
     const before = haystack[at - 1] ?? "";
     const after = haystack[at + needle.length] ?? "";
@@ -122,7 +141,7 @@ export function buildCaseModelFromExtraction(
   // Names the party is known by, used to check that the text really names a party.
   const namesOf = (partyId: string): string[] => {
     const party = model.parties.find(p => p.id === partyId);
-    return party ? [party.displayName, ...party.aliases] : [];
+    return party ? [party.displayName, ...party.aliases].filter(usableName) : [];
   };
   // A party is named by the quotation when one of its names appears in it. Unknown ids are dropped.
   const namedIn = (quote: string | null, ids: string[]): string[] =>
@@ -314,4 +333,13 @@ export function attachParentAttribution(report: Record<string, any>, documentTex
   if (!isObject(raw)) return;
   const { caseModel, rejected } = buildCaseModelFromExtraction(raw, documentText, documentId);
   report.parentAttribution = { version: 1, caseModel, rejected };
+}
+
+/**
+ * True when a report carries a verified parent model that has at least one parent and case to choose. An empty or
+ * garbage model is not a parent view, so it must never be offered as one.
+ */
+export function hasParentView(report: Record<string, any>): boolean {
+  const model = report?.parentAttribution?.caseModel;
+  return Boolean(model) && listSelectionOptions(model).pairs.length > 0;
 }
