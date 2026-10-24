@@ -7,6 +7,7 @@
  */
 import { isVerbatimQuoteStatus, verifyQuoteAgainstSource } from "./analyzerSections.js";
 import {
+  normalizeAlias,
   type Allegation,
   type AllegationStatus,
   type CaseModel,
@@ -51,10 +52,13 @@ export const EXTRACTION_LIMITS = {
   text: 600,
 };
 
+/** A quotation shorter than this cannot tie a record to a specific statement, so it is not accepted. */
+export const MIN_QUOTE_LENGTH = 20;
+
 export interface RejectedRecord {
   kind: "party" | "proceeding" | "allegation" | "order" | "role";
   id: string;
-  reason: "MALFORMED" | "QUOTE_NOT_VERIFIED" | "LIMIT_EXCEEDED";
+  reason: "MALFORMED" | "QUOTE_NOT_VERIFIED" | "LIMIT_EXCEEDED" | "NOT_IN_DOCUMENT";
 }
 
 export interface ExtractionResult {
@@ -75,12 +79,32 @@ const pageOf = (v: unknown): number | null =>
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback;
 
-/** Verified locator: the quotation must appear in the source document. Returns null when it does not. */
+/** Verified locator: the quotation must appear exactly once in the source document. Returns null otherwise. */
 function verifiedSource(raw: Raw, documentText: string, documentId: string): SourceLocator | null {
   const quote = text(raw.quote);
-  if (!quote) return null;
-  if (!isVerbatimQuoteStatus(verifyQuoteAgainstSource(documentText, quote))) return null;
+  if (quote.length < MIN_QUOTE_LENGTH) return null;
+  // AMBIGUOUS means the quotation appears more than once, so it cannot point to one place in the document.
+  const status = verifyQuoteAgainstSource(documentText, quote);
+  if (!isVerbatimQuoteStatus(status) || status === "AMBIGUOUS") return null;
   return { documentId, page: pageOf(raw.page), paragraph: text(raw.paragraph, 40) || null, quote };
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/**
+ * True when the name appears in the text as a whole word or phrase. Used so that a subject or role is kept only
+ * when the text itself names that person. A name appearing inside another word does not count.
+ */
+export function namesAppearIn(textToSearch: string, name: string): boolean {
+  const needle = normalizeAlias(name);
+  if (!needle) return false;
+  const haystack = normalizeAlias(textToSearch);
+  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + 1)) {
+    const before = haystack[at - 1] ?? "";
+    const after = haystack[at + needle.length] ?? "";
+    if (!WORD_CHAR.test(before) && !WORD_CHAR.test(after)) return true;
+  }
+  return false;
 }
 
 /**
@@ -95,6 +119,14 @@ export function buildCaseModelFromExtraction(
   const rejected: RejectedRecord[] = [];
   const model: CaseModel = { parties: [], proceedings: [], roles: [], allegations: [], orders: [] };
   if (!isObject(raw)) return { caseModel: model, rejected };
+  // Names the party is known by, used to check that the text really names a party.
+  const namesOf = (partyId: string): string[] => {
+    const party = model.parties.find(p => p.id === partyId);
+    return party ? [party.displayName, ...party.aliases] : [];
+  };
+  // A party is named by the quotation when one of its names appears in it. Unknown ids are dropped.
+  const namedIn = (quote: string | null, ids: string[]): string[] =>
+    ids.filter(id => quote !== null && namesOf(id).some(name => namesAppearIn(quote, name)));
 
   const parties = Array.isArray(raw.parties) ? raw.parties : [];
   for (const p of parties.slice(0, EXTRACTION_LIMITS.parties)) {
@@ -117,18 +149,31 @@ export function buildCaseModelFromExtraction(
       continue;
     }
     const date = text(p.applicationDate, 10);
+    const fileNumber = text(p.fileNumber, 64);
     model.proceedings.push({
       id: idOf(p.id),
-      fileNumber: text(p.fileNumber, 64) || null,
+      // A file number the document does not contain is not used.
+      fileNumber: fileNumber && namesAppearIn(documentText, fileNumber) ? fileNumber : null,
       applicationDate: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
       childNames: strings(p.childNames, 10).map(c => c.slice(0, 120)),
     });
   }
 
   const roles = Array.isArray(raw.roles) ? raw.roles : [];
+  const partyIds = new Set(model.parties.map(p => p.id));
+  const proceedingIds = new Set(model.proceedings.map(p => p.id));
   for (const r of roles.slice(0, EXTRACTION_LIMITS.roles)) {
     if (!isObject(r) || !idOf(r.proceedingId) || !idOf(r.partyId)) {
       rejected.push({ kind: "role", id: "", reason: "MALFORMED" });
+      continue;
+    }
+    if (!partyIds.has(idOf(r.partyId)) || !proceedingIds.has(idOf(r.proceedingId))) {
+      rejected.push({ kind: "role", id: idOf(r.partyId), reason: "MALFORMED" });
+      continue;
+    }
+    // A role is kept only when the document names the party. The model's word alone is not enough.
+    if (!namesOf(idOf(r.partyId)).some(name => namesAppearIn(documentText, name))) {
+      rejected.push({ kind: "role", id: idOf(r.partyId), reason: "NOT_IN_DOCUMENT" });
       continue;
     }
     model.roles.push({
@@ -141,7 +186,7 @@ export function buildCaseModelFromExtraction(
   const allegations = Array.isArray(raw.allegations) ? raw.allegations : [];
   for (const a of allegations.slice(0, EXTRACTION_LIMITS.allegations)) {
     const id = isObject(a) ? idOf(a.id) : "";
-    if (!isObject(a) || !id || !idOf(a.proceedingId) || !text(a.text)) {
+    if (!isObject(a) || !id || !proceedingIds.has(idOf(a.proceedingId)) || !text(a.text)) {
       rejected.push({ kind: "allegation", id, reason: "MALFORMED" });
       continue;
     }
@@ -158,7 +203,8 @@ export function buildCaseModelFromExtraction(
       kind: "ALLEGATION",
       text: text(a.text),
       madeBy: text(a.madeBy, 120) || null,
-      subjectPartyIds: strings(a.subjectPartyIds, 10),
+      // A subject is kept only when the verified quotation names that party.
+      subjectPartyIds: namedIn(source.quote, strings(a.subjectPartyIds, 10)),
       status: "UNRESOLVED",
       classification: oneOf(a.classification, CLASSIFICATIONS, "UNCLEAR") as Allegation["classification"],
       source,
@@ -173,7 +219,7 @@ export function buildCaseModelFromExtraction(
   const orders = Array.isArray(raw.orders) ? raw.orders : [];
   for (const o of orders.slice(0, EXTRACTION_LIMITS.orders)) {
     const id = isObject(o) ? idOf(o.id) : "";
-    if (!isObject(o) || !id || !idOf(o.proceedingId) || !text(o.description)) {
+    if (!isObject(o) || !id || !proceedingIds.has(idOf(o.proceedingId)) || !text(o.description)) {
       rejected.push({ kind: "order", id, reason: "MALFORMED" });
       continue;
     }
@@ -186,8 +232,8 @@ export function buildCaseModelFromExtraction(
       id,
       proceedingId: idOf(o.proceedingId),
       description: text(o.description),
-      affectsPartyIds: strings(o.affectsPartyIds, 10),
-      proposedCaregiverPartyId: idOf(o.proposedCaregiverPartyId) || null,
+      affectsPartyIds: namedIn(source.quote, strings(o.affectsPartyIds, 10)),
+      proposedCaregiverPartyId: namedIn(source.quote, [idOf(o.proposedCaregiverPartyId)])[0] ?? null,
       source,
     } as ProposedOrder);
   }
@@ -264,6 +310,8 @@ export function attachParentAttribution(report: Record<string, any>, documentTex
   if (!("parentAttribution" in report)) return;
   const raw = report.parentAttribution;
   delete report.parentAttribution;
+  // No block, or not an object: leave the report without a parent model rather than storing an empty one.
+  if (!isObject(raw)) return;
   const { caseModel, rejected } = buildCaseModelFromExtraction(raw, documentText, documentId);
   report.parentAttribution = { version: 1, caseModel, rejected };
 }

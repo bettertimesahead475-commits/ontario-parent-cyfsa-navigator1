@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCaseModelFromExtraction, buildSelectedView, listSelectionOptions } from "./parentExtraction.js";
-import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_FIELD, PARENT_ATTRIBUTION_SCHEMA } from "./parentAnalysisSchema.js";
+import { attachParentAttribution, buildCaseModelFromExtraction, buildSelectedView, listSelectionOptions } from "./parentExtraction.js";
+import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_FIELD, PARENT_ATTRIBUTION_SCHEMA, sectionForClient } from "./parentAnalysisSchema.js";
 
 // Synthetic documents. Both parents are named in every document.
 const DOC_PROC1 = [
@@ -185,7 +185,7 @@ describe("bounds and malformed input", () => {
 });
 
 describe("review fixes", () => {
-  it("never accepts a model-asserted finding, documentary classification or admitted status", () => {
+  it("never accepts a model-asserted finding or admitted status; the model's classification stays a label only", () => {
     const raw = structuredClone(rawBlock);
     raw.allegations[0].kind = "FINDING";
     raw.allegations[0].classification = "DOCUMENTARY";
@@ -201,5 +201,172 @@ describe("review fixes", () => {
     const model = buildCaseModelFromExtraction(rawBlock, DOC_PROC1, "doc-1").caseModel;
     model.proceedings.push({ ...model.proceedings[0] });
     expect(buildSelectedView(model, "PROC-1", "P-A")).toEqual({ ok: false, code: "NOT_A_VALID_CHOICE" });
+  });
+});
+
+describe("attribution gates (review fixes)", () => {
+  it("drops a subject whose name is not in the verified quotation", () => {
+    const raw = structuredClone(rawBlock);
+    raw.allegations[0].subjectPartyIds = ["P-B"];
+    const { caseModel } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
+    expect(caseModel.allegations[0].subjectPartyIds).toEqual([]);
+    const view = buildSelectedView(caseModel, "PROC-1", "P-B");
+    expect(view.ok && view.report.specificAllegations).toEqual([]);
+  });
+
+  it("keeps a subject only when the quotation names that party as a whole word", () => {
+    const raw = structuredClone(rawBlock);
+    raw.parties.push({ id: "P-AB", displayName: "Parent AB", aliases: [], role: "OTHER_PARTY" } as never);
+    raw.allegations[0].subjectPartyIds = ["P-AB", "P-A"];
+    const { caseModel } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
+    expect(caseModel.allegations[0].subjectPartyIds).toEqual(["P-A"]);
+  });
+
+  it("drops a role for a party the document never names", () => {
+    const raw = structuredClone(rawBlock);
+    raw.parties.push({ id: "P-C", displayName: "Parent C", aliases: [], role: "OTHER_PARTY" } as never);
+    raw.roles.push({ proceedingId: "PROC-1", partyId: "P-C", role: "RESPONDENT" } as never);
+    const { caseModel, rejected } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
+    expect(caseModel.roles.some(r => r.partyId === "P-C")).toBe(false);
+    expect(rejected).toContainEqual({ kind: "role", id: "P-C", reason: "NOT_IN_DOCUMENT" });
+  });
+
+  it("drops a role that points at an unknown party or proceeding", () => {
+    const raw = structuredClone(rawBlock);
+    raw.roles.push({ proceedingId: "PROC-1", partyId: "P-ZZ", role: "RESPONDENT" } as never);
+    raw.roles.push({ proceedingId: "PROC-9", partyId: "P-A", role: "RESPONDENT" } as never);
+    const { caseModel } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
+    expect(caseModel.roles.every(r => ["P-A", "P-B"].includes(r.partyId))).toBe(true);
+    expect(caseModel.roles.every(r => r.proceedingId === "PROC-1" || r.proceedingId === "PROC-2")).toBe(true);
+  });
+
+  it("rejects a quotation that appears more than once, since it cannot point to one place", () => {
+    const doc = `${DOC_PROC1}\nParagraph 30. Parent A left the child alone overnight on two occasions.`;
+    const { caseModel, rejected } = buildCaseModelFromExtraction(rawBlock, doc, "doc-1");
+    expect(caseModel.allegations.map(a => a.id)).toEqual([]);
+    expect(rejected).toContainEqual({ kind: "allegation", id: "ALG-1", reason: "QUOTE_NOT_VERIFIED" });
+  });
+
+  it("rejects a very short quotation such as a bare name", () => {
+    const raw = structuredClone(rawBlock);
+    raw.allegations[0].quote = "Parent A";
+    const { caseModel } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
+    expect(caseModel.allegations).toEqual([]);
+  });
+
+  it("does not use a file number the document does not contain", () => {
+    const raw = structuredClone(rawBlock);
+    raw.proceedings[0].fileNumber = "FC-99-9999";
+    const { caseModel } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
+    expect(caseModel.proceedings.find(p => p.id === "PROC-1")?.fileNumber).toBeNull();
+  });
+});
+
+describe("section values sent to clients", () => {
+  it("removes the unverified parent block and keeps the rest of the section", () => {
+    const value = { overview: "x", [PARENT_ATTRIBUTION_FIELD]: { parties: [] } };
+    expect(sectionForClient(value)).toEqual({ overview: "x" });
+    expect(value[PARENT_ATTRIBUTION_FIELD]).toBeDefined();
+  });
+});
+
+describe("attachParentAttribution", () => {
+  it("leaves no parent model when the block is missing or not an object", () => {
+    for (const missing of [undefined, null, "text", []]) {
+      const report: Record<string, unknown> = { parentAttribution: missing, other: 1 };
+      attachParentAttribution(report, DOC_PROC1, "doc-1");
+      expect("parentAttribution" in report).toBe(false);
+      expect(report.other).toBe(1);
+    }
+  });
+
+  it("replaces a real block with the verified model and removes the raw key contents", () => {
+    const report: Record<string, any> = { parentAttribution: structuredClone(rawBlock) };
+    attachParentAttribution(report, DOC_PROC1, "doc-1");
+    expect(report.parentAttribution.version).toBe(1);
+    expect(report.parentAttribution.caseModel.allegations.map((a: { id: string }) => a.id)).toEqual(["ALG-1"]);
+    expect(report.parentAttribution.parties).toBeUndefined();
+  });
+});
+
+describe("attribution scenarios through the extraction pipeline", () => {
+  const SHARED_DOC = [
+    "Application FC-24-0001. Respondents: Parent A and Parent B.",
+    "Paragraph 20. Parent A and Parent B were both present when the child was left alone overnight.",
+    "Paragraph 21. The child was found outside the home after midnight on the second occasion.",
+  ].join("\n");
+  const base = () => {
+    const raw = structuredClone(rawBlock);
+    raw.proceedings = [raw.proceedings[0]];
+    raw.roles = [raw.roles[0], raw.roles[1]];
+    raw.orders = [];
+    return raw;
+  };
+  const allegation = (id: string, quote: string, subjects: string[]) => ({
+    id, proceedingId: "PROC-1", kind: "ALLEGATION", text: `Text for ${id}`, madeBy: "Applicant",
+    subjectPartyIds: subjects, status: "UNRESOLVED", classification: "UNCLEAR", quote, page: 1, paragraph: "20",
+  });
+
+  it("shows shared evidence to each parent it names, and as specific to neither", () => {
+    const raw = base();
+    raw.allegations = [allegation("ALG-S", "Parent A and Parent B were both present when the child was left alone overnight.", ["P-A", "P-B"])] as never;
+    const { caseModel } = buildCaseModelFromExtraction(raw, SHARED_DOC, "doc-1");
+    for (const party of ["P-A", "P-B"]) {
+      const view = buildSelectedView(caseModel, "PROC-1", party);
+      expect(view.ok && view.report.sharedAllegations.map(a => a.id)).toEqual(["ALG-S"]);
+      expect(view.ok && view.report.specificAllegations).toEqual([]);
+    }
+  });
+
+  it("shows an allegation with no stated subject as unattributed for both parents, with a warning", () => {
+    const raw = base();
+    raw.allegations = [allegation("ALG-U", "The child was found outside the home after midnight on the second occasion.", ["P-A"])] as never;
+    const { caseModel } = buildCaseModelFromExtraction(raw, SHARED_DOC, "doc-1");
+    // The model named P-A, but the quotation does not name anyone, so no subject is kept.
+    expect(caseModel.allegations[0].subjectPartyIds).toEqual([]);
+    for (const party of ["P-A", "P-B"]) {
+      const view = buildSelectedView(caseModel, "PROC-1", party);
+      expect(view.ok && view.report.unattributedAllegations.map(a => a.id)).toEqual(["ALG-U"]);
+      expect(view.ok && view.report.specificAllegations).toEqual([]);
+      expect(view.ok && view.report.issues.some(i => i.code === "NO_SUBJECT_IDENTIFIED")).toBe(true);
+    }
+  });
+
+  it("flags two parties sharing an alias and blocks drafting for both", () => {
+    const raw = base();
+    raw.parties[0].aliases = ["Pat"];
+    raw.parties[1].aliases = ["Pat"];
+    raw.allegations = [];
+    const { caseModel } = buildCaseModelFromExtraction(raw, SHARED_DOC, "doc-1");
+    for (const party of ["P-A", "P-B"]) {
+      const view = buildSelectedView(caseModel, "PROC-1", party);
+      expect(view.ok && view.report.issues.some(i => i.code === "ALIAS_COLLISION")).toBe(true);
+      expect(view.ok && view.drafting.status).toBe("NOT_ACTIVATED");
+      expect(view.ok && view.drafting.blockedBy.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("does not attribute records that share an identifier", () => {
+    const raw = base();
+    const quote = "Parent A and Parent B were both present when the child was left alone overnight.";
+    raw.allegations = [allegation("ALG-D", quote, ["P-A"]), allegation("ALG-D", quote, ["P-B"])] as never;
+    const { caseModel } = buildCaseModelFromExtraction(raw, SHARED_DOC, "doc-1");
+    for (const party of ["P-A", "P-B"]) {
+      const view = buildSelectedView(caseModel, "PROC-1", party);
+      expect(view.ok && view.report.specificAllegations).toEqual([]);
+      expect(view.ok && view.report.issues.some(i => i.code === "DUPLICATE_ID")).toBe(true);
+    }
+  });
+
+  it("keeps reversed roles separate per proceeding", () => {
+    const { caseModel } = buildCaseModelFromExtraction(rawBlock, `${DOC_PROC1}\n${DOC_PROC2}`, "doc-1");
+    const roles = (proceeding: string, party: string) => {
+      const view = buildSelectedView(caseModel, proceeding, party);
+      return view.ok ? view.report.roles : null;
+    };
+    expect(roles("PROC-1", "P-A")).toEqual(["RESPONDENT"]);
+    expect(roles("PROC-1", "P-B")).toEqual(["PROPOSED_CAREGIVER"]);
+    expect(roles("PROC-2", "P-A")).toEqual(["PROPOSED_CAREGIVER"]);
+    expect(roles("PROC-2", "P-B")).toEqual(["RESPONDENT"]);
   });
 });

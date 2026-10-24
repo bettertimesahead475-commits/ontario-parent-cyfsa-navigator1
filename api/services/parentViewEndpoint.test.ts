@@ -63,7 +63,7 @@ const OTHER = "other-uid";
 
 function jobFor(uid: string | null, withAnalysis = true) {
   return {
-    jobId: "req_1700000000000_abc",
+    jobId: "req_1700000000000_abcdef",
     uid,
     mode: "fast",
     status: "completed",
@@ -84,7 +84,7 @@ beforeEach(() => {
   process.env.PARENT_ANALYSIS_ENABLED = "true";
 });
 
-const url = "/api/analyze/job/req_1700000000000_abc/parent-view";
+const url = "/api/analyze/job/req_1700000000000_abcdef/parent-view";
 
 describe("parent-view endpoint", () => {
   it("is unavailable while the flag is OFF", async () => {
@@ -152,10 +152,17 @@ describe("parent-view endpoint", () => {
     expect(res.body.code).toBe("NOT_A_VALID_CHOICE");
   });
 
-  it("never calls a credit function, and never reads the job for another account", async () => {
+  it("does not call a credit function for any parent view request", async () => {
     await request(app).get(`${url}?proceedingId=PROC-1&partyId=P-A`).set("Authorization", "Bearer owner");
     await request(app).get(`${url}?proceedingId=PROC-1&partyId=P-B`).set("Authorization", "Bearer owner");
     await request(app).get(url).set("Authorization", "Bearer owner");
     expect(creditCalls).not.toHaveBeenCalled();
+  });
+
+  it("refuses a malformed job id before reading storage", async () => {
+    const res = await request(app).get("/api/analyze/job/not-a-valid-id/parent-view").set("Authorization", "Bearer owner");
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("JOB_NOT_FOUND");
+    expect(getJob).not.toHaveBeenCalled();
   });
 });

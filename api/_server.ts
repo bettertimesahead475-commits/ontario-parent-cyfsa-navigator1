@@ -78,13 +78,15 @@ import {
   failAnalysisJob,
   completeAnalysisJobDurable,
   storeCompletedJobStrict,
+  completeAnalysisJobStrict,
   failAnalysisJobDurable,
   recordAnalysisJobSection,
   isValidAnalysisJobId,
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
 import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
-import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_FIELD, PARENT_ATTRIBUTION_RULES, PARENT_ATTRIBUTION_SCHEMA } from "./services/parentAnalysisSchema.js";
+import { forensicBillingKey } from "./services/billingKey.js";
+import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_FIELD, PARENT_ATTRIBUTION_RULES, PARENT_ATTRIBUTION_SCHEMA, sectionForClient } from "./services/parentAnalysisSchema.js";
 import { attachParentAttribution, buildSelectedView, listSelectionOptions } from "./services/parentExtraction.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
@@ -1940,6 +1942,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let isPaid = false;
     let uid: string | null = null;
     let freeUseRecorded = false;
+    // True only once this request has created the job record. Only then may it mark that job failed, so an
+    // error in a request that merely reuses someone else's id can never change that person's job.
+    let jobCreatedHere = false;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -1949,6 +1954,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       null;
     // The id names a Supabase Storage object, so only the analyzer's own format is accepted.
     analysisRequestId = isValidAnalysisJobId(idempotencyKey) ? idempotencyKey : generateAnalysisJobId();
+    // Usage idempotency is scoped to the paid session and honours only a valid analyzer id. A raw header string is
+    // never a usage key, so one id cannot be shared across accounts or used to skip the usage count.
+    const usageKeyFor = (sessionId: string | null | undefined): string | null =>
+      sessionId && isValidAnalysisJobId(idempotencyKey) ? `analyze:${sessionId}:${idempotencyKey}` : null;
     const requestStartedAt = Date.now();
     // No job record is created until access has been granted (below). A record created here used
     // to stay "analyzing" forever, with no owner, whenever the request was then refused (e.g. 402
@@ -2094,7 +2103,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           });
         }
         if (paidSessionId && paidTier) {
-          const check = await checkPaidUsage(paidSessionId, paidTier, "forensic", idempotencyKey);
+          const check = await checkPaidUsage(paidSessionId, paidTier, "forensic", usageKeyFor(paidSessionId));
           logAnalyzerTraceStage({
             requestId: analysisRequestId,
             stage: 6,
@@ -2128,7 +2137,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       } else {
         // Quick Document Review
         if (isPaid && paidSessionId && paidTier) {
-          const check = await checkPaidUsage(paidSessionId, paidTier, "quick", idempotencyKey);
+          const check = await checkPaidUsage(paidSessionId, paidTier, "quick", usageKeyFor(paidSessionId));
           logAnalyzerTraceStage({
             requestId: analysisRequestId,
             stage: 6,
@@ -2238,11 +2247,21 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         details: { mode, isPaid, tier: paidTier || "Free" },
       });
 
+      // Last ownership check before the record is written. The check at the top of the request can miss a job
+      // that another request created in the meantime; this one reads this instance's memory and refuses to
+      // overwrite a job that belongs to someone else. The handler below releases any reserved credit.
+      const racedJob = getAnalysisJob(analysisRequestId);
+      const callerUid = identity ? identity.uid : (uid || null);
+      if (racedJob && racedJob.uid && racedJob.uid !== callerUid) {
+        throw new AnalyzerError("ANALYSIS_ID_CONFLICT", 409,
+          "This analysis id is already in use. Please start a new analysis.", false);
+      }
       await createAnalysisJobDurable({
         jobId: analysisRequestId,
-        uid: identity ? identity.uid : (uid || null),
+        uid: callerUid,
         mode: mode === "full" ? "full" : "fast",
       });
+      jobCreatedHere = true;
 
       const wantsStream = Boolean(
         req.body?.stream === true || (req.header("accept") || "").includes("text/event-stream")
@@ -2341,14 +2360,16 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           const span = isForensic ? 50 : 60; // the verification pass owns the last part in Forensic
           const percent = 35 + Math.round((completed / total) * span);
           const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
-          await recordAnalysisJobSection(analysisRequestId, key, value, {
+          // The raw parent block is unverified here, so clients and the job record never receive it.
+          const publicValue = sectionForClient(value as Record<string, unknown>);
+          await recordAnalysisJobSection(analysisRequestId, key, publicValue, {
             stage: "reviewing_evidence",
             percent,
             message,
             total,
           }).catch(() => {});
           if (streamEmitter) {
-            streamEmitter.emitSection(key, value);
+            streamEmitter.emitSection(key, publicValue);
             streamEmitter.emitStage(completed === total ? "preparing_report" : "reviewing_evidence", message, percent);
           }
         },
@@ -2447,7 +2468,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       } else if (isPaid && paidSessionId && paidTier) {
         try {
           const usageType = mode === "full" ? "forensic" : "quick";
-          await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, idempotencyKey);
+          await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, usageKeyFor(paidSessionId));
           if (creditReservation && identity) {
             await finalizeAnalysisCredit({
               sessionId: paidSessionId,
@@ -2472,8 +2493,21 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // still recover it after a refresh (the instance may freeze once the response ends).
       if (isParentAnalysisEnabled()) {
         attachParentAttribution(report, targetText, analysisRequestId);
-        // The Quick Review job is stored under the client's request id, so the parent view can be read from it.
-        report.parentViewJobId = analysisRequestId;
+        if (report.parentAttribution?.caseModel) {
+          // The Quick Review job is stored under the request id, so the parent view reads from it. The id is
+          // offered only if the stored record is confirmed; otherwise the report says it is unavailable.
+          report.parentViewJobId = analysisRequestId;
+          try {
+            await completeAnalysisJobStrict(analysisRequestId, report);
+            report.parentViewAvailable = true;
+          } catch (storageError) {
+            delete report.parentViewJobId;
+            report.parentViewAvailable = false;
+            console.warn("[document analysis] Parent view could not be stored", { requestId: analysisRequestId, error: String(storageError) });
+          }
+        } else {
+          report.parentViewAvailable = false;
+        }
       }
       await completeAnalysisJobDurable(analysisRequestId, report);
 
@@ -2501,7 +2535,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         await decrementFreeUse(uid).catch(() => {});
       }
 
-      if (getAnalysisJob(analysisRequestId)) {
+      if (jobCreatedHere && getAnalysisJob(analysisRequestId)) {
         const failed = formatAnalyzerErrorResponse(error);
         await failAnalysisJobDurable(analysisRequestId, {
           code: failed.code,
@@ -2606,6 +2640,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       return res.status(401).json({ error: "Please sign in to continue.", code: "SIGN_IN_REQUIRED" });
     }
     const { jobId } = req.params;
+    if (!isValidAnalysisJobId(jobId)) {
+      return res.status(404).json({ error: "Analysis not found.", code: "JOB_NOT_FOUND" });
+    }
     const job = await getAnalysisJobDurable(jobId);
     if (!job || !job.uid || job.uid !== identity.uid) {
       return res.status(404).json({ error: "Analysis not found.", code: "JOB_NOT_FOUND" });
@@ -3021,8 +3058,11 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       req.body?.requestId ||
       null;
 
+    // Billing identity of this analysis. The raw client id is never used as a billing key; see forensicBillingKey.
+    const billingKey = sessionInfo ? forensicBillingKey(sessionInfo.sessionId, String(req.body.documentText), idempotencyKey) : null;
+
     if (sessionInfo) {
-      const check = await checkPaidUsage(sessionInfo.sessionId, sessionInfo.tier, "forensic", idempotencyKey);
+      const check = await checkPaidUsage(sessionInfo.sessionId, sessionInfo.tier, "forensic", billingKey);
       if (!check.allowed) {
         return res.status(402).json({
           error: check.error,
@@ -3037,13 +3077,15 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
     const analysisRequestId =
       idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // Identifies this analysis to credit accounting. analysisRequestId stays for logs and citations only.
+    const creditRequestId = billingKey || analysisRequestId;
     let creditReservation: ReservationResult | null = null;
     if (sessionInfo) try {
       creditReservation = await reserveAnalysisCredit({
         sessionId: sessionInfo.sessionId,
         firebaseUid: sessionInfo.uid,
         tier: sessionInfo.tier,
-        requestId: analysisRequestId,
+        requestId: creditRequestId,
         analysisType: "forensic",
         documentName: req.body?.documentName || "deep-scan-document",
       });
@@ -3268,13 +3310,14 @@ OUTPUT — return strictly this JSON schema, nothing else:
       if (parentOn) attachParentAttribution(report, documentText, analysisRequestId);
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
+      let usageRecordFailed = false;
       if (sessionInfo) try {
-        await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey);
+        await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", billingKey);
         if (creditReservation) {
           await finalizeAnalysisCredit({
             sessionId: sessionInfo.sessionId,
             firebaseUid: sessionInfo.uid,
-            requestId: analysisRequestId,
+            requestId: creditRequestId,
             reservationId: creditReservation.reservationId,
             tier: sessionInfo.tier,
             documentName: req.body?.documentName || "deep-scan-document",
@@ -3282,14 +3325,14 @@ OUTPUT — return strictly this JSON schema, nothing else:
         }
         credits = await getPaidUsageStatus(sessionInfo.sessionId, sessionInfo.tier);
       } catch (usageErr) {
+        usageRecordFailed = true;
         console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
       }
-      // Stored only after the charge is recorded, under a server-generated id. A client-chosen id can never
-      // overwrite another job, and a failed charge leaves nothing stored. Storage failures are ignored.
-      // The parent view is offered only when the job was really stored. A storage failure never changes the
-      // charge or the report; the response says plainly that the parent view is unavailable.
+      // Stored only when the usage record succeeded, under a server-generated id, and only when the verified parent
+      // model is present. A client-chosen id can never overwrite another job. A storage failure never changes the
+      // report; the response says plainly that the parent view is unavailable.
       let storedJobId: string | null = null;
-      if (parentOn) {
+      if (parentOn && !usageRecordFailed && report.parentAttribution?.caseModel) {
         const candidateId = generateAnalysisJobId();
         try {
           await storeCompletedJobStrict({ jobId: candidateId, uid: identity.uid, mode: "full", report });
@@ -3310,7 +3353,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         try {
           await releaseAnalysisReservation({
             sessionId: sessionInfo.sessionId,
-            requestId: analysisRequestId,
+            requestId: creditRequestId,
             reservationId: creditReservation.reservationId,
             reason: error?.message || "deep_scan_failed",
           });

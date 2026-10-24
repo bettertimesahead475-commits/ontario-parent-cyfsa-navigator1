@@ -157,9 +157,21 @@ export async function persistJobToStorage(job: AnalysisJob): Promise<void> {
   }
 }
 
+/** Uploads a job record and throws unless it is really in Storage. persistJobToStorage ignores failures instead. */
+async function uploadJobStrict(job: AnalysisJob): Promise<void> {
+  const db = safeGetSupabase();
+  if (!db) throw new Error("Storage is not configured");
+  const hasBucket = await ensureBucket();
+  if (!hasBucket) throw new Error("Job storage bucket is unavailable");
+  const { error } = await db.storage
+    .from(BUCKET_NAME)
+    .upload(`${job.jobId}.json`, JSON.stringify(job), { upsert: true, contentType: "application/json" });
+  if (error) throw new Error(`Job upload failed: ${error.message}`);
+}
+
 /**
- * Stores a finished job and throws unless the record is really in Storage. Unlike persistJobToStorage, which
- * ignores failures, this is for callers that must not report a job as available when it was not saved.
+ * Stores a finished job under a new id and throws unless the record is really in Storage. For callers that must
+ * not report a job as available when it was not saved.
  */
 export async function storeCompletedJobStrict(params: {
   jobId: string;
@@ -167,12 +179,8 @@ export async function storeCompletedJobStrict(params: {
   mode: "fast" | "full";
   report: unknown;
 }): Promise<void> {
-  const db = safeGetSupabase();
-  if (!db) throw new Error("Storage is not configured");
-  const hasBucket = await ensureBucket();
-  if (!hasBucket) throw new Error("Job storage bucket is unavailable");
   const now = Date.now();
-  const job: AnalysisJob = {
+  const job = {
     jobId: params.jobId,
     uid: params.uid,
     mode: params.mode,
@@ -183,12 +191,20 @@ export async function storeCompletedJobStrict(params: {
     createdAt: now,
     updatedAt: now,
   } as AnalysisJob;
-  const { error } = await db.storage
-    .from(BUCKET_NAME)
-    .upload(`${job.jobId}.json`, JSON.stringify(job), { upsert: true, contentType: "application/json" });
-  if (error) throw new Error(`Job upload failed: ${error.message}`);
+  await uploadJobStrict(job);
   // Same as completeAnalysisJob: this instance can serve the job without reading it back from Storage.
   jobStore.set(job.jobId, job);
+}
+
+/**
+ * Completes an existing in-memory job and throws unless the completed record is really in Storage. The job is
+ * completed in memory either way, so the running request can still answer from it.
+ */
+export async function completeAnalysisJobStrict(jobId: string, report: any): Promise<void> {
+  completeAnalysisJob(jobId, report);
+  const job = jobStore.get(jobId);
+  if (!job) throw new Error("Job is not registered");
+  await uploadJobStrict(job);
 }
 
 export async function fetchJobFromStorage(jobId: string): Promise<AnalysisJob | null> {

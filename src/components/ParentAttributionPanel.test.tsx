@@ -131,7 +131,7 @@ describe("parent and proceeding selection", () => {
     expect(screen.getByText(/Parent A left the child alone overnight on two occasions\./)).toBeTruthy();
   });
 
-  it("never shows an allegation as a court finding unless the document's record is a finding", async () => {
+  it("shows an allegation as an allegation (not a court finding) when the record is an ALLEGATION", async () => {
     mockFetch.mockResolvedValueOnce(ALL_CHOICES).mockResolvedValueOnce(json(200, viewFor("P-A", "PROC-1", [ALG_A])));
     render(<ParentAttributionSection report={REPORT} enabled fetcher={fetcher} />);
     fireEvent.click(await screen.findByLabelText("Parent A, case FC-24-0001"));
@@ -139,6 +139,16 @@ describe("parent and proceeding selection", () => {
     await screen.findByText("Left the child alone overnight.");
     expect(screen.queryByText(/Court finding/)).toBeNull();
     expect(screen.getByText(/Allegation · Not yet decided · Second-hand account/)).toBeTruthy();
+  });
+
+  it("labels a record as a court finding only when the record itself is a FINDING", async () => {
+    const FINDING = { ...ALG_A, id: "ALG-F", kind: "FINDING", text: "The court found the child was left alone." };
+    mockFetch.mockResolvedValueOnce(ALL_CHOICES).mockResolvedValueOnce(json(200, viewFor("P-A", "PROC-1", [FINDING])));
+    render(<ParentAttributionSection report={REPORT} enabled fetcher={fetcher} />);
+    fireEvent.click(await screen.findByLabelText("Parent A, case FC-24-0001"));
+    fireEvent.click(screen.getByRole("button", { name: "Show this parent's view" }));
+    await screen.findByText("The court found the child was left alone.");
+    expect(screen.getByText(/Court finding, as stated in the document/)).toBeTruthy();
   });
 
   it("switching to another parent replaces the view and never keeps the earlier parent's allegations", async () => {

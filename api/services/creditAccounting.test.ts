@@ -517,6 +517,44 @@ describe("creditAccounting - Server-Authoritative Package Limits & Cutoffs", () 
     });
   });
 
+  describe("Usage-record failure and retries", () => {
+    const basicSession = (id: string) => ({ id, tier: "Basic", credits_granted: 3, credits_consumed: 0, is_suspended: false });
+
+    it("keeps a reserved credit counted when finalization never happens, so a failed usage record gives no free analysis", async () => {
+      currentDb.ref = createFakeDb([basicSession("session_unfinalized")]);
+      for (const n of [1, 2, 3]) {
+        // The route's finalize step is skipped when recording usage fails, so these stay reserved.
+        await reserveAnalysisCredit({ sessionId: "session_unfinalized", firebaseUid: "u", tier: "Basic", requestId: `unfinalized_${n}`, analysisType: "quick" });
+      }
+      const balance = await getCreditBalance("session_unfinalized", "Basic");
+      expect(balance.creditsConsumed).toBe(3);
+      expect(balance.creditsRemaining).toBe(0);
+      await expect(
+        reserveAnalysisCredit({ sessionId: "session_unfinalized", firebaseUid: "u", tier: "Basic", requestId: "unfinalized_4", analysisType: "quick" }),
+      ).rejects.toMatchObject({ code: "ANALYSIS_LIMIT_REACHED" });
+    });
+
+    it("does not charge again when a finished request is retried with the same id", async () => {
+      currentDb.ref = createFakeDb([basicSession("session_retry_done")]);
+      const params = { sessionId: "session_retry_done", firebaseUid: "u", tier: "Basic", requestId: "retry_done_1", analysisType: "quick" as const };
+      await reserveAnalysisCredit(params);
+      await finalizeAnalysisCredit({ sessionId: params.sessionId, firebaseUid: "u", requestId: params.requestId, tier: "Basic" });
+      const retry = await reserveAnalysisCredit(params);
+      expect(retry.alreadyFinalized).toBe(true);
+      const balance = await getCreditBalance("session_retry_done", "Basic");
+      expect(balance.creditsConsumed).toBe(1);
+    });
+
+    it("does not charge twice when a still-reserved request is retried", async () => {
+      currentDb.ref = createFakeDb([basicSession("session_retry_open")]);
+      const params = { sessionId: "session_retry_open", firebaseUid: "u", tier: "Basic", requestId: "retry_open_1", analysisType: "quick" as const };
+      await reserveAnalysisCredit(params);
+      await reserveAnalysisCredit(params);
+      const balance = await getCreditBalance("session_retry_open", "Basic");
+      expect(balance.creditsConsumed).toBe(1);
+    });
+  });
+
   describe("Safe Release on Pipeline Failure", () => {
     it("releases reservation and restores credit slot when analysis pipeline fails", async () => {
       const db = createFakeDb([

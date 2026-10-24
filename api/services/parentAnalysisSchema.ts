@@ -27,3 +27,14 @@ export const PARENT_ATTRIBUTION_RULES = [
   "Use kind FINDING only for an outcome the court has actually made. A worker's or parent's claim is an ALLEGATION.",
   "Every quote must be copied exactly from the document. If you cannot quote a record, leave it out.",
 ].join(" ");
+
+/**
+ * The section value a client may see while the analysis runs. The parent block is removed here because it is
+ * unverified until attachParentAttribution checks it against the document, and it must not reach the stream or
+ * the job's section record in its raw form.
+ */
+export function sectionForClient(value: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...value };
+  delete copy[PARENT_ATTRIBUTION_FIELD];
+  return copy;
+}
