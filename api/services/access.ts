@@ -36,6 +36,19 @@
 import crypto from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+/**
+ * A 500 error for a failed database or provider call. The customer sees a fixed message. The
+ * database detail is kept on the error for server logs only.
+ */
+function dbFailure(label: string, error: { message?: string } | null | undefined, extra: Record<string, unknown> = {}) {
+  return Object.assign(new Error("We could not complete this request. Please try again."), {
+    statusCode: 500,
+    detail: `${label}: ${error?.message ?? "unknown error"}`,
+    ...extra,
+  });
+}
+
+
 export type AnalyzerTier = "Basic" | "AnalyzerBasic" | "Premium" | "AnalyzerPremium";
 export type CaseAccessTier = "Pro" | "Community5" | "Community10" | "Community25";
 export type Tier = AnalyzerTier | CaseAccessTier;
@@ -451,7 +464,7 @@ export async function createPaidSession(params: {
     if (error.code === "23505") {
       throw Object.assign(new Error("This access code has already been redeemed."), { statusCode: 409, code: error.code });
     }
-    throw Object.assign(new Error(`Failed to create paid session: ${error.message}`), { statusCode: 500, code: error.code });
+    throw dbFailure("Failed to create paid session", error, { statusCode: 500, code: error.code });
   }
   return { id: data.id, expiresAt: data.expires_at };
 }
@@ -469,7 +482,7 @@ export async function getActivePaidSession(sessionId: string): Promise<PaidSessi
     .select("id, firebase_uid, tier, revoked_at, expires_at, email")
     .eq("id", sessionId)
     .maybeSingle();
-  if (error) throw Object.assign(new Error(`Failed to look up paid session: ${error.message}`), { statusCode: 500, supabaseError: error });
+  if (error) throw dbFailure("Failed to look up paid session", error, { statusCode: 500, supabaseError: error });
   if (!data) return null;
   if (data.revoked_at) return null;
   if (new Date(data.expires_at).getTime() <= Date.now()) return null;
@@ -491,7 +504,7 @@ export async function revokeSession(sessionId: string, reason?: string | null): 
     .eq("id", sessionId)
     .is("revoked_at", null)
     .select("id");
-  if (error) throw Object.assign(new Error(`Failed to revoke session: ${error.message}`), { statusCode: 500 });
+  if (error) throw dbFailure("Failed to revoke session", error, { statusCode: 500 });
   return !!data && data.length > 0;
 }
 
@@ -503,7 +516,7 @@ export async function revokeAllSessionsForUid(firebaseUid: string, reason?: stri
     .eq("firebase_uid", firebaseUid)
     .is("revoked_at", null)
     .select("id");
-  if (error) throw Object.assign(new Error(`Failed to revoke sessions for uid: ${error.message}`), { statusCode: 500 });
+  if (error) throw dbFailure("Failed to revoke sessions for uid", error, { statusCode: 500 });
   return data ? data.length : 0;
 }
 
@@ -524,7 +537,7 @@ export async function checkAndConsumeFreeToolUse(email: string, tool: FreeTool):
   const { error } = await db.from("free_tool_usage").insert({ email: normalizedEmail, tool });
   if (!error) return true;
   if (error.code === "23505") return false; // unique_violation - already used this tool's free pass
-  throw Object.assign(new Error(`Failed to check free tool usage: ${error.message}`), { statusCode: 500 });
+  throw dbFailure("Failed to check free tool usage", error, { statusCode: 500 });
 }
 
 // --- Step 1: parent requests access before paying --------------------------
@@ -557,7 +570,7 @@ async function findKeyedRequest(
     .eq("firebase_uid", uid)
     .eq("request_key", requestKey)
     .maybeSingle();
-  if (error) throw Object.assign(new Error(`Failed to check existing requests: ${error.message}`), { statusCode: 500 });
+  if (error) throw dbFailure("Failed to check existing requests", error, { statusCode: 500 });
   return (data as PaymentRequestRow | null) ?? null;
 }
 
@@ -660,9 +673,9 @@ export async function requestAccess(
         status: "pending",
         notes,
       });
-      if (fallbackErr) throw Object.assign(new Error(`Failed to record payment request: ${fallbackErr.message}`), { statusCode: 500 });
+      if (fallbackErr) throw dbFailure("Failed to record payment request", fallbackErr, { statusCode: 500 });
     } else {
-      throw Object.assign(new Error(`Failed to record payment request: ${error.message}`), { statusCode: 500 });
+      throw dbFailure("Failed to record payment request", error, { statusCode: 500 });
     }
   }
 
@@ -698,7 +711,7 @@ export async function activateTrustBasedPayment(
     .eq("reference_number", referenceNumber)
     .maybeSingle();
 
-  if (findErr) throw Object.assign(new Error(findErr.message), { statusCode: 500 });
+  if (findErr) throw dbFailure("database", findErr);
   if (!payment) {
     throw Object.assign(new Error("No payment request found for that reference number."), { statusCode: 404 });
   }
@@ -743,7 +756,7 @@ export async function activateTrustBasedPayment(
         .eq("reference_number", referenceNumber)
         .eq("status", "pending")
         .select("reference_number");
-      if (fbErr) throw Object.assign(new Error(`Failed to claim payment: ${fbErr.message}`), { statusCode: 500 });
+      if (fbErr) throw dbFailure("Failed to claim payment", fbErr, { statusCode: 500 });
       if (!fallbackClaimed || fallbackClaimed.length === 0) {
         throw Object.assign(
           new Error("This payment was already claimed by a concurrent request. No duplicate entitlement issued."),
@@ -751,7 +764,7 @@ export async function activateTrustBasedPayment(
         );
       }
     } else {
-      throw Object.assign(new Error(`Failed to claim payment: ${claimErr.message}`), { statusCode: 500 });
+      throw dbFailure("Failed to claim payment", claimErr, { statusCode: 500 });
     }
   } else if (!claimed || claimed.length === 0) {
     throw Object.assign(
@@ -778,7 +791,7 @@ export async function activateTrustBasedPayment(
     expires_at: new Date(Date.now() + CODE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
   });
   if (codeErr) {
-    throw Object.assign(new Error(`Payment notification accepted but code generation failed: ${codeErr.message}`), { statusCode: 500 });
+    throw dbFailure("Payment notification accepted but code generation failed", codeErr, { statusCode: 500 });
   }
 
   // Calculate allowance
@@ -871,7 +884,7 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     .eq("reference_number", referenceNumber)
     .eq("status", "pending")
     .maybeSingle();
-  if (findErr) throw Object.assign(new Error(findErr.message), { statusCode: 500 });
+  if (findErr) throw dbFailure("database", findErr);
   if (!payment) throw Object.assign(new Error("No pending payment found for that reference number."), { statusCode: 404 });
 
   const expected = Number(payment.amount);
@@ -896,7 +909,7 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     .eq("reference_number", referenceNumber)
     .eq("status", "pending")
     .select("reference_number");
-  if (claimErr) throw Object.assign(new Error(`Failed to claim payment for approval: ${claimErr.message}`), { statusCode: 500 });
+  if (claimErr) throw dbFailure("Failed to claim payment for approval", claimErr, { statusCode: 500 });
   if (!claimed || claimed.length === 0) {
     throw Object.assign(
       new Error("This payment was already approved by a concurrent request. No second access code was issued."),
@@ -937,7 +950,7 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
         { statusCode: 500, code: "APPROVED_WITHOUT_CODE" }
       );
     }
-    throw Object.assign(new Error(`Code generation failed; the payment was left pending for retry: ${codeErr.message}`), { statusCode: 500 });
+    throw dbFailure("Code generation failed; the payment was left pending for retry", codeErr, { statusCode: 500 });
   }
 
   // Plaintext code is only ever visible right here - it's never stored anywhere, so this
@@ -1007,7 +1020,7 @@ export async function verifyAccessCode(identity: { uid: string; email: string | 
     .eq("email", normalizedEmail)
     .is("used_at", null)
     .order("created_at", { ascending: false });
-  if (error) throw Object.assign(new Error(error.message), { statusCode: 500 });
+  if (error) throw dbFailure("database", error);
   if (!candidates || candidates.length === 0) {
     throw Object.assign(new Error("Invalid email or code."), { statusCode: 401 });
   }
@@ -1036,7 +1049,7 @@ export async function verifyAccessCode(identity: { uid: string; email: string | 
     .eq("id", match.id)
     .is("used_at", null)
     .select("id");
-  if (claimErr) throw Object.assign(new Error(claimErr.message), { statusCode: 500 });
+  if (claimErr) throw dbFailure("database", claimErr);
   if (!claimed || claimed.length === 0) {
     throw Object.assign(new Error("This code was already redeemed by a concurrent request."), { statusCode: 409 });
   }
