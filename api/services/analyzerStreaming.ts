@@ -157,6 +157,38 @@ export async function persistJobToStorage(job: AnalysisJob): Promise<void> {
   }
 }
 
+/**
+ * Stores a finished job and throws unless the record is really in Storage. Unlike persistJobToStorage, which
+ * ignores failures, this is for callers that must not report a job as available when it was not saved.
+ */
+export async function storeCompletedJobStrict(params: {
+  jobId: string;
+  uid: string;
+  mode: "fast" | "full";
+  report: unknown;
+}): Promise<void> {
+  const db = safeGetSupabase();
+  if (!db) throw new Error("Storage is not configured");
+  const hasBucket = await ensureBucket();
+  if (!hasBucket) throw new Error("Job storage bucket is unavailable");
+  const now = Date.now();
+  const job: AnalysisJob = {
+    jobId: params.jobId,
+    uid: params.uid,
+    mode: params.mode,
+    status: "completed",
+    currentStage: "complete",
+    percent: 100,
+    report: params.report,
+    createdAt: now,
+    updatedAt: now,
+  } as AnalysisJob;
+  const { error } = await db.storage
+    .from(BUCKET_NAME)
+    .upload(`${job.jobId}.json`, JSON.stringify(job), { upsert: true, contentType: "application/json" });
+  if (error) throw new Error(`Job upload failed: ${error.message}`);
+}
+
 export async function fetchJobFromStorage(jobId: string): Promise<AnalysisJob | null> {
   const db = safeGetSupabase();
   if (!db) return null;

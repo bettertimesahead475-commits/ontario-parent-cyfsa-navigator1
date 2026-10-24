@@ -77,6 +77,7 @@ import {
   completeAnalysisJob,
   failAnalysisJob,
   completeAnalysisJobDurable,
+  storeCompletedJobStrict,
   failAnalysisJobDurable,
   recordAnalysisJobSection,
   isValidAnalysisJobId,
@@ -3281,15 +3282,23 @@ OUTPUT — return strictly this JSON schema, nothing else:
       }
       // Stored only after the charge is recorded, under a server-generated id. A client-chosen id can never
       // overwrite another job, and a failed charge leaves nothing stored. Storage failures are ignored.
-      const storedJobId = parentOn ? generateAnalysisJobId() : null;
-      if (storedJobId) {
-        await createAnalysisJobDurable({ jobId: storedJobId, uid: identity.uid, mode: "full" }).catch(() => {});
-        await completeAnalysisJobDurable(storedJobId, report).catch(() => {});
+      // The parent view is offered only when the job was really stored. A storage failure never changes the
+      // charge or the report; the response says plainly that the parent view is unavailable.
+      let storedJobId: string | null = null;
+      if (parentOn) {
+        const candidateId = generateAnalysisJobId();
+        try {
+          await storeCompletedJobStrict({ jobId: candidateId, uid: identity.uid, mode: "full", report });
+          storedJobId = candidateId;
+        } catch (storageError) {
+          console.warn("[deep scan] Parent view could not be stored", { requestId: analysisRequestId, error: String(storageError) });
+        }
       }
       res.json({
         ...report,
         timing: { durationMs },
         ...(credits ? { credits } : {}),
+        ...(parentOn ? { parentViewAvailable: storedJobId !== null } : {}),
         ...(storedJobId ? { jobId: storedJobId } : {}),
       });
     } catch (error: any) {
