@@ -56,7 +56,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     // warrantless apprehension is s. 88, verified against the consolidated CYFSA text.
     citation: "CYFSA s. 88",
     category: "Statutory Section",
-    content: "As soon as practicable, but in any event within five days after a child is brought to a place of safety, the matter must be brought before a court for a hearing, the child returned, a temporary care agreement made, or (for a 16 or 17 year old) an agreement made under s. 77. Note: the Act says \"five days,\" not \"five court days\" — confirm with counsel exactly how the days are counted in your registry.",
+    content: "As soon as practicable, but in any event within five days after a child is brought to a place of safety, the matter must be brought before a court for a hearing, the child returned (including to the authority named in an extra-provincial order), a temporary care agreement made, or (for a 16 or 17 year old) an agreement made under s. 77. Note: the Act says \"five days,\" not \"five court days\" — confirm with counsel exactly how the days are counted in your registry.",
     isPreloaded: true
   },
   {
@@ -150,7 +150,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     title: "Supervision Order",
     citation: "CYFSA s. 101(1), para. 1",
     category: "Legal Definition",
-    content: "A court order placing the child in the care and custody of a parent or another person, subject to CAS supervision, for a specified period of at least three months and not more than 12 months (s. 101(1), para. 1). Supportive conditions such as counselling or parenting classes are common in practice but are not set out in s. 101; confirm the terms with counsel.",
+    content: "A court order placing the child in the care and custody of a parent or another person, subject to CAS supervision, for a specified period of at least three months and not more than 12 months (s. 101(1), para. 1). The court may also impose reasonable terms and conditions relating to the child's care and supervision (s. 101(7)(a)); examples such as counselling or parenting classes are common in practice. Confirm the terms with counsel.",
     isPreloaded: true
   },
   {

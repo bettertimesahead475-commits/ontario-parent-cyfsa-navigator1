@@ -16,9 +16,9 @@ Date: 2026-10-24. Source of truth for CYFSA text: `legal-reference/CYFSA_full_te
 | s. 81(7) (sidebar, data.ts) | Warrantless apprehension: worker believes (a) in need of protection, (b) under 16, (c) substantial risk during time to get warrant or hearing | Verified. Wording "substantial risk to the child's health or safety" matches. Peace officers apply under s. 81(12). |
 | s. 81(2) (data.ts) | Warrant: justice of the peace; under 16; in need of protection; less restrictive course not available or will not protect the child adequately | Verified. |
 | s. 81(13) (data.ts) | No action for an act done in good faith under s. 81, or for an alleged neglect or default in good faith in that duty | Verified. Corrected: the earlier summary omitted the neglect-or-default clause and added a court-process claim the text does not contain. |
-| s. 88 (sidebar, data.ts) | Five-day rule after place of safety; hearing, return, temporary care agreement, or s. 77 agreement | Verified. |
+| s. 88 (sidebar, data.ts) | Five-day rule after place of safety; hearing, return (including under an extra-provincial order), temporary care agreement, or s. 77 agreement | Verified. The sidebar previously omitted the extra-provincial return in para. (c). |
 | s. 74(2) (sidebar, data.ts) | Grounds in clauses (a) to (o) | Verified as to structure. The text lists family circumstances as grounds (e.g. clause (k), parent died or unavailable; clause (n), parent unable to care), so the sidebar now says only that poverty and housing on their own are not listed. The poverty-and-clutter sentence was not in the text (corrected). |
-| s. 74(3) (sidebar, data.ts) | Best-interests factors | Heading verified; factor list not re-checked clause by clause. |
+| s. 74(3) (sidebar, data.ts) | Best-interests factors: views and wishes, physical, mental and emotional needs, and other listed circumstances | Verified. The sidebar previously said "safety"; the text says "needs". |
 | s. 94(1), 94(2) (data.ts) | 30-day adjournment; temporary care and custody during adjournment | Verified (also in the statute quotations). |
 | s. 101(1) para. 1 (new citation) | Supervision order, at least 3 and not more than 12 months | Verified. The sidebar previously cited s. 102, which is the custody order (corrected). |
 | s. 101(1) para. 4 (data.ts) | Consecutive interim care and supervision: total not exceeding 12 months | Verified. |
@@ -31,7 +31,7 @@ Date: 2026-10-24. Source of truth for CYFSA text: `legal-reference/CYFSA_full_te
 | s. 3 (sidebar) | Children's rights list | Verified as to content. The sidebar also attributed counsel rights and an age-12 rule to s. 3, which are not there (corrected; counsel now cites s. 78). |
 | s. 78 (data.ts, sidebar) | Legal representation; court considers desirability; s. 78(4) deems representation desirable in listed cases unless the court is satisfied, taking into account the child's views and wishes, given due weight in accordance with the child's age and maturity, that the child's interests are otherwise adequately protected | Verified. Corrected: the sidebar previously said nothing of the s. 78(4) presumption, and the qualifier is now stated in full. |
 | s. 72 (sidebar) | Regular consultation with bands about matters including places of safety and residential placement | Verified. |
-| s. 70 (sidebar) | Designation of a child and family service authority (not consultation) | Heading verified. |
+| s. 70 (sidebar code comment; data.ts) | Designation of a child and family service authority (not consultation) | Heading verified. Not a sidebar item; cited only in a code comment and data.ts. |
 
 ## Corrected in this change
 

@@ -77,6 +77,7 @@ const EXPECTED: Record<string, Ref[]> = {
     { section: "88", quote: "within five days after a child is brought" },
     { section: "88", quote: "brought before a court for a hearing" },
     { section: "88", quote: "an agreement shall be made under section 77" },
+    { section: "88", quote: "extra-provincial child protection order" },
   ],
   "cyfsa-74": [
     { section: "74", subsection: "2", quote: "in need of protection" },
@@ -96,12 +97,21 @@ const EXPECTED: Record<string, Ref[]> = {
     { section: "101", subsection: "3", quote: "would be inadequate to protect the child" },
   ],
   "def-best-interests": [{ section: "74", subsection: "3", quote: "physical, mental and emotional needs" }],
-  "def-supervision-order": [{ section: "101", subsection: "1", para: "1", quote: "at least three months and not more than 12 months" }],
+  "def-supervision-order": [
+    { section: "101", subsection: "1", para: "1", quote: "at least three months and not more than 12 months" },
+    { section: "101", subsection: "7", quote: "reasonable terms and conditions relating to the child" },
+  ],
 };
 
 /** Collapses whitespace and typographic apostrophes, so quotes match the bundled text's layout. */
-const squash = (t: string) => normalizeQuotes(t).replace(/\s+/g, " ");
 const normalizeQuotes = (t: string) => t.replace(/[’‘]/g, "'");
+const squash = (t: string) => normalizeQuotes(t).replace(/\s+/g, " ");
+
+/** True when the quote appears in the cited subsection (or, with no subsection, the section). Used by every quote check. */
+function quoteFound(section: string, sub: string | undefined, quote: string): boolean {
+  const scope = sub !== undefined ? subsectionText(section, sub) : sectionBody(section);
+  return scope !== null && squash(scope).includes(squash(quote));
+}
 
 // Item scope: any citation naming the CYFSA by its short or full name.
 const CYFSA_NAME = /\bCYFSA\b|Child, Youth and Family Services Act/i;
@@ -156,8 +166,7 @@ describe("each referenced provision exists in the bundled text", () => {
             `s. ${ref.section}(${ref.subsection})(${ref.clause}) exists`
           ).toBe(true);
         }
-        const scope = ref.subsection !== undefined ? subsectionText(ref.section, ref.subsection) : sectionBody(ref.section);
-        expect(scope !== null && squash(scope).includes(squash(ref.quote)), `"${ref.quote}" appears in s. ${ref.section}${ref.subsection ? `(${ref.subsection})` : ""}`).toBe(true);
+        expect(quoteFound(ref.section, ref.subsection, ref.quote), `"${ref.quote}" appears in s. ${ref.section}${ref.subsection ? `(${ref.subsection})` : ""}`).toBe(true);
         if (ref.para !== undefined) {
           expect(
             hasParagraph(ref.section, ref.subsection, ref.para),
@@ -170,11 +179,6 @@ describe("each referenced provision exists in the bundled text", () => {
 });
 
 describe("the checks themselves fail on wrong references", () => {
-  const quoteFound = (section: string, sub: string | undefined, quote: string) => {
-    const scope = sub !== undefined ? subsectionText(section, sub) : sectionBody(section);
-    return scope !== null && squash(scope).includes(squash(quote));
-  };
-
   it("rejects a quote that the cited provision does not contain", () => {
     // Section 81 exists and so does subsection (7), but the sidebar's "poverty" claim is not in s. 81(7).
     expect(quoteFound("81", "7", "substantial risk to the child")).toBe(true);
