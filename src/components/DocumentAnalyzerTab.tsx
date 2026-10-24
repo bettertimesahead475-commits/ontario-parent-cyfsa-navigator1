@@ -2583,7 +2583,7 @@ export default function DocumentAnalyzerTab() {
 
         <div class="section-card">
           <h3 class="section-title">🔗 Statute Links (check against e-Laws)</h3>
-          <p style="font-size:12px; color:#475569; margin-bottom:12px;">These links go to the Ontario e-Laws page for the CYFSA. They are the same in every report. Check the current text there before relying on it:</p>
+          <p style="font-size:12px; color:#475569; margin-bottom:12px;">These links go to Ontario e-Laws pages, including the Children's Law Reform Act. They are the same in every report. Check the current text there before relying on it:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             <li><strong>CYFSA Section 74 (Child Protection Thresholds):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK123" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK123</a></li>
             <li><strong>CYFSA Section 94 (30-Day Adjournment Limit / Temporary Care Order):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
@@ -4249,7 +4249,7 @@ export default function DocumentAnalyzerTab() {
                                 };
                                 localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
                                 setLocation("/lawyers");
-                                alert("Success: Your Detailed Case Brief has been synchronized with the Lawyer Directory. Select a lawyer in the directory to see your pre-filled intake brief!");
+                                alert("Your case brief was saved on this device.");
                               }}
                               className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 transition-colors border border-brand-700 cursor-pointer"
                               title={redactionEnabled ? "Turn off redaction to sync the full case to the Lawyer Directory" : "Sync to Lawyer Directory tab for attorney review"}
