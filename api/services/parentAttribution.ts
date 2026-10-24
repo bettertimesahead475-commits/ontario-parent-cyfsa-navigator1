@@ -166,9 +166,12 @@ export function normalizeAlias(name: string): string {
     .toLowerCase();
 }
 
-/** A court file number counts only if it has visible text once invisible characters are removed. */
+/**
+ * A court file number counts only if it has visible text. Whitespace and every format character (for
+ * example zero-width and directional marks) are not visible text.
+ */
 function hasFileNumber(fileNumber: string | null): boolean {
-  return fileNumber !== null && normalizeAlias(fileNumber).length > 0;
+  return fileNumber !== null && fileNumber.normalize('NFKC').replace(/[\s\p{Cf}]/gu, '').length > 0;
 }
 
 /** Roles held by known parties in known proceedings, keyed by proceeding. */

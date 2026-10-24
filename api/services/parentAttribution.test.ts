@@ -414,3 +414,13 @@ describe('file number visibility', () => {
     expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B')).toEqual({ok: false, missing: ['court file number']});
   });
 });
+
+describe('file number visibility, all format characters', () => {
+  it('treats a file number made only of directional or joining marks as missing', () => {
+    for (const mark of ['‎', '‏', '‌', '‍', '‪‬']) {
+      const m = twoProceedings();
+      m.proceedings[0].fileNumber = mark;
+      expect(validateCaseModel(m).some(i => i.code === 'MISSING_FILE_NUMBER' && i.proceedingId === 'P1')).toBe(true);
+    }
+  });
+});
