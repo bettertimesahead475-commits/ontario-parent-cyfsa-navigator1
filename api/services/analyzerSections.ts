@@ -486,17 +486,34 @@ export function isVerbatimQuoteStatus(status: string): boolean {
 }
 
 /**
- * Sections confirmed in the analyzer's verified statute reference (ANALYSIS_RULES). Anything else
- * that looks like a section number must carry the "unverified" note. This is a local reference
- * list, not an external legal database lookup, and the report says so.
+ * Provisions whose text the app has compared against the bundled CYFSA text (src/utils/statuteReference.ts).
+ * Only these may be labelled CONFIRMED_REFERENCE. A section number alone is not a check: 94(5) and 125(1)
+ * exist in the bundled text but have no compared entry here, so they stay UNVERIFIED. This must mirror
+ * the keys of BUNDLED_STATUTE_ENTRIES; a test enforces that. This is a local reference list, not an
+ * external legal database lookup, and the report says so.
  */
-const CONFIRMED_SECTION_PATTERNS = [/^74(\(2\))?$/, /^94\(1\)$/, /^94\(5\)$/, /^125(\(1\))?$/];
+export const CONFIRMED_SECTION_KEYS = ["74(2)", "81(7)", "88", "94(1)", "94(2)"] as const;
+const CONFIRMED_SECTION_PATTERNS = CONFIRMED_SECTION_KEYS.map((key) => new RegExp(`^${key.replace(/[()]/g, "\\$&")}$`));
 
+/**
+ * Every section number a citation names, including lists such as "ss. 74(2) and 125(1)" or
+ * "s. 74(2), 94(5)". Only numbers introduced by a section keyword count, so "S.O. 2017, c. 14" adds nothing.
+ */
 function citedSections(text: string): string[] {
   const out: string[] = [];
-  const re = /\b(?:s\.|ss\.|sec\.|section)\s*(\d{1,3}(?:\(\d+\))?(?:\([a-z]\))?)/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) out.push(m[1].replace(/\([a-z]\)$/i, ""));
+  // Keyword, then a list of items: "74(2)" or a bare subsection "(5)" continuing the previous section.
+  const list = /\b(?:s|ss|sec|secs|section|sections|subs?|subsections?)\.?\s*((?:(?:\d{1,3}(?:\(\d+\))*|\(\d+\))(?:\([a-z]\))*(?:\s*(?:,|and|or|&|to|-|–)\s*)?)+)/gi;
+  for (const m of text.matchAll(list)) {
+    let base = "";
+    for (const item of m[1].matchAll(/(\d{1,3})((?:\(\d+\))*)|\((\d+)\)/g)) {
+      if (item[1]) {
+        base = item[1];
+        out.push(item[1] + item[2]);
+      } else if (base) {
+        out.push(`${base}(${item[3]})`);
+      }
+    }
+  }
   return out;
 }
 
@@ -507,7 +524,9 @@ export function guardCitation(text: string): { text: string; status: "CONFIRMED_
   if (/unverified/i.test(t)) return { text: t, status: "UNVERIFIED" };
   const sections = citedSections(t);
   const clra = /\bCLRA\b|Children's Law Reform Act/i.test(t);
-  const unconfirmed = clra || sections.some((s) => !CONFIRMED_SECTION_PATTERNS.some((p) => p.test(s)));
+  // A regulation's subsection can share a number with a CYFSA section, so a citation naming one is never confirmed.
+  const otherInstrument = /\bregulations?\b|\breg\b/i.test(t);
+  const unconfirmed = clra || otherInstrument || sections.some((s) => !CONFIRMED_SECTION_PATTERNS.some((p) => p.test(s)));
   if (unconfirmed) return { text: `${t} ${UNVERIFIED_CITATION_NOTE}`, status: "UNVERIFIED" };
   return { text: t, status: sections.length ? "CONFIRMED_REFERENCE" : "NONE" };
 }
