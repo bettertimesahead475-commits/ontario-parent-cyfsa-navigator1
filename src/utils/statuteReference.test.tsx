@@ -47,6 +47,7 @@ describe("matching a citation to a bundled entry", () => {
     "CLRA, s. 88",
     "Criminal Code, s. 81(7)",
     "Family Law Rules, s. 94(1)",
+    "Criminal Code, S.C. 2017, c. 14, s. 88",
   ])("does not invent an entry for %s", (citation) => {
     expect(findBundledStatute(citation)).toBeNull();
   });

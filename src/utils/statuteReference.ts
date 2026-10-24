@@ -54,7 +54,7 @@ export const BUNDLED_STATUTE_ENTRIES: Record<string, BundledStatuteEntry> = {
 export function findBundledStatute(citation: string): BundledStatuteEntry | null {
   // Only a citation that names the CYFSA can match. "CLRA, s. 88" and "Criminal Code, s. 81(7)"
   // are other Acts, even though their section numbers look the same.
-  if (!/CYFSA|Child,?\s+Youth\s+and\s+Family|S\.\s*O\.\s*2017,?\s*c\.\s*14|2017,?\s*c\.\s*14/i.test(citation)) return null;
+  if (!/CYFSA|Child,?\s+Youth\s+and\s+Family|S\.\s*O\.\s*2017,?\s*c\.\s*14/i.test(citation)) return null;
   const match = /(?:^|\bs\.?\s*|\bsection\s+)(\d+)(?:\s*\(\s*(\d+)\s*\))?/i.exec(citation.trim());
   if (!match) return null;
   const key = match[2] ? `${match[1]}(${match[2]})` : match[1];
