@@ -86,13 +86,18 @@ function getBillingMonth(): string {
   return new Date().toISOString().slice(0, 7); // YYYY-MM
 }
 
-export function getPaidUsageKey(sessionId: string, tier: string, type: UsageAnalysisType): string {
+export function getPaidUsageKey(
+  sessionId: string,
+  tier: string,
+  type: UsageAnalysisType,
+  billingCycle: string = getBillingMonth()
+): string {
   if (type === "quick") {
     return `paid_session_${sessionId}_quick`;
   }
   // Forensic analyses:
   if (tier === "Pro" || tier.startsWith("Community")) {
-    return `paid_session_${sessionId}_forensic_${getBillingMonth()}`;
+    return `paid_session_${sessionId}_forensic_${billingCycle}`;
   }
   return `paid_session_${sessionId}_forensic`;
 }
@@ -202,14 +207,19 @@ export async function checkPaidUsage(
  * Deducts credit ONLY after an analysis successfully completes.
  * Safe against double deductions and network retry duplicate consumption.
  */
+/**
+ * Records one completed analysis. `billingCycle` is the month the credit was reserved in, so an analysis that
+ * straddles a month boundary is counted in the month it was reserved for.
+ */
 export async function recordPaidUse(
   sessionId: string,
   tier: string,
   email: string | null,
   type: UsageAnalysisType,
-  idempotencyKey?: string | null
+  idempotencyKey?: string | null,
+  billingCycle?: string
 ): Promise<number> {
-  const key = getPaidUsageKey(sessionId, tier, type);
+  const key = getPaidUsageKey(sessionId, tier, type, billingCycle);
   if (idempotencyKey) {
     if (isAnalysisAlreadyRecorded(idempotencyKey)) {
       return await getUsageCount(key);

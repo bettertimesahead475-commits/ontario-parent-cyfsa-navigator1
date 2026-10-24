@@ -7,16 +7,22 @@
 // - Individual / Family Case Access ($149 CAD/mo): 5 Forensic Analyses per monthly billing cycle.
 // - Community Sponsorships (Community 5/10/25): 5 Forensic Analyses per family per month.
 //
-// Source of truth: one counter per paid session, paid_session_<id>_total, in free_usage.
-// Reserving an analysis increments it with a compare-and-set update, so two instances can never
-// both take the last credit. Each request also has a marker row (keyed by a hash of its request id)
-// that records whether it is reserved, consumed or released. Markers make retries idempotent and
-// let a release return exactly the unit that was taken.
+// Source of truth: one counter in free_usage per allowance scope.
+//   - Basic and Premium: paid_session_<id>_total, all analysis types together.
+//   - Pro and Community: paid_session_<id>_cycle_<YYYY-MM>, forensic analyses only, per UTC calendar month.
+//     Quick reviews on those plans are unlimited and draw on no counter.
+// Reserving an analysis increments its counter with a compare-and-set update, so two instances can never both
+// take the last unit. Each request also has a marker row (keyed by a hash of its request id) whose state records
+// whether it is reserved, consumed or released, and which counter its unit came from. Markers make retries
+// idempotent, and let a release return exactly the unit that was taken.
 //
-// Pipeline: Authenticate -> Validate Entitlement -> Reserve (claim counter + marker) -> Process
+// Pipeline: Authenticate -> Validate Entitlement -> Reserve (marker + counter) -> Process
 //           -> Finalize (marker: reserved -> consumed), or Release on failure (marker -> released, counter -1).
-// Fail-closed: if the reservation cannot be written, AI processing never begins.
-// A reservation whose request never finished is released automatically after RESERVATION_TTL_MS.
+// Only the attempt that owns a reservation may run the model or release it.
+// Fail-closed: if the reservation cannot be written, AI processing never begins; if the charge cannot be
+// recorded, the result is withheld.
+// A reservation whose claim never recorded its unit is reclaimed after CLAIM_WINDOW_MS. A reservation
+// that has been touched within RESERVATION_TTL_MS is never reclaimed.
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
@@ -49,6 +55,7 @@ const MARKER_RELEASED = "reservation:released";
 // A claim records its unit within milliseconds. Anything still unrecorded after this long was abandoned.
 const CLAIM_WINDOW_MS = 60 * 1000;
 const MAX_CLAIM_ATTEMPTS = 5;
+const SAFE_ID = /^[A-Za-z0-9_-]+$/;
 
 export interface PackageAllowance {
   tier: string;
@@ -96,6 +103,8 @@ export interface ReservationResult {
   tier: string;
   creditsRemainingAfterReservation: number;
   alreadyFinalized?: boolean;
+  /** Calendar month (YYYY-MM) the unit was drawn from, for Pro and Community forensic analyses; otherwise null. */
+  billingCycle: string | null;
 }
 
 export function resetCreditAccountingCachesForTesting(): void {
@@ -247,7 +256,8 @@ function reservationFor(
   slotIndex: number,
   remaining: number,
   alreadyFinalized: boolean,
-  owned: boolean
+  owned: boolean,
+  billingCycle: string | null
 ): ReservationResult {
   return {
     // Only the attempt that created or re-took the reservation owns it and may release it.
@@ -258,7 +268,12 @@ function reservationFor(
     tier,
     creditsRemainingAfterReservation: remaining,
     alreadyFinalized,
+    billingCycle,
   };
+}
+
+function cycleOf(scope: CounterScope): string | null {
+  return scope.kind === "cycle" ? scope.cycle : null;
 }
 
 /**
@@ -329,6 +344,9 @@ export async function reserveAnalysisCredit(params: {
     );
   }
 
+  if (!SAFE_ID.test(sessionId)) {
+    throw new LifecycleError(400, "INVALID_SESSION", "This paid session is not valid. Please sign in again.");
+  }
   const key = markerKey(sessionId, requestId);
   const scope = scopeFor(allowance, analysisType);
   const state = reservedState(scope);
@@ -340,14 +358,14 @@ export async function reserveAnalysisCredit(params: {
 
     if (marker?.email === MARKER_CONSUMED) {
       const current = await getCreditBalance(sessionId, tier);
-      return reservationFor(sessionId, requestId, tier, marker.analyses_used, current.creditsRemaining, true, false);
+      return reservationFor(sessionId, requestId, tier, marker.analyses_used, current.creditsRemaining, true, false, null);
     }
 
     if (marker && isReservedState(marker.email)) {
       if (marker.analyses_used > 0 && !isStale(marker)) {
         // A retry of a live request. Its unit is already claimed, so it is not charged again, and it does not own the reservation.
         const current = await getCreditBalance(sessionId, tier);
-        return reservationFor(sessionId, requestId, tier, marker.analyses_used, current.creditsRemaining, false, false);
+        return reservationFor(sessionId, requestId, tier, marker.analyses_used, current.creditsRemaining, false, false, cycleOf(scope));
       }
       if (marker.analyses_used <= 0 && !isStale(marker) && !isOlderThan(marker, CLAIM_WINDOW_MS)) {
         // Another attempt is still claiming its unit. Ask the caller to retry in a moment.
@@ -360,7 +378,8 @@ export async function reserveAnalysisCredit(params: {
 
     if (marker?.email === MARKER_RELEASED) {
       // A previous attempt failed and released its credit. Re-reserve it for this retry.
-      if (!(await transitionMarker(key, MARKER_RELEASED, state))) continue;
+      // Zero the slot in the same write: the earlier slot was returned, and must not be read as a claimed unit.
+      if (!(await transitionMarker(key, MARKER_RELEASED, state, true))) continue;
     } else if (!(await claimUsageRow({
       uid: key,
       email: state,
@@ -374,7 +393,7 @@ export async function reserveAnalysisCredit(params: {
 
     if (counter === null) {
       // Plan allowance does not count this analysis (Pro/Community quick reviews). Nothing to claim.
-      return reservationFor(sessionId, requestId, tier, 0, Math.max(0, granted - (await cycleConsumed(sessionId))), false, true);
+      return reservationFor(sessionId, requestId, tier, 0, Math.max(0, granted - (await cycleConsumed(sessionId))), false, true, null);
     }
 
     const claimed = await claimCounterUnit(sessionId, counter, granted, key);
@@ -390,7 +409,7 @@ export async function reserveAnalysisCredit(params: {
       throw usageUnavailable("credit reservation slot", new Error("marker changed during claim"));
     }
 
-    return reservationFor(sessionId, requestId, tier, claimed.slot, Math.max(0, granted - claimed.slot), false, true);
+    return reservationFor(sessionId, requestId, tier, claimed.slot, Math.max(0, granted - claimed.slot), false, true, cycleOf(scope));
   }
 
   throw usageUnavailable("credit reservation", new Error(`contention on ${key}`));
@@ -436,12 +455,12 @@ async function claimCounterUnit(
 }
 
 /**
- * Marks a reservation consumed after the analysis succeeds. The unit was already taken at reservation, so
- * this only changes the marker. Retries and duplicates are no-ops, and a finished analysis is never
- * released afterwards.
+ * Marks a reservation consumed after the analysis succeeds. The unit was already taken at reservation, so this
+ * only changes the marker. A duplicate finalize is a no-op.
  *
- * Never throws for a database error: the analysis has already been produced. A reservation that cannot be
- * finalized expires and is released, which errs on the side of not charging twice.
+ * Throws when the charge cannot be recorded, or when the reservation was already released. The caller must then
+ * withhold the result: it is not delivered for free. Releasing it in that case returns the unit, because nothing
+ * was delivered.
  */
 export async function finalizeAnalysisCredit(params: {
   sessionId: string;
@@ -453,18 +472,22 @@ export async function finalizeAnalysisCredit(params: {
 }): Promise<CreditBalance | null> {
   const { sessionId, requestId, tier } = params;
   const key = markerKey(sessionId, requestId);
-  try {
-    const marker = await readUsageRow(key);
-    if (marker && isReservedState(marker.email)) {
-      if (!(await transitionMarker(key, marker.email as string, MARKER_CONSUMED))) {
-        console.warn("[creditAccounting] Reservation changed while finalizing; not re-charged.", { requestId });
+  const marker = await readUsageRow(key);
+  if (!marker) {
+    throw new LifecycleError(409, "RESERVATION_MISSING", "This analysis has no credit reservation. Please start a new analysis.");
+  }
+  if (marker.email !== MARKER_CONSUMED) {
+    if (!isReservedState(marker.email) || !(await transitionMarker(key, marker.email as string, MARKER_CONSUMED))) {
+      const now = await readUsageRow(key);
+      if (now?.email !== MARKER_CONSUMED) {
+        throw new LifecycleError(409, "RESERVATION_RELEASED", "This analysis's reservation expired before it could be recorded. Please start a new analysis.");
       }
-    } else if (marker?.email === MARKER_RELEASED) {
-      console.warn("[creditAccounting] Analysis finished after its reservation was released; not charged again.", { requestId });
     }
+  }
+  try {
     return await getCreditBalance(sessionId, tier);
-  } catch (err) {
-    console.error("[creditAccounting] Non-fatal error finalizing credit reservation:", err);
+  } catch {
+    // The charge is recorded; a failed balance read for the response does not undo it.
     return null;
   }
 }

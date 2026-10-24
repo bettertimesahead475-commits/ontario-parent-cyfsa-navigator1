@@ -105,6 +105,8 @@ export function createProductionLikeDb(seed: {
   // Simulates a write outage on free_usage. Reads still work.
   failWrites?: boolean;
 } = {}) {
+  // Lost-response fault: the next N free_usage updates are applied, then reported as failed (as if the response was lost).
+  const faults = { commitThenFailUpdates: 0 };
   const outage = () => ({ code: "PGRST000", message: "simulated database write outage" });
   const freeUsage = new Map<string, Row>();
   for (const [uid, analyses_used] of Object.entries(seed.usage ?? {})) {
@@ -153,6 +155,10 @@ export function createProductionLikeDb(seed: {
               updated.push({ ...row });
             }
           }
+          if (faults.commitThenFailUpdates > 0) {
+            faults.commitThenFailUpdates--;
+            return { data: null, error: outage() };
+          }
           return { data: updated, error: null };
         });
       },
@@ -199,6 +205,7 @@ export function createProductionLikeDb(seed: {
 
   return {
     _freeUsage: freeUsage,
+    _faults: faults,
     _sessions: sessions,
     _queryLog: queryLog,
     from(table: string) {

@@ -1772,3 +1772,45 @@ describe("Server-Authoritative Usage Accounting & Idempotency", () => {
     expect(res.body.remaining).toBe(1);
   });
 });
+
+// Replay and joined-attempt refusals: the model must not run unless this attempt owns the reservation.
+describe("Credit ownership at the route level", () => {
+  const DEEP_SCAN = {
+    gaps: [], missingEvidence: [], retorts: [], thresholdAnalysis: [], proceduralTimelineViolations: [],
+    charterAndHumanRightsIssues: [], whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [],
+    disclaimer: "This document is generated for informational/educational purposes only. disclaimer",
+  };
+  const ID = "req_1700000000000_deepowner1";
+
+  // The marker for this request, found by its prefix in the fake database (the session id is not needed).
+  const markerRows = () => [...dbHolder.db._freeUsage.values()].filter((r: any) => String(r.uid).startsWith("paid_res_") && String(r.uid).length > 0);
+
+  it("a replay of a completed Deep Scan is refused without running the model again", async () => {
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse(DEEP_SCAN));
+    const first = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    expect(first.status).toBe(200);
+    const callsAfterFirst = mockCreateMessage.mock.calls.length;
+
+    const replay = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    expect(replay.status).toBe(409);
+    expect(replay.body.code).toBe("ANALYSIS_ALREADY_COMPLETED");
+    expect(mockCreateMessage.mock.calls.length).toBe(callsAfterFirst);
+  });
+
+  it("a second Deep Scan that joins a running reservation does not run the model", async () => {
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse(DEEP_SCAN));
+    await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    // Make the stored reservation look like a live analysis that has not finished.
+    const marker = markerRows()[0];
+    expect(marker).toBeDefined();
+    marker.email = "reservation:reserved";
+    marker.analyses_used = 1;
+    marker.last_analysis_at = new Date().toISOString();
+    const callsBefore = mockCreateMessage.mock.calls.length;
+
+    const joined = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    expect(joined.status).toBe(409);
+    expect(joined.body.code).toBe("ANALYSIS_IN_PROGRESS");
+    expect(mockCreateMessage.mock.calls.length).toBe(callsBefore);
+  });
+});

@@ -50,6 +50,24 @@ async function run<T>(operation: string, fn: (db: ReturnType<typeof getSupabase>
   }
 }
 
+/**
+ * Writes are never retried by the transport or by us. A lost response leaves the outcome unknown: the write may
+ * have committed. A retry could apply it twice (a counter incremented twice, a unit given back twice). So an
+ * ambiguous write fails closed as 503, and the reservation is cleaned up by the TTL instead.
+ */
+async function writeOnce<T>(operation: string, fn: (db: ReturnType<typeof getSupabase>) => PromiseLike<{ data: T; error: any }>): Promise<T> {
+  let result: { data: T; error: any };
+  try {
+    result = await fn(getSupabase());
+  } catch (err) {
+    throw usageUnavailable(operation, err);
+  }
+  if (result.error) {
+    throw usageUnavailable(operation, result.error);
+  }
+  return result.data;
+}
+
 /** Waits a short random time before retrying a compare-and-set that lost a race. */
 export async function backoff(attempt: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, Math.random() * 5 * (attempt + 1)));
@@ -71,20 +89,15 @@ export async function readUsageRow(uid: string): Promise<UsageRow | null> {
 
 /** Inserts a new row. Returns false (and changes nothing) if the uid already exists. */
 export async function claimUsageRow(row: UsageRow): Promise<boolean> {
+  let result: { error: any };
   try {
-    await withTransientRetry(async () => {
-      const { error } = await getSupabase().from("free_usage").insert(row);
-      if (error && error.code !== UNIQUE_VIOLATION) {
-        throw Object.assign(new Error(`free_usage insert failed: ${error.message}`), { supabaseError: error, statusCode: 503 });
-      }
-      if (error) throw Object.assign(new Error("duplicate"), { duplicate: true });
-    });
-    return true;
-  } catch (err: any) {
-    if (err?.duplicate) return false;
-    if (err instanceof LifecycleError) throw err;
-    throw usageUnavailable("free_usage insert", err?.supabaseError ?? err);
+    result = await getSupabase().from("free_usage").insert(row);
+  } catch (err) {
+    throw usageUnavailable("free_usage insert", err);
   }
+  if (result.error?.code === UNIQUE_VIOLATION) return false;
+  if (result.error) throw usageUnavailable("free_usage insert", result.error);
+  return true;
 }
 
 /**
@@ -92,16 +105,15 @@ export async function claimUsageRow(row: UsageRow): Promise<boolean> {
  * Returns true when this call made the change.
  */
 export async function compareAndSetCounter(uid: string, expected: number, next: number): Promise<boolean> {
-  const rows = await run<Array<{ uid: string }>>("free_usage counter update", async (db) => {
-    const { data, error } = await db
+  const rows = await writeOnce<Array<{ uid: string }>>("free_usage counter update", async (db) =>
+    db
       .from("free_usage")
       .update({ analyses_used: next, last_analysis_at: new Date().toISOString() })
       .eq("uid", uid)
       .eq("analyses_used", expected)
       .select("uid")
-      .retry(false);
-    return { data: data as Array<{ uid: string }>, error };
-  });
+      .retry(false)
+  );
   return Array.isArray(rows) && rows.length === 1;
 }
 
@@ -135,33 +147,36 @@ export async function decrementCounter(uid: string): Promise<number> {
   throw usageUnavailable("free_usage counter decrement", new Error(`contention on ${uid}`));
 }
 
-/** Changes a row's email marker only if it currently has `fromEmail`. Returns true when changed. */
-export async function transitionMarker(uid: string, fromEmail: string, toEmail: string): Promise<boolean> {
-  const rows = await run<Array<{ uid: string }>>("free_usage marker update", async (db) => {
-    const { data, error } = await db
+/**
+ * Changes a row's email marker only if it currently has `fromEmail`. Returns true when changed.
+ * `resetSlot` also zeroes analyses_used, so a re-taken reservation never inherits a slot it did not claim.
+ */
+export async function transitionMarker(uid: string, fromEmail: string, toEmail: string, resetSlot = false): Promise<boolean> {
+  const patch: Record<string, unknown> = { email: toEmail, last_analysis_at: new Date().toISOString() };
+  if (resetSlot) patch.analyses_used = 0;
+  const rows = await writeOnce<Array<{ uid: string }>>("free_usage marker update", async (db) =>
+    db
       .from("free_usage")
-      .update({ email: toEmail, last_analysis_at: new Date().toISOString() })
+      .update(patch)
       .eq("uid", uid)
       .eq("email", fromEmail)
       .select("uid")
-      .retry(false);
-    return { data: data as Array<{ uid: string }>, error };
-  });
+      .retry(false)
+  );
   return Array.isArray(rows) && rows.length === 1;
 }
 
 /** Records the counter slot a reservation claimed, only while its marker still says `email`. */
 export async function setMarkerSlot(uid: string, email: string, slot: number): Promise<boolean> {
-  const rows = await run<Array<{ uid: string }>>("free_usage marker slot update", async (db) => {
-    const { data, error } = await db
+  const rows = await writeOnce<Array<{ uid: string }>>("free_usage marker slot update", async (db) =>
+    db
       .from("free_usage")
       .update({ analyses_used: slot, last_analysis_at: new Date().toISOString() })
       .eq("uid", uid)
       .eq("email", email)
       .select("uid")
-      .retry(false);
-    return { data: data as Array<{ uid: string }>, error };
-  });
+      .retry(false)
+  );
   return Array.isArray(rows) && rows.length === 1;
 }
 

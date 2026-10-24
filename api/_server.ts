@@ -93,6 +93,11 @@ dotenv.config();
 let geminiClient: GoogleGenAI | null = null;
 let anthropicClient: Anthropic | null = null;
 
+/** The billing month a reservation was drawn from, passed to the per-analysis counter (empty when none). */
+function cycleArgs(reservation: { billingCycle: string | null } | null): [string] | [] {
+  return reservation?.billingCycle ? [reservation.billingCycle] : [];
+}
+
 function getAnthropicClient(): Anthropic {
   if (anthropicClient) return anthropicClient;
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -2168,6 +2173,20 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           analysisType: mode === "full" ? "forensic" : "quick",
           documentName: req.body?.documentName || req.body?.fileData?.name || "document",
         });
+        // Only the attempt that owns the reservation may run the model. A replay of a finished analysis, or a
+        // second attempt that joined a running one, would otherwise run the model with no unit behind it.
+        if (creditReservation.alreadyFinalized) {
+          return res.status(409).json({
+            error: "This analysis was already completed. Open its saved report instead.",
+            code: "ANALYSIS_ALREADY_COMPLETED",
+          });
+        }
+        if (!creditReservation.reservationId) {
+          return res.status(409).json({
+            error: "This analysis is already running. We'll show the results as soon as it finishes.",
+            code: "ANALYSIS_IN_PROGRESS",
+          });
+        }
       }
 
       if (!isPaid) {
@@ -2444,7 +2463,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       } else if (isPaid && paidSessionId && paidTier) {
         try {
           const usageType = mode === "full" ? "forensic" : "quick";
-          await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, idempotencyKey);
+          await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, idempotencyKey, ...cycleArgs(creditReservation));
         } catch (usageErr) {
           console.error("[document analysis] Failed to record paid usage (non-fatal):", usageErr);
         }
@@ -3018,6 +3037,18 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       }
       throw resErr;
     }
+    if (creditReservation?.alreadyFinalized) {
+      return res.status(409).json({
+        error: "This analysis was already completed. Open its saved report instead.",
+        code: "ANALYSIS_ALREADY_COMPLETED",
+      });
+    }
+    if (creditReservation && !creditReservation.reservationId) {
+      return res.status(409).json({
+        error: "This analysis is already running. We'll show the results as soon as it finishes.",
+        code: "ANALYSIS_IN_PROGRESS",
+      });
+    }
 
     try {
       const startTime = Date.now();
@@ -3228,7 +3259,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       let credits: CreditStatus | null = null;
       if (sessionInfo) {
         try {
-          await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey);
+          await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey, ...cycleArgs(creditReservation));
         } catch (usageErr) {
           console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
         }
