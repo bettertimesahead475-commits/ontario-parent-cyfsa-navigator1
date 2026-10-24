@@ -3260,14 +3260,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
           "The deep scan returned an incomplete report. Your analysis was not completed; please retry.", true);
       }
-      // Verified parent attribution is stored with the job so the parent view can read it later.
-      // Storage failures are ignored: they never change the charge or the report.
-      const storeJob = parentOn && isValidAnalysisJobId(analysisRequestId);
-      if (storeJob) {
-        attachParentAttribution(report, documentText, analysisRequestId);
-        await createAnalysisJobDurable({ jobId: analysisRequestId, uid: identity.uid, mode: "full" }).catch(() => {});
-        await completeAnalysisJobDurable(analysisRequestId, report).catch(() => {});
-      }
+      if (parentOn) attachParentAttribution(report, documentText, analysisRequestId);
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
       if (sessionInfo) try {
@@ -3286,11 +3279,18 @@ OUTPUT — return strictly this JSON schema, nothing else:
       } catch (usageErr) {
         console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
       }
+      // Stored only after the charge is recorded, under a server-generated id. A client-chosen id can never
+      // overwrite another job, and a failed charge leaves nothing stored. Storage failures are ignored.
+      const storedJobId = parentOn ? generateAnalysisJobId() : null;
+      if (storedJobId) {
+        await createAnalysisJobDurable({ jobId: storedJobId, uid: identity.uid, mode: "full" }).catch(() => {});
+        await completeAnalysisJobDurable(storedJobId, report).catch(() => {});
+      }
       res.json({
         ...report,
         timing: { durationMs },
         ...(credits ? { credits } : {}),
-        ...(storeJob ? { jobId: analysisRequestId } : {}),
+        ...(storedJobId ? { jobId: storedJobId } : {}),
       });
     } catch (error: any) {
       if (creditReservation && sessionInfo) {

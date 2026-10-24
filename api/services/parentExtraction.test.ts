@@ -101,8 +101,7 @@ describe("quotation verification", () => {
     const raw = structuredClone(rawBlock);
     raw.allegations[0].kind = "FINDING";
     const { caseModel } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
-    expect(caseModel.allegations[0].kind).toBe("FINDING");
-    // The engine then shows it unresolved unless its classification is DOCUMENTARY.
+    expect(caseModel.allegations[0].kind).toBe("ALLEGATION");
     const view = buildSelectedView(caseModel, "PROC-1", "P-A");
     expect(view.ok && view.report.specificAllegations[0].status).toBe("UNRESOLVED");
   });
@@ -182,5 +181,25 @@ describe("bounds and malformed input", () => {
     const { caseModel, rejected } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
     expect(caseModel.allegations.length).toBeLessThanOrEqual(150);
     expect(rejected).toContainEqual({ kind: "allegation", id: "", reason: "LIMIT_EXCEEDED" });
+  });
+});
+
+describe("review fixes", () => {
+  it("never accepts a model-asserted finding, documentary classification or admitted status", () => {
+    const raw = structuredClone(rawBlock);
+    raw.allegations[0].kind = "FINDING";
+    raw.allegations[0].classification = "DOCUMENTARY";
+    raw.allegations[0].status = "ADMITTED";
+    const { caseModel } = buildCaseModelFromExtraction(raw, DOC_PROC1, "doc-1");
+    expect(caseModel.allegations[0].kind).toBe("ALLEGATION");
+    expect(caseModel.allegations[0].status).toBe("UNRESOLVED");
+    const view = buildSelectedView(caseModel, "PROC-1", "P-A");
+    expect(view.ok && view.report.specificAllegations[0].status).toBe("UNRESOLVED");
+  });
+
+  it("refuses a duplicate proceeding identifier cleanly instead of throwing", () => {
+    const model = buildCaseModelFromExtraction(rawBlock, DOC_PROC1, "doc-1").caseModel;
+    model.proceedings.push({ ...model.proceedings[0] });
+    expect(buildSelectedView(model, "PROC-1", "P-A")).toEqual({ ok: false, code: "NOT_A_VALID_CHOICE" });
   });
 });

@@ -29,7 +29,6 @@ const ROLES: ProceedingRole[] = [
   "OTHER_PARTY",
   "UNKNOWN",
 ];
-const STATUSES: AllegationStatus[] = ["ADMITTED", "DISPUTED", "CORROBORATED", "UNSUPPORTED", "UNRESOLVED"];
 const CLASSIFICATIONS = [
   "DIRECT",
   "DOCUMENTARY",
@@ -154,11 +153,13 @@ export function buildCaseModelFromExtraction(
     model.allegations.push({
       id,
       proceedingId: idOf(a.proceedingId),
-      kind: a.kind === "FINDING" ? "FINDING" : "ALLEGATION",
+      // A verified quotation proves the text exists in the document. It does not prove what the text means, so
+      // the model's claimed kind and status are not trusted: every record stays an allegation, unresolved.
+      kind: "ALLEGATION",
       text: text(a.text),
       madeBy: text(a.madeBy, 120) || null,
       subjectPartyIds: strings(a.subjectPartyIds, 10),
-      status: oneOf(a.status, STATUSES, "UNRESOLVED"),
+      status: "UNRESOLVED",
       classification: oneOf(a.classification, CLASSIFICATIONS, "UNCLEAR") as Allegation["classification"],
       source,
       sourceRecordId: text(a.paragraph, 40) || null,
@@ -239,6 +240,9 @@ export type SelectedView =
 
 /** Builds the view for one confirmed parent and proceeding. Reads the stored model only; never calls a model. */
 export function buildSelectedView(model: CaseModel, proceedingId: string, partyId: string): SelectedView {
+  if (model.proceedings.filter(p => p.id === proceedingId).length !== 1) {
+    return { ok: false, code: "NOT_A_VALID_CHOICE" };
+  }
   const options = listSelectionOptions(model);
   if (!options.pairs.some(p => p.partyId === partyId && p.proceedingId === proceedingId)) {
     return { ok: false, code: "NOT_A_VALID_CHOICE" };
