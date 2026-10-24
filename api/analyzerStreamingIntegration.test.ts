@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createProductionLikeDb } from "./testSupport/productionLikeCreditDb.js";
 import request from "supertest";
 
 const { mockCreateMessage, mockGenerateContent } = vi.hoisted(() => ({
@@ -6,13 +7,14 @@ const { mockCreateMessage, mockGenerateContent } = vi.hoisted(() => ({
   mockGenerateContent: vi.fn(),
 }));
 
+const dbHolder = vi.hoisted(() => ({ db: null as any }));
 const mockAccess = vi.hoisted(() => ({
   requestAccess: vi.fn(),
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
   verifySessionToken: vi.fn(),
   getActivePaidSession: vi.fn(),
-  getSupabase: vi.fn(),
+  getSupabase: vi.fn(() => dbHolder.db),
   revokeSession: vi.fn(),
   revokeAllSessionsForUid: vi.fn(),
   checkAndConsumeFreeToolUse: vi.fn(),
@@ -161,6 +163,7 @@ const STREAM_REPORT = { ...COMPLETE_ANALYSIS, documentTitle: MINIMAL_ANALYSIS.do
 
 describe("Analyzer Streaming & Job Recovery Integration", () => {
   beforeEach(() => {
+  dbHolder.db = createProductionLikeDb();
     vi.clearAllMocks();
     mockCreateMessage.mockReset();
     process.env.ANTHROPIC_API_KEY = "test-anthropic-key";

@@ -2445,19 +2445,26 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         try {
           const usageType = mode === "full" ? "forensic" : "quick";
           await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, idempotencyKey);
-          if (creditReservation && identity) {
-            await finalizeAnalysisCredit({
-              sessionId: paidSessionId,
-              firebaseUid: identity.uid,
-              requestId: analysisRequestId,
-              reservationId: creditReservation.reservationId,
-              tier: paidTier,
-              documentName: req.body?.documentName || req.body?.fileData?.name,
-            });
-          }
-          credits = await getPaidUsageStatus(paidSessionId, paidTier);
         } catch (usageErr) {
           console.error("[document analysis] Failed to record paid usage (non-fatal):", usageErr);
+        }
+        // The credit was taken before the analysis ran and the report now exists, so finalize it
+        // whether or not the per-type counter write above succeeded. Otherwise the reservation would
+        // expire and the parent would get a free analysis.
+        if (creditReservation && identity) {
+          await finalizeAnalysisCredit({
+            sessionId: paidSessionId,
+            firebaseUid: identity.uid,
+            requestId: analysisRequestId,
+            reservationId: creditReservation.reservationId,
+            tier: paidTier,
+            documentName: req.body?.documentName || req.body?.fileData?.name,
+          });
+        }
+        try {
+          credits = await getPaidUsageStatus(paidSessionId, paidTier);
+        } catch (usageErr) {
+          console.error("[document analysis] Failed to read paid usage status (non-fatal):", usageErr);
         }
       }
 
@@ -3219,8 +3226,13 @@ OUTPUT — return strictly this JSON schema, nothing else:
       }
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
-      if (sessionInfo) try {
-        await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey);
+      if (sessionInfo) {
+        try {
+          await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey);
+        } catch (usageErr) {
+          console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
+        }
+        // Finalized regardless of the per-type counter write; see the Quick Review path.
         if (creditReservation) {
           await finalizeAnalysisCredit({
             sessionId: sessionInfo.sessionId,
@@ -3231,9 +3243,11 @@ OUTPUT — return strictly this JSON schema, nothing else:
             documentName: req.body?.documentName || "deep-scan-document",
           });
         }
-        credits = await getPaidUsageStatus(sessionInfo.sessionId, sessionInfo.tier);
-      } catch (usageErr) {
-        console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
+        try {
+          credits = await getPaidUsageStatus(sessionInfo.sessionId, sessionInfo.tier);
+        } catch (usageErr) {
+          console.error("[deep scan] Failed to read paid usage status (non-fatal):", usageErr);
+        }
       }
       res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
     } catch (error: any) {
