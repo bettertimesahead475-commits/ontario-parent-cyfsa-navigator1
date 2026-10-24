@@ -2471,7 +2471,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         try {
           const usageType = mode === "full" ? "forensic" : "quick";
           await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, usageKeyFor(paidSessionId));
-          if (creditReservation && identity) {
+          // A retry that reuses an already-finalized reservation was paid for by the first run. Finalizing it again
+          // would consume a second credit for one analysis.
+          if (creditReservation && identity && !creditReservation.alreadyFinalized) {
             await finalizeAnalysisCredit({
               sessionId: paidSessionId,
               firebaseUid: identity.uid,
@@ -3319,7 +3321,9 @@ OUTPUT — return strictly this JSON schema, nothing else:
       let usageRecordFailed = false;
       if (sessionInfo) try {
         await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", billingKey);
-        if (creditReservation) {
+        // A retry that reuses an already-finalized reservation was paid for by the first run. Finalizing it again
+        // would consume a second credit for one analysis.
+        if (creditReservation && !creditReservation.alreadyFinalized) {
           await finalizeAnalysisCredit({
             sessionId: sessionInfo.sessionId,
             firebaseUid: sessionInfo.uid,

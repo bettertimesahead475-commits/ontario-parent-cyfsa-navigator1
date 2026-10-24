@@ -894,7 +894,11 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
   // A small in-memory bucket: uploads are kept, so a later download returns what was stored.
   function fakeStorage(uploadError: { message: string } | null = null) {
     const objects = new Map<string, string>();
-    const upload = vi.fn(async (name: string, body: string) => {
+    const upload = vi.fn(async (name: string, body: string, options?: { upsert?: boolean }) => {
+      // Like Supabase Storage: with upsert:false an existing object is refused with a 409.
+      if (!uploadError && options?.upsert === false && objects.has(name)) {
+        return { data: null, error: { message: "The resource already exists", statusCode: "409" } };
+      }
       if (!uploadError) objects.set(name, body);
       return { data: {}, error: uploadError };
     });
@@ -912,7 +916,7 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
         })),
       },
     };
-    return { db, upload };
+    return { db, upload, objects };
   }
 
   beforeEach(() => {
@@ -1325,7 +1329,10 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
       expect((await scan(DOC)).status).toBe(200);
       expect((await scan(DOC)).status).toBe(200); // a genuine retry
       expect(db._reservations).toHaveLength(1);
+      // The retry must not consume a second credit from the account.
+      expect(db._sessions.get(PAID_SESSION)?.credits_consumed).toBe(1);
       expect((await scan("A different document. " + DOC)).status).toBe(200);
+      expect(db._sessions.get(PAID_SESSION)?.credits_consumed).toBe(2);
       expect(db._reservations).toHaveLength(2);
       expect(new Set(db._reservations.map(r => r.request_id)).size).toBe(2);
       expect(db._reservations.every(r => r.status === "finalized")).toBe(true);
@@ -1378,5 +1385,34 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
       expect(mockUsage.recordPaidUse).toHaveBeenCalledTimes(1);
       expect(upload).not.toHaveBeenCalled();
     });
+  });
+
+  it("Quick Review: a record another server instance created after the first check is never overwritten (exclusive claim)", async () => {
+    mockCreateMessage.mockImplementation(responder);
+    const { db, upload, objects } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    // Hold the second account after its first ownership check has found nothing.
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    mockUsage.getFreeUsage.mockImplementationOnce(async () => { await gate; return 0; });
+    const held = request(app)
+      .post("/api/analyze").set("Authorization", PAID_TOKEN).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: "second account text", mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Another instance now creates the owner's record. This instance's memory never sees it.
+    const ownersRecord = JSON.stringify({ jobId: CLIENT_JOB_ID, uid: "free-uid", mode: "fast", status: "analyzing", createdAt: 1, updatedAt: 1 });
+    objects.set(`${CLIENT_JOB_ID}.json`, ownersRecord);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    release();
+    const loser = await held;
+    expect(loser.status).toBe(409);
+    expect(loser.body.code).toBe("ANALYSIS_ID_CONFLICT");
+    expect(objects.get(`${CLIENT_JOB_ID}.json`)).toBe(ownersRecord); // untouched
+    expect(upload.mock.calls.every(call => (call[2] as { upsert?: boolean })?.upsert !== true)).toBe(true); // no overwrite attempted
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
   });
 });
