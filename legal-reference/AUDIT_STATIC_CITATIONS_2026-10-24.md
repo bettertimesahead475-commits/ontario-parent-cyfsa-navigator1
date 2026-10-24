@@ -59,6 +59,8 @@ s. 10, 12, 14, 15, 16, 20, 22, 33, 38, 39, 41, 48, 68, 71, 73, 75, 77, 79, 90, 9
 
 ## How the citation checks work
 
-`src/utils/legalReferenceAudit.test.tsx` holds a hand-maintained table, `EXPECTED`, that maps each CYFSA item in the statutory sidebar to the sections, subsections, clauses and paragraphs it relies on. Each entry is checked against the bundled text: the section exists, the subsection exists, the clause sits inside that subsection, and the paragraph sits inside that subsection. A completeness test fails if a CYFSA item has no entry.
+`src/utils/legalReferenceAudit.test.tsx` holds a hand-maintained table, `EXPECTED`, that lists the provisions each CYFSA item in the statutory sidebar relies on. Each entry is checked against the bundled text: the section exists, the subsection, clause or paragraph exists inside it, and a verbatim quote of the wording the sidebar relies on appears in the cited subsection (or section). The item scope is set by the names CYFSA and Child, Youth and Family Services Act. A completeness test fails if a CYFSA item has no entry.
 
-An earlier version parsed citation strings with a regular expression. Review found several forms it misread (ranges, subsection and clause continuations, paragraphs under the wrong section), so the parser was removed. The table does not cover subclauses (for example 74(2)(c)(i)); add them to the table if a sidebar item relies on one.
+The table does not list every provision the sidebar's prose mentions. It covers the provisions that carry each item's stated claims, as reviewed on 2026-10-24. A new claim in a sidebar item needs a new entry.
+
+An earlier version parsed citation strings with a regular expression. Review found several forms it misread (ranges, subsection and clause continuations, paragraphs under the wrong section), so the parser was removed. The table does not cover subclauses (for example 74(2)(c)(i)).

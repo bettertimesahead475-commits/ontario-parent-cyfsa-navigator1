@@ -56,7 +56,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     // warrantless apprehension is s. 88, verified against the consolidated CYFSA text.
     citation: "CYFSA s. 88",
     category: "Statutory Section",
-    content: "As soon as practicable, but in any event within five days after a child is brought to a place of safety, the matter must be brought before a court for a hearing, the child returned, or a temporary care agreement made. Note: the Act says \"five days,\" not \"five court days\" — confirm with counsel exactly how the days are counted in your registry.",
+    content: "As soon as practicable, but in any event within five days after a child is brought to a place of safety, the matter must be brought before a court for a hearing, the child returned, a temporary care agreement made, or (for a 16 or 17 year old) an agreement made under s. 77. Note: the Act says \"five days,\" not \"five court days\" — confirm with counsel exactly how the days are counted in your registry.",
     isPreloaded: true
   },
   {
@@ -134,7 +134,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     title: "Best Interests of the Child",
     citation: "CYFSA s. 74(3)",
     category: "Legal Definition",
-    content: "The ultimate judicial test. Weighs the child's physical, mental, and emotional safety, relationship with parent, cultural/heritage identity, and the child's expressed wishes based on their maturity.",
+    content: "The ultimate judicial test. Under s. 74(3), the decision-maker considers the child's views and wishes (given due weight by age and maturity), the child's physical, mental and emotional needs, and other listed circumstances.",
     isPreloaded: true
   },
   {

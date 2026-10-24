@@ -32,7 +32,7 @@ function subsectionText(section: string, k: string): string | null {
   if (body === null) return null;
   const start = body.search(new RegExp(`^(\\*\\*${escapeRe(section)} \\*\\*)?\\(${escapeRe(k)}\\)`, "m"));
   if (start < 0) return null;
-  const next = body.slice(start + 1).search(/^\(\d+\)/m);
+  const next = body.slice(start + 1).search(/^\(\d+(?:\.\d+)?\)/m);
   return next < 0 ? body.slice(start) : body.slice(start, start + 1 + next);
 }
 
@@ -69,12 +69,21 @@ interface Ref {
  * and checked against the bundled text. A completeness test fails when a CYFSA item has no entry.
  */
 const EXPECTED: Record<string, Ref[]> = {
-  "cyfsa-81": [{ section: "81", subsection: "7", quote: "substantial risk to the child" }],
-  "cyfsa-88": [{ section: "88", quote: "within five days after a child is brought" }],
+  "cyfsa-81": [
+    { section: "81", subsection: "7", quote: "substantial risk to the child" },
+    { section: "81", subsection: "12", quote: "apply to a peace officer" },
+  ],
+  "cyfsa-88": [
+    { section: "88", quote: "within five days after a child is brought" },
+    { section: "88", quote: "brought before a court for a hearing" },
+    { section: "88", quote: "an agreement shall be made under section 77" },
+  ],
   "cyfsa-74": [
     { section: "74", subsection: "2", quote: "in need of protection" },
+    { section: "74", subsection: "2", clause: "a", quote: "physical harm" },
+    { section: "74", subsection: "2", clause: "c", quote: "sexually abused or sexually exploited" },
+    { section: "74", subsection: "2", clause: "f", quote: "emotional harm, demonstrated by serious" },
     { section: "74", subsection: "2", clause: "k", quote: "is unavailable to exercise the rights of custody" },
-    { section: "74", subsection: "2", clause: "n", quote: "unable to care for the child" },
   ],
   "cyfsa-3": [
     { section: "3", quote: "express their own views freely and safely" },
@@ -86,14 +95,17 @@ const EXPECTED: Record<string, Ref[]> = {
     { section: "1", subsection: "2", para: "2", quote: "should be considered" },
     { section: "101", subsection: "3", quote: "would be inadequate to protect the child" },
   ],
-  "def-best-interests": [{ section: "74", subsection: "3", quote: "best interests" }],
+  "def-best-interests": [{ section: "74", subsection: "3", quote: "physical, mental and emotional needs" }],
   "def-supervision-order": [{ section: "101", subsection: "1", para: "1", quote: "at least three months and not more than 12 months" }],
 };
 
 /** Collapses whitespace and typographic apostrophes, so quotes match the bundled text's layout. */
-const squash = (t: string) => t.replace(/[’‘]/g, "'").replace(/\s+/g, " ");
+const squash = (t: string) => normalizeQuotes(t).replace(/\s+/g, " ");
+const normalizeQuotes = (t: string) => t.replace(/[’‘]/g, "'");
 
-const cyfsaItems = PRELOADED_ITEMS.filter((i) => /\bCYFSA\b/.test(i.citation));
+// Item scope: any citation naming the CYFSA by its short or full name.
+const CYFSA_NAME = /\bCYFSA\b|Child, Youth and Family Services Act/i;
+const cyfsaItems = PRELOADED_ITEMS.filter((i) => CYFSA_NAME.test(normalizeQuotes(i.citation)));
 
 function itemById(id: string): string {
   const item = PRELOADED_ITEMS.find((i) => i.id === id);
@@ -112,13 +124,17 @@ describe("the reference table covers the sidebar", () => {
     const unnamed = PRELOADED_ITEMS.filter(
       (i) =>
         /\bss?\.\s*\d/i.test(i.citation) &&
-        !/\b(?:CYFSA|CLRA|Evidence Act|Family Law Rules|Mental Health Act|Charter)\b/i.test(i.citation)
+        !/\b(?:CYFSA|CLRA|Children's Law Reform Act|Child, Youth and Family Services Act|Evidence Act|Family Law Rules|Mental Health Act|Charter)\b/i.test(
+          normalizeQuotes(i.citation)
+        )
     ).map((i) => i.id);
     expect(unnamed).toEqual([]);
   });
 
   it("keeps CYFSA items free of other Acts", () => {
-    const mixed = cyfsaItems.filter((i) => /\b(?:CLRA|Evidence Act|Family Law Rules|Mental Health Act|Charter)\b/i.test(i.citation));
+    const mixed = cyfsaItems.filter((i) =>
+      /\b(?:CLRA|Children's Law Reform Act|Evidence Act|Family Law Rules|Mental Health Act|Charter)\b/i.test(normalizeQuotes(i.citation))
+    );
     expect(mixed.map((i) => i.id)).toEqual([]);
   });
 });
