@@ -59,6 +59,8 @@ interface Ref {
   subsection?: string;
   clause?: string;
   para?: string;
+  /** Wording the sidebar relies on. Must appear in the cited subsection (or section), so a real provision with the wrong content fails. */
+  quote: string;
 }
 
 /**
@@ -67,15 +69,29 @@ interface Ref {
  * and checked against the bundled text. A completeness test fails when a CYFSA item has no entry.
  */
 const EXPECTED: Record<string, Ref[]> = {
-  "cyfsa-81": [{ section: "81", subsection: "7" }],
-  "cyfsa-88": [{ section: "88" }],
-  "cyfsa-74": [{ section: "74", subsection: "2" }, { section: "74", subsection: "2", clause: "k" }, { section: "74", subsection: "2", clause: "n" }],
-  "cyfsa-3": [{ section: "3" }, { section: "78" }, { section: "78", subsection: "4" }],
-  "cyfsa-72": [{ section: "72" }],
-  "def-least-intrusive": [{ section: "1", subsection: "2", para: "2" }, { section: "101", subsection: "3" }],
-  "def-best-interests": [{ section: "74", subsection: "3" }],
-  "def-supervision-order": [{ section: "101", subsection: "1", para: "1" }],
+  "cyfsa-81": [{ section: "81", subsection: "7", quote: "substantial risk to the child" }],
+  "cyfsa-88": [{ section: "88", quote: "within five days after a child is brought" }],
+  "cyfsa-74": [
+    { section: "74", subsection: "2", quote: "in need of protection" },
+    { section: "74", subsection: "2", clause: "k", quote: "is unavailable to exercise the rights of custody" },
+    { section: "74", subsection: "2", clause: "n", quote: "unable to care for the child" },
+  ],
+  "cyfsa-3": [
+    { section: "3", quote: "express their own views freely and safely" },
+    { section: "78", quote: "may have legal representation at any stage" },
+    { section: "78", subsection: "4", quote: "deemed to be desirable to protect the child" },
+  ],
+  "cyfsa-72": [{ section: "72", quote: "regularly consult with their bands" }],
+  "def-least-intrusive": [
+    { section: "1", subsection: "2", para: "2", quote: "should be considered" },
+    { section: "101", subsection: "3", quote: "would be inadequate to protect the child" },
+  ],
+  "def-best-interests": [{ section: "74", subsection: "3", quote: "best interests" }],
+  "def-supervision-order": [{ section: "101", subsection: "1", para: "1", quote: "at least three months and not more than 12 months" }],
 };
+
+/** Collapses whitespace and typographic apostrophes, so quotes match the bundled text's layout. */
+const squash = (t: string) => t.replace(/[’‘]/g, "'").replace(/\s+/g, " ");
 
 const cyfsaItems = PRELOADED_ITEMS.filter((i) => /\bCYFSA\b/.test(i.citation));
 
@@ -124,6 +140,8 @@ describe("each referenced provision exists in the bundled text", () => {
             `s. ${ref.section}(${ref.subsection})(${ref.clause}) exists`
           ).toBe(true);
         }
+        const scope = ref.subsection !== undefined ? subsectionText(ref.section, ref.subsection) : sectionBody(ref.section);
+        expect(scope !== null && squash(scope).includes(squash(ref.quote)), `"${ref.quote}" appears in s. ${ref.section}${ref.subsection ? `(${ref.subsection})` : ""}`).toBe(true);
         if (ref.para !== undefined) {
           expect(
             hasParagraph(ref.section, ref.subsection, ref.para),
@@ -136,6 +154,25 @@ describe("each referenced provision exists in the bundled text", () => {
 });
 
 describe("the checks themselves fail on wrong references", () => {
+  const quoteFound = (section: string, sub: string | undefined, quote: string) => {
+    const scope = sub !== undefined ? subsectionText(section, sub) : sectionBody(section);
+    return scope !== null && squash(scope).includes(squash(quote));
+  };
+
+  it("rejects a quote that the cited provision does not contain", () => {
+    // Section 81 exists and so does subsection (7), but the sidebar's "poverty" claim is not in s. 81(7).
+    expect(quoteFound("81", "7", "substantial risk to the child")).toBe(true);
+    expect(quoteFound("81", "7", "poverty")).toBe(false);
+    // The 81(7) wording is not in subsection (2) of the same section.
+    expect(quoteFound("81", "2", "substantial risk to the child")).toBe(false);
+  });
+
+  it("rejects a mapping that points at a subsection that does not carry the claim", () => {
+    // s. 101(3), not 101(1), carries the 'would be inadequate' test.
+    expect(quoteFound("101", "1", "would be inadequate to protect the child")).toBe(false);
+    expect(quoteFound("101", "3", "would be inadequate to protect the child")).toBe(true);
+  });
+
   it("rejects a clause that is not in the subsection", () => {
     expect(hasClause("74", "2", "z")).toBe(false);
     expect(hasClause("74", "2", "k")).toBe(true);
