@@ -35,7 +35,7 @@ interface BookmarkItem extends LegalItem {
 }
 
 // Preloaded data
-const PRELOADED_ITEMS: LegalItem[] = [
+export const PRELOADED_ITEMS: LegalItem[] = [
   // Statutory Sections
   {
     id: "cyfsa-81",
@@ -45,7 +45,7 @@ const PRELOADED_ITEMS: LegalItem[] = [
     // BUG FIX (flagged in audit): "immediate risk of serious harm" is not the statutory wording —
     // the real s.81(7) threshold is "substantial risk to the child's health or safety," and it only
     // applies to children under 16 (this power isn't available at all for a 16/17 year old).
-    content: "A children's aid worker or peace officer may bring a child to a place of safety without a warrant only if there are reasonable and probable grounds to believe the child is in need of protection, is younger than 16, and there would be a substantial risk to the child's health or safety during the time it would take to get a warrant or hearing. Not available for 16/17 year olds under this subsection.",
+    content: "A child protection worker (and, under s. 81(12), a peace officer) may bring a child to a place of safety without a warrant only if there are reasonable and probable grounds to believe the child is in need of protection, is younger than 16, and there would be a substantial risk to the child's health or safety during the time it would take to get a warrant or hearing. Not available for 16/17 year olds under this subsection.",
     isPreloaded: true
   },
   {
@@ -56,7 +56,7 @@ const PRELOADED_ITEMS: LegalItem[] = [
     // warrantless apprehension is s. 88, verified against the consolidated CYFSA text.
     citation: "CYFSA s. 88",
     category: "Statutory Section",
-    content: "As soon as practicable, but in any event within five days after a child is brought to a place of safety, the matter must be brought before a court for a hearing, the child returned, or a temporary care agreement made. Note: the Act says \"five days,\" not \"five court days\" — confirm with counsel exactly how the days are counted in your registry.",
+    content: "As soon as practicable, but in any event within five days after a child is brought to a place of safety, the matter must be brought before a court for a hearing, the child returned (including to the authority named in an extra-provincial order), a temporary care agreement made, or (for a 16 or 17 year old) an agreement made under s. 77. Note: the Act says \"five days,\" not \"five court days\" — confirm with counsel exactly how the days are counted in your registry.",
     isPreloaded: true
   },
   {
@@ -64,15 +64,15 @@ const PRELOADED_ITEMS: LegalItem[] = [
     title: "Child in Need of Protection Threshold",
     citation: "CYFSA s. 74(2)",
     category: "Statutory Section",
-    content: "Defines specific sub-sections (physical risk, sexual abuse, severe emotional harm, or medical neglect) that must be met to assert that a child is in need of protection. General concerns like home clutter or poverty do not meet this legal standard.",
+    content: "Sets out the grounds in clauses (a) to (o) that must be met for a protection finding, for example physical harm, sexual abuse, serious emotional harm, or a parent who has died or is unavailable and has made no adequate provision (clause (k)). Poverty and housing on their own are not listed grounds. Confirm each stated concern against a specific clause with counsel.",
     isPreloaded: true
   },
   {
     id: "cyfsa-3",
     title: "Child's Right to be Heard & Counsel",
-    citation: "CYFSA s. 3",
+    citation: "CYFSA s. 3; s. 78",
     category: "Statutory Section",
-    content: "Guarantees children (especially those aged 12 and older) the right to receive notice of hearings, express their views to the court, and be represented by independent legal counsel through the Office of the Children's Lawyer (OCL).",
+    content: "Section 3 lists children's rights, including the right to express their views freely and safely, to be consulted on services and informed of decisions, and to raise concerns without reprisal. Under s. 78, a child may have legal representation at any stage of a proceeding, and the court must consider whether it is desirable to protect the child's interests. Under s. 78(4), representation is deemed desirable in listed circumstances, for example where the child is in the society's care and no parent appears, unless the court is satisfied, taking into account the child's views and wishes, given due weight in accordance with the child's age and maturity, that the child's interests are otherwise adequately protected.",
     isPreloaded: true
   },
   {
@@ -124,9 +124,9 @@ const PRELOADED_ITEMS: LegalItem[] = [
   {
     id: "def-least-intrusive",
     title: "Least Intrusive Course of Action",
-    citation: "Statutory Standard",
+    citation: "CYFSA s. 1(2), para. 2; s. 101(3)",
     category: "Legal Definition",
-    content: "The legal principle dictating that child welfare interventions must interfere with the family as little as possible. CAS must prove that less disruptive support options were thoroughly tried and failed before taking the child.",
+    content: "The statutory purpose that the least disruptive course of action available and appropriate should be considered to help a child (s. 1(2), para. 2). Under s. 101(3), the court may not order a child removed from the care of the person who had charge of them unless it is satisfied that less disruptive alternatives would be inadequate to protect the child.",
     isPreloaded: true
   },
   {
@@ -134,7 +134,7 @@ const PRELOADED_ITEMS: LegalItem[] = [
     title: "Best Interests of the Child",
     citation: "CYFSA s. 74(3)",
     category: "Legal Definition",
-    content: "The ultimate judicial test. Weighs the child's physical, mental, and emotional safety, relationship with parent, cultural/heritage identity, and the child's expressed wishes based on their maturity.",
+    content: "The ultimate judicial test. Under s. 74(3), the decision-maker considers the child's views and wishes (given due weight by age and maturity), the child's physical, mental and emotional needs, and other listed circumstances.",
     isPreloaded: true
   },
   {
@@ -148,9 +148,9 @@ const PRELOADED_ITEMS: LegalItem[] = [
   {
     id: "def-supervision-order",
     title: "Supervision Order",
-    citation: "CYFSA s. 102",
+    citation: "CYFSA s. 101(1), para. 1",
     category: "Legal Definition",
-    content: "A court order returning the child to the parent's primary home under CAS supervision for 3 to 12 months, usually with agreed-upon supportive conditions like counseling or parenting classes.",
+    content: "A court order placing the child in the care and custody of a parent or another person, subject to CAS supervision, for a specified period of at least three months and not more than 12 months (s. 101(1), para. 1). The court may also impose reasonable terms and conditions relating to the child's care and supervision (s. 101(7)(a)); examples such as counselling or parenting classes are common in practice. Confirm the terms with counsel.",
     isPreloaded: true
   },
   {
