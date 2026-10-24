@@ -20,6 +20,7 @@ import { AnalyzerError, logAnalyzerDiagnostic } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
 import type { AnalysisStage } from "./analyzerStreaming.js";
 import { verifyQuote } from "./pageSources.js";
+import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_RULES, PARENT_ATTRIBUTION_SCHEMA } from "./parentAnalysisSchema.js";
 
 export type SectionKey = "overview" | "redFlags" | "chronology" | "guidance" | "thresholds" | "timeline";
 
@@ -396,6 +397,9 @@ export function buildSectionPrompt(key: SectionKey, mode: "fast" | "full", docum
   const spec = SECTION_SPECS[key];
   const schemaParts = spec.fields.map((f) => FIELD_SCHEMAS[f]).filter(Boolean);
   if (spec.extraSchema) schemaParts.push(spec.extraSchema);
+  // Parent attribution rides on the overview call. With the flag OFF this function returns the same text as before.
+  const parentOn = key === "overview" && isParentAnalysisEnabled();
+  if (parentOn) schemaParts.push(PARENT_ATTRIBUTION_SCHEMA);
   return [
     "<document>",
     "DOCUMENT TEXT CONTENT:",
@@ -413,6 +417,7 @@ export function buildSectionPrompt(key: SectionKey, mode: "fast" | "full", docum
     "",
     `LIMITS: ${spec.limits(mode)}`,
     "Every direct quotation must be copied verbatim from the document. Never present your own interpretation as a quotation.",
+    ...(parentOn ? [PARENT_ATTRIBUTION_RULES] : []),
     retryNote ? `\nCORRECTION REQUIRED: ${retryNote}` : "",
   ].join("\n");
 }

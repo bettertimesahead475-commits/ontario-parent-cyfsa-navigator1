@@ -83,6 +83,8 @@ import {
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
 import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
+import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_FIELD, PARENT_ATTRIBUTION_RULES, PARENT_ATTRIBUTION_SCHEMA } from "./services/parentAnalysisSchema.js";
+import { attachParentAttribution, buildSelectedView, listSelectionOptions } from "./services/parentExtraction.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -2467,6 +2469,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
       // Persist the finished report before responding, so a browser that lost the stream can
       // still recover it after a refresh (the instance may freeze once the response ends).
+      if (isParentAnalysisEnabled()) attachParentAttribution(report, targetText, analysisRequestId);
       await completeAnalysisJobDurable(analysisRequestId, report);
 
       if (streamEmitter) {
@@ -2583,6 +2586,40 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
 
     res.json(job.report ? { ...job, report: redactCustomerReport(job.report) } : job);
+  });
+
+  // API: Parent-specific view of a saved analysis. Reads the stored, verified attribution model only:
+  // it never calls a model, never consumes a credit, and never changes the saved report. The job must
+  // belong to the signed-in account; other accounts and missing jobs get the same 404.
+  app.get("/api/analyze/job/:jobId/parent-view", async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isParentAnalysisEnabled()) {
+      return res.status(404).json({ error: "This feature is not available.", code: "FEATURE_NOT_AVAILABLE" });
+    }
+    const identity = await verifyFirebaseToken(req.header("authorization"));
+    if (!identity) {
+      return res.status(401).json({ error: "Please sign in to continue.", code: "SIGN_IN_REQUIRED" });
+    }
+    const { jobId } = req.params;
+    const job = await getAnalysisJobDurable(jobId);
+    if (!job || !job.uid || job.uid !== identity.uid) {
+      return res.status(404).json({ error: "Analysis not found.", code: "JOB_NOT_FOUND" });
+    }
+    const stored = job.report?.parentAttribution;
+    if (!stored?.caseModel) {
+      return res.status(404).json({ error: "No parent-specific analysis is available for this report.", code: "NO_PARENT_ANALYSIS" });
+    }
+    const proceedingId = typeof req.query.proceedingId === "string" ? req.query.proceedingId : "";
+    const partyId = typeof req.query.partyId === "string" ? req.query.partyId : "";
+    if (!proceedingId || !partyId) {
+      const options = listSelectionOptions(stored.caseModel);
+      return res.json({ jobId, selection: null, options });
+    }
+    const view = buildSelectedView(stored.caseModel, proceedingId, partyId);
+    if (view.ok === false) {
+      return res.status(400).json({ error: "That parent and proceeding do not match this analysis.", code: view.code });
+    }
+    return res.json({ jobId, selection: { proceedingId, partyId }, view: view.report, drafting: view.drafting });
   });
 
   // API: Cross-Document Case Timeline
@@ -3110,12 +3147,15 @@ OUTPUT — return strictly this JSON schema, nothing else:
       // proceduralTimelineViolations has the heaviest per-item schema (six fields per item,
       // including citations). Packed with three other keys it overflowed its 12k-token cap in
       // production, so it gets a section of its own.
-      const forensicSections = [
+      // Parent attribution, when enabled, rides on the last section. It is optional: it is never required
+      // for the section to pass validation, so a malformed block cannot fail the report.
+      const parentOn = isParentAnalysisEnabled();
+      const forensicSections: readonly (readonly string[])[] = [
         ["gaps", "missingEvidence", "whatIsMissing", "whatToVerify"],
         ["retorts", "thresholdAnalysis"],
         ["proceduralTimelineViolations"],
-        ["charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief"]
-      ] as const;
+        ["charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief", ...(parentOn ? [PARENT_ATTRIBUTION_FIELD] : [])]
+      ];
       const FORENSIC_SECTION_ATTEMPTS = 2;
       const generateForensicSection = async (
         keys: readonly string[],
@@ -3130,8 +3170,11 @@ OUTPUT — return strictly this JSON schema, nothing else:
           (attempt > 1
             ? " Your previous attempt for this section was cut off or malformed. Keep every item short and complete, with no dropped findings."
             : "");
+        const parentSuffix = keys.includes(PARENT_ATTRIBUTION_FIELD)
+          ? "\n" + PARENT_ATTRIBUTION_SCHEMA + "\n" + PARENT_ATTRIBUTION_RULES
+          : "";
         const response = await generateContentWithFallback({
-          system: sectionSystem,
+          system: sectionSystem + parentSuffix,
           messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
           max_tokens: 12000,
           requestId: analysisRequestId,
@@ -3155,7 +3198,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
           });
           throw error;
         }
-        if (!forensicSectionIsValid(parsed, keys)) {
+        if (!forensicSectionIsValid(parsed, keys.filter(key => key !== PARENT_ATTRIBUTION_FIELD))) {
           throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
             "A forensic report section was incomplete. No analysis credit was consumed.", true);
         }
@@ -3217,6 +3260,14 @@ OUTPUT — return strictly this JSON schema, nothing else:
         throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
           "The deep scan returned an incomplete report. Your analysis was not completed; please retry.", true);
       }
+      // Verified parent attribution is stored with the job so the parent view can read it later.
+      // Storage failures are ignored: they never change the charge or the report.
+      const storeJob = parentOn && isValidAnalysisJobId(analysisRequestId);
+      if (storeJob) {
+        attachParentAttribution(report, documentText, analysisRequestId);
+        await createAnalysisJobDurable({ jobId: analysisRequestId, uid: identity.uid, mode: "full" }).catch(() => {});
+        await completeAnalysisJobDurable(analysisRequestId, report).catch(() => {});
+      }
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
       if (sessionInfo) try {
@@ -3235,7 +3286,12 @@ OUTPUT — return strictly this JSON schema, nothing else:
       } catch (usageErr) {
         console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
       }
-      res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
+      res.json({
+        ...report,
+        timing: { durationMs },
+        ...(credits ? { credits } : {}),
+        ...(storeJob ? { jobId: analysisRequestId } : {}),
+      });
     } catch (error: any) {
       if (creditReservation && sessionInfo) {
         try {
