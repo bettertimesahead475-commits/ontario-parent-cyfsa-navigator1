@@ -203,8 +203,28 @@ describe('conflicting aliases', () => {
       {id: 'C', displayName: 'Parent C', aliases: []},
     ];
     m.roles.push({proceedingId: 'P1', partyId: 'C', role: 'OTHER_PARTY'});
-    expect(buildDraftingContext(m, 'P1', 'C', 'FORM_33B').ok).toBe(false);
+    m.orders.push({id: 'oc', proceedingId: 'P1', description: 'Caregiver C', affectsPartyIds: ['C'], proposedCaregiverPartyId: 'C', source: locator(9, '1')});
     expect(buildParentReport(m, 'P1', 'C').issues.some(i => i.code === 'ALIAS_COLLISION')).toBe(false);
+    expect(buildDraftingContext(m, 'P1', 'C', 'FORM_33B').ok).toBe(true);
+  });
+
+  it('gives drafting a reason naming the alias collision for an affected party', () => {
+    const m = twoProceedings();
+    m.parties = [
+      {id: 'A', displayName: 'Sam', aliases: []},
+      {id: 'B', displayName: 'Parent B', aliases: ['Sam']},
+    ];
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B')).toEqual({ok: false, missing: ['resolve ALIAS_COLLISION']});
+  });
+
+  it('treats names that differ only by case or spacing as a collision', () => {
+    expect(normalizeAlias('  SAM   Lee ')).toBe(normalizeAlias('sam lee'));
+    const m = twoProceedings();
+    m.parties = [
+      {id: 'A', displayName: 'SAM  Lee', aliases: []},
+      {id: 'B', displayName: 'sam lee', aliases: []},
+    ];
+    expect(validateCaseModel(m).some(i => i.code === 'ALIAS_COLLISION')).toBe(true);
   });
 
   it('blocks a party in one proceeding when its name collides with a party who has a role only in another', () => {
@@ -306,5 +326,47 @@ describe('invalid requests', () => {
     expect(() => buildParentReport(m, 'P1', 'Z')).toThrow();
     m.roles = m.roles.filter(r => !(r.partyId === 'B' && r.proceedingId === 'P1'));
     expect(() => buildParentReport(m, 'P1', 'B')).toThrow();
+  });
+});
+
+describe('reviewer gaps', () => {
+  it('does not attribute an allegation from names in its text or in the maker of the statement', () => {
+    const m = twoProceedings();
+    m.allegations = [allegation({id: 't1', proceedingId: 'P1', subjectPartyIds: ['A'], text: 'Parent B was not present.', madeBy: 'Parent B (affidavit)'})];
+    expect(ids(buildParentReport(m, 'P1', 'A').specificAllegations)).toEqual(['t1']);
+    const b = buildParentReport(m, 'P1', 'B');
+    expect(b.specificAllegations).toEqual([]);
+    expect(b.sharedAllegations).toEqual([]);
+  });
+
+  it('matches allegations by internal ID only, never by the identifier written in the document', () => {
+    const m = twoProceedings();
+    m.allegations = [
+      allegation({id: 'r1', proceedingId: 'P1', subjectPartyIds: ['A'], sourceRecordId: 'para 12'}),
+      allegation({id: 'r2', proceedingId: 'P1', subjectPartyIds: ['A'], sourceRecordId: 'para 12'}),
+    ];
+    expect(ids(buildParentReport(m, 'P1', 'A').specificAllegations).sort()).toEqual(['r1', 'r2']);
+    expect(validateCaseModel(m).some(i => i.code === 'DUPLICATE_ID')).toBe(false);
+  });
+
+  it('shows a repeated-ID block to the other party in the same proceeding', () => {
+    const m = twoProceedings();
+    m.allegations = [
+      allegation({id: 'x', proceedingId: 'P1', subjectPartyIds: ['A']}),
+      allegation({id: 'x', proceedingId: 'P1', subjectPartyIds: ['B']}),
+    ];
+    expect(buildParentReport(m, 'P1', 'B').issues.map(i => i.code)).toContain('DUPLICATE_ID');
+    expect(buildDraftingContext(m, 'P1', 'B', 'FORM_33B').ok).toBe(false);
+  });
+
+  it('does not show a party from another proceeding in a report\'s subject or order lists', () => {
+    const m = twoProceedings();
+    m.roles = m.roles.filter(r => !(r.partyId === 'B' && r.proceedingId === 'P1'));
+    m.allegations = [allegation({id: 'p', proceedingId: 'P1', subjectPartyIds: ['A', 'B']})];
+    m.orders = [{...m.orders[0], affectsPartyIds: ['A', 'B'], proposedCaregiverPartyId: 'B'}];
+    const a = buildParentReport(m, 'P1', 'A');
+    expect(a.specificAllegations[0].subjectPartyIds).toEqual(['A']);
+    expect(a.relatedOrders[0].affectsPartyIds).toEqual(['A']);
+    expect(a.relatedOrders[0].proposedCaregiverPartyId).toBeNull();
   });
 });

@@ -309,6 +309,9 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
   if (!party || !proceeding) throw new Error('Unknown party or proceeding.');
   const roster = rosterByProceeding(model);
   if (!roster.get(proceedingId)?.has(partyId)) throw new Error('Party has no role in this proceeding.');
+  // Party IDs from other proceedings are not shown in this report.
+  const partiesInProceeding = roster.get(proceedingId) ?? new Set<string>();
+  const inThisProceeding = (pid: string | null) => (pid !== null && partiesInProceeding.has(pid) ? pid : null);
   const rolesIn = (pid: string, inProceedingId: string) =>
     model.roles.filter(r => r.partyId === pid && r.proceedingId === inProceedingId).map(r => r.role);
 
@@ -317,14 +320,17 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
   const unattributedAllegations: Allegation[] = [];
   for (const a of usableRecords(model, proceedingId)) {
     const attributed = attributableSubjects(a, roster);
-    const item = {...a, status: effectiveStatus(a, attributed.length > 0)};
+    const item: Allegation = {
+      ...a,
+      subjectPartyIds: uniqueSubjects(a).filter(pid => partiesInProceeding.has(pid)),
+      status: effectiveStatus(a, attributed.length > 0),
+    };
     if (attributed.length === 0) unattributedAllegations.push(item);
     else if (!attributed.includes(partyId)) continue;
     else if (attributed.length === 1) specificAllegations.push(item);
     else sharedAllegations.push(item);
   }
 
-  const partiesInProceeding = roster.get(proceedingId) ?? new Set<string>();
   return {
     proceedingId,
     fileNumber: proceeding.fileNumber,
@@ -334,9 +340,9 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
     specificAllegations,
     sharedAllegations,
     unattributedAllegations,
-    relatedOrders: model.orders.filter(
-      o => o.proceedingId === proceedingId && (o.affectsPartyIds.includes(partyId) || o.proposedCaregiverPartyId === partyId),
-    ),
+    relatedOrders: model.orders
+      .filter(o => o.proceedingId === proceedingId && (o.affectsPartyIds.includes(partyId) || o.proposedCaregiverPartyId === partyId))
+      .map(o => ({...o, affectsPartyIds: o.affectsPartyIds.filter(pid => partiesInProceeding.has(pid)), proposedCaregiverPartyId: inThisProceeding(o.proposedCaregiverPartyId)})),
     otherPartyRoles: model.parties
       .filter(p => p.id !== partyId && partiesInProceeding.has(p.id))
       .map(p => ({partyId: p.id, partyName: p.displayName, roles: rolesIn(p.id, proceedingId)})),
