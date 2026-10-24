@@ -4248,14 +4248,13 @@ export default function DocumentAnalyzerTab() {
                                   savedBriefs
                                 };
                                 localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
-                                setLocation("/lawyers");
-                                alert("Your case brief was saved on this device.");
+                                alert("Your case brief was saved on this device for the Templates and Chat tools.");
                               }}
                               className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 transition-colors border border-brand-700 cursor-pointer"
-                              title={redactionEnabled ? "Turn off redaction to sync the full case to the Lawyer Directory" : "Sync to Lawyer Directory tab for attorney review"}
+                              title={redactionEnabled ? "Turn off redaction to save the full case on this device" : "Save the case brief on this device for the Templates and Chat tools"}
                             >
                               <Scale className="w-3.5 h-3.5 text-white" />
-                              <span>Sync to Lawyer Directory Intake</span>
+                              <span>Save Brief on This Device</span>
                             </button>
                           </div>
                         </div>

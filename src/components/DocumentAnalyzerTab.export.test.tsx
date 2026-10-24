@@ -366,12 +366,12 @@ describe("redaction on the remaining export sinks and the on-screen toggle", () 
   });
 });
 
-describe("sync to the lawyer directory while redaction is on", () => {
-  it("does not copy the full case to the directory tab", async () => {
+describe("saving the brief while redaction is on", () => {
+  it("does not save the full case while redaction is on", async () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     seed({ redact: true, report: { ...REPORT, lawyerCaseBrief: ["ZQFREE brief point"] } });
     render(<DocumentAnalyzerTab />);
-    const button = screen.getByRole("button", { name: /Sync to Lawyer Directory Intake/i }) as HTMLButtonElement;
+    const button = screen.getByRole("button", { name: /Save Brief on This Device/i }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     const writesBefore = setItem.mock.calls.filter(([key]) => String(key).startsWith("OPA_DOC_ANALYZER_PROGRESS")).length;
     fireEvent.click(button);
