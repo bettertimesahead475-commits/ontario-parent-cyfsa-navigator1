@@ -113,10 +113,14 @@ export interface AttributionIssue {
  */
 export function normalizeName(name: string): string {
   return name
+    .normalize('NFKC')
+    // Invisible format characters (soft hyphen, byte-order mark, zero-width space) are dropped. Zero-width
+    // joiners are kept, because some scripts need them to form letters.
+    .replace(/\p{Cf}/gu, m => (m === '‌' || m === '‍' ? m : ''))
     .normalize('NFD')
     .replace(/(\p{Script=Latin})\p{M}+/gu, '$1')
     .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}\p{Cf}]+/gu, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}‌‍]+/gu, ' ')
     .trim();
 }
 
@@ -166,13 +170,16 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
     }
   }
 
-  const seenAllegationIds = new Set<string>();
+  const subjectsById = new Map<string, string[]>();
   for (const a of model.allegations) {
-    if (seenAllegationIds.has(a.id)) {
-      issues.push({code: 'DUPLICATE_ID', itemId: a.id, proceedingId: a.proceedingId, partyIds: [], detail: 'Allegation ID is used more than once; the record cannot be referenced reliably.'});
-    }
-    seenAllegationIds.add(a.id);
     const subjects = subjectsOf(a);
+    if (subjectsById.has(a.id)) {
+      // Both records' subjects are named, so each party whose record shares this ID sees the problem.
+      const both = [...new Set([...subjectsById.get(a.id)!, ...subjects])];
+      issues.push({code: 'DUPLICATE_ID', itemId: a.id, proceedingId: a.proceedingId, partyIds: both, detail: 'Allegation ID is used more than once; the record cannot be referenced reliably.'});
+    } else {
+      subjectsById.set(a.id, subjects);
+    }
     const base = {itemId: a.id, proceedingId: a.proceedingId, partyIds: subjects};
     if (!proceedingIds.has(a.proceedingId)) {
       issues.push({...base, code: 'UNKNOWN_PROCEEDING', detail: 'Allegation refers to an unknown proceeding.'});
@@ -253,14 +260,14 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
   // party this report should not show. Other issues in this proceeding are shown to every party in it.
   // Cross-proceeding issues, such as an alias collision, are shown only when they touch a party in this
   // proceeding, and name only those parties.
+  // Visibility uses each issue's subject list, not its ID, because allegation IDs can repeat.
   const knownIds = new Set(model.parties.map(p => p.id));
-  const involvingIds = new Set(involving.map(a => a.id));
   const allegationIds = new Set(inProceeding.map(a => a.id));
   const issues = validateCaseModel(model)
     .filter(i => {
       if (i.proceedingId === proceedingId) {
         if (!allegationIds.has(i.itemId)) return true;
-        return involvingIds.has(i.itemId) || i.partyIds.every(pid => !knownIds.has(pid));
+        return i.partyIds.includes(partyId) || i.partyIds.every(pid => !knownIds.has(pid));
       }
       return i.proceedingId === null && i.partyIds.some(pid => roster.has(pid));
     })
@@ -300,6 +307,7 @@ const CONFLICT_CODES: AttributionIssueCode[] = [
   'UNKNOWN_PROCEEDING',
   'SUBJECT_NOT_IN_PROCEEDING',
   'DUPLICATE_SUBJECT',
+  'DUPLICATE_ID',
   'ALIAS_COLLISION',
 ];
 

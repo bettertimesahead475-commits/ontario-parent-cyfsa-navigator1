@@ -441,3 +441,37 @@ describe('third review fixes', () => {
     expect(normalizeName('क‍ष')).toBe('क‍ष');
   });
 });
+
+describe('fourth review fixes', () => {
+  it('does not show a duplicate-ID issue for an allegation that concerns only another party', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'd', subjectPartyIds: ['B']}), allegation({id: 'd', subjectPartyIds: ['B']})];
+    expect(buildParentReport(m, 'P1', 'A').unresolved.some(i => i.code === 'DUPLICATE_ID')).toBe(false);
+    expect(buildParentReport(m, 'P1', 'B').unresolved.some(i => i.code === 'DUPLICATE_ID')).toBe(true);
+  });
+
+  it('blocks drafting for a party whose allegation shares an ID with another record', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'x', subjectPartyIds: ['A']}), allegation({id: 'x', subjectPartyIds: ['B']})];
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B').ok).toBe(false);
+  });
+
+  it('does not show another record\'s issue to a party when the two records share an ID', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'x', subjectPartyIds: ['A']}), allegation({id: 'x', subjectPartyIds: ['B'], source: null})];
+    expect(buildParentReport(m, 'P1', 'A').unresolved.some(i => i.code === 'MISSING_LOCATOR')).toBe(false);
+    expect(buildParentReport(m, 'P1', 'B').unresolved.some(i => i.code === 'MISSING_LOCATOR')).toBe(true);
+  });
+
+  it('treats a soft hyphen or byte-order mark as invisible when comparing names', () => {
+    expect(normalizeName('Mor­gan')).toBe(normalizeName('Morgan'));
+    expect(normalizeName('﻿Sam')).toBe(normalizeName('Sam'));
+    const m = proceeding1();
+    m.parties = [{id: 'A', displayName: 'Mor­gan', aliases: []}, {id: 'B', displayName: 'Morgan', aliases: []}];
+    expect(validateCaseModel(m).some(i => i.code === 'ALIAS_COLLISION')).toBe(true);
+  });
+
+  it('matches full-width Latin letters to their ASCII form', () => {
+    expect(normalizeName('Ｓａｍ')).toBe(normalizeName('Sam'));
+  });
+});
