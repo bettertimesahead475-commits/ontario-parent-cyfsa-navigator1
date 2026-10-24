@@ -71,6 +71,7 @@ import {
   SseStreamEmitter,
   createAnalysisJob,
   createAnalysisJobDurable,
+  claimAnalysisJobDurable,
   getAnalysisJob,
   getAnalysisJobDurable,
   updateAnalysisJobStage,
@@ -2252,16 +2253,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         details: { mode, isPaid, tier: paidTier || "Free" },
       });
 
-      // Last ownership check before the record is written. The check at the top of the request can miss a job
-      // that another request created in the meantime; this one reads this instance's memory and refuses to
-      // overwrite a job that belongs to someone else. The handler below releases any reserved credit.
-      const racedJob = getAnalysisJob(analysisRequestId);
+      // Create the job record, refusing to take over one that belongs to another account. The claim is exclusive in
+      // Storage, so two server instances racing on one id cannot both create it. A refusal is thrown as a 409, and
+      // the handler below releases any reserved credit and leaves the other account's job untouched.
       const callerUid = identity ? identity.uid : (uid || null);
-      if (racedJob && racedJob.uid && racedJob.uid !== callerUid) {
-        throw new AnalyzerError("ANALYSIS_ID_CONFLICT", 409,
-          "This analysis id is already in use. Please start a new analysis.", false);
-      }
-      await createAnalysisJobDurable({
+      await claimAnalysisJobDurable({
         jobId: analysisRequestId,
         uid: callerUid,
         mode: mode === "full" ? "full" : "fast",
@@ -3212,10 +3208,13 @@ OUTPUT — return strictly this JSON schema, nothing else:
       ];
       const FORENSIC_SECTION_ATTEMPTS = 2;
       const generateForensicSection = async (
-        keys: readonly string[],
+        requestedKeys: readonly string[],
         index: number,
         attempt: number
       ): Promise<Record<string, unknown>> => {
+        // The optional parent block must never decide whether the Forensic report succeeds. The retry asks for the
+        // section without it. This reuses the existing retry: no extra call and no larger output limit.
+        const keys = attempt > 1 ? requestedKeys.filter(key => key !== PARENT_ATTRIBUTION_FIELD) : requestedKeys;
         const sectionSystem = systemInstruction +
           "\nSECTION-SPECIFIC OUTPUT: Return ONLY a JSON object with these exact keys: " +
           keys.join(", ") +

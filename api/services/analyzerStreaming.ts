@@ -98,6 +98,7 @@ export function generateAnalysisJobId(): string {
 }
 
 import { getSupabase } from "./access.js";
+import { AnalyzerError } from "./analyzerErrors.js";
 
 const jobStore = new Map<string, AnalysisJob>();
 const JOB_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -226,13 +227,16 @@ export async function fetchJobFromStorage(jobId: string): Promise<AnalysisJob | 
   return null;
 }
 
-export function createAnalysisJob(params: {
+type NewJobParams = {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
   currentStage?: AnalysisStage;
   percent?: number;
-}): AnalysisJob {
+};
+
+/** Builds a new job record and registers it in this instance's memory. Does not touch Storage. */
+function registerNewJob(params: NewJobParams): AnalysisJob {
   // Prune expired jobs
   const now = Date.now();
   if (jobStore.size > 200) {
@@ -257,8 +261,60 @@ export function createAnalysisJob(params: {
     updatedAt: now,
   };
   jobStore.set(params.jobId, job);
+  return job;
+}
+
+export function createAnalysisJob(params: NewJobParams): AnalysisJob {
+  const job = registerNewJob(params);
   // Asynchronously persist initial job record
   persistJobToStorage(job).catch(() => {});
+  return job;
+}
+
+const conflict = () =>
+  new AnalyzerError("ANALYSIS_ID_CONFLICT", 409, "This analysis id is already in use. Please start a new analysis.", false);
+
+const isAlreadyExists = (error: any): boolean =>
+  String(error?.statusCode) === "409" || /already exists|duplicate/i.test(String(error?.message ?? ""));
+
+/**
+ * Creates a job record for the caller, and refuses to take over a job that belongs to someone else.
+ *
+ * The first write is an exclusive create (upsert: false), so two server instances racing on one id cannot both
+ * create it: the loser finds the record, reads its owner, and is refused unless it is the same account. If the
+ * existing record cannot be read, the claim fails closed. A record owned by the same account (a retry of a failed
+ * or stale analysis) is replaced as before. If Storage is unavailable the claim falls back to this instance's
+ * memory, which is the existing behaviour: nothing can be checked, and nothing else can be overwritten either.
+ */
+export async function claimAnalysisJobDurable(params: NewJobParams): Promise<AnalysisJob> {
+  const inMemory = jobStore.get(params.jobId);
+  if (inMemory?.uid && inMemory.uid !== params.uid) throw conflict();
+
+  const db = safeGetSupabase();
+  const hasBucket = db ? await ensureBucket() : false;
+  if (!db || !hasBucket) return createAnalysisJobDurable(params);
+
+  const job = registerNewJob(params);
+  let exclusive: { error: any } | null = null;
+  try {
+    exclusive = await db.storage
+      .from(BUCKET_NAME)
+      .upload(`${job.jobId}.json`, JSON.stringify(job), { upsert: false, contentType: "application/json" });
+  } catch {
+    exclusive = null; // network failure: not an ownership signal, so keep the existing best-effort behaviour
+  }
+  if (exclusive?.error && isAlreadyExists(exclusive.error)) {
+    // Someone created this id first. Only the same account may continue with it.
+    jobStore.delete(job.jobId);
+    if (inMemory) jobStore.set(job.jobId, inMemory);
+    const existing = await fetchJobFromStorage(job.jobId);
+    if (!existing || (existing.uid && existing.uid !== params.uid)) throw conflict();
+    return createAnalysisJobDurable(params);
+  }
+  if (exclusive?.error) {
+    // Some other storage error: persist the usual way, best effort.
+    await persistJobToStorage(job).catch(() => {});
+  }
   return job;
 }
 

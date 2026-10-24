@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { createFakeDb } from "./testSupport/fakeCreditDb.js";
+import { forensicBillingKey } from "./services/billingKey.js";
 
 const { mockCreateMessage, mockGenerateContent } = vi.hoisted(() => ({
   mockCreateMessage: vi.fn(),
@@ -1285,5 +1286,97 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
     expect(res.body.parentViewAvailable).toBe(false);
     expect(res.body.parentViewJobId).toBeUndefined();
     expect(upload.mock.calls.some(call => String(call[0]).startsWith(CLIENT_JOB_ID) && String(call[1]).includes("parentViewJobId"))).toBe(false);
+  });
+
+  describe("Forensic credit identifiers (real credit accounting, fake database)", () => {
+    function forensicDb() {
+      const db = createFakeDb([{ id: PAID_SESSION, tier: "Pro", credits_granted: 5, credits_consumed: 0, is_suspended: false }]);
+      mockAccess.getSupabase.mockReturnValue(Object.assign(db, { storage: fakeStorage().db.storage }));
+      return db;
+    }
+    const scan = (doc: string) =>
+      request(app).post("/api/deep-scan").set(myPaid()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ documentText: doc, priorAnalysis: CORE });
+
+    it("reserves and finalizes under the same scoped identifier, never the raw client id", async () => {
+      mockCreateMessage.mockImplementation(forensicResponder);
+      const db = forensicDb();
+      const res = await scan(DOC);
+      expect(res.status).toBe(200);
+      const expectedKey = forensicBillingKey(PAID_SESSION, DOC, CLIENT_JOB_ID);
+      expect(db._reservations).toHaveLength(1);
+      expect(db._reservations[0].request_id).toBe(expectedKey);
+      expect(db._reservations[0].request_id).not.toBe(CLIENT_JOB_ID);
+      expect(db._reservations[0].status).toBe("finalized");
+    });
+
+    it("releases under the same scoped identifier when the analysis fails, and charges nothing", async () => {
+      mockCreateMessage.mockRejectedValue(Object.assign(new Error("Connection error."), { name: "APIConnectionError" }));
+      const db = forensicDb();
+      const res = await scan(DOC);
+      expect(res.status).toBeGreaterThanOrEqual(500);
+      expect(db._reservations).toHaveLength(1);
+      expect(db._reservations[0].request_id).toBe(forensicBillingKey(PAID_SESSION, DOC, CLIENT_JOB_ID));
+      expect(db._reservations[0].status).toBe("released");
+    });
+
+    it("treats a retry of the same document as one analysis and a different document as a new one", async () => {
+      mockCreateMessage.mockImplementation(forensicResponder);
+      const db = forensicDb();
+      expect((await scan(DOC)).status).toBe(200);
+      expect((await scan(DOC)).status).toBe(200); // a genuine retry
+      expect(db._reservations).toHaveLength(1);
+      expect((await scan("A different document. " + DOC)).status).toBe(200);
+      expect(db._reservations).toHaveLength(2);
+      expect(new Set(db._reservations.map(r => r.request_id)).size).toBe(2);
+      expect(db._reservations.every(r => r.status === "finalized")).toBe(true);
+    });
+  });
+
+  describe("a truncated parent block never fails the core report", () => {
+    const truncated = () => claudeText('{"documentTitle": "x", "parentAttribution": {"parties": [', "max_tokens");
+    const withBlock = (calls: unknown[][]) => calls.filter(call => JSON.stringify(call[0]).includes("parentAttribution")).length;
+
+    it("Quick Review: the retry drops the parent block, so the report still completes and is charged once", async () => {
+      process.env.PARENT_ANALYSIS_ENABLED = "true";
+      const { db, upload } = fakeStorage();
+      mockAccess.getSupabase.mockReturnValue(db);
+      mockCreateMessage.mockImplementation(async (body: any) =>
+        JSON.stringify(body).includes("parentAttribution") ? truncated() : responder(body));
+      const res = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+      expect(res.status).toBe(200);
+      expect(res.body.documentTitle).toBe("Affidavit of a worker");
+      expect(res.body.parentViewAvailable).toBe(false);
+      expect(res.body.parentViewJobId).toBeUndefined();
+      expect(withBlock(mockCreateMessage.mock.calls)).toBe(1); // only the first overview attempt asked for it
+      expect(mockCreateMessage.mock.calls.length).toBe(5); // four sections plus the one existing retry
+      expect(mockUsage.recordFreeUse).toHaveBeenCalledTimes(1);
+      expect(upload.mock.calls.some(call => String(call[1]).includes("parentViewJobId"))).toBe(false);
+    });
+
+    it("Quick Review: the first attempt asks for a bounded block", async () => {
+      process.env.PARENT_ANALYSIS_ENABLED = "true";
+      mockCreateMessage.mockImplementation(responder);
+      await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+      const asked = mockCreateMessage.mock.calls.map(call => JSON.stringify(call[0])).find(text => text.includes("parentAttribution")) ?? "";
+      expect(asked).toContain("at most 12 allegations");
+      expect(asked).toContain("under 160 characters");
+    });
+
+    it("Forensic: the retry drops the parent block, so the report still completes and is charged once", async () => {
+      process.env.PARENT_ANALYSIS_ENABLED = "true";
+      const { db, upload } = fakeStorage();
+      mockAccess.getSupabase.mockReturnValue(db);
+      mockCreateMessage.mockImplementation(async (body: any) =>
+        isVerificationRequest(body) ? claudeJson(VERIFICATION_RESULT)
+          : JSON.stringify(body).includes("parentAttribution") ? truncated() : claudeJson(FORENSIC_BODY));
+      const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+      expect(res.status).toBe(200);
+      expect(res.body.gaps).toEqual(["g"]);
+      expect(res.body.parentViewAvailable).toBe(false);
+      expect(res.body.parentViewJobId).toBeUndefined();
+      expect(withBlock(mockCreateMessage.mock.calls)).toBe(1);
+      expect(mockUsage.recordPaidUse).toHaveBeenCalledTimes(1);
+      expect(upload).not.toHaveBeenCalled();
+    });
   });
 });

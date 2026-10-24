@@ -26,6 +26,9 @@ export const PARENT_ATTRIBUTION_RULES = [
   "Never assign an allegation to a person because their name appears near it, or because they made or quoted the statement.",
   "Use kind FINDING only for an outcome the court has actually made. A worker's or parent's claim is an ALLEGATION.",
   "Every quote must be copied exactly from the document. If you cannot quote a record, leave it out.",
+  // Volume bounds keep the block inside the section's output budget. Without them a long document can fill it.
+  "Keep the block short: at most 12 allegations (the most significant ones), 5 orders and 6 parties.",
+  "Keep each allegation text under 120 characters and each quote under 160 characters, using the most specific sentence.",
 ].join(" ");
 
 /**
