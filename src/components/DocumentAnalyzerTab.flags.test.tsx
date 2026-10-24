@@ -74,6 +74,8 @@ async function renderAnalyzer() {
 
 describe("parent report flag in the analyzer", () => {
   it("is off when the build variable is not set: the parent report does not appear", async () => {
+    // Clear any local .env value so this case reflects an unset flag.
+    vi.stubEnv("VITE_PARENT_REPORT_UI", "");
     await renderAnalyzer();
     expect(screen.queryByRole("heading", { name: "Parent report" })).toBeNull();
   });

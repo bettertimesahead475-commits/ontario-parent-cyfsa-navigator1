@@ -25,7 +25,26 @@ describe("glossary trigger matching", () => {
 
   it("matches a multi-word trigger across the words", () => {
     expect(containsTrigger("the child welfare file", "child welfare")).toBe(true);
-    expect(containsTrigger("the child welfares file", "child welfare")).toBe(false);
+    expect(containsTrigger("the child welfarex file", "child welfare")).toBe(false);
+  });
+
+  it("matches a common inflection of the trigger", () => {
+    expect(containsTrigger("The child was apprehended on Monday.", "apprehend")).toBe(true);
+    expect(containsTrigger("the apprehending officer", "apprehend")).toBe(true);
+    expect(containsTrigger("A 300-days rule applies", "300-day")).toBe(true);
+  });
+
+  it("does not match a letter that is not a common inflection", () => {
+    expect(containsTrigger("apprehendable risk", "apprehend")).toBe(false);
+  });
+
+  it("treats accented letters as part of a word", () => {
+    expect(containsTrigger("a bonusé payment", "onus")).toBe(false);
+    expect(containsTrigger("the onusé rule", "onus")).toBe(false);
+  });
+
+  it("finds a later whole-term occurrence after an earlier partial one", () => {
+    expect(containsTrigger("a bonus, then the onus is on the society", "onus")).toBe(true);
   });
 
   it("still matches when the term is followed by punctuation or an apostrophe", () => {
