@@ -501,9 +501,18 @@ const CONFIRMED_SECTION_PATTERNS = CONFIRMED_SECTION_KEYS.map((key) => new RegEx
  */
 function citedSections(text: string): string[] {
   const out: string[] = [];
-  const list = /\b(?:s|ss|sec|secs|section|sections)\.?\s*((?:\d{1,3}(?:\(\d+\))*(?:\([a-z]\))*(?:\s*(?:,|and|or|&|to|-|–)\s*)?)+)/gi;
+  // Keyword, then a list of items: "74(2)" or a bare subsection "(5)" continuing the previous section.
+  const list = /\b(?:s|ss|sec|secs|section|sections|subs?|subsections?)\.?\s*((?:(?:\d{1,3}(?:\(\d+\))*|\(\d+\))(?:\([a-z]\))*(?:\s*(?:,|and|or|&|to|-|–)\s*)?)+)/gi;
   for (const m of text.matchAll(list)) {
-    for (const n of m[1].matchAll(/\d{1,3}(?:\(\d+\))*/g)) out.push(n[0]);
+    let base = "";
+    for (const item of m[1].matchAll(/(\d{1,3})((?:\(\d+\))*)|\((\d+)\)/g)) {
+      if (item[1]) {
+        base = item[1];
+        out.push(item[1] + item[2]);
+      } else if (base) {
+        out.push(`${base}(${item[3]})`);
+      }
+    }
   }
   return out;
 }
