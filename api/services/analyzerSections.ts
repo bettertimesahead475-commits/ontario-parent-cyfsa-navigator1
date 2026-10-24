@@ -486,11 +486,14 @@ export function isVerbatimQuoteStatus(status: string): boolean {
 }
 
 /**
- * Sections confirmed in the analyzer's verified statute reference (ANALYSIS_RULES). Anything else
- * that looks like a section number must carry the "unverified" note. This is a local reference
- * list, not an external legal database lookup, and the report says so.
+ * Provisions whose text the app has compared against the bundled CYFSA text (src/utils/statuteReference.ts).
+ * Only these may be labelled CONFIRMED_REFERENCE. A section number alone is not a check: 94(5) and 125(1)
+ * exist in the bundled text but have no compared entry here, so they stay UNVERIFIED. This must mirror
+ * the keys of BUNDLED_STATUTE_ENTRIES; a test enforces that. This is a local reference list, not an
+ * external legal database lookup, and the report says so.
  */
-const CONFIRMED_SECTION_PATTERNS = [/^74(\(2\))?$/, /^94\(1\)$/, /^94\(5\)$/, /^125(\(1\))?$/];
+export const CONFIRMED_SECTION_KEYS = ["74(2)", "81(7)", "88", "94(1)", "94(2)"] as const;
+const CONFIRMED_SECTION_PATTERNS = CONFIRMED_SECTION_KEYS.map((key) => new RegExp(`^${key.replace(/[()]/g, "\\$&")}$`));
 
 function citedSections(text: string): string[] {
   const out: string[] = [];

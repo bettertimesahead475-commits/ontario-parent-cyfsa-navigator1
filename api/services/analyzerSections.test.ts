@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { BUNDLED_STATUTE_ENTRIES } from "../../src/utils/statuteReference";
 import {
   runSectionedAnalysis,
   parseJsonObject,
   guardCitation,
+  CONFIRMED_SECTION_KEYS,
   verifyQuoteAgainstSource,
   mergeVerification,
   buildSectionPrompt,
@@ -147,7 +149,7 @@ describe("runSectionedAnalysis", () => {
           evidenceClassification: "HEARSAY",
           phraseDetected: "a neighbour told me",
           explanation: "Secondhand.",
-          legalReference: "CYFSA s. 81(7)",
+          legalReference: "CYFSA s. 94(5)",
         },
       ],
     };
@@ -221,12 +223,19 @@ describe("deterministic guards", () => {
     expect(parseJsonObject("no json")).toBeNull();
   });
 
+  it("confirms only the sections whose text is compared against the bundled statute", () => {
+    expect([...CONFIRMED_SECTION_KEYS].sort()).toEqual(Object.keys(BUNDLED_STATUTE_ENTRIES).sort());
+  });
+
   it("marks citations outside the confirmed reference as unverified", () => {
-    expect(guardCitation("CYFSA 2017, Section 74").status).toBe("CONFIRMED_REFERENCE");
+    expect(guardCitation("CYFSA 2017, Section 74").status).toBe("UNVERIFIED");
+    expect(guardCitation("CYFSA s. 74(2)").status).toBe("CONFIRMED_REFERENCE");
     expect(guardCitation("CYFSA, S.O. 2017, c. 14, s. 94(1)").status).toBe("CONFIRMED_REFERENCE");
     const s81 = guardCitation("CYFSA s. 81(7)");
-    expect(s81.status).toBe("UNVERIFIED");
-    expect(s81.text).toContain(UNVERIFIED_CITATION_NOTE);
+    expect(s81.status).toBe("CONFIRMED_REFERENCE");
+    expect(guardCitation("CYFSA s. 94(5)").status).toBe("UNVERIFIED");
+    expect(guardCitation("CYFSA s. 125(1)").status).toBe("UNVERIFIED");
+    expect(s81.text).not.toContain(UNVERIFIED_CITATION_NOTE);
     expect(guardCitation("CLRA s. 8(1)").status).toBe("UNVERIFIED");
     expect(guardCitation(UNVERIFIED_CITATION_NOTE).text).toBe(UNVERIFIED_CITATION_NOTE); // not doubled
   });

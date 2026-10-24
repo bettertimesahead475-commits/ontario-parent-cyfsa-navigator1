@@ -7,7 +7,10 @@ https://www.ontario.ca/laws/docs/S17014_e.doc (via the e-Laws statute page's raw
 which — unlike the interactive e-Laws page — does not require JavaScript and is not blocked
 by robots.txt like CanLII).
 
-Consolidation period: July 1, 2026 to the e-Laws currency date. Last amendment: 2025, c. 12,
+Consolidation period (as stated in the bundled file's header): July 1, 2026 to the e-Laws currency date.
+The filename's date, 2026-06-24, is not explained by the file and has NOT been verified against e-Laws
+(e-Laws was not reachable from the build environment on 2026-10-24). Confirm the consolidation date on the
+e-Laws currency page before citing either date. Last amendment: 2025, c. 12,
 Sched. 1. This is the CURRENT, in-force version as of 2026-08-29, not the original 2017
 introduced bill (Bill 89) — that historical version is a different document and should not be
 used as a citation source.

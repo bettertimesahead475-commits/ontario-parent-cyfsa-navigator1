@@ -54,7 +54,7 @@ import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
 import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED } from "../config/featureFlags";
-import { STATUTE_ROOT_URL, statuteDetailsFor } from "../utils/statuteReference";
+import { BUNDLED_STATUTE_ENTRIES, STATUTE_ROOT_URL, statuteDetailsFor } from "../utils/statuteReference";
 import { containsTrigger } from "../../shared/glossaryMatch";
 import { ParentReportSection } from "./ParentReportPanel";
 import { EducationalQa } from "./EducationalQa";
@@ -2437,13 +2437,9 @@ export default function DocumentAnalyzerTab() {
 
         <div class="section-card">
           <h3 class="section-title">🔗 Statute Links (check against e-Laws)</h3>
-          <p style="font-size:12px; color:#475569; margin-bottom:12px;">These links go to Ontario e-Laws pages, including the Children's Law Reform Act. They are the same in every report. Check the current text there before relying on it:</p>
+          <p style="font-size:12px; color:#475569; margin-bottom:12px;">Only provisions whose text this app has checked against the bundled CYFSA text are listed. Check the current text on e-Laws before relying on it:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
-            <li><strong>CYFSA Section 74 (Child Protection Thresholds):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK123" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK123</a></li>
-            <li><strong>CYFSA Section 94 (30-Day Adjournment Limit / Temporary Care Order):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
-            <li><strong>CYFSA Section 88 (The Five-Day Hearing Rule):</strong> <a href="https://www.ontario.ca/laws/statute/17c14" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14</a></li>
-            <li><strong>CYFSA Section 81 (Apprehension & Substantial Risk Threshold):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK136" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK136</a></li>
-            <li><strong>Children's Law Reform Act Parentage Presumptions:</strong> <a href="https://www.ontario.ca/laws/statute/90c12#BK9" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/90c12#BK9</a></li>
+            ${Object.values(BUNDLED_STATUTE_ENTRIES).map((entry) => `<li><strong>${entry.citation} (${entry.heading}):</strong> <a href="${STATUTE_ROOT_URL}" target="_blank" style="color:#4f46e5; text-decoration:underline;">${STATUTE_ROOT_URL}</a></li>`).join("\n            ")}
           </ul>
         </div>
       `;
@@ -5203,8 +5199,7 @@ export default function DocumentAnalyzerTab() {
       {/* BUG FOUND IN AUDIT: every "Verify Law: ... ↗" button throughout the audit report calls
           openLegislativeReference(), which sets activeLegislativeCitation — but nothing ever
           rendered a modal reading that state back, so clicking those buttons silently did
-          nothing. getStatuteDetails()/getLegislativeUrl() were fully built to back this exact
-          modal. Wired it up. */}
+          nothing. The modal now reads its text from statuteDetailsFor() in statuteReference.ts. */}
       {activeLegislativeCitation && (
         <div
           className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
@@ -5236,8 +5231,8 @@ export default function DocumentAnalyzerTab() {
                     </div>
                   )}
                   <p className="text-xs text-slate-600 leading-relaxed">{details.explanation}</p>
-{details.exactText && (
-                  <a
+                  {details.exactText && (
+                    <a
                       href={STATUTE_ROOT_URL}
                       target="_blank"
                       rel="noreferrer"
