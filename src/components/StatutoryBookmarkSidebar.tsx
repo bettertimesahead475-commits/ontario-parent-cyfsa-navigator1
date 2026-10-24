@@ -72,7 +72,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     title: "Child's Right to be Heard & Counsel",
     citation: "CYFSA s. 3; s. 78",
     category: "Statutory Section",
-    content: "Section 3 lists children's rights, including the right to express their views freely and safely, to be consulted on services and informed of decisions, and to raise concerns without reprisal. Under s. 78, a child may have legal representation at any stage of a proceeding, and the court must consider whether representation is desirable to protect the child's interests.",
+    content: "Section 3 lists children's rights, including the right to express their views freely and safely, to be consulted on services and informed of decisions, and to raise concerns without reprisal. Under s. 78, a child may have legal representation at any stage of a proceeding, and the court must consider whether it is desirable to protect the child's interests. Under s. 78(4), representation is deemed desirable in listed circumstances, for example where the child is in the society's care and no parent appears, unless the court is satisfied the child's interests are otherwise protected.",
     isPreloaded: true
   },
   {
@@ -126,7 +126,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     title: "Least Intrusive Course of Action",
     citation: "CYFSA s. 1(2), para. 2; s. 101(3)",
     category: "Legal Definition",
-    content: "The statutory purpose that the least disruptive course of action available and appropriate should be used to help a child (s. 1(2), para. 2). Under s. 101(3), the court may not order a child removed from the care of the person who had charge of them unless it is satisfied that less disruptive alternatives would be inadequate to protect the child.",
+    content: "The statutory purpose that the least disruptive course of action available and appropriate should be considered to help a child (s. 1(2), para. 2). Under s. 101(3), the court may not order a child removed from the care of the person who had charge of them unless it is satisfied that less disruptive alternatives would be inadequate to protect the child.",
     isPreloaded: true
   },
   {

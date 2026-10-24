@@ -6,6 +6,7 @@ const BUNDLED = readFileSync(
   new URL("../../legal-reference/CYFSA_full_text_2026-06-24_consolidation.txt", import.meta.url),
   "utf8"
 );
+const DATA_SOURCE = readFileSync(new URL("../data.ts", import.meta.url), "utf8");
 
 /** Section headings from the bundled table of contents, e.g. "| 74. | Interpretation |". */
 const TOC = new Map<number, string>();
@@ -13,37 +14,63 @@ for (const m of BUNDLED.matchAll(/^\| (\d+)\. \| (.+?) \|$/gm)) {
   if (!TOC.has(Number(m[1]))) TOC.set(Number(m[1]), m[2].trim());
 }
 
-/** The body of a section: from its "**N **" header to the next section header. */
-function sectionBody(n: number): string | null {
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The body of a section such as "81", "77.1": from its "**N **" header to the next section header. */
+function sectionBody(section: string): string | null {
   const lines = BUNDLED.split("\n");
-  const start = lines.findIndex((l) => new RegExp(`^\\*\\*${n} \\*\\*`).test(l));
+  const start = lines.findIndex((l) => new RegExp(`^\\*\\*${escapeRe(section)} \\*\\*`).test(l));
   if (start < 0) return null;
   let end = start + 1;
   while (end < lines.length && !/^\*\*\d+(\.\d+)? \*\*/.test(lines[end])) end++;
   return lines.slice(start, end).join("\n");
 }
 
-/** True when the bundled section has a subsection marker "(k)" at the start of a line or on its header line. */
-function hasSubsection(n: number, k: string): boolean {
-  const body = sectionBody(n);
-  return body !== null && new RegExp(`^(\\*\\*${n} \\*\\*)?\\(${k}\\)`, "m").test(body);
+/** A subsection marker "(k)" at the start of a line, or on the section header line. Clauses are indented, so they do not match. */
+function hasSubsection(section: string, k: string): boolean {
+  const body = sectionBody(section);
+  return body !== null && new RegExp(`^(\\*\\*${escapeRe(section)} \\*\\*)?\\(${escapeRe(k)}\\)`, "m").test(body);
 }
 
+export interface CyfsaRef {
+  section: string;
+  subsection: string | null;
+  /** Letter or other non-numeric first-level subsection, e.g. "74(h)". Always invalid under the Act's numbering. */
+  invalidSubsection: boolean;
+}
+
+const ITEM = String.raw`(?:\d{1,3}(?:\.\d+)?(?:\([0-9a-z]+\))*|\(\d+\)(?:\([0-9a-z]+\))*)`;
+const SEP = String.raw`\s*(?:,|and|or|&|;|to|-|–)\s*`;
+const LIST = new RegExp(String.raw`\b(?:ss?|secs?|sections?|subs?|subsections?)\.?\s*(${ITEM}(?:${SEP}${ITEM})*)`, "gi");
+
 /**
- * Section references in a CYFSA citation string: "s. 81(7)", "ss. 74(2) and 81(7)", "s. 3; s. 78",
- * "s. 1(2), para. 2". Each number after a section keyword counts, including items in a list. "para." is not a section.
+ * Section references in one citation: "s. 81(7)", "ss. 74(2) and 81(7)", "s. 77.1", "s. 94(1) and (5)" (a bare
+ * subsection continues the previous section), "s. 1(2), para. 2" (para. is not a section). Quantities such as
+ * "150 days" are removed first, so they are not read as sections.
  */
-export function cyfsaReferences(citation: string): { section: number; subsection: string | null }[] {
-  const out: { section: number; subsection: string | null }[] = [];
-  const list = /\b(?:ss?\.|sections?)\s*((?:\d{1,3}(?:\([0-9a-z]+\))*(?:\s*(?:,|and|or|&|;|to|-|–)\s*(?!para\b))?)+)/gi;
-  for (const m of citation.matchAll(list)) {
-    for (const item of m[1].matchAll(/(\d{1,3})((?:\([0-9a-z]+\))*)/g)) {
-      const first = /^\((\d+)\)/.exec(item[2]);
-      out.push({ section: Number(item[1]), subsection: first ? first[1] : null });
+export function cyfsaReferences(citation: string): CyfsaRef[] {
+  const cleaned = citation.replace(/\d+\s*(?:days?|months?|years?|hours?|weeks?|%|per cent)\b/gi, "");
+  const out: CyfsaRef[] = [];
+  for (const m of cleaned.matchAll(LIST)) {
+    let base = "";
+    for (const item of m[1].matchAll(/(\d{1,3}(?:\.\d+)?)((?:\([0-9a-z]+\))*)|\((\d+)\)((?:\([0-9a-z]+\))*)/g)) {
+      if (item[1]) {
+        base = item[1];
+        const first = /^\(([0-9a-z]+)\)/.exec(item[2]);
+        out.push({
+          section: base,
+          subsection: first && /^\d+$/.test(first[1]) ? first[1] : null,
+          invalidSubsection: Boolean(first && !/^\d+$/.test(first[1])),
+        });
+      } else if (base) {
+        out.push({ section: base, subsection: item[3], invalidSubsection: false });
+      }
     }
   }
   return out;
 }
+
+const OTHER_ACTS = /\b(?:CLRA|Children's Law Reform Act|Evidence Act|Family Law Rules|Mental Health Act|Charter|Criminal Code|Family Law Act)\b/i;
 
 function itemById(id: string): string {
   const item = PRELOADED_ITEMS.find((i) => i.id === id);
@@ -52,33 +79,66 @@ function itemById(id: string): string {
 }
 
 describe("citation parsing", () => {
-  it("reads every section in a list and ignores para. numbers", () => {
-    expect(cyfsaReferences("CYFSA ss. 74(2) and 81(7)")).toEqual([
-      { section: 74, subsection: "2" },
-      { section: 81, subsection: "7" },
+  it("reads every section in a list, including bare subsection continuations", () => {
+    expect(cyfsaReferences("CYFSA ss. 74(2) and 81(7)").map((r) => [r.section, r.subsection])).toEqual([
+      ["74", "2"],
+      ["81", "7"],
     ]);
-    expect(cyfsaReferences("CYFSA s. 1(2), para. 2")).toEqual([{ section: 1, subsection: "2" }]);
-    expect(cyfsaReferences("CYFSA s. 101(1), para. 1")).toEqual([{ section: 101, subsection: "1" }]);
+    expect(cyfsaReferences("CYFSA ss. 94(1) and (5)").map((r) => [r.section, r.subsection])).toEqual([
+      ["94", "1"],
+      ["94", "5"],
+    ]);
+    expect(cyfsaReferences("CYFSA s. 74(2)-(4)").map((r) => [r.section, r.subsection])).toEqual([
+      ["74", "2"],
+      ["74", "4"],
+    ]);
+  });
+
+  it("reads 'subs.' and 'subsection' and decimal sections", () => {
+    expect(cyfsaReferences("CYFSA subs. 81(7)").map((r) => [r.section, r.subsection])).toEqual([["81", "7"]]);
+    expect(cyfsaReferences("CYFSA subsection 94(5)").map((r) => [r.section, r.subsection])).toEqual([["94", "5"]]);
+    expect(cyfsaReferences("CYFSA s. 77.1").map((r) => r.section)).toEqual(["77.1"]);
+  });
+
+  it("does not read para. numbers, quantities or other Acts' numbers as sections", () => {
+    expect(cyfsaReferences("CYFSA s. 1(2), para. 2").map((r) => r.section)).toEqual(["1"]);
+    expect(cyfsaReferences("CYFSA s. 81(7) and 150 days").map((r) => r.section)).toEqual(["81"]);
+    expect(cyfsaReferences("CYFSA s. 88 and 16 months").map((r) => r.section)).toEqual(["88"]);
+    expect(cyfsaReferences("CYFSA, S.O. 2017, c. 14, s. 94(1)").map((r) => r.section)).toEqual(["94"]);
+  });
+
+  it("flags letter subsections directly after a section number", () => {
+    const [ref] = cyfsaReferences("CYFSA s. 74(h)");
+    expect(ref.invalidSubsection).toBe(true);
+    expect(hasSubsection("74", "h")).toBe(false);
   });
 
   it("matches subsections against the bundled text", () => {
-    expect(hasSubsection(81, "7")).toBe(true);
-    expect(hasSubsection(101, "3")).toBe(true);
-    expect(hasSubsection(88, "2")).toBe(false); // s. 88 has no subsections
-    expect(hasSubsection(102, "9")).toBe(false);
+    expect(hasSubsection("81", "7")).toBe(true);
+    expect(hasSubsection("101", "1")).toBe(true);
+    expect(hasSubsection("101", "3")).toBe(true);
+    expect(hasSubsection("88", "2")).toBe(false); // s. 88 has no subsections
+    expect(hasSubsection("102", "9")).toBe(false);
   });
 });
 
 describe("preloaded CYFSA citations resolve to the bundled text", () => {
   const cyfsaItems = PRELOADED_ITEMS.filter((i) => /\bCYFSA\b/.test(i.citation));
 
-  it("has CYFSA items to check", () => {
+  it("has CYFSA items to check, and none mixes CYFSA with another Act", () => {
     expect(cyfsaItems.length).toBeGreaterThanOrEqual(7);
+    const mixed = PRELOADED_ITEMS.filter((i) => /\bCYFSA\b/.test(i.citation) && OTHER_ACTS.test(i.citation));
+    expect(mixed.map((i) => i.id)).toEqual([]);
   });
 
   it.each(cyfsaItems.map((i) => [i.id, i.citation] as const))("%s (%s)", (_id, citation) => {
-    for (const ref of cyfsaReferences(citation)) {
-      expect(TOC.has(ref.section), `s. ${ref.section} is in the CYFSA table of contents`).toBe(true);
+    const refs = cyfsaReferences(citation);
+    expect(refs.length, "citation names at least one CYFSA section").toBeGreaterThan(0);
+    for (const ref of refs) {
+      expect(ref.invalidSubsection, `no letter subsection in "${citation}"`).toBe(false);
+      const integer = Number(ref.section.split(".")[0]);
+      expect(TOC.has(integer), `s. ${ref.section} is in the CYFSA table of contents`).toBe(true);
+      expect(sectionBody(ref.section), `s. ${ref.section} has bundled text`).not.toBeNull();
       if (ref.subsection) {
         expect(hasSubsection(ref.section, ref.subsection), `s. ${ref.section}(${ref.subsection}) exists`).toBe(true);
       }
@@ -94,26 +154,37 @@ describe("corrected statements", () => {
     expect(item?.content).toContain("at least three months and not more than 12 months");
   });
 
-  it("does not attribute counsel rights or the age-12 rule to s. 3", () => {
+  it("states s. 3 rights and s. 78 representation, including the s. 78(4) presumption", () => {
     const item = PRELOADED_ITEMS.find((i) => i.id === "cyfsa-3");
-    expect(item?.citation).toContain("s. 78");
-    expect(item?.content).not.toMatch(/Children's Lawyer|OCL|12 and older/);
-    expect(item?.content).toContain("legal representation");
+    expect(item?.citation).toBe("CYFSA s. 3; s. 78");
+    expect(item?.content).not.toMatch(/Children[’']s Lawyer|\bOCL\b|12 and older|aged 12/i);
+    expect(item?.content).toMatch(/legal representation/);
+    expect(item?.content).toMatch(/deemed desirable/);
+    expect(item?.content).toMatch(/no parent appears/);
   });
 
   it("uses the statutory child protection worker term for s. 81(7)", () => {
     const content = itemById("cyfsa-81");
     expect(content).toContain("child protection worker");
-    expect(content).not.toContain("children's aid worker");
+    expect(content).toContain("s. 81(12)");
+    expect(content).not.toMatch(/children[’']s aid worker/i);
   });
 
-  it("does not say poverty or clutter are ruled out by s. 74(2)", () => {
-    expect(itemById("cyfsa-74")).not.toMatch(/do not meet/);
+  it("states that poverty and housing are not listed grounds, without a broader legal conclusion", () => {
+    const content = itemById("cyfsa-74");
+    expect(content).toMatch(/not listed as grounds/);
+    expect(content).not.toMatch(/do not meet|home clutter/i);
   });
 
-  it("states the s. 101(3) test instead of an unsupported 'thoroughly tried' standard", () => {
+  it("states the s. 101(3) test and the s. 1(2) para. 2 'should be considered' wording", () => {
     const content = itemById("def-least-intrusive");
     expect(content).toContain("would be inadequate");
-    expect(content).not.toMatch(/thoroughly|tried and failed/);
+    expect(content).toContain("should be considered");
+    expect(content).not.toMatch(/thoroughly|tried and failed|should be used/i);
+  });
+
+  it("keeps the s. 81(13) neglect-or-default clause and drops the unsupported court-process claim", () => {
+    expect(DATA_SOURCE).toContain("alleged neglect or default in the execution in good faith of that duty");
+    expect(DATA_SOURCE).not.toMatch(/challenges go through the court process below/);
   });
 });

@@ -14,8 +14,8 @@ Date: 2026-10-24. Source of truth for CYFSA text: `legal-reference/CYFSA_full_te
 | Citation in app | Claim in app | Result |
 |---|---|---|
 | s. 81(7) (sidebar, data.ts) | Warrantless apprehension: worker believes (a) in need of protection, (b) under 16, (c) substantial risk during time to get warrant or hearing | Verified. Wording "substantial risk to the child's health or safety" matches. Peace officers apply under s. 81(12). |
-| s. 81(2) (data.ts) | Warrant: justice of the peace; under 16; in need of protection; less restrictive course not available | Verified. |
-| s. 81(13) (data.ts) | Good-faith immunity | Verified; the wording was tightened to match the text (corrected). |
+| s. 81(2) (data.ts) | Warrant: justice of the peace; under 16; in need of protection; less restrictive course not available or will not protect the child adequately | Verified. |
+| s. 81(13) (data.ts) | No action for an act done in good faith under s. 81, or for an alleged neglect or default in good faith in that duty | Verified. Corrected: the earlier summary omitted the neglect-or-default clause and added a court-process claim the text does not contain. |
 | s. 88 (sidebar, data.ts) | Five-day rule after place of safety; hearing, return, temporary care agreement, or s. 77 agreement | Verified. |
 | s. 74(2) (sidebar, data.ts) | Grounds in clauses (a) to (o) | Verified as to structure. The sentence about poverty and clutter was not in the text (corrected). |
 | s. 74(3) (sidebar, data.ts) | Best-interests factors | Heading verified; factor list not re-checked clause by clause. |
@@ -23,13 +23,13 @@ Date: 2026-10-24. Source of truth for CYFSA text: `legal-reference/CYFSA_full_te
 | s. 101(1) para. 1 (new citation) | Supervision order, at least 3 and not more than 12 months | Verified. The sidebar previously cited s. 102, which is the custody order (corrected). |
 | s. 101(1) para. 4 (data.ts) | Consecutive interim care and supervision: total not exceeding 12 months | Verified. |
 | s. 101(3) (new citation) | Court may not remove child unless less disruptive alternatives would be inadequate | Verified (corrected: the earlier "thoroughly tried and failed" wording is not in the text). |
-| s. 1(2) para. 2 (new citation) | Least disruptive course of action as an additional purpose | Verified. |
+| s. 1(2) para. 2 (new citation) | Least disruptive course of action that is available and appropriate 'should be considered' | Verified. The earlier 'should be used' wording was corrected. |
 | s. 13 (data.ts) | Child's own plan of care within 30 days of admission | Verified. |
 | s. 121(3) (data.ts) | 10-day stay on execution of a care-and-custody decision after notice of appeal | Verified. |
 | s. 121(2.1) (data.ts appeal section) | Appeal to Superior Court (from OCJ) or Divisional Court (from Family Court) | Verified. |
 | s. 123 (data.ts) | Order expires when child turns 18 or marries | Verified. |
-| s. 3 (sidebar) | Children's rights list | Verified as to content. The sidebar also attributed counsel rights and an age-12 rule to s. 3, which are not there (corrected; now cites s. 78). |
-| s. 78 (data.ts, sidebar) | Legal representation of child; court considers whether desirable | Verified as to structure; the court directs representation, it is not automatic. |
+| s. 3 (sidebar) | Children's rights list | Verified as to content. The sidebar also attributed counsel rights and an age-12 rule to s. 3, which are not there (corrected; counsel now cites s. 78). |
+| s. 78 (data.ts, sidebar) | Legal representation; court considers desirability; s. 78(4) deems representation desirable in listed cases unless the court is satisfied otherwise | Verified. Corrected: the sidebar previously said nothing of the s. 78(4) presumption. |
 | s. 72 (sidebar) | Regular consultation with bands about matters including places of safety and residential placement | Verified. |
 | s. 70 (sidebar) | Designation of a child and family service authority (not consultation) | Heading verified. |
 
@@ -39,8 +39,8 @@ Date: 2026-10-24. Source of truth for CYFSA text: `legal-reference/CYFSA_full_te
 2. **Sidebar, "Child's Right to be Heard & Counsel":** attributed legal counsel through the Office of the Children's Lawyer and an age-12 rule to s. 3. Neither appears in the bundled text. Now cites s. 3 for rights and s. 78 for representation.
 3. **Sidebar, s. 81(7):** "children's aid worker" replaced with the statutory term "child protection worker", with the s. 81(12) peace-officer extension stated.
 4. **Sidebar, s. 74(2):** "General concerns like home clutter or poverty do not meet this legal standard" replaced. Poverty and housing are not listed grounds; the sentence no longer states a legal conclusion the text does not contain.
-5. **Sidebar, "Least Intrusive Course":** replaced "CAS must prove … thoroughly tried and failed" with the s. 101(3) test and the s. 1(2) purpose. The app's wording overstated the standard.
-6. **data.ts, s. 81(13):** good-faith immunity wording tightened to the text.
+5. **Sidebar, "Least Intrusive Course":** replaced "CAS must prove … thoroughly tried and failed" with the s. 101(3) test and the s. 1(2) para. 2 purpose ("should be considered").
+6. **data.ts, s. 81(13):** good-faith immunity now includes the neglect-or-default clause; the unsupported court-process sentence was removed.
 
 ## Not verifiable from the repository (external sources needed)
 
