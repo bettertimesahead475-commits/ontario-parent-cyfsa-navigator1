@@ -243,6 +243,7 @@ describe("deterministic guards", () => {
     expect(guardCitation("CYFSA s. 94(1) and (2) of the Regulation").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 94(1) of O. Reg. 1/18").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 94(1), R.R.O. 1990, Reg. 1").status).toBe("UNVERIFIED");
+    expect(guardCitation("CYFSA s. 94(1) of O. Reg 1/18").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 74(2)-(4)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 74(2) and subs. 94(5)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA subsection 94(5)").status).toBe("UNVERIFIED");

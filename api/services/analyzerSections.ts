@@ -525,7 +525,7 @@ export function guardCitation(text: string): { text: string; status: "CONFIRMED_
   const sections = citedSections(t);
   const clra = /\bCLRA\b|Children's Law Reform Act/i.test(t);
   // A regulation's subsection can share a number with a CYFSA section, so a citation naming one is never confirmed.
-  const otherInstrument = /\bregulations?\b|\breg\./i.test(t);
+  const otherInstrument = /\bregulations?\b|\breg\b/i.test(t);
   const unconfirmed = clra || otherInstrument || sections.some((s) => !CONFIRMED_SECTION_PATTERNS.some((p) => p.test(s)));
   if (unconfirmed) return { text: `${t} ${UNVERIFIED_CITATION_NOTE}`, status: "UNVERIFIED" };
   return { text: t, status: sections.length ? "CONFIRMED_REFERENCE" : "NONE" };
