@@ -382,3 +382,62 @@ describe('second review fixes', () => {
     expect(ctx).toMatchObject({missing: expect.arrayContaining(['party role in this proceeding'])});
   });
 });
+
+describe('third review fixes', () => {
+  it('does not show another proceeding\'s allegation with the same ID to a party', () => {
+    const m = withProceeding2(proceeding1());
+    m.allegations = [
+      allegation({id: 'same', subjectPartyIds: ['A']}),
+      allegation({id: 'same', proceedingId: 'P2', subjectPartyIds: ['B'], source: null}),
+    ];
+    const a1 = buildParentReport(m, 'P1', 'A');
+    expect(a1.unresolved.some(i => i.proceedingId === 'P2')).toBe(false);
+  });
+
+  it('shows an alias collision even when its key equals an allegation ID in this proceeding', () => {
+    const m = proceeding1();
+    m.parties = [{id: 'A', displayName: 'Sam', aliases: []}, {id: 'B', displayName: 'Sam', aliases: []}, {id: 'C', displayName: 'Parent C', aliases: []}];
+    m.roles.push({proceedingId: 'P1', partyId: 'C', role: 'OTHER_PARTY'});
+    m.allegations = [allegation({id: 'sam', subjectPartyIds: ['C']})];
+    expect(buildParentReport(m, 'P1', 'A').unresolved.map(i => i.code)).toContain('ALIAS_COLLISION');
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B').ok).toBe(false);
+  });
+
+  it('shows an allegation whose only subject is an unknown party to every party in the proceeding', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'z1', subjectPartyIds: ['Z']})];
+    expect(buildParentReport(m, 'P1', 'A').unresolved.map(i => i.code)).toContain('UNKNOWN_PARTY');
+    expect(buildParentReport(m, 'P1', 'B').unresolved.map(i => i.code)).toContain('UNKNOWN_PARTY');
+  });
+
+  it('does not show an allegation with a known subject to a party it does not concern', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'k1', subjectPartyIds: ['A'], source: null})];
+    expect(buildParentReport(m, 'P1', 'B').unresolved.some(i => i.itemId === 'k1')).toBe(false);
+  });
+
+  it('does not state a party count or name a non-roster party in an alias collision', () => {
+    const m = withProceeding2(proceeding1());
+    m.parties = [{id: 'A', displayName: 'Sam', aliases: []}, {id: 'B', displayName: 'Sam', aliases: []}, {id: 'C', displayName: 'Sam', aliases: []}];
+    m.roles = m.roles.filter(r => r.partyId !== 'C');
+    m.roles.push({proceedingId: 'P2', partyId: 'C', role: 'OTHER_PARTY'});
+    const issue = buildParentReport(m, 'P1', 'A').unresolved.find(i => i.code === 'ALIAS_COLLISION');
+    expect(issue?.partyIds.sort()).toEqual(['A', 'B']);
+    expect(issue?.detail).not.toMatch(/\d/);
+  });
+
+  it('flags a duplicate allegation ID', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'dup', subjectPartyIds: ['A']}), allegation({id: 'dup', subjectPartyIds: ['A']})];
+    expect(validateCaseModel(m).some(i => i.code === 'DUPLICATE_ID')).toBe(true);
+  });
+
+  it('keeps Cyrillic й and и distinct and matches Latin accented and unaccented names', () => {
+    expect(normalizeName('й')).not.toBe(normalizeName('и'));
+    expect(normalizeName('José')).toBe(normalizeName('Jose'));
+  });
+
+  it('keeps a zero-width joiner inside a name rather than splitting it', () => {
+    expect(normalizeName('क‍ष')).toBe('क‍ष');
+  });
+});

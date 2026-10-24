@@ -85,6 +85,7 @@ export interface CaseModel {
 export type AttributionIssueCode =
   | 'NO_SUBJECT_IDENTIFIED'
   | 'DUPLICATE_SUBJECT'
+  | 'DUPLICATE_ID'
   | 'SUBJECT_NOT_IN_PROCEEDING'
   | 'UNKNOWN_PARTY'
   | 'UNKNOWN_PROCEEDING'
@@ -113,9 +114,9 @@ export interface AttributionIssue {
 export function normalizeName(name: string): string {
   return name
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/(\p{Script=Latin})\p{M}+/gu, '$1')
     .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}\p{Cf}]+/gu, ' ')
     .trim();
 }
 
@@ -155,7 +156,7 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
   }
   for (const [key, ids] of claimants) {
     if (ids.size > 1) {
-      issues.push({code: 'ALIAS_COLLISION', itemId: key, proceedingId: null, partyIds: [...ids], detail: `Name "${key}" matches ${ids.size} parties; mentions cannot be attributed by name.`});
+      issues.push({code: 'ALIAS_COLLISION', itemId: key, proceedingId: null, partyIds: [...ids], detail: `Name "${key}" is shared by more than one party; mentions cannot be attributed by name.`});
     }
   }
 
@@ -165,7 +166,12 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
     }
   }
 
+  const seenAllegationIds = new Set<string>();
   for (const a of model.allegations) {
+    if (seenAllegationIds.has(a.id)) {
+      issues.push({code: 'DUPLICATE_ID', itemId: a.id, proceedingId: a.proceedingId, partyIds: [], detail: 'Allegation ID is used more than once; the record cannot be referenced reliably.'});
+    }
+    seenAllegationIds.add(a.id);
     const subjects = subjectsOf(a);
     const base = {itemId: a.id, proceedingId: a.proceedingId, partyIds: subjects};
     if (!proceedingIds.has(a.proceedingId)) {
@@ -242,17 +248,20 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
   const specific = involving.filter(a => subjectsOf(a).length === 1);
   const shared = involving.filter(a => subjectsOf(a).length > 1);
 
-  // An allegation-level issue is shown only to the parties the allegation concerns. An allegation with
-  // no identified subject concerns no one in particular, so its issues are shown to every party in the
-  // proceeding. Proceeding-level issues and cross-proceeding issues (such as an alias collision) are
-  // shown only when they touch a party in this proceeding, and name only those parties.
+  // Issues for this proceeding's allegations are shown to a party only when the allegation concerns that
+  // party, or when it concerns no known party (no subject, or only unknown subjects). Those cases name no
+  // party this report should not show. Other issues in this proceeding are shown to every party in it.
+  // Cross-proceeding issues, such as an alias collision, are shown only when they touch a party in this
+  // proceeding, and name only those parties.
+  const knownIds = new Set(model.parties.map(p => p.id));
   const involvingIds = new Set(involving.map(a => a.id));
   const allegationIds = new Set(inProceeding.map(a => a.id));
-  const unsubjectedIds = new Set(inProceeding.filter(a => subjectsOf(a).length === 0).map(a => a.id));
   const issues = validateCaseModel(model)
     .filter(i => {
-      if (allegationIds.has(i.itemId)) return involvingIds.has(i.itemId) || unsubjectedIds.has(i.itemId);
-      if (i.proceedingId === proceedingId) return true;
+      if (i.proceedingId === proceedingId) {
+        if (!allegationIds.has(i.itemId)) return true;
+        return involvingIds.has(i.itemId) || i.partyIds.every(pid => !knownIds.has(pid));
+      }
       return i.proceedingId === null && i.partyIds.some(pid => roster.has(pid));
     })
     .map(i => (i.proceedingId === null ? {...i, partyIds: i.partyIds.filter(pid => roster.has(pid))} : i));
