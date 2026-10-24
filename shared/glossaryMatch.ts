@@ -17,7 +17,12 @@ export function containsTrigger(text: string, trigger: string): boolean {
     const rest = haystack.slice(at + needle.length);
     const suffix = INFLECTION.exec(rest)?.[0] ?? "";
     const after = rest.charAt(suffix.length);
-    const wholeStart = before === "" || !WORD_CHARACTER.test(before);
+    let wholeStart = before === "" || !WORD_CHARACTER.test(before);
+    // "ss." is the plural of "s." in section citations ("ss. 74 and 81"), so "ss.74" contains "s.74".
+    if (!wholeStart && before === "s" && needle.startsWith("s.")) {
+      const beforeS = at > 1 ? haystack.charAt(at - 2) : "";
+      wholeStart = beforeS === "" || !WORD_CHARACTER.test(beforeS);
+    }
     // A dot followed by a digit continues a decimal section number ("s.74.1" is not "s.74").
     const decimal = after === "." && /\d/.test(rest.charAt(suffix.length + 1));
     const wholeEnd = (after === "" || !WORD_CHARACTER.test(after)) && !decimal;

@@ -47,6 +47,12 @@ describe("glossary trigger matching", () => {
     expect(containsTrigger("the onu\u0301s rule", "onus")).toBe(false);
   });
 
+  it("matches the plural section form 'ss.74' for the trigger 's.74'", () => {
+    expect(containsTrigger("the grounds in ss.74 and 81 apply", "s.74")).toBe(true);
+    expect(containsTrigger("the grounds in ss.740 apply", "s.74")).toBe(false);
+    expect(containsTrigger("the grounds in xss.74 apply", "s.74")).toBe(false);
+  });
+
   it("treats accented letters as part of a word", () => {
     expect(containsTrigger("a bonusé payment", "onus")).toBe(false);
     expect(containsTrigger("the onusé rule", "onus")).toBe(false);
