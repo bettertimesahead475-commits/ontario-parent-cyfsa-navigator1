@@ -67,7 +67,9 @@ describe.skipIf(!isLocal)("atomic paid-credit functions on a real PostgreSQL ser
       drop table if exists public.free_usage;
       create table public.free_usage (
         uid text primary key, email text, analyses_used integer not null default 0,
-        first_analysis_at timestamptz, last_analysis_at timestamptz);`);
+        first_analysis_at timestamptz, last_analysis_at timestamptz);
+      -- Supabase grants the service role table access by default; the functions run as the caller.
+      grant select, insert, update, delete on public.free_usage to service_role;`);
     await pool.query(readFileSync(MIGRATION, "utf8"));
   });
 
@@ -87,6 +89,31 @@ describe.skipIf(!isLocal)("atomic paid-credit functions on a real PostgreSQL ser
     const others = await pool.query(`select has_function_privilege('anon','public.paid_release_credit(text,text,text,timestamptz)','execute') as release_anon,
       has_function_privilege('anon','public.paid_finalize_credit(text,text,timestamptz)','execute') as finalize_anon`);
     expect(others.rows[0]).toEqual({ release_anon: false, finalize_anon: false });
+  });
+
+  // The entry points run as the caller, so service_role must also execute the internal helpers they call.
+  // Earlier tests ran as the owner and could not see a missing grant on those helpers.
+  it("service_role can run a full reserve, release and finalize cycle", async () => {
+    // Its own session: the other cases share SESSION and count its units, so this one cleans up after itself.
+    const roleSession = "22222222-2222-4222-8222-222222222222";
+    const now = () => new Date().toISOString();
+    const client = await pool.connect();
+    try {
+      await client.query("set role service_role");
+      const first = (await client.query("select public.paid_reserve_credit($1,$2,$3,$4,$5,$6::interval,$7::interval) as r", [roleSession, "role_probe_1", "total", 3, now(), TTL, CLAIM])).rows[0].r;
+      expect(first.status).toBe("reserved");
+      const released = (await client.query("select public.paid_release_credit($1,$2,$3,$4) as r", [roleSession, "role_probe_1", first.reservation_id, now()])).rows[0].r;
+      expect(released.status).toBe("released");
+      const second = (await client.query("select public.paid_reserve_credit($1,$2,$3,$4,$5,$6::interval,$7::interval) as r", [roleSession, "role_probe_2", "total", 3, now(), TTL, CLAIM])).rows[0].r;
+      expect(second.status).toBe("reserved");
+      const finalized = (await client.query("select public.paid_finalize_credit($1,$2,$3) as r", [roleSession, "role_probe_2", now()])).rows[0].r;
+      expect(finalized.status).toBe("consumed");
+      await client.query("reset role");
+    } finally {
+      await client.query("reset role").catch(() => undefined);
+      await pool.query("delete from public.free_usage where uid like $1", [`%${roleSession}%`]);
+      client.release();
+    }
   });
 
   it("the migration creates functions and no tables", async () => {

@@ -250,4 +250,12 @@ grant execute on function public.paid_reserve_credit(text, text, text, integer, 
 grant execute on function public.paid_release_credit(text, text, text, timestamptz) to service_role;
 grant execute on function public.paid_finalize_credit(text, text, timestamptz) to service_role;
 
+-- The entry points above run as the caller, so service_role also needs the internal helpers they call.
+-- Without these the first reservation fails with 42501 (permission denied) and the route fails closed.
+grant execute on function public.paid_marker_uid(text, text) to service_role;
+grant execute on function public.paid_state_for_scope(text) to service_role;
+grant execute on function public.paid_counter_for_state(text, text) to service_role;
+grant execute on function public.paid_release_marker(text, text, timestamptz) to service_role;
+grant execute on function public.paid_reconcile(text, text, timestamptz, interval) to service_role;
+
 commit;
