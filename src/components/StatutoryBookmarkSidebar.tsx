@@ -64,7 +64,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     title: "Child in Need of Protection Threshold",
     citation: "CYFSA s. 74(2)",
     category: "Statutory Section",
-    content: "Defines specific sub-sections (physical risk, sexual abuse, severe emotional harm, or medical neglect) that must be met to assert that a child is in need of protection. Those clauses are the statutory grounds for a protection finding. General family circumstances, such as poverty or housing, are not listed as grounds. Confirm each stated concern against a specific clause with counsel.",
+    content: "Sets out the grounds in clauses (a) to (o) that must be met for a protection finding, for example physical harm, sexual abuse, severe emotional harm, medical neglect, or a parent who has died or is unavailable and has made no adequate provision (clause (k)). Poverty and housing on their own are not listed grounds. Confirm each stated concern against a specific clause with counsel.",
     isPreloaded: true
   },
   {

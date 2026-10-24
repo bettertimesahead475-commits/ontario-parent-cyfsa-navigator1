@@ -17,7 +17,7 @@ Date: 2026-10-24. Source of truth for CYFSA text: `legal-reference/CYFSA_full_te
 | s. 81(2) (data.ts) | Warrant: justice of the peace; under 16; in need of protection; less restrictive course not available or will not protect the child adequately | Verified. |
 | s. 81(13) (data.ts) | No action for an act done in good faith under s. 81, or for an alleged neglect or default in good faith in that duty | Verified. Corrected: the earlier summary omitted the neglect-or-default clause and added a court-process claim the text does not contain. |
 | s. 88 (sidebar, data.ts) | Five-day rule after place of safety; hearing, return, temporary care agreement, or s. 77 agreement | Verified. |
-| s. 74(2) (sidebar, data.ts) | Grounds in clauses (a) to (o) | Verified as to structure. The sentence about poverty and clutter was not in the text (corrected). |
+| s. 74(2) (sidebar, data.ts) | Grounds in clauses (a) to (o) | Verified as to structure. The text lists family circumstances as grounds (e.g. clause (k), parent died or unavailable; clause (n), parent unable to care), so the sidebar now says only that poverty and housing on their own are not listed. The poverty-and-clutter sentence was not in the text (corrected). |
 | s. 74(3) (sidebar, data.ts) | Best-interests factors | Heading verified; factor list not re-checked clause by clause. |
 | s. 94(1), 94(2) (data.ts) | 30-day adjournment; temporary care and custody during adjournment | Verified (also in the statute quotations). |
 | s. 101(1) para. 1 (new citation) | Supervision order, at least 3 and not more than 12 months | Verified. The sidebar previously cited s. 102, which is the custody order (corrected). |
