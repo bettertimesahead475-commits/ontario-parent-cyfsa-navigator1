@@ -25,7 +25,7 @@ export const QUOTE_LABEL: Record<QuoteStatus, string> = {
 };
 
 export const AUTHORITY_LABEL: Record<AuthorityStatus, string> = {
-  VERIFIED_IN_REPOSITORY_REFERENCE: "Matches the copy of the CYFSA held by this app (consolidation dated 2026-06-24). Not checked against the official e-Laws text.",
+  CONFIRMED_SECTION_NUMBER: "Section number is on the app's list of confirmed section numbers. The section text was not compared. Confirm with counsel.",
   CITATION_UNVERIFIED: "Citation unverified: confirm with counsel",
   NOT_CHECKED: "Citation not checked",
 };

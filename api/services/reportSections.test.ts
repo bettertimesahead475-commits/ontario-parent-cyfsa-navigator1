@@ -75,7 +75,7 @@ describe("Section 5 rights in the sectioned report", () => {
   it("cites the statute with its verbatim quote and the verification status", () => {
     const sectioned = buildSectionedReport(JUDICIAL_ENDORSEMENT);
     const right = sectioned.findings.find((f) => f.id === "R-adjournment-limit")!;
-    expect(right.authorities[0]).toEqual({ citation: "CYFSA s. 94(1)", status: "VERIFIED_IN_REPOSITORY_REFERENCE" });
+    expect(right.authorities[0]).toEqual({ citation: "CYFSA s. 94(1)", status: "NOT_CHECKED" });
     expect(right.whatLawSays).toContain("The court shall not adjourn a hearing for more than 30 days,");
   });
 
