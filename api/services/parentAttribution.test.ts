@@ -370,3 +370,38 @@ describe('reviewer gaps', () => {
     expect(a.relatedOrders[0].proposedCaregiverPartyId).toBeNull();
   });
 });
+
+describe('PR 100 follow-ups', () => {
+  it('treats a whitespace-only court file number as missing', () => {
+    const m = twoProceedings();
+    m.proceedings[0].fileNumber = '   ';
+    expect(validateCaseModel(m).some(i => i.code === 'MISSING_FILE_NUMBER' && i.proceedingId === 'P1')).toBe(true);
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B')).toEqual({ok: false, missing: ['court file number']});
+  });
+
+  it('blocks reports and drafting for a repeated proceeding identifier', () => {
+    const m = twoProceedings();
+    m.proceedings.push({id: 'P1', fileNumber: 'FC-99-0001', applicationDate: null, childNames: []});
+    expect(validateCaseModel(m).some(i => i.code === 'DUPLICATE_PROCEEDING_ID' && i.blocking)).toBe(true);
+    expect(() => buildParentReport(m, 'P1', 'A')).toThrow();
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B')).toEqual({ok: false, missing: ['unique proceeding identifier']});
+  });
+
+  it('removes invisible characters from names before comparing them', () => {
+    expect(normalizeAlias('Sam​')).toBe(normalizeAlias('Sam'));
+    expect(normalizeAlias('Mor­gan⁠')).toBe(normalizeAlias('Morgan'));
+    expect(normalizeAlias('﻿Sam')).toBe(normalizeAlias('Sam'));
+  });
+
+  it('keeps a zero-width joiner, which some scripts need, inside a name', () => {
+    expect(normalizeAlias('क‍ष')).not.toBe(normalizeAlias('कष'));
+  });
+
+  it('does not repeat a shared name in the collision message shown to parties', () => {
+    const m = twoProceedings();
+    m.parties = [{id: 'A', displayName: 'Secret Shared Name', aliases: []}, {id: 'B', displayName: 'secret  shared name', aliases: []}];
+    const issue = validateCaseModel(m).find(i => i.code === 'ALIAS_COLLISION');
+    expect(issue).toBeDefined();
+    expect(issue?.detail).not.toMatch(/secret/i);
+  });
+});

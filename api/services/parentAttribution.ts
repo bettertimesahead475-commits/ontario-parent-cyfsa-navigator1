@@ -99,6 +99,7 @@ export interface CaseModel {
 
 export type IssueCode =
   | 'DUPLICATE_ID'
+  | 'DUPLICATE_PROCEEDING_ID'
   | 'UNKNOWN_PROCEEDING'
   | 'UNKNOWN_PARTY'
   | 'SUBJECT_NOT_IN_PROCEEDING'
@@ -157,7 +158,12 @@ export type DraftingContext =
 
 /** Conservative name comparison: compatibility form, case and spacing only. Accents are not folded. */
 export function normalizeAlias(name: string): string {
-  return name.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+  return name
+    .normalize('NFKC')
+    .replace(/[\u00ad\u200b\u2060\ufeff]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 /** Roles held by known parties in known proceedings, keyed by proceeding. */
@@ -213,8 +219,15 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
   const roster = rosterByProceeding(model);
   const repeated = repeatedIds(model);
 
+  const proceedingCounts = new Map<string, number>();
+  for (const p of model.proceedings) proceedingCounts.set(p.id, (proceedingCounts.get(p.id) ?? 0) + 1);
+  for (const [id, n] of proceedingCounts) {
+    if (n > 1) {
+      issues.push({code: 'DUPLICATE_PROCEEDING_ID', proceedingId: id, recordId: null, partyIds: [], blocking: true, detail: 'This proceeding identifier is used by more than one proceeding. Reports and drafting are refused until it is corrected.'});
+    }
+  }
   for (const p of model.proceedings) {
-    if (!p.fileNumber) {
+    if (!p.fileNumber?.trim()) {
       issues.push({code: 'MISSING_FILE_NUMBER', proceedingId: p.id, recordId: null, partyIds: [], blocking: true, detail: 'The proceeding has no court file number.'});
     }
   }
@@ -290,7 +303,7 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
       const inProceeding = roster.get(p.id) ?? new Set<string>();
       const colliders = [...ids].filter(pid => inProceeding.has(pid));
       if (colliders.length > 0) {
-        issues.push({code: 'ALIAS_COLLISION', proceedingId: p.id, recordId: null, partyIds: colliders, blocking: true, detail: `The name "${key}" is shared by more than one party. Parent-specific drafting is blocked for the affected parties until the name is resolved.`});
+        issues.push({code: 'ALIAS_COLLISION', proceedingId: p.id, recordId: null, partyIds: colliders, blocking: true, detail: 'A name used by this party is shared with another party. Parent-specific drafting is blocked for the affected parties until the names are distinguished.'});
       }
     }
   }
@@ -307,6 +320,7 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
   const party = model.parties.find(p => p.id === partyId);
   const proceeding = model.proceedings.find(p => p.id === proceedingId);
   if (!party || !proceeding) throw new Error('Unknown party or proceeding.');
+  if (model.proceedings.filter(p => p.id === proceedingId).length !== 1) throw new Error('Proceeding identifier is not unique.');
   const roster = rosterByProceeding(model);
   if (!roster.get(proceedingId)?.has(partyId)) throw new Error('Party has no role in this proceeding.');
   // Party IDs from other proceedings are not shown in this report.
@@ -361,8 +375,9 @@ const DRAFT_DISCLAIMER =
 export function buildDraftingContext(model: CaseModel, proceedingId: string, partyId: string, purpose: DraftingPurpose): DraftingContext {
   const missing: string[] = [];
   const proceeding = model.proceedings.find(p => p.id === proceedingId);
-  if (!proceeding) missing.push('proceeding');
-  else if (!proceeding.fileNumber) missing.push('court file number');
+  if (model.proceedings.filter(p => p.id === proceedingId).length > 1) missing.push('unique proceeding identifier');
+  else if (!proceeding) missing.push('proceeding');
+  else if (!proceeding.fileNumber?.trim()) missing.push('court file number');
   if (!model.parties.some(p => p.id === partyId)) missing.push('party');
   else if (!rosterByProceeding(model).get(proceedingId)?.has(partyId)) missing.push('party role in this proceeding');
   if (proceeding) {
