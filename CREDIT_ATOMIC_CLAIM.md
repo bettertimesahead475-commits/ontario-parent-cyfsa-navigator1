@@ -141,3 +141,53 @@ PR #102 (`68a07775`) is unchanged, with both parent-analysis flags off. It merge
 | `api/services/creditAccounting.test.ts` | #103 replaced the inline fake with the production-shaped fake | Take #103's version. |
 
 Steps: merge `main` into #102's branch (a merge commit, no history rewrite), resolve the three files, run the full suite, `tsc` and build, and push. Keep #102 a draft, and do not merge it.
+
+## 9. Final staging gate (checklist)
+
+Status as of `79a65262`:
+
+| Item | Status |
+|---|---|
+| CI `test` on `79a65262` | Passed |
+| Staging project `nxfhvebzzobegubefcda` | INACTIVE (paused) |
+| Supabase organization plan | Free (`tier_free`) |
+| Restore charge | **Unverified.** The available tools do not expose a restore price. Public third-party guides say free projects restore without charge, but none is Supabase's own documentation. Needs owner confirmation from the Supabase dashboard before restoring. |
+| Six staging scenarios | Written and ready (`api/services/creditStaging.test.ts`). Synthetic UUID sessions and `vfy_` request IDs only. Refuses production. Not run. |
+| RPC permissions | Tested on a real PostgreSQL server (only `service_role` executes). Not yet tested on Supabase. |
+| Production deployment branch | `main` (verified: current production deployment built from `main` at `7cd63b4f`). Merging PR #103 deploys automatically. |
+| Function duration | `vercel.json` sets `maxDuration: 300` for `api/index.ts`. The deployment record does not show the applied value, and the plan tier cannot be read with the tools. Needs owner confirmation of the plan. |
+| PR #102 | Unchanged at `68a07775`, draft. Both feature flags off (not set in production; default off). |
+
+### 9.1 Single next action
+
+**Owner: confirm in the Supabase dashboard that restoring `cyfsa-navigator-staging` (`nxfhvebzzobegubefcda`, free plan) carries no charge, and authorize the restore.** Nothing else can proceed until staging is running.
+
+### 9.2 Production checklist (do not start until 9.1 is complete and the staging run passes)
+
+Pre-deploy:
+
+1. Owner approves applying `paid_credit_reservation_functions.sql` to production.
+2. Confirm production is ACTIVE_HEALTHY and that the target is `qboidsfpjuxeqtfotryj`.
+3. Take a read-only snapshot of the function list and the `free_usage` row count (counts only).
+
+Migration:
+
+4. Apply `paid_credit_reservation_functions.sql` to production (one transaction; adds functions only).
+5. Verify: all eight functions exist; `service_role` can execute the three public ones; `anon` and `authenticated` cannot.
+
+Deploy:
+
+6. Merge PR #103 to `main`. Production deploys from `main` automatically; the functions from step 4 must already exist.
+7. Wait for the deployment to reach READY. Verify it is built from the PR #103 merge commit.
+8. Verify the paid-analysis path fails safely or succeeds as expected for a synthetic check. Do not use a real customer session.
+9. Confirm the feature flags remain unset (`PARENT_ANALYSIS_ENABLED`, `VITE_PARENT_ANALYSIS_UI`).
+
+Rollback:
+
+- **Application:** revert the merge commit on `main` (Vercel redeploys the previous READY deployment, `dpl_9DgyuPFqjoyDw9B6XJjGXsZEdbyh` is the current one to return to if needed).
+- **Database:** leave the functions. They hold no data and nothing calls them after the application revert. Drop them with `paid_credit_reservation_functions.down.sql` only if the owner decides they must go.
+- **Stranded reservations:** returned by the 15-minute reconciliation on the next reservation for that session.
+
+### 9.3 PR #102 (after #103 is deployed and verified)
+
+Merge `main` into PR #102's branch, resolve the three conflicts listed in section 8.8, run the full suite, `tsc` and build, and push. Keep it a draft.
