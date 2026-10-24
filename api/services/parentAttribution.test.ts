@@ -405,3 +405,12 @@ describe('PR 100 follow-ups', () => {
     expect(issue?.detail).not.toMatch(/secret/i);
   });
 });
+
+describe('file number visibility', () => {
+  it('treats a file number made only of zero-width characters as missing', () => {
+    const m = twoProceedings();
+    m.proceedings[0].fileNumber = '​⁠﻿';
+    expect(validateCaseModel(m).some(i => i.code === 'MISSING_FILE_NUMBER' && i.proceedingId === 'P1')).toBe(true);
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B')).toEqual({ok: false, missing: ['court file number']});
+  });
+});

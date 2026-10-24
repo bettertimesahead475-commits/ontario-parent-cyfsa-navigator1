@@ -166,6 +166,11 @@ export function normalizeAlias(name: string): string {
     .toLowerCase();
 }
 
+/** A court file number counts only if it has visible text once invisible characters are removed. */
+function hasFileNumber(fileNumber: string | null): boolean {
+  return fileNumber !== null && normalizeAlias(fileNumber).length > 0;
+}
+
 /** Roles held by known parties in known proceedings, keyed by proceeding. */
 function rosterByProceeding(model: CaseModel): Map<string, Set<string>> {
   const parties = new Set(model.parties.map(p => p.id));
@@ -227,7 +232,7 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
     }
   }
   for (const p of model.proceedings) {
-    if (!p.fileNumber?.trim()) {
+    if (!hasFileNumber(p.fileNumber)) {
       issues.push({code: 'MISSING_FILE_NUMBER', proceedingId: p.id, recordId: null, partyIds: [], blocking: true, detail: 'The proceeding has no court file number.'});
     }
   }
@@ -377,7 +382,7 @@ export function buildDraftingContext(model: CaseModel, proceedingId: string, par
   const proceeding = model.proceedings.find(p => p.id === proceedingId);
   if (model.proceedings.filter(p => p.id === proceedingId).length > 1) missing.push('unique proceeding identifier');
   else if (!proceeding) missing.push('proceeding');
-  else if (!proceeding.fileNumber?.trim()) missing.push('court file number');
+  else if (!hasFileNumber(proceeding.fileNumber)) missing.push('court file number');
   if (!model.parties.some(p => p.id === partyId)) missing.push('party');
   else if (!rosterByProceeding(model).get(proceedingId)?.has(partyId)) missing.push('party role in this proceeding');
   if (proceeding) {
