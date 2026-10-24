@@ -180,7 +180,7 @@ describe("each referenced provision exists in the bundled text", () => {
 
 describe("the checks themselves fail on wrong references", () => {
   it("rejects a quote that the cited provision does not contain", () => {
-    // Section 81 exists and so does subsection (7), but the sidebar's "poverty" claim is not in s. 81(7).
+    // Section 81 exists and so does subsection (7). The poverty statement belongs to s. 74(2), so the quote is not in s. 81(7).
     expect(quoteFound("81", "7", "substantial risk to the child")).toBe(true);
     expect(quoteFound("81", "7", "poverty")).toBe(false);
     // The 81(7) wording is not in subsection (2) of the same section.
