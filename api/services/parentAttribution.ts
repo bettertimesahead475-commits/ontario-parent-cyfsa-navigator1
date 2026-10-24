@@ -84,29 +84,44 @@ export interface CaseModel {
 
 export type AttributionIssueCode =
   | 'NO_SUBJECT_IDENTIFIED'
+  | 'DUPLICATE_SUBJECT'
   | 'SUBJECT_NOT_IN_PROCEEDING'
   | 'UNKNOWN_PARTY'
   | 'UNKNOWN_PROCEEDING'
   | 'MISSING_LOCATOR'
   | 'MISSING_SOURCE_OF_STATEMENT'
+  | 'UNSUPPORTED_STATUS'
   | 'FINDING_WITHOUT_DOCUMENTARY_SOURCE'
   | 'ALIAS_COLLISION'
   | 'MISSING_FILE_NUMBER';
 
 export interface AttributionIssue {
   code: AttributionIssueCode;
+  /** The record the issue is about: an allegation, order, role party, proceeding, or a normalized name. */
   itemId: string;
+  /** The proceeding the issue belongs to. Null for issues across proceedings, such as alias collisions. */
+  proceedingId: string | null;
+  /** Parties the issue touches, so cross-proceeding issues can be scoped to the proceedings they affect. */
+  partyIds: string[];
   detail: string;
 }
 
-/** Normalizes a name for comparison: case, accents, punctuation and spacing are ignored. */
+/**
+ * Normalizes a name for comparison: case, accents, punctuation and spacing are ignored. Letters and
+ * digits in any script are kept, so non-Latin names are not reduced to an empty key.
+ */
 export function normalizeName(name: string): string {
   return name
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
+}
+
+/** Subjects with duplicates removed, so a repeated ID cannot make an allegation look shared. */
+function subjectsOf(a: Allegation): string[] {
+  return [...new Set(a.subjectPartyIds)];
 }
 
 /** Reports aliases shared by more than one party, and parties or items that point at missing records. */
@@ -116,10 +131,17 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
   const proceedingIds = new Set(model.proceedings.map(p => p.id));
   const rolesByProceeding = new Map<string, Set<string>>();
   for (const r of model.roles) {
-    if (!partyIds.has(r.partyId)) issues.push({code: 'UNKNOWN_PARTY', itemId: r.partyId, detail: 'Role refers to an unknown party.'});
-    if (!proceedingIds.has(r.proceedingId)) issues.push({code: 'UNKNOWN_PROCEEDING', itemId: r.proceedingId, detail: 'Role refers to an unknown proceeding.'});
+    if (!partyIds.has(r.partyId)) issues.push({code: 'UNKNOWN_PARTY', itemId: r.partyId, proceedingId: r.proceedingId, partyIds: [r.partyId], detail: 'Role refers to an unknown party.'});
+    if (!proceedingIds.has(r.proceedingId)) issues.push({code: 'UNKNOWN_PROCEEDING', itemId: r.proceedingId, proceedingId: r.proceedingId, partyIds: [r.partyId], detail: 'Role refers to an unknown proceeding.'});
     if (!rolesByProceeding.has(r.proceedingId)) rolesByProceeding.set(r.proceedingId, new Set());
     rolesByProceeding.get(r.proceedingId)!.add(r.partyId);
+  }
+  for (const o of model.orders) {
+    const named = [...o.affectsPartyIds, ...(o.proposedCaregiverPartyId ? [o.proposedCaregiverPartyId] : [])];
+    if (!proceedingIds.has(o.proceedingId)) issues.push({code: 'UNKNOWN_PROCEEDING', itemId: o.id, proceedingId: o.proceedingId, partyIds: named, detail: 'Order refers to an unknown proceeding.'});
+    for (const pid of named) {
+      if (!partyIds.has(pid)) issues.push({code: 'UNKNOWN_PARTY', itemId: o.id, proceedingId: o.proceedingId, partyIds: [pid], detail: `Order names unknown party ${pid}.`});
+    }
   }
 
   const claimants = new Map<string, Set<string>>();
@@ -133,47 +155,57 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
   }
   for (const [key, ids] of claimants) {
     if (ids.size > 1) {
-      issues.push({code: 'ALIAS_COLLISION', itemId: key, detail: `Name "${key}" matches ${ids.size} parties; mentions cannot be attributed by name.`});
+      issues.push({code: 'ALIAS_COLLISION', itemId: key, proceedingId: null, partyIds: [...ids], detail: `Name "${key}" matches ${ids.size} parties; mentions cannot be attributed by name.`});
     }
   }
 
   for (const proceeding of model.proceedings) {
     if (!proceeding.fileNumber) {
-      issues.push({code: 'MISSING_FILE_NUMBER', itemId: proceeding.id, detail: 'Proceeding has no court file number.'});
+      issues.push({code: 'MISSING_FILE_NUMBER', itemId: proceeding.id, proceedingId: proceeding.id, partyIds: [], detail: 'Proceeding has no court file number.'});
     }
   }
 
   for (const a of model.allegations) {
+    const subjects = subjectsOf(a);
+    const base = {itemId: a.id, proceedingId: a.proceedingId, partyIds: subjects};
     if (!proceedingIds.has(a.proceedingId)) {
-      issues.push({code: 'UNKNOWN_PROCEEDING', itemId: a.id, detail: 'Allegation refers to an unknown proceeding.'});
+      issues.push({...base, code: 'UNKNOWN_PROCEEDING', detail: 'Allegation refers to an unknown proceeding.'});
       continue;
     }
     const roster = rolesByProceeding.get(a.proceedingId) ?? new Set<string>();
-    if (a.subjectPartyIds.length === 0) {
-      issues.push({code: 'NO_SUBJECT_IDENTIFIED', itemId: a.id, detail: 'No party is recorded as the subject of this allegation.'});
+    if (subjects.length === 0) {
+      issues.push({...base, code: 'NO_SUBJECT_IDENTIFIED', detail: 'No party is recorded as the subject of this allegation.'});
     }
-    for (const pid of a.subjectPartyIds) {
-      if (!partyIds.has(pid)) issues.push({code: 'UNKNOWN_PARTY', itemId: a.id, detail: `Subject ${pid} is not a known party.`});
-      else if (!roster.has(pid)) issues.push({code: 'SUBJECT_NOT_IN_PROCEEDING', itemId: a.id, detail: `Subject ${pid} has no role in this proceeding.`});
+    if (subjects.length !== a.subjectPartyIds.length) {
+      issues.push({...base, code: 'DUPLICATE_SUBJECT', detail: 'A subject is recorded more than once; each party is counted once.'});
     }
-    if (!a.madeBy) issues.push({code: 'MISSING_SOURCE_OF_STATEMENT', itemId: a.id, detail: 'The person or document making the statement is not recorded.'});
+    for (const pid of subjects) {
+      if (!partyIds.has(pid)) issues.push({...base, code: 'UNKNOWN_PARTY', detail: `Subject ${pid} is not a known party.`});
+      else if (!roster.has(pid)) issues.push({...base, code: 'SUBJECT_NOT_IN_PROCEEDING', detail: `Subject ${pid} has no role in this proceeding.`});
+    }
+    if (!a.madeBy) issues.push({...base, code: 'MISSING_SOURCE_OF_STATEMENT', detail: 'The person or document making the statement is not recorded.'});
     if (!a.source || a.source.page === null || !a.source.paragraph) {
-      issues.push({code: 'MISSING_LOCATOR', itemId: a.id, detail: 'Page or paragraph locator is missing.'});
+      issues.push({...base, code: 'MISSING_LOCATOR', detail: 'Page or paragraph locator is missing.'});
     }
     if (a.kind === 'FINDING' && (!a.source || a.classification !== 'DOCUMENTARY')) {
-      issues.push({code: 'FINDING_WITHOUT_DOCUMENTARY_SOURCE', itemId: a.id, detail: 'Recorded as a finding without a documentary source; shown as unresolved.'});
+      issues.push({...base, code: 'FINDING_WITHOUT_DOCUMENTARY_SOURCE', detail: 'Recorded as a finding without a documentary source; shown as unresolved.'});
+    }
+    if ((a.status === 'ADMITTED' || a.status === 'CORROBORATED') && !a.source) {
+      issues.push({...base, code: 'UNSUPPORTED_STATUS', detail: `Recorded as ${a.status} without a source; shown as unresolved.`});
     }
   }
   return issues;
 }
 
 /**
- * The status an allegation may be shown with. A finding without documentary support, or an
- * allegation whose subject is not identified, is shown as UNRESOLVED regardless of what was recorded.
+ * The status an allegation may be shown with. A finding without documentary support, an allegation
+ * whose subject is not identified, and an admitted or corroborated status without a source are all
+ * shown as UNRESOLVED regardless of what was recorded.
  */
 export function effectiveStatus(a: Allegation): AllegationStatus {
-  if (a.subjectPartyIds.length === 0) return 'UNRESOLVED';
+  if (subjectsOf(a).length === 0) return 'UNRESOLVED';
   if (a.kind === 'FINDING' && (!a.source || a.classification !== 'DOCUMENTARY')) return 'UNRESOLVED';
+  if ((a.status === 'ADMITTED' || a.status === 'CORROBORATED') && !a.source) return 'UNRESOLVED';
   return a.status;
 }
 
@@ -205,12 +237,16 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
   if (roleIn(partyId).length === 0) throw new Error('Party has no role in this proceeding.');
 
   const inProceeding = model.allegations.filter(a => a.proceedingId === proceedingId);
-  const scopedIds = new Set([proceedingId, ...inProceeding.map(a => a.id)]);
-  const issues = validateCaseModel(model).filter(i => scopedIds.has(i.itemId));
+  const roster = new Set(model.roles.filter(r => r.proceedingId === proceedingId).map(r => r.partyId));
+  // Issues belong to this proceeding, or are cross-proceeding issues (such as an alias collision)
+  // that touch a party in this proceeding. Other proceedings' issues are not shown here.
+  const issues = validateCaseModel(model).filter(i =>
+    i.proceedingId === proceedingId || (i.proceedingId === null && i.partyIds.some(pid => roster.has(pid))),
+  );
 
-  const involving = inProceeding.filter(a => a.subjectPartyIds.includes(partyId));
-  const specific = involving.filter(a => a.subjectPartyIds.length === 1);
-  const shared = involving.filter(a => a.subjectPartyIds.length > 1);
+  const involving = inProceeding.filter(a => subjectsOf(a).includes(partyId));
+  const specific = involving.filter(a => subjectsOf(a).length === 1);
+  const shared = involving.filter(a => subjectsOf(a).length > 1);
 
   return {
     proceedingId,
@@ -241,6 +277,14 @@ export type DraftingContext =
       disclaimer: string;
     };
 
+const CONFLICT_CODES: AttributionIssueCode[] = [
+  'UNKNOWN_PARTY',
+  'UNKNOWN_PROCEEDING',
+  'SUBJECT_NOT_IN_PROCEEDING',
+  'DUPLICATE_SUBJECT',
+  'ALIAS_COLLISION',
+];
+
 const DRAFT_DISCLAIMER =
   'AI-generated drafting context for a parent-specific document. It is not legal advice, has not been reviewed by counsel, and is not a court-approved document. Confirm the applicable court form and its requirements before use.';
 
@@ -257,6 +301,12 @@ export function buildDraftingContext(model: CaseModel, proceedingId: string, par
   else if (!model.roles.some(r => r.partyId === partyId && r.proceedingId === proceedingId)) missing.push('party role in this proceeding');
   const hasProposal = model.orders.some(o => o.proceedingId === proceedingId && (o.affectsPartyIds.includes(partyId) || o.proposedCaregiverPartyId === partyId));
   if (!hasProposal) missing.push('proposed arrangement or requested order for this party');
+  // Attribution conflicts that change who a document is about block drafting. Gaps such as a missing
+  // locator do not block it; they are shown in the report's unresolved list.
+  const conflict = validateCaseModel(model).some(i =>
+    CONFLICT_CODES.includes(i.code) && (i.proceedingId === proceedingId || i.proceedingId === null) && i.partyIds.includes(partyId),
+  );
+  if (conflict) missing.push('resolve attribution conflicts involving this party');
   if (missing.length > 0) return {ok: false, missing};
   return {
     ok: true,

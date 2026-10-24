@@ -245,3 +245,86 @@ describe('Form 33B and Plan of Care drafting contexts', () => {
     expect(ctx).toEqual({ok: false, missing: ['party role in this proceeding']});
   });
 });
+
+describe('review fixes', () => {
+  it('counts a repeated subject once and flags it', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'd1', subjectPartyIds: ['A', 'A']})];
+    const a = buildParentReport(m, 'P1', 'A');
+    expect(a.specificAllegations.map(x => x.id)).toEqual(['d1']);
+    expect(a.sharedAllegations).toEqual([]);
+    expect(validateCaseModel(m).map(i => i.code)).toContain('DUPLICATE_SUBJECT');
+  });
+
+  it('keeps a shared allegation out of the report of a party it does not name', () => {
+    const m = proceeding1();
+    m.parties = [A, B, {id: 'C', displayName: 'Parent C', aliases: []}];
+    m.roles.push({proceedingId: 'P1', partyId: 'C', role: 'EXTENDED_FAMILY'});
+    m.allegations = [allegation({id: 's1', subjectPartyIds: ['A', 'B']})];
+    const c = buildParentReport(m, 'P1', 'C');
+    expect(c.sharedAllegations).toEqual([]);
+    expect(c.specificAllegations).toEqual([]);
+  });
+
+  it('shows an admitted or corroborated allegation with no source as unresolved', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'n1', subjectPartyIds: ['A'], status: 'CORROBORATED', source: null})];
+    const a = buildParentReport(m, 'P1', 'A');
+    expect(a.specificAllegations[0].status).toBe('UNRESOLVED');
+    expect(a.unresolved.map(i => i.code)).toContain('UNSUPPORTED_STATUS');
+  });
+
+  it('treats a documentary finding with no source as unresolved', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'f3', kind: 'FINDING', subjectPartyIds: ['A'], status: 'ADMITTED', classification: 'DOCUMENTARY', source: null})];
+    expect(buildParentReport(m, 'P1', 'A').specificAllegations[0].status).toBe('UNRESOLVED');
+  });
+
+  it('shows an alias collision in the report of a party it affects', () => {
+    const m = proceeding1();
+    m.parties = [{...A, aliases: ['Alex Morgan']}, {...B, aliases: ['Alex Morgan']}];
+    const a = buildParentReport(m, 'P1', 'A');
+    expect(a.unresolved.map(i => i.code)).toContain('ALIAS_COLLISION');
+  });
+
+  it('does not show another proceeding\'s allegation problems in this report', () => {
+    const m = withProceeding2(proceeding1());
+    m.allegations = m.allegations.map(x => (x.id === 'b1' ? {...x, source: null} : x));
+    const a1 = buildParentReport(m, 'P1', 'A');
+    expect(a1.unresolved.some(i => i.itemId === 'b1')).toBe(false);
+    expect(buildParentReport(m, 'P2', 'B').unresolved.some(i => i.itemId === 'b1')).toBe(true);
+  });
+
+  it('matches non-Latin names instead of dropping them to an empty key', () => {
+    expect(normalizeName('Иван')).toBe('иван');
+    const m = proceeding1();
+    m.parties = [{id: 'A', displayName: 'Иван', aliases: []}, {id: 'B', displayName: 'Иван', aliases: []}];
+    expect(validateCaseModel(m).some(i => i.code === 'ALIAS_COLLISION')).toBe(true);
+  });
+
+  it('does not treat different non-Latin names as the same because they share a prefix', () => {
+    const m = proceeding1();
+    m.parties = [{id: 'A', displayName: 'Parent 李', aliases: []}, {id: 'B', displayName: 'Parent 王', aliases: []}];
+    expect(validateCaseModel(m).some(i => i.code === 'ALIAS_COLLISION')).toBe(false);
+  });
+
+  it('flags an order that names an unknown party or proceeding', () => {
+    const m = proceeding1();
+    m.orders = [{...m.orders[0], proposedCaregiverPartyId: 'Z'}];
+    expect(validateCaseModel(m).some(i => i.code === 'UNKNOWN_PARTY' && i.partyIds.includes('Z'))).toBe(true);
+  });
+
+  it('blocks drafting when an attribution conflict involves the party', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'x2', subjectPartyIds: ['A', 'A']})];
+    const ctx = buildDraftingContext(m, 'P1', 'A', 'FORM_33B');
+    expect(ctx.ok).toBe(false);
+    expect(ctx).toEqual({ok: false, missing: ['resolve attribution conflicts involving this party']});
+  });
+
+  it('does not block drafting for a routine gap such as a missing locator', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'l2', subjectPartyIds: ['A'], source: src(null, null)})];
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B').ok).toBe(true);
+  });
+});
