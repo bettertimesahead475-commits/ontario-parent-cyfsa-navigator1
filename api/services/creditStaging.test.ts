@@ -29,7 +29,8 @@ async function loadCredit(): Promise<CreditModule> {
 }
 
 describe.skipIf(!enabled)("credit reservation against a real Supabase project (staging only)", () => {
-  const sessionId = `vfy_${randomUUID()}`;
+  // navigator_paid_sessions.id is a uuid, so synthetic session ids are uuids too.
+  const sessionId = randomUUID();
 
   beforeAll(() => {
     process.env.SUPABASE_URL = stagingUrl;
@@ -58,7 +59,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
   });
 
   it("one request id sent to three instances at once is charged once", async () => {
-    const retrySession = `vfy_retry_${randomUUID()}`;
+    const retrySession = randomUUID();
     const instances = await Promise.all(Array.from({ length: 3 }, () => loadCredit()));
     await Promise.allSettled(instances.map((credit) => reserve(credit, "vfy_same_request", retrySession)));
     const credit = await loadCredit();
@@ -66,7 +67,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
   });
 
   it("a failed analysis gives its credit back; a finished one keeps it", async () => {
-    const releaseSession = `vfy_release_${randomUUID()}`;
+    const releaseSession = randomUUID();
     const credit = await loadCredit();
     const failed = await reserve(credit, "vfy_fails", releaseSession);
     await credit.releaseAnalysisReservation({ sessionId: releaseSession, requestId: "vfy_fails", reservationId: failed.reservationId, reason: "timeout" });
@@ -94,7 +95,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
   // Exercises the prefix listing against real PostgREST: a stale reservation with a recorded unit is found and returned
   // on the next reserve. The row is written with the same statements the store uses; nothing is mocked.
   it("a crashed reservation on staging is reconciled by the next reserve", async () => {
-    const reconcileSession = `vfy_reconcile_${randomUUID()}`;
+    const reconcileSession = randomUUID();
     const { getSupabase } = await import("./access.js");
     const { createHash } = await import("node:crypto");
     const digest = createHash("sha256").update("vfy_crashed").digest("hex").slice(0, 32);
@@ -112,19 +113,32 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
     await db.from("free_usage").delete().like("uid", `*${reconcileSession}*`);
   });
 
-  // Pro: forensic analyses count per UTC calendar month; quick reviews draw on no counter.
-  it("a Pro session's quick reviews are not counted and its forensic allowance is per month", async () => {
-    const proSession = `vfy_pro_${randomUUID()}`;
-    const credit = await loadCredit();
-    for (let i = 0; i < 2; i++) {
-      await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: `vfy_pq_${i}`, analysisType: "quick" });
-    }
-    const cycle = new Date().toISOString().slice(0, 7);
-    const pro = await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: "vfy_pf_1", analysisType: "forensic" });
-    expect(pro.billingCycle).toBe(cycle);
+  // Pro: forensic analyses renew on the session's own renewal date (issued_at), not the calendar month.
+  it("a Pro session's quick reviews are not counted, and its forensic allowance renews on its anniversary", async () => {
+    const proSession = randomUUID();
+    const issued = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
     const { getSupabase } = await import("./access.js");
-    const row = await getSupabase().from("free_usage").select("analyses_used").eq("uid", `paid_session_${proSession}_cycle_${cycle}`).retry(false);
-    expect(row.data?.[0]?.analyses_used).toBe(1);
-    await getSupabase().from("free_usage").delete().like("uid", `*${proSession}*`);
+    const db = getSupabase();
+    const row = await db.from("navigator_paid_sessions").insert({
+      id: proSession,
+      firebase_uid: "vfy-uid",
+      tier: "Pro",
+      issued_at: issued.toISOString(),
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+    expect(row.error).toBeNull();
+    try {
+      const credit = await loadCredit();
+      for (let i = 0; i < 2; i++) {
+        await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: `vfy_pq_${i}`, analysisType: "quick" });
+      }
+      const pro = await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: "vfy_pf_1", analysisType: "forensic" });
+      expect(pro.billingCycle).toBe(issued.toISOString().slice(0, 10));
+      const period = await db.from("free_usage").select("analyses_used").eq("uid", `paid_session_${proSession}_period_${issued.toISOString().slice(0, 10)}`).retry(false);
+      expect(period.data?.[0]?.analyses_used).toBe(1);
+    } finally {
+      await db.from("free_usage").delete().like("uid", `*${proSession}*`);
+      await db.from("navigator_paid_sessions").delete().eq("id", proSession);
+    }
   });
 });

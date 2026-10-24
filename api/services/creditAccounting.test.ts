@@ -22,6 +22,7 @@ const currentDb: { ref: any } = vi.hoisted(() => ({ ref: null }));
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     from: (table: string) => currentDb.ref.from(table),
+    rpc: (name: string, args: any) => currentDb.ref.rpc(name, args),
   }),
 }));
 

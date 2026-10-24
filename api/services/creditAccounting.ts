@@ -1,60 +1,38 @@
 // ---------------------------------------------------------------------------
 // Server-Authoritative Credit Accounting
 //
-// Enforces non-negotiable CYFSA Navigator commercial limits:
-// - Document Analyzer Basic ($19.99 CAD): Exactly 3 analyses. 4th blocked server-side.
-// - Document Analyzer Premium ($49.99 CAD): Exactly 5 analyses. 6th blocked server-side.
-// - Individual / Family Case Access ($149 CAD/mo): 5 Forensic Analyses per monthly billing cycle.
-// - Community Sponsorships (Community 5/10/25): 5 Forensic Analyses per family per month.
+// Enforces commercial limits:
+// - Document Analyzer Basic ($19.99 CAD): exactly 3 analyses.
+// - Document Analyzer Premium ($49.99 CAD): exactly 5 analyses (quick and forensic together).
+// - Individual / Family Case Access ($149 CAD/mo) and Community Sponsorships (5/10/25): 5 forensic analyses per
+//   monthly billing cycle, renewing on the customer's own renewal date. Quick reviews are not limited.
 //
-// Source of truth: one counter in free_usage per allowance scope.
-//   - Basic and Premium: paid_session_<id>_total, all analysis types together.
-//   - Pro and Community: paid_session_<id>_cycle_<YYYY-MM>, forensic analyses only, per UTC calendar month.
-//     Quick reviews on those plans are unlimited and draw on no counter.
-// Reserving an analysis increments its counter with a compare-and-set update, so two instances can never both
-// take the last unit. Each request also has a marker row (keyed by a hash of its request id) whose state records
-// whether it is reserved, consumed or released, and which counter its unit came from. Markers make retries
-// idempotent, and let a release return exactly the unit that was taken.
+// Every reservation, release and finalization is one atomic PostgreSQL function call (see
+// supabase/migrations_pending_approval/paid_credit_reservation_functions.sql). A function runs in one transaction
+// under a per-session advisory lock, so a crash, a lost connection or a concurrent request cannot leave a counter
+// moved without its marker, or the reverse.
 //
-// Pipeline: Authenticate -> Validate Entitlement -> Reserve (marker + counter) -> Process
-//           -> Finalize (marker: reserved -> consumed), or Release on failure (marker -> released, counter -1).
-// Only the attempt that owns a reservation may run the model or release it.
-// Fail-closed: if the reservation cannot be written, AI processing never begins; if the charge cannot be
-// recorded, the result is withheld.
-// A reservation whose claim never recorded its unit is reclaimed after CLAIM_WINDOW_MS. A reservation
-// that has been touched within RESERVATION_TTL_MS is never reclaimed.
+// Billing cycle anchor: a paid session's issued_at (set when the access code is redeemed). Each renewal is a new
+// session, so the cycle for a monthly plan starts on that date and renews on the same day each month (UTC).
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
 import { getSupabase } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 import { withTransientRetry } from "./transientRetry.js";
-import {
-  backoff,
-  claimUsageRow,
-  compareAndSetCounter,
-  decrementCounter,
-  listMarkers,
-  readUsageRow,
-  setMarkerSlot,
-  transitionMarker,
-  usageUnavailable,
-  type UsageRow,
-} from "./freeUsageStore.js";
+import { readUsageRow, usageUnavailable, type UsageRow } from "./freeUsageStore.js";
 
 export const BASIC_ANALYSES_LIMIT = 3;
 export const PREMIUM_ANALYSES_LIMIT = 5;
 export const CASE_ACCESS_FORENSIC_LIMIT = 5;
 
-// Longer than the 300 s function limit in vercel.json, so a live analysis is never reclaimed.
+// Longer than the 300 s function limit in vercel.json. A reservation with a recorded unit that has not been touched
+// for this long belongs to a request that can no longer be running.
+export const RESERVATION_TTL = "15 minutes";
 export const RESERVATION_TTL_MS = 15 * 60 * 1000;
+// A claim that records no unit within this window is abandoned.
+export const CLAIM_WINDOW = "60 seconds";
 
-const RESERVED_PREFIX = "reservation:reserved";
-const MARKER_CONSUMED = "reservation:consumed";
-const MARKER_RELEASED = "reservation:released";
-// A claim records its unit within milliseconds. Anything still unrecorded after this long was abandoned.
-const CLAIM_WINDOW_MS = 60 * 1000;
-const MAX_CLAIM_ATTEMPTS = 5;
 const SAFE_ID = /^[A-Za-z0-9_-]+$/;
 
 export interface PackageAllowance {
@@ -103,81 +81,106 @@ export interface ReservationResult {
   tier: string;
   creditsRemainingAfterReservation: number;
   alreadyFinalized?: boolean;
-  /** Calendar month (YYYY-MM) the unit was drawn from, for Pro and Community forensic analyses; otherwise null. */
+  /** Billing period (start date, YYYY-MM-DD) the unit was drawn from, for monthly forensic analyses; otherwise null. */
   billingCycle: string | null;
 }
 
-export function resetCreditAccountingCachesForTesting(): void {
-  // Nothing is cached in memory: every decision reads the shared database.
-}
-
-// ---- Counter scope ---------------------------------------------------------------------------------
-// Basic and Premium: one total per session (exact package count, quick and forensic together).
-// Pro and Community: forensic analyses only, counted per calendar month (UTC). That matches the
-// per-cycle key usage.ts uses for forensic analyses. Quick reviews on these plans are unlimited, so they
-// do not draw on a counter.
+// ---- Clock and billing periods ----------------------------------------------------------------------------------
 
 let clock: () => Date = () => new Date();
 
-/** Test hook: pins the billing clock. Pass null to restore the real clock. */
+/** Test hook: pins the clock. Pass null to restore the real clock. */
 export function setCreditClockForTesting(now: (() => Date) | null): void {
   clock = now ?? (() => new Date());
 }
 
-function billingCycle(): string {
-  return clock().toISOString().slice(0, 7);
+/**
+ * Start of the billing period that contains `now`, for a plan anchored on `issuedAt`. Periods are whole calendar months
+ * from the issue date (UTC). A day that a month does not have is the month's last day (31 January renews on 28/29
+ * February, then 31 March). Returned as YYYY-MM-DD.
+ */
+export function billingPeriodStart(issuedAt: Date, now: Date): string {
+  const anchor = (k: number): number => {
+    const y = issuedAt.getUTCFullYear();
+    const m = issuedAt.getUTCMonth() + k;
+    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    const d = Math.min(issuedAt.getUTCDate(), lastDay);
+    return Date.UTC(y, m, d, issuedAt.getUTCHours(), issuedAt.getUTCMinutes(), issuedAt.getUTCSeconds(), issuedAt.getUTCMilliseconds());
+  };
+  const t = now.getTime();
+  let k = Math.max(
+    0,
+    (now.getUTCFullYear() - issuedAt.getUTCFullYear()) * 12 + (now.getUTCMonth() - issuedAt.getUTCMonth())
+  );
+  while (k > 0 && anchor(k) > t) k--;
+  while (anchor(k + 1) <= t) k++;
+  return new Date(anchor(k)).toISOString().slice(0, 10);
 }
 
-type CounterScope = { kind: "total" } | { kind: "cycle"; cycle: string } | { kind: "none" };
+// ---- Counter scopes ----------------------------------------------------------------------------------------------
+// 'total'  : Basic and Premium, one total per session (all analysis types together).
+// 'period:<YYYY-MM-DD>' : Pro and Community forensic analyses, per billing period.
+// 'none'   : Pro and Community quick reviews, which are not limited.
 
-function scopeFor(allowance: PackageAllowance, analysisType: "quick" | "forensic"): CounterScope {
-  if (!allowance.isMonthly) return { kind: "total" };
-  return analysisType === "forensic" ? { kind: "cycle", cycle: billingCycle() } : { kind: "none" };
+function scopeFor(allowance: PackageAllowance, analysisType: "quick" | "forensic", issuedAt: Date | null): string {
+  if (!allowance.isMonthly) return "total";
+  if (analysisType !== "forensic") return "none";
+  if (!issuedAt) {
+    throw usageUnavailable("navigator_paid_sessions issued_at", new Error("monthly plan without an issue date"));
+  }
+  return `period:${billingPeriodStart(issuedAt, clock())}`;
 }
 
-function reservedState(scope: CounterScope): string {
-  if (scope.kind === "total") return RESERVED_PREFIX;
-  if (scope.kind === "cycle") return `${RESERVED_PREFIX}:cycle:${scope.cycle}`;
-  return `${RESERVED_PREFIX}:none`;
+function counterKeyFor(sessionId: string, scope: string): string | null {
+  if (scope === "none") return null;
+  if (scope === "total") return `paid_session_${sessionId}_total`;
+  return `paid_session_${sessionId}_period_${scope.slice("period:".length)}`;
 }
 
-function isReservedState(state: string | null | undefined): boolean {
-  return typeof state === "string" && state.startsWith(RESERVED_PREFIX);
-}
-
-function scopeFromState(state: string): CounterScope | null {
-  if (state === RESERVED_PREFIX) return { kind: "total" };
-  if (state === `${RESERVED_PREFIX}:none`) return { kind: "none" };
-  const match = /^reservation:reserved:cycle:(\d{4}-\d{2})$/.exec(state);
-  return match ? { kind: "cycle", cycle: match[1] } : null;
-}
-
-function counterKeyFor(sessionId: string, scope: CounterScope): string | null {
-  if (scope.kind === "none") return null;
-  if (scope.kind === "total") return `paid_session_${sessionId}_total`;
-  return `paid_session_${sessionId}_cycle_${scope.cycle}`;
-}
-
-function isOlderThan(row: UsageRow, ms: number): boolean {
-  const touched = Date.parse(row.last_analysis_at ?? row.first_analysis_at ?? "") || 0;
-  return clock().getTime() - touched > ms;
-}
-
-export function usageCounterKey(sessionId: string): string {
-  return `paid_session_${sessionId}_total`;
-}
-
-function markerPrefix(sessionId: string): string {
-  return `paid_res_${sessionId}_`;
-}
-
-function markerKey(sessionId: string, requestId: string): string {
+/** Marker row key for one request. Must match paid_marker_uid() in the SQL migration. */
+export function markerKey(sessionId: string, requestId: string): string {
   const digest = createHash("sha256").update(requestId).digest("hex").slice(0, 32);
-  return `${markerPrefix(sessionId)}${digest}`;
+  return `paid_res_${sessionId}_${digest}`;
 }
 
-function isStale(row: UsageRow): boolean {
-  return isOlderThan(row, RESERVATION_TTL_MS);
+// ---- Database access ---------------------------------------------------------------------------------------------
+
+/** Single attempt. Writes are not retried: an ambiguous outcome fails closed, and the function is idempotent by request. */
+async function rpc<T>(name: string, args: Record<string, unknown>): Promise<T> {
+  let result: { data: unknown; error: any };
+  try {
+    result = await getSupabase().rpc(name, args);
+  } catch (err) {
+    throw usageUnavailable(name, err);
+  }
+  if (result.error) {
+    throw usageUnavailable(name, result.error);
+  }
+  return result.data as T;
+}
+
+/** Reads the session row. Any failure other than "no such row" fails closed. */
+async function readSession(sessionId: string): Promise<{ revoked: boolean; issuedAt: Date | null }> {
+  try {
+    return await withTransientRetry(async () => {
+      const { data, error } = await getSupabase()
+        .from("navigator_paid_sessions")
+        .select("id, tier, revoked_at, issued_at")
+        .eq("id", sessionId)
+        .retry(false)
+        .maybeSingle();
+      if (error) {
+        throw Object.assign(new Error(`navigator_paid_sessions read failed: ${error.message}`), { supabaseError: error, statusCode: 503 });
+      }
+      return {
+        revoked: Boolean(data?.revoked_at),
+        issuedAt: data?.issued_at ? new Date(data.issued_at) : null,
+      };
+    });
+  } catch (err: any) {
+    if (err instanceof LifecycleError) throw err;
+    throw usageUnavailable("navigator_paid_sessions read", err?.supabaseError ?? err);
+  }
 }
 
 function limitReached(): LifecycleError {
@@ -188,55 +191,33 @@ function limitReached(): LifecycleError {
   );
 }
 
-/** Reads the session row. Any failure other than "no such row" fails closed. */
-async function readSessionRevocation(sessionId: string): Promise<{ revoked: boolean }> {
-  try {
-    return await withTransientRetry(async () => {
-      const { data, error } = await getSupabase()
-        .from("navigator_paid_sessions")
-        .select("id, tier, revoked_at")
-        .eq("id", sessionId)
-        .retry(false)
-        .maybeSingle();
-      if (error) {
-        throw Object.assign(new Error(`navigator_paid_sessions read failed: ${error.message}`), { supabaseError: error, statusCode: 503 });
-      }
-      return { revoked: Boolean(data?.revoked_at) };
-    });
-  } catch (err: any) {
-    if (err instanceof LifecycleError) throw err;
-    throw usageUnavailable("navigator_paid_sessions read", err?.supabaseError ?? err);
-  }
+function suspendedBy(reason: string): LifecycleError {
+  return new LifecycleError(
+    403,
+    "ACCOUNT_SUSPENDED",
+    reason || "Your account access has been temporarily suspended pending payment verification. Please contact support at chris@cyfsanavigator.com."
+  );
 }
 
 /**
- * Returns the current credit balance for a paid session.
- * Suspension is recorded as a suspended_<id> row (the administrative fallback used while
- * navigator_paid_sessions has no suspension columns).
+ * Current balance for a paid session. For monthly plans this is the current billing period's forensic count.
  */
 export async function getCreditBalance(sessionId: string, tier: string): Promise<CreditBalance> {
   const allowance = getPackageAllowance(tier);
   const base = { sessionId, tier: allowance.tier, allowsForensic: allowance.allowsForensic, isMonthly: allowance.isMonthly };
 
-  const session = await readSessionRevocation(sessionId);
+  const session = await readSession(sessionId);
   if (session.revoked) {
     return { ...base, creditsGranted: 0, creditsConsumed: 0, creditsRemaining: 0, isSuspended: true, suspendedReason: "Session revoked" };
   }
-
   const suspension = await readUsageRow(`suspended_${sessionId}`);
   if (suspension) {
-    return {
-      ...base,
-      creditsGranted: 0,
-      creditsConsumed: 0,
-      creditsRemaining: 0,
-      isSuspended: true,
-      suspendedReason: suspension.email || "Account suspended",
-    };
+    return { ...base, creditsGranted: 0, creditsConsumed: 0, creditsRemaining: 0, isSuspended: true, suspendedReason: suspension.email || "Account suspended" };
   }
 
-  const scope: CounterScope = allowance.isMonthly ? { kind: "cycle", cycle: billingCycle() } : { kind: "total" };
-  const usage = await readUsageRow(counterKeyFor(sessionId, scope) as string);
+  const scope = scopeFor(allowance, "forensic", session.issuedAt);
+  const counter = counterKeyFor(sessionId, scope);
+  const usage = counter ? await readUsageRow(counter) : null;
   const consumed = usage?.analyses_used ?? 0;
   const granted = allowance.totalLimit;
   return {
@@ -249,71 +230,23 @@ export async function getCreditBalance(sessionId: string, tier: string): Promise
   };
 }
 
-function reservationFor(
-  sessionId: string,
-  requestId: string,
-  tier: string,
-  slotIndex: number,
-  remaining: number,
-  alreadyFinalized: boolean,
-  owned: boolean,
-  billingCycle: string | null
-): ReservationResult {
-  return {
-    // Only the attempt that created or re-took the reservation owns it and may release it.
-    reservationId: owned ? markerKey(sessionId, requestId) : "",
-    sessionId,
-    requestId,
-    slotIndex,
-    tier,
-    creditsRemainingAfterReservation: remaining,
-    alreadyFinalized,
-    billingCycle,
-  };
-}
+// ---- Reservation lifecycle ---------------------------------------------------------------------------------------
 
-function cycleOf(scope: CounterScope): string | null {
-  return scope.kind === "cycle" ? scope.cycle : null;
+interface ReserveRpcResult {
+  status: "reserved" | "joined" | "consumed" | "in_progress" | "limit";
+  reservation_id: string | null;
+  slot?: number;
+  counter_used?: number | null;
 }
 
 /**
- * Releases one reservation: marker reserved -> released, then the counter it drew on -1 if it claimed a unit.
- * The marker's own state says which counter that was, so a release after a billing-cycle change still
- * returns the unit to the right counter. Only the caller whose transition succeeds gives a unit back.
- */
-async function releaseMarker(sessionId: string, key: string): Promise<boolean> {
-  const marker = await readUsageRow(key);
-  if (!marker || !isReservedState(marker.email)) return false;
-  if (!(await transitionMarker(key, marker.email as string, MARKER_RELEASED))) return false;
-  const scope = scopeFromState(marker.email as string);
-  const counter = scope ? counterKeyFor(sessionId, scope) : null;
-  if (counter && marker.analyses_used > 0) {
-    await decrementCounter(counter);
-  }
-  return true;
-}
-
-/** Releases reservations left by requests that never finished. Returns how many were released. */
-async function releaseStaleReservations(sessionId: string, exceptKey: string): Promise<number> {
-  const stale = (await listMarkers(markerPrefix(sessionId), RESERVED_PREFIX)).filter(
-    (row) => row.uid !== exceptKey && isStale(row)
-  );
-  let released = 0;
-  for (const row of stale) {
-    if (await releaseMarker(sessionId, row.uid)) released++;
-  }
-  return released;
-}
-
-/**
- * Atomically reserves 1 credit for an analysis request.
- * MUST be called BEFORE any AI processing begins.
- * Throws 'ANALYSIS_LIMIT_REACHED' if no credits remain, 'ACCOUNT_SUSPENDED' if the account is suspended,
- * 'ANALYSIS_IN_PROGRESS' (409) if the same request is still being claimed, and 503
- * 'USAGE_SERVICE_TEMPORARILY_UNAVAILABLE' if the reservation cannot be recorded.
+ * Atomically reserves one unit for an analysis request. MUST be called BEFORE any AI processing begins.
+ * Throws 402 ANALYSIS_LIMIT_REACHED when the allowance is used up, 403 ACCOUNT_SUSPENDED, 409 ANALYSIS_IN_PROGRESS when
+ * the same request is still being claimed, and 503 USAGE_SERVICE_TEMPORARILY_UNAVAILABLE when the reservation cannot be
+ * recorded.
  *
- * `reservationId` is non-empty only for the attempt that owns the reservation. A retry that joins a live
- * reservation gets an empty id, so its failure cannot release the owner's credit.
+ * `reservationId` is non-empty only for the attempt that owns the reservation. A retry that joins a live or finished
+ * reservation gets an empty id: it cannot release the owner's unit, and the route does not run the model for it.
  */
 export async function reserveAnalysisCredit(params: {
   sessionId: string;
@@ -333,138 +266,74 @@ export async function reserveAnalysisCredit(params: {
       "Forensic In-Depth Dual-Pass scanning requires Document Analyzer Premium ($49.99) or CYFSA Case Access ($149/mo). Your current plan includes Quick Document Review."
     );
   }
-
   if (!SAFE_ID.test(sessionId)) {
     throw new LifecycleError(400, "INVALID_SESSION", "This paid session is not valid. Please sign in again.");
   }
-  const key = markerKey(sessionId, requestId);
-  // Reconcile first: a unit whose request crashed after recording it is returned now, not only once the allowance is
-  // full. Exact: a reservation with a recorded unit is reclaimed only after the TTL, and never this request's own.
-  await releaseStaleReservations(sessionId, key);
 
-  const balance = await getCreditBalance(sessionId, tier);
-  if (balance.isSuspended) {
-    throw new LifecycleError(
-      403,
-      "ACCOUNT_SUSPENDED",
-      balance.suspendedReason ||
-        "Your account access has been temporarily suspended pending payment verification. Please contact support at chris@cyfsanavigator.com."
-    );
-  }
+  const session = await readSession(sessionId);
+  if (session.revoked) throw suspendedBy("Session revoked");
+  const suspension = await readUsageRow(`suspended_${sessionId}`);
+  if (suspension) throw suspendedBy(suspension.email || "");
 
-  const scope = scopeFor(allowance, analysisType);
-  const state = reservedState(scope);
-  const counter = counterKeyFor(sessionId, scope);
+  const now = clock();
+  const scope = scopeFor(allowance, analysisType, session.issuedAt);
+  const period = scope.startsWith("period:") ? scope.slice("period:".length) : null;
   const granted = allowance.totalLimit;
 
-  for (let attempt = 0; attempt < MAX_CLAIM_ATTEMPTS; attempt++) {
-    const marker = await readUsageRow(key);
+  const result = await rpc<ReserveRpcResult>("paid_reserve_credit", {
+    p_session: sessionId,
+    p_request: requestId,
+    p_scope: scope,
+    p_granted: granted,
+    p_now: now.toISOString(),
+    p_ttl: RESERVATION_TTL,
+    p_claim_window: CLAIM_WINDOW,
+  });
 
-    if (marker?.email === MARKER_CONSUMED) {
-      const current = await getCreditBalance(sessionId, tier);
-      return reservationFor(sessionId, requestId, tier, marker.analyses_used, current.creditsRemaining, true, false, null);
-    }
-
-    if (marker && isReservedState(marker.email)) {
-      if (marker.analyses_used > 0 && !isStale(marker)) {
-        // A retry of a live request. Its unit is already claimed, so it is not charged again, and it does not own the reservation.
-        const current = await getCreditBalance(sessionId, tier);
-        return reservationFor(sessionId, requestId, tier, marker.analyses_used, current.creditsRemaining, false, false, cycleOf(scope));
-      }
-      if (marker.analyses_used <= 0 && !isStale(marker) && !isOlderThan(marker, CLAIM_WINDOW_MS)) {
-        // Another attempt is still claiming its unit. Ask the caller to retry in a moment.
-        throw new LifecycleError(409, "ANALYSIS_IN_PROGRESS", "This analysis is already being prepared. Please wait a moment and try again.");
-      }
-      // Abandoned: the claim never recorded its unit (no slot), or the reservation has expired. Free it, then claim again.
-      await releaseMarker(sessionId, key);
-      continue;
-    }
-
-    if (marker?.email === MARKER_RELEASED) {
-      // A previous attempt failed and released its credit. Re-reserve it for this retry.
-      // Zero the slot in the same write: the earlier slot was returned, and must not be read as a claimed unit.
-      if (!(await transitionMarker(key, MARKER_RELEASED, state, true))) continue;
-    } else if (!(await claimUsageRow({
-      uid: key,
-      email: state,
-      analyses_used: 0,
-      first_analysis_at: new Date().toISOString(),
-      last_analysis_at: new Date().toISOString(),
-    }))) {
-      // Another attempt with the same request id inserted the marker first. Read it again.
-      continue;
-    }
-
-    if (counter === null) {
-      // Plan allowance does not count this analysis (Pro/Community quick reviews). Nothing to claim.
-      return reservationFor(sessionId, requestId, tier, 0, Math.max(0, granted - (await cycleConsumed(sessionId))), false, true, null);
-    }
-
-    const claimed = await claimCounterUnit(sessionId, counter, granted, key);
-    if (claimed === "limit") {
-      // Nothing was taken. Free the marker so it does not look like a live reservation.
-      await transitionMarker(key, state, MARKER_RELEASED);
+  switch (result.status) {
+    case "limit":
       throw limitReached();
+    case "in_progress":
+      throw new LifecycleError(409, "ANALYSIS_IN_PROGRESS", "This analysis is already being prepared. Please wait a moment and try again.");
+    case "reserved": {
+      const remaining =
+        scope === "none"
+          ? (await getCreditBalance(sessionId, tier)).creditsRemaining
+          : Math.max(0, granted - (result.slot ?? 0));
+      return {
+        reservationId: result.reservation_id ?? "",
+        sessionId,
+        requestId,
+        slotIndex: result.slot ?? 0,
+        tier,
+        creditsRemainingAfterReservation: remaining,
+        alreadyFinalized: false,
+        billingCycle: period,
+      };
     }
-
-    if (!(await setMarkerSlot(key, state, claimed.slot))) {
-      // The marker was released while we were claiming. Give the unit back so the counter stays exact.
-      await decrementCounter(counter);
-      throw usageUnavailable("credit reservation slot", new Error("marker changed during claim"));
+    case "consumed":
+    case "joined": {
+      const current = await getCreditBalance(sessionId, tier);
+      return {
+        reservationId: "",
+        sessionId,
+        requestId,
+        slotIndex: result.slot ?? 0,
+        tier,
+        creditsRemainingAfterReservation: current.creditsRemaining,
+        alreadyFinalized: result.status === "consumed",
+        billingCycle: period,
+      };
     }
-
-    return reservationFor(sessionId, requestId, tier, claimed.slot, Math.max(0, granted - claimed.slot), false, true, cycleOf(scope));
+    default:
+      throw usageUnavailable("credit reservation", new Error(`unexpected status ${(result as any).status}`));
   }
-
-  throw usageUnavailable("credit reservation", new Error(`contention on ${key}`));
-}
-
-async function cycleConsumed(sessionId: string): Promise<number> {
-  const usage = await readUsageRow(counterKeyFor(sessionId, { kind: "cycle", cycle: billingCycle() }) as string);
-  return usage?.analyses_used ?? 0;
 }
 
 /**
- * Takes one unit from a counter with a compare-and-set. Reclaims stale reservations first when the counter
- * is full.
- */
-async function claimCounterUnit(
-  sessionId: string,
-  counterKey: string,
-  granted: number,
-  ownKey: string
-): Promise<{ slot: number } | "limit"> {
-  for (let attempt = 0; attempt < MAX_CLAIM_ATTEMPTS; attempt++) {
-    const usage = await readUsageRow(counterKey);
-    const used = usage?.analyses_used ?? 0;
-
-    if (used >= granted) {
-      if ((await releaseStaleReservations(sessionId, ownKey)) > 0) continue;
-      return "limit";
-    }
-
-    const claimed = usage
-      ? await compareAndSetCounter(counterKey, used, used + 1)
-      : await claimUsageRow({
-          uid: counterKey,
-          email: null,
-          analyses_used: 1,
-          first_analysis_at: new Date().toISOString(),
-          last_analysis_at: new Date().toISOString(),
-        });
-    if (claimed) return { slot: used + 1 };
-    await backoff(attempt);
-  }
-  throw usageUnavailable("credit counter claim", new Error(`contention on ${counterKey}`));
-}
-
-/**
- * Marks a reservation consumed after the analysis succeeds. The unit was already taken at reservation, so this
- * only changes the marker. A duplicate finalize is a no-op.
- *
- * Throws when the charge cannot be recorded, or when the reservation was already released. The caller must then
- * withhold the result: it is not delivered for free. Releasing it in that case returns the unit, because nothing
- * was delivered.
+ * Marks a reservation consumed after the analysis is delivered. A duplicate finalize is a no-op. Throws when the charge
+ * cannot be recorded or the reservation was already released: the caller then withholds the result, so nothing is
+ * delivered for free. Releasing it in that case returns the unit, because nothing was delivered.
  */
 export async function finalizeAnalysisCredit(params: {
   sessionId: string;
@@ -475,18 +344,16 @@ export async function finalizeAnalysisCredit(params: {
   documentName?: string;
 }): Promise<CreditBalance | null> {
   const { sessionId, requestId, tier } = params;
-  const key = markerKey(sessionId, requestId);
-  const marker = await readUsageRow(key);
-  if (!marker) {
+  const result = await rpc<{ status: "consumed" | "released" | "missing" }>("paid_finalize_credit", {
+    p_session: sessionId,
+    p_request: requestId,
+    p_now: clock().toISOString(),
+  });
+  if (result.status === "missing") {
     throw new LifecycleError(409, "RESERVATION_MISSING", "This analysis has no credit reservation. Please start a new analysis.");
   }
-  if (marker.email !== MARKER_CONSUMED) {
-    if (!isReservedState(marker.email) || !(await transitionMarker(key, marker.email as string, MARKER_CONSUMED))) {
-      const now = await readUsageRow(key);
-      if (now?.email !== MARKER_CONSUMED) {
-        throw new LifecycleError(409, "RESERVATION_RELEASED", "This analysis's reservation expired before it could be recorded. Please start a new analysis.");
-      }
-    }
+  if (result.status === "released") {
+    throw new LifecycleError(409, "RESERVATION_RELEASED", "This analysis's reservation expired before it could be recorded. Please start a new analysis.");
   }
   try {
     return await getCreditBalance(sessionId, tier);
@@ -497,7 +364,7 @@ export async function finalizeAnalysisCredit(params: {
 }
 
 /**
- * Releases a reservation when processing fails before a billable result is produced, restoring the credit.
+ * Releases a reservation when processing fails before a billable result is produced, returning the unit.
  * Only the attempt that owns the reservation may release it: a missing or different reservation id does nothing.
  */
 export async function releaseAnalysisReservation(params: {
@@ -507,13 +374,21 @@ export async function releaseAnalysisReservation(params: {
   reason?: string;
 }): Promise<void> {
   const { sessionId, requestId, reservationId } = params;
-  const key = markerKey(sessionId, requestId);
-  if (!reservationId || reservationId !== key) return;
+  if (!reservationId) return;
   try {
-    await releaseMarker(sessionId, key);
+    await rpc("paid_release_credit", {
+      p_session: sessionId,
+      p_request: requestId,
+      p_reservation_id: reservationId,
+      p_now: clock().toISOString(),
+    });
   } catch (err) {
     console.error("[creditAccounting] Non-fatal error releasing credit reservation:", err);
   }
+}
+
+export function resetCreditAccountingCachesForTesting(): void {
+  // Nothing is cached in memory: every decision reads the shared database.
 }
 
 function safeGetDb(): any {

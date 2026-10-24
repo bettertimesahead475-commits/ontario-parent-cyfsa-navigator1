@@ -213,7 +213,13 @@ const SAMPLE_DEEP_DIVE = {
 const claudeText = (text: string, stop_reason = "end_turn") => ({ content: [{ type: "text", text }], stop_reason, usage: {} });
 
 beforeEach(() => {
-  dbHolder.db = createProductionLikeDb();
+  dbHolder.db = createProductionLikeDb({
+    sessions: [
+      { id: "jti-1", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "session-row-456", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "session-google-sub", tier: "Premium", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+    ],
+  });
   mockAccess.getSupabase.mockReset();
   mockAccess.getSupabase.mockImplementation(() => dbHolder.db);
   vi.clearAllMocks();

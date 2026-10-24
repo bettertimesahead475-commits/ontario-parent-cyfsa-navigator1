@@ -247,7 +247,15 @@ const PAID_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-paid-user";
 const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FIREBASE_TOKEN });
 
 beforeEach(() => {
-  dbHolder.db = createProductionLikeDb();
+  dbHolder.db = createProductionLikeDb({
+    // Paid sessions as the database holds them: monthly plans need their renewal anchor (issued_at).
+    sessions: [
+      { id: PAID_JTI, tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "jti-pro", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "jti-premium", tier: "Premium", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "jti-basic", tier: "Basic", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+    ],
+  });
   vi.clearAllMocks();
   // Drop any queued one-shot responses so they cannot leak into the next test.
   mockCreateMessage.mockReset();

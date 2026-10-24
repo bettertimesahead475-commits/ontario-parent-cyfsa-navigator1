@@ -163,7 +163,13 @@ const STREAM_REPORT = { ...COMPLETE_ANALYSIS, documentTitle: MINIMAL_ANALYSIS.do
 
 describe("Analyzer Streaming & Job Recovery Integration", () => {
   beforeEach(() => {
-  dbHolder.db = createProductionLikeDb();
+  dbHolder.db = createProductionLikeDb({
+    sessions: [
+      { id: "jti-1", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "session-row-456", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "session-google-sub", tier: "Premium", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+    ],
+  });
     vi.clearAllMocks();
     mockCreateMessage.mockReset();
     process.env.ANTHROPIC_API_KEY = "test-anthropic-key";

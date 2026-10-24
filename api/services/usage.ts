@@ -15,6 +15,7 @@ import { LifecycleError } from "./lifecycleErrors.js";
 import { withTransientRetry } from "./transientRetry.js";
 import { logSupabaseFailure } from "./supabaseDiagnostics.js";
 import { claimUsageRow, incrementCounter, readUsageRow } from "./freeUsageStore.js";
+import { getCreditBalance, getPackageAllowance } from "./creditAccounting.js";
 
 export const FREE_ANALYSES_LIMIT = 1;
 export const BASIC_QUICK_REVIEWS_LIMIT = 3;
@@ -165,6 +166,12 @@ export async function checkPaidUsage(
   const limits = TIER_LIMITS[tier] || TIER_LIMITS.Basic;
   const limit = type === "quick" ? limits.quickReviews : limits.forensicAnalyses;
 
+  // Monthly plans: forensic analyses are gated by the atomic reservation, which knows the customer's billing period.
+  // This pre-check must not second-guess it with a calendar-month count.
+  if (type === "forensic" && getPackageAllowance(tier).isMonthly) {
+    return { allowed: true, used: 0, limit, remaining: null, tier };
+  }
+
   const key = getPaidUsageKey(sessionId, tier, type);
   const used = await getUsageCount(key);
 
@@ -255,9 +262,11 @@ export async function getPaidUsageStatus(sessionId: string, tier: string): Promi
   const quickKey = getPaidUsageKey(sessionId, tier, "quick");
   const forensicKey = getPaidUsageKey(sessionId, tier, "forensic");
 
+  const monthly = getPackageAllowance(tier).isMonthly;
   const [quickUsed, forensicUsed] = await Promise.all([
     getUsageCount(quickKey),
-    getUsageCount(forensicKey),
+    // Monthly plans: the current billing period, as the reservation counts it.
+    monthly ? getCreditBalance(sessionId, tier).then((balance) => balance.creditsConsumed) : getUsageCount(forensicKey),
   ]);
 
   return {
