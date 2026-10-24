@@ -656,3 +656,15 @@ describe("Lost responses and retries of the atomic functions", () => {
     expect(counter()).toBe(1);
   });
 });
+
+describe("Fail-safe when the reservation functions are not installed", () => {
+  it("refuses the analysis with a retryable 503 and never reaches the model", async () => {
+    // Before the migration is applied, PostgREST reports the function as missing (PGRST202).
+    currentDb.ref = createProductionLikeDb({ sessions: [{ id: SESSION, tier: "Basic", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" }] });
+    const original = currentDb.ref.rpc;
+    currentDb.ref.rpc = async () => ({ data: null, error: { code: "PGRST202", message: "Could not find the function public.paid_reserve_credit" } });
+    const credit = await loadCredit();
+    await expect(reserveWith(credit, "req_no_functions")).rejects.toMatchObject({ statusCode: 503, code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE" });
+    currentDb.ref.rpc = original;
+  });
+});

@@ -78,6 +78,17 @@ describe.skipIf(!isLocal)("atomic paid-credit functions on a real PostgreSQL ser
     await pool.end();
   });
 
+  it("only the service role can execute the functions; anon and authenticated cannot", async () => {
+    const sig = "(text,text,text,integer,timestamptz,interval,interval)";
+    const reserve = await pool.query(`select has_function_privilege('service_role','public.paid_reserve_credit${sig}','execute') as svc,
+      has_function_privilege('anon','public.paid_reserve_credit${sig}','execute') as anon,
+      has_function_privilege('authenticated','public.paid_reserve_credit${sig}','execute') as auth`);
+    expect(reserve.rows[0]).toEqual({ svc: true, anon: false, auth: false });
+    const others = await pool.query(`select has_function_privilege('anon','public.paid_release_credit(text,text,text,timestamptz)','execute') as release_anon,
+      has_function_privilege('anon','public.paid_finalize_credit(text,text,timestamptz)','execute') as finalize_anon`);
+    expect(others.rows[0]).toEqual({ release_anon: false, finalize_anon: false });
+  });
+
   it("the migration creates functions and no tables", async () => {
     const r = await pool.query(`select count(*)::int as n from information_schema.tables where table_schema='public' and table_name like 'paid_%'`);
     expect(r.rows[0].n).toBe(0);

@@ -69,3 +69,75 @@ Production facts (read-only checks): `payments` has 2 rows; `navigator_paid_sess
 - Production migration of the functions (section 6, step 2).
 - Confirmation of renewal behaviour (section 5, item 1) and the Vercel plan (item 2).
 - Payment columns migration, owned by the payments work.
+
+## 8. Release readiness (phase 4)
+
+### 8.1 Staging status
+
+- `cyfsa-navigator-staging` (`nxfhvebzzobegubefcda`): **INACTIVE (paused)**, read via the Supabase project list.
+- Restoration cost: not available to this session. No restore was started. **Blocker:** staging must be restored before the six-scenario test can run. Restoring needs your explicit authorization and cost confirmation.
+- The service key for staging is not available in this session and must be supplied locally.
+- Production `cyfsa-navigator live` (`qboidsfpjuxeqtfotryj`): ACTIVE_HEALTHY. Not touched.
+
+### 8.2 Staging run (when staging is restored and authorized)
+
+```
+STAGING_SUPABASE_URL=https://nxfhvebzzobegubefcda.supabase.co \
+STAGING_SUPABASE_SERVICE_ROLE_KEY=<staging service-role key, from a local env file or secret manager> \
+npx vitest run api/services/creditStaging.test.ts
+```
+
+Order:
+
+1. Restore staging (authorized). Confirm the project is ACTIVE_HEALTHY and that its ref is `nxfhvebzzobegubefcda`.
+2. Apply `supabase/migrations_pending_approval/paid_credit_reservation_functions.sql` to **staging only**. Then confirm the grants: `service_role` can execute, `anon` and `authenticated` cannot (the local test covers this; the staging check repeats it on the real project).
+3. Run the command above. Expected: 6 scenarios pass. The scenarios use only synthetic `uuid` session IDs and `vfy_` request IDs, insert and delete only their own rows, and refuse to run against the production ref.
+4. Record the output in the PR and stop the staging project again if it is not needed (owner decision).
+
+Staging has no customer data to protect in these scenarios, but the test must still never be pointed at production.
+
+### 8.3 Fail-safe behaviour
+
+- If the functions are not installed, PostgREST reports `PGRST202`. The application returns **503 `USAGE_SERVICE_TEMPORARILY_UNAVAILABLE` before any model call**. There is a test for this.
+- A missing `issued_at` on a monthly plan returns 503. No period is guessed.
+- A write whose outcome is unknown returns 503 and is never retried by the application.
+
+### 8.4 Environment and flags (production, names only)
+
+- Required by this change: `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Both exist in production (secret values not read).
+- No new environment variables are introduced.
+- `PARENT_ANALYSIS_ENABLED` and `VITE_PARENT_ANALYSIS_UI` (PR #102 feature flags): **not set** in production. Both default to off: the server checks for exactly `"true"`, and the client checks for exactly `"true"`.
+
+### 8.5 Final production order (nothing has been applied)
+
+1. Approve and complete the staging run (8.2).
+2. Apply `paid_credit_reservation_functions.sql` to production, with explicit approval. It adds functions only.
+3. Confirm the functions exist and the grants are as tested.
+4. Merge PR #103 to `main`. **Confirm in the Vercel project settings that production deploys from `main`** (the project's production domains suggest it, but the production-branch setting was not read). If it does, the functions must already exist (step 2) before this merge. Do not merge before step 2.
+5. Verify: the production deployment is READY, the paid-analysis path returns the expected responses for a synthetic check (no paid sessions exist today), and the feature flags remain unset.
+6. Leave both feature flags off. Enabling paid sales is a separate, explicit approval.
+
+Merging PR #103 before step 2 is not safe: the deployed application would return 503 for every paid analysis until the functions exist. No paid session exists in production today, but the order must still be followed.
+
+### 8.6 Rollback and recovery
+
+- **Application:** revert the merge commit on `main`. Vercel redeploys the previous version automatically.
+- **Database:** leave the functions in place. Nothing calls them after a revert of the application, and they hold no data. Dropping them is `paid_credit_reservation_functions.down.sql`, and it is needed only if the owner decides the functions must go.
+- **Data:** the only rows the functions write are `free_usage` counter rows and `paid_res_` marker rows. Stranded reservations are returned by the 15-minute reconciliation, or by a manual release of `reservation:reserved` markers older than 15 minutes if an operator must clear them sooner.
+
+### 8.7 Merge status
+
+- PR #103 (`7f45596b`) merges cleanly into `main` (`7cd63b4f`). GitHub reports it mergeable.
+- CI on `7f45596b`: `test` passed.
+
+### 8.8 PR #102 rebase plan (after #103 is on `main`)
+
+PR #102 (`68a07775`) is unchanged, with both parent-analysis flags off. It merges cleanly into `main` today, but conflicts with #103 in three files:
+
+| File | Conflict | Resolution |
+|---|---|---|
+| `api/_server.ts` | Both sides changed the credit reservation and finalize sections in the Quick Review path | Keep #103's reservation, ownership refusal and charge-before-delivery. Keep #102's parent-view and parent-attribution code. |
+| `api/analyzerEndToEnd.test.ts` | Both sides changed the database fake | Use #103's production-shaped fake and seeded sessions. Keep #102's assertions. |
+| `api/services/creditAccounting.test.ts` | #103 replaced the inline fake with the production-shaped fake | Take #103's version. |
+
+Steps: merge `main` into #102's branch (a merge commit, no history rewrite), resolve the three files, run the full suite, `tsc` and build, and push. Keep #102 a draft, and do not merge it.

@@ -83,7 +83,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
     process.env.SUPABASE_SERVICE_ROLE_KEY = "invalid-key-for-verification";
     try {
       const credit = await loadCredit();
-      await expect(reserve(credit, "vfy_bad_key", `vfy_badkey_${randomUUID()}`)).rejects.toMatchObject({
+      await expect(reserve(credit, "vfy_bad_key", randomUUID())).rejects.toMatchObject({
         statusCode: 503,
         code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
       });
