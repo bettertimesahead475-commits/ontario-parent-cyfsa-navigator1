@@ -27,7 +27,7 @@ describe("matching a citation to a bundled entry", () => {
     ["CYFSA 2017, Section 94(2)", "94(2)"],
     ["CYFSA, S.O. 2017, c. 14, s. 88", "88"],
     ["CYFSA s. 74(2)", "74(2)"],
-    ["81(7)", "81(7)"],
+    ["CYFSA s. 81(7)", "81(7)"],
   ])("maps %s to %s", (citation, key) => {
     expect(findBundledStatute(citation)).toBe(BUNDLED_STATUTE_ENTRIES[key]);
   });
@@ -43,6 +43,10 @@ describe("matching a citation to a bundled entry", () => {
     "CYFSA s. 2",
     "Family Law Rules r. 13",
     "CYFSA s. 100",
+    "81(7)",
+    "CLRA, s. 88",
+    "Criminal Code, s. 81(7)",
+    "Family Law Rules, s. 94(1)",
   ])("does not invent an entry for %s", (citation) => {
     expect(findBundledStatute(citation)).toBeNull();
   });

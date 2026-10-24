@@ -5207,15 +5207,17 @@ export default function DocumentAnalyzerTab() {
                     </div>
                   )}
                   <p className="text-xs text-slate-600 leading-relaxed">{details.explanation}</p>
+{details.exactText && (
                   <a
-                    href={STATUTE_ROOT_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    View Official Ontario e-Laws Source
-                  </a>
+                      href={STATUTE_ROOT_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      View Official Ontario e-Laws Source
+                    </a>
+                  )}
                 </>
               );
             })()}
