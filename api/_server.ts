@@ -71,18 +71,24 @@ import {
   SseStreamEmitter,
   createAnalysisJob,
   createAnalysisJobDurable,
+  claimAnalysisJobDurable,
   getAnalysisJob,
   getAnalysisJobDurable,
   updateAnalysisJobStage,
   completeAnalysisJob,
   failAnalysisJob,
   completeAnalysisJobDurable,
+  storeCompletedJobStrict,
+  completeAnalysisJobStrict,
   failAnalysisJobDurable,
   recordAnalysisJobSection,
   isValidAnalysisJobId,
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
 import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
+import { forensicBillingKey } from "./services/billingKey.js";
+import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_FIELD, PARENT_ATTRIBUTION_RULES, PARENT_ATTRIBUTION_SCHEMA, sectionForClient } from "./services/parentAnalysisSchema.js";
+import { attachParentAttribution, buildSelectedView, hasParentView, listSelectionOptions } from "./services/parentExtraction.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -1937,6 +1943,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let isPaid = false;
     let uid: string | null = null;
     let freeUseRecorded = false;
+    // Set when recording usage fails. The report is still returned, but no parent view is stored for it.
+    let usageRecordFailed = false;
+    // True only once this request has created the job record. Only then may it mark that job failed, so an
+    // error in a request that merely reuses someone else's id can never change that person's job.
+    let jobCreatedHere = false;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -1946,6 +1957,13 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       null;
     // The id names a Supabase Storage object, so only the analyzer's own format is accepted.
     analysisRequestId = isValidAnalysisJobId(idempotencyKey) ? idempotencyKey : generateAnalysisJobId();
+    // Usage idempotency is scoped to the paid session and honours only a valid analyzer id. A raw header string is
+    // never a usage key, so one id cannot be shared across accounts or used to skip the usage count.
+    const usageKeyFor = (sessionId: string | null | undefined): string | null =>
+      sessionId && isValidAnalysisJobId(idempotencyKey) ? `analyze:${sessionId}:${idempotencyKey}` : null;
+    // Credit accounting id for this request, scoped to the paid session. Another account that reuses this id gets its
+    // own reservation, so its failure can never release or reuse someone else's reserved credit.
+    const creditIdFor = (sessionId: string): string => `analyze:${sessionId}:${analysisRequestId}`;
     const requestStartedAt = Date.now();
     // No job record is created until access has been granted (below). A record created here used
     // to stay "analyzing" forever, with no owner, whenever the request was then refused (e.g. 402
@@ -2091,7 +2109,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           });
         }
         if (paidSessionId && paidTier) {
-          const check = await checkPaidUsage(paidSessionId, paidTier, "forensic", idempotencyKey);
+          const check = await checkPaidUsage(paidSessionId, paidTier, "forensic", usageKeyFor(paidSessionId));
           logAnalyzerTraceStage({
             requestId: analysisRequestId,
             stage: 6,
@@ -2125,7 +2143,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       } else {
         // Quick Document Review
         if (isPaid && paidSessionId && paidTier) {
-          const check = await checkPaidUsage(paidSessionId, paidTier, "quick", idempotencyKey);
+          const check = await checkPaidUsage(paidSessionId, paidTier, "quick", usageKeyFor(paidSessionId));
           logAnalyzerTraceStage({
             requestId: analysisRequestId,
             stage: 6,
@@ -2164,7 +2182,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           sessionId: paidSessionId,
           firebaseUid: identity.uid,
           tier: paidTier,
-          requestId: analysisRequestId,
+          requestId: creditIdFor(paidSessionId),
           analysisType: mode === "full" ? "forensic" : "quick",
           documentName: req.body?.documentName || req.body?.fileData?.name || "document",
         });
@@ -2235,11 +2253,16 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         details: { mode, isPaid, tier: paidTier || "Free" },
       });
 
-      await createAnalysisJobDurable({
+      // Create the job record, refusing to take over one that belongs to another account. The claim is exclusive in
+      // Storage, so two server instances racing on one id cannot both create it. A refusal is thrown as a 409, and
+      // the handler below releases any reserved credit and leaves the other account's job untouched.
+      const callerUid = identity ? identity.uid : (uid || null);
+      await claimAnalysisJobDurable({
         jobId: analysisRequestId,
-        uid: identity ? identity.uid : (uid || null),
+        uid: callerUid,
         mode: mode === "full" ? "full" : "fast",
       });
+      jobCreatedHere = true;
 
       const wantsStream = Boolean(
         req.body?.stream === true || (req.header("accept") || "").includes("text/event-stream")
@@ -2338,14 +2361,16 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           const span = isForensic ? 50 : 60; // the verification pass owns the last part in Forensic
           const percent = 35 + Math.round((completed / total) * span);
           const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
-          await recordAnalysisJobSection(analysisRequestId, key, value, {
+          // The raw parent block is unverified here, so clients and the job record never receive it.
+          const publicValue = sectionForClient(value as Record<string, unknown>);
+          await recordAnalysisJobSection(analysisRequestId, key, publicValue, {
             stage: "reviewing_evidence",
             percent,
             message,
             total,
           }).catch(() => {});
           if (streamEmitter) {
-            streamEmitter.emitSection(key, value);
+            streamEmitter.emitSection(key, publicValue);
             streamEmitter.emitStage(completed === total ? "preparing_report" : "reviewing_evidence", message, percent);
           }
         },
@@ -2439,17 +2464,20 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         } catch (usageErr) {
           // A parent's completed analysis must never be withheld because our own
           // usage bookkeeping failed - log it and let the real result through.
+          usageRecordFailed = true;
           console.error("[document analysis] Failed to record free-tier usage (non-fatal):", usageErr);
         }
       } else if (isPaid && paidSessionId && paidTier) {
         try {
           const usageType = mode === "full" ? "forensic" : "quick";
-          await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, idempotencyKey);
-          if (creditReservation && identity) {
+          await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, usageKeyFor(paidSessionId));
+          // A retry that reuses an already-finalized reservation was paid for by the first run. Finalizing it again
+          // would consume a second credit for one analysis.
+          if (creditReservation && identity && !creditReservation.alreadyFinalized) {
             await finalizeAnalysisCredit({
               sessionId: paidSessionId,
               firebaseUid: identity.uid,
-              requestId: analysisRequestId,
+              requestId: creditIdFor(paidSessionId),
               reservationId: creditReservation.reservationId,
               tier: paidTier,
               documentName: req.body?.documentName || req.body?.fileData?.name,
@@ -2457,6 +2485,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           }
           credits = await getPaidUsageStatus(paidSessionId, paidTier);
         } catch (usageErr) {
+          usageRecordFailed = true;
           console.error("[document analysis] Failed to record paid usage (non-fatal):", usageErr);
         }
       }
@@ -2467,6 +2496,24 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
       // Persist the finished report before responding, so a browser that lost the stream can
       // still recover it after a refresh (the instance may freeze once the response ends).
+      if (isParentAnalysisEnabled()) {
+        attachParentAttribution(report, targetText, analysisRequestId);
+        if (!usageRecordFailed && hasParentView(report)) {
+          // The Quick Review job is stored under the request id, so the parent view reads from it. The id is
+          // offered only if the stored record is confirmed; otherwise the report says it is unavailable.
+          report.parentViewJobId = analysisRequestId;
+          try {
+            await completeAnalysisJobStrict(analysisRequestId, report);
+            report.parentViewAvailable = true;
+          } catch (storageError) {
+            delete report.parentViewJobId;
+            report.parentViewAvailable = false;
+            console.warn("[document analysis] Parent view could not be stored", { requestId: analysisRequestId, error: String(storageError) });
+          }
+        } else {
+          report.parentViewAvailable = false;
+        }
+      }
       await completeAnalysisJobDurable(analysisRequestId, report);
 
       if (streamEmitter) {
@@ -2480,7 +2527,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         try {
           await releaseAnalysisReservation({
             sessionId: paidSessionId,
-            requestId: analysisRequestId,
+            requestId: creditIdFor(paidSessionId),
             reservationId: creditReservation.reservationId,
             reason: error?.message || "analysis_failed",
           });
@@ -2493,7 +2540,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         await decrementFreeUse(uid).catch(() => {});
       }
 
-      if (getAnalysisJob(analysisRequestId)) {
+      if (jobCreatedHere && getAnalysisJob(analysisRequestId)) {
         const failed = formatAnalyzerErrorResponse(error);
         await failAnalysisJobDurable(analysisRequestId, {
           code: failed.code,
@@ -2583,6 +2630,43 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
 
     res.json(job.report ? { ...job, report: redactCustomerReport(job.report) } : job);
+  });
+
+  // API: Parent-specific view of a saved analysis. Reads the stored, verified attribution model only:
+  // it never calls a model, never consumes a credit, and never changes the saved report. The job must
+  // belong to the signed-in account; other accounts and missing jobs get the same 404.
+  app.get("/api/analyze/job/:jobId/parent-view", async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!isParentAnalysisEnabled()) {
+      return res.status(404).json({ error: "This feature is not available.", code: "FEATURE_NOT_AVAILABLE" });
+    }
+    const identity = await verifyFirebaseToken(req.header("authorization"));
+    if (!identity) {
+      return res.status(401).json({ error: "Please sign in to continue.", code: "SIGN_IN_REQUIRED" });
+    }
+    const { jobId } = req.params;
+    if (!isValidAnalysisJobId(jobId)) {
+      return res.status(404).json({ error: "Analysis not found.", code: "JOB_NOT_FOUND" });
+    }
+    const job = await getAnalysisJobDurable(jobId);
+    if (!job || !job.uid || job.uid !== identity.uid) {
+      return res.status(404).json({ error: "Analysis not found.", code: "JOB_NOT_FOUND" });
+    }
+    const stored = job.report?.parentAttribution;
+    if (!stored?.caseModel) {
+      return res.status(404).json({ error: "No parent-specific analysis is available for this report.", code: "NO_PARENT_ANALYSIS" });
+    }
+    const proceedingId = typeof req.query.proceedingId === "string" ? req.query.proceedingId : "";
+    const partyId = typeof req.query.partyId === "string" ? req.query.partyId : "";
+    if (!proceedingId || !partyId) {
+      const options = listSelectionOptions(stored.caseModel);
+      return res.json({ jobId, selection: null, options });
+    }
+    const view = buildSelectedView(stored.caseModel, proceedingId, partyId);
+    if (view.ok === false) {
+      return res.status(400).json({ error: "That parent and proceeding do not match this analysis.", code: view.code });
+    }
+    return res.json({ jobId, selection: { proceedingId, partyId }, view: view.report, drafting: view.drafting });
   });
 
   // API: Cross-Document Case Timeline
@@ -2979,8 +3063,11 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       req.body?.requestId ||
       null;
 
+    // Billing identity of this analysis. The raw client id is never used as a billing key; see forensicBillingKey.
+    const billingKey = sessionInfo ? forensicBillingKey(sessionInfo.sessionId, String(req.body.documentText), idempotencyKey) : null;
+
     if (sessionInfo) {
-      const check = await checkPaidUsage(sessionInfo.sessionId, sessionInfo.tier, "forensic", idempotencyKey);
+      const check = await checkPaidUsage(sessionInfo.sessionId, sessionInfo.tier, "forensic", billingKey);
       if (!check.allowed) {
         return res.status(402).json({
           error: check.error,
@@ -2995,13 +3082,15 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
 
     const analysisRequestId =
       idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // Identifies this analysis to credit accounting. analysisRequestId stays for logs and citations only.
+    const creditRequestId = billingKey || analysisRequestId;
     let creditReservation: ReservationResult | null = null;
     if (sessionInfo) try {
       creditReservation = await reserveAnalysisCredit({
         sessionId: sessionInfo.sessionId,
         firebaseUid: sessionInfo.uid,
         tier: sessionInfo.tier,
-        requestId: analysisRequestId,
+        requestId: creditRequestId,
         analysisType: "forensic",
         documentName: req.body?.documentName || "deep-scan-document",
       });
@@ -3110,18 +3199,24 @@ OUTPUT — return strictly this JSON schema, nothing else:
       // proceduralTimelineViolations has the heaviest per-item schema (six fields per item,
       // including citations). Packed with three other keys it overflowed its 12k-token cap in
       // production, so it gets a section of its own.
-      const forensicSections = [
+      // Parent attribution, when enabled, rides on the last section. It is optional: it is never required
+      // for the section to pass validation, so a malformed block cannot fail the report.
+      const parentOn = isParentAnalysisEnabled();
+      const forensicSections: readonly (readonly string[])[] = [
         ["gaps", "missingEvidence", "whatIsMissing", "whatToVerify"],
         ["retorts", "thresholdAnalysis"],
         ["proceduralTimelineViolations"],
-        ["charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief"]
-      ] as const;
+        ["charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief", ...(parentOn ? [PARENT_ATTRIBUTION_FIELD] : [])]
+      ];
       const FORENSIC_SECTION_ATTEMPTS = 2;
       const generateForensicSection = async (
-        keys: readonly string[],
+        requestedKeys: readonly string[],
         index: number,
         attempt: number
       ): Promise<Record<string, unknown>> => {
+        // The optional parent block must never decide whether the Forensic report succeeds. The retry asks for the
+        // section without it. This reuses the existing retry: no extra call and no larger output limit.
+        const keys = attempt > 1 ? requestedKeys.filter(key => key !== PARENT_ATTRIBUTION_FIELD) : requestedKeys;
         const sectionSystem = systemInstruction +
           "\nSECTION-SPECIFIC OUTPUT: Return ONLY a JSON object with these exact keys: " +
           keys.join(", ") +
@@ -3130,8 +3225,11 @@ OUTPUT — return strictly this JSON schema, nothing else:
           (attempt > 1
             ? " Your previous attempt for this section was cut off or malformed. Keep every item short and complete, with no dropped findings."
             : "");
+        const parentSuffix = keys.includes(PARENT_ATTRIBUTION_FIELD)
+          ? "\n" + PARENT_ATTRIBUTION_SCHEMA + "\n" + PARENT_ATTRIBUTION_RULES
+          : "";
         const response = await generateContentWithFallback({
-          system: sectionSystem,
+          system: sectionSystem + parentSuffix,
           messages: [{ role: "user", content: [{ type: "text", text: promptText }] }],
           max_tokens: 12000,
           requestId: analysisRequestId,
@@ -3155,7 +3253,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
           });
           throw error;
         }
-        if (!forensicSectionIsValid(parsed, keys)) {
+        if (!forensicSectionIsValid(parsed, keys.filter(key => key !== PARENT_ATTRIBUTION_FIELD))) {
           throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
             "A forensic report section was incomplete. No analysis credit was consumed.", true);
         }
@@ -3217,15 +3315,19 @@ OUTPUT — return strictly this JSON schema, nothing else:
         throw new AnalyzerError("AI_RESPONSE_INVALID", 422,
           "The deep scan returned an incomplete report. Your analysis was not completed; please retry.", true);
       }
+      if (parentOn) attachParentAttribution(report, documentText, analysisRequestId);
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
+      let usageRecordFailed = false;
       if (sessionInfo) try {
-        await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey);
-        if (creditReservation) {
+        await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", billingKey);
+        // A retry that reuses an already-finalized reservation was paid for by the first run. Finalizing it again
+        // would consume a second credit for one analysis.
+        if (creditReservation && !creditReservation.alreadyFinalized) {
           await finalizeAnalysisCredit({
             sessionId: sessionInfo.sessionId,
             firebaseUid: sessionInfo.uid,
-            requestId: analysisRequestId,
+            requestId: creditRequestId,
             reservationId: creditReservation.reservationId,
             tier: sessionInfo.tier,
             documentName: req.body?.documentName || "deep-scan-document",
@@ -3233,15 +3335,35 @@ OUTPUT — return strictly this JSON schema, nothing else:
         }
         credits = await getPaidUsageStatus(sessionInfo.sessionId, sessionInfo.tier);
       } catch (usageErr) {
+        usageRecordFailed = true;
         console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
       }
-      res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
+      // Stored only when the usage record succeeded, under a server-generated id, and only when the verified parent
+      // model is present. A client-chosen id can never overwrite another job. A storage failure never changes the
+      // report; the response says plainly that the parent view is unavailable.
+      let storedJobId: string | null = null;
+      if (parentOn && !usageRecordFailed && hasParentView(report)) {
+        const candidateId = generateAnalysisJobId();
+        try {
+          await storeCompletedJobStrict({ jobId: candidateId, uid: identity.uid, mode: "full", report });
+          storedJobId = candidateId;
+        } catch (storageError) {
+          console.warn("[deep scan] Parent view could not be stored", { requestId: analysisRequestId, error: String(storageError) });
+        }
+      }
+      res.json({
+        ...report,
+        timing: { durationMs },
+        ...(credits ? { credits } : {}),
+        ...(parentOn ? { parentViewAvailable: storedJobId !== null } : {}),
+        ...(storedJobId ? { parentViewJobId: storedJobId } : {}),
+      });
     } catch (error: any) {
       if (creditReservation && sessionInfo) {
         try {
           await releaseAnalysisReservation({
             sessionId: sessionInfo.sessionId,
-            requestId: analysisRequestId,
+            requestId: creditRequestId,
             reservationId: creditReservation.reservationId,
             reason: error?.message || "deep_scan_failed",
           });

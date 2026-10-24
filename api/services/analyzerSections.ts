@@ -20,6 +20,7 @@ import { AnalyzerError, logAnalyzerDiagnostic } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
 import type { AnalysisStage } from "./analyzerStreaming.js";
 import { verifyQuote } from "./pageSources.js";
+import { isParentAnalysisEnabled, PARENT_ATTRIBUTION_RULES, PARENT_ATTRIBUTION_SCHEMA } from "./parentAnalysisSchema.js";
 
 export type SectionKey = "overview" | "redFlags" | "chronology" | "guidance" | "thresholds" | "timeline";
 
@@ -182,6 +183,9 @@ function validateOverview(raw: any): Validation {
         limitations: str(esiRaw.limitations),
       },
       fileSummary,
+      // Raw and unverified here. attachParentAttribution checks every record's quotation against the document.
+      // Passed through only while the parent analysis flag is on, so a flag-OFF response is unchanged.
+      ...(isParentAnalysisEnabled() && raw.parentAttribution !== undefined ? { parentAttribution: raw.parentAttribution } : {}),
     },
   };
 }
@@ -392,10 +396,19 @@ export function sectionTitle(key: string): string {
 // Prompt construction and parsing
 // ---------------------------------------------------------------------------
 
-export function buildSectionPrompt(key: SectionKey, mode: "fast" | "full", documentText: string, retryNote?: string): string {
+export function buildSectionPrompt(
+  key: SectionKey,
+  mode: "fast" | "full",
+  documentText: string,
+  retryNote?: string,
+  includeParent = true,
+): string {
   const spec = SECTION_SPECS[key];
   const schemaParts = spec.fields.map((f) => FIELD_SCHEMAS[f]).filter(Boolean);
   if (spec.extraSchema) schemaParts.push(spec.extraSchema);
+  // Parent attribution rides on the overview call. With the flag OFF this function returns the same text as before.
+  const parentOn = key === "overview" && includeParent && isParentAnalysisEnabled();
+  if (parentOn) schemaParts.push(PARENT_ATTRIBUTION_SCHEMA);
   return [
     "<document>",
     "DOCUMENT TEXT CONTENT:",
@@ -413,6 +426,7 @@ export function buildSectionPrompt(key: SectionKey, mode: "fast" | "full", docum
     "",
     `LIMITS: ${spec.limits(mode)}`,
     "Every direct quotation must be copied verbatim from the document. Never present your own interpretation as a quotation.",
+    ...(parentOn ? [PARENT_ATTRIBUTION_RULES] : []),
     retryNote ? `\nCORRECTION REQUIRED: ${retryNote}` : "",
   ].join("\n");
 }
@@ -607,6 +621,9 @@ async function runOneSection(
   let retryNote: string | undefined;
   let lastProblem = "";
   let lastProviderError: AnalyzerError | null = null;
+  // The optional parent block must never decide whether the core report succeeds. If a response arrived but was cut
+  // off or invalid, the retry asks for the section without it. This reuses the existing retry: no extra call.
+  let includeParent = true;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const remaining = opts.deadlineAt - now();
     if (attempt > 1 && remaining < MIN_RETRY_BUDGET_MS) break;
@@ -617,7 +634,7 @@ async function runOneSection(
       result = await opts.generate(
         {
           system: ANALYZER_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: [{ type: "text", text: buildSectionPrompt(key, opts.mode, opts.documentText, retryNote) }] }],
+          messages: [{ role: "user", content: [{ type: "text", text: buildSectionPrompt(key, opts.mode, opts.documentText, retryNote, includeParent) }] }],
           max_tokens: spec.maxTokens[opts.mode],
           timeoutMs,
           retries: 1, // retries are handled here, inside the deadline, not stacked in the client
@@ -641,6 +658,7 @@ async function runOneSection(
     lastProviderError = null;
 
     if (result.stopReason === "max_tokens") {
+      includeParent = false;
       lastProblem = "the response was incomplete - it hit its length limit before finishing";
       retryNote =
         "Your previous answer was cut off because it was too long. Stay strictly within the LIMITS: fewer items and shorter sentences.";
@@ -648,12 +666,14 @@ async function runOneSection(
     }
     const parsed = parseJsonObject(result.text);
     if (!parsed) {
+      includeParent = false;
       lastProblem = "the response was not a valid JSON object";
       retryNote = "Your previous answer was not one valid JSON object. Return only the JSON object, with no other text.";
       continue;
     }
     const checked = spec.validate(parsed, opts.mode);
     if (checked.ok === true) return { value: checked.value, attempts: attempt };
+    includeParent = false;
     lastProblem = (checked as { ok: false; problems: string[] }).problems.join("; ");
     retryNote = `Your previous answer failed validation: ${lastProblem}. Fix these problems and return the complete section.`;
   }

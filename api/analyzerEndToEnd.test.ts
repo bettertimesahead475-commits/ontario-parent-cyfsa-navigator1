@@ -9,9 +9,11 @@
 //   - refusals / malformed / empty model output are reported as AI_RESPONSE_INVALID,
 //   - a failed analysis never consumes the free analysis,
 //   - text extraction no longer depends on the paid-session database lookup.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { LifecycleError } from "./services/lifecycleErrors.js";
+import { createFakeDb } from "./testSupport/fakeCreditDb.js";
+import { forensicBillingKey } from "./services/billingKey.js";
 
 const { mockCreateMessage, mockGenerateContent } = vi.hoisted(() => ({
   mockCreateMessage: vi.fn(),
@@ -838,3 +840,624 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
   });
 });
 
+
+describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
+  // A fresh id per test: the server returns a stored job for a repeated X-Analysis-Id, so tests must not share one.
+  let CLIENT_JOB_ID = "";
+  // A fresh paid session per test: forensic allowances are counted per session, so tests must not share one.
+  let PAID_SESSION = "";
+  const myPaid = () => ({ Authorization: PAID_TOKEN, "x-ps-session": PAID_SESSION });
+  const DOC = "Parent A left the child alone overnight on two occasions. Parent B has offered care.";
+  const PARENT_BLOCK = {
+    parties: [
+      { id: "P-A", displayName: "Parent A", aliases: [], role: "RESPONDENT" },
+      { id: "P-B", displayName: "Parent B", aliases: [], role: "PROPOSED_CAREGIVER" },
+    ],
+    proceedings: [{ id: "PROC-1", fileNumber: "FC-24-0001", applicationDate: "", childNames: [] }],
+    roles: [
+      { proceedingId: "PROC-1", partyId: "P-A", role: "RESPONDENT" },
+      { proceedingId: "PROC-1", partyId: "P-B", role: "PROPOSED_CAREGIVER" },
+    ],
+    allegations: [
+      {
+        id: "ALG-1", proceedingId: "PROC-1", kind: "FINDING", text: "Left the child alone overnight.", madeBy: "Applicant",
+        subjectPartyIds: ["P-A"], status: "ADMITTED", classification: "DOCUMENTARY",
+        quote: "Parent A left the child alone overnight on two occasions.", page: 1, paragraph: "12",
+      },
+      {
+        id: "ALG-2", proceedingId: "PROC-1", kind: "ALLEGATION", text: "Never attended a visit.", madeBy: "Applicant",
+        subjectPartyIds: ["P-B"], status: "UNRESOLVED", classification: "DIRECT",
+        quote: "Parent B never attended any visit.", page: 1, paragraph: "13",
+      },
+    ],
+    orders: [],
+  };
+  // Forensic sections need the forensic keys, so this responder returns the same shape the forensic test uses.
+  const FORENSIC_BODY = {
+    gaps: ["g"], missingEvidence: ["m"], retorts: [{ claim: "c", objection: "o", action: "a" }],
+    thresholdAnalysis: [], proceduralTimelineViolations: [], charterAndHumanRightsIssues: [],
+    whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [],
+    disclaimer: "This document is generated for informational/educational purposes only.",
+  };
+  const forensicResponder = async (body: any) => {
+    if (isVerificationRequest(body)) return claudeJson(VERIFICATION_RESULT);
+    return claudeJson(JSON.stringify(body).includes("parentAttribution") ? { ...FORENSIC_BODY, parentAttribution: PARENT_BLOCK } : FORENSIC_BODY);
+  };
+  // Returns the parent block only for a request that asked for it, so flag OFF can be checked by absence.
+  const responder = async (body: any) => {
+    if (isVerificationRequest(body)) return claudeJson(VERIFICATION_RESULT);
+    return claudeJson(JSON.stringify(body).includes("parentAttribution") ? { ...CORE, parentAttribution: PARENT_BLOCK } : CORE);
+  };
+  const ownerView = (partyId: string, proceedingId: string) =>
+    request(app).get(`/api/analyze/job/${CLIENT_JOB_ID}/parent-view?proceedingId=${proceedingId}&partyId=${partyId}`).set(free());
+
+  // A small in-memory bucket: uploads are kept, so a later download returns what was stored.
+  function fakeStorage(uploadError: { message: string } | null = null) {
+    const objects = new Map<string, string>();
+    const control = { downloadFails: false };
+    const upload = vi.fn(async (name: string, body: string, options?: { upsert?: boolean }) => {
+      // Like Supabase Storage: with upsert:false an existing object is refused with a 409.
+      if (!uploadError && options?.upsert === false && objects.has(name)) {
+        return { data: null, error: { message: "The resource already exists", statusCode: "409" } };
+      }
+      if (!uploadError) objects.set(name, body);
+      return { data: {}, error: uploadError };
+    });
+    const db = {
+      storage: {
+        listBuckets: vi.fn(async () => ({ data: [{ name: "analysis_jobs", public: false }], error: null })),
+        updateBucket: vi.fn(),
+        createBucket: vi.fn(),
+        from: vi.fn(() => ({
+          upload,
+          download: vi.fn(async (name: string) => {
+            if (control.downloadFails) return { data: null, error: { message: "network" } };
+            const body = objects.get(name);
+            return body === undefined ? { data: null, error: { message: "not found" } } : { data: { text: async () => body }, error: null };
+          }),
+        })),
+      },
+    };
+    return { db, upload, objects, control };
+  }
+
+  beforeEach(() => {
+    CLIENT_JOB_ID = `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    PAID_SESSION = `paid-session-${CLIENT_JOB_ID}`;
+    mockAccess.verifySessionToken.mockImplementation((t: string) => (t === PAID_SESSION ? { jti: PAID_SESSION } : null));
+    mockAccess.getActivePaidSession.mockReset();
+    mockAccess.getActivePaidSession.mockImplementation(async (sessionId: string) =>
+      sessionId === PAID_SESSION ? { id: PAID_SESSION, firebaseUid: "paid-uid", tier: "Pro" } : null);
+    // Earlier describes leave one-shot and overridden mocks behind, so this block sets its own state.
+    mockCreateMessage.mockImplementation(responder);
+    mockUsage.recordPaidUse.mockClear();
+    mockUsage.getFreeUsage.mockResolvedValue(0);
+  });
+  afterEach(() => {
+    delete process.env.PARENT_ANALYSIS_ENABLED;
+    mockAccess.getSupabase.mockReset();
+  });
+
+  it("Quick Review with the flag OFF: no parent block, no parent view, and the prompt is unchanged", async () => {
+    const res = await request(app)
+      .post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.parentAttribution).toBeUndefined();
+    expect(res.body.parentViewJobId).toBeUndefined();
+    const sent = mockCreateMessage.mock.calls.map(call => JSON.stringify(call[0])).join("\n");
+    expect(sent).not.toContain("parentAttribution");
+  });
+
+  it("Quick Review with the flag ON: only verified quotes become records; the parent view reads the stored model", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    mockAccess.getSupabase.mockReturnValue(fakeStorage().db);
+    const res = await request(app)
+      .post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewJobId).toBe(CLIENT_JOB_ID);
+    const model = res.body.parentAttribution.caseModel;
+    // A model-asserted FINDING is stored as an unresolved allegation, never as a finding.
+    expect(model.allegations.map((a: { id: string }) => a.id)).toEqual(["ALG-1"]);
+    expect(model.allegations[0]).toMatchObject({ kind: "ALLEGATION", status: "UNRESOLVED" });
+    expect(res.body.parentAttribution.rejected).toContainEqual({ kind: "allegation", id: "ALG-2", reason: "QUOTE_NOT_VERIFIED" });
+
+    const choices = await request(app).get(`/api/analyze/job/${CLIENT_JOB_ID}/parent-view`).set(free());
+    expect(choices.status).toBe(200);
+    expect(choices.body.options.pairs).toEqual([
+      { partyId: "P-A", proceedingId: "PROC-1" },
+      { partyId: "P-B", proceedingId: "PROC-1" },
+    ]);
+    const a = await ownerView("P-A", "PROC-1");
+    expect(a.body.view.specificAllegations.map((x: { id: string }) => x.id)).toEqual(["ALG-1"]);
+    const b = await ownerView("P-B", "PROC-1");
+    expect(b.body.view.specificAllegations).toEqual([]);
+  });
+
+  it("Quick Review: another account cannot read the parent view of a job it did not create", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    mockAccess.getSupabase.mockReturnValue(fakeStorage().db);
+    await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    const res = await request(app)
+      .get(`/api/analyze/job/${CLIENT_JOB_ID}/parent-view`)
+      .set("Authorization", PAID_TOKEN);
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("JOB_NOT_FOUND");
+  });
+
+  it("Forensic with the flag ON and storage working: returns a server-generated id that opens the owner's view", async () => {
+    mockCreateMessage.mockImplementation(forensicResponder);
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    const res = await request(app)
+      .post("/api/deep-scan").set(myPaid()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(true);
+    expect(res.body.parentViewJobId).toBeTruthy();
+    expect(res.body.parentViewJobId).not.toBe(CLIENT_JOB_ID);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const view = await request(app)
+      .get(`/api/analyze/job/${res.body.parentViewJobId}/parent-view`)
+      .set(myPaid());
+    expect(view.status).toBe(200);
+    expect(view.body.options.pairs.length).toBe(2);
+  });
+
+  it("Forensic with the flag ON and storage failing: reports the view unavailable, keeps the report, charges once", async () => {
+    mockCreateMessage.mockImplementation(forensicResponder);
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db } = fakeStorage({ message: "quota exceeded" });
+    mockAccess.getSupabase.mockReturnValue(db);
+    const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(res.body.jobId).toBeUndefined();
+    expect(res.body.gaps).toEqual(["g"]);
+    expect(mockUsage.recordPaidUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("Forensic with the flag OFF: no parent fields and the forensic prompt is unchanged", async () => {
+    mockCreateMessage.mockImplementation(forensicResponder);
+    const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.parentViewAvailable).toBeUndefined();
+    expect(res.body.parentViewJobId).toBeUndefined();
+    const sent = mockCreateMessage.mock.calls.map(call => JSON.stringify(call[0])).join("\n");
+    expect(sent).not.toContain("parentAttribution");
+  });
+
+  it("Forensic: a failed usage record means no stored parent view, even though the report is returned", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    mockCreateMessage.mockImplementation(forensicResponder);
+    mockUsage.recordPaidUse.mockRejectedValueOnce(new Error("database unavailable"));
+    const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("Forensic: a report without the verified parent model is not offered as a parent view", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    mockCreateMessage.mockImplementation(async (body: any) =>
+      isVerificationRequest(body) ? claudeJson(VERIFICATION_RESULT) : claudeJson(FORENSIC_BODY));
+    const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("Quick Review: the raw parent block is not in the job's section record", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    mockAccess.getSupabase.mockReturnValue(fakeStorage().db);
+    const res = await request(app)
+      .post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.parentAttribution.caseModel).toBeDefined();
+    // The model really returned the block (the prompt asked for it), but the recorded sections must not hold it.
+    expect(mockCreateMessage.mock.calls.some(call => JSON.stringify(call[0]).includes("parentAttribution"))).toBe(true);
+    const job = await request(app).get(`/api/analyze/job/${CLIENT_JOB_ID}`).set(free());
+    expect(job.status).toBe(200);
+    expect(Object.keys(job.body.sections ?? {}).length).toBeGreaterThan(0);
+    expect(JSON.stringify(job.body.sections)).not.toContain("parentAttribution");
+    expect(JSON.stringify(job.body.sections)).not.toContain("P-A");
+  });
+
+  it("Quick Review: the parent view id is returned only after the record is confirmed stored", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    const res = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(true);
+    expect(res.body.parentViewJobId).toBe(CLIENT_JOB_ID);
+    expect(upload).toHaveBeenCalled();
+  });
+
+  it("Quick Review: no parent view id when storage is not configured, and the report is still returned", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const res = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(res.body.documentTitle).toBe("Affidavit of a worker");
+    expect(mockUsage.recordFreeUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("Quick Review: no parent view id when the upload is rejected, and the use is recorded once", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const rejected = fakeStorage({ message: "quota exceeded" });
+    mockAccess.getSupabase.mockReturnValue(rejected.db);
+    const res = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(mockUsage.recordFreeUse).toHaveBeenCalledTimes(1);
+    // Availability is kept (the analysis completed), and the failed claim never turned into an unconditional write.
+    expect(rejected.upload.mock.calls.length).toBe(1);
+    expect((rejected.upload.mock.calls[0][2] as { upsert?: boolean }).upsert).toBe(false);
+  });
+
+  it("Quick Review: an unreadable existing record is refused with a retryable 503 and no credit is kept", async () => {
+    mockCreateMessage.mockImplementation(responder);
+    const B_SESSION = `b-${PAID_SESSION}`;
+    mockAccess.verifySessionToken.mockImplementation((t: string) => (t === PAID_SESSION || t === B_SESSION ? { jti: t } : null));
+    mockAccess.getActivePaidSession.mockImplementation(async (id: string) =>
+      id === B_SESSION ? { id, firebaseUid: "b-uid", tier: "Pro" } : id === PAID_SESSION ? { id, firebaseUid: "paid-uid", tier: "Pro" } : null);
+    mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) =>
+      header === "Bearer b-token" ? { uid: "b-uid", email: "b@example.com" } : header === PAID_TOKEN ? { uid: "paid-uid", email: "paid@example.com" } : null);
+    const storage = fakeStorage();
+    const fakeDb = createFakeDb([{ id: B_SESSION, tier: "Pro", credits_granted: 5, credits_consumed: 0, is_suspended: false }]);
+    mockAccess.getSupabase.mockReturnValue(Object.assign(fakeDb, { storage: storage.db.storage }));
+
+    // The second account passes its first check, then another instance creates the owner's record, which then cannot be read.
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    mockUsage.checkPaidUsage.mockImplementationOnce((async () => {
+      await gate;
+      return { allowed: true, used: 0, limit: Infinity, remaining: null, tier: "Pro" };
+    }) as never);
+    const held = request(app)
+      .post("/api/analyze").set({ Authorization: "Bearer b-token", "x-ps-session": B_SESSION }).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const ownersRecord = JSON.stringify({ jobId: CLIENT_JOB_ID, uid: "paid-uid", mode: "fast", status: "analyzing", createdAt: 1, updatedAt: 1 });
+    storage.objects.set(`${CLIENT_JOB_ID}.json`, ownersRecord);
+    storage.control.downloadFails = true;
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    release();
+    const res = await held;
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("ANALYSIS_PERSISTENCE_FAILED");
+    expect(res.body.retryable).toBe(true);
+    expect(storage.objects.get(`${CLIENT_JOB_ID}.json`)).toBe(ownersRecord);
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(fakeDb._reservations.every(row => row.status === "released")).toBe(true); // no credit is kept
+  });
+
+  it("Quick Review: another account reusing a finished job's id is refused, and the owner's job is untouched", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    mockAccess.getSupabase.mockReturnValue(fakeStorage().db);
+    const first = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(first.status).toBe(200);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    const other = await request(app)
+      .post("/api/analyze").set("Authorization", PAID_TOKEN).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: "different text for another account", mode: "fast" });
+    expect(other.status).toBe(409);
+    expect(other.body.code).toBe("ANALYSIS_ID_CONFLICT");
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+
+    const ownersJob = await request(app).get(`/api/analyze/job/${CLIENT_JOB_ID}`).set(free());
+    expect(ownersJob.status).toBe(200);
+    expect(ownersJob.body.status).toBe("completed");
+    expect(mockUsage.recordFreeUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("Quick Review: the owner retrying a finished analysis gets the same report with no new model call or charge", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    mockAccess.getSupabase.mockReturnValue(fakeStorage().db);
+    const first = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    const modelCalls = mockCreateMessage.mock.calls.length;
+    const retry = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(retry.status).toBe(200);
+    expect(retry.body.documentTitle).toBe(first.body.documentTitle);
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(mockUsage.recordFreeUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("Quick Review: two accounts racing on one id produce exactly one analysis and one conflict", async () => {
+    const [a, b] = await Promise.all([
+      request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" }),
+      request(app).post("/api/analyze").set("Authorization", PAID_TOKEN).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" }),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([200, 409]);
+    const loser = a.status === 409 ? a : b;
+    expect(loser.body.code).toBe("ANALYSIS_ID_CONFLICT");
+    expect(mockUsage.recordFreeUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("Quick Review: a job another account creates after the first ownership check is never overwritten", async () => {
+    // Hold the second account's request after its first check has passed (no job existed yet).
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    mockUsage.getFreeUsage.mockImplementationOnce(async () => { await gate; return 0; });
+    const held = request(app)
+      .post("/api/analyze").set("Authorization", PAID_TOKEN).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: "second account text", mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // The first account now creates and finishes the job under the same id.
+    const owner = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(owner.status).toBe(200);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    release();
+    const loser = await held;
+    expect(loser.status).toBe(409);
+    expect(loser.body.code).toBe("ANALYSIS_ID_CONFLICT");
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    const ownersJob = await request(app).get(`/api/analyze/job/${CLIENT_JOB_ID}`).set(free());
+    expect(ownersJob.body.status).toBe("completed");
+    expect(ownersJob.body.report?.documentTitle ?? owner.body.documentTitle).toBe("Affidavit of a worker");
+  });
+
+  it("Forensic: billing keys are scoped to session and document and never equal the raw client id", async () => {
+    mockCreateMessage.mockImplementation(forensicResponder);
+    const send = (doc: string) =>
+      request(app).post("/api/deep-scan").set(myPaid()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ documentText: doc, priorAnalysis: CORE });
+    expect((await send("Document one. " + DOC)).status).toBe(200);
+    expect((await send("Document one. " + DOC)).status).toBe(200); // a genuine retry
+    expect((await send("Document two. " + DOC)).status).toBe(200); // same id, different document
+
+    const checkKeys = mockUsage.checkPaidUsage.mock.calls.map(call => (call as unknown[])[3]);
+    const recordKeys = mockUsage.recordPaidUse.mock.calls.map(call => (call as unknown[])[4]);
+    expect(checkKeys.some(key => key === CLIENT_JOB_ID)).toBe(false);
+    expect(recordKeys.some(key => key === CLIENT_JOB_ID)).toBe(false);
+    expect(recordKeys[0]).toBe(recordKeys[1]); // retry: same key, so it is not charged twice
+    expect(recordKeys[2]).not.toBe(recordKeys[0]); // different document: a new analysis
+    expect(checkKeys[0]).toBe(recordKeys[0]);
+  });
+
+  it("Quick Review (paid): usage keys are scoped to the session and ignore an invalid raw id", async () => {
+    mockCreateMessage.mockImplementation(responder);
+    const ok = await request(app).post("/api/analyze").set(myPaid()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(ok.status).toBe(200);
+    const bad = await request(app).post("/api/analyze").set(myPaid()).set("X-Analysis-Id", "shared-key").send({ textContent: DOC, mode: "fast" });
+    expect(bad.status).toBe(200);
+    const recordKeys = mockUsage.recordPaidUse.mock.calls.map(call => (call as unknown[])[4]);
+    expect(recordKeys[0]).toBe(`analyze:${PAID_SESSION}:${CLIENT_JOB_ID}`);
+    expect(recordKeys[1]).toBeNull();
+    expect(recordKeys).not.toContain("shared-key");
+  });
+
+  it("Quick Review (paid): a losing request with a reused id never releases the owner's in-flight credit", async () => {
+    mockCreateMessage.mockImplementation(responder);
+    const B_SESSION = `b-${PAID_SESSION}`;
+    mockAccess.verifySessionToken.mockImplementation((t: string) => (t === PAID_SESSION || t === B_SESSION ? { jti: t } : null));
+    mockAccess.getActivePaidSession.mockImplementation(async (id: string) =>
+      id === PAID_SESSION ? { id, firebaseUid: "paid-uid", tier: "Pro" } : id === B_SESSION ? { id, firebaseUid: "b-uid", tier: "Pro" } : null);
+    mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) => {
+      if (header === PAID_TOKEN) return { uid: "paid-uid", email: "paid@example.com" };
+      if (header === "Bearer b-token") return { uid: "b-uid", email: "b@example.com" };
+      return null;
+    });
+    const fakeDb = createFakeDb([
+      { id: PAID_SESSION, tier: "Pro", credits_granted: 5, credits_consumed: 0, is_suspended: false },
+      { id: B_SESSION, tier: "Pro", credits_granted: 5, credits_consumed: 0, is_suspended: false },
+    ]);
+    mockAccess.getSupabase.mockReturnValue(Object.assign(fakeDb, { storage: fakeStorage().db.storage }));
+
+    // B passes its first ownership check, then waits. A then starts and is held mid-analysis with its credit reserved.
+    let releaseB!: () => void;
+    const gateB = new Promise<void>(resolve => { releaseB = resolve; });
+    mockUsage.checkPaidUsage.mockImplementationOnce((async () => {
+      await gateB;
+      return { allowed: true, used: 0, limit: Infinity, remaining: null, tier: "Pro" };
+    }) as never);
+    const bRequest = request(app)
+      .post("/api/analyze").set({ Authorization: "Bearer b-token", "x-ps-session": B_SESSION }).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: "second account text", mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    let releaseModel!: () => void;
+    const gateModel = new Promise<void>(resolve => { releaseModel = resolve; });
+    mockCreateMessage.mockImplementationOnce((async (body: any) => {
+      await gateModel;
+      return responder(body);
+    }) as never);
+    const aRequest = request(app)
+      .post("/api/analyze").set(myPaid()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 250));
+
+    releaseB();
+    const b = await bRequest;
+    expect(b.status).toBe(409);
+    expect(b.body.code).toBe("ANALYSIS_ID_CONFLICT");
+
+    // B has failed and released its own reservation. A's reservation must still be held.
+    const aRow = fakeDb._reservations.find(row => row.session_id === PAID_SESSION);
+    expect(aRow?.status).toBe("reserved");
+    for (const row of fakeDb._reservations.filter(r => r.session_id === B_SESSION)) {
+      expect(row.status).toBe("released");
+      expect(row.request_id).not.toBe(aRow?.request_id);
+    }
+
+    releaseModel();
+    const a = await aRequest;
+    expect(a.status).toBe(200);
+    expect(fakeDb._reservations.find(row => row.session_id === PAID_SESSION)?.status).toBe("finalized");
+  });
+
+  it("Forensic: a parent block with no usable records is not offered as a parent view", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    mockCreateMessage.mockImplementation(async (body: any) =>
+      isVerificationRequest(body)
+        ? claudeJson(VERIFICATION_RESULT)
+        : claudeJson(JSON.stringify(body).includes("parentAttribution")
+          ? { ...FORENSIC_BODY, parentAttribution: { parties: [{ nope: true }], roles: [{}] } }
+          : FORENSIC_BODY));
+    const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("Quick Review: a failed usage record returns the report but offers no parent view", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    mockUsage.recordFreeUse.mockRejectedValueOnce(new Error("database unavailable"));
+    const res = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.documentTitle).toBe("Affidavit of a worker");
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(upload.mock.calls.some(call => String(call[0]).startsWith(CLIENT_JOB_ID) && String(call[1]).includes("parentViewJobId"))).toBe(false);
+  });
+
+  describe("Forensic credit identifiers (real credit accounting, fake database)", () => {
+    function forensicDb() {
+      const db = createFakeDb([{ id: PAID_SESSION, tier: "Pro", credits_granted: 5, credits_consumed: 0, is_suspended: false }]);
+      mockAccess.getSupabase.mockReturnValue(Object.assign(db, { storage: fakeStorage().db.storage }));
+      return db;
+    }
+    const scan = (doc: string) =>
+      request(app).post("/api/deep-scan").set(myPaid()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ documentText: doc, priorAnalysis: CORE });
+
+    it("reserves and finalizes under the same scoped identifier, never the raw client id", async () => {
+      mockCreateMessage.mockImplementation(forensicResponder);
+      const db = forensicDb();
+      const res = await scan(DOC);
+      expect(res.status).toBe(200);
+      const expectedKey = forensicBillingKey(PAID_SESSION, DOC, CLIENT_JOB_ID);
+      expect(db._reservations).toHaveLength(1);
+      expect(db._reservations[0].request_id).toBe(expectedKey);
+      expect(db._reservations[0].request_id).not.toBe(CLIENT_JOB_ID);
+      expect(db._reservations[0].status).toBe("finalized");
+    });
+
+    it("releases under the same scoped identifier when the analysis fails, and charges nothing", async () => {
+      mockCreateMessage.mockRejectedValue(Object.assign(new Error("Connection error."), { name: "APIConnectionError" }));
+      const db = forensicDb();
+      const res = await scan(DOC);
+      expect(res.status).toBeGreaterThanOrEqual(500);
+      expect(db._reservations).toHaveLength(1);
+      expect(db._reservations[0].request_id).toBe(forensicBillingKey(PAID_SESSION, DOC, CLIENT_JOB_ID));
+      expect(db._reservations[0].status).toBe("released");
+    });
+
+    it("treats a retry of the same document as one analysis and a different document as a new one", async () => {
+      mockCreateMessage.mockImplementation(forensicResponder);
+      const db = forensicDb();
+      expect((await scan(DOC)).status).toBe(200);
+      expect((await scan(DOC)).status).toBe(200); // a genuine retry
+      expect(db._reservations).toHaveLength(1);
+      // The retry must not consume a second credit from the account.
+      expect(db._sessions.get(PAID_SESSION)?.credits_consumed).toBe(1);
+      expect((await scan("A different document. " + DOC)).status).toBe(200);
+      expect(db._sessions.get(PAID_SESSION)?.credits_consumed).toBe(2);
+      expect(db._reservations).toHaveLength(2);
+      expect(new Set(db._reservations.map(r => r.request_id)).size).toBe(2);
+      expect(db._reservations.every(r => r.status === "finalized")).toBe(true);
+    });
+  });
+
+  describe("a truncated parent block never fails the core report", () => {
+    const truncated = () => claudeText('{"documentTitle": "x", "parentAttribution": {"parties": [', "max_tokens");
+    const withBlock = (calls: unknown[][]) => calls.filter(call => JSON.stringify(call[0]).includes("parentAttribution")).length;
+
+    it("Quick Review: the retry drops the parent block, so the report still completes and is charged once", async () => {
+      process.env.PARENT_ANALYSIS_ENABLED = "true";
+      const { db, upload } = fakeStorage();
+      mockAccess.getSupabase.mockReturnValue(db);
+      mockCreateMessage.mockImplementation(async (body: any) =>
+        JSON.stringify(body).includes("parentAttribution") ? truncated() : responder(body));
+      const res = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+      expect(res.status).toBe(200);
+      expect(res.body.documentTitle).toBe("Affidavit of a worker");
+      expect(res.body.parentViewAvailable).toBe(false);
+      expect(res.body.parentViewJobId).toBeUndefined();
+      expect(withBlock(mockCreateMessage.mock.calls)).toBe(1); // only the first overview attempt asked for it
+      expect(mockCreateMessage.mock.calls.length).toBe(5); // four sections plus the one existing retry
+      expect(mockUsage.recordFreeUse).toHaveBeenCalledTimes(1);
+      expect(upload.mock.calls.some(call => String(call[1]).includes("parentViewJobId"))).toBe(false);
+    });
+
+    it("Quick Review: the first attempt asks for a bounded block", async () => {
+      process.env.PARENT_ANALYSIS_ENABLED = "true";
+      mockCreateMessage.mockImplementation(responder);
+      await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+      const asked = mockCreateMessage.mock.calls.map(call => JSON.stringify(call[0])).find(text => text.includes("parentAttribution")) ?? "";
+      expect(asked).toContain("at most 12 allegations");
+      expect(asked).toContain("under 160 characters");
+    });
+
+    it("Forensic: the retry drops the parent block, so the report still completes and is charged once", async () => {
+      process.env.PARENT_ANALYSIS_ENABLED = "true";
+      const { db, upload } = fakeStorage();
+      mockAccess.getSupabase.mockReturnValue(db);
+      mockCreateMessage.mockImplementation(async (body: any) =>
+        isVerificationRequest(body) ? claudeJson(VERIFICATION_RESULT)
+          : JSON.stringify(body).includes("parentAttribution") ? truncated() : claudeJson(FORENSIC_BODY));
+      const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+      expect(res.status).toBe(200);
+      expect(res.body.gaps).toEqual(["g"]);
+      expect(res.body.parentViewAvailable).toBe(false);
+      expect(res.body.parentViewJobId).toBeUndefined();
+      expect(withBlock(mockCreateMessage.mock.calls)).toBe(1);
+      expect(mockUsage.recordPaidUse).toHaveBeenCalledTimes(1);
+      expect(upload).not.toHaveBeenCalled();
+    });
+  });
+
+  it("Quick Review: a record another server instance created after the first check is never overwritten (exclusive claim)", async () => {
+    mockCreateMessage.mockImplementation(responder);
+    const { db, upload, objects } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    // Hold the second account after its first ownership check has found nothing.
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    mockUsage.getFreeUsage.mockImplementationOnce(async () => { await gate; return 0; });
+    const held = request(app)
+      .post("/api/analyze").set("Authorization", PAID_TOKEN).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: "second account text", mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Another instance now creates the owner's record. This instance's memory never sees it.
+    const ownersRecord = JSON.stringify({ jobId: CLIENT_JOB_ID, uid: "free-uid", mode: "fast", status: "analyzing", createdAt: 1, updatedAt: 1 });
+    objects.set(`${CLIENT_JOB_ID}.json`, ownersRecord);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    release();
+    const loser = await held;
+    expect(loser.status).toBe(409);
+    expect(loser.body.code).toBe("ANALYSIS_ID_CONFLICT");
+    expect(objects.get(`${CLIENT_JOB_ID}.json`)).toBe(ownersRecord); // untouched
+    expect(upload.mock.calls.every(call => (call[2] as { upsert?: boolean })?.upsert !== true)).toBe(true); // no overwrite attempted
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
+  });
+});

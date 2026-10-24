@@ -1698,7 +1698,9 @@ describe("Server-Authoritative Usage Accounting & Idempotency", () => {
     expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
   });
 
-  it("forwards idempotency key and prevents duplicate deductions across network retries", async () => {
+  // The usage key is scoped to the paid session and only a valid analyzer id (req_<epoch>_<random>) is honoured, so a
+  // raw client string can never be shared across accounts or used to skip the usage count.
+  it("forwards a session-scoped idempotency key and prevents duplicate deductions across network retries", async () => {
     mockUsage.checkPaidUsage.mockResolvedValueOnce({
       allowed: true,
       alreadyConsumed: true,
@@ -1714,13 +1716,14 @@ describe("Server-Authoritative Usage Accounting & Idempotency", () => {
       .set({
         Authorization: "Bearer basic-token",
         "x-ps-session": BASIC_TOKEN,
-        "x-analysis-id": "retry-id-12345",
+        "x-analysis-id": "req_1700000000000_retry12",
       })
       .send({ textContent: "Valid test document text", mode: "fast" });
 
     expect(res.status).toBe(200);
-    expect(mockUsage.checkPaidUsage).toHaveBeenCalledWith("session-basic-1", "Basic", "quick", "retry-id-12345");
-    expect(mockUsage.recordPaidUse).toHaveBeenCalledWith("session-basic-1", "Basic", "basic@example.com", "quick", "retry-id-12345");
+    const scopedKey = "analyze:session-basic-1:req_1700000000000_retry12";
+    expect(mockUsage.checkPaidUsage).toHaveBeenCalledWith("session-basic-1", "Basic", "quick", scopedKey);
+    expect(mockUsage.recordPaidUse).toHaveBeenCalledWith("session-basic-1", "Basic", "basic@example.com", "quick", scopedKey);
   });
 
   it("GET /api/analyzer-usage returns paid credit status for a valid session", async () => {
