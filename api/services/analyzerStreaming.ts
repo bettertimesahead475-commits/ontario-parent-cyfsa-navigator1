@@ -349,7 +349,8 @@ export async function claimAnalysisJobDurable(params: NewJobParams): Promise<Ana
   // nothing awaited in between, so two accounts cannot both register the same id on this instance.
   refuseIfOwnedByAnother();
   const inMemory = jobStore.get(params.jobId); // same account's earlier entry, if any
-  memoryOnlyJobs.delete(params.jobId); // this run decides afresh
+  // An earlier run of this account may be memory-only and still going. Its mark is cleared only once this claim has
+  // succeeded. If the claim is lost, that run must stay unable to write to Storage.
   if (!db || !hasBucket) return memoryOnly(registerNewJob(params));
 
   const job = registerNewJob(params);
@@ -361,7 +362,10 @@ export async function claimAnalysisJobDurable(params: NewJobParams): Promise<Ana
   } catch {
     return memoryOnly(job); // network failure: no claim was made
   }
-  if (!result?.error) return job; // claimed exclusively
+  if (!result?.error) {
+    memoryOnlyJobs.delete(job.jobId); // claimed exclusively: this job may now write to Storage
+    return job;
+  }
   if (!isAlreadyExists(result.error)) return memoryOnly(job); // any other Storage error: no claim was made
 
   // Someone created this id first. Only the same account may continue with it. Remove only the entry this request
@@ -375,6 +379,7 @@ export async function claimAnalysisJobDurable(params: NewJobParams): Promise<Ana
   // A corrupt or ownerless record has no owner who could claim it back. Refuse, as the route's pre-check does, so the
   // client starts a new analysis instead of retrying a record that will never become readable.
   if (record.status === "corrupt" || !record.job.uid || record.job.uid !== params.uid) throw conflict();
+  memoryOnlyJobs.delete(job.jobId); // the record is this account's own, so it may replace it
   return createAnalysisJobDurable(params);
 }
 

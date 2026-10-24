@@ -230,4 +230,20 @@ describe("claimAnalysisJobDurable", () => {
     expect(finalRecord.report.documentTitle).toBe("winner's report");
     expect(finalRecord.status).toBe("completed");
   });
+
+  it("a lost claim does not strip the memory-only mark from an earlier run of the same account", async () => {
+    const id = "req_1700000000017_oooo";
+    uploadError = { message: "service unavailable", statusCode: "503" };
+    await claimAnalysisJobDurable({ jobId: id, uid: "alice", mode: "fast" }); // alice's first run is memory-only
+    uploadError = null;
+    objects.set(`${id}.json`, stored(id, "bob")); // bob claims the id through another instance
+    await expect(claimAnalysisJobDurable({ jobId: id, uid: "alice", mode: "fast" }))
+      .rejects.toMatchObject({ code: "ANALYSIS_ID_CONFLICT" }); // alice's retry loses
+    const before = uploads.length;
+    await completeAnalysisJobDurable(id, { documentTitle: "alice's old run" }); // the old run finishes
+    expect(uploads.length).toBe(before); // and still cannot write
+    const storedRecord = JSON.parse(objects.get(`${id}.json`)!);
+    expect(storedRecord.uid).toBe("bob");
+    expect(storedRecord.report).toBeUndefined();
+  });
 });
