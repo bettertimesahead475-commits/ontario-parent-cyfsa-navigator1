@@ -104,7 +104,7 @@ function secondReviewNotice(report: Loose): string {
 const EVIDENCE_LABELS: Record<string, string> = {
   HEARSAY: "Second-hand (hearsay)",
   INFERENCE: "Inference, not stated directly",
-  UNSUPPORTED: "Not supported by the document",
+  UNSUPPORTED: "Supporting evidence not identified in the reviewed documents.",
 };
 
 /** Plain-language evidence label. An analyzer enum is never shown raw to a parent. */
@@ -119,7 +119,7 @@ function evidenceLabel(classification: unknown): string {
 function chronologyLine(entry: Loose): string {
   const where = text(entry.locationInDocument);
   const label = evidenceLabel(entry.evidenceClassification);
-  return [text(entry.date), text(entry.event), where ? `(${where})` : "", label ? `Evidence: ${label}.` : ""].filter(Boolean).join(" ");
+  return [text(entry.date), text(entry.event), where ? `(${where})` : "", label ? `Evidence: ${label.replace(/\.$/, "")}.` : ""].filter(Boolean).join(" ");
 }
 
 /**

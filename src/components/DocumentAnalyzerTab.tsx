@@ -55,10 +55,12 @@ import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
 import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED } from "../config/featureFlags";
 import { STATUTE_ROOT_URL, statuteDetailsFor } from "../utils/statuteReference";
+import { containsTrigger } from "../../shared/glossaryMatch";
 import { ParentReportSection } from "./ParentReportPanel";
 import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
+import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -646,6 +648,8 @@ export default function DocumentAnalyzerTab() {
   const exportSummaryLog = () => {
     try {
       const generatedAt = new Date().toLocaleString("en-US");
+      // A redacted copy keeps no file names, chat text or free text from the reports.
+      const redacting = redactionEnabled;
       let reportText = "";
 
       reportText += "================================================================================\n";
@@ -657,6 +661,7 @@ export default function DocumentAnalyzerTab() {
       reportText += `Analyzed Files : ${organizedFiles.filter(f => f.analysisReport).length}\n`;
       reportText += `Chat History   : ${ragChatMessages.length} message(s)\n\n`;
       
+      if (redacting) reportText += REDACTED_COPY_NOTICE + "\n\n";
       reportText += "Disclaimer: This report is for educational purposes only under the Ontario Child,\n";
       reportText += "Youth and Family Services Act (CYFSA), 2017, and does not constitute formal legal\n";
       reportText += "advice. Please consult with a licensed Ontario family defense lawyer.\n\n";
@@ -677,16 +682,16 @@ export default function DocumentAnalyzerTab() {
 
         sortedFiles.forEach((file, index) => {
           reportText += `[FILE ${index + 1}/${sortedFiles.length}] -----------------------------------------------------\n`;
-          reportText += `File Name       : ${file.name}\n`;
+          reportText += `File Name       : ${redacting ? `Document ${index + 1}` : file.name}\n`;
           reportText += `Category        : ${file.category}\n`;
-          reportText += `Uploaded At     : ${file.uploadedAt}\n`;
+          reportText += `Uploaded At     : ${redacting ? "[date removed from redacted copy]" : file.uploadedAt}\n`;
           reportText += `Size            : ${(file.size / 1024).toFixed(1)} KB\n`;
           reportText += `Mime Type       : ${file.mimeType}\n`;
           reportText += `Analysis Status : ${file.analysisStatus.toUpperCase()}\n\n`;
 
           if (file.analysisReport) {
-            const report = file.analysisReport;
-            reportText += `>>> ANALYSIS AUDIT REPORT: ${report.documentTitle || file.name}\n`;
+            const report = redacting ? redactForExport(file.analysisReport) : file.analysisReport;
+            reportText += `>>> ANALYSIS AUDIT REPORT: ${redacting ? "Analysis report" : report.documentTitle || file.name}\n`;
             reportText += `Document Type : ${report.documentType || "N/A"}\n`;
             reportText += `Completeness / Reliability Score: ${report.completenessScore}/100\n\n`;
 
@@ -715,7 +720,7 @@ export default function DocumentAnalyzerTab() {
             if (report.thresholdAnalysis && report.thresholdAnalysis.length > 0) {
               report.thresholdAnalysis.forEach((th) => {
                 reportText += `    - ${th.thresholdChecked}\n`;
-                reportText += `      Status      : ${th.isMet.toUpperCase()}\n`;
+                reportText += `      Analyzer preliminary read (not a legal finding): ${th.isMet}\n`;
                 reportText += `      Citation    : ${th.primarySourceLaw}\n`;
                 reportText += `      Reasoning   : ${th.reasoning}\n\n`;
               });
@@ -787,7 +792,9 @@ export default function DocumentAnalyzerTab() {
       reportText += "SECTION 2: CHRONOLOGICAL CASE ASSISTANT CHAT LOGS\n";
       reportText += "================================================================================\n\n";
 
-      if (ragChatMessages.length === 0) {
+      if (redacting) {
+        reportText += "Consultation messages are not included in a redacted copy.\n\n";
+      } else if (ragChatMessages.length === 0) {
         reportText += "No chat session messages have been recorded yet.\n\n";
       } else {
         ragChatMessages.forEach((msg, index) => {
@@ -2112,11 +2119,14 @@ export default function DocumentAnalyzerTab() {
     };
     window.addEventListener("trigger-print-pdf", handleFooterPrint);
     return () => window.removeEventListener("trigger-print-pdf", handleFooterPrint);
-  }, [activeTab, ragChatMessages, selectedReport, organizedFiles, selectedFileId]);
+  }, [activeTab, ragChatMessages, selectedReport, organizedFiles, selectedFileId, redactionEnabled, deepScanReports, quickReviewSnapshots]);
 
   const printAnalyzer = (reportMode: "combined" | "quick" | "deep" = "combined") => {
     const quickReport = activeSelectedFile && (quickReviewSnapshots[activeSelectedFile.id] || activeSelectedFile.analysisReport);
-    const deepReport = activeSelectedFile && deepScanReports[activeSelectedFile.id];
+    const rawDeepReport = activeSelectedFile && deepScanReports[activeSelectedFile.id];
+    // A redacted copy removes free text and names before anything is written, and keeps no chat text.
+    const deepReport = redactionEnabled && rawDeepReport ? redactForExport(rawDeepReport) : rawDeepReport;
+    const displayFileName = redactionEnabled ? "Analysis report" : activeSelectedFile?.name;
     if (reportMode === "deep" && !deepReport) { alert("No completed Deep Scan is available for this document."); return; }
     if (reportMode === "quick" && !quickReport) { alert("No Quick Review is available for this document."); return; }
     const printWindow = window.open("", "_blank");
@@ -2128,7 +2138,17 @@ export default function DocumentAnalyzerTab() {
     let title = "Document Audit & Case File Explorer";
     let bodyContent = "";
     // Quick Review exports use the original snapshot, not the merged on-screen report.
-    const reportForExport = reportMode === "quick" ? quickReport : selectedReport;
+    const sourceReport = reportMode === "quick" ? quickReport : selectedReport;
+    const redactedReport = sourceReport && redactionEnabled ? redactForExport(sourceReport) : null;
+    const reportForExport = redactedReport && sourceReport
+      ? {
+          ...redactedReport,
+          documentTitle: "Analysis report",
+          forensicVerification: redactedReport.forensicVerification && sourceReport.forensicVerification
+            ? { ...redactedReport.forensicVerification, status: sourceReport.forensicVerification.status }
+            : redactedReport.forensicVerification,
+        }
+      : sourceReport;
 
     const sharedStyle = `
       <style>
@@ -2385,14 +2405,14 @@ export default function DocumentAnalyzerTab() {
           <div class="meta-bar">
             System Agent: <strong>Claude 3.5 Sonnet RAG</strong>
             • Active Case Vault Size: <strong>${organizedFiles.length} files organized</strong>
-            • Verified Statutory Base: Q2 2026 e-Laws Compliant
+            • Statute entries in this report were not checked against the official text
           </div>
         </div>
 
         <div class="section-card">
           <h3 class="section-title">🔍 Consultation Session Log</h3>
           <div style="margin-top: 15px;">
-            ${ragChatMessages.map(msg => {
+            ${redactionEnabled ? "<p>The consultation transcript is not included in a redacted copy.</p>" : ragChatMessages.map(msg => {
               const author = msg.sender === "user" ? "Client (Parent)" : "CYFSA AI Statutory Assistant";
               // Escape first, then apply the bold/citation markup so the <strong>/<span> tags
               // this intentionally inserts don't themselves get escaped away.
@@ -2416,8 +2436,8 @@ export default function DocumentAnalyzerTab() {
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">🔗 Official Verification Citations (Live e-Laws Links)</h3>
-          <p style="font-size:12px; color:#475569; margin-bottom:12px;">The statutory references scanned by the consultation pipeline resolve directly to real, physically accessible Ontario Government e-Laws pages:</p>
+          <h3 class="section-title">🔗 Statute Links (check against e-Laws)</h3>
+          <p style="font-size:12px; color:#475569; margin-bottom:12px;">These links go to Ontario e-Laws pages, including the Children's Law Reform Act. They are the same in every report. Check the current text there before relying on it:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             <li><strong>CYFSA Section 74 (Child Protection Thresholds):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK123" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK123</a></li>
             <li><strong>CYFSA Section 94 (30-Day Adjournment Limit / Temporary Care Order):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
@@ -2428,7 +2448,7 @@ export default function DocumentAnalyzerTab() {
         </div>
       `;
     } else if (activeTab === "organizer" && reportMode === "deep" && deepReport) {
-      title = `Forensic Deep Scan - ${activeSelectedFile?.name || "Document"}`;
+      title = `Forensic Deep Scan - ${displayFileName || "Document"}`;
       const renderValue = (value: unknown): string => {
         if (value === null || value === undefined) return "Not provided in this report";
         if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return escapeHtml(String(value));
@@ -2437,7 +2457,7 @@ export default function DocumentAnalyzerTab() {
       };
       bodyContent = `<header class="header-container"><span class="platform-label">CYFSA Navigator • Forensic Deep Scan</span><h1 class="title-main">${escapeHtml(title)}</h1><p>Separate forensic findings. This report is not the original Quick Review.</p></header>${Object.entries(deepReport).filter(([key]) => !["timestamp", "documentText"].includes(key)).map(([key, value]) => `<section class="section-card"><h2 class="section-title">${escapeHtml(key.replace(/([A-Z])/g, " $1"))}</h2>${renderValue(value)}</section>`).join("")}`;
     } else if (activeTab === "organizer" && reportForExport) {
-      title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || activeSelectedFile?.name || "Report")}`;
+      title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || displayFileName || "Report")}`;
       const evidenceIndex = reportForExport.evidenceStrengthIndex || {
         score: 0,
         components: {},
@@ -2471,11 +2491,11 @@ export default function DocumentAnalyzerTab() {
 
           <div class="meta-bar">
             Document Checked:
-            <strong>${escapeHtml(reportForExport.documentTitle || activeSelectedFile?.name || "N/A")}</strong>
+            <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "N/A")}</strong>
             • Type:
             <strong>${escapeHtml(reportForExport.documentType || "Casework Correspondence")}</strong>
             • Date of Audit:
-            <strong>${escapeHtml(reportForExport.analysisDate || "Current")}</strong>
+            <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Current")}</strong>
           </div>
         </div>
 
@@ -2639,7 +2659,7 @@ export default function DocumentAnalyzerTab() {
               <thead>
                 <tr>
                   <th style="width: 30%">Apprehension Threshold Rule</th>
-                  <th style="width: 15%">Threshold Met?</th>
+                  <th style="width: 15%">Analyzer preliminary read (not a legal finding)</th>
                   <th style="width: 35%">Fact-Centered Appraisal</th>
                   <th style="width: 20%">Source law Authority</th>
                 </tr>
@@ -2758,17 +2778,17 @@ export default function DocumentAnalyzerTab() {
               </tr>
             </thead>
             <tbody>
-              ${organizedFiles.map(f => `
+              ${organizedFiles.map((f, fileIndex) => `
                 <tr>
                   <td><strong>${escapeHtml(f.category)}</strong></td>
-                  <td><code>${escapeHtml(f.name)}</code></td>
+                  <td><code>${escapeHtml(redactionEnabled ? `Document ${fileIndex + 1}` : f.name)}</code></td>
                   <td>${(f.size / 1024).toFixed(1)} KB</td>
                   <td>
                     <span style="font-weight: bold; color: ${f.analysisStatus === 'completed' ? '#166534' : f.analysisStatus === 'analyzing' ? '#2563eb' : '#64748b'}">
                       ${escapeHtml(f.analysisStatus.toUpperCase())}
                     </span>
                   </td>
-                  <td>${escapeHtml(f.uploadedAt)}</td>
+                  <td>${escapeHtml(redactionEnabled ? "[removed]" : f.uploadedAt)}</td>
                 </tr>
               `).join("")}
               ${organizedFiles.length === 0 ? `<tr><td colspan="5" style="text-align: center; color: #64748b;">No documents uploaded to case file cabinet yet.</td></tr>` : ""}
@@ -2778,6 +2798,8 @@ export default function DocumentAnalyzerTab() {
       `;
     }
 
+    // Every redacted copy states that it is not guaranteed to be anonymous, whichever report is printed.
+    const redactionNotice = redactionEnabled ? `<p class="redaction-notice" style="font-size:11px; color:#92400e; border:1px solid #fcd34d; padding:8px; border-radius:6px;">${escapeHtml(REDACTED_COPY_NOTICE)}</p>` : "";
     const htmlContent = `
       <html>
         <head>
@@ -2787,6 +2809,7 @@ export default function DocumentAnalyzerTab() {
         <body>
           <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
 
+          ${redactionNotice}
           ${bodyContent}
 
           <div class="legal-notice">
@@ -2794,7 +2817,7 @@ export default function DocumentAnalyzerTab() {
           </div>
 
           <div class="footer-signature">
-            Primary databases verified current through Q2 2026 • Saved dynamically via OPA PDF Legal Desk.
+            Statute entries in this report were not checked against the official text. Confirm them on e-Laws or with counsel. • Saved dynamically via OPA PDF Legal Desk.
           </div>
 
           <script>
@@ -3317,7 +3340,7 @@ export default function DocumentAnalyzerTab() {
                     item.definition.toLowerCase().includes(glossarySearch.toLowerCase()) ||
                     item.abbreviation.toLowerCase().includes(glossarySearch.toLowerCase())
                   ).map((item) => {
-                    const isMatched = activeSelectedFile && activeSelectedFile.content && item.triggers.some(trig => activeSelectedFile.content.toLowerCase().includes(trig));
+                    const isMatched = activeSelectedFile && activeSelectedFile.content && item.triggers.some(trig => containsTrigger(activeSelectedFile.content, trig));
                     const isExpanded = expandedTerm === item.term;
 
                     return (
@@ -3478,7 +3501,7 @@ export default function DocumentAnalyzerTab() {
                                 printWindow.document.write(`
                                   <html>
                                     <head>
-                                      <title>Print Certified Transcript - ${escapeHtml(activeSelectedFile.name)}</title>
+                                      <title>Print Certified Transcript - ${escapeHtml(redactionEnabled ? "Document" : activeSelectedFile.name)}</title>
                                       <style>
                                         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
                                         body {
@@ -3524,13 +3547,15 @@ export default function DocumentAnalyzerTab() {
                                     <body>
                                       <div class="transcript">
                                         <div class="margin-line"></div>
-                                        <pre>${escapeHtml(activeSelectedFile.content)}</pre>
+                                        <pre>${escapeHtml(redactionEnabled ? "The document text is not included in a redacted copy." : activeSelectedFile.content)}</pre>
                                       </div>
                                       <script>window.print();</script>
                                     </body>
                                   </html>
                                 `);
                                 printWindow.document.close();
+                              } else if (redactionEnabled) {
+                                alert("Your browser blocked the print window. Allow pop-ups to print the redacted copy.");
                               } else {
                                 window.print();
                               }
@@ -3919,10 +3944,10 @@ export default function DocumentAnalyzerTab() {
                         <Scale className="w-4 h-4 text-emerald-600 shrink-0 mt-1" />
                         <div className="space-y-1">
                           <p className="font-bold text-emerald-900 flex items-center gap-1.5">
-                            <span>⚖️</span> Verified Citations & Source-Backed Analysis
+                            <span>⚖️</span> Citations & Analysis
                           </p>
                           <p className="text-[11px] text-emerald-800 leading-normal">
-                            Every single objection, red flag, timeline defect, and compliance evaluation extracted during this analysis is strictly verified and backed by the official <strong>Ontario Child, Youth and Family Services Act (CYFSA), 2017</strong>, the <strong>Ontario Evidence Act</strong>, or <strong>Constitutional Charter Protections</strong>. Use the buttons provided inline to verify legal source sections.
+                            Where the app has its own entry for a section, the button opens that entry. The entry was not checked against the official statute. The app checks citations only against its list of confirmed section numbers. Confirm every citation with counsel.
                           </p>
                         </div>
                       </div>
@@ -3983,10 +4008,13 @@ export default function DocumentAnalyzerTab() {
                             })}
                           </div>
 
+                          {redactionEnabled && (
+                            <p className="text-[10.5px] text-slate-400">Copy and download are off while redaction is on, because the brief contains case text.</p>
+                          )}
                           <div className="flex flex-wrap gap-2.5 pt-4 border-t border-slate-800/85">
                             <button
                               onClick={() => {
-                                const textToCopy = selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
+                                const textToCopy = redactionEnabled ? undefined : selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
                                 if (textToCopy) {
                                   navigator.clipboard.writeText(textToCopy).then(
                                     () => alert("Success: Lawyer Case Brief copied to clipboard!"),
@@ -4003,7 +4031,7 @@ export default function DocumentAnalyzerTab() {
 
                             <button
                               onClick={() => {
-                                const textToCopy = selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
+                                const textToCopy = redactionEnabled ? undefined : selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
                                 if (textToCopy) {
                                   const blob = new Blob([textToCopy], { type: "text/plain" });
                                   const url = URL.createObjectURL(blob);
@@ -4061,7 +4089,9 @@ export default function DocumentAnalyzerTab() {
                             </button>
 
                             <button
+                              disabled={redactionEnabled}
                               onClick={() => {
+                                if (redactionEnabled) return;
                                 const stateToSave = {
                                   organizedFiles,
                                   selectedFileId,
@@ -4072,14 +4102,13 @@ export default function DocumentAnalyzerTab() {
                                   savedBriefs
                                 };
                                 localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
-                                setLocation("/lawyers");
-                                alert("Success: Your Detailed Case Brief has been synchronized with the Lawyer Directory. Select a lawyer in the directory to see your pre-filled intake brief!");
+                                alert("Your case brief was saved on this device for the Templates and Chat tools.");
                               }}
                               className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 transition-colors border border-brand-700 cursor-pointer"
-                              title="Sync to Lawyer Directory tab for attorney review"
+                              title={redactionEnabled ? "Turn off redaction to save the full case on this device" : "Save the case brief on this device for the Templates and Chat tools"}
                             >
                               <Scale className="w-3.5 h-3.5 text-white" />
-                              <span>Sync to Lawyer Directory Intake</span>
+                              <span>Save Brief on This Device</span>
                             </button>
                           </div>
                         </div>
@@ -4215,9 +4244,9 @@ export default function DocumentAnalyzerTab() {
                                 <button
                                   onClick={() => openLegislativeReference(flag.legalReference)}
                                   className="font-sans text-brand-700 hover:text-brand-900 font-bold text-xs bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                  title="Click to open Verified Source reference modal"
+                                  title="Open the statute reference for this citation"
                                 >
-                                  <Scale className="w-3.5 h-3.5 text-brand-600" /> Verify Law: {flag.legalReference} ↗
+                                  <Scale className="w-3.5 h-3.5 text-brand-600" /> Statute reference: {flag.legalReference} ↗
                                 </button>
                               </div>
                               {flag.phraseDetected && (
@@ -4364,9 +4393,9 @@ export default function DocumentAnalyzerTab() {
                                   <button
                                     onClick={() => openLegislativeReference(violation.citation)}
                                     className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                    title="Click to open Verified Source reference modal"
+                                    title="Open the statute reference for this citation"
                                   >
-                                    <Scale className="w-3 h-3 text-amber-600" /> Verify: {violation.citation} ↗
+                                    <Scale className="w-3 h-3 text-amber-600" /> Statute reference: {violation.citation} ↗
                                   </button>
                                 </div>
                                 
@@ -4430,7 +4459,7 @@ export default function DocumentAnalyzerTab() {
                               <div className="flex justify-between items-center text-[10px] font-sans text-slate-600 font-semibold uppercase">
                                 <span>{thresh.thresholdChecked}</span>
                                 <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
-                                  Met: {thresh.isMet}
+                                  Analyzer preliminary read (not a legal finding): {thresh.isMet}
                                 </span>
                               </div>
                               <div className="text-xs text-slate-700 leading-relaxed">
@@ -4804,7 +4833,7 @@ export default function DocumentAnalyzerTab() {
                                 {/* Status badge */}
                                 {file.analysisStatus === "completed" ? (
                                   <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1">
-                                    <Check className="w-3.5 h-3.5" /> Audited & Verified
+                                    <Check className="w-3.5 h-3.5" /> Audited
                                   </span>
                                 ) : file.analysisStatus === "analyzing" ? (
                                   <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1 animate-pulse">

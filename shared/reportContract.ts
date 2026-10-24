@@ -67,7 +67,7 @@ export type ConcernStatus =
 /** Whether a quotation was found in the uploaded text. */
 export type QuoteStatus = "CONFIRMED_FROM_SOURCE" | "NOT_FOUND_IN_SOURCE" | "NOT_CHECKED";
 
-export type AuthorityStatus = "VERIFIED_IN_REPOSITORY_REFERENCE" | "CITATION_UNVERIFIED" | "NOT_CHECKED";
+export type AuthorityStatus = "CONFIRMED_SECTION_NUMBER" | "CITATION_UNVERIFIED" | "NOT_CHECKED";
 
 export interface SourceReference {
   documentId: string;
@@ -175,7 +175,7 @@ function sectionOf(id: ReportSectionId) {
 }
 
 function authorityStatus(citationText: string, citationStatus?: string): AuthorityStatus {
-  if (citationStatus === "CONFIRMED_REFERENCE") return "VERIFIED_IN_REPOSITORY_REFERENCE";
+  if (citationStatus === "CONFIRMED_REFERENCE") return "CONFIRMED_SECTION_NUMBER";
   if (citationStatus === "UNVERIFIED" || /unverified/i.test(citationText)) return "CITATION_UNVERIFIED";
   return "NOT_CHECKED";
 }
