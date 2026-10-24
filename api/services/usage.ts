@@ -9,10 +9,12 @@
 // All usage checks are server-authoritative, fail-closed, idempotent, and resilient against duplicate deductions.
 // ---------------------------------------------------------------------------
 
+import { createHash } from "node:crypto";
 import { getSupabase } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 import { withTransientRetry } from "./transientRetry.js";
 import { logSupabaseFailure } from "./supabaseDiagnostics.js";
+import { claimUsageRow, incrementCounter, readUsageRow } from "./freeUsageStore.js";
 
 export const FREE_ANALYSES_LIMIT = 1;
 export const BASIC_QUICK_REVIEWS_LIMIT = 3;
@@ -84,18 +86,26 @@ function getBillingMonth(): string {
   return new Date().toISOString().slice(0, 7); // YYYY-MM
 }
 
-export function getPaidUsageKey(sessionId: string, tier: string, type: UsageAnalysisType): string {
+export function getPaidUsageKey(
+  sessionId: string,
+  tier: string,
+  type: UsageAnalysisType,
+  billingCycle: string = getBillingMonth()
+): string {
   if (type === "quick") {
     return `paid_session_${sessionId}_quick`;
   }
   // Forensic analyses:
   if (tier === "Pro" || tier.startsWith("Community")) {
-    return `paid_session_${sessionId}_forensic_${getBillingMonth()}`;
+    return `paid_session_${sessionId}_forensic_${billingCycle}`;
   }
   return `paid_session_${sessionId}_forensic`;
 }
 
 export async function getUsageCount(key: string, alternateEmail?: string | null): Promise<number> {
+  if (!(alternateEmail && alternateEmail.trim())) {
+    return (await readUsageRow(key))?.analyses_used ?? 0;
+  }
   try {
     return await withTransientRetry(async () => {
       const db = getSupabase();
@@ -127,37 +137,19 @@ export async function getUsageCount(key: string, alternateEmail?: string | null)
   }
 }
 
+/**
+ * Adds one to a usage counter. Every write is a compare-and-set, so concurrent increments on any
+ * instance are never lost.
+ */
 export async function incrementUsageCount(key: string, email: string | null): Promise<number> {
-  try {
-    const current = await getUsageCount(key);
-    const next = current + 1;
-    const now = new Date().toISOString();
-    await withTransientRetry(async () => {
-      const db = getSupabase();
-      const { error } = await db.from("free_usage").upsert(
-        {
-          uid: key,
-          email,
-          analyses_used: next,
-          first_analysis_at: current === 0 ? now : undefined,
-          last_analysis_at: now,
-        },
-        { onConflict: "uid" }
-      );
-      if (error) {
-        throw Object.assign(new Error(`Failed to record usage: ${error.message}`), { statusCode: 500, supabaseError: error });
-      }
-    });
-    return next;
-  } catch (err: any) {
-    if (err instanceof LifecycleError) throw err;
-    logSupabaseFailure("free_usage write", err?.supabaseError ?? err);
-    throw new LifecycleError(
-      503,
-      "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
-      "We couldn't update your analysis usage right now. Please try again in a moment."
-    );
-  }
+  return await incrementCounter(key, email);
+}
+
+// Marker row that records one analysis as counted for a paid usage key. Its uid is a hash of the
+// counter key and the analysis's idempotency key, so retries on any instance see the same marker.
+function paidUseMarkerKey(counterKey: string, idempotencyKey: string): string {
+  const digest = createHash("sha256").update(`${counterKey}|${idempotencyKey}`).digest("hex").slice(0, 32);
+  return `paid_use_${digest}`;
 }
 
 /**
@@ -176,7 +168,10 @@ export async function checkPaidUsage(
   const key = getPaidUsageKey(sessionId, tier, type);
   const used = await getUsageCount(key);
 
-  if (idempotencyKey && isAnalysisAlreadyRecorded(idempotencyKey)) {
+  const alreadyRecorded =
+    Boolean(idempotencyKey) &&
+    (isAnalysisAlreadyRecorded(idempotencyKey) || (await readUsageRow(paidUseMarkerKey(key, idempotencyKey as string))) !== null);
+  if (alreadyRecorded) {
     return {
       allowed: true,
       alreadyConsumed: true,
@@ -212,19 +207,38 @@ export async function checkPaidUsage(
  * Deducts credit ONLY after an analysis successfully completes.
  * Safe against double deductions and network retry duplicate consumption.
  */
+/**
+ * Records one completed analysis. `billingCycle` is the month the credit was reserved in, so an analysis that
+ * straddles a month boundary is counted in the month it was reserved for.
+ */
 export async function recordPaidUse(
   sessionId: string,
   tier: string,
   email: string | null,
   type: UsageAnalysisType,
-  idempotencyKey?: string | null
+  idempotencyKey?: string | null,
+  billingCycle?: string
 ): Promise<number> {
-  if (idempotencyKey && isAnalysisAlreadyRecorded(idempotencyKey)) {
-    const key = getPaidUsageKey(sessionId, tier, type);
-    return await getUsageCount(key);
+  const key = getPaidUsageKey(sessionId, tier, type, billingCycle);
+  if (idempotencyKey) {
+    if (isAnalysisAlreadyRecorded(idempotencyKey)) {
+      return await getUsageCount(key);
+    }
+    // Claim the marker before counting. If another instance already recorded this analysis, the claim fails
+    // and nothing is added. A crash between the claim and the increment under-counts by one, never over-counts.
+    const claimed = await claimUsageRow({
+      uid: paidUseMarkerKey(key, idempotencyKey),
+      email: "recorded",
+      analyses_used: 1,
+      first_analysis_at: new Date().toISOString(),
+      last_analysis_at: new Date().toISOString(),
+    });
+    if (!claimed) {
+      markAnalysisRecorded(idempotencyKey);
+      return await getUsageCount(key);
+    }
   }
 
-  const key = getPaidUsageKey(sessionId, tier, type);
   const next = await incrementUsageCount(key, email);
   if (idempotencyKey) {
     markAnalysisRecorded(idempotencyKey);
