@@ -28,7 +28,7 @@ export const CYFSA_TOPICS: CYFSATopic[] = [
 
 **s. 81(9) & (10):** A worker acting under (7), a warrant, or a court order may authorize a child's medical examination even where a parent's consent would otherwise be required, and may enter premises without a warrant, by force if necessary, to search for and remove the child.
 
-**s. 81(13):** A peace officer or worker acting in good faith under this section cannot be sued personally for the apprehension itself — challenges go through the court process below, not a lawsuit against the individual worker.
+**s. 81(13):** No action may be brought against a peace officer or child protection worker for an act done in good faith under this section. A challenge to an apprehension goes through the court process described below.
 
 **The five-day hearing (s. 88):** As soon as practicable, but in any event within five days after a child is brought to a place of safety under s. 81, the matter must be brought before a court for a hearing under s. 90(1), the child must be returned to whoever last had charge of them, a temporary care agreement must be made under s. 75(1), or an agreement made under s. 77 (16/17 year olds). Note: the Act says "five days," not "five court days" — confirm with counsel exactly how the days are counted in your registry before relying on a specific calendar date.`,
     primarySources: [
