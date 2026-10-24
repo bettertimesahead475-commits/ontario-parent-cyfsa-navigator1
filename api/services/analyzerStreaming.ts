@@ -101,6 +101,12 @@ import { getSupabase } from "./access.js";
 import { AnalyzerError } from "./analyzerErrors.js";
 
 const jobStore = new Map<string, AnalysisJob>();
+/**
+ * Jobs that could not be claimed exclusively in Storage. They run to completion in memory and the report is returned
+ * to the client, but nothing is ever written to Storage for them. Every later write is an unconditional upsert, so
+ * letting one through after a failed claim could overwrite another account's record if Storage recovers mid-run.
+ */
+const memoryOnlyJobs = new Set<string>();
 const JOB_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
 const BUCKET_NAME = "analysis_jobs";
 let bucketChecked = false;
@@ -141,6 +147,7 @@ async function ensureBucket(): Promise<boolean> {
 }
 
 export async function persistJobToStorage(job: AnalysisJob): Promise<void> {
+  if (memoryOnlyJobs.has(job.jobId)) return;
   const db = safeGetSupabase();
   if (!db) return;
   try {
@@ -160,6 +167,7 @@ export async function persistJobToStorage(job: AnalysisJob): Promise<void> {
 
 /** Uploads a job record and throws unless it is really in Storage. persistJobToStorage ignores failures instead. */
 async function uploadJobStrict(job: AnalysisJob): Promise<void> {
+  if (memoryOnlyJobs.has(job.jobId)) throw new Error("Job is memory-only: it could not be claimed in Storage");
   const db = safeGetSupabase();
   if (!db) throw new Error("Storage is not configured");
   const hasBucket = await ensureBucket();
@@ -243,6 +251,7 @@ function registerNewJob(params: NewJobParams): AnalysisJob {
     for (const [id, job] of jobStore.entries()) {
       if (now - job.createdAt > JOB_RETENTION_MS) {
         jobStore.delete(id);
+        memoryOnlyJobs.delete(id);
       }
     }
   }
@@ -274,48 +283,74 @@ export function createAnalysisJob(params: NewJobParams): AnalysisJob {
 const conflict = () =>
   new AnalyzerError("ANALYSIS_ID_CONFLICT", 409, "This analysis id is already in use. Please start a new analysis.", false);
 
+/** The id exists but its owner cannot be established right now. Retryable: the client can simply try again. */
+const ownerUnverifiable = () =>
+  new AnalyzerError("ANALYSIS_PERSISTENCE_FAILED", 503, "We couldn't verify this analysis right now. Please try again in a moment.", true);
+
 const isAlreadyExists = (error: any): boolean =>
   String(error?.statusCode) === "409" || /already exists|duplicate/i.test(String(error?.message ?? ""));
+
+type StoredRecord = { status: "ok"; job: AnalysisJob } | { status: "unreadable" };
+
+/** Reads an existing job record and says plainly whether the read worked. A failed read is not "no owner". */
+async function readStoredRecord(jobId: string): Promise<StoredRecord> {
+  const db = safeGetSupabase();
+  if (!db) return { status: "unreadable" };
+  try {
+    const { data, error } = await db.storage.from(BUCKET_NAME).download(`${jobId}.json`);
+    if (error || !data) return { status: "unreadable" };
+    const job = JSON.parse(await data.text()) as AnalysisJob;
+    return job && typeof job === "object" ? { status: "ok", job } : { status: "unreadable" };
+  } catch {
+    return { status: "unreadable" };
+  }
+}
 
 /**
  * Creates a job record for the caller, and refuses to take over a job that belongs to someone else.
  *
  * The first write is an exclusive create (upsert: false), so two server instances racing on one id cannot both
- * create it: the loser finds the record, reads its owner, and is refused unless it is the same account. If the
- * existing record cannot be read, the claim fails closed. A record owned by the same account (a retry of a failed
- * or stale analysis) is replaced as before. If Storage is unavailable the claim falls back to this instance's
- * memory, which is the existing behaviour: nothing can be checked, and nothing else can be overwritten either.
+ * create it: the loser finds the record and reads its owner. It is refused (409) unless it is the same account.
+ * If the owner cannot be read the claim fails closed with a retryable 503. A record owned by the same account (a
+ * retry of a failed or stale analysis) is replaced.
+ *
+ * If the exclusive claim cannot be made at all (Storage unconfigured or unreachable, or any other Storage error),
+ * the job is kept in memory only and never written to Storage. The analysis still completes and the report is
+ * returned to the client, so availability is kept, but no later write can overwrite another account's record.
  */
 export async function claimAnalysisJobDurable(params: NewJobParams): Promise<AnalysisJob> {
   const inMemory = jobStore.get(params.jobId);
   if (inMemory?.uid && inMemory.uid !== params.uid) throw conflict();
+  memoryOnlyJobs.delete(params.jobId); // this run decides afresh
+
+  const memoryOnly = (job: AnalysisJob): AnalysisJob => {
+    memoryOnlyJobs.add(job.jobId);
+    return job;
+  };
 
   const db = safeGetSupabase();
   const hasBucket = db ? await ensureBucket() : false;
-  if (!db || !hasBucket) return createAnalysisJobDurable(params);
+  if (!db || !hasBucket) return memoryOnly(registerNewJob(params));
 
   const job = registerNewJob(params);
-  let exclusive: { error: any } | null = null;
+  let result: { error: any } | null;
   try {
-    exclusive = await db.storage
+    result = await db.storage
       .from(BUCKET_NAME)
       .upload(`${job.jobId}.json`, JSON.stringify(job), { upsert: false, contentType: "application/json" });
   } catch {
-    exclusive = null; // network failure: not an ownership signal, so keep the existing best-effort behaviour
+    return memoryOnly(job); // network failure: no claim was made
   }
-  if (exclusive?.error && isAlreadyExists(exclusive.error)) {
-    // Someone created this id first. Only the same account may continue with it.
-    jobStore.delete(job.jobId);
-    if (inMemory) jobStore.set(job.jobId, inMemory);
-    const existing = await fetchJobFromStorage(job.jobId);
-    if (!existing || (existing.uid && existing.uid !== params.uid)) throw conflict();
-    return createAnalysisJobDurable(params);
-  }
-  if (exclusive?.error) {
-    // Some other storage error: persist the usual way, best effort.
-    await persistJobToStorage(job).catch(() => {});
-  }
-  return job;
+  if (!result?.error) return job; // claimed exclusively
+  if (!isAlreadyExists(result.error)) return memoryOnly(job); // any other Storage error: no claim was made
+
+  // Someone created this id first. Only the same account may continue with it.
+  jobStore.delete(job.jobId);
+  if (inMemory) jobStore.set(job.jobId, inMemory);
+  const record = await readStoredRecord(job.jobId);
+  if (record.status !== "ok") throw ownerUnverifiable();
+  if (record.job.uid && record.job.uid !== params.uid) throw conflict();
+  return createAnalysisJobDurable(params);
 }
 
 export async function createAnalysisJobDurable(params: {

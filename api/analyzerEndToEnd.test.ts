@@ -894,6 +894,7 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
   // A small in-memory bucket: uploads are kept, so a later download returns what was stored.
   function fakeStorage(uploadError: { message: string } | null = null) {
     const objects = new Map<string, string>();
+    const control = { downloadFails: false };
     const upload = vi.fn(async (name: string, body: string, options?: { upsert?: boolean }) => {
       // Like Supabase Storage: with upsert:false an existing object is refused with a 409.
       if (!uploadError && options?.upsert === false && objects.has(name)) {
@@ -910,13 +911,14 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
         from: vi.fn(() => ({
           upload,
           download: vi.fn(async (name: string) => {
+            if (control.downloadFails) return { data: null, error: { message: "network" } };
             const body = objects.get(name);
             return body === undefined ? { data: null, error: { message: "not found" } } : { data: { text: async () => body }, error: null };
           }),
         })),
       },
     };
-    return { db, upload, objects };
+    return { db, upload, objects, control };
   }
 
   beforeEach(() => {
@@ -1094,12 +1096,55 @@ describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
 
   it("Quick Review: no parent view id when the upload is rejected, and the use is recorded once", async () => {
     process.env.PARENT_ANALYSIS_ENABLED = "true";
-    mockAccess.getSupabase.mockReturnValue(fakeStorage({ message: "quota exceeded" }).db);
+    const rejected = fakeStorage({ message: "quota exceeded" });
+    mockAccess.getSupabase.mockReturnValue(rejected.db);
     const res = await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
     expect(res.status).toBe(200);
     expect(res.body.parentViewAvailable).toBe(false);
     expect(res.body.parentViewJobId).toBeUndefined();
     expect(mockUsage.recordFreeUse).toHaveBeenCalledTimes(1);
+    // Availability is kept (the analysis completed), and the failed claim never turned into an unconditional write.
+    expect(rejected.upload.mock.calls.length).toBe(1);
+    expect((rejected.upload.mock.calls[0][2] as { upsert?: boolean }).upsert).toBe(false);
+  });
+
+  it("Quick Review: an unreadable existing record is refused with a retryable 503 and no credit is kept", async () => {
+    mockCreateMessage.mockImplementation(responder);
+    const B_SESSION = `b-${PAID_SESSION}`;
+    mockAccess.verifySessionToken.mockImplementation((t: string) => (t === PAID_SESSION || t === B_SESSION ? { jti: t } : null));
+    mockAccess.getActivePaidSession.mockImplementation(async (id: string) =>
+      id === B_SESSION ? { id, firebaseUid: "b-uid", tier: "Pro" } : id === PAID_SESSION ? { id, firebaseUid: "paid-uid", tier: "Pro" } : null);
+    mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) =>
+      header === "Bearer b-token" ? { uid: "b-uid", email: "b@example.com" } : header === PAID_TOKEN ? { uid: "paid-uid", email: "paid@example.com" } : null);
+    const storage = fakeStorage();
+    const fakeDb = createFakeDb([{ id: B_SESSION, tier: "Pro", credits_granted: 5, credits_consumed: 0, is_suspended: false }]);
+    mockAccess.getSupabase.mockReturnValue(Object.assign(fakeDb, { storage: storage.db.storage }));
+
+    // The second account passes its first check, then another instance creates the owner's record, which then cannot be read.
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    mockUsage.checkPaidUsage.mockImplementationOnce((async () => {
+      await gate;
+      return { allowed: true, used: 0, limit: Infinity, remaining: null, tier: "Pro" };
+    }) as never);
+    const held = request(app)
+      .post("/api/analyze").set({ Authorization: "Bearer b-token", "x-ps-session": B_SESSION }).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" })
+      .then(res => res);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const ownersRecord = JSON.stringify({ jobId: CLIENT_JOB_ID, uid: "paid-uid", mode: "fast", status: "analyzing", createdAt: 1, updatedAt: 1 });
+    storage.objects.set(`${CLIENT_JOB_ID}.json`, ownersRecord);
+    storage.control.downloadFails = true;
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    release();
+    const res = await held;
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("ANALYSIS_PERSISTENCE_FAILED");
+    expect(res.body.retryable).toBe(true);
+    expect(storage.objects.get(`${CLIENT_JOB_ID}.json`)).toBe(ownersRecord);
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(fakeDb._reservations.every(row => row.status === "released")).toBe(true); // no credit is kept
   });
 
   it("Quick Review: another account reusing a finished job's id is refused, and the owner's job is untouched", async () => {
