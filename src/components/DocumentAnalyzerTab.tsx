@@ -54,6 +54,7 @@ import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
 import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED } from "../config/featureFlags";
+import { STATUTE_ROOT_URL, statuteDetailsFor } from "../utils/statuteReference";
 import { ParentReportSection } from "./ParentReportPanel";
 import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
@@ -567,154 +568,6 @@ export default function DocumentAnalyzerTab() {
 
   const openLegislativeReference = (citation: string) => {
     setActiveLegislativeCitation(citation);
-  };
-
-  const getLegislativeUrl = (citation: string): string => {
-    const normalized = citation.toLowerCase();
-    if (normalized.includes("94(1)") || normalized.includes("94 (1)")) {
-      return "https://www.ontario.ca/laws/statute/17c14#BK161";
-    }
-    if (normalized.includes("94(2)") || normalized.includes("94 (2)")) {
-      return "https://www.ontario.ca/laws/statute/17c14#BK161";
-    }
-    if (normalized.includes("94")) {
-      return "https://www.ontario.ca/laws/statute/17c14#BK161";
-    }
-    if (normalized.includes("81") || normalized.includes("apprehension") || normalized.includes("removal")) {
-      return "https://www.ontario.ca/laws/statute/17c14#BK136";
-    }
-    if (normalized.includes("74") || normalized.includes("protection")) {
-      return "https://www.ontario.ca/laws/statute/17c14#BK123";
-    }
-    if (normalized.includes("101") || normalized.includes("extended society")) {
-      return "https://www.ontario.ca/laws/statute/17c14#BK173";
-    }
-    if (normalized.includes("125") || normalized.includes("duty to report")) {
-      return "https://www.ontario.ca/laws/statute/17c14#BK215";
-    }
-    if (normalized.includes("part x") || normalized.includes("285") || normalized.includes("280")) {
-      return "https://www.ontario.ca/laws/statute/17c14#BK367";
-    }
-    if (normalized.includes("clra") || normalized.includes("children's law reform") || normalized.includes("parentage") || normalized.includes("300")) {
-      return "https://www.ontario.ca/laws/statute/90c12#BK9";
-    }
-    return "https://www.ontario.ca/laws/statute/17c14";
-  };
-
-  const STATUTORY_TEXT_DB: Record<string, { title: string; subtitle: string; exactText: string; explanation: string }> = {
-    "CYFSA 2017, Section 94(1)": {
-      title: "CYFSA 2017, Section 94(1)",
-      subtitle: "30-Day Adjournment Limit",
-      // BUG FIX (flagged in audit): this entry previously fabricated a "5 court days" removal-hearing
-      // rule and attributed invented statutory text to s.94(1). The real five-day hearing deadline
-      // after a warrantless apprehension is s. 88, not s. 94 at all — s.94(1) actually caps how long
-      // a hearing can be adjourned. Text below is the real s.94(1), verified against the consolidated
-      // CYFSA text saved in legal-reference/.
-      exactText: "94 (1) The court shall not adjourn a hearing for more than 30 days, (a) unless all the parties present and the person who will be caring for the child during the adjournment consent; or (b) if the court is aware that a party who is not present at the hearing objects to the longer adjournment.",
-      explanation: "This governs how long a hearing can be adjourned once it's already before the court — it is not the deadline for first bringing an apprehended child before a court (that's s. 88, see the five-day rule entry). Ask your lawyer whether any adjournment past 30 days had the required consent or lack of objection on the record."
-    },
-    "CYFSA 2017, Section 94(2)": {
-      title: "CYFSA 2017, Section 94(2)",
-      subtitle: "Temporary Care Order During an Adjournment",
-      exactText: "94 (2) Where a hearing is adjourned, the court shall make a temporary order for care and custody providing that the child (a) remain in or be returned to the person who had charge of the child immediately before intervention; (b) remain in or be returned to that person subject to the society's supervision; (c) be placed with another person, with that person's consent, subject to the society's supervision; or (d) remain or be placed in the care and custody of the society, but not in a place of temporary detention or custody.",
-      explanation: "The court must pick one of these four placement options whenever it adjourns a hearing — it is not, by itself, a burden-of-proof rule. Under s. 94(4), the court can't choose option (c) or (d) unless satisfied there's a risk the child would suffer harm that can't be adequately addressed by option (a) or (b)."
-    },
-    "CYFSA 2017, Section 81": {
-      title: "CYFSA 2017, Section 81",
-      subtitle: "Warrantless Apprehension Standard: 'Substantial Risk to Health or Safety'",
-      // BUG FIX (flagged in audit): this previously used "imminent risk of serious harm," which is not
-      // the statutory wording and was already corrected elsewhere in the app (data.ts, the analyze
-      // prompt). The real s.81(7) threshold is "substantial risk to the child's health or safety," and
-      // it only applies to children under 16 — 16/17 year olds are not covered by this subsection.
-      exactText: "81 (7) A child protection worker who believes on reasonable and probable grounds that (a) a child is in need of protection; (b) the child is younger than 16; and (c) there would be a substantial risk to the child's health or safety during the time necessary to bring the matter on for a hearing or obtain a warrant, may without a warrant bring the child to a place of safety.",
-      explanation: "This warrantless power only applies to children under 16 and requires a substantial risk to health or safety during the time it would take to get a warrant or hearing — not a general 'imminent danger' standard, and not available at all for a 16 or 17 year old under this subsection. Compare against s. 81(2), the warrant-based power, which has a different threshold."
-    },
-    "CYFSA, S.O. 2017, c. 14, s. 88": {
-      title: "CYFSA 2017, Section 88",
-      subtitle: "Time in Place of Safety Limited (The Five-Day Hearing Rule)",
-      exactText: "As soon as practicable, but in any event within five days after a child is brought to a place of safety under section 81, the matter shall be brought before a court for a hearing under subsection 90(1), unless the child is returned or a temporary care agreement is made instead.",
-      explanation: "This is the real five-day rule — not section 94, which covers adjournment limits and temporary-care placement considerations instead. If the matter isn't brought before a court within five days of a warrantless apprehension, ask your lawyer whether this deadline was met."
-    },
-    "Ontario Evidence Act & Family Law Rules": {
-      title: "Ontario Evidence Act & Family Law Rules",
-      subtitle: "Exclusion of Hearsay Claims in Child Custody Actions",
-      exactText: "Hearsay (unsworn out-of-court assertions by unlocatable third-parties) is generally inadmissible to establish truth. While casework summary logs may append neighbor statements, judges should attach negligible probative weight unless first-hand direct witnesses testify.",
-      explanation: "Caseworkers regularly file unverified 'anonymous neighbor alerts'. Parents should systematically target and register evidentiary objections against these rumor statements."
-    },
-    "Supporting Children's Futures Act, 2024 (SCFA)": {
-      title: "Supporting Children's Futures Act, 2024 (SCFA)",
-      subtitle: "Mandatory Child Rights Notifications on Ombudsman Access",
-      exactText: "Ensures children in out-of-home care possess explicit rights under Ontario law to be informed of, and communicate with, the Ontario Ombudsman's office, and mandates enhanced casework physical visitation frequencies starting Jan 1, 2025.",
-      explanation: "Omission of these notices to children represents an active procedural defect. Workers are legally bound to provide physical brochures outlining the Ombudsman contact protocols."
-    },
-    "CYFSA Part X, s. 280-285": {
-      title: "CYFSA 2017, Part X (Privacy and Record Integrity)",
-      subtitle: "Durable Rights to Request and Review Internal CAS Files",
-      exactText: "281 (1) An individual has a right of access to a record of personal information that is in the custody or under the control of a service provider... and is entitled to request correction of errors or omissions.",
-      explanation: "CAS workers are prone to claiming that files cannot be shared because 'active litigation is ongoing.' This represents systemic non-compliance with Part X consumer access rules."
-    },
-    "CYFSA 2017, Section 2 & Section 81": {
-      title: "CYFSA 2017, Sections 2 & 81",
-      subtitle: "Mandatory Constitutional Consultations on Indigenous Heritage",
-      exactText: "Section 2 (2) 5: Service providers must actively account for First Nations, Inuit, and Métis cultures and prioritize direct kin custom-care arrangements prior to stranger placements.",
-      explanation: "Setting foster care with strangers before consulting the Métis Nation or indigenous family council violates major statutory duty directives of Ontario child protection acts."
-    },
-    "CYFSA, S.O. 2017, c.14, s.74": {
-      title: "CYFSA 2017, Section 74",
-      subtitle: "Comprehensive Custody Intervention Thresholds",
-      exactText: "A child is in need of protection ONLY if there forms a real, severe likelihood of physical, emotional, or medical injury under standard section 74 sub-sections.",
-      explanation: "The court holds zero authority to interfere with family autonomy in the absence of severe physical or medical hazards. Minor housekeeping concerns or low-income are insufficient."
-    }
-    // BUG FIX (flagged in audit): a duplicate "CYFSA, S.O. 2017, c.14, s.94(1)" entry used to sit
-    // here with fabricated statute text (another copy of the wrong "5 court days" claim, see the
-    // real s. 94(1)/s. 88 entries above). It was never actually reachable through
-    // getStatuteDetails() below — the lookup keys don't match this format — so it was dead code
-    // carrying wrong legal content for no functional reason. Removed rather than fixed in place.
-  };
-
-  const getStatuteDetails = (citation: string) => {
-    const normalized = citation.toLowerCase();
-    
-    // BUG FIX (flagged in audit): "88" must be checked before "8" prefixes on "81" collide, and
-    // before the generic "94" branch below routed every plain "s. 94" mention to a fabricated
-    // 5-day-rule entry — s. 88 is the real five-day rule, s. 94 is the adjournment-limit section.
-    if (normalized.includes("88") || normalized.includes("five-day") || normalized.includes("five day")) {
-      return STATUTORY_TEXT_DB["CYFSA, S.O. 2017, c. 14, s. 88"];
-    }
-    if (normalized.includes("94(1)") || normalized.includes("94 (1)")) {
-      return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(1)"];
-    }
-    if (normalized.includes("94(2)") || normalized.includes("94 (2)")) {
-      return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(2)"];
-    }
-    if (normalized.includes("94")) {
-      return STATUTORY_TEXT_DB["CYFSA 2017, Section 94(1)"];
-    }
-    if (normalized.includes("81") || normalized.includes("apprehension")) {
-      return STATUTORY_TEXT_DB["CYFSA 2017, Section 81"];
-    }
-    if (normalized.includes("74") || normalized.includes("protection")) {
-      return STATUTORY_TEXT_DB["CYFSA, S.O. 2017, c.14, s.74"];
-    }
-    if (normalized.includes("part x") || normalized.includes("285") || normalized.includes("280")) {
-      return STATUTORY_TEXT_DB["CYFSA Part X, s. 280-285"];
-    }
-    if (normalized.includes("indigenous") || normalized.includes("métis") || normalized.includes("section 2")) {
-      return STATUTORY_TEXT_DB["CYFSA 2017, Section 2 & Section 81"];
-    }
-    if (normalized.includes("supporting children") || normalized.includes("ombudsman") || normalized.includes("scfa")) {
-      return STATUTORY_TEXT_DB["Supporting Children's Futures Act, 2024 (SCFA)"];
-    }
-    if (normalized.includes("evidence") || normalized.includes("hearsay")) {
-      return STATUTORY_TEXT_DB["Ontario Evidence Act & Family Law Rules"];
-    }
-    
-    return {
-      title: citation,
-      subtitle: "Verified Statutory Reference Node",
-      exactText: "Section provisions governed under S.O. 2017, c. 14 (Child, Youth and Family Services Act) or associated family litigation guidelines.",
-      explanation: "This section maps directly to the regulatory powers, children's safety classifications, or parent rights within the jurisdiction of Ontario. Utilize the live portal link to inspect full sub-clause logs."
-    };
   };
 
   // Search & Spot visual highlight state for parent users
@@ -5333,7 +5186,7 @@ export default function DocumentAnalyzerTab() {
             onClick={(e) => e.stopPropagation()}
           >
             {(() => {
-              const details = getStatuteDetails(activeLegislativeCitation);
+              const details = statuteDetailsFor(activeLegislativeCitation);
               return (
                 <>
                   <div className="flex justify-between items-start gap-3 border-b border-gray-100 pb-3">
@@ -5348,12 +5201,14 @@ export default function DocumentAnalyzerTab() {
                       <X className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-xs text-slate-800 leading-relaxed font-sans italic">
-                    {details.exactText}
-                  </div>
+                  {details.exactText && (
+                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-xs text-slate-800 leading-relaxed font-sans italic">
+                      {details.exactText}
+                    </div>
+                  )}
                   <p className="text-xs text-slate-600 leading-relaxed">{details.explanation}</p>
                   <a
-                    href={getLegislativeUrl(activeLegislativeCitation)}
+                    href={STATUTE_ROOT_URL}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full inline-flex items-center justify-center gap-2 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition-colors"
