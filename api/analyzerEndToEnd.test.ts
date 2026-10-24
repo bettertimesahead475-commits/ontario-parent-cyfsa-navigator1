@@ -9,7 +9,7 @@
 //   - refusals / malformed / empty model output are reported as AI_RESPONSE_INVALID,
 //   - a failed analysis never consumes the free analysis,
 //   - text extraction no longer depends on the paid-session database lookup.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 
@@ -838,3 +838,185 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
   });
 });
 
+
+describe("parent-specific analysis, provider mocked (flag ON and OFF)", () => {
+  // A fresh id per test: the server returns a stored job for a repeated X-Analysis-Id, so tests must not share one.
+  let CLIENT_JOB_ID = "";
+  // A fresh paid session per test: forensic allowances are counted per session, so tests must not share one.
+  let PAID_SESSION = "";
+  const myPaid = () => ({ Authorization: PAID_TOKEN, "x-ps-session": PAID_SESSION });
+  const DOC = "Parent A left the child alone overnight on two occasions. Parent B has offered care.";
+  const PARENT_BLOCK = {
+    parties: [
+      { id: "P-A", displayName: "Parent A", aliases: [], role: "RESPONDENT" },
+      { id: "P-B", displayName: "Parent B", aliases: [], role: "PROPOSED_CAREGIVER" },
+    ],
+    proceedings: [{ id: "PROC-1", fileNumber: "FC-24-0001", applicationDate: "", childNames: [] }],
+    roles: [
+      { proceedingId: "PROC-1", partyId: "P-A", role: "RESPONDENT" },
+      { proceedingId: "PROC-1", partyId: "P-B", role: "PROPOSED_CAREGIVER" },
+    ],
+    allegations: [
+      {
+        id: "ALG-1", proceedingId: "PROC-1", kind: "FINDING", text: "Left the child alone overnight.", madeBy: "Applicant",
+        subjectPartyIds: ["P-A"], status: "ADMITTED", classification: "DOCUMENTARY",
+        quote: "Parent A left the child alone overnight on two occasions.", page: 1, paragraph: "12",
+      },
+      {
+        id: "ALG-2", proceedingId: "PROC-1", kind: "ALLEGATION", text: "Never attended a visit.", madeBy: "Applicant",
+        subjectPartyIds: ["P-B"], status: "UNRESOLVED", classification: "DIRECT",
+        quote: "Parent B never attended any visit.", page: 1, paragraph: "13",
+      },
+    ],
+    orders: [],
+  };
+  // Forensic sections need the forensic keys, so this responder returns the same shape the forensic test uses.
+  const FORENSIC_BODY = {
+    gaps: ["g"], missingEvidence: ["m"], retorts: [{ claim: "c", objection: "o", action: "a" }],
+    thresholdAnalysis: [], proceduralTimelineViolations: [], charterAndHumanRightsIssues: [],
+    whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [],
+    disclaimer: "This document is generated for informational/educational purposes only.",
+  };
+  const forensicResponder = async (body: any) => {
+    if (isVerificationRequest(body)) return claudeJson(VERIFICATION_RESULT);
+    return claudeJson(JSON.stringify(body).includes("parentAttribution") ? { ...FORENSIC_BODY, parentAttribution: PARENT_BLOCK } : FORENSIC_BODY);
+  };
+  // Returns the parent block only for a request that asked for it, so flag OFF can be checked by absence.
+  const responder = async (body: any) => {
+    if (isVerificationRequest(body)) return claudeJson(VERIFICATION_RESULT);
+    return claudeJson(JSON.stringify(body).includes("parentAttribution") ? { ...CORE, parentAttribution: PARENT_BLOCK } : CORE);
+  };
+  const ownerView = (partyId: string, proceedingId: string) =>
+    request(app).get(`/api/analyze/job/${CLIENT_JOB_ID}/parent-view?proceedingId=${proceedingId}&partyId=${partyId}`).set(free());
+
+  // A small in-memory bucket: uploads are kept, so a later download returns what was stored.
+  function fakeStorage(uploadError: { message: string } | null = null) {
+    const objects = new Map<string, string>();
+    const upload = vi.fn(async (name: string, body: string) => {
+      if (!uploadError) objects.set(name, body);
+      return { data: {}, error: uploadError };
+    });
+    const db = {
+      storage: {
+        listBuckets: vi.fn(async () => ({ data: [{ name: "analysis_jobs", public: false }], error: null })),
+        updateBucket: vi.fn(),
+        createBucket: vi.fn(),
+        from: vi.fn(() => ({
+          upload,
+          download: vi.fn(async (name: string) => {
+            const body = objects.get(name);
+            return body === undefined ? { data: null, error: { message: "not found" } } : { data: { text: async () => body }, error: null };
+          }),
+        })),
+      },
+    };
+    return { db, upload };
+  }
+
+  beforeEach(() => {
+    CLIENT_JOB_ID = `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    PAID_SESSION = `paid-session-${CLIENT_JOB_ID}`;
+    mockAccess.verifySessionToken.mockImplementation((t: string) => (t === PAID_SESSION ? { jti: PAID_SESSION } : null));
+    mockAccess.getActivePaidSession.mockReset();
+    mockAccess.getActivePaidSession.mockImplementation(async (sessionId: string) =>
+      sessionId === PAID_SESSION ? { id: PAID_SESSION, firebaseUid: "paid-uid", tier: "Pro" } : null);
+    // Earlier describes leave one-shot and overridden mocks behind, so this block sets its own state.
+    mockCreateMessage.mockImplementation(responder);
+    mockUsage.recordPaidUse.mockClear();
+    mockUsage.getFreeUsage.mockResolvedValue(0);
+  });
+  afterEach(() => {
+    delete process.env.PARENT_ANALYSIS_ENABLED;
+    mockAccess.getSupabase.mockReset();
+  });
+
+  it("Quick Review with the flag OFF: no parent block, no parent view, and the prompt is unchanged", async () => {
+    const res = await request(app)
+      .post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.parentAttribution).toBeUndefined();
+    expect(res.body.parentViewJobId).toBeUndefined();
+    const sent = mockCreateMessage.mock.calls.map(call => JSON.stringify(call[0])).join("\n");
+    expect(sent).not.toContain("parentAttribution");
+  });
+
+  it("Quick Review with the flag ON: only verified quotes become records; the parent view reads the stored model", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const res = await request(app)
+      .post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ textContent: DOC, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewJobId).toBe(CLIENT_JOB_ID);
+    const model = res.body.parentAttribution.caseModel;
+    // A model-asserted FINDING is stored as an unresolved allegation, never as a finding.
+    expect(model.allegations.map((a: { id: string }) => a.id)).toEqual(["ALG-1"]);
+    expect(model.allegations[0]).toMatchObject({ kind: "ALLEGATION", status: "UNRESOLVED" });
+    expect(res.body.parentAttribution.rejected).toContainEqual({ kind: "allegation", id: "ALG-2", reason: "QUOTE_NOT_VERIFIED" });
+
+    const choices = await request(app).get(`/api/analyze/job/${CLIENT_JOB_ID}/parent-view`).set(free());
+    expect(choices.status).toBe(200);
+    expect(choices.body.options.pairs).toEqual([
+      { partyId: "P-A", proceedingId: "PROC-1" },
+      { partyId: "P-B", proceedingId: "PROC-1" },
+    ]);
+    const a = await ownerView("P-A", "PROC-1");
+    expect(a.body.view.specificAllegations.map((x: { id: string }) => x.id)).toEqual(["ALG-1"]);
+    const b = await ownerView("P-B", "PROC-1");
+    expect(b.body.view.specificAllegations).toEqual([]);
+  });
+
+  it("Quick Review: another account cannot read the parent view of a job it did not create", async () => {
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    await request(app).post("/api/analyze").set(free()).set("X-Analysis-Id", CLIENT_JOB_ID).send({ textContent: DOC, mode: "fast" });
+    const res = await request(app)
+      .get(`/api/analyze/job/${CLIENT_JOB_ID}/parent-view`)
+      .set("Authorization", PAID_TOKEN);
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe("JOB_NOT_FOUND");
+  });
+
+  it("Forensic with the flag ON and storage working: returns a server-generated id that opens the owner's view", async () => {
+    mockCreateMessage.mockImplementation(forensicResponder);
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db, upload } = fakeStorage();
+    mockAccess.getSupabase.mockReturnValue(db);
+    const res = await request(app)
+      .post("/api/deep-scan").set(myPaid()).set("X-Analysis-Id", CLIENT_JOB_ID)
+      .send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(true);
+    expect(res.body.parentViewJobId).toBeTruthy();
+    expect(res.body.parentViewJobId).not.toBe(CLIENT_JOB_ID);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const view = await request(app)
+      .get(`/api/analyze/job/${res.body.parentViewJobId}/parent-view`)
+      .set(myPaid());
+    expect(view.status).toBe(200);
+    expect(view.body.options.pairs.length).toBe(2);
+  });
+
+  it("Forensic with the flag ON and storage failing: reports the view unavailable, keeps the report, charges once", async () => {
+    mockCreateMessage.mockImplementation(forensicResponder);
+    process.env.PARENT_ANALYSIS_ENABLED = "true";
+    const { db } = fakeStorage({ message: "quota exceeded" });
+    mockAccess.getSupabase.mockReturnValue(db);
+    const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.parentViewAvailable).toBe(false);
+    expect(res.body.parentViewJobId).toBeUndefined();
+    expect(res.body.jobId).toBeUndefined();
+    expect(res.body.gaps).toEqual(["g"]);
+    expect(mockUsage.recordPaidUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("Forensic with the flag OFF: no parent fields and the forensic prompt is unchanged", async () => {
+    mockCreateMessage.mockImplementation(forensicResponder);
+    const res = await request(app).post("/api/deep-scan").set(myPaid()).send({ documentText: DOC, priorAnalysis: CORE });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.parentViewAvailable).toBeUndefined();
+    expect(res.body.parentViewJobId).toBeUndefined();
+    const sent = mockCreateMessage.mock.calls.map(call => JSON.stringify(call[0])).join("\n");
+    expect(sent).not.toContain("parentAttribution");
+  });
+});

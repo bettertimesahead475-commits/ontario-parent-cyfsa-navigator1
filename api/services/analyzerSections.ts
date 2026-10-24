@@ -183,6 +183,9 @@ function validateOverview(raw: any): Validation {
         limitations: str(esiRaw.limitations),
       },
       fileSummary,
+      // Raw and unverified here. attachParentAttribution checks every record's quotation against the document.
+      // Passed through only while the parent analysis flag is on, so a flag-OFF response is unchanged.
+      ...(isParentAnalysisEnabled() && raw.parentAttribution !== undefined ? { parentAttribution: raw.parentAttribution } : {}),
     },
   };
 }

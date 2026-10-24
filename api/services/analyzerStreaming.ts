@@ -187,6 +187,8 @@ export async function storeCompletedJobStrict(params: {
     .from(BUCKET_NAME)
     .upload(`${job.jobId}.json`, JSON.stringify(job), { upsert: true, contentType: "application/json" });
   if (error) throw new Error(`Job upload failed: ${error.message}`);
+  // Same as completeAnalysisJob: this instance can serve the job without reading it back from Storage.
+  jobStore.set(job.jobId, job);
 }
 
 export async function fetchJobFromStorage(jobId: string): Promise<AnalysisJob | null> {

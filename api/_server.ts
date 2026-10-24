@@ -2470,7 +2470,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
       // Persist the finished report before responding, so a browser that lost the stream can
       // still recover it after a refresh (the instance may freeze once the response ends).
-      if (isParentAnalysisEnabled()) attachParentAttribution(report, targetText, analysisRequestId);
+      if (isParentAnalysisEnabled()) {
+        attachParentAttribution(report, targetText, analysisRequestId);
+        // The Quick Review job is stored under the client's request id, so the parent view can be read from it.
+        report.parentViewJobId = analysisRequestId;
+      }
       await completeAnalysisJobDurable(analysisRequestId, report);
 
       if (streamEmitter) {
@@ -3299,7 +3303,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         timing: { durationMs },
         ...(credits ? { credits } : {}),
         ...(parentOn ? { parentViewAvailable: storedJobId !== null } : {}),
-        ...(storedJobId ? { jobId: storedJobId } : {}),
+        ...(storedJobId ? { parentViewJobId: storedJobId } : {}),
       });
     } catch (error: any) {
       if (creditReservation && sessionInfo) {

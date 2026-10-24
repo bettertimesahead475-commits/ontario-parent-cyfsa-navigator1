@@ -53,10 +53,11 @@ import {
 import { getUserKey } from "../utils/storage";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
-import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED } from "../config/featureFlags";
+import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED, PARENT_ANALYSIS_UI_ENABLED } from "../config/featureFlags";
 import { BUNDLED_STATUTE_ENTRIES, STATUTE_ROOT_URL, statuteDetailsFor } from "../utils/statuteReference";
 import { containsTrigger } from "../../shared/glossaryMatch";
 import { ParentReportSection } from "./ParentReportPanel";
+import { ParentAttributionSection } from "./ParentAttributionPanel";
 import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
@@ -3901,6 +3902,7 @@ export default function DocumentAnalyzerTab() {
                         <CourtPrepWorkspace report={selectedReport} documentTitle={selectedReport.documentTitle || "Analysis report"} redact={redactionEnabled} />
                       )}
                       <ParentReportSection report={selectedReport} enabled={PARENT_REPORT_UI_ENABLED} />
+                      <ParentAttributionSection report={selectedReport} enabled={PARENT_ANALYSIS_UI_ENABLED} />
                       {PARENT_QA_UI_ENABLED && <EducationalQa report={selectedReport} />}
 
                       {/* Redaction Toggle & Preview */}
