@@ -226,6 +226,14 @@ export async function fetchJobFromStorage(jobId: string): Promise<AnalysisJob | 
     if (data && !error) {
       const text = await data.text();
       const job = JSON.parse(text) as AnalysisJob;
+      const local = jobStore.get(jobId);
+      if (local) {
+        // This instance's own live copy is newer than Storage, and Storage cannot be trusted to overrule it.
+        if (memoryOnlyJobs.has(jobId) && local.uid === job.uid) return local;
+        // Another account's record is reported as it is, but never adopted over the job held here: adopting it would
+        // let this instance's running analysis complete into an object owned by someone else.
+        if (local.uid !== job.uid) return job;
+      }
       jobStore.set(job.jobId, job);
       return job;
     }
@@ -290,7 +298,7 @@ const ownerUnverifiable = () =>
 const isAlreadyExists = (error: any): boolean =>
   String(error?.statusCode) === "409" || /already exists|duplicate/i.test(String(error?.message ?? ""));
 
-type StoredRecord = { status: "ok"; job: AnalysisJob } | { status: "unreadable" };
+type StoredRecord = { status: "ok"; job: AnalysisJob } | { status: "unreadable" } | { status: "corrupt" };
 
 /** Reads an existing job record and says plainly whether the read worked. A failed read is not "no owner". */
 async function readStoredRecord(jobId: string): Promise<StoredRecord> {
@@ -299,8 +307,13 @@ async function readStoredRecord(jobId: string): Promise<StoredRecord> {
   try {
     const { data, error } = await db.storage.from(BUCKET_NAME).download(`${jobId}.json`);
     if (error || !data) return { status: "unreadable" };
-    const job = JSON.parse(await data.text()) as AnalysisJob;
-    return job && typeof job === "object" ? { status: "ok", job } : { status: "unreadable" };
+    const text = await data.text();
+    try {
+      const job = JSON.parse(text) as AnalysisJob;
+      return job && typeof job === "object" && !Array.isArray(job) ? { status: "ok", job } : { status: "corrupt" };
+    } catch {
+      return { status: "corrupt" }; // the record was read, and it is not a job record
+    }
   } catch {
     return { status: "unreadable" };
   }
@@ -319,9 +332,11 @@ async function readStoredRecord(jobId: string): Promise<StoredRecord> {
  * returned to the client, so availability is kept, but no later write can overwrite another account's record.
  */
 export async function claimAnalysisJobDurable(params: NewJobParams): Promise<AnalysisJob> {
-  const inMemory = jobStore.get(params.jobId);
-  if (inMemory?.uid && inMemory.uid !== params.uid) throw conflict();
-  memoryOnlyJobs.delete(params.jobId); // this run decides afresh
+  const refuseIfOwnedByAnother = () => {
+    const current = jobStore.get(params.jobId);
+    if (current?.uid && current.uid !== params.uid) throw conflict();
+  };
+  refuseIfOwnedByAnother();
 
   const memoryOnly = (job: AnalysisJob): AnalysisJob => {
     memoryOnlyJobs.add(job.jobId);
@@ -330,6 +345,11 @@ export async function claimAnalysisJobDurable(params: NewJobParams): Promise<Ana
 
   const db = safeGetSupabase();
   const hasBucket = db ? await ensureBucket() : false;
+  // Another request may have registered this id while the bucket check was awaiting. Check again, and register, with
+  // nothing awaited in between, so two accounts cannot both register the same id on this instance.
+  refuseIfOwnedByAnother();
+  const inMemory = jobStore.get(params.jobId); // same account's earlier entry, if any
+  memoryOnlyJobs.delete(params.jobId); // this run decides afresh
   if (!db || !hasBucket) return memoryOnly(registerNewJob(params));
 
   const job = registerNewJob(params);
@@ -344,12 +364,17 @@ export async function claimAnalysisJobDurable(params: NewJobParams): Promise<Ana
   if (!result?.error) return job; // claimed exclusively
   if (!isAlreadyExists(result.error)) return memoryOnly(job); // any other Storage error: no claim was made
 
-  // Someone created this id first. Only the same account may continue with it.
-  jobStore.delete(job.jobId);
-  if (inMemory) jobStore.set(job.jobId, inMemory);
+  // Someone created this id first. Only the same account may continue with it. Remove only the entry this request
+  // registered: the id may by now hold another request's job.
+  if (jobStore.get(job.jobId) === job) {
+    jobStore.delete(job.jobId);
+    if (inMemory) jobStore.set(job.jobId, inMemory);
+  }
   const record = await readStoredRecord(job.jobId);
-  if (record.status !== "ok") throw ownerUnverifiable();
-  if (record.job.uid && record.job.uid !== params.uid) throw conflict();
+  if (record.status === "unreadable") throw ownerUnverifiable(); // transient: the same request can simply be retried
+  // A corrupt or ownerless record has no owner who could claim it back. Refuse, as the route's pre-check does, so the
+  // client starts a new analysis instead of retrying a record that will never become readable.
+  if (record.status === "corrupt" || !record.job.uid || record.job.uid !== params.uid) throw conflict();
   return createAnalysisJobDurable(params);
 }
 

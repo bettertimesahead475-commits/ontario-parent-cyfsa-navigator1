@@ -38,7 +38,7 @@ vi.mock("./access.js", async (orig) => ({
   getSupabase: () => getSupabaseMock(),
 }));
 
-const { claimAnalysisJobDurable, getAnalysisJob, completeAnalysisJobDurable, completeAnalysisJobStrict, updateAnalysisJobStage } =
+const { claimAnalysisJobDurable, getAnalysisJob, getAnalysisJobDurable, completeAnalysisJobDurable, completeAnalysisJobStrict, updateAnalysisJobStage } =
   await import("./analyzerStreaming.js");
 
 const stored = (jobId: string, uid: string | null, status = "analyzing") =>
@@ -164,5 +164,70 @@ describe("claimAnalysisJobDurable", () => {
     uploadError = null;
     await claimAnalysisJobDurable({ jobId: "req_1700000000012_llll", uid: "owner", mode: "fast" });
     expect(objects.has("req_1700000000012_llll.json")).toBe(true);
+    // And its later writes reach Storage again (a stale memory-only mark would silently drop them).
+    await completeAnalysisJobDurable("req_1700000000012_llll", { documentTitle: "mine" });
+    expect(JSON.parse(objects.get("req_1700000000012_llll.json")!).status).toBe("completed");
+  });
+
+  it("refuses an ownerless stored record, as the route's pre-check does", async () => {
+    objects.set("req_1700000000014_mmmm.json", stored("req_1700000000014_mmmm", null));
+    await expect(claimAnalysisJobDurable({ jobId: "req_1700000000014_mmmm", uid: "anyone", mode: "fast" }))
+      .rejects.toMatchObject({ code: "ANALYSIS_ID_CONFLICT" });
+    expect(uploads.every(u => !u.upsert)).toBe(true);
+  });
+
+  it("treats a corrupt stored record as a conflict (start a new analysis), not as a retryable error", async () => {
+    for (const [n, body] of [["a", "not json at all"], ["b", "[]"], ["c", "null"]] as const) {
+      const id = `req_1700000000015_corrupt${n}`;
+      objects.set(`${id}.json`, body);
+      await expect(claimAnalysisJobDurable({ jobId: id, uid: "owner", mode: "fast" }))
+        .rejects.toMatchObject({ code: "ANALYSIS_ID_CONFLICT", retryable: false });
+      expect(objects.get(`${id}.json`)).toBe(body);
+    }
+  });
+
+  it("never adopts another account's stored record over a job this instance is running", async () => {
+    const id = "req_1700000000016_nnnn";
+    uploadError = { message: "service unavailable", statusCode: "503" };
+    await claimAnalysisJobDurable({ jobId: id, uid: "alice", mode: "fast" }); // alice runs memory-only
+    uploadError = null;
+    objects.set(`${id}.json`, stored(id, "bob")); // bob claims the same id through another instance
+    const seen = await getAnalysisJobDurable(id);
+    expect(seen?.uid).toBe("bob"); // reported as it is
+    expect(getAnalysisJob(id)?.uid).toBe("alice"); // but never adopted here
+    await completeAnalysisJobDurable(id, { documentTitle: "alice report" });
+    expect(getAnalysisJob(id)?.uid).toBe("alice");
+    const storedRecord = JSON.parse(objects.get(`${id}.json`)!);
+    expect(storedRecord.uid).toBe("bob");
+    expect(storedRecord.report).toBeUndefined(); // alice's report never lands in bob's object
+  });
+
+  it("two accounts racing on one id while the bucket check is still pending: exactly one wins and keeps its own job", async () => {
+    // A cold instance: the bucket check is not cached yet and takes a while, so both claims are in flight together.
+    vi.resetModules();
+    fakeDb.storage.listBuckets.mockImplementationOnce(async () => {
+      await new Promise(resolve => setTimeout(resolve, 30));
+      return { data: [{ name: "analysis_jobs", public: false }], error: null };
+    });
+    const fresh = await import("./analyzerStreaming.js");
+    const id = "req_1700000000013_race";
+    const results = await Promise.allSettled([
+      fresh.claimAnalysisJobDurable({ jobId: id, uid: "alice", mode: "fast" }),
+      fresh.claimAnalysisJobDurable({ jobId: id, uid: "bob", mode: "fast" }),
+    ]);
+    const won = results.filter(r => r.status === "fulfilled") as PromiseFulfilledResult<{ uid: string }>[];
+    const lost = results.filter(r => r.status === "rejected") as PromiseRejectedResult[];
+    expect(won).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect(lost[0].reason).toMatchObject({ code: "ANALYSIS_ID_CONFLICT" });
+    const winner = won[0].value.uid;
+    // The id still belongs to the winner in memory and in Storage, and the winner's completion lands on its own job.
+    expect(fresh.getAnalysisJob(id)?.uid).toBe(winner);
+    expect(JSON.parse(objects.get(`${id}.json`)!).uid).toBe(winner);
+    await fresh.completeAnalysisJobDurable(id, { documentTitle: "winner's report" });
+    const finalRecord = JSON.parse(objects.get(`${id}.json`)!);
+    expect(finalRecord.uid).toBe(winner);
+    expect(finalRecord.report.documentTitle).toBe("winner's report");
+    expect(finalRecord.status).toBe("completed");
   });
 });
