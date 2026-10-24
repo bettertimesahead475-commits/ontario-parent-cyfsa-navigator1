@@ -2,8 +2,8 @@
  * Statute text the analyzer screen may show. Each quotation is copied verbatim from the bundled CYFSA
  * text in legal-reference/CYFSA_full_text_2026-06-24_consolidation.txt. The notes describe only what
  * that text says. A citation with no entry here has no text in the app, and the screen says so.
- * The bundled file dates its consolidation 2026-06-24, but its README gives July 1, 2026 as the
- * start of the consolidation period. That conflict is not resolved here.
+ * The bundled file's header states a consolidation period from July 1, 2026. The 2026-06-24 in its
+ * filename is unverified against e-Laws. That is not resolved here.
  */
 export interface BundledStatuteEntry {
   citation: string;

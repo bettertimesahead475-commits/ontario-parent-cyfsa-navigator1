@@ -168,7 +168,7 @@ describe("runSectionedAnalysis", () => {
     expect(out.redFlags[0].severity).toBe("Affects Evidentiary Weight");
     expect(out.redFlags[0].originalSeverity).toBe("CRITICAL");
     expect(out.redFlags[0].forensicVerification.verdict).toBe("OVERSTATED");
-    expect(out.redFlags[0].legalReference).toContain(UNVERIFIED_CITATION_NOTE); // s.81 is not confirmed
+    expect(out.redFlags[0].legalReference).toContain(UNVERIFIED_CITATION_NOTE); // s.94(5) is not confirmed
     expect(out.redFlags[0].quoteVerified).toBe(true);
     expect(out.forensicVerification.status).toBe("completed");
     expect(usageByModel["claude-opus-5"]).toBeDefined();
@@ -235,6 +235,9 @@ describe("deterministic guards", () => {
     expect(s81.status).toBe("CONFIRMED_REFERENCE");
     expect(guardCitation("CYFSA s. 94(5)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 125(1)").status).toBe("UNVERIFIED");
+    expect(guardCitation("CYFSA ss. 74(2) and 125(1)").status).toBe("UNVERIFIED");
+    expect(guardCitation("CYFSA s. 74(2), 94(5)").status).toBe("UNVERIFIED");
+    expect(guardCitation("CYFSA ss. 74(2) and 94(1)").status).toBe("CONFIRMED_REFERENCE");
     expect(s81.text).not.toContain(UNVERIFIED_CITATION_NOTE);
     expect(guardCitation("CLRA s. 8(1)").status).toBe("UNVERIFIED");
     expect(guardCitation(UNVERIFIED_CITATION_NOTE).text).toBe(UNVERIFIED_CITATION_NOTE); // not doubled

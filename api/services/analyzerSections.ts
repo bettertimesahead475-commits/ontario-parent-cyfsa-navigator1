@@ -495,11 +495,16 @@ export function isVerbatimQuoteStatus(status: string): boolean {
 export const CONFIRMED_SECTION_KEYS = ["74(2)", "81(7)", "88", "94(1)", "94(2)"] as const;
 const CONFIRMED_SECTION_PATTERNS = CONFIRMED_SECTION_KEYS.map((key) => new RegExp(`^${key.replace(/[()]/g, "\\$&")}$`));
 
+/**
+ * Every section number a citation names, including lists such as "ss. 74(2) and 125(1)" or
+ * "s. 74(2), 94(5)". Only numbers introduced by a section keyword count, so "S.O. 2017, c. 14" adds nothing.
+ */
 function citedSections(text: string): string[] {
   const out: string[] = [];
-  const re = /\b(?:s\.|ss\.|sec\.|section)\s*(\d{1,3}(?:\(\d+\))?(?:\([a-z]\))?)/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) out.push(m[1].replace(/\([a-z]\)$/i, ""));
+  const list = /\b(?:s|ss|sec|secs|section|sections)\.?\s*((?:\d{1,3}(?:\(\d+\))*(?:\([a-z]\))*(?:\s*(?:,|and|or|&|to|-|–)\s*)?)+)/gi;
+  for (const m of text.matchAll(list)) {
+    for (const n of m[1].matchAll(/\d{1,3}(?:\(\d+\))*/g)) out.push(n[0]);
+  }
   return out;
 }
 
