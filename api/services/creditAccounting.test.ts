@@ -296,7 +296,9 @@ describe("creditAccounting - Server-Authoritative Package Limits & Cutoffs", () 
         analysisType: "quick",
       });
 
-      expect(second.reservationId).toBe(first.reservationId);
+      // Only the attempt that owns the reservation carries its id; the joining retry carries none.
+      expect(first.reservationId).not.toBe("");
+      expect(second.reservationId).toBe("");
       expect(second.slotIndex).toBe(first.slotIndex);
     });
   });

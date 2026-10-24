@@ -165,20 +165,23 @@ export async function setMarkerSlot(uid: string, email: string, slot: number): P
   return Array.isArray(rows) && rows.length === 1;
 }
 
-/** Lists rows whose uid starts with `prefix` and whose email marker equals `email`. */
-export async function listMarkers(prefix: string, email: string): Promise<UsageRow[]> {
+/**
+ * Lists rows whose uid starts with `uidPrefix` and whose email starts with `emailPrefix`.
+ * PostgREST's documented LIKE wildcard in URLs is `*`. Prefixes are restricted to letters, digits, `_` and `-`,
+ * so no escaping is needed.
+ */
+export async function listMarkers(uidPrefix: string, emailPrefix: string): Promise<UsageRow[]> {
+  if (!/^[A-Za-z0-9_\-]+$/.test(uidPrefix) || !/^[A-Za-z0-9_:\-]+$/.test(emailPrefix)) {
+    throw new Error("Unsafe marker prefix");
+  }
   const rows = await run<UsageRow[]>("free_usage marker list", async (db) => {
     const { data, error } = await db
       .from("free_usage")
       .select("uid, email, analyses_used, first_analysis_at, last_analysis_at")
-      .like("uid", `${escapeLike(prefix)}%`)
-      .eq("email", email)
+      .like("uid", `${uidPrefix}*`)
+      .like("email", `${emailPrefix}*`)
       .retry(false);
     return { data: data as UsageRow[], error };
   });
-  return (rows ?? []).filter((r) => r.uid.startsWith(prefix));
-}
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return (rows ?? []).filter((r) => r.uid.startsWith(uidPrefix) && (r.email ?? "").startsWith(emailPrefix));
 }

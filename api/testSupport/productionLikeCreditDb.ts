@@ -19,14 +19,14 @@ interface Filter {
   value: any;
 }
 
-// SQL LIKE: % matches any run, _ matches one character, and a backslash escapes the next character.
+// PostgREST LIKE: * (or %) matches any run, _ matches one character, and a backslash escapes the next character.
 function likeToRegExp(pattern: string): RegExp {
   let source = "";
   for (let i = 0; i < pattern.length; i++) {
     const c = pattern[i];
     if (c === "\\" && i + 1 < pattern.length) {
       source += pattern[++i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    } else if (c === "%") {
+    } else if (c === "%" || c === "*") {
       source += ".*";
     } else if (c === "_") {
       source += ".";

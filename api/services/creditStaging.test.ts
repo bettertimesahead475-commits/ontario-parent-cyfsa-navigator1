@@ -38,7 +38,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
 
   afterAll(async () => {
     const { getSupabase } = await import("./access.js");
-    await getSupabase().from("free_usage").delete().like("uid", `%${sessionId}%`);
+    await getSupabase().from("free_usage").delete().like("uid", `*${sessionId}*`);
   });
 
   const reserve = (credit: CreditModule, requestId: string, sid = sessionId) =>

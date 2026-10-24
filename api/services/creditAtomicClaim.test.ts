@@ -5,7 +5,7 @@
 // free_usage table: a primary key on uid, and row-level writes that are atomic.
 
 import { createHash } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProductionLikeDb } from "../testSupport/productionLikeCreditDb.js";
 
 process.env.SUPABASE_URL = "https://example.supabase.co";
@@ -94,7 +94,8 @@ describe("Credit claims are atomic across instances", () => {
       if (r.status === "rejected") expect((r.reason as any).code).toBe("ANALYSIS_IN_PROGRESS");
     }
     expect(fulfilled.length).toBeGreaterThanOrEqual(1);
-    expect(new Set(fulfilled.map((r) => r.value.reservationId)).size).toBe(1);
+    // Exactly one attempt owns the reservation; any attempt that joined it carries no id and cannot release it.
+    expect(fulfilled.filter((r) => r.value.reservationId !== "")).toHaveLength(1);
     expect(counter()).toBe(1);
   });
 
@@ -127,36 +128,36 @@ describe("Release returns exactly one unit", () => {
 
   it("a failed analysis releases its unit once, even if released twice", async () => {
     const credit = await loadCredit();
-    await reserveWith(credit, "req_fail");
+    const held = await reserveWith(credit, "req_fail");
     expect(counter()).toBe(1);
-    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_fail", reason: "timeout" });
-    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_fail", reason: "timeout" });
+    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_fail", reservationId: held.reservationId, reason: "timeout" });
+    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_fail", reservationId: held.reservationId, reason: "timeout" });
     expect(counter()).toBe(0);
   });
 
   it("a release on one instance is seen by another instance", async () => {
     const [a, b] = [await loadCredit(), await loadCredit()];
-    await reserveWith(a, "req_cross");
-    await b.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_cross", reason: "stream dropped" });
+    const held = await reserveWith(a, "req_cross");
+    await b.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_cross", reservationId: held.reservationId, reason: "stream dropped" });
     expect(counter()).toBe(0);
   });
 
   it("two instances releasing the same reservation at the same moment give back one unit, not two", async () => {
     const [a, b, c] = [await loadCredit(), await loadCredit(), await loadCredit()];
-    await reserveWith(c, "req_one");
+    const held = await reserveWith(c, "req_one");
     await reserveWith(c, "req_two");
     expect(counter()).toBe(2);
     await Promise.all([
-      a.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_one", reason: "timeout" }),
-      b.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_one", reason: "timeout" }),
+      a.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_one", reservationId: held.reservationId, reason: "timeout" }),
+      b.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_one", reservationId: held.reservationId, reason: "timeout" }),
     ]);
     expect(counter()).toBe(1);
   });
 
   it("a retry after a released attempt re-reserves exactly one unit", async () => {
     const credit = await loadCredit();
-    await reserveWith(credit, "req_retry");
-    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_retry", reason: "timeout" });
+    const first = await reserveWith(credit, "req_retry");
+    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_retry", reservationId: first.reservationId, reason: "timeout" });
     expect(counter()).toBe(0);
     const again = await reserveWith(credit, "req_retry");
     expect(again.alreadyFinalized).toBe(false);
@@ -165,9 +166,9 @@ describe("Release returns exactly one unit", () => {
 
   it("a release after finalization does not give the unit back", async () => {
     const credit = await loadCredit();
-    await reserveWith(credit, "req_done");
+    const done = await reserveWith(credit, "req_done");
     await finalizeWith(credit, "req_done");
-    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_done", reason: "late error" });
+    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_done", reservationId: done.reservationId, reason: "late error" });
     expect(counter()).toBe(1);
   });
 });
@@ -256,10 +257,17 @@ describe("Fail closed", () => {
   });
 
   it("finalize never throws after the analysis has been produced", async () => {
-    currentDb.ref = createProductionLikeDb();
+    // A live reservation exists, but the database refuses writes when the analysis finishes.
+    const db = createProductionLikeDb({ failWrites: true, usage: { [COUNTER]: 1 } });
+    db._freeUsage.set(markerFor(SESSION, "req_late"), {
+      uid: markerFor(SESSION, "req_late"),
+      email: "reservation:reserved",
+      analyses_used: 1,
+      first_analysis_at: new Date().toISOString(),
+      last_analysis_at: new Date().toISOString(),
+    });
+    currentDb.ref = db;
     const credit = await loadCredit();
-    await reserveWith(credit, "req_late");
-    currentDb.ref = createProductionLikeDb({ failWrites: true, usage: { [COUNTER]: 1 } });
     await expect(finalizeWith(credit, "req_late")).resolves.toBeNull();
   });
 });
@@ -332,5 +340,180 @@ describe("Per-analysis usage counters (usage.ts)", () => {
     expect(retry.alreadyConsumed).toBe(true);
     const fresh = await other.checkPaidUsage(SESSION, "Basic", "quick", quickKey("req_quick_4"));
     expect(fresh.allowed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Billing integrity: ownership, reclaim while running, crash points, claim window, monthly cycles.
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const PRO_SESSION = "22222222-2222-4222-8222-222222222222";
+const proCounter = (cycle: string) => `paid_session_${PRO_SESSION}_cycle_${cycle}`;
+
+function minutesAgo(minutes: number): string {
+  return new Date(Date.now() - minutes * 60 * 1000).toISOString();
+}
+
+function seedMarker(sessionId: string, requestId: string, email: string, slot: number, touched: string) {
+  const uid = markerFor(sessionId, requestId);
+  return { uid, email, analyses_used: slot, first_analysis_at: touched, last_analysis_at: touched };
+}
+
+describe("Only the owner of a reservation can release it", () => {
+  beforeEach(() => {
+    currentDb.ref = createProductionLikeDb();
+  });
+
+  it("a retry that joins a live reservation and then fails cannot release the owner's credit", async () => {
+    const [owner, retry] = [await loadCredit(), await loadCredit()];
+    const held = await reserveWith(owner, "req_live");
+    const joined = await reserveWith(retry, "req_live");
+    expect(joined.reservationId).toBe("");
+
+    await retry.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_live", reservationId: joined.reservationId, reason: "retry timed out" });
+    expect(counter()).toBe(1);
+
+    await owner.finalizeAnalysisCredit({ sessionId: SESSION, firebaseUid: "uid-owner", requestId: "req_live", tier: "Basic" });
+    expect(counter()).toBe(1);
+    expect(held.reservationId).not.toBe("");
+  });
+
+  it("a release carrying another request's reservation id does nothing", async () => {
+    const credit = await loadCredit();
+    const other = await reserveWith(credit, "req_other");
+    await reserveWith(credit, "req_mine");
+    await credit.releaseAnalysisReservation({ sessionId: SESSION, requestId: "req_mine", reservationId: other.reservationId, reason: "wrong id" });
+    expect(counter()).toBe(2);
+  });
+});
+
+describe("Reclaim never touches a legitimately running analysis", () => {
+  it("a reservation touched 10 minutes ago (inside the 15-minute window) is not reclaimed when the allowance is full", async () => {
+    currentDb.ref = createProductionLikeDb({ usage: { [COUNTER]: 3 } });
+    const marker = seedMarker(SESSION, "req_running", "reservation:reserved", 3, minutesAgo(10));
+    currentDb.ref._freeUsage.set(marker.uid, marker);
+    const credit = await loadCredit();
+    await expect(reserveWith(credit, "req_blocked_running")).rejects.toMatchObject({ code: "ANALYSIS_LIMIT_REACHED" });
+    expect(currentDb.ref._freeUsage.get(marker.uid).email).toBe("reservation:reserved");
+    expect(counter()).toBe(3);
+  });
+
+  it("the reservation window is longer than twice the longest function run (vercel.json maxDuration)", async () => {
+    const vercel = JSON.parse(readFileSync(resolve(__dirname, "../../vercel.json"), "utf8"));
+    const maxSeconds = Math.max(...Object.values<any>(vercel.functions).map((f) => f.maxDuration));
+    const credit = await loadCredit();
+    expect(credit.RESERVATION_TTL_MS).toBeGreaterThanOrEqual(2 * maxSeconds * 1000);
+  });
+});
+
+describe("Crash recovery between marker and counter", () => {
+  beforeEach(() => {
+    currentDb.ref = createProductionLikeDb();
+  });
+
+  it("crash after the marker was written but before the counter moved: never decrements the counter, and is swept only when the allowance is full", async () => {
+    currentDb.ref = createProductionLikeDb({ usage: { [COUNTER]: 2 } });
+    const crashed = seedMarker(SESSION, "req_crash_marker", "reservation:reserved", 0, minutesAgo(16));
+    currentDb.ref._freeUsage.set(crashed.uid, crashed);
+    const credit = await loadCredit();
+    await reserveWith(credit, "req_after_crash_marker");
+    expect(counter()).toBe(3);
+    // Not full at the time, so the sweep did not run; the stale marker is harmless because it holds no unit.
+    expect(currentDb.ref._freeUsage.get(crashed.uid).analyses_used).toBe(0);
+  });
+
+  it("crash after the counter moved but before the slot was recorded: the unit is lost, never over-issued", async () => {
+    // The counter already includes the crashed unit (3 of 3), and the crashed marker has no slot.
+    currentDb.ref = createProductionLikeDb({ usage: { [COUNTER]: 3 } });
+    const crashed = seedMarker(SESSION, "req_crash_counter", "reservation:reserved", 0, minutesAgo(16));
+    currentDb.ref._freeUsage.set(crashed.uid, crashed);
+    const credit = await loadCredit();
+    await expect(reserveWith(credit, "req_over")).rejects.toMatchObject({ code: "ANALYSIS_LIMIT_REACHED" });
+    expect(counter()).toBe(3);
+  });
+
+  it("a claim that has not recorded its unit yet is not reclaimed inside the claim window", async () => {
+    currentDb.ref = createProductionLikeDb({ usage: { [COUNTER]: 1 } });
+    const claiming = seedMarker(SESSION, "req_claiming", "reservation:reserved", 0, new Date().toISOString());
+    currentDb.ref._freeUsage.set(claiming.uid, claiming);
+    const credit = await loadCredit();
+    await expect(reserveWith(credit, "req_claiming")).rejects.toMatchObject({ statusCode: 409, code: "ANALYSIS_IN_PROGRESS" });
+  });
+
+  it("a claim abandoned longer than the claim window does not block its retry for the full TTL", async () => {
+    currentDb.ref = createProductionLikeDb({ usage: { [COUNTER]: 1 } });
+    const abandoned = seedMarker(SESSION, "req_abandoned_claim", "reservation:reserved", 0, minutesAgo(2));
+    currentDb.ref._freeUsage.set(abandoned.uid, abandoned);
+    const credit = await loadCredit();
+    const retry = await reserveWith(credit, "req_abandoned_claim");
+    expect(retry.reservationId).not.toBe("");
+    expect(counter()).toBe(2);
+  });
+});
+
+describe("Pro and Community: forensic analyses per calendar month, quick reviews unlimited", () => {
+  beforeEach(() => {
+    currentDb.ref = createProductionLikeDb();
+  });
+  afterEach(async () => {
+    const { setCreditClockForTesting } = await loadCredit();
+    setCreditClockForTesting(null);
+  });
+
+  const reserveFor = (credit: CreditModule, requestId: string, analysisType: "quick" | "forensic", tier = "Pro") =>
+    credit.reserveAnalysisCredit({ sessionId: PRO_SESSION, firebaseUid: "uid-pro", tier, requestId, analysisType });
+
+  it("ten quick reviews do not draw on the forensic allowance, and five forensic analyses are allowed per month", async () => {
+    const credit = await loadCredit();
+    credit.setCreditClockForTesting(() => new Date("2026-03-15T12:00:00Z"));
+    for (let i = 0; i < 10; i++) await reserveFor(credit, `pro_quick_${i}`, "quick");
+    for (let i = 0; i < 5; i++) await reserveFor(credit, `pro_forensic_${i}`, "forensic");
+    expect(currentDb.ref._freeUsage.get(proCounter("2026-03"))?.analyses_used).toBe(5);
+    expect(currentDb.ref._freeUsage.get(`paid_session_${PRO_SESSION}_total`)).toBeUndefined();
+    await expect(reserveFor(credit, "pro_forensic_6", "forensic")).rejects.toMatchObject({ code: "ANALYSIS_LIMIT_REACHED" });
+  });
+
+  it("the Community plans use the same monthly forensic allowance", async () => {
+    const credit = await loadCredit();
+    credit.setCreditClockForTesting(() => new Date("2026-03-15T12:00:00Z"));
+    for (let i = 0; i < 5; i++) await reserveFor(credit, `com_forensic_${i}`, "forensic", "Community10");
+    await expect(reserveFor(credit, "com_forensic_6", "forensic", "Community10")).rejects.toMatchObject({ code: "ANALYSIS_LIMIT_REACHED" });
+  });
+
+  it("the allowance renews at the calendar-month boundary", async () => {
+    const credit = await loadCredit();
+    credit.setCreditClockForTesting(() => new Date("2026-01-31T23:59:00Z"));
+    for (let i = 0; i < 5; i++) await reserveFor(credit, `jan_${i}`, "forensic");
+    await expect(reserveFor(credit, "jan_6", "forensic")).rejects.toMatchObject({ code: "ANALYSIS_LIMIT_REACHED" });
+
+    credit.setCreditClockForTesting(() => new Date("2026-02-01T00:01:00Z"));
+    const feb = await reserveFor(credit, "feb_1", "forensic");
+    expect(feb.slotIndex).toBe(1);
+    expect(currentDb.ref._freeUsage.get(proCounter("2026-02"))?.analyses_used).toBe(1);
+  });
+
+  it("releasing a January reservation after the boundary returns the unit to January, not February", async () => {
+    const credit = await loadCredit();
+    credit.setCreditClockForTesting(() => new Date("2026-01-31T23:59:00Z"));
+    const held = await reserveFor(credit, "jan_held", "forensic");
+    credit.setCreditClockForTesting(() => new Date("2026-02-01T00:01:00Z"));
+    await credit.releaseAnalysisReservation({ sessionId: PRO_SESSION, requestId: "jan_held", reservationId: held.reservationId, reason: "failed" });
+    expect(currentDb.ref._freeUsage.get(proCounter("2026-01"))?.analyses_used).toBe(0);
+    expect(currentDb.ref._freeUsage.get(proCounter("2026-02"))).toBeUndefined();
+  });
+
+  it("concurrent forensic requests across instances never exceed the monthly five", async () => {
+    const credit = await loadCredit();
+    credit.setCreditClockForTesting(() => new Date("2026-03-15T12:00:00Z"));
+    const instances = await Promise.all([loadCredit(), loadCredit(), loadCredit()]);
+    instances.forEach((i) => i.setCreditClockForTesting(() => new Date("2026-03-15T12:00:00Z")));
+    const results = await Promise.allSettled(
+      Array.from({ length: 12 }, (_, i) => reserveFor(instances[i % 3], `burst_pro_${i}`, "forensic"))
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(5);
+    expect(currentDb.ref._freeUsage.get(proCounter("2026-03"))?.analyses_used).toBe(5);
   });
 });
