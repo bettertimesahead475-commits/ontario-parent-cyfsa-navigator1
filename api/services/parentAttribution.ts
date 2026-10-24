@@ -115,7 +115,7 @@ export function normalizeName(name: string): string {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ')
     .trim();
 }
 
@@ -238,15 +238,24 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
 
   const inProceeding = model.allegations.filter(a => a.proceedingId === proceedingId);
   const roster = new Set(model.roles.filter(r => r.proceedingId === proceedingId).map(r => r.partyId));
-  // Issues belong to this proceeding, or are cross-proceeding issues (such as an alias collision)
-  // that touch a party in this proceeding. Other proceedings' issues are not shown here.
-  const issues = validateCaseModel(model).filter(i =>
-    i.proceedingId === proceedingId || (i.proceedingId === null && i.partyIds.some(pid => roster.has(pid))),
-  );
-
   const involving = inProceeding.filter(a => subjectsOf(a).includes(partyId));
   const specific = involving.filter(a => subjectsOf(a).length === 1);
   const shared = involving.filter(a => subjectsOf(a).length > 1);
+
+  // An allegation-level issue is shown only to the parties the allegation concerns. An allegation with
+  // no identified subject concerns no one in particular, so its issues are shown to every party in the
+  // proceeding. Proceeding-level issues and cross-proceeding issues (such as an alias collision) are
+  // shown only when they touch a party in this proceeding, and name only those parties.
+  const involvingIds = new Set(involving.map(a => a.id));
+  const allegationIds = new Set(inProceeding.map(a => a.id));
+  const unsubjectedIds = new Set(inProceeding.filter(a => subjectsOf(a).length === 0).map(a => a.id));
+  const issues = validateCaseModel(model)
+    .filter(i => {
+      if (allegationIds.has(i.itemId)) return involvingIds.has(i.itemId) || unsubjectedIds.has(i.itemId);
+      if (i.proceedingId === proceedingId) return true;
+      return i.proceedingId === null && i.partyIds.some(pid => roster.has(pid));
+    })
+    .map(i => (i.proceedingId === null ? {...i, partyIds: i.partyIds.filter(pid => roster.has(pid))} : i));
 
   return {
     proceedingId,

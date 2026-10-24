@@ -328,3 +328,57 @@ describe('review fixes', () => {
     expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B').ok).toBe(true);
   });
 });
+
+describe('second review fixes', () => {
+  it('does not show an allegation-level issue to a party the allegation does not concern', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'a1', subjectPartyIds: ['A'], source: src(null, null)})];
+    expect(buildParentReport(m, 'P1', 'A').unresolved.map(i => i.code)).toContain('MISSING_LOCATOR');
+    expect(buildParentReport(m, 'P1', 'B').unresolved.some(i => i.itemId === 'a1')).toBe(false);
+  });
+
+  it('shows an unsubjected allegation\'s issues to every party in the proceeding', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'u2', subjectPartyIds: [], source: src(null, null)})];
+    expect(buildParentReport(m, 'P1', 'A').unresolved.some(i => i.itemId === 'u2')).toBe(true);
+    expect(buildParentReport(m, 'P1', 'B').unresolved.some(i => i.itemId === 'u2')).toBe(true);
+  });
+
+  it('names only the parties of this proceeding in an alias collision', () => {
+    const m = withProceeding2(proceeding1());
+    m.parties = [{id: 'A', displayName: 'Parent A', aliases: ['Sam']}, {id: 'B', displayName: 'Parent B', aliases: ['Sam']}, {id: 'C', displayName: 'Parent C', aliases: ['Sam']}];
+    m.roles = m.roles.filter(r => r.partyId !== 'C');
+    m.roles.push({proceedingId: 'P2', partyId: 'C', role: 'OTHER_PARTY'});
+    const p1 = buildParentReport(m, 'P1', 'A').unresolved.find(i => i.code === 'ALIAS_COLLISION');
+    expect(p1?.partyIds.sort()).toEqual(['A', 'B']);
+  });
+
+  it('shows an admitted allegation with no source as unresolved', () => {
+    const m = proceeding1();
+    m.allegations = [allegation({id: 'ad1', subjectPartyIds: ['A'], status: 'ADMITTED', source: null})];
+    expect(buildParentReport(m, 'P1', 'A').specificAllegations[0].status).toBe('UNRESOLVED');
+  });
+
+  it('flags an order that names an unknown proceeding', () => {
+    const m = proceeding1();
+    m.orders = [{...m.orders[0], proceedingId: 'P9'}];
+    expect(validateCaseModel(m).some(i => i.code === 'UNKNOWN_PROCEEDING' && i.itemId === 'o1')).toBe(true);
+  });
+
+  it('keeps Devanagari names with combining marks distinct', () => {
+    const m = proceeding1();
+    m.parties = [{id: 'A', displayName: 'रवि', aliases: []}, {id: 'B', displayName: 'रव', aliases: []}];
+    expect(normalizeName('रवि')).toBe('रवि');
+    expect(validateCaseModel(m).some(i => i.code === 'ALIAS_COLLISION')).toBe(false);
+  });
+
+  it('refuses drafting for a subject with no role in the proceeding', () => {
+    const m = proceeding1();
+    m.parties = [A, B, {id: 'C', displayName: 'Parent C', aliases: []}];
+    m.allegations = [allegation({id: 'x3', subjectPartyIds: ['C']})];
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B').ok).toBe(true);
+    const ctx = buildDraftingContext(m, 'P1', 'C', 'FORM_33B');
+    expect(ctx.ok).toBe(false);
+    expect(ctx).toMatchObject({missing: expect.arrayContaining(['party role in this proceeding'])});
+  });
+});
