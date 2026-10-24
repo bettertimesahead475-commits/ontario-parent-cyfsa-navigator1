@@ -64,7 +64,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     title: "Child in Need of Protection Threshold",
     citation: "CYFSA s. 74(2)",
     category: "Statutory Section",
-    content: "Sets out the grounds in clauses (a) to (o) that must be met for a protection finding, for example physical harm, sexual abuse, severe emotional harm, medical neglect, or a parent who has died or is unavailable and has made no adequate provision (clause (k)). Poverty and housing on their own are not listed grounds. Confirm each stated concern against a specific clause with counsel.",
+    content: "Sets out the grounds in clauses (a) to (o) that must be met for a protection finding, for example physical harm, sexual abuse, serious emotional harm, or a parent who has died or is unavailable and has made no adequate provision (clause (k)). Poverty and housing on their own are not listed grounds. Confirm each stated concern against a specific clause with counsel.",
     isPreloaded: true
   },
   {
@@ -72,7 +72,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     title: "Child's Right to be Heard & Counsel",
     citation: "CYFSA s. 3; s. 78",
     category: "Statutory Section",
-    content: "Section 3 lists children's rights, including the right to express their views freely and safely, to be consulted on services and informed of decisions, and to raise concerns without reprisal. Under s. 78, a child may have legal representation at any stage of a proceeding, and the court must consider whether it is desirable to protect the child's interests. Under s. 78(4), representation is deemed desirable in listed circumstances, for example where the child is in the society's care and no parent appears, unless the court is satisfied the child's interests are otherwise protected.",
+    content: "Section 3 lists children's rights, including the right to express their views freely and safely, to be consulted on services and informed of decisions, and to raise concerns without reprisal. Under s. 78, a child may have legal representation at any stage of a proceeding, and the court must consider whether it is desirable to protect the child's interests. Under s. 78(4), representation is deemed desirable in listed circumstances, for example where the child is in the society's care and no parent appears, unless the court is satisfied, taking into account the child's views and wishes, that the child's interests are otherwise adequately protected.",
     isPreloaded: true
   },
   {
