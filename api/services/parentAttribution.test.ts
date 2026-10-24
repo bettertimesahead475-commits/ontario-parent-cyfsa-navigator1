@@ -126,7 +126,7 @@ describe('role reversal across proceedings', () => {
 
 describe('similar names and aliases', () => {
   it('normalizes accents, case, and punctuation when comparing names', () => {
-    expect(normalizeName("  José  O'Brien ")).toBe('jose o brien');
+    expect(normalizeName("  José  O'Brien ")).toBe('jose obrien');
   });
 
   it('flags an alias that two parties share instead of guessing', () => {
@@ -500,5 +500,25 @@ describe('fifth review fixes', () => {
   it('folds Latin letters that do not decompose to their ASCII form', () => {
     expect(normalizeName('Søren')).toBe(normalizeName('Soren'));
     expect(normalizeName('Łukasz')).toBe(normalizeName('Lukasz'));
+  });
+});
+
+describe('sixth review fixes', () => {
+  it('keeps a repeated ID inside its proceeding when both records are in that proceeding', () => {
+    const m = withProceeding2(proceeding1());
+    m.allegations = [allegation({id: 'x', proceedingId: 'P2', subjectPartyIds: ['A']}), allegation({id: 'x', proceedingId: 'P2', subjectPartyIds: ['B']})];
+    expect(buildParentReport(m, 'P1', 'A').unresolved.some(i => i.code === 'DUPLICATE_ID')).toBe(false);
+  });
+
+  it('does not show an alias collision to a party outside the colliding set', () => {
+    const m = proceeding1();
+    m.parties = [{id: 'A', displayName: 'Sam', aliases: []}, {id: 'B', displayName: 'Sam', aliases: []}, {id: 'C', displayName: 'Parent C', aliases: []}];
+    m.roles.push({proceedingId: 'P1', partyId: 'C', role: 'OTHER_PARTY'});
+    expect(buildParentReport(m, 'P1', 'C').unresolved.some(i => i.code === 'ALIAS_COLLISION')).toBe(false);
+    expect(buildParentReport(m, 'P1', 'A').unresolved.some(i => i.code === 'ALIAS_COLLISION')).toBe(true);
+  });
+
+  it('keeps dotless ı distinct from i', () => {
+    expect(normalizeName('Sıla')).not.toBe(normalizeName('Sila'));
   });
 });

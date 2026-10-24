@@ -112,7 +112,7 @@ export interface AttributionIssue {
  * digits in any script are kept, so non-Latin names are not reduced to an empty key.
  */
 /** Latin letters that do not decompose under NFD, folded to their closest ASCII form. */
-const LATIN_FOLDS: Record<string, string> = {ø: 'o', ł: 'l', đ: 'd', ð: 'd', æ: 'ae', œ: 'oe', ß: 'ss', þ: 'th', ı: 'i'};
+const LATIN_FOLDS: Record<string, string> = {ø: 'o', ł: 'l', đ: 'd', ð: 'd', æ: 'ae', œ: 'oe', ß: 'ss', þ: 'th'};
 
 export function normalizeName(name: string): string {
   return name
@@ -126,7 +126,8 @@ export function normalizeName(name: string): string {
     .normalize('NFD')
     .replace(/(\p{Script=Latin})\p{M}+/gu, '$1')
     .toLowerCase()
-    .replace(/[øłđðæœßþı]/g, c => LATIN_FOLDS[c])
+    .replace(/[øłđðæœßþ]/g, c => LATIN_FOLDS[c])
+    .replace(/['’]/g, '')
     .replace(/[^\p{L}\p{M}\p{N}‌‍]+/gu, ' ')
     .trim();
 }
@@ -177,16 +178,19 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
     }
   }
 
-  const subjectsById = new Map<string, string[]>();
+  const firstById = new Map<string, {proceedingId: string; subjects: string[]}>();
   for (const a of model.allegations) {
     const subjects = subjectsOf(a);
-    if (subjectsById.has(a.id)) {
-      // Both records' subjects are named, so each party whose record shares this ID sees the problem.
-      // IDs are expected to be unique across the model. A repeat is not scoped to one proceeding.
-      const both = [...new Set([...subjectsById.get(a.id)!, ...subjects])];
-      issues.push({code: 'DUPLICATE_ID', itemId: a.id, proceedingId: null, partyIds: both, detail: 'Allegation ID is used more than once; the record cannot be referenced reliably.'});
+    const first = firstById.get(a.id);
+    if (first) {
+      // Both records' subjects are named, so each party whose record shares this ID sees the problem. A
+      // repeat within one proceeding is scoped to that proceeding; a repeat across proceedings is shown
+      // only to the parties it names.
+      const both = [...new Set([...first.subjects, ...subjects])];
+      const proceedingId = first.proceedingId === a.proceedingId ? a.proceedingId : null;
+      issues.push({code: 'DUPLICATE_ID', itemId: a.id, proceedingId, partyIds: both, detail: 'Allegation ID is used more than once; the record cannot be referenced reliably.'});
     } else {
-      subjectsById.set(a.id, subjects);
+      firstById.set(a.id, {proceedingId: a.proceedingId, subjects});
     }
     const base = {itemId: a.id, proceedingId: a.proceedingId, partyIds: subjects};
     if (!proceedingIds.has(a.proceedingId)) {
@@ -277,11 +281,9 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
         if (!allegationIds.has(i.itemId)) return true;
         return i.partyIds.includes(partyId) || i.partyIds.every(pid => !knownIds.has(pid));
       }
-      if (i.proceedingId !== null) return false;
-      // A repeated ID concerns only the parties whose records share it. An alias collision concerns any
-      // colliding party in this proceeding.
-      if (i.code === 'DUPLICATE_ID') return i.partyIds.includes(partyId);
-      return i.partyIds.some(pid => roster.has(pid));
+      // A model-wide issue (a repeated ID across proceedings, or an alias collision) concerns only the
+      // parties it names. Those are the only parties shown in it, and only the ones in this proceeding.
+      return i.proceedingId === null && i.partyIds.includes(partyId);
     })
     .map(i => (i.proceedingId === null ? {...i, partyIds: i.partyIds.filter(pid => roster.has(pid))} : i));
 
