@@ -173,7 +173,7 @@ Pre-deploy:
 Migration:
 
 4. Apply `paid_credit_reservation_functions.sql` to production (one transaction; adds functions only).
-5. Verify: all eight functions exist; `service_role` can execute the three public ones; `anon` and `authenticated` cannot.
+5. Verify: all eight functions exist; `service_role` can execute all eight (the three entry points and the five internal helpers they call); `anon`, `authenticated` and PUBLIC cannot execute any of them. Run one reserve as `service_role` (in a rolled-back transaction) to confirm the path works end to end.
 
 Deploy:
 
@@ -187,6 +187,19 @@ Rollback:
 - **Application:** revert the merge commit on `main` (Vercel redeploys the previous READY deployment, `dpl_9DgyuPFqjoyDw9B6XJjGXsZEdbyh` is the current one to return to if needed).
 - **Database:** leave the functions. They hold no data and nothing calls them after the application revert. Drop them with `paid_credit_reservation_functions.down.sql` only if the owner decides they must go.
 - **Stranded reservations:** returned by the 15-minute reconciliation on the next reservation for that session.
+
+### 9.4 Release checklist additions
+
+Staging evidence (required before step 6 of 9.2):
+
+- Run the **Staging credit verification** workflow (`workflow_dispatch` only, `.github/workflows/staging-credit-verification.yml`) on the exact PR #103 head commit. It must report all six scenarios passed. A skipped or partly run suite is a failure.
+- Record the run URL, the commit SHA, and the pass count in the PR before merging.
+
+Production security finding (read-only, found 2026-10-24; not fixed by PR #103):
+
+- `public.free_usage` on production has RLS enabled with no policies, which blocks `anon` and `authenticated`. But the table still grants them `SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER`. Any future policy mistake would expose the table directly.
+- Recommended fix: a separate, tested privilege-hardening change, not part of PR #103. It would revoke all table privileges from `anon` and `authenticated` and keep `service_role` only. Before applying, test it on staging: `has_table_privilege` for each role, an `anon` REST request returning no rows, and the credit suite still passing as `service_role`.
+- Owner approval is required before any production change.
 
 ### 9.3 PR #102 (after #103 is deployed and verified)
 

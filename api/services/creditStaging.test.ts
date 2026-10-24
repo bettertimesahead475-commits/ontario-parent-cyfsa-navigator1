@@ -31,6 +31,12 @@ async function loadCredit(): Promise<CreditModule> {
 describe.skipIf(!enabled)("credit reservation against a real Supabase project (staging only)", () => {
   // navigator_paid_sessions.id is a uuid, so synthetic session ids are uuids too.
   const sessionId = randomUUID();
+  // Every synthetic session a case creates is recorded here, so afterAll removes it even when an assertion fails.
+  const synthetic = new Set<string>([sessionId]);
+  const track = <T extends string>(id: T): T => {
+    synthetic.add(id);
+    return id;
+  };
 
   beforeAll(() => {
     process.env.SUPABASE_URL = stagingUrl;
@@ -39,7 +45,13 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
 
   afterAll(async () => {
     const { getSupabase } = await import("./access.js");
-    await getSupabase().from("free_usage").delete().like("uid", `*${sessionId}*`);
+    const db = getSupabase();
+    for (const id of synthetic) {
+      const { error } = await db.from("free_usage").delete().like("uid", `*${id}*`);
+      if (error) throw new Error(`cleanup of synthetic free_usage rows failed: ${error.message}`);
+    }
+    const { error } = await db.from("navigator_paid_sessions").delete().in("id", [...synthetic]);
+    if (error) throw new Error(`cleanup of synthetic paid sessions failed: ${error.message}`);
   });
 
   const reserve = (credit: CreditModule, requestId: string, sid = sessionId) =>
@@ -59,7 +71,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
   });
 
   it("one request id sent to three instances at once is charged once", async () => {
-    const retrySession = randomUUID();
+    const retrySession = track(randomUUID());
     const instances = await Promise.all(Array.from({ length: 3 }, () => loadCredit()));
     await Promise.allSettled(instances.map((credit) => reserve(credit, "vfy_same_request", retrySession)));
     const credit = await loadCredit();
@@ -67,7 +79,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
   });
 
   it("a failed analysis gives its credit back; a finished one keeps it", async () => {
-    const releaseSession = randomUUID();
+    const releaseSession = track(randomUUID());
     const credit = await loadCredit();
     const failed = await reserve(credit, "vfy_fails", releaseSession);
     await credit.releaseAnalysisReservation({ sessionId: releaseSession, requestId: "vfy_fails", reservationId: failed.reservationId, reason: "timeout" });
@@ -83,7 +95,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
     process.env.SUPABASE_SERVICE_ROLE_KEY = "invalid-key-for-verification";
     try {
       const credit = await loadCredit();
-      await expect(reserve(credit, "vfy_bad_key", randomUUID())).rejects.toMatchObject({
+      await expect(reserve(credit, "vfy_bad_key", track(randomUUID()))).rejects.toMatchObject({
         statusCode: 503,
         code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
       });
@@ -95,7 +107,7 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
   // Exercises the prefix listing against real PostgREST: a stale reservation with a recorded unit is found and returned
   // on the next reserve. The row is written with the same statements the store uses; nothing is mocked.
   it("a crashed reservation on staging is reconciled by the next reserve", async () => {
-    const reconcileSession = randomUUID();
+    const reconcileSession = track(randomUUID());
     const { getSupabase } = await import("./access.js");
     const { createHash } = await import("node:crypto");
     const digest = createHash("sha256").update("vfy_crashed").digest("hex").slice(0, 32);
@@ -110,12 +122,11 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
     const credit = await loadCredit();
     await reserve(credit, "vfy_next", reconcileSession);
     expect((await credit.getCreditBalance(reconcileSession, "Basic")).creditsConsumed).toBe(1);
-    await db.from("free_usage").delete().like("uid", `*${reconcileSession}*`);
   });
 
   // Pro: forensic analyses renew on the session's own renewal date (issued_at), not the calendar month.
   it("a Pro session's quick reviews are not counted, and its forensic allowance renews on its anniversary", async () => {
-    const proSession = randomUUID();
+    const proSession = track(randomUUID());
     const issued = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
     const { getSupabase } = await import("./access.js");
     const db = getSupabase();
@@ -127,18 +138,13 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
       expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     });
     expect(row.error).toBeNull();
-    try {
-      const credit = await loadCredit();
-      for (let i = 0; i < 2; i++) {
-        await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: `vfy_pq_${i}`, analysisType: "quick" });
-      }
-      const pro = await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: "vfy_pf_1", analysisType: "forensic" });
-      expect(pro.billingCycle).toBe(issued.toISOString().slice(0, 10));
-      const period = await db.from("free_usage").select("analyses_used").eq("uid", `paid_session_${proSession}_period_${issued.toISOString().slice(0, 10)}`).retry(false);
-      expect(period.data?.[0]?.analyses_used).toBe(1);
-    } finally {
-      await db.from("free_usage").delete().like("uid", `*${proSession}*`);
-      await db.from("navigator_paid_sessions").delete().eq("id", proSession);
+    const credit = await loadCredit();
+    for (let i = 0; i < 2; i++) {
+      await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: `vfy_pq_${i}`, analysisType: "quick" });
     }
+    const pro = await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: "vfy_pf_1", analysisType: "forensic" });
+    expect(pro.billingCycle).toBe(issued.toISOString().slice(0, 10));
+    const period = await db.from("free_usage").select("analyses_used").eq("uid", `paid_session_${proSession}_period_${issued.toISOString().slice(0, 10)}`).retry(false);
+    expect(period.data?.[0]?.analyses_used).toBe(1);
   });
 });

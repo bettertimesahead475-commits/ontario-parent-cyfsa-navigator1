@@ -1,0 +1,72 @@
+name: Staging credit verification
+
+# Manual only. Runs the six staging integration scenarios against the staging Supabase project.
+# It never runs on push or pull request, and it never touches production.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-credit-verification
+  cancel-in-progress: false
+
+jobs:
+  staging-integration:
+    name: Six staging scenarios
+    runs-on: ubuntu-latest
+    # Secrets live in the "staging" environment. Add required reviewers there to gate each run.
+    environment: staging
+    timeout-minutes: 15
+    env:
+      # Non-secret. The run refuses to start unless the secret URL points at this project.
+      EXPECTED_STAGING_PROJECT_REF: nxfhvebzzobegubefcda
+      EXPECTED_SCENARIO_COUNT: "6"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify staging secrets are configured
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STAGING_SUPABASE_URL:-}" ]; then
+            echo "::error::STAGING_SUPABASE_URL is not set in the staging environment."
+            exit 1
+          fi
+          if [ -z "${STAGING_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::STAGING_SUPABASE_SERVICE_ROLE_KEY is not set in the staging environment."
+            exit 1
+          fi
+          case "$STAGING_SUPABASE_URL" in
+            *"$EXPECTED_STAGING_PROJECT_REF"*) ;;
+            *)
+              echo "::error::STAGING_SUPABASE_URL does not point at the expected staging project. Refusing to run."
+              exit 1
+              ;;
+          esac
+          case "$STAGING_SUPABASE_URL" in
+            *qboidsfpjuxeqtfotryj*)
+              echo "::error::STAGING_SUPABASE_URL points at the production project. Refusing to run."
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Run the six staging scenarios
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx vitest run api/services/creditStaging.test.ts --reporter=json --outputFile=staging-results.json
+
+      - name: Confirm all six scenarios actually executed and passed
+        if: always()
+        run: node scripts/check-staging-results.mjs staging-results.json
