@@ -111,15 +111,22 @@ export interface AttributionIssue {
  * Normalizes a name for comparison: case, accents, punctuation and spacing are ignored. Letters and
  * digits in any script are kept, so non-Latin names are not reduced to an empty key.
  */
+/** Latin letters that do not decompose under NFD, folded to their closest ASCII form. */
+const LATIN_FOLDS: Record<string, string> = {ø: 'o', ł: 'l', đ: 'd', ð: 'd', æ: 'ae', œ: 'oe', ß: 'ss', þ: 'th', ı: 'i'};
+
 export function normalizeName(name: string): string {
   return name
     .normalize('NFKC')
-    // Invisible format characters (soft hyphen, byte-order mark, zero-width space) are dropped. Zero-width
-    // joiners are kept, because some scripts need them to form letters.
+    // Invisible format characters (soft hyphen, byte-order mark, zero-width space) are dropped.
     .replace(/\p{Cf}/gu, m => (m === '‌' || m === '‍' ? m : ''))
+    // Zero-width joiners and non-joiners are dropped at word edges and inside Latin words. Some other
+    // scripts need them between letters to form the name, so they are kept there.
+    .replace(/(?<![\p{L}\p{M}])[‌‍]|[‌‍](?![\p{L}\p{M}])/gu, '')
+    .replace(/(?<=\p{Script=Latin})[‌‍](?=\p{Script=Latin})/gu, '')
     .normalize('NFD')
     .replace(/(\p{Script=Latin})\p{M}+/gu, '$1')
     .toLowerCase()
+    .replace(/[øłđðæœßþı]/g, c => LATIN_FOLDS[c])
     .replace(/[^\p{L}\p{M}\p{N}‌‍]+/gu, ' ')
     .trim();
 }
@@ -175,8 +182,9 @@ export function validateCaseModel(model: CaseModel): AttributionIssue[] {
     const subjects = subjectsOf(a);
     if (subjectsById.has(a.id)) {
       // Both records' subjects are named, so each party whose record shares this ID sees the problem.
+      // IDs are expected to be unique across the model. A repeat is not scoped to one proceeding.
       const both = [...new Set([...subjectsById.get(a.id)!, ...subjects])];
-      issues.push({code: 'DUPLICATE_ID', itemId: a.id, proceedingId: a.proceedingId, partyIds: both, detail: 'Allegation ID is used more than once; the record cannot be referenced reliably.'});
+      issues.push({code: 'DUPLICATE_ID', itemId: a.id, proceedingId: null, partyIds: both, detail: 'Allegation ID is used more than once; the record cannot be referenced reliably.'});
     } else {
       subjectsById.set(a.id, subjects);
     }
@@ -269,7 +277,11 @@ export function buildParentReport(model: CaseModel, proceedingId: string, partyI
         if (!allegationIds.has(i.itemId)) return true;
         return i.partyIds.includes(partyId) || i.partyIds.every(pid => !knownIds.has(pid));
       }
-      return i.proceedingId === null && i.partyIds.some(pid => roster.has(pid));
+      if (i.proceedingId !== null) return false;
+      // A repeated ID concerns only the parties whose records share it. An alias collision concerns any
+      // colliding party in this proceeding.
+      if (i.code === 'DUPLICATE_ID') return i.partyIds.includes(partyId);
+      return i.partyIds.some(pid => roster.has(pid));
     })
     .map(i => (i.proceedingId === null ? {...i, partyIds: i.partyIds.filter(pid => roster.has(pid))} : i));
 

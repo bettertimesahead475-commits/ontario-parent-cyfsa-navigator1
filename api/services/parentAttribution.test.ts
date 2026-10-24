@@ -475,3 +475,30 @@ describe('fourth review fixes', () => {
     expect(normalizeName('Ｓａｍ')).toBe(normalizeName('Sam'));
   });
 });
+
+describe('fifth review fixes', () => {
+  it('shows a cross-proceeding duplicate ID to the party whose record shares it and blocks drafting for that party', () => {
+    const m = withProceeding2(proceeding1());
+    m.allegations = [allegation({id: 'x', subjectPartyIds: ['A']}), allegation({id: 'x', proceedingId: 'P2', subjectPartyIds: ['B']})];
+    expect(buildParentReport(m, 'P1', 'A').unresolved.map(i => i.code)).toContain('DUPLICATE_ID');
+    expect(buildDraftingContext(m, 'P1', 'A', 'FORM_33B').ok).toBe(false);
+  });
+
+  it('does not name a party from another proceeding in a duplicate-ID issue', () => {
+    const m = withProceeding2(proceeding1());
+    m.roles = m.roles.filter(r => !(r.partyId === 'A' && r.proceedingId === 'P2'));
+    m.allegations = [allegation({id: 'x', subjectPartyIds: ['A']}), allegation({id: 'x', proceedingId: 'P2', subjectPartyIds: ['B']})];
+    const issue = buildParentReport(m, 'P2', 'B').unresolved.find(i => i.code === 'DUPLICATE_ID');
+    expect(issue?.partyIds).toEqual(['B']);
+  });
+
+  it('matches a zero-width joiner at a Latin word edge or inside a Latin word', () => {
+    expect(normalizeName('Sam‍')).toBe(normalizeName('Sam'));
+    expect(normalizeName('Mo‍rgan')).toBe(normalizeName('Morgan'));
+  });
+
+  it('folds Latin letters that do not decompose to their ASCII form', () => {
+    expect(normalizeName('Søren')).toBe(normalizeName('Soren'));
+    expect(normalizeName('Łukasz')).toBe(normalizeName('Lukasz'));
+  });
+});
