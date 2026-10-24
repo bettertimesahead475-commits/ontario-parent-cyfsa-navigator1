@@ -119,7 +119,7 @@ function evidenceLabel(classification: unknown): string {
 function chronologyLine(entry: Loose): string {
   const where = text(entry.locationInDocument);
   const label = evidenceLabel(entry.evidenceClassification);
-  return [text(entry.date), text(entry.event), where ? `(${where})` : "", label ? `Evidence: ${label}.` : ""].filter(Boolean).join(" ");
+  return [text(entry.date), text(entry.event), where ? `(${where})` : "", label ? `Evidence: ${label.replace(/\.$/, "")}.` : ""].filter(Boolean).join(" ");
 }
 
 /**

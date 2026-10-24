@@ -2583,7 +2583,7 @@ export default function DocumentAnalyzerTab() {
 
         <div class="section-card">
           <h3 class="section-title">🔗 Statute Links (check against e-Laws)</h3>
-          <p style="font-size:12px; color:#475569; margin-bottom:12px;">The statutory references scanned by the consultation pipeline point to Ontario Government e-Laws pages. Check the current text there before relying on it:</p>
+          <p style="font-size:12px; color:#475569; margin-bottom:12px;">These links go to the Ontario e-Laws page for the CYFSA. They are the same in every report. Check the current text there before relying on it:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             <li><strong>CYFSA Section 74 (Child Protection Thresholds):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK123" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK123</a></li>
             <li><strong>CYFSA Section 94 (30-Day Adjournment Limit / Temporary Care Order):</strong> <a href="https://www.ontario.ca/laws/statute/17c14#BK161" target="_blank" style="color:#4f46e5; text-decoration:underline;">https://www.ontario.ca/laws/statute/17c14#BK161</a></li>
@@ -4093,7 +4093,7 @@ export default function DocumentAnalyzerTab() {
                             <span>⚖️</span> Citations & Analysis
                           </p>
                           <p className="text-[11px] text-emerald-800 leading-normal">
-                            The statute buttons open the app's own entries for those sections. The app does not check these entries against the official statute, and other citations are not checked at all. Confirm every citation with counsel.
+                            Where the app has its own entry for a section, the button opens that entry. The entry was not checked against the official statute. The app checks citations only against its list of confirmed section numbers. Confirm every citation with counsel.
                           </p>
                         </div>
                       </div>
@@ -4235,7 +4235,9 @@ export default function DocumentAnalyzerTab() {
                             </button>
 
                             <button
+                              disabled={redactionEnabled}
                               onClick={() => {
+                                if (redactionEnabled) return;
                                 const stateToSave = {
                                   organizedFiles,
                                   selectedFileId,
@@ -4250,7 +4252,7 @@ export default function DocumentAnalyzerTab() {
                                 alert("Success: Your Detailed Case Brief has been synchronized with the Lawyer Directory. Select a lawyer in the directory to see your pre-filled intake brief!");
                               }}
                               className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 transition-colors border border-brand-700 cursor-pointer"
-                              title="Sync to Lawyer Directory tab for attorney review"
+                              title={redactionEnabled ? "Turn off redaction to sync the full case to the Lawyer Directory" : "Sync to Lawyer Directory tab for attorney review"}
                             >
                               <Scale className="w-3.5 h-3.5 text-white" />
                               <span>Sync to Lawyer Directory Intake</span>
@@ -4391,7 +4393,7 @@ export default function DocumentAnalyzerTab() {
                                   className="font-sans text-brand-700 hover:text-brand-900 font-bold text-xs bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                                   title="Open the statute reference for this citation"
                                 >
-                                  <Scale className="w-3.5 h-3.5 text-brand-600" /> Verify Law: {flag.legalReference} ↗
+                                  <Scale className="w-3.5 h-3.5 text-brand-600" /> Statute reference: {flag.legalReference} ↗
                                 </button>
                               </div>
                               {flag.phraseDetected && (
@@ -4540,7 +4542,7 @@ export default function DocumentAnalyzerTab() {
                                     className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
                                     title="Open the statute reference for this citation"
                                   >
-                                    <Scale className="w-3 h-3 text-amber-600" /> Verify: {violation.citation} ↗
+                                    <Scale className="w-3 h-3 text-amber-600" /> Statute reference: {violation.citation} ↗
                                   </button>
                                 </div>
                                 

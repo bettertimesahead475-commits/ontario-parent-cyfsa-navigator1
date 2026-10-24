@@ -36,7 +36,7 @@ export default function RedactionToggle({ enabled, onToggle }: RedactionTogglePr
         </span>
       </div>
       <span className="text-[10px] text-slate-400 ml-1">
-        (on-screen text is not changed; exports remove free text and identifiers)
+        (on-screen text is not changed; exports remove names, dates and free text, but some values may remain)
       </span>
     </div>
   );
