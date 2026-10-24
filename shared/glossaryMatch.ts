@@ -5,7 +5,7 @@
  * "s.740". The check uses no lookbehind, which older browsers lack.
  */
 const INFLECTION = /^(?:s|es|ed|ing)?/;
-const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+const WORD_CHARACTER = /[\p{L}\p{N}\p{M}]/u;
 
 export function containsTrigger(text: string, trigger: string): boolean {
   const haystack = text.toLowerCase();
@@ -18,7 +18,9 @@ export function containsTrigger(text: string, trigger: string): boolean {
     const suffix = INFLECTION.exec(rest)?.[0] ?? "";
     const after = rest.charAt(suffix.length);
     const wholeStart = before === "" || !WORD_CHARACTER.test(before);
-    const wholeEnd = after === "" || !WORD_CHARACTER.test(after);
+    // A dot followed by a digit continues a decimal section number ("s.74.1" is not "s.74").
+    const decimal = after === "." && /\d/.test(rest.charAt(suffix.length + 1));
+    const wholeEnd = (after === "" || !WORD_CHARACTER.test(after)) && !decimal;
     if (wholeStart && wholeEnd) return true;
     from = at + 1;
   }

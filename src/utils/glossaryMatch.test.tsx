@@ -38,6 +38,15 @@ describe("glossary trigger matching", () => {
     expect(containsTrigger("apprehendable risk", "apprehend")).toBe(false);
   });
 
+  it("does not match a decimal section number that starts with the trigger", () => {
+    expect(containsTrigger("See s.74.1 of the Act.", "s.74")).toBe(false);
+    expect(containsTrigger("See s.74. The Act applies.", "s.74")).toBe(true);
+  });
+
+  it("does not match a word with a combining accent that is part of it", () => {
+    expect(containsTrigger("the onu\u0301s rule", "onus")).toBe(false);
+  });
+
   it("treats accented letters as part of a word", () => {
     expect(containsTrigger("a bonusé payment", "onus")).toBe(false);
     expect(containsTrigger("the onusé rule", "onus")).toBe(false);
