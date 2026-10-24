@@ -334,6 +334,14 @@ export async function reserveAnalysisCredit(params: {
     );
   }
 
+  if (!SAFE_ID.test(sessionId)) {
+    throw new LifecycleError(400, "INVALID_SESSION", "This paid session is not valid. Please sign in again.");
+  }
+  const key = markerKey(sessionId, requestId);
+  // Reconcile first: a unit whose request crashed after recording it is returned now, not only once the allowance is
+  // full. Exact: a reservation with a recorded unit is reclaimed only after the TTL, and never this request's own.
+  await releaseStaleReservations(sessionId, key);
+
   const balance = await getCreditBalance(sessionId, tier);
   if (balance.isSuspended) {
     throw new LifecycleError(
@@ -344,10 +352,6 @@ export async function reserveAnalysisCredit(params: {
     );
   }
 
-  if (!SAFE_ID.test(sessionId)) {
-    throw new LifecycleError(400, "INVALID_SESSION", "This paid session is not valid. Please sign in again.");
-  }
-  const key = markerKey(sessionId, requestId);
   const scope = scopeFor(allowance, analysisType);
   const state = reservedState(scope);
   const counter = counterKeyFor(sessionId, scope);

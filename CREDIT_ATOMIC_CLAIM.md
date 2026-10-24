@@ -116,3 +116,86 @@ File: `supabase/migrations_pending_approval/create_paid_access_credit_ledger_and
 3. Deploy with the paid-analysis route unchanged from production's current behaviour. Monitor 503 and 409 rates on `free_usage`.
 4. Do not apply any migration. Do not enable paid sales until steps 2 and 3 pass.
 5. Rebase PR #102 on the merged result before any review of it. It touches the same credit code and the same `_server.ts` section.
+
+## 10. Release preparation (current revision)
+
+### 10.1 Vercel function duration
+
+- The team's plan tier is **not readable** with the tools available here (the team record has no plan field, and the billing export exceeds the tool's limits). It must be confirmed in the Vercel dashboard.
+- `vercel.json` sets `maxDuration: 300` for `api/index.ts`, which serves every analyzer route.
+- Published limits conflict. An older guide lists 60 s (Hobby) / 300 s (Pro) / 900 s (Enterprise). Vercel's Fluid-compute changelog lists 300 s as the default for all plans and 800 s for Pro and Enterprise. Under both, 300 s is supported on a paid plan. The older guide does **not** allow 300 s on Hobby.
+- **Owner check:** confirm the plan is Pro or higher, and re-read Vercel's current "Configuring Maximum Duration" page before any deploy.
+
+### 10.2 Pro and Community terms versus enforcement
+
+Published copy (`src/components/PricingTab.tsx` and `api/_server.ts` plan descriptions):
+
+- "5 Forensic In-Depth Analyses per monthly billing cycle"
+- "forensic quota refreshes monthly"
+- "refreshes its 5-analysis quota on every monthly renewal"
+
+Enforcement (this revision): UTC calendar month, `paid_session_<id>_cycle_<YYYY-MM>`.
+
+**Conflict.** "Every monthly renewal" means the allowance resets on the customer's renewal date. A calendar-month reset does not. Example: a customer who renews on the 15th and uses all five on the 1st of the month has no allowance until the 1st of the next month, not until their 15th-day renewal. In other cases, the calendar reset grants a refresh earlier than the renewal. The enforcement is therefore inconsistent with the published terms, and I have **not** changed either the copy or the enforcement.
+
+**Decision required (recommended default: option B).**
+
+- **A.** Keep calendar-month enforcement and change the copy to "per calendar month". Customer-facing terms change.
+- **B. (recommended)** Anchor the cycle to each session's renewal date, so the copy is true as written. This needs the renewal date stored per session. The current schema does not show one, and the code change is larger.
+
+### 10.3 Reconciliation of incomplete reservations
+
+Two kinds of incomplete reservation exist.
+
+| Crash point | Recovery now | Customer effect |
+|---|---|---|
+| After the unit is recorded (slot > 0) | Returned on the next reserve after 15 min (new in this revision: reconciled on **every** reserve, not only when full) | None after 15 min |
+| After the counter moves, before the slot is recorded (slot 0) | None: the claim does not record whether the counter moved | One unit lost per crash, in a window of milliseconds |
+
+**Atomic option.** The database cannot make the counter change and the marker write atomic through the REST API. Production has no credit-related function (verified read-only), so an atomic transaction would need a new `plpgsql` RPC. That is a new migration, which needs approval.
+
+**Decision required (recommended default: A now, B after staging).**
+
+- **A. (recommended, implemented)** Reconcile on every reserve. Accept the one-unit slot-0 window.
+- **B.** Add a single RPC that performs the marker write, counter change and slot write in one transaction. This removes the window. It is a new function only, with no table change, but it is a database change and needs approval, plus a staging test.
+
+### 10.4 Pending migration
+
+- `supabase/migrations_pending_approval/paid_payments_columns_minimal.sql` (new). It adds only the four payment columns absent in production (`bank_settlement_status`, `notification_accepted_at`, `client_ip`, `user_agent`). It has been applied to a throwaway database with a stub table and is not applied to production.
+- The original file is marked superseded for credit accounting in its header. It is not applied.
+- Production check (read-only): `payments` has 2 rows, so the CHECK validation is negligible.
+- **Decision required.** The payment columns belong to the payments work. Recommended default: the payments owner approves this minimal file in the payments PR, not in this one.
+
+### 10.5 Staging verification procedure
+
+**Prerequisites**
+
+- Staging project: `nxfhvebzzobegubefcda` (paused). Restoring it may cost money, so it needs your approval before restore.
+- A staging service-role key, supplied locally as an environment variable. Never paste it into chat or a PR.
+- Staging must have `free_usage` (primary key `uid`) and `navigator_paid_sessions` (with `revoked_at`), matching production. No migration is needed for this change.
+- Do not use a Vercel preview for testing. Previews share production variables.
+
+**Procedure**
+
+1. Restore staging (with approval). Confirm the URL does not contain `qboidsfpjuxeqtfotryj`.
+2. Run:
+   ```
+   STAGING_SUPABASE_URL=https://nxfhvebzzobegubefcda.supabase.co \
+   STAGING_SUPABASE_SERVICE_ROLE_KEY=<local env only> \
+   npx vitest run api/services/creditStaging.test.ts
+   ```
+3. Expected: all six scenarios pass.
+   - 12 concurrent reservations across 4 instances, 3 credits: exactly 3 reserved.
+   - One request ID across 3 instances: charged once.
+   - Release gives back a failed analysis's credit; a finished one keeps it.
+   - Invalid service key: 503.
+   - Crashed reservation on staging is reconciled by the next reserve. This exercises the prefix listing (`like` with `*`) against real PostgREST.
+   - Pro quick reviews are not counted; Pro forensic counts per UTC month.
+4. The test removes every row it creates (`vfy_` IDs only).
+5. **Abort** if any scenario fails, or if the listing returns no reconciled row (the `*` wildcard is then wrong for this PostgREST).
+6. Record the output in the PR.
+
+### 10.6 Status
+
+- Tests: credit suites 54 passed; full suite 3318 passed, 0 failed, 454 skipped (the staging and PostgreSQL tests skip without credentials); `tsc` clean; `npm run build` passes.
+- Not performed: staging run, live Supabase verification, any production change.

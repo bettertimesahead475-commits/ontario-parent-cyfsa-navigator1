@@ -1,3 +1,5 @@
+-- SUPERSEDED FOR CREDIT ACCOUNTING: do not apply this file. Use paid_payments_columns_minimal.sql for the payment
+-- columns. The reservation table, audit ledger and credit columns below are not used by the code (see CREDIT_ATOMIC_CLAIM.md).
 -- ============================================================================
 -- Migration: create_paid_access_credit_ledger_and_enforcement.sql
 -- Status: PENDING OWNER APPROVAL (DO NOT EXECUTE AUTOMATICALLY)

@@ -595,3 +595,30 @@ describe("Review findings", () => {
     expect(currentDb.ref._freeUsage.size).toBe(0);
   });
 });
+
+describe("Reconciliation of incomplete reservations", () => {
+  beforeEach(() => {
+    currentDb.ref = createProductionLikeDb();
+  });
+
+  it("a crashed reservation with a recorded unit is returned on the next reserve, not only when the allowance is full", async () => {
+    currentDb.ref = createProductionLikeDb({ usage: { [COUNTER]: 1 } });
+    const crashed = seedMarker(SESSION, "req_crashed_unit", "reservation:reserved", 1, minutesAgo(16));
+    currentDb.ref._freeUsage.set(crashed.uid, crashed);
+    const credit = await loadCredit();
+    await reserveWith(credit, "req_next_reconciles");
+    // Before: 2 (crashed unit still counted). After: the crashed unit is returned, and the new one is counted.
+    expect(counter()).toBe(1);
+    expect(currentDb.ref._freeUsage.get(crashed.uid).email).toBe("reservation:released");
+  });
+
+  it("a live reservation with a recorded unit is never reconciled by another request", async () => {
+    currentDb.ref = createProductionLikeDb({ usage: { [COUNTER]: 1 } });
+    const live = seedMarker(SESSION, "req_live_unit", "reservation:reserved", 1, minutesAgo(3));
+    currentDb.ref._freeUsage.set(live.uid, live);
+    const credit = await loadCredit();
+    await reserveWith(credit, "req_next_leaves_live");
+    expect(currentDb.ref._freeUsage.get(live.uid).email).toBe("reservation:reserved");
+    expect(counter()).toBe(2);
+  });
+});
