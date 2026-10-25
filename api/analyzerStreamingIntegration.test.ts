@@ -274,10 +274,10 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     expect(completeEvent.report).toBeDefined();
     expect(completeEvent.report.documentTitle).toBe("Society Protection Application");
 
-    // Quote verification was executed:
+    // The quote came in client-typed text, which is not an authenticated source. It must not be reported as verified.
     const redFlag = completeEvent.report.redFlags[0];
-    expect(redFlag.quoteVerified).toBe(true);
-    expect(redFlag.quoteVerification).toBe("EXACT");
+    expect(redFlag.quoteVerified).toBeNull();
+    expect(redFlag.quoteVerification).toBe("UNAUTHENTICATED_SOURCE");
   });
 
   it("POST /api/analyze verifies quotes and detects unverified phrases", async () => {
@@ -295,9 +295,11 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
       });
 
     expect(res.status).toBe(200);
+    // Client text is never checked as documentary evidence, so an absent quote is not reported as "not found" either.
+    // The authenticated absence check is covered by the route tests in _server.test.ts and analyzerSections.pageCitation.test.ts.
     const redFlag = res.body.redFlags[0];
-    expect(redFlag.quoteVerified).toBe(false);
-    expect(redFlag.quoteVerification).toBe("ABSENT");
+    expect(redFlag.quoteVerified).toBeNull();
+    expect(redFlag.quoteVerification).toBe("UNAUTHENTICATED_SOURCE");
   });
 
   it("GET /api/analyze/job/:jobId rejects unauthenticated requests with 401 SIGN_IN_REQUIRED", async () => {

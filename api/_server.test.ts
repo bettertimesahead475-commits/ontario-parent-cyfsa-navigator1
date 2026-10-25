@@ -1987,3 +1987,216 @@ describe("OCR cost: a blocked page is not retried", () => {
     expect(mockGenerateContent).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Billing hold and recovery through the real routes. A validated report whose credit cannot be confirmed is held as
+// billing_pending (its reservation kept, nothing released). The same analysis id recovers it once the credit is
+// confirmed. The model never runs again for that id, and the analysis is counted once.
+// ---------------------------------------------------------------------------
+describe("billing_pending recovery through the real routes", () => {
+  const OTHER_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-other-user";
+  const OTHER_UID = "other-firebase-uid-2";
+  const OTHER_SESSION_TOKEN = "other-session-token";
+  const OTHER_SESSION_JTI = "session-row-other";
+
+  let analysisCounter = 0;
+  // Analysis ids must match the analyzer's format: req_<10-16 digits>_<4-24 alphanumerics>.
+  const newAnalysisId = () => {
+    analysisCounter += 1;
+    return `req_${String(1_760_000_000_000 + analysisCounter).padStart(13, "0")}_recov${analysisCounter}`;
+  };
+  const analyze = (analysisId: string, headers: Record<string, string> = {}) =>
+    request(app)
+      .post("/api/analyze")
+      .set({ ...paid(), "x-analysis-id": analysisId, ...headers })
+      .send({ textContent: "Valid test document text for billing recovery", mode: "fast" });
+
+  // The reservation marker for one analysis id, in the credit fixture (keyed by session and a hash of the request id).
+  const reservationState = (analysisId: string): string | null => {
+    const hash = createHash("sha256").update(analysisId).digest("hex").slice(0, 32);
+    const marker: string | undefined = dbHolder.db._freeUsage.get(`paid_res_${PAID_JTI}_${hash}`)?.email;
+    // The marker is "reservation:<state>[:<billing cycle>]"; the state is what these tests assert.
+    return marker ? marker.split(":").slice(0, 2).join(":") : null;
+  };
+  const storedJob = (analysisId: string): any => {
+    const key = [...dbHolder.db.storage._objects.keys()].find((k: string) => k.endsWith(`${analysisId}.json`));
+    return key ? JSON.parse(dbHolder.db.storage._objects.get(key)) : null;
+  };
+  const countedFor = (analysisId: string) =>
+    mockUsage.recordPaidUse.mock.calls.filter((call: any[]) => call[4] === analysisId).length;
+
+  beforeEach(() => {
+    mockAccess.verifySessionToken.mockImplementation((token: string) =>
+      token === PAID_SESSION_TOKEN ? { jti: PAID_JTI } : token === OTHER_SESSION_TOKEN ? { jti: OTHER_SESSION_JTI } : null
+    );
+    mockAccess.getActivePaidSession.mockImplementation(async (jti: string) =>
+      jti === PAID_JTI
+        ? { id: PAID_JTI, firebaseUid: PAID_FIREBASE_UID, tier: "Pro" }
+        : jti === OTHER_SESSION_JTI
+          ? { id: OTHER_SESSION_JTI, firebaseUid: OTHER_UID, tier: "Pro" }
+          : null
+    );
+    mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header: string | undefined) => {
+      if (header === PAID_FIREBASE_TOKEN) return { uid: PAID_FIREBASE_UID, email: "paid@example.com" };
+      if (header === OTHER_FIREBASE_TOKEN) return { uid: OTHER_UID, email: "other@example.com" };
+      return null;
+    });
+    mockCreateMessage.mockImplementation(sectionResponder());
+  });
+
+  it("holds a validated report when the credit cannot be confirmed, then recovers it without running the model again", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3; // all three finalize attempts fail
+
+    const first = await analyze(id);
+    expect(first.status).toBe(503);
+    expect(first.body.code).toBe("BILLING_PENDING");
+    expect(first.body.report).toBeUndefined();
+    const modelCalls = mockCreateMessage.mock.calls.length;
+    expect(modelCalls).toBeGreaterThan(0);
+
+    // Held, not released: the reservation is still open and the report is kept only in the job record.
+    expect(reservationState(id)).toBe("reservation:reserved");
+    expect(storedJob(id)).toMatchObject({ status: "billing_pending" });
+    expect(storedJob(id).heldReport).toBeDefined();
+    // Nothing is counted until the credit is confirmed.
+    expect(countedFor(id)).toBe(0);
+
+    const second = await analyze(id);
+    expect(second.status).toBe(200);
+    expect(second.body.report).toBeUndefined(); // the report is returned as the analysis, not wrapped
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls); // no second model run
+    expect(reservationState(id)).toBe("reservation:consumed");
+    expect(storedJob(id)).toMatchObject({ status: "completed" });
+    expect(countedFor(id)).toBe(1);
+  });
+
+  it("does not deliver the held report to a request without the paid session it was made with", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await analyze(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    // No paid session at all.
+    const anonymous = await request(app)
+      .post("/api/analyze")
+      .set({ Authorization: PAID_FIREBASE_TOKEN, "x-analysis-id": id })
+      .send({ textContent: "x", mode: "fast" });
+    expect(anonymous.status).toBe(403);
+    expect(anonymous.body.code).toBe("BILLING_SESSION_REQUIRED");
+    expect(anonymous.body.report).toBeUndefined();
+
+    // A different paid session of the same person.
+    const wrongSession = await analyze(id, { "x-ps-session": OTHER_SESSION_TOKEN });
+    expect(wrongSession.status).toBe(403);
+    expect(wrongSession.body.code).toBe("BILLING_SESSION_REQUIRED");
+    expect(wrongSession.body.report).toBeUndefined();
+
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(storedJob(id)).toMatchObject({ status: "billing_pending" });
+    expect(countedFor(id)).toBe(0);
+  });
+
+  it("does not deliver a held report to another user, even with a valid paid session", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await analyze(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    const intruder = await request(app)
+      .post("/api/analyze")
+      .set({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: OTHER_FIREBASE_TOKEN, "x-analysis-id": id })
+      .send({ textContent: "x", mode: "fast" });
+    expect(intruder.status).toBe(409);
+    expect(intruder.body.code).toBe("ANALYSIS_ID_CONFLICT");
+    expect(intruder.body.report).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(reservationState(id)).toBe("reservation:reserved");
+    expect(countedFor(id)).toBe(0);
+  });
+
+  it("keeps the report held while the credit is still unavailable, and never runs the model", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await analyze(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    const retry = await analyze(id);
+    expect(retry.status).toBe(503);
+    expect(retry.body.code).toBe("BILLING_PENDING");
+    expect(retry.body.report).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(storedJob(id)).toMatchObject({ status: "billing_pending" });
+    expect(countedFor(id)).toBe(0);
+  });
+
+  it("delivers nothing and charges nothing more when the reservation expired before recovery", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await analyze(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    // The reservation is reconciled after its TTL: it is released, so it can no longer be consumed.
+    const hash = createHash("sha256").update(id).digest("hex").slice(0, 32);
+    dbHolder.db._freeUsage.get(`paid_res_${PAID_JTI}_${hash}`).email = "reservation:released";
+
+    const recovery = await analyze(id);
+    expect(recovery.status).toBe(409);
+    expect(recovery.body.code).toBe("RESERVATION_RELEASED");
+    expect(recovery.body.report).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(reservationState(id)).toBe("reservation:released");
+    expect(countedFor(id)).toBe(0);
+  });
+
+  it("does not hold the report when its billing hold cannot be stored: the reservation is released and nothing is delivered", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    dbHolder.db.storage._faults.failUploadMatching = (body: string) => body.includes('"status":"billing_pending"');
+
+    const res = await analyze(id);
+    expect(res.status).not.toBe(200);
+    expect(res.body.code).not.toBe("BILLING_PENDING");
+    expect(res.body.report).toBeUndefined();
+    expect(storedJob(id)?.status ?? null).not.toBe("billing_pending");
+    expect(reservationState(id)).toBe("reservation:released");
+    expect(countedFor(id)).toBe(0);
+  });
+
+  it("counts a recovered analysis once, and a repeat request returns the saved report without a second charge or run", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await analyze(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    const recovered = await analyze(id);
+    expect(recovered.status).toBe(200);
+    const again = await analyze(id);
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(recovered.body);
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(reservationState(id)).toBe("reservation:consumed");
+    expect(countedFor(id)).toBe(1);
+  });
+});
+
+describe("billing outages during finalization", () => {
+  it("retries a transient credit outage and delivers the report without holding it", async () => {
+    const id = `req_${String(1_770_000_000_000).padStart(13, "0")}_outage1`;
+    mockCreateMessage.mockImplementation(sectionResponder());
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 1; // first attempt fails, the retry succeeds
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({ ...paid(), "x-analysis-id": id })
+      .send({ textContent: "Valid test document text for an outage retry", mode: "fast" });
+
+    expect(res.status).toBe(200);
+    const hash = createHash("sha256").update(id).digest("hex").slice(0, 32);
+    expect(dbHolder.db._freeUsage.get(`paid_res_${PAID_JTI}_${hash}`).email).toMatch(/^reservation:consumed/);
+    const job = [...dbHolder.db.storage._objects.entries()].find(([k]: [string, string]) => k.endsWith(`${id}.json`));
+    expect(JSON.parse(job![1]).status).toBe("completed");
+    expect(mockUsage.recordPaidUse.mock.calls.filter((call: any[]) => call[4] === id)).toHaveLength(1);
+  });
+});

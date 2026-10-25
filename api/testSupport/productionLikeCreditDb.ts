@@ -222,7 +222,15 @@ export function createProductionLikeDb(seed: {
   failWrites?: boolean;
 } = {}) {
   // Lost-response fault: the next N free_usage updates are applied, then reported as failed (as if the response was lost).
-  const faults = { commitThenFailUpdates: 0, commitThenFailRpc: 0 };
+  // failNextRpc: the named function is refused before it runs (nothing is applied), for the next N calls to that name.
+  const faults = { commitThenFailUpdates: 0, commitThenFailRpc: 0, failNextRpc: {} as Record<string, number> };
+  // Supabase Storage (the durable analysis job store), in memory. failUploadMatching refuses an upload whose body matches.
+  const storageObjects = new Map<string, string>();
+  const storageFaults: { failUploads: number; failUploadMatching: ((body: string) => boolean) | null } = {
+    failUploads: 0,
+    failUploadMatching: null,
+  };
+  const buckets = new Set<string>();
   const outage = () => ({ code: "PGRST000", message: "simulated database write outage" });
   const freeUsage = new Map<string, Row>();
   for (const [uid, analyses_used] of Object.entries(seed.usage ?? {})) {
@@ -319,14 +327,55 @@ export function createProductionLikeDb(seed: {
     return { select: failed, insert: failed, update: failed, upsert: failed, delete: failed };
   }
 
+  // The subset of the Supabase Storage client that the durable job store uses. Errors are returned, not thrown,
+  // as Supabase does, so a caller that ignores `error` would wrongly believe the write succeeded.
+  const storage = {
+    _objects: storageObjects,
+    _faults: storageFaults,
+    async listBuckets() {
+      return { data: [...buckets].map((name) => ({ name, public: false })), error: null };
+    },
+    async createBucket(name: string) {
+      if (buckets.has(name)) return { data: null, error: { message: "Bucket already exists" } };
+      buckets.add(name);
+      return { data: { name }, error: null };
+    },
+    async updateBucket() {
+      return { data: null, error: null };
+    },
+    from(bucket: string) {
+      return {
+        async upload(path: string, body: string) {
+          const text = String(body);
+          const refused =
+            storageFaults.failUploads > 0 || (storageFaults.failUploadMatching?.(text) ?? false);
+          if (storageFaults.failUploads > 0) storageFaults.failUploads--;
+          if (refused) return { data: null, error: { message: "simulated storage upload failure" } };
+          storageObjects.set(`${bucket}/${path}`, text);
+          return { data: { path }, error: null };
+        },
+        async download(path: string) {
+          const text = storageObjects.get(`${bucket}/${path}`);
+          if (text === undefined) return { data: null, error: { message: "Object not found" } };
+          return { data: new Blob([text]), error: null };
+        },
+      };
+    },
+  };
+
   return {
     _freeUsage: freeUsage,
     _faults: faults,
+    storage,
     // Calls one of the atomic functions. Applied in one step; a configured fault applies it and then reports a lost response.
     rpc(name: string, args: Row) {
       return (async () => {
         await pause();
         if (seed.failWrites) return { data: null, error: outage() };
+        if ((faults.failNextRpc[name] ?? 0) > 0) {
+          faults.failNextRpc[name]--;
+          return { data: null, error: outage() };
+        }
         const store = freeUsage as Store;
         let data: any;
         if (name === "paid_reserve_credit") data = emulateReserve(store, args);

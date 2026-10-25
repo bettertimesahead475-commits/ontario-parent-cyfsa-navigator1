@@ -169,7 +169,9 @@ describe("runSectionedAnalysis", () => {
     expect(out.redFlags[0].originalSeverity).toBe("CRITICAL");
     expect(out.redFlags[0].forensicVerification.verdict).toBe("OVERSTATED");
     expect(out.redFlags[0].legalReference).toContain(UNVERIFIED_CITATION_NOTE); // s.94(5) is not confirmed
-    expect(out.redFlags[0].quoteVerified).toBe(true);
+    // Text passed without authenticated pages is not documentary evidence, so no quote is reported as verified.
+    expect(out.redFlags[0].quoteVerified).toBeNull();
+    expect(out.redFlags[0].quoteVerification).toBe("UNAUTHENTICATED_SOURCE");
     expect(out.forensicVerification.status).toBe("completed");
     expect(usageByModel["claude-opus-5"]).toBeDefined();
   });

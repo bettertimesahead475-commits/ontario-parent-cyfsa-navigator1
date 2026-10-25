@@ -72,6 +72,9 @@ export interface HeldBilling {
   tier: string;
   reservationId: string;
   documentName?: string;
+  /** Needed to count the delivered analysis once its credit is confirmed on recovery. */
+  usageType?: "quick" | "forensic";
+  billingCycle?: string | null;
 }
 
 export interface AnalysisJob {

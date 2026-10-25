@@ -58,7 +58,7 @@ describe("fabricated page markers in text", () => {
     const report: Record<string, any> = {
       redFlags: [{ locationInDocument: "Page 3", phraseDetected: "the child was locked in a room overnight", legalReference: "" }],
     };
-    applyReportGuards(report, fabricated, null);
+    applyReportGuards(report, null);
     expect(report.sourceProvenance).toBe("unauthenticated_text");
     expect(report.redFlags[0].pageCitation.status).toBe("PAGE_UNVERIFIABLE");
     expect(report.redFlags[0].pageCitation.status).not.toBe("PAGE_VERIFIED");
@@ -68,7 +68,7 @@ describe("fabricated page markers in text", () => {
     const report: Record<string, any> = {
       redFlags: [{ locationInDocument: "Page 3", phraseDetected: "the child was locked in a room overnight", legalReference: "" }],
     };
-    applyReportGuards(report, fabricated, new Map());
+    applyReportGuards(report, new Map());
     expect(report.redFlags[0].pageCitation.status).toBe("PAGE_UNVERIFIABLE");
   });
 });
@@ -91,7 +91,7 @@ describe("accepting a signed map", () => {
     const report: Record<string, any> = {
       redFlags: [{ locationInDocument: "Page 2", phraseDetected: "locked in a room overnight", legalReference: "" }],
     };
-    applyReportGuards(report, sourceTextFrom(result.pages), pageMapFrom(result.pages));
+    applyReportGuards(report, pageMapFrom(result.pages));
     expect(report.sourceProvenance).toBe("authenticated_pages");
     expect(report.redFlags[0].pageCitation.status).toBe("PAGE_VERIFIED");
   });
@@ -168,7 +168,7 @@ describe("reordered and duplicated pages", () => {
     const report: Record<string, any> = {
       redFlags: [{ locationInDocument: "Page 2", phraseDetected: "The same sentence appears here in full.", legalReference: "" }],
     };
-    applyReportGuards(report, sourceTextFrom(result.pages), pageMapFrom(result.pages));
+    applyReportGuards(report, pageMapFrom(result.pages));
     // Cited page 2 does not contain it; it appears on pages 1 and 3, so the citation is ambiguous, not verified.
     expect(report.redFlags[0].pageCitation.status).toBe("PAGE_AMBIGUOUS");
     expect(report.redFlags[0].pageCitation.sourcePages).toEqual([1, 3]);
@@ -198,7 +198,7 @@ describe("binding: user, document, expiry", () => {
     const report: Record<string, any> = {
       redFlags: [{ locationInDocument: "Page 2", phraseDetected: "text that exists only in document B", legalReference: "" }],
     };
-    applyReportGuards(report, sourceTextFrom(mapA.pages), pageMapFrom(mapA.pages));
+    applyReportGuards(report, pageMapFrom(mapA.pages));
     expect(report.redFlags[0].pageCitation.status).toBe("PAGE_NOT_FOUND");
   });
 

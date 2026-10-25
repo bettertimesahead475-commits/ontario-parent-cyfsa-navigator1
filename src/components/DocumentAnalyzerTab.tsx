@@ -2630,6 +2630,7 @@ export default function DocumentAnalyzerTab() {
                     <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div>
                     ${rf.quoteVerified === true ? `<div style="font-size:11px; color:#047857; margin-top:4px;">Found word-for-word in the document.</div>` : ""}
                     ${rf.quoteVerified === false ? `<div style="font-size:11px; color:#92400e; margin-top:4px;"><strong>Not found word-for-word in the document</strong> - treat as a paraphrase and check the original wording.</div>` : ""}
+                    ${rf.quoteVerified == null && rf.quoteVerification === "UNAUTHENTICATED_SOURCE" ? `<div style="font-size:11px; color:#475569; margin-top:4px;"><strong>Not verified against the original file</strong> - this quote is not confirmed as evidence.</div>` : ""}
                     ${rf.forensicVerification ? `<div style="font-size:11px; color:#334155; margin-top:4px;"><strong>Independent second review: ${escapeHtml(rf.forensicVerification.verdict)}</strong>${rf.forensicVerification.note ? ` - ${escapeHtml(rf.forensicVerification.note)}` : ""}</div>` : ""}
                     <br/><br/>
                     <strong>Educational Advisory:</strong> ${escapeHtml(rf.explanation)}<br/><br/>
@@ -4303,6 +4304,11 @@ export default function DocumentAnalyzerTab() {
                                   {flag.quoteVerified === false && (
                                     <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
                                       ⚠️ Not found word-for-word in your document. Treat this as a paraphrase and check the original wording before relying on it.
+                                    </p>
+                                  )}
+                                  {flag.quoteVerified == null && flag.quoteVerification === "UNAUTHENTICATED_SOURCE" && (
+                                    <p className="text-[10.5px] font-sans font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-md px-2 py-1">
+                                      Not verified against your original file. The text was not authenticated as the document, so this quote is not confirmed as evidence.
                                     </p>
                                   )}
                                 </div>

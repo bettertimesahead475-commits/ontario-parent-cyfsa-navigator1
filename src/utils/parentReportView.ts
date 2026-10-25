@@ -198,7 +198,9 @@ function findingView(flag: Loose, index: number): ParentFindingView {
         ? `The record says: "${quote}"`
         : flag.quoteVerified === false
           ? `The analyzer quoted this point, but the exact wording could not be matched to the document, so treat it as a paraphrase: "${quote}"`
-          : `The analyzer quoted this point. Its exact wording has not been checked against the document, so treat it as a paraphrase until it is: "${quote}"`
+          : flag.quoteVerification === "UNAUTHENTICATED_SOURCE"
+            ? `The analyzer quoted this point, but the text it was checked against was not verified against your original file, so this is not confirmed as record evidence: "${quote}"`
+            : `The analyzer quoted this point. Its exact wording has not been checked against the document, so treat it as a paraphrase until it is: "${quote}"`
       : "The record quote for this point was not found.",
     // The analyzer's explanation is its reasoning about the point. The parent gets a question to check instead.
     whyItMatters: CHECK_QUESTION,

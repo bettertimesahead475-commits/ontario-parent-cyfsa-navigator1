@@ -69,7 +69,7 @@ describe("applyReportGuards keeps page checks tied to authoritative pages", () =
         { locationInDocument: "Page 3", phraseDetected: "a fabricated quotation", legalReference: "" },
       ],
     };
-    applyReportGuards(report, SOURCE, PAGES);
+    applyReportGuards(report, PAGES);
     expect(report.sourceProvenance).toBe("authenticated_pages");
     expect(report.redFlags[0].pageCitation.status).toBe("PAGE_CORRECTED");
     expect(report.redFlags[1].quoteVerified).toBe(false);

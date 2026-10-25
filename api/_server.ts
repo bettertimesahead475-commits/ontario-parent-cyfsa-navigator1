@@ -46,6 +46,7 @@ import {
   releaseAnalysisReservation,
   finalizeAnalysisCredit,
   finalizeAnalysisCreditWithRetry,
+  isBillingOutage,
   getCreditBalance,
   suspendSession,
   restoreSession,
@@ -103,6 +104,34 @@ let anthropicClient: Anthropic | null = null;
 /** The billing month a reservation was drawn from, passed to the per-analysis counter (empty when none). */
 function cycleArgs(reservation: { billingCycle: string | null } | null): [string] | [] {
   return reservation?.billingCycle ? [reservation.billingCycle] : [];
+}
+
+/**
+ * Counts a delivered paid analysis in its per-type display counter. Called only once the credit is confirmed, so an
+ * analysis that was never delivered (released or expired reservation) is not shown as used. Keyed by the analysis id,
+ * so a recovered analysis is never counted twice. Non-fatal: the reservation is the credit record, not this counter.
+ */
+async function countDeliveredPaidAnalysis(params: {
+  sessionId: string;
+  tier: string;
+  email: string | null;
+  usageType: "quick" | "forensic";
+  /** The client's idempotency key: a network retry of the same request must not count twice. */
+  idempotencyKey: string | null | undefined;
+  billingCycle: string | null;
+}): Promise<void> {
+  try {
+    await recordPaidUse(
+      params.sessionId,
+      params.tier,
+      params.email,
+      params.usageType,
+      params.idempotencyKey,
+      ...(params.billingCycle ? [params.billingCycle] as [string] : [])
+    );
+  } catch (usageErr) {
+    console.error("[document analysis] Failed to record paid usage (non-fatal):", usageErr);
+  }
 }
 
 function getAnthropicClient(): Anthropic {
@@ -2094,7 +2123,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
                 documentName: billing.documentName,
               });
             } catch (billingErr: any) {
-              if (billingErr instanceof LifecycleError) {
+              if (billingErr instanceof LifecycleError && !isBillingOutage(billingErr)) {
                 // The reservation was released or never existed. Nothing is delivered and nothing is charged.
                 return res.status(409).json({
                   error: "The credit reservation for this analysis expired before it could be recorded. No report was released and nothing was charged. Start a new analysis if you still need one.",
@@ -2105,6 +2134,17 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
                 error: "Your analysis is ready, but its billing record is still being confirmed. Retry in a moment.",
                 code: "BILLING_PENDING",
                 retryable: true,
+              });
+            }
+            // The credit is now confirmed, so the analysis is counted here (once, keyed by its id), not on the held attempt.
+            if (billing.usageType) {
+              await countDeliveredPaidAnalysis({
+                sessionId: billing.sessionId,
+                tier: billing.tier,
+                email: identity.email || null,
+                usageType: billing.usageType,
+                idempotencyKey: analysisRequestId,
+                billingCycle: billing.billingCycle ?? null,
               });
             }
             const delivered = await completeHeldAnalysisJob(existingJob);
@@ -2655,21 +2695,17 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           console.error("[document analysis] Failed to record free-tier usage (non-fatal):", usageErr);
         }
       } else if (isPaid && paidSessionId && paidTier) {
-        try {
-          const usageType = mode === "full" ? "forensic" : "quick";
-          await recordPaidUse(paidSessionId, paidTier, userEmail, usageType, idempotencyKey, ...cycleArgs(creditReservation));
-        } catch (usageErr) {
-          console.error("[document analysis] Failed to record paid usage (non-fatal):", usageErr);
-        }
-        // The credit was taken before the analysis ran and the report now exists, so finalize it
-        // whether or not the per-type counter write above succeeded. Otherwise the reservation would
-        // expire and the parent would get a free analysis.
+        const usageType: "quick" | "forensic" = mode === "full" ? "forensic" : "quick";
+        // The credit was taken before the analysis ran and the report now exists, so finalize it. The per-type
+        // counter is written only after the credit is confirmed (below), so an undelivered analysis is never counted.
         if (creditReservation && identity) {
           const billing = {
             sessionId: paidSessionId,
             tier: paidTier,
             reservationId: creditReservation.reservationId,
             documentName: req.body?.documentName || req.body?.fileData?.name,
+            usageType,
+            billingCycle: creditReservation.billingCycle,
           };
           try {
             await finalizeAnalysisCreditWithRetry({
@@ -2681,7 +2717,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             });
           } catch (billingErr: any) {
             // A released or missing reservation is final: nothing is delivered, and the error path releases nothing.
-            if (billingErr instanceof LifecycleError) throw billingErr;
+            if (billingErr instanceof LifecycleError && !isBillingOutage(billingErr)) throw billingErr;
             // Billing is uncertain after retries. The reservation must stay (never released once it may be consumed),
             // and the validated report is held for recovery instead of being discarded. If the hold cannot be stored
             // durably, the report is not held, and the normal failure path releases the reservation.
@@ -2697,6 +2733,14 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             );
           }
         }
+        await countDeliveredPaidAnalysis({
+          sessionId: paidSessionId,
+          tier: paidTier,
+          email: userEmail,
+          usageType,
+          idempotencyKey,
+          billingCycle: creditReservation?.billingCycle ?? null,
+        });
         try {
           credits = await getPaidUsageStatus(paidSessionId, paidTier);
         } catch (usageErr) {
@@ -3479,12 +3523,6 @@ OUTPUT — return strictly this JSON schema, nothing else:
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
       if (sessionInfo) {
-        try {
-          await recordPaidUse(sessionInfo.sessionId, sessionInfo.tier, sessionInfo.email, "forensic", idempotencyKey, ...cycleArgs(creditReservation));
-        } catch (usageErr) {
-          console.error("[deep scan] Failed to record paid usage (non-fatal):", usageErr);
-        }
-        // Finalized regardless of the per-type counter write; see the Quick Review path.
         if (creditReservation) {
           await finalizeAnalysisCreditWithRetry({
             sessionId: sessionInfo.sessionId,
@@ -3495,6 +3533,15 @@ OUTPUT — return strictly this JSON schema, nothing else:
             documentName: req.body?.documentName || "deep-scan-document",
           });
         }
+        // Counted only after the credit is confirmed, so an analysis whose reservation was released is not shown as used.
+        await countDeliveredPaidAnalysis({
+          sessionId: sessionInfo.sessionId,
+          tier: sessionInfo.tier,
+          email: sessionInfo.email,
+          usageType: "forensic",
+          idempotencyKey,
+          billingCycle: creditReservation?.billingCycle ?? null,
+        });
         try {
           credits = await getPaidUsageStatus(sessionInfo.sessionId, sessionInfo.tier);
         } catch (usageErr) {
