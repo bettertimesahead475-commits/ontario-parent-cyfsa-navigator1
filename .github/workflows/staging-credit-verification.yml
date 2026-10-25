@@ -17,7 +17,7 @@ concurrency:
 
 env:
   # Head of PR #103 (fix/credit-atomic-claim) that this run verifies. Immutable: a full 40-character SHA.
-  APPROVED_COMMIT_SHA: d07bdfbda854edcdae8e8d7fbc0095b00642017d
+  APPROVED_COMMIT_SHA: c59a3f5aa20577d35c74a986cbfc53acc44bd69c
   # The only Supabase URL the run will use. A single trailing slash is tolerated; nothing else.
   EXPECTED_STAGING_URL: https://nxfhvebzzobegubefcda.supabase.co
   EXPECTED_SCENARIO_COUNT: "6"
