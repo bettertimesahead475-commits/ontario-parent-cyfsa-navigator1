@@ -531,12 +531,66 @@ export function guardCitation(text: string): { text: string; status: "CONFIRMED_
   return { text: t, status: sections.length ? "CONFIRMED_REFERENCE" : "NONE" };
 }
 
+/** Page texts from the "[Page N]" boundaries the extractor writes. Empty when the source has no page boundaries. */
+export function pageTextsFromSource(sourceText: string): Map<number, string> {
+  const pages = new Map<number, string>();
+  // split() with a capture group yields [before, pageNumber, text, pageNumber, text, ...].
+  const parts = sourceText.split(/^\[Page (\d+)\]\s*$/m);
+  for (let i = 1; i + 1 < parts.length; i += 2) {
+    const page = Number(parts[i]);
+    pages.set(page, `${pages.get(page) ?? ""}${parts[i + 1]}`);
+  }
+  return pages;
+}
+
+export type PageCitationStatus = "PAGE_VERIFIED" | "PAGE_CORRECTED" | "PAGE_AMBIGUOUS" | "PAGE_NOT_FOUND" | "PAGE_UNVERIFIABLE" | "NO_PAGE_CITED";
+
+/**
+ * Checks the page a finding cites against the page text it came from. The model's page number is kept as
+ * reported. If the quotation is found on exactly one other page, that page is recorded as a proposed correction,
+ * with the original location preserved beside it. Nothing is changed when the quotation is on several pages.
+ */
+export function verifyPageCitation(flag: Record<string, any>, sourceText: string): void {
+  const reported = /\bpage\s+(\d+)/i.exec(String(flag.locationInDocument ?? ""));
+  if (!reported) {
+    flag.pageCitation = { status: "NO_PAGE_CITED" as PageCitationStatus };
+    return;
+  }
+  const reportedPage = Number(reported[1]);
+  const pages = pageTextsFromSource(sourceText);
+  const phrase = String(flag.phraseDetected ?? "").trim();
+  if (pages.size === 0 || !phrase) {
+    flag.pageCitation = { status: "PAGE_UNVERIFIABLE" as PageCitationStatus, reportedPage };
+    return;
+  }
+  if (pages.has(reportedPage) && verifyQuoteAgainstSource(pages.get(reportedPage)!, phrase) !== "ABSENT") {
+    flag.pageCitation = { status: "PAGE_VERIFIED" as PageCitationStatus, reportedPage, sourcePages: [reportedPage] };
+    return;
+  }
+  const foundOn = [...pages.entries()]
+    .filter(([, text]) => verifyQuoteAgainstSource(text, phrase) !== "ABSENT")
+    .map(([page]) => page)
+    .sort((a, b) => a - b);
+  if (foundOn.length === 1) {
+    flag.locationAsReported = flag.locationInDocument;
+    flag.locationInDocument = `Page ${foundOn[0]}`;
+    flag.pageCitation = { status: "PAGE_CORRECTED" as PageCitationStatus, reportedPage, sourcePages: foundOn, correctedFrom: reportedPage };
+    return;
+  }
+  flag.pageCitation = {
+    status: (foundOn.length > 1 ? "PAGE_AMBIGUOUS" : "PAGE_NOT_FOUND") as PageCitationStatus,
+    reportedPage,
+    sourcePages: foundOn,
+  };
+}
+
 /** Applies quote verification and citation guards across an assembled report (mutates and returns it). */
 export function applyReportGuards(report: Record<string, any>, sourceText: string): Record<string, any> {
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
     const status = verifyQuoteAgainstSource(sourceText, flag.phraseDetected);
     flag.quoteVerification = status;
     flag.quoteVerified = isVerbatimQuoteStatus(status);
+    verifyPageCitation(flag, sourceText);
     const g = guardCitation(flag.legalReference);
     flag.legalReference = g.text;
     flag.citationStatus = g.status;

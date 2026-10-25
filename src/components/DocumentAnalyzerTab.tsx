@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
+import { canSendForAnalysis, interpretTranscription, NO_READABLE_CONTENT_MESSAGE, TRANSCRIPTION_FAILED_MESSAGE } from "../utils/analyzerUploadGuards";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -1503,6 +1504,8 @@ export default function DocumentAnalyzerTab() {
 
     const loadedFiles: OrganizedFile[] = await Promise.all(filesArray.map(async (f) => {
       let parsedContent = "";
+      // Set when the file cannot be turned into text. Such a file is listed with its error and is never analyzed.
+      let extractionError: string | null = null;
       let finalName = f.name;
       const nameL = f.name.toLowerCase();
       // Some browsers leave File.type empty for PDFs, DOCX, and common image formats.
@@ -1568,14 +1571,19 @@ export default function DocumentAnalyzerTab() {
           });
 
           const responseData = await safeReadJson(response);
-          parsedContent = responseData.transcribedText;
-          finalName = responseData.fileName;
-          finalMimeType = "application/pdf"; // Stored in PDF format
+          const outcome = interpretTranscription(responseData);
+          if (outcome.ok && outcome.text !== undefined) {
+            parsedContent = outcome.text;
+            finalName = responseData.fileName || f.name;
+            finalMimeType = "application/pdf"; // Stored in PDF format
+          } else {
+            // A response with no text is a failed transcription, so it must not be analyzed.
+            extractionError = outcome.error ?? TRANSCRIPTION_FAILED_MESSAGE;
+          }
         } catch (error: any) {
           console.error("Automated audio transcription failed:", error);
-          parsedContent = `IN THE ONTARIO FAMILY COURT OF JUSTICE\n\nRECORDING STATEMENT FOR: ${f.name}\n\n[SYSTEM TRANSCRIBING PIPE WARNING]: The automated transcription queue failed to reach the model. Falling back to parent raw audio metadata representation.\nReason: ${error.message || error}\nPencil notes: Please contact your legal advisor.`;
-          finalName = `Transcript - ${f.name.replace(/\.[^/.]+$/, "")}.pdf`;
-          finalMimeType = "application/pdf";
+          // No placeholder text. A placeholder would be analyzed as if it were the recording's content.
+          extractionError = TRANSCRIPTION_FAILED_MESSAGE;
         }
       } else if (finalMimeType === "text/plain") {
         parsedContent = await new Promise<string>((resolve) => {
@@ -1613,11 +1621,12 @@ export default function DocumentAnalyzerTab() {
         name: finalName,
         type: finalMimeType,
         size: processedFile.size,
-        content: parsedContent,
+        content: extractionError ? "" : parsedContent,
         category: categoryIndex,
         uploadedAt: new Date().toISOString(),
         mimeType: finalMimeType,
-        analysisStatus: "pending"
+        analysisStatus: extractionError ? "failed" : "pending",
+        analysisError: extractionError ?? undefined
       };
     }));
 
@@ -1626,11 +1635,13 @@ export default function DocumentAnalyzerTab() {
     setSelectedFileId(chunkedFiles[0]?.id || null);
     setSelectedReport(null);
     e.target.value = "";
+    // Files that failed to become text are listed with their error and never sent for analysis.
+    const analyzableFiles = chunkedFiles.filter(file => file.analysisStatus !== "failed");
     // Single-file uploads use full streaming and stage callbacks; batches use parallel engine
-    if (chunkedFiles.length === 1) {
-      await triggerSingleAnalysis(chunkedFiles[0]);
-    } else if (chunkedFiles.length > 1) {
-      await runParallelBulkAnalysis(chunkedFiles);
+    if (analyzableFiles.length === 1) {
+      await triggerSingleAnalysis(analyzableFiles[0]);
+    } else if (analyzableFiles.length > 1) {
+      await runParallelBulkAnalysis(analyzableFiles);
     } else {
       setBulkProgress(null);
     }
@@ -1792,6 +1803,13 @@ export default function DocumentAnalyzerTab() {
   // Re-run single analysis on demand
   const triggerSingleAnalysis = async (file: OrganizedFile) => {
     if (analysisInFlightRef.current || isRecoveringJob) return; // never two analyses at once
+    if (!canSendForAnalysis(file)) {
+      // Nothing to analyze. Never send an empty document for analysis.
+      setOrganizedFiles(prev => prev.map(f => f.id === file.id
+        ? { ...f, analysisStatus: "failed", analysisError: f.analysisError || NO_READABLE_CONTENT_MESSAGE }
+        : f));
+      return;
+    }
     analysisInFlightRef.current = true;
     stopWaitingRef.current = false;
     setIsSingleAnalyzing(true);

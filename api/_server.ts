@@ -35,8 +35,8 @@ import { registerMatterAccessLifecycleRoutes } from "./matterAccessLifecycleRout
 import { registerParentProfessionalCollaborationRoutes } from "./parentProfessionalCollaborationRoutes.js";
 import { registerProfessionalOutputRoutes } from "./professionalOutputRoutes.js";
 import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.js";
-import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./services/pageSources.js";
-import { extractTextFromDocx } from "./services/docxExtractor.js";
+import { decodeSource, DOCX_MIME, extractPages, SOURCE_SYSTEM, verifyQuote } from "./services/pageSources.js";
+import { extractDocxDocument } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, decrementFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
@@ -44,6 +44,7 @@ import {
   reserveAnalysisCredit,
   releaseAnalysisReservation,
   finalizeAnalysisCredit,
+  finalizeAnalysisCreditWithRetry,
   getCreditBalance,
   suspendSession,
   restoreSession,
@@ -60,6 +61,8 @@ import {
 import {
   ANALYZER_MODELS,
   CLAUDE_MODELS,
+  assertAllowlistedModel,
+  isAllowlistedModel,
   TOKEN_BUDGETS,
   MODEL_TIMEOUTS,
   resolveServerAuthoritativeModel,
@@ -223,7 +226,7 @@ async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): 
         {
           role: "user",
           parts: [
-            { text: "Extract the complete text of this document, preserving page numbers, headers, and paragraph breaks as closely as possible. Output plain text only, no commentary." },
+            { text: "Extract the complete text of this document, preserving page numbers, headers, and paragraph breaks as closely as possible. Output plain text only, no commentary. If the page has no visible text, marks, stamps, signatures or handwriting at all, output exactly [[BLANK_PAGE]] and nothing else. If you cannot read the page, output nothing." },
             {
               inlineData: {
                 mimeType: mimeType,
@@ -234,8 +237,15 @@ async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): 
         }
       ]
     });
-    return response.text || "";
+    // Empty output is not a blank page. Blank pages are confirmed by the explicit BLANK_PAGE marker in pageSources.
+    // Safety blocks and provider glitches also return nothing, so empty output is a retryable read failure.
+    const text = (response.text || "").trim();
+    if (!text) {
+      throw new AnalyzerError("AI_RESPONSE_INVALID", 422, "The OCR service returned no text for this page.", true);
+    }
+    return text;
   } catch (error) {
+    if (error instanceof AnalyzerError) throw error;
     console.error("extractTextWithGeminiBase64 error:", error);
     throw providerFailure(error, "gemini");
   }
@@ -329,7 +339,12 @@ async function generateContentWithFallback(
   stopReason?: string;
 }> {
   const client = getAnthropicClient();
-  const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : ANALYZER_MODELS.QUICK;
+  // Refuse an unlisted model rather than substituting one (see assertAllowlistedModel).
+  if (!isAllowlistedModel(primaryModel)) {
+    console.error(`[AI Engine] Refusing unlisted analyzer model "${primaryModel}". Add it to CLAUDE_MODELS if it is valid.`);
+  }
+  assertAllowlistedModel(primaryModel);
+  const model = primaryModel;
   const wireModel = resolveAnthropicWireModel(model);
   const messages = params.messages.map((message: any) => ({
     role: (message.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
@@ -1713,16 +1728,25 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         (typeof fileData.name === 'string' && fileData.name.toLowerCase().endsWith('.docx'));
 
       if (isDocx) {
-        const docxSource = decodeSource(base64Data, 'application/octet-stream');
-        const extractedText = extractTextFromDocx(docxSource.bytes);
-        if (!extractedText.trim()) {
+        const docxSource = decodeSource(base64Data, DOCX_MIME);
+        let docx: ReturnType<typeof extractDocxDocument>;
+        try {
+          docx = extractDocxDocument(docxSource.bytes);
+        } catch (docxErr) {
+          // A damaged or unsafe Word file is a problem with the document, so it is reported as one (422), not as a server fault.
+          console.error("[/api/extract-text] DOCX read failed", docxErr);
+          throw new LifecycleError(422, "EXTRACTION_FAILED", "This Word document could not be read. Try saving it again, or upload a PDF.");
+        }
+        if (!docx.text.trim()) {
           return res.status(422).json({
             error: "No readable text could be extracted from this DOCX file.",
           });
         }
+        // A DOCX has no fixed pages: pagination is decided by the word processor when it renders. The single
+        // segment is therefore marked unpaginated, and the page number must not be cited as a source location.
         const pages = [{
           pageNumber: 1,
-          text: extractedText,
+          text: docx.text,
           extractionMethod: "docx-xml-extraction",
           confidence: null,
           checksum: docxSource.checksum,
@@ -1730,9 +1754,17 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         const durationMs = Date.now() - startTime;
         return res.json({
           pages,
+          pagination: "unpaginated",
           contentHash: docxSource.checksum,
-          extractedText,
-          characters: extractedText.length,
+          extractedText: docx.text,
+          characters: docx.text.length,
+          // complete=false means material content (images, tracked deletions, charts) was not read as text.
+          extraction: {
+            complete: docx.complete,
+            notes: docx.notes,
+            imageCount: docx.images.length,
+            metadata: docx.metadata,
+          },
           timing: { extractMs: durationMs }
         });
       }
@@ -1742,9 +1774,13 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       }
       const source = decodeSource(base64Data,mime);
       const pages = await extractPages(source.bytes,source.mime,ocrSingleSourceWithGemini);
-      const extractedText = pages.map(p=>p.text).join('\n\n');
+      // PDF pages are labelled "[Page N]" so the analysis can cite the page a passage came from. The page number
+      // comes from the PDF's own page tree (pageSources), never from OCR output.
+      const extractedText = source.mime === 'application/pdf'
+        ? pages.map(p=>`[Page ${p.pageNumber}]\n${p.text}`).join('\n\n')
+        : pages.map(p=>p.text).join('\n\n');
 
-      if (!extractedText.trim()) {
+      if (!pages.some(p=>p.text.trim())) {
         return res.status(422).json({
           error: "No readable text could be extracted from this file. If it's a scanned image, try a clearer copy.",
         });
@@ -2270,6 +2306,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
       targetText = textContent || "";
       let extractedText = "";
+      // Extraction notes the analysis must be told about, e.g. embedded images that were not read as text.
+      const extractionNotes: string[] = [];
 
       if (fileData && fileData.base64) {
         let base64Data = fileData.base64;
@@ -2285,14 +2323,25 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           mime === "application/msword" ||
           fileName.endsWith(".docx");
 
+        // Fail closed. When a document was supplied, analysis must not continue on the caller's text alone:
+        // that would produce a report about text the document never contained. Nothing is charged, because
+        // the failure happens before any model call and the reservation is released by the catch below.
         if (isDocx) {
           try {
             console.log(`[Dual Pass] Extracting text from DOCX: ${fileName || mime}`);
             const buf = Buffer.from(base64Data, "base64");
-            extractedText = extractTextFromDocx(buf);
+            const docx = extractDocxDocument(buf);
+            extractedText = docx.text;
+            extractionNotes.push(...docx.notes);
             console.log(`[Dual Pass] DOCX extracted ${extractedText.length} characters successfully.`);
           } catch (e) {
-            console.error("DOCX extraction failed, falling back to text", e);
+            console.error("DOCX extraction failed", e);
+            throw new AnalyzerError(
+              "EXTRACTION_FAILED",
+              422,
+              "This Word document could not be read. Nothing was charged. Try saving it again, or upload a PDF.",
+              false
+            );
           }
         } else if (mime === "application/pdf" || mime.startsWith("image/")) {
           try {
@@ -2300,20 +2349,49 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             extractedText = await extractTextWithGeminiBase64(base64Data, mime);
             console.log(`[Dual Pass] Gemini extracted ${extractedText.length} characters successfully.`);
           } catch (e) {
-            console.error("Gemini text/OCR extraction failed, falling back to text", e);
+            console.error("Gemini text/OCR extraction failed", e);
+            // Provider failures keep their own classification (retryable or not). Anything else is an extraction failure.
+            if (e instanceof AnalyzerError || e instanceof LifecycleError) throw e;
+            throw new AnalyzerError(
+              "EXTRACTION_FAILED",
+              422,
+              "This document could not be read. Nothing was charged. Try a clearer copy or another file.",
+              false
+            );
           }
         } else if (mime.startsWith("text/")) {
           try {
-            const decodedText = Buffer.from(base64Data, "base64").toString("utf-8");
-            extractedText = decodedText;
+            extractedText = Buffer.from(base64Data, "base64").toString("utf-8");
           } catch (e) {
-            console.error("Base64 text decoding failed, falling back", e);
+            console.error("Base64 text decoding failed", e);
+            throw new AnalyzerError(
+              "EXTRACTION_FAILED",
+              422,
+              "This text file could not be read. Nothing was charged. Try saving it as plain text.",
+              false
+            );
           }
+        } else {
+          throw new AnalyzerError(
+            "EXTRACTION_FAILED",
+            422,
+            `This file type (${mime || "unknown"}) cannot be read by the analyzer. Nothing was charged. Upload a PDF, Word document, image or plain text file.`,
+            false
+          );
         }
-      }
 
-      if (extractedText) {
-        targetText = extractedText + "\n\n" + targetText;
+        if (!extractedText.trim()) {
+          throw new AnalyzerError(
+            "EXTRACTION_FAILED",
+            422,
+            "No readable text was found in this document. If it is a scanned image, try a clearer copy. Nothing was charged.",
+            false
+          );
+        }
+        const completenessNote = extractionNotes.length > 0
+          ? `[Extraction notes: the document text below may be incomplete. ${extractionNotes.join(" ")}]\n\n`
+          : "";
+        targetText = completenessNote + extractedText + "\n\n" + targetText;
       }
 
       if (!targetText || !targetText.trim()) {
@@ -2471,7 +2549,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         // whether or not the per-type counter write above succeeded. Otherwise the reservation would
         // expire and the parent would get a free analysis.
         if (creditReservation && identity) {
-          await finalizeAnalysisCredit({
+          await finalizeAnalysisCreditWithRetry({
             sessionId: paidSessionId,
             firebaseUid: identity.uid,
             requestId: analysisRequestId,
@@ -3265,7 +3343,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         }
         // Finalized regardless of the per-type counter write; see the Quick Review path.
         if (creditReservation) {
-          await finalizeAnalysisCredit({
+          await finalizeAnalysisCreditWithRetry({
             sessionId: sessionInfo.sessionId,
             firebaseUid: sessionInfo.uid,
             requestId: analysisRequestId,

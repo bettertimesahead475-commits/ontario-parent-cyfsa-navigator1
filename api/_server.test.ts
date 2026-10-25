@@ -1,3 +1,4 @@
+import { buildZip } from "./testSupport/docxFixture.js";
 // Integration tests for the Express backend in _server.ts, run against the
 // real route handlers with only the external SDKs (Anthropic, Gemini,
 // nodemailer) and the Supabase-backed access-code service mocked out.
@@ -726,19 +727,66 @@ describe("POST /api/extract-text", () => {
       .set(paid())
       .send({ fileData: { base64, mimeType: "application/pdf" } });
     expect(res.status).toBe(200);
-    expect(res.body.extractedText).toBe("Extracted content");
+    // PDF pages are labelled so the analysis can cite them. The label comes from the PDF page tree.
+    expect(res.body.extractedText).toBe("[Page 1]\nExtracted content");
     expect(mockGenerateContent).toHaveBeenCalledTimes(1);
     expect(res.body.pages).toHaveLength(1);
     expect(mockGenerateContent.mock.calls[0][0].config.systemInstruction).toContain('UNTRUSTED');
   });
 
-  it("returns 422 when nothing readable comes back", async () => {
-    mockGenerateContent.mockResolvedValueOnce({ text: "   " });
+  it("returns 422 when nothing readable comes back, after the bounded retries", async () => {
+    // Empty output is retried, not treated as a blank page or as a provider outage. Every attempt is empty here.
+    for (let i = 0; i < 3; i++) mockGenerateContent.mockResolvedValueOnce({ text: "   " });
     const res = await request(app)
       .post("/api/extract-text")
       .set(paid())
       .send({ fileData: { base64: "abcd", mimeType: "image/png" } });
     expect(res.status).toBe(422);
+    expect(res.body.code).toBe("EXTRACTION_INCOMPLETE");
+    expect(mockGenerateContent).toHaveBeenCalledTimes(3);
+  });
+
+  it("extracts a valid Word file (it was rejected with 400 before the MIME fix) and reports an embedded image as incomplete", async () => {
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+    const document = `<?xml version="1.0" encoding="UTF-8"?><w:document ${W}><w:body>` +
+      `<w:p><w:r><w:t>COURT FILE NO: FC-26-8888</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:drawing><a:blip r:embed="rId9"/></w:drawing></w:r></w:p></w:body></w:document>`;
+    const rels = `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/></Relationships>`;
+    const bytes = buildZip({ "word/document.xml": document, "word/_rels/document.xml.rels": rels, "word/media/logo.png": "logo" });
+    const res = await request(app)
+      .post("/api/extract-text")
+      .set(paid())
+      .send({
+        fileData: {
+          base64: bytes.toString("base64"),
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          fileName: "affidavit.docx",
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.extractedText).toBe("COURT FILE NO: FC-26-8888");
+    expect(res.body.pagination).toBe("unpaginated");
+    expect(res.body.extraction.complete).toBe(false);
+    expect(res.body.extraction.imageCount).toBe(1);
+    expect(res.body.extraction.notes.join(" ")).toMatch(/embedded image/);
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+  });
+
+  it("reports a damaged Word file as a document problem (422), not a server fault", async () => {
+    const res = await request(app)
+      .post("/api/extract-text")
+      .set(paid())
+      .send({
+        fileData: {
+          base64: Buffer.from("definitely not a zip package").toString("base64"),
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          fileName: "damaged.docx",
+        },
+      });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("EXTRACTION_FAILED");
+    expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 });
 
@@ -821,6 +869,41 @@ describe("POST /api/analyze", () => {
     expect(Object.keys(res.body.modelMetadata).sort()).toEqual(["durationMs", "engineName", "mode", "modeName"]);
     expect(res.body.forensicVerification.model).toBeUndefined();
     expect(res.body.thresholdAnalysis).toHaveLength(4);
+  });
+
+  // Fail closed: when a document was supplied but could not be read, the analysis must not run on other text.
+  it("does not analyze caller text when the supplied document type cannot be read", async () => {
+    mockCreateMessage.mockImplementation(sectionResponder());
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({
+        textContent: "Text the parent typed about the case.",
+        fileData: { base64: Buffer.from("PK-zip-like").toString("base64"), mimeType: "application/zip", fileName: "bundle.zip" },
+        mode: "fast",
+      });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("EXTRACTION_FAILED");
+    expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not analyze when a Word file cannot be read, and says nothing was charged", async () => {
+    mockCreateMessage.mockImplementation(sectionResponder());
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({
+        fileData: {
+          base64: Buffer.from("this is not a word document").toString("base64"),
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          fileName: "affidavit.docx",
+        },
+        mode: "fast",
+      });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("EXTRACTION_FAILED");
+    expect(res.body.error).toMatch(/Nothing was charged/);
+    expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
   it("returns a clear error instead of fabricating a report when a section never returns valid JSON", async () => {

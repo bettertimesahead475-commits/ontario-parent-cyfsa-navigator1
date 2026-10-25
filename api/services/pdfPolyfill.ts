@@ -6,6 +6,9 @@
  * evaluating pdfjs-dist.
  */
 
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+
 if (typeof (globalThis as any).DOMMatrix === "undefined") {
   (globalThis as any).DOMMatrix = class DOMMatrix {
     a = 1;
@@ -47,13 +50,32 @@ if (typeof (globalThis as any).Path2D === "undefined") {
   (globalThis as any).Path2D = class Path2D {};
 }
 
-// Ensure headless serverless node environment does not attempt to resolve external worker files
-try {
-  import("pdfjs-dist/legacy/build/pdf.mjs")
-    .then((pdfjsLib: any) => {
-      if (pdfjsLib?.GlobalWorkerOptions) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-      }
-    })
-    .catch(() => {});
-} catch {}
+/**
+ * Resolves once PDF.js is loaded and pointed at its worker module. Callers must await it before parsing.
+ *
+ * Two defects are fixed here. First, the old code set workerSrc to "", which PDF.js treats as unset: every full-layout
+ * parse then failed with "No GlobalWorkerOptions.workerSrc specified" and fell back to the degraded path. Second, the
+ * assignment ran asynchronously after the first parse could already have started. The worker file is pdf.worker.mjs
+ * from the same package; vercel.json includes it in the function bundle so it is present at runtime.
+ */
+function pdfWorkerUrl(): string | null {
+  try {
+    // createRequire works in every runner we use (Node ESM, vitest). import.meta.resolve is not available under vitest.
+    const requireFromHere = createRequire(import.meta.url);
+    return pathToFileURL(requireFromHere.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")).href;
+  } catch {
+    return null;
+  }
+}
+export const pdfJsReady: Promise<void> = import("pdfjs-dist/legacy/build/pdf.mjs").then((pdfjsLib: any) => {
+  if (!pdfjsLib?.GlobalWorkerOptions) {
+    throw new Error("PDF.js did not expose GlobalWorkerOptions; PDF text extraction is unavailable.");
+  }
+  const workerUrl = pdfWorkerUrl();
+  if (!workerUrl) {
+    throw new Error("The PDF.js worker file could not be located; full-layout PDF extraction is unavailable.");
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+});
+// Awaiters still receive the rejection. This only stops an import-time unhandled-rejection warning when nobody has awaited yet.
+pdfJsReady.catch(() => undefined);
