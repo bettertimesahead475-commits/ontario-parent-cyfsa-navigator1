@@ -9,8 +9,9 @@
 //   STAGING_SUPABASE_SERVICE_ROLE_KEY=<staging service key> \
 //   npx vitest run api/services/creditStaging.test.ts
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createStagingFixtureClient } from "../testSupport/stagingFixtureClient.js";
 
 const PRODUCTION_PROJECT_REF = "qboidsfpjuxeqtfotryj";
 const stagingUrl = process.env.STAGING_SUPABASE_URL;
@@ -38,20 +39,29 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
     return id;
   };
 
-  beforeAll(() => {
+  // Used only for seeding, verification reads and cleanup. Never the module-cached client; see the helper.
+  const fixtureDb = () => createStagingFixtureClient(stagingUrl!, stagingKey!);
+
+  beforeAll(async () => {
     process.env.SUPABASE_URL = stagingUrl;
     process.env.SUPABASE_SERVICE_ROLE_KEY = stagingKey;
+    // Fail fast with a clear cause. Otherwise a rejected key shows up as several unrelated assertion failures.
+    const probe = await fixtureDb().from("free_usage").select("uid").limit(1);
+    if (probe.error) {
+      throw new Error(`Staging fixture client cannot read free_usage: ${probe.error.message}. Check STAGING_SUPABASE_SERVICE_ROLE_KEY.`);
+    }
   });
 
   afterAll(async () => {
-    const { getSupabase } = await import("./access.js");
-    const db = getSupabase();
+    const db = fixtureDb();
+    const errors: string[] = [];
     for (const id of synthetic) {
       const { error } = await db.from("free_usage").delete().like("uid", `*${id}*`);
-      if (error) throw new Error(`cleanup of synthetic free_usage rows failed: ${error.message}`);
+      if (error) errors.push(`free_usage rows for ${id}: ${error.message}`);
     }
     const { error } = await db.from("navigator_paid_sessions").delete().in("id", [...synthetic]);
-    if (error) throw new Error(`cleanup of synthetic paid sessions failed: ${error.message}`);
+    if (error) errors.push(`navigator_paid_sessions: ${error.message}`);
+    if (errors.length > 0) throw new Error(`staging cleanup failed; synthetic rows may remain: ${errors.join("; ")}`);
   });
 
   const reserve = (credit: CreditModule, requestId: string, sid = sessionId) =>
@@ -104,16 +114,13 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
     }
   });
 
-  // Exercises the prefix listing against real PostgREST: a stale reservation with a recorded unit is found and returned
-  // on the next reserve. The row is written with the same statements the store uses; nothing is mocked.
+  // A crashed reservation leaves a marker with a recorded unit and an old timestamp. The next reserve for the session
+  // must release it and return the unit, so exactly one unit is charged for the new request.
   it("a crashed reservation on staging is reconciled by the next reserve", async () => {
     const reconcileSession = track(randomUUID());
-    const { getSupabase } = await import("./access.js");
-    const { createHash } = await import("node:crypto");
     const digest = createHash("sha256").update("vfy_crashed").digest("hex").slice(0, 32);
     const old = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const db = getSupabase();
-    const seeded = await db.from("free_usage").insert([
+    const seeded = await fixtureDb().from("free_usage").insert([
       { uid: `paid_session_${reconcileSession}_total`, email: null, analyses_used: 1, first_analysis_at: old, last_analysis_at: old },
       { uid: `paid_res_${reconcileSession}_${digest}`, email: "reservation:reserved", analyses_used: 1, first_analysis_at: old, last_analysis_at: old },
     ]);
@@ -124,12 +131,12 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
     expect((await credit.getCreditBalance(reconcileSession, "Basic")).creditsConsumed).toBe(1);
   });
 
-  // Pro: forensic analyses renew on the session's own renewal date (issued_at), not the calendar month.
+  // Pro: quick reviews are not counted; forensic analyses renew on the session's own renewal date (issued_at),
+  // not the calendar month.
   it("a Pro session's quick reviews are not counted, and its forensic allowance renews on its anniversary", async () => {
     const proSession = track(randomUUID());
     const issued = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-    const { getSupabase } = await import("./access.js");
-    const db = getSupabase();
+    const db = fixtureDb();
     const row = await db.from("navigator_paid_sessions").insert({
       id: proSession,
       firebase_uid: "vfy-uid",
@@ -138,13 +145,21 @@ describe.skipIf(!enabled)("credit reservation against a real Supabase project (s
       expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     });
     expect(row.error).toBeNull();
+
     const credit = await loadCredit();
     for (let i = 0; i < 2; i++) {
       await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: `vfy_pq_${i}`, analysisType: "quick" });
     }
     const pro = await credit.reserveAnalysisCredit({ sessionId: proSession, firebaseUid: "vfy-uid", tier: "Pro", requestId: "vfy_pf_1", analysisType: "forensic" });
-    expect(pro.billingCycle).toBe(issued.toISOString().slice(0, 10));
-    const period = await db.from("free_usage").select("analyses_used").eq("uid", `paid_session_${proSession}_period_${issued.toISOString().slice(0, 10)}`).retry(false);
+    const cycle = issued.toISOString().slice(0, 10);
+    expect(pro.billingCycle).toBe(cycle);
+
+    const total = await db.from("free_usage").select("uid").eq("uid", `paid_session_${proSession}_total`);
+    expect(total.error).toBeNull();
+    expect(total.data).toEqual([]);
+
+    const period = await db.from("free_usage").select("analyses_used").eq("uid", `paid_session_${proSession}_period_${cycle}`);
+    expect(period.error).toBeNull();
     expect(period.data?.[0]?.analyses_used).toBe(1);
   });
 });
