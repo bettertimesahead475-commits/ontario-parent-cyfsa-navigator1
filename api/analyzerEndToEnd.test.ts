@@ -10,6 +10,7 @@
 //   - a failed analysis never consumes the free analysis,
 //   - text extraction no longer depends on the paid-session database lookup.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createProductionLikeDb } from "./testSupport/productionLikeCreditDb.js";
 import request from "supertest";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 
@@ -18,13 +19,14 @@ const { mockCreateMessage, mockGenerateContent } = vi.hoisted(() => ({
   mockGenerateContent: vi.fn(),
 }));
 
+const dbHolder = vi.hoisted(() => ({ db: null as any }));
 const mockAccess = vi.hoisted(() => ({
   requestAccess: vi.fn(),
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
   verifySessionToken: vi.fn(),
   getActivePaidSession: vi.fn(),
-  getSupabase: vi.fn(),
+  getSupabase: vi.fn(() => dbHolder.db),
   revokeSession: vi.fn(),
   revokeAllSessionsForUid: vi.fn(),
   checkAndConsumeFreeToolUse: vi.fn(),
@@ -211,6 +213,15 @@ const SAMPLE_DEEP_DIVE = {
 const claudeText = (text: string, stop_reason = "end_turn") => ({ content: [{ type: "text", text }], stop_reason, usage: {} });
 
 beforeEach(() => {
+  dbHolder.db = createProductionLikeDb({
+    sessions: [
+      { id: "jti-1", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "session-row-456", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "session-google-sub", tier: "Premium", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+    ],
+  });
+  mockAccess.getSupabase.mockReset();
+  mockAccess.getSupabase.mockImplementation(() => dbHolder.db);
   vi.clearAllMocks();
   mockCreateMessage.mockReset(); // no queued one-shot responses may leak between tests
   mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header?: string) => {

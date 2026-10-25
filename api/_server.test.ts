@@ -14,7 +14,9 @@
 //   - /api/transcribe-audio must degrade to a 200 fallback response on
 //     transcription failure rather than surfacing an error to the caller.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createProductionLikeDb } from "./testSupport/productionLikeCreditDb.js";
 import request from "supertest";
+import { createHash } from "node:crypto";
 import { PDFDocument } from 'pdf-lib';
 import { resetCreditAccountingCachesForTesting } from "./services/creditAccounting.js";
 import { resetUsageCachesForTesting } from "./services/usage.js";
@@ -25,6 +27,7 @@ const { mockCreateMessage, mockGenerateContent, mockSendMail } = vi.hoisted(() =
   mockSendMail: vi.fn(),
 }));
 
+const dbHolder = vi.hoisted(() => ({ db: null as any }));
 const mockAccess = vi.hoisted(() => ({
   resolveSupabaseCredentials: vi.fn(() => ({ url: "https://test.supabase.co", key: "test-key", source: "test" })),
   getConfiguredProjectRef: vi.fn(() => "test-project-ref"),
@@ -38,13 +41,7 @@ const mockAccess = vi.hoisted(() => ({
     return false;
   }),
   healSessionUidBinding: vi.fn(async () => {}),
-  getSupabase: vi.fn(() => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        limit: vi.fn(async () => ({ data: [], error: null })),
-      })),
-    })),
-  })),
+  getSupabase: vi.fn(() => dbHolder.db),
   requestAccess: vi.fn(),
   approvePayment: vi.fn(),
   verifyAccessCode: vi.fn(),
@@ -250,6 +247,15 @@ const PAID_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-paid-user";
 const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FIREBASE_TOKEN });
 
 beforeEach(() => {
+  dbHolder.db = createProductionLikeDb({
+    // Paid sessions as the database holds them: monthly plans need their renewal anchor (issued_at).
+    sessions: [
+      { id: PAID_JTI, tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "jti-pro", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "jti-premium", tier: "Premium", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+      { id: "jti-basic", tier: "Basic", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
+    ],
+  });
   vi.clearAllMocks();
   // Drop any queued one-shot responses so they cannot leak into the next test.
   mockCreateMessage.mockReset();
@@ -1723,6 +1729,25 @@ describe("Server-Authoritative Usage Accounting & Idempotency", () => {
     expect(mockUsage.recordPaidUse).toHaveBeenCalledWith("session-basic-1", "Basic", "basic@example.com", "quick", "retry-id-12345");
   });
 
+  it("consumes the reserved credit even when the per-type usage write fails, so the analysis is not free", async () => {
+    mockUsage.recordPaidUse.mockRejectedValueOnce(new Error("usage counter unavailable"));
+    mockCreateMessage.mockImplementation(sectionResponder());
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set({
+        Authorization: "Bearer basic-token",
+        "x-ps-session": BASIC_TOKEN,
+        "x-analysis-id": "req_1700000000000_finalize1",
+      })
+      .send({ textContent: "Valid test document text", mode: "fast" });
+
+    expect(res.status).toBe(200);
+    const digest = createHash("sha256").update("req_1700000000000_finalize1").digest("hex").slice(0, 32);
+    // Consumed, not left reserved: a reservation left open would expire and give the analysis away.
+    expect(dbHolder.db._freeUsage.get(`paid_res_session-basic-1_${digest}`)?.email).toBe("reservation:consumed");
+  });
+
   it("GET /api/analyzer-usage returns paid credit status for a valid session", async () => {
     mockUsage.getPaidUsageStatus.mockResolvedValueOnce({
       tier: "Basic",
@@ -1753,5 +1778,47 @@ describe("Server-Authoritative Usage Accounting & Idempotency", () => {
     expect(res.body.type).toBe("free");
     expect(res.body.limit).toBe(1);
     expect(res.body.remaining).toBe(1);
+  });
+});
+
+// Replay and joined-attempt refusals: the model must not run unless this attempt owns the reservation.
+describe("Credit ownership at the route level", () => {
+  const DEEP_SCAN = {
+    gaps: [], missingEvidence: [], retorts: [], thresholdAnalysis: [], proceduralTimelineViolations: [],
+    charterAndHumanRightsIssues: [], whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [], lawyerCaseBrief: [],
+    disclaimer: "This document is generated for informational/educational purposes only. disclaimer",
+  };
+  const ID = "req_1700000000000_deepowner1";
+
+  // The marker for this request, found by its prefix in the fake database (the session id is not needed).
+  const markerRows = () => [...dbHolder.db._freeUsage.values()].filter((r: any) => String(r.uid).startsWith("paid_res_") && String(r.uid).length > 0);
+
+  it("a replay of a completed Deep Scan is refused without running the model again", async () => {
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse(DEEP_SCAN));
+    const first = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    expect(first.status).toBe(200);
+    const callsAfterFirst = mockCreateMessage.mock.calls.length;
+
+    const replay = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    expect(replay.status).toBe(409);
+    expect(replay.body.code).toBe("ANALYSIS_ALREADY_COMPLETED");
+    expect(mockCreateMessage.mock.calls.length).toBe(callsAfterFirst);
+  });
+
+  it("a second Deep Scan that joins a running reservation does not run the model", async () => {
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse(DEEP_SCAN));
+    await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    // Make the stored reservation look like a live analysis that has not finished.
+    const marker = markerRows()[0];
+    expect(marker).toBeDefined();
+    marker.email = "reservation:reserved";
+    marker.analyses_used = 1;
+    marker.last_analysis_at = new Date().toISOString();
+    const callsBefore = mockCreateMessage.mock.calls.length;
+
+    const joined = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    expect(joined.status).toBe(409);
+    expect(joined.body.code).toBe("ANALYSIS_IN_PROGRESS");
+    expect(mockCreateMessage.mock.calls.length).toBe(callsBefore);
   });
 });
