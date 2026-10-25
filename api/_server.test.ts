@@ -736,14 +736,14 @@ describe("POST /api/extract-text", () => {
 
   it("returns 422 when nothing readable comes back, after the bounded retries", async () => {
     // Empty output is retried, not treated as a blank page or as a provider outage. Every attempt is empty here.
-    for (let i = 0; i < 3; i++) mockGenerateContent.mockResolvedValueOnce({ text: "   " });
+    for (let i = 0; i < 2; i++) mockGenerateContent.mockResolvedValueOnce({ text: "   " });
     const res = await request(app)
       .post("/api/extract-text")
       .set(paid())
       .send({ fileData: { base64: "abcd", mimeType: "image/png" } });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("EXTRACTION_INCOMPLETE");
-    expect(mockGenerateContent).toHaveBeenCalledTimes(3);
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
   });
 
   it("extracts a valid Word file (it was rejected with 400 before the MIME fix) and reports an embedded image as incomplete", async () => {
@@ -1903,5 +1903,87 @@ describe("Credit ownership at the route level", () => {
     expect(joined.status).toBe(409);
     expect(joined.body.code).toBe("ANALYSIS_IN_PROGRESS");
     expect(mockCreateMessage.mock.calls.length).toBe(callsBefore);
+  });
+});
+
+// Source-integrity through the real routes. Page numbers come only from the server's signed extraction map. Text the
+// client types or pastes, including fabricated "[Page N]" markers, never establishes a page.
+describe("authenticated source pages through the real routes", () => {
+  const CLIENT_FABRICATED = "[Page 1]\nRoutine visit.\n\n[Page 2]\nFABRICATED-CLIENT-TEXT: the child was locked in a room overnight.";
+
+  async function pdfWithServerText(): Promise<string> {
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont((await import("pdf-lib")).StandardFonts.Helvetica);
+    pdf.addPage([400, 300]).drawText("Routine school visit, nothing concerning was observed on this page.", { x: 20, y: 250, size: 11, font });
+    pdf.addPage([400, 300]).drawText("Worker note: the child appeared well at school on this page.", { x: 20, y: 250, size: 11, font });
+    return Buffer.from(await pdf.save()).toString("base64");
+  }
+
+  async function extractSigned(base64: string) {
+    const res = await request(app).post("/api/extract-text").set(paid()).send({ fileData: { base64, mimeType: "application/pdf" } });
+    expect(res.status).toBe(200);
+    return res;
+  }
+
+  function sentToModel(): string {
+    return JSON.stringify(mockCreateMessage.mock.calls.map((c) => c[0].messages));
+  }
+
+  it("the extract route returns a signed page map alongside the pages", async () => {
+    const res = await extractSigned(await pdfWithServerText());
+    expect(res.body.pages).toHaveLength(2);
+    expect(res.body.sourcePageMap).toEqual({ payload: expect.any(String), signature: expect.any(String) });
+  });
+
+  it("with the signed map, the analysis uses the server's pages and ignores fabricated client text", async () => {
+    mockCreateMessage.mockReset();
+    mockCreateMessage.mockImplementation(sectionResponder());
+    const ex = await extractSigned(await pdfWithServerText());
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({ textContent: CLIENT_FABRICATED, sourcePageMap: ex.body.sourcePageMap, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.sourcePageMapStatus).toBe("accepted");
+    expect(res.body.sourceProvenance).toBe("authenticated_pages");
+    expect(sentToModel()).toContain("appeared well at school");
+    expect(sentToModel()).not.toContain("FABRICATED-CLIENT-TEXT");
+  });
+
+  it("a tampered signed map is rejected, and the analysis is unpaginated rather than trusting the edit", async () => {
+    mockCreateMessage.mockReset();
+    mockCreateMessage.mockImplementation(sectionResponder());
+    const ex = await extractSigned(await pdfWithServerText());
+    const parsed = JSON.parse(Buffer.from(ex.body.sourcePageMap.payload, "base64url").toString("utf8"));
+    parsed.pages[1].text = "FABRICATED-EDIT: the child was locked in a room overnight.";
+    const forged = { payload: Buffer.from(JSON.stringify(parsed), "utf8").toString("base64url"), signature: ex.body.sourcePageMap.signature };
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: CLIENT_FABRICATED, sourcePageMap: forged, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.sourcePageMapStatus).toBe("rejected:bad-signature");
+    expect(res.body.sourceProvenance).toBe("unauthenticated_text");
+    expect(sentToModel()).not.toContain("FABRICATED-EDIT");
+  });
+
+  it("typed or pasted [Page N] markers with no signed map are unpaginated, never authenticated", async () => {
+    mockCreateMessage.mockReset();
+    mockCreateMessage.mockImplementation(sectionResponder());
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: CLIENT_FABRICATED, mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.sourcePageMapStatus).toBe("absent");
+    expect(res.body.sourceProvenance).toBe("unauthenticated_text");
+  });
+});
+
+describe("OCR cost: a blocked page is not retried", () => {
+  it("a Gemini SAFETY block fails the page once, without a repeat paid call", async () => {
+    mockGenerateContent.mockReset();
+    mockGenerateContent.mockResolvedValueOnce({ text: "", candidates: [{ finishReason: "SAFETY" }] });
+    const res = await request(app)
+      .post("/api/extract-text")
+      .set(paid())
+      .send({ fileData: { base64: Buffer.from("png-bytes").toString("base64"), mimeType: "image/png" } });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("EXTRACTION_INCOMPLETE");
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
   });
 });

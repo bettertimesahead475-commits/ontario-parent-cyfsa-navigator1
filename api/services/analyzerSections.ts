@@ -531,18 +531,6 @@ export function guardCitation(text: string): { text: string; status: "CONFIRMED_
   return { text: t, status: sections.length ? "CONFIRMED_REFERENCE" : "NONE" };
 }
 
-/** Page texts from the "[Page N]" boundaries the extractor writes. Empty when the source has no page boundaries. */
-export function pageTextsFromSource(sourceText: string): Map<number, string> {
-  const pages = new Map<number, string>();
-  // split() with a capture group yields [before, pageNumber, text, pageNumber, text, ...].
-  const parts = sourceText.split(/^\[Page (\d+)\]\s*$/m);
-  for (let i = 1; i + 1 < parts.length; i += 2) {
-    const page = Number(parts[i]);
-    pages.set(page, `${pages.get(page) ?? ""}${parts[i + 1]}`);
-  }
-  return pages;
-}
-
 export type PageCitationStatus = "PAGE_VERIFIED" | "PAGE_CORRECTED" | "PAGE_AMBIGUOUS" | "PAGE_NOT_FOUND" | "PAGE_UNVERIFIABLE" | "NO_PAGE_CITED";
 
 /**
@@ -550,14 +538,15 @@ export type PageCitationStatus = "PAGE_VERIFIED" | "PAGE_CORRECTED" | "PAGE_AMBI
  * reported. If the quotation is found on exactly one other page, that page is recorded as a proposed correction,
  * with the original location preserved beside it. Nothing is changed when the quotation is on several pages.
  */
-export function verifyPageCitation(flag: Record<string, any>, sourceText: string): void {
+export function verifyPageCitation(flag: Record<string, any>, sourcePages: Map<number, string> | null): void {
   const reported = /\bpage\s+(\d+)/i.exec(String(flag.locationInDocument ?? ""));
   if (!reported) {
     flag.pageCitation = { status: "NO_PAGE_CITED" as PageCitationStatus };
     return;
   }
   const reportedPage = Number(reported[1]);
-  const pages = pageTextsFromSource(sourceText);
+  // Only an authenticated, server-extracted page map can verify a page. Pasted or typed "[Page N]" text never can.
+  const pages = sourcePages ?? new Map<number, string>();
   const phrase = String(flag.phraseDetected ?? "").trim();
   if (pages.size === 0 || !phrase) {
     flag.pageCitation = { status: "PAGE_UNVERIFIABLE" as PageCitationStatus, reportedPage };
@@ -585,13 +574,23 @@ export function verifyPageCitation(flag: Record<string, any>, sourceText: string
   };
 }
 
-/** Applies quote verification and citation guards across an assembled report (mutates and returns it). */
-export function applyReportGuards(report: Record<string, any>, sourceText: string): Record<string, any> {
+/**
+ * Applies quote verification and citation guards across an assembled report (mutates and returns it).
+ * `sourcePages` is the authenticated page map, or null when the source has no server-verified pages. The report
+ * records which of the two it was checked against, so a reader can tell the difference.
+ */
+export function applyReportGuards(
+  report: Record<string, any>,
+  sourceText: string,
+  sourcePages: Map<number, string> | null = null
+): Record<string, any> {
+  const authenticatedPages = sourcePages !== null && sourcePages.size > 0;
+  report.sourceProvenance = authenticatedPages ? "authenticated_pages" : "unauthenticated_text";
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
     const status = verifyQuoteAgainstSource(sourceText, flag.phraseDetected);
     flag.quoteVerification = status;
     flag.quoteVerified = isVerbatimQuoteStatus(status);
-    verifyPageCitation(flag, sourceText);
+    verifyPageCitation(flag, authenticatedPages ? sourcePages : null);
     const g = guardCitation(flag.legalReference);
     flag.legalReference = g.text;
     flag.citationStatus = g.status;
@@ -623,6 +622,8 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
 export interface SectionRunOptions {
   mode: "fast" | "full";
   documentText: string;
+  /** Authenticated page texts for citation checks. Null when the source has no server-verified pages. */
+  sourcePages?: Map<number, string> | null;
   primaryModel: string;
   verificationModel?: string;
   generate: GenerateFn;
@@ -753,7 +754,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   const failure = outcomes.find((o) => o !== null);
   if (failure) throw failure;
 
-  applyReportGuards(report, opts.documentText);
+  applyReportGuards(report, opts.documentText, opts.sourcePages ?? null);
 
   if (opts.mode === "full" && opts.verificationModel) {
     opts.onVerificationStart?.();

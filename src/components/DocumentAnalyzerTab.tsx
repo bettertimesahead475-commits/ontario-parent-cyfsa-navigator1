@@ -113,6 +113,8 @@ interface OrganizedFile {
   analysisReport?: AnalysisReport;
   // Why the last analysis attempt failed, as reported by the server (shown to the parent).
   analysisError?: string;
+  // The analysis id of a finished analysis whose billing is still being confirmed. Retry reuses it.
+  heldAnalysisId?: string;
   // Legacy local workspace retains structural page attribution. Persistent UUIDs
   // are issued only by the matter-scoped document API, never invented here.
   sourcePages?: { pageNumber: number; text: string; extractionMethod: string; checksum: string }[];
@@ -1668,6 +1670,9 @@ export default function DocumentAnalyzerTab() {
     // making the whole batch slower the more files it had. One call after the batch settles
     // gets the same up-to-date timeline for a fraction of the requests.
     const extractedContentById: Record<string, string> = {};
+    // The server-signed page map for each file's extraction. Sent back with the analysis so page numbers come from the
+    // server, never from the text. Kept per file, so it always matches the text it was issued for.
+    const extractedSourceMapById: Record<string, unknown> = {};
     try {
       const concurrencyLimit = 5;
       const queue = [...filesToAnalyzeList];
@@ -1720,6 +1725,7 @@ export default function DocumentAnalyzerTab() {
                     }
                     payload.textContent = extractResult.extractedText;
                     extractedContentById[file.id] = extractResult.extractedText;
+                    extractedSourceMapById[file.id] = extractResult.sourcePageMap ?? undefined;
                     setOrganizedFiles(prev => prev.map(f => f.id === file.id
                       ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
                   }
@@ -1727,7 +1733,7 @@ export default function DocumentAnalyzerTab() {
                   const response = await apiFetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
+                    body: JSON.stringify({ ...payload, sourcePageMap: extractedSourceMapById[file.id], mode: analysisMode, model: claudeModel })
                   });
 
                   // safeReadJson throws an ApiResponseError (status/code/retryable) for any
@@ -1821,10 +1827,12 @@ export default function DocumentAnalyzerTab() {
     setStreamingProgress({ stage: "uploading", percent: 10, message: "Preparing document for analysis..." });
 
     setOrganizedFiles(prev => prev.map(f => 
-      f.id === file.id ? { ...f, analysisStatus: "analyzing", analysisError: undefined } : f
+      f.id === file.id ? { ...f, analysisStatus: "analyzing", analysisError: undefined, heldAnalysisId: undefined } : f
     ));
 
-    const analysisId = "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+    // A retry of a finished analysis whose billing was not confirmed reuses its id, so the server returns the held
+    // report instead of running the model again.
+    const analysisId = file.heldAnalysisId || "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
     // Persist the job ID so it can be recovered after a page reload. Do NOT set activeJobId here:
     // that starts the recovery poller alongside this live request, which overwrote real progress
     // (e.g. during text extraction) with status-endpoint data and left the UI stuck at 45%.
@@ -1864,6 +1872,8 @@ export default function DocumentAnalyzerTab() {
           throw new Error("No readable text could be extracted from this document.");
         }
         payload.textContent = extractResult.extractedText;
+        // Server-signed page map for this extraction. Undefined for plain text and DOCX, which are unpaginated.
+        payload.sourcePageMap = extractResult.sourcePageMap ?? undefined;
         setOrganizedFiles(prev => prev.map(f => f.id === file.id
           ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
       }
@@ -2000,8 +2010,10 @@ export default function DocumentAnalyzerTab() {
       }
       const errMsg = err.message || "Failed single scan.";
       setSingleAnalysisError(errMsg);
-      setOrganizedFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: errMsg } : f
+      // A finished analysis whose billing is still being confirmed keeps its id, so Retry recovers the held report.
+      const heldAnalysisId = err?.code === "BILLING_PENDING" ? analysisId : undefined;
+      setOrganizedFiles(prev => prev.map(f =>
+        f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: errMsg, heldAnalysisId } : f
       ));
     } finally {
       analysisInFlightRef.current = false;

@@ -42,9 +42,40 @@ export type OCR = (base64: string, mime: string) => Promise<string>;
 export const OCR_CONCURRENCY = 4;
 /** Sent to the OCR model for a page with no visible marks at all. Any other empty output is a failure, never a blank page. */
 export const BLANK_PAGE_MARKER = '[[BLANK_PAGE]]';
-/** Bounded retries for a page whose OCR call failed or returned nothing. */
-export const OCR_PAGE_ATTEMPTS = 3;
+/**
+ * Attempts for a page whose OCR response was empty. Only an empty response is retried at page level, and only once.
+ * Provider failures are already retried inside the OCR call (across models), and blocked content is deterministic,
+ * so retrying either here would multiply paid calls without changing the outcome.
+ */
+export const OCR_PAGE_ATTEMPTS = 2;
 export const OCR_RETRY_DELAY_MS = 400;
+/** Paid OCR calls allowed in flight across all concurrent extractions in this process. */
+export const OCR_GLOBAL_CONCURRENCY = 8;
+
+let ocrActive = 0;
+const ocrWaiters: Array<() => void> = [];
+/**
+ * Runs one paid OCR call under the process-wide limit. A released slot is handed straight to the next waiter, so the
+ * limit is never exceeded, even briefly.
+ */
+async function withOcrSlot<T>(task: () => Promise<T>): Promise<T> {
+  if (ocrActive < OCR_GLOBAL_CONCURRENCY) {
+    ocrActive++;
+  } else {
+    await new Promise<void>((resolve) => ocrWaiters.push(resolve));
+  }
+  try {
+    return await task();
+  } finally {
+    const next = ocrWaiters.shift();
+    if (next) next();
+    else ocrActive--;
+  }
+}
+/** Test hook: the number of OCR calls currently holding a slot. */
+export function ocrSlotsInUseForTesting(): number {
+  return ocrActive;
+}
 
 /** Word documents are read by docxExtractor, not by the page pipeline, but they arrive through the same decoder. */
 export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -249,7 +280,7 @@ export async function extractPages(bytes: Buffer, mime: string, ocr: OCR): Promi
     }
     for (let attempt = 1; ; attempt++) {
       try {
-        const raw = await ocr(Buffer.from(input.bytes).toString('base64'), mime);
+        const raw = await withOcrSlot(() => ocr(Buffer.from(input.bytes).toString('base64'), mime));
         if (typeof raw !== 'string') throw new OcrEmptyOutput();
         if (raw.trim() === BLANK_PAGE_MARKER) {
           texts[index] = '';
@@ -263,14 +294,19 @@ export async function extractPages(bytes: Buffer, mime: string, ocr: OCR): Promi
         return;
       } catch (err) {
         if (err instanceof LifecycleError) throw err;
-        const transient = err instanceof OcrEmptyOutput || !(err instanceof AnalyzerError) || err.retryable;
-        if (!transient || attempt >= OCR_PAGE_ATTEMPTS) throw err;
+        // Only an empty response is retried here, whether pageSources saw it as empty output or the OCR call reported it
+        // as a retryable invalid response. Anything else is final for this page: provider failures were already retried
+        // inside the OCR call, and blocked content (non-retryable) does not change on a second try.
+        const emptyResponse =
+          err instanceof OcrEmptyOutput || (err instanceof AnalyzerError && err.code === 'AI_RESPONSE_INVALID' && err.retryable);
+        if (!emptyResponse || attempt >= OCR_PAGE_ATTEMPTS) throw err;
         await new Promise((resolve) => setTimeout(resolve, OCR_RETRY_DELAY_MS * attempt));
       }
     }
   };
+  let stopScheduling = false;
   const worker = async () => {
-    while (next < inputs.length) {
+    while (!stopScheduling && next < inputs.length) {
       const index = next++;
       try {
         await readPage(index);
@@ -278,12 +314,16 @@ export async function extractPages(bytes: Buffer, mime: string, ocr: OCR): Promi
         // A permanent failure (for example an invalid page) stops extraction at once. A failed page is recorded
         // and the others are still read, so the error names every page that needs review.
         if (err instanceof LifecycleError) throw err;
-        if (err instanceof AnalyzerError && !err.retryable) throw err;
-        unreadPages.push(index + 1);
-        // Empty or invalid output is a read failure of that page. Anything else is a provider failure, which keeps
-        // its own classification (a retryable AnalyzerError, or the raw error that the caller maps to a failure state).
+        // Empty or invalid output is a read failure of that page. Anything else is a provider failure.
         const isReadFailure = err instanceof OcrEmptyOutput || (err instanceof AnalyzerError && err.code === 'AI_RESPONSE_INVALID');
-        if (!isReadFailure) providerFailure = providerFailure ?? err;
+        if (!isReadFailure && err instanceof AnalyzerError && !err.retryable) throw err;
+        unreadPages.push(index + 1);
+        if (!isReadFailure) {
+          // A provider failure usually repeats on every remaining page, so stop paying for them. The pages already in
+          // flight finish, and the error keeps its own classification for the caller.
+          providerFailure = providerFailure ?? err;
+          stopScheduling = true;
+        }
       }
     }
   };

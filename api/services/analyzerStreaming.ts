@@ -63,11 +63,24 @@ export const STAGE_DEFINITIONS: Record<AnalysisStage, { message: string; percent
   },
 };
 
+/**
+ * The paid reservation a held report waits on. `billing_pending` means the analysis finished and was validated, but
+ * its credit could not be confirmed. The report is held here, never in `report`, so no status read can release it.
+ */
+export interface HeldBilling {
+  sessionId: string;
+  tier: string;
+  reservationId: string;
+  documentName?: string;
+}
+
 export interface AnalysisJob {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
-  status: "pending" | "analyzing" | "completed" | "failed";
+  status: "pending" | "analyzing" | "completed" | "failed" | "billing_pending";
+  heldReport?: any;
+  billing?: HeldBilling;
   currentStage: AnalysisStage;
   percent: number;
   report?: any;
@@ -139,21 +152,38 @@ async function ensureBucket(): Promise<boolean> {
   return false;
 }
 
-export async function persistJobToStorage(job: AnalysisJob): Promise<void> {
+/**
+ * Writes the job record to durable storage and reports whether it was stored. Supabase reports an upload failure in
+ * the returned `error` (it does not throw), so that value is checked. A `false` means the record exists only in memory.
+ */
+export async function persistJobToStorageStrict(job: AnalysisJob): Promise<boolean> {
   const db = safeGetSupabase();
-  if (!db) return;
+  if (!db) return false;
   try {
     const hasBucket = await ensureBucket();
-    if (hasBucket) {
-      await db.storage
-        .from(BUCKET_NAME)
-        .upload(`${job.jobId}.json`, JSON.stringify(job), {
-          upsert: true,
-          contentType: "application/json",
-        });
+    if (!hasBucket) return false;
+    const { error } = await db.storage
+      .from(BUCKET_NAME)
+      .upload(`${job.jobId}.json`, JSON.stringify(job), {
+        upsert: true,
+        contentType: "application/json",
+      });
+    if (error) {
+      console.error(`[analysis job] durable write failed for ${job.jobId}: ${error.message}`);
+      return false;
     }
-  } catch {
-    // ignore storage upload failures, memory state remains intact
+    return true;
+  } catch (err: any) {
+    console.error(`[analysis job] durable write threw for ${job.jobId}: ${err?.message || err}`);
+    return false;
+  }
+}
+
+/** Best-effort persistence for progress and status. A failure is logged, not silent; the job stays in memory. */
+export async function persistJobToStorage(job: AnalysisJob): Promise<void> {
+  const stored = await persistJobToStorageStrict(job);
+  if (!stored) {
+    console.warn(`[analysis job] ${job.jobId} is not in durable storage; recovery after a restart is not possible.`);
   }
 }
 
@@ -278,6 +308,51 @@ export async function failAnalysisJobDurable(
   failAnalysisJob(jobId, error);
   const job = jobStore.get(jobId);
   if (job) await persistJobToStorage(job);
+}
+
+/**
+ * Holds a validated report until its credit is confirmed. Returns true only when the hold is durably stored. On
+ * false nothing is held, so the caller fails closed: the reservation is released and no report is delivered.
+ */
+export async function holdAnalysisJobForBilling(jobId: string, heldReport: any, billing: HeldBilling): Promise<boolean> {
+  const job = jobStore.get(jobId);
+  if (!job) return false;
+  const previous = { status: job.status, heldReport: job.heldReport, billing: job.billing };
+  job.status = "billing_pending";
+  job.heldReport = heldReport;
+  job.billing = billing;
+  job.updatedAt = Date.now();
+  const stored = await persistJobToStorageStrict(job);
+  if (!stored) {
+    Object.assign(job, previous);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Completes a held job after its credit is confirmed, writing the record back to durable storage. Returns the held
+ * report, or null when the job holds nothing. The record is taken from storage by the caller, so this writes through.
+ */
+export async function completeHeldAnalysisJob(job: AnalysisJob): Promise<any | null> {
+  if (job.status !== "billing_pending" || job.heldReport === undefined) return null;
+  const report = job.heldReport;
+  job.status = "completed";
+  job.currentStage = "complete";
+  job.percent = 100;
+  job.report = report;
+  delete job.heldReport;
+  delete job.billing;
+  job.updatedAt = Date.now();
+  jobStore.set(job.jobId, job);
+  await persistJobToStorage(job);
+  return report;
+}
+
+/** The job as a status read may show it. The held report and the billing record are never included. */
+export function publicAnalysisJob(job: AnalysisJob): Omit<AnalysisJob, "heldReport" | "billing"> {
+  const { heldReport: _held, billing: _billing, ...rest } = job;
+  return rest;
 }
 
 /** Records real progress (no invented percent): the stage plus a percent derived from completed work. */

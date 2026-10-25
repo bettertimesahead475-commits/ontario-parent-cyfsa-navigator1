@@ -37,6 +37,7 @@ import { registerProfessionalOutputRoutes } from "./professionalOutputRoutes.js"
 import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.js";
 import { decodeSource, DOCX_MIME, extractPages, SOURCE_SYSTEM, verifyQuote } from "./services/pageSources.js";
 import { extractDocxDocument } from "./services/docxExtractor.js";
+import { pageMapFrom, signSourcePageMap, sourceTextFrom, verifySourcePageMap } from "./services/sourcePageMap.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, recordFreeUse, decrementFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
@@ -84,6 +85,9 @@ import {
   recordAnalysisJobSection,
   isValidAnalysisJobId,
   generateAnalysisJobId,
+  holdAnalysisJobForBilling,
+  completeHeldAnalysisJob,
+  publicAnalysisJob,
 } from "./services/analyzerStreaming.js";
 import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
@@ -209,6 +213,16 @@ const isLastModel = modelNames.indexOf(modelName) === modelNames.length - 1;
   throw lastError;
 }
 
+/** Gemini finish reasons that mean the content was refused. A refused page is not retried. */
+const BLOCKED_OCR_FINISH_REASONS = new Set([
+  "SAFETY",
+  "RECITATION",
+  "BLOCKLIST",
+  "PROHIBITED_CONTENT",
+  "SPII",
+  "IMAGE_SAFETY",
+]);
+
 async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): Promise<string> {
   // Simple validation to ensure base64Data is likely valid base64
   const cleanedBase64 = base64Data.trim();
@@ -237,8 +251,19 @@ async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): 
         }
       ]
     });
+    // A provider block is deterministic: the same page will be blocked again. Fail that page now, without a retry,
+    // so the request does not pay for the same refused call twice.
+    const finishReason = String(response?.candidates?.[0]?.finishReason ?? "");
+    if (BLOCKED_OCR_FINISH_REASONS.has(finishReason)) {
+      throw new AnalyzerError(
+        "AI_RESPONSE_INVALID",
+        422,
+        "The OCR service blocked this page's content, so it could not be read. Try a clearer copy of the page.",
+        false
+      );
+    }
     // Empty output is not a blank page. Blank pages are confirmed by the explicit BLANK_PAGE marker in pageSources.
-    // Safety blocks and provider glitches also return nothing, so empty output is a retryable read failure.
+    // Other empty output (for example a transient glitch) is a read failure that pageSources retries once.
     const text = (response.text || "").trim();
     if (!text) {
       throw new AnalyzerError("AI_RESPONSE_INVALID", 422, "The OCR service returned no text for this page.", true);
@@ -1787,8 +1812,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       }
 
       const durationMs = Date.now() - startTime;
+      // Server-authoritative page map for this user and document. The analysis trusts page numbers only from this
+      // signed map, never from text the client sends back (see services/sourcePageMap.ts). Null when it cannot be
+      // signed (for example SESSION_SECRET is missing), in which case the analysis is unpaginated.
+      // Plain text has no physical pages, so it is never signed as paginated.
+      const sourcePageMap = source.mime === "text/plain"
+        ? null
+        : signSourcePageMap({ uid: identity.uid, contentHash: source.checksum, pages });
       // Compatibility text remains for legacy reports; pages are authoritative attribution.
-      res.json({ pages, contentHash: source.checksum, extractedText, characters: extractedText.length, timing: { extractMs: durationMs } });
+      res.json({ pages, contentHash: source.checksum, extractedText, characters: extractedText.length, sourcePageMap, timing: { extractMs: durationMs } });
     } catch (err: any) {
       if (err instanceof LifecycleError) return res.status(err.statusCode).json({code:err.code,error:err.message});
       console.error("[/api/extract-text]", err);
@@ -1978,6 +2010,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let isPaid = false;
     let uid: string | null = null;
     let freeUseRecorded = false;
+    // Set when the report is validated but its credit could not be confirmed. The reservation is then kept, the report
+    // is held for recovery, and neither a release nor a failure record may be written.
+    let billingHeld = false;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -2022,6 +2057,61 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
               error: "This analysis id is already in use. Please start a new analysis.",
               code: "ANALYSIS_ID_CONFLICT",
             });
+          }
+          if (existingJob.status === "billing_pending" && existingJob.heldReport !== undefined && existingJob.billing) {
+            // The analysis already ran and was validated. Only its credit is outstanding, so confirm that credit and
+            // return the held report. The model is never run again for this analysis id.
+            const billing = existingJob.billing;
+            const presentedToken = req.header("x-ps-session");
+            const presentedSession = presentedToken ? verifySessionToken(presentedToken) : null;
+            if (!identity || !presentedSession || presentedSession.jti !== billing.sessionId) {
+              return res.status(403).json({
+                error: "Present the paid session this analysis was made with to receive its report.",
+                code: "BILLING_SESSION_REQUIRED",
+              });
+            }
+            let heldSession: Awaited<ReturnType<typeof lookupPaidSession>>;
+            try {
+              heldSession = await lookupPaidSession(presentedSession.jti);
+            } catch {
+              // Fail closed: if access cannot be verified, the held report is not released.
+              return res.status(503).json({
+                error: "We couldn't verify your access right now. Please retry in a moment.",
+                code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
+                retryable: true,
+              });
+            }
+            if (!heldSession || !isSessionBoundToIdentity(heldSession, identity)) {
+              return res.status(403).json({ error: "This paid session is not active for your account.", code: "ACCESS_DENIED" });
+            }
+            try {
+              await finalizeAnalysisCreditWithRetry({
+                sessionId: billing.sessionId,
+                firebaseUid: identity.uid,
+                requestId: analysisRequestId,
+                reservationId: billing.reservationId,
+                tier: billing.tier,
+                documentName: billing.documentName,
+              });
+            } catch (billingErr: any) {
+              if (billingErr instanceof LifecycleError) {
+                // The reservation was released or never existed. Nothing is delivered and nothing is charged.
+                return res.status(409).json({
+                  error: "The credit reservation for this analysis expired before it could be recorded. No report was released and nothing was charged. Start a new analysis if you still need one.",
+                  code: billingErr.code,
+                });
+              }
+              return res.status(503).json({
+                error: "Your analysis is ready, but its billing record is still being confirmed. Retry in a moment.",
+                code: "BILLING_PENDING",
+                retryable: true,
+              });
+            }
+            const delivered = await completeHeldAnalysisJob(existingJob);
+            if (delivered === null) {
+              return res.status(409).json({ error: "This analysis has no held report.", code: "ANALYSIS_NOT_HELD" });
+            }
+            return res.json(redactCustomerReport(delivered));
           }
           if (existingJob.status === "completed" && existingJob.report) {
             return res.json(redactCustomerReport(existingJob.report));
@@ -2308,6 +2398,24 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       let extractedText = "";
       // Extraction notes the analysis must be told about, e.g. embedded images that were not read as text.
       const extractionNotes: string[] = [];
+      // Authenticated page texts. Only a page map this server signed for this user is trusted, and only the server's
+      // own extraction (below) can supply it otherwise. Client text never establishes a page (see sourcePageMap.ts).
+      let authoritativePages: Map<number, string> | null = null;
+      let sourcePageMapStatus = "absent";
+      if (req.body?.sourcePageMap !== undefined && req.body?.sourcePageMap !== null) {
+        const check = verifySourcePageMap(req.body.sourcePageMap, { uid: identity?.uid });
+        if (check.ok) {
+          sourcePageMapStatus = "accepted";
+          // A document in this request is extracted by the server below, and that extraction defines the pages.
+          if (!fileData) {
+            authoritativePages = pageMapFrom(check.pages);
+            targetText = sourceTextFrom(check.pages);
+          }
+        } else {
+          sourcePageMapStatus = `rejected:${check.reason}`;
+          console.warn(`[analyze] source page map not accepted (${check.reason}); analysis is unpaginated.`);
+        }
+      }
 
       if (fileData && fileData.base64) {
         let base64Data = fileData.base64;
@@ -2346,7 +2454,12 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         } else if (mime === "application/pdf" || mime.startsWith("image/")) {
           try {
             console.log(`[Dual Pass] Using Gemini for text/OCR extraction on mime: ${mime}`);
-            extractedText = await extractTextWithGeminiBase64(base64Data, mime);
+            // The server extracted these bytes itself, so its page numbers are authoritative for this request.
+            const serverSource = decodeSource(base64Data, mime);
+            const serverPages = await extractPages(serverSource.bytes, serverSource.mime, ocrSingleSourceWithGemini);
+            extractedText = serverPages.map((p) => `[Page ${p.pageNumber}]\n${p.text}`).join("\n\n");
+            authoritativePages = pageMapFrom(serverPages);
+            sourcePageMapStatus = "server-extraction";
             console.log(`[Dual Pass] Gemini extracted ${extractedText.length} characters successfully.`);
           } catch (e) {
             console.error("Gemini text/OCR extraction failed", e);
@@ -2426,6 +2539,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const run = await runSectionedAnalysis({
         mode: modelResolution.mode,
         documentText: targetText,
+        sourcePages: authoritativePages,
         primaryModel,
         verificationModel,
         generate: generateContentWithFallback,
@@ -2475,6 +2589,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
       report = {
         ...run.report,
+        // Whether the page checks had server-verified pages. A reader can see the difference.
+        sourcePageMapStatus,
         timing: {
           mode: modelResolution.mode,
           durationMs,
@@ -2549,14 +2665,37 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         // whether or not the per-type counter write above succeeded. Otherwise the reservation would
         // expire and the parent would get a free analysis.
         if (creditReservation && identity) {
-          await finalizeAnalysisCreditWithRetry({
+          const billing = {
             sessionId: paidSessionId,
-            firebaseUid: identity.uid,
-            requestId: analysisRequestId,
-            reservationId: creditReservation.reservationId,
             tier: paidTier,
+            reservationId: creditReservation.reservationId,
             documentName: req.body?.documentName || req.body?.fileData?.name,
-          });
+          };
+          try {
+            await finalizeAnalysisCreditWithRetry({
+              sessionId: paidSessionId,
+              firebaseUid: identity.uid,
+              requestId: analysisRequestId,
+              ...billing,
+              tier: paidTier,
+            });
+          } catch (billingErr: any) {
+            // A released or missing reservation is final: nothing is delivered, and the error path releases nothing.
+            if (billingErr instanceof LifecycleError) throw billingErr;
+            // Billing is uncertain after retries. The reservation must stay (never released once it may be consumed),
+            // and the validated report is held for recovery instead of being discarded. If the hold cannot be stored
+            // durably, the report is not held, and the normal failure path releases the reservation.
+            const held = await holdAnalysisJobForBilling(analysisRequestId, report, billing);
+            if (!held) throw billingErr;
+            billingHeld = true;
+            console.error(`[document analysis] billing finalization failed for ${analysisRequestId}; report held for recovery.`);
+            throw new AnalyzerError(
+              "BILLING_PENDING",
+              503,
+              "Your analysis is ready, but its billing record could not be confirmed yet. Retry with the same analysis to receive it. The analysis is not run again.",
+              true
+            );
+          }
         }
         try {
           credits = await getPaidUsageStatus(paidSessionId, paidTier);
@@ -2580,7 +2719,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       }
 
     } catch (error: any) {
-      if (creditReservation && paidSessionId) {
+      // A held report keeps its reservation: releasing it could hand the report to a user who was never charged, and
+      // a failure record would hide a finished analysis. Recovery is the only way out of this state.
+      if (creditReservation && paidSessionId && !billingHeld) {
         try {
           await releaseAnalysisReservation({
             sessionId: paidSessionId,
@@ -2597,7 +2738,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         await decrementFreeUse(uid).catch(() => {});
       }
 
-      if (getAnalysisJob(analysisRequestId)) {
+      if (!billingHeld && getAnalysisJob(analysisRequestId)) {
         const failed = formatAnalyzerErrorResponse(error);
         await failAnalysisJobDurable(analysisRequestId, {
           code: failed.code,
@@ -2686,7 +2827,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       return res.status(403).json({ error: "Access denied. You cannot access another user's analysis job.", code: "FORBIDDEN" });
     }
 
-    res.json(job.report ? { ...job, report: redactCustomerReport(job.report) } : job);
+    // The public view never carries a held (unbilled) report or its billing record. Only a completed job exposes a report.
+    const publicJob = publicAnalysisJob(job);
+    res.json(publicJob.report ? { ...publicJob, report: redactCustomerReport(publicJob.report) } : publicJob);
   });
 
   // API: Cross-Document Case Timeline

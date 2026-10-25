@@ -1,7 +1,10 @@
 # Design: preserving a validated report when billing finalization fails permanently
 
-Status: DESIGN ONLY. Not implemented. No database schema change is proposed for the first phase.
-Owner approval is required before implementation.
+Status: Option A is IMPLEMENTED on PR #106 (no schema change, no migration). A validated report whose billing
+finalization fails permanently is held in the job record as `billing_pending`, its reservation is kept, and the
+same analysis id recovers it after the credit is confirmed. Covered by `analyzerStreaming.billingHold.test.ts` (storage
+and hold semantics). The route-level hold and recovery flow is NOT covered by an automated test; see the release report.
+Option B (ledger table) still needs a separately approved migration and is not implemented.
 
 ## The problem
 
