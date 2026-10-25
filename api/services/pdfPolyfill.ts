@@ -8,6 +8,7 @@
 
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 
 if (typeof (globalThis as any).DOMMatrix === "undefined") {
   (globalThis as any).DOMMatrix = class DOMMatrix {
@@ -58,14 +59,20 @@ if (typeof (globalThis as any).Path2D === "undefined") {
  * assignment ran asynchronously after the first parse could already have started. The worker file is pdf.worker.mjs
  * from the same package; vercel.json includes it in the function bundle so it is present at runtime.
  */
+const WORKER_SPECIFIER = "pdfjs-dist/legacy/build/pdf.worker.mjs";
 function pdfWorkerUrl(): string | null {
-  try {
-    // createRequire works in every runner we use (Node ESM, vitest). import.meta.resolve is not available under vitest.
-    const requireFromHere = createRequire(import.meta.url);
-    return pathToFileURL(requireFromHere.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")).href;
-  } catch {
-    return null;
+  // Resolve from this module's location (ESM: Node and vitest). In the CommonJS bundle (npm start, esbuild output)
+  // import.meta.url is unavailable, so resolve from the project root instead. Either way the worker is the same file.
+  const bases = [import.meta.url, pathToFileURL(join(process.cwd(), "package.json")).href];
+  for (const base of bases) {
+    if (!base) continue;
+    try {
+      return pathToFileURL(createRequire(base).resolve(WORKER_SPECIFIER)).href;
+    } catch {
+      // try the next base
+    }
   }
+  return null;
 }
 export const pdfJsReady: Promise<void> = import("pdfjs-dist/legacy/build/pdf.mjs").then((pdfjsLib: any) => {
   if (!pdfjsLib?.GlobalWorkerOptions) {

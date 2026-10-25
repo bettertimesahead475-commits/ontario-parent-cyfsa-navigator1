@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { extractDocxDocument, extractTextFromDocx } from "./docxExtractor.js";
+import { randomBytes } from "node:crypto";
+import { extractDocxDocument, extractTextFromDocx, MAX_XML_PART_CHARS } from "./docxExtractor.js";
 import { buildZip } from "../testSupport/docxFixture.js";
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
@@ -125,6 +126,13 @@ describe("extractDocxDocument: safety", () => {
 
   it("refuses a package without word/document.xml", () => {
     expect(() => extractDocxDocument(buildZip({ "other.txt": "hello" }))).toThrow(/word\/document.xml not found/);
+  });
+
+  it("refuses a part too large to parse safely, before parsing it", () => {
+    // Incompressible filler, so the ZIP ratio guard does not reject the archive before the XML size check runs.
+    const filler = randomBytes(MAX_XML_PART_CHARS / 2).toString("hex");
+    const huge = docBody(para("x")) + filler;
+    expect(() => extractDocxDocument(buildZip({ "word/document.xml": huge }))).toThrow(/too large to read safely/);
   });
 
   it("refuses malformed XML rather than returning partial text", () => {

@@ -102,7 +102,16 @@ function findAll(nodes: XmlNode[], tags: readonly string[], out: XmlNode[] = [])
   return out;
 }
 
+/**
+ * Largest XML part accepted for parsing. The parser builds the whole element tree in memory, so this is much tighter
+ * than the 64 MiB ZIP entry limit. Real documents are far below it.
+ */
+export const MAX_XML_PART_CHARS = 16 * 1024 * 1024;
+
 function parseXml(xml: string, part: string): XmlNode[] {
+  if (xml.length > MAX_XML_PART_CHARS) {
+    throw new DocxSafetyError("XML_TOO_LARGE", `${part} is too large to read safely.`);
+  }
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) {
     throw new DocxSafetyError("DTD_FORBIDDEN", `${part} contains an XML document type declaration, which Word files do not use.`);
   }

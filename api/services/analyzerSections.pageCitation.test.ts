@@ -39,9 +39,11 @@ describe("verifyPageCitation", () => {
   it("CORRECTED: a wrong page number is proposed as a correction, with the original kept", () => {
     const flag: Record<string, any> = { locationInDocument: "Page 1", phraseDetected: "appeared unwell at school" };
     verifyPageCitation(flag, SOURCE);
-    expect(flag.pageCitation).toMatchObject({ status: "PAGE_CORRECTED", reportedPage: 1, correctedFrom: 1, sourcePages: [2] });
-    expect(flag.locationInDocument).toBe("Page 2");
-    expect(flag.locationAsReported).toBe("Page 1");
+    expect(flag.pageCitation).toMatchObject({ status: "PAGE_CORRECTED", reportedPage: 1, sourcePages: [2] });
+    // The reported location is untouched; the proposal is separate.
+    expect(flag.locationInDocument).toBe("Page 1");
+    expect(flag.proposedLocation).toBe("Page 2");
+    expect(flag.locationAsReported).toBeUndefined();
   });
 
   it("NOT_FOUND: a quotation that is on no page keeps its reported location and is flagged", () => {
@@ -58,6 +60,7 @@ describe("verifyPageCitation", () => {
     verifyPageCitation(flag, source);
     expect(flag.pageCitation).toMatchObject({ status: "PAGE_AMBIGUOUS", reportedPage: 2, sourcePages: [1, 4] });
     expect(flag.locationInDocument).toBe("Page 2");
+    expect(flag.proposedLocation).toBeUndefined();
   });
 
   it("UNVERIFIABLE: a source without page boundaries cannot confirm a page", () => {

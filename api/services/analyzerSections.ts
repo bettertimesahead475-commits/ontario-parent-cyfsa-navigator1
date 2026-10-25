@@ -572,9 +572,10 @@ export function verifyPageCitation(flag: Record<string, any>, sourceText: string
     .map(([page]) => page)
     .sort((a, b) => a - b);
   if (foundOn.length === 1) {
-    flag.locationAsReported = flag.locationInDocument;
-    flag.locationInDocument = `Page ${foundOn[0]}`;
-    flag.pageCitation = { status: "PAGE_CORRECTED" as PageCitationStatus, reportedPage, sourcePages: foundOn, correctedFrom: reportedPage };
+    // The finding keeps the location the model reported. The page the text was found on is a separate proposal,
+    // so the report never changes its own finding silently.
+    flag.proposedLocation = `Page ${foundOn[0]}`;
+    flag.pageCitation = { status: "PAGE_CORRECTED" as PageCitationStatus, reportedPage, sourcePages: foundOn };
     return;
   }
   flag.pageCitation = {
