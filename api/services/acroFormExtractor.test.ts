@@ -93,7 +93,8 @@ describe("AcroForm extractor: deterministic mutation (negative paths)", () => {
       seed = (seed * 1103515245 + 12345) & 0x7fffffff;
       return seed;
     };
-    const allowed = new Set(["NOT_A_PDF", "PDF_TOO_LARGE", "MALFORMED_OR_PROTECTED_PDF", "UNSUPPORTED_PAGE_COUNT", "TOO_MANY_WIDGETS"]);
+    // Every declared classified error. Anything else is an unclassified failure.
+    const allowed = new Set(["NOT_A_PDF", "PDF_TOO_LARGE", "MALFORMED_OR_PROTECTED_PDF", "UNSUPPORTED_PAGE_COUNT", "TOO_MANY_WIDGETS", "EXPANDED_CONTENT_TOO_LARGE"]);
     let classified = 0;
     let read = 0;
     for (let i = 0; i < 60; i++) {
