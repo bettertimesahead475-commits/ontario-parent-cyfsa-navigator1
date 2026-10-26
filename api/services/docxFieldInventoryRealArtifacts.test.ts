@@ -14,8 +14,9 @@ import crypto from "node:crypto";
 import { buildDocxFieldInventory } from "./docxFieldInventory.js";
 import { DOCX_FIELD_INVENTORIES } from "./docxFieldInventoryData.js";
 import { REAL_ARTIFACT_BYTE_VERIFICATIONS } from "./officialFormSourceManifest.js";
+import { OFFICIAL_FORMS_DIR } from "../testSupport/officialFormFixtures.js";
 
-const UPLOAD_DIR = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e";
+const UPLOAD_DIR = OFFICIAL_FORMS_DIR;
 
 const REAL_DOCX_FILES: { formNumber: string; path: string }[] = [
   { formNumber: "8B", path: `${UPLOAD_DIR}/d39f83dd-form-8b-feb_1_2022-en.docx` },

@@ -29,6 +29,7 @@ import {
   FORM_14A_MAP_VERSION_LABEL,
   form14aCoverageSummary
 } from "./form14aSemanticFieldMap.js";
+import { OFFICIAL_FORMS_DIR } from "../testSupport/officialFormFixtures.js";
 
 // ---------------------------------------------------------------------------
 // Build a DocxFieldInventoryResult shaped exactly like the frozen Form 14A entry in
@@ -412,7 +413,7 @@ describe("Form 14A: determinism and immutability", () => {
 });
 
 describe("Form 14A: real-artifact validation", () => {
-  const UPLOAD_DIR = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e";
+  const UPLOAD_DIR = OFFICIAL_FORMS_DIR;
   const REAL_PATH = `${UPLOAD_DIR}/c01f056a-flr_14a_sept105_en_fil.docx`;
   const available = fs.existsSync(REAL_PATH);
   const d = available ? describe : describe.skip;

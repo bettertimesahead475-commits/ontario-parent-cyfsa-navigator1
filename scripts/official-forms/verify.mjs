@@ -12,7 +12,10 @@ const args = process.argv.slice(2);
 const manifestArg = args.find((a) => a.startsWith("--manifest="));
 const manifestName = manifestArg ? manifestArg.slice("--manifest=".length) : "manifest.json";
 const manifest = JSON.parse(readFileSync(join(here, manifestName), "utf8"));
-const dir = args.find((a) => !a.startsWith("--")) || manifest.uploadDirectory;
+// Default folder: OFFICIAL_FORMS_DIR / OFFICIAL_FORMS_CURRENT_DIR when set, otherwise the repo-relative folder in the manifest.
+const repoRoot = join(here, "..", "..");
+const envDir = manifestName.startsWith("current") ? process.env.OFFICIAL_FORMS_CURRENT_DIR : process.env.OFFICIAL_FORMS_DIR;
+const dir = args.find((a) => !a.startsWith("--")) || envDir || join(repoRoot, manifest.uploadDirectory);
 const results = verifyDirectory(manifest, dir);
 for (const r of results) console.log(`${r.status.padEnd(14)} ${r.fileName}`);
 const s = summarize(results);

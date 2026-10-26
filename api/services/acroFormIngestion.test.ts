@@ -7,6 +7,7 @@ import type { ExtractedWidget } from "./acroFormExtractor";
 import { buildSyntheticAcroFormPdf } from "../testSupport/acroFormFixtures";
 import { applyReportGuards } from "./analyzerSections";
 import { FIELD_NOT_ESTABLISHED_TEXT } from "./formFieldFacts";
+import { OFFICIAL_FORMS_CURRENT_DIR } from "../testSupport/officialFormFixtures.js";
 
 const factFor = (facts: { fieldName: string }[], name: string) => facts.find(f => f.fieldName === name) as any;
 
@@ -147,7 +148,7 @@ describe("analyzer boundary on ingested facts", () => {
 });
 
 // Real official PDFs (when present): each blank "Name of court" combo box is blank, not withheld.
-const CURRENT_DIR = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e-current";
+const CURRENT_DIR = OFFICIAL_FORMS_CURRENT_DIR;
 const currentManifest = JSON.parse(
   fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/official-forms/current-manifest.json"), "utf8")
 ) as { files: { formNumber: string; fileName: string }[] };

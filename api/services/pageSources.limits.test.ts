@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { decodeSource, extractPages } from "./pageSources";
 import { expandedBytesWithin, isBase64Text, ANALYZER_MAX_EXPANDED_BYTES } from "./pdfResourceLimits";
 import { buildExpansionPdf } from "../testSupport/acroFormFixtures";
+import { OFFICIAL_FORMS_CURRENT_DIR } from "../testSupport/officialFormFixtures.js";
 
 const noOcr = async () => {
   throw new Error("OCR must not run for a refused file");
@@ -58,7 +59,7 @@ describe("analyzer: decompression bound before any PDF parser", () => {
   }, 60000);
 
   it("does not refuse the real current official PDFs (when present)", () => {
-    const dir = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e-current";
+    const dir = OFFICIAL_FORMS_CURRENT_DIR;
     const manifest = JSON.parse(
       fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/official-forms/current-manifest.json"), "utf8")
     ) as { files: { fileName: string }[] };

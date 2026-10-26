@@ -95,7 +95,7 @@ export interface RealArtifactByteVerificationEntry {
   formNumber: string;
   format: "PDF" | "DOCX";
   suppliedFilename: string;
-  suppliedFilePath: string; // local sandbox path only, not a production location
+  suppliedFilePath: string; // file name inside the historical fixture folder (not a location)
   byteLength: number;
   sha256Hex: string;
   contentValidationPassed: true;
@@ -113,7 +113,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "PDF",
     suppliedFilename: "form-35-1a-en-dec20.pdf",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/33f4ddb3-form-35-1a-en-dec20.pdf",
+      "33f4ddb3-form-35-1a-en-dec20.pdf",
     byteLength: 208594,
     sha256Hex: "288882fe64111160104f47ce9eeda758843b7d22d925bcb121f877a0ea711650",
     contentValidationPassed: true,
@@ -127,7 +127,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "DOCX",
     suppliedFilename: "form-35-1a-en-dec20.docx",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/48d81005-form-35-1a-en-dec20.docx",
+      "48d81005-form-35-1a-en-dec20.docx",
     byteLength: 39464,
     sha256Hex: "4efdb1baabe0e621caceb73b0b9924b414665d9872e5f280a29e3ff61b28fbcc",
     contentValidationPassed: true,
@@ -141,7 +141,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "PDF",
     suppliedFilename: "form_33c_2018.pdf",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/89af8ff6-form_33c_2018.pdf",
+      "89af8ff6-form_33c_2018.pdf",
     byteLength: 224841,
     sha256Hex: "73ff6adc549ae0fa70ec1de3f335058a7d7cdc80ac0c2918f87ad87993499bfe",
     contentValidationPassed: true,
@@ -155,7 +155,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "DOCX",
     suppliedFilename: "form_33c_2018.docx",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/3bf6f793-form_33c_2018.docx",
+      "3bf6f793-form_33c_2018.docx",
     byteLength: 41730,
     sha256Hex: "d73d4f9d8641616fe502ec0dd2f67511e424e69a1a7fff68015d403f5645407b",
     contentValidationPassed: true,
@@ -169,7 +169,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "DOCX",
     suppliedFilename: "form-33b-1-en-dec20.docx",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/df0e02ef-form-33b-1-en-dec20.docx",
+      "df0e02ef-form-33b-1-en-dec20.docx",
     byteLength: 55033,
     sha256Hex: "79d718a2de8be55001b47649a34366613b7050a69f98dfb6a4fd394870908a6e",
     contentValidationPassed: true,
@@ -189,7 +189,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "PDF",
     suppliedFilename: "form-33b-1-en-dec20.pdf",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/90196879-form-33b-1-en-dec20.pdf",
+      "90196879-form-33b-1-en-dec20.pdf",
     byteLength: 456688,
     sha256Hex: "a78a4b2e337b5a08c4645c6744a2c5b57e892bcdcb7fb410d3ab9fd82dbfe52b",
     contentValidationPassed: true,
@@ -203,7 +203,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "DOCX",
     suppliedFilename: "flr_14a_sept105_en_fil.docx",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/c01f056a-flr_14a_sept105_en_fil.docx",
+      "c01f056a-flr_14a_sept105_en_fil.docx",
     byteLength: 29561,
     sha256Hex: "bfc552bf54c5972700759e455e5782e5cdec7f8affaa5e822e89e07681801261",
     contentValidationPassed: true,
@@ -217,7 +217,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "PDF",
     suppliedFilename: "flr-14a-sept105-en-fil.pdf",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/df9e829b-flr-14a-sept105-en-fil.pdf",
+      "df9e829b-flr-14a-sept105-en-fil.pdf",
     byteLength: 150386,
     sha256Hex: "84d443426575f4a0e94e70fac73cd02106172fc00aa1578ca40db7628ef907fd",
     contentValidationPassed: true,
@@ -231,7 +231,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "DOCX",
     suppliedFilename: "form-8b-feb_1_2022-en.docx",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/d39f83dd-form-8b-feb_1_2022-en.docx",
+      "d39f83dd-form-8b-feb_1_2022-en.docx",
     byteLength: 59408,
     sha256Hex: "02a5c3fdc32b42ed1f2db20115c1ff8bb9cf0233aa510a48063af9a10c5e7799",
     contentValidationPassed: true,
@@ -245,7 +245,7 @@ export const REAL_ARTIFACT_BYTE_VERIFICATIONS: RealArtifactByteVerificationEntry
     format: "PDF",
     suppliedFilename: "form-8b-feb-2022-en.pdf",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/4dcaaa3e-form-8b-feb-2022-en.pdf",
+      "4dcaaa3e-form-8b-feb-2022-en.pdf",
     byteLength: 549760,
     sha256Hex: "da5ed87cdf454c77af04c255b9b7be44a2f08aa837a6bb3715ab0d0dcb8bdd6c",
     contentValidationPassed: true,
@@ -304,7 +304,7 @@ export const UNIDENTIFIED_BYTE_VERIFIED_ARTIFACTS: UnidentifiedByteVerifiedArtif
     format: "PDF",
     suppliedFilename: "form_33b_2018.pdf",
     suppliedFilePath:
-      "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/b43d35f7-form_33b_2018.pdf",
+      "b43d35f7-form_33b_2018.pdf",
     byteLength: 276848,
     sha256Hex: "acb30d488447bc1e044b5575d2d4a7e0d0ad0c227e58b413c35233ef21561b65",
     contentValidationPassed: true,

@@ -3,7 +3,7 @@
   "purpose": "Current official Ontario court-form PDFs, verified read-only on 2026-10-26. Separate from the historical pins in manifest.json; not used as fixtures for historical regression tests.",
   "sourceIndex": "https://ontariocourtforms.on.ca/en/family-law-rules-forms/",
   "retrievedAt": "2026-10-26",
-  "uploadDirectory": "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e-current",
+  "uploadDirectory": "fixtures/official-forms-current",
   "files": [
     {
       "label": "35.1A PDF",

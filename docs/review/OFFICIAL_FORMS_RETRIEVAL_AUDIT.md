@@ -90,3 +90,35 @@ Simplest supported transfer: attach the ZIP (or the six PDFs) to the chat so it 
 - A filesystem search for `*fixture*.zip` and `cyfsa*.zip` found nothing.
 - All 18 PDF and ZIP files of 50 KB to 2 MB were hashed. None matches a historical pin in `scripts/official-forms/manifest.json`.
 - Result: the six historical PDFs are not in this environment. No fixture directory, resolver change, or test change was made. The 38 historical tests remain skipped.
+
+## 9. Verified restoration (supersedes sections 1, 7, and 8)
+
+Source: the owner's ZIP `cyfsa-historical-court-forms-all-11.zip`, uploaded to the sandbox. It holds exactly 11 flat files with no unsafe paths.
+
+Verification:
+- Each file was matched by SHA-256 against `scripts/official-forms/manifest.json`, then checked for byte length. Result: 11 of 11 match. The 6 historical PDFs and the 5 historical DOCX files all match their pins.
+- Files were renamed to their manifest names (the ZIP names lack the hash prefixes), by hash, not by guessing.
+- Current PDFs (`scripts/official-forms/current-manifest.json`) were copied to `fixtures/official-forms-current/` and verified 6 of 6. They are a separate set and are not historical fixtures.
+- `node scripts/official-forms/verify.mjs` now reports 11/11 for the historical set. With `--manifest=current-manifest.json`, it reports 6/6.
+
+Resolver:
+- `api/testSupport/officialFormFixtures.ts` exports `OFFICIAL_FORMS_DIR` and `OFFICIAL_FORMS_CURRENT_DIR`. Each comes from its environment variable when set, and otherwise defaults to a gitignored folder inside the repository.
+- The fixture folders are gitignored (`fixtures/`). Binary official PDFs are not committed.
+- 13 test files and `officialFormSourceManifest.ts` use the resolver. The manifest now stores file names only. No code reads `suppliedFilePath` at runtime.
+
+Restored results (after the change, no environment variables set except the PostgreSQL URL where noted):
+- Historical integration file `officialFormRealArtifactIntegration.test.ts`: 77 of 77 tests pass, 0 skipped. This file previously had 38 skipped tests.
+- All 13 fixture-dependent files: 488 of 488 pass.
+- Full suite, Node 22, with PostgreSQL: 212 files passed, 1 file skipped; 4,155 passed, 0 failed, 6 skipped (staging only).
+- Full suite, Node 24, with PostgreSQL: same result, 4,155 passed, 0 failed, 6 skipped.
+- Full suite, Node 22, without PostgreSQL: 201 files passed, 12 skipped; 3,787 passed, 0 failed, 374 skipped (368 PostgreSQL-gated, 6 staging).
+- Typecheck (`tsc --noEmit`): exit 0 on Node 22 and Node 24. Build: exit 0 on Node 22 and Node 24.
+- Wrong-bytes check: a current PDF placed under a historical name makes 4 integrity tests fail. It does not skip them.
+
+Remaining sandbox paths, on purpose:
+- Seven files still contain the old sandbox path. All seven are frozen: their SHA-256 values are pinned in the test suite. Three are test files (`form8bAdminChildPartySemanticFieldMap.test.ts`, `form8bStructuralManifest.test.ts`, `form8bRequestedOrderSemanticFieldMap.test.ts`). Four are source files whose only sandbox reference is in a comment (`form14aSemanticFieldMap.ts`, `form33cSemanticFieldMap.ts`, `form351aSemanticFieldMap.ts`, `form8bAdminChildPartySemanticFieldMap.ts`). Editing any of them breaks the frozen-pin assertions. Those tests still pass in this sandbox because the same bytes exist at the old path. On another machine they would skip, not fail.
+- Changing them needs an explicit decision: update the frozen pins through a reviewed change, or accept the old paths as documentation.
+
+Not done in this change:
+- No merge, no deployment, no production change, no migration.
+- The `draft/official-forms-audit` branch is the only branch changed.

@@ -31,8 +31,9 @@ import {
   REAL_ARTIFACT_BYTE_VERIFICATIONS,
   UNIDENTIFIED_BYTE_VERIFIED_ARTIFACTS
 } from "./officialFormSourceManifest.js";
+import { OFFICIAL_FORMS_DIR } from "../testSupport/officialFormFixtures.js";
 
-const UPLOAD_DIR = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e";
+const UPLOAD_DIR = OFFICIAL_FORMS_DIR;
 
 interface SuppliedFile {
   label: string;

@@ -38,8 +38,9 @@ import {
 import { FORM_14A_SEMANTIC_FIELD_MAP, FORM_14A_EXACT_TEMPLATE_BINDING } from "./form14aSemanticFieldMap.js";
 import { FORM_351A_SEMANTIC_FIELD_MAP, FORM_351A_EXACT_TEMPLATE_BINDING } from "./form351aSemanticFieldMap.js";
 import { FORM_33C_SEMANTIC_FIELD_MAP, FORM_33C_EXACT_TEMPLATE_BINDING } from "./form33cSemanticFieldMap.js";
+import { officialFormFile } from "../testSupport/officialFormFixtures.js";
 
-const REAL_PATH = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/d39f83dd-form-8b-feb_1_2022-en.docx";
+const REAL_PATH = officialFormFile("d39f83dd-form-8b-feb_1_2022-en.docx");
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n")).digest("hex");
 

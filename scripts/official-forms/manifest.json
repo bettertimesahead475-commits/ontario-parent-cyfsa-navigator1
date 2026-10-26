@@ -1,7 +1,7 @@
 {
   "source": "api/services/officialFormRealArtifactIntegration.test.ts (pins); dependent tests found by filename",
   "sourceIndex": "https://ontariocourtforms.on.ca/en/family-law-rules-forms/",
-  "uploadDirectory": "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e",
+  "uploadDirectory": "fixtures/official-forms",
   "files": [
     {
       "label": "35.1A PDF",
