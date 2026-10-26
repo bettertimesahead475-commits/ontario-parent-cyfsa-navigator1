@@ -8,8 +8,8 @@ The "47 outstanding items" figure does not match any list kept in this repositor
 ## A. Skipped tests (44 at last full run)
 | Group | Count | Status | Evidence and prerequisite |
 |---|---|---|---|
-| Historical PDF regression tests (`officialFormRealArtifactIntegration.test.ts`) | 38 | BLOCKED | Six original historical PDFs (pinned SHA-256 and length in `scripts/official-forms/manifest.json`) are not on this machine. Filesystem search and git history: none. Archive lookup (web.archive.org): connection reset by the egress proxy on every attempt (`recentRelayFailures`: ws_closed_mid_exchange). Owner supplies the originals, or an archived copy whose SHA-256 matches the pin. |
-| Staging Supabase tests (`creditStaging.test.ts`) | 6 | BLOCKED | `STAGING_SUPABASE_URL` and `STAGING_SUPABASE_SERVICE_ROLE_KEY` are not set in this environment. Owner adds them as environment variables for the staging project only. The test refuses the production project. |
+| Historical PDF regression tests (`officialFormRealArtifactIntegration.test.ts`: 14 in batch 1, 24 in batch 2) | 38 | BLOCKED | Measured 2026-10-26 by SHA-256 against `scripts/official-forms/manifest.json`. The five historical `.docx` originals are present and match their pins (their tests run). The six historical PDFs are missing: 35.1A `33f4ddb3-form-35-1a-en-dec20.pdf` (208594 bytes), 33C `89af8ff6-form_33c_2018.pdf` (224841), 33B.1 `90196879-form-33b-1-en-dec20.pdf` (456688), 14A `df9e829b-flr-14a-sept105-en-fil.pdf` (150386), 8B `4dcaaa3e-form-8b-feb-2022-en.pdf` (549760), and the unpinned `b43d35f7-form_33b_2018.pdf` (276848). Files with the same names in `-current` are different files (current official versions, verified against `current-manifest.json`) and must not be substituted. The gate checks only that a path exists; the integrity test checks SHA-256 and length, so a wrong file fails rather than passes. Owner supplies the original six, or an archived copy whose SHA-256 and length match. |
+| Staging Supabase tests (`creditStaging.test.ts`) | 6 | BLOCKED | `STAGING_SUPABASE_URL` and `STAGING_SUPABASE_SERVICE_ROLE_KEY` are not set in this environment. Owner adds them as environment variables for the staging project only (ref `nxfhvebzzobegubefcda`). The test refuses the production project (`qboidsfpjuxeqtfotryj`). No staging access was used for this PR. |
 
 ## B. Defects found and fixed (each has a regression test)
 | ID | Defect | Status | Evidence |
@@ -43,11 +43,11 @@ The "47 outstanding items" figure does not match any list kept in this repositor
 | ID | Item | Status | Reason and next step |
 |---|---|---|---|
 | O4 | Analyzer 64 MB bound may refuse large scanned PDFs whose images are raw Flate. | OPEN (owner decision) | Most scanner output is DCT, which is not sized (M2). Owner to confirm the limit after real-world uploads. |
-| O5 | Shared rate limiting for serverless deployments. | PARTLY DONE; BLOCKED (owner approval) | Code is written and tested: `api/services/acroFormReadLimiter.ts` and the route switch. `ACROFORM_LIMIT_BACKEND=shared` calls `acroform_consume_read`; any error, missing function, or non-boolean answer returns 503 (`LIMITER_UNAVAILABLE`) and never allows the read. Default is still the per-process limiter. The migration (`supabase/migrations_pending_approval/acroform_shared_read_limit.sql`) is NOT applied. Applying it is a production database change and needs your authorization. Tests: `acroFormReadLimiter.test.ts` (11 cases including grants), `acroFormReadLimiterRoute.test.ts` (503 end to end, no PDF read). Not exercised against a real database yet. |
-| O9 | Table boundary detection and continuation tables. | OPEN | Not implemented. Row attribution is 0 on all six real PDFs. Next step: detect column bands from widget geometry and repeated headers, with tests on synthetic tables. |
-| O10 | Mapping coverage: 61 of 483 fields confirmed. | OPEN | Most fields lack printed-label evidence. Rules were not relaxed to raise this number. |
-| O7 | Parent-facing wording: plain-language review. | OPEN (human) | The automated estimate (D18) is a guard, not a certification. |
-| O8 | Privacy and legal review of field facts and uploads. | OPEN (human) | Required before any activation. |
+| O5 | Shared rate limiting for serverless deployments. | PARTLY DONE; BLOCKED (owner approval to apply) | Code: `api/services/acroFormReadLimiter.ts` and the route switch. `ACROFORM_LIMIT_BACKEND=shared` calls `acroform_consume_read`; any error, missing function, or non-boolean answer returns 503 and never allows the read. Default stays per-process. Migration `supabase/migrations_pending_approval/acroform_shared_read_limit.sql` is NOT applied, and staging does not have the table or function (read-only catalog check, 2026-10-26). Fixed this session: the window was computed before argument validation, so `window = 0` gave "division by zero" instead of the validation message. Added: an index on `window_start` for the cleanup. Verified against a real PostgreSQL 16 server (scratch cluster, SCRAM auth): grants (service_role only), RLS on with no anon/authenticated privileges, refusal from anon and authenticated roles, the limit, 30 concurrent reads against a limit of 20 allow exactly 20, window cleanup, invalid arguments, and the index (`acroFormReadLimiter.pg.test.ts`, 9 cases). Still open: retention is lazy (see O8). |
+| O7 | Parent-facing wording: plain-language review. | PREPARED; OPEN (human review) | Review package: `docs/review/O7_PLAIN_LANGUAGE_REVIEW.md`. Fixed this session: the limiter refusal text scored Grade 12.5 (heuristic) and now reads "We cannot read forms right now. Please try again later." (Grade 1.6). A route test enforces Grade 8 on that message. Other error messages are listed in the package and not yet measured. The automated estimate is a guard, not a certification. |
+| O8 | Privacy and legal review of field facts and uploads. | PREPARED; OPEN (human review, required before activation) | Review package: `docs/review/O8_PRIVACY_LEGAL_REVIEW.md` (data flow, the only stored identifier, retention, claims to avoid, five questions). No legal determination is made. |
+| O9 | Table boundary detection and continuation tables. | OPEN (decision needed) | Measured on the six current official PDFs: 0 of 501 widgets attributed. Only 67 widgets (13%) have printed text to their left, and row attribution requires that. These forms put labels above their fields. Recommended: do not build table detection for these layouts now. Evidence: `docs/review/O9_O10_MAPPING_EVIDENCE.md`. |
+| O10 | Mapping coverage: 61 of 483 fields confirmed. | OPEN (decision needed); figure reproduced | Re-measured 2026-10-26: 61 of 483 confirmed (12.6%), 422 unresolved, 2 conflicting, 3 radio groups. No mapping rule, label phrase, or window was changed. Raising the number needs a person to review each new label phrase. Evidence: `docs/review/O9_O10_MAPPING_EVIDENCE.md`. |
 | O11 | Remaining moderate advisories. | FIXED (commit d0b0d8a6) | Were 13 moderate: `ip-address` (override to 10.7.5), `uuid` (override to 11.1.1; Google libraries call only `uuid.v4()`), `vitest` and `@vitest/mocker` (4.1.12, dev only). The Firebase/Google findings were the same `uuid` chain. `npm audit`: 0 across all levels. |
 | O12 | Image codecs are not bounded by size. | OPEN (boundary) | See M2. Revisit if a future feature decodes images. |
 | O13 | AcroForm feature is off and not integrated into any report. | OPEN (by design) | Integration plan in `ACROFORM_INTEGRATION_PLAN.md`. Not activated. |
@@ -57,24 +57,23 @@ The "47 outstanding items" figure does not match any list kept in this repositor
 ## E. Verification
 | ID | Check | Status |
 |---|---|---|
-| V1 | Node 22 and Node 24 full matrices | PARTLY VERIFIED on the current tree (d0b0d8a6 plus the shared-limiter change). Without PostgreSQL: Node 22 and Node 24 each 3,748 passed, 0 failed, 403 skipped (201 of 212 files run). With PostgreSQL: NOT RUN. The local cluster is up, but the `.pg.test.ts` suites need password or trusted TCP auth on 127.0.0.1, and the sandbox refused a change to `pg_hba.conf` to allow it. Those suites fail to connect here (10 files). The earlier 4,093 figure was from a run with PostgreSQL and is not reproduced. |
-| V2 | TypeScript (`tsc --noEmit`) | VERIFIED: exit 0 on Node 22 and Node 24 (current tree) |
-| V3 | Production build | VERIFIED: exit 0 on Node 22 and Node 24 (current tree) |
-| V4 | Historical pins, fixtures, and regression assertions unchanged | VERIFIED: `scripts/official-forms` pins and the six real-file tests are not edited in this change |
+| V1 | Full test matrix, Node 22 and Node 24, WITH PostgreSQL | VERIFIED on the working tree after this change (`cc8e9e9` plus the limiter-migration fixes in this commit). Both versions: 213 files, 212 passed, 1 skipped file; 4,117 tests passed, 0 failed, 44 skipped. The PostgreSQL-gated suites (9 files, 368 tests, all passing) ran against a disposable PostgreSQL 16 cluster this session, started on 127.0.0.1:5433 with SCRAM-SHA-256 and a random password held only in an environment variable. The 44 skips are exactly A: 38 historical fixture tests and 6 staging tests. |
+| V1a | Same matrix WITHOUT PostgreSQL (CI-equivalent) | Node 22 on the working tree after this change: 201 of 213 files passed, 12 skipped files; 3,749 passed, 0 failed, 412 skipped. (Before the fixes in this commit: 3,748 passed, 403 skipped.) Of the 412 skipped, 44 are the group A tests and 368 are PostgreSQL-gated tests (they need `NAVIGATOR_PG_TEST_ADMIN_URL` and `CREDIT_PG_URL`; with both set, all 368 pass, see V1). Node 24 without PostgreSQL: not re-run on this tree. |
+| V2 | TypeScript (`tsc --noEmit`) | VERIFIED: exit 0 on Node 22 and Node 24 (working tree after this change) |
+| V3 | Production build | VERIFIED: exit 0 on Node 22 and Node 24 (working tree after this change) |
+| V4 | Historical pins, fixtures, and regression assertions unchanged | VERIFIED: no file under `scripts/official-forms/`, no pin, and no existing test was edited in this commit. Pin SHA-256 and length were not changed. |
 | V5 | Dependency audit | VERIFIED: 0 critical, 0 high, 0 moderate, 0 low, 0 total (`npm audit --json`, Node 22) |
-| V6 | GitHub CI (Actions, `CI`, Node 22) | PASSED on `d0b0d8a6` (3,614 passed, 0 failed, 523 skipped, 210 files). CI does not configure PostgreSQL, so the `.pg.test.ts` suites are skipped there too. Run for `7d11222d`: queued at the time of writing. |
-| V7 | Vercel preview on the exact commit | `309ae47a`: READY (`dpl_7qqBmtBqFKD9Cdgm2yibrMTuJRdX`). `d0b0d8a6` and `7d11222d`: QUEUED at the time of writing; not verified. |
+| V6 | GitHub CI (Actions, `CI`) | PASSED on `d0b0d8a6`, `7d11222d`, and `cc8e9e9` (success on each). CI does not configure PostgreSQL, so the `.pg.test.ts` suites are skipped there. Result for the commit that contains this checklist update: recorded in the final report. |
+| V7 | Vercel preview on the exact commit | `cc8e9e9`: READY (`dpl_9gT4SyhZoEsPSrjV6ZCM2ktXaAki`). `309ae47`: READY (`dpl_7qqBmtBqFKD9Cdgm2yibrMTuJRdX`). `7d11222d` and `d0b0d8a6`: CANCELED by Vercel (superseded by later pushes on the same branch), so no preview of their own. |
+| V8 | Supabase staging, read only | Catalog check on staging (`nxfhvebzzobegubefcda`): O5 table and function absent; security advisor run: 43 INFO (RLS enabled, no policies, intended for server-only tables) and 8 WARN (mutable `search_path` on the existing `paid_*` functions). No write was made to any Supabase project. Production (`qboidsfpjuxeqtfotryj`) was not queried. |
 
 ## Release readiness
-PR #106 is **not ready for final release review**. Blocking items:
-- Section A: 44 skipped tests need the historical originals (38) and staging credentials (6).
-- PostgreSQL suites (10 files): not run in this environment. They need a password or trusted TCP auth for 127.0.0.1,
-  and the sandbox refused a change to allow it. Run them in an environment you control with
-  `NAVIGATOR_PG_TEST_ADMIN_URL` set to a disposable local database.
-- O5: applying the pending migration (needs your approval).
-- Human reviews O7 and O8.
-- V6 and V7: CI and Vercel preview on the final commit, to be recorded after the push.
+PR #106 is **not ready for final release review**. Mandatory gates not yet satisfied:
+- A. 44 skipped tests: 38 need the six historical PDFs (the five historical `.docx` pass); 6 need staging credentials.
+- O5. Owner approval to apply the migration. The migration itself is fixed and tested on a real PostgreSQL server.
+- O7 and O8. Human reviews. Packages are in `docs/review/`.
+- V7. The `cc8e9e9` preview is READY. Any later commit needs its own preview check.
 
-Counts at this commit (no PostgreSQL): 3,748 passed, 0 failed, 403 skipped, on Node 22 and Node 24.
-Open engineering items (not started or not complete): O9 table detection, O10 mapping coverage, O12 image codecs, O14
-multi-page tables and radio groups, O15 Nodemailer types residual.
+Engineering decisions still open: O9 (recommended: do not build table detection for these layouts), O10 (12.6% stays the honest figure unless each label phrase is reviewed), O12 image codecs, O14 multi-page tables and radio groups, O15 Nodemailer types residual, O4 owner decision on the 64 MB limit, O13 integration (not activated).
+
+Staging advisor WARN (8 `paid_*` functions with mutable `search_path`) is outside this PR's changes. It exists on staging already and needs its own approved migration.

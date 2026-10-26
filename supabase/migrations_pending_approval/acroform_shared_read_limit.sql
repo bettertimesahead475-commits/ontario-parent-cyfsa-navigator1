@@ -10,6 +10,9 @@ create table if not exists public.acroform_read_limits (
   primary key (uid, window_start)
 );
 
+-- The primary key is (uid, window_start), which cannot serve the cleanup predicate on window_start alone.
+create index if not exists acroform_read_limits_window_start_idx on public.acroform_read_limits (window_start);
+
 alter table public.acroform_read_limits enable row level security;
 revoke all on public.acroform_read_limits from public, anon, authenticated;
 
@@ -20,12 +23,14 @@ security definer
 set search_path = public
 as $$
 declare
-  v_window timestamptz := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
+  v_window timestamptz;
   v_count integer;
 begin
+  -- Validate before any arithmetic on the arguments, so a bad window raises this message and not a division error.
   if p_uid is null or p_uid = '' or p_limit < 1 or p_window_seconds < 1 then
     raise exception 'invalid rate limit arguments';
   end if;
+  v_window := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
   insert into public.acroform_read_limits as l (uid, window_start, reads)
   values (p_uid, v_window, 1)
   on conflict (uid, window_start) do update set reads = l.reads + 1

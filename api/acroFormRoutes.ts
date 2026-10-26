@@ -120,7 +120,7 @@ export function registerAcroFormRoutes(app: Express) {
       }
     } catch (e) {
       if (e instanceof ReadLimiterUnavailable) {
-        res.status(503).json({ code: "LIMITER_UNAVAILABLE", error: "Form reads are temporarily unavailable. Try again later." });
+        res.status(503).json({ code: "LIMITER_UNAVAILABLE", error: "We cannot read forms right now. Please try again later." });
       } else if (e instanceof AcroFormError) {
         res.status(ERROR_STATUS[e.code] ?? 422).json({ code: e.code, error: e.message });
       } else {
