@@ -25,6 +25,16 @@ export interface FormFieldSource {
   sourceSha256: string | null;
 }
 
+/**
+ * Row attribution: which printed table row a field sits in. ATTRIBUTED only from printed row text, a printed column
+ * header, and a row label that is unique on its page. It never identifies a child or a party.
+ */
+export type RowAttribution =
+  | { status: "ATTRIBUTED"; rowLabel: string }
+  | { status: "UNRESOLVED"; reason: string };
+
+export const ROW_UNRESOLVED_DEFAULT: RowAttribution = { status: "UNRESOLVED", reason: "NO_ROW_EVIDENCE" };
+
 export interface FormFieldFact {
   formNumber: string;
   sourceSha256: string | null;
@@ -43,6 +53,8 @@ export interface FormFieldFact {
   labelRoleStatus: "CONFIRMED_BY_LABEL" | "NOT_ESTABLISHED";
   /** The printed label the confirmation was read from, or null when not established. */
   printedLabel: string | null;
+  /** Row in a printed table, when the printed text supports it. Never a child or party identity. */
+  rowAttribution: RowAttribution;
   reportText: string;
 }
 
@@ -57,11 +69,21 @@ function reportTextFor(f: Pick<FormFieldFact, "fieldName" | "pages" | "enteredVa
   );
 }
 
+/** Only a well-formed ATTRIBUTED row with a non-empty printed label survives; anything else is unresolved. */
+function sanitizeRow(raw: unknown): RowAttribution {
+  const r = raw as any;
+  if (r && r.status === "ATTRIBUTED" && typeof r.rowLabel === "string" && r.rowLabel.trim() !== "") {
+    return { status: "ATTRIBUTED", rowLabel: r.rowLabel };
+  }
+  return ROW_UNRESOLVED_DEFAULT;
+}
+
 /** The only constructor. A confirmed label role is copied from the mapping; nothing else can set one. */
 export function buildFormFieldFact(
   mapping: PdfFieldMapping,
   enteredValue: string | null,
-  source: FormFieldSource
+  source: FormFieldSource,
+  rowAttribution: RowAttribution = ROW_UNRESOLVED_DEFAULT
 ): FormFieldFact {
   const confirmed = usableForAnalysis(mapping);
   const base = {
@@ -75,7 +97,8 @@ export function buildFormFieldFact(
     legalSignificance: "NOT_ASSESSED" as const,
     labelRole: confirmed ? mapping.role : null,
     labelRoleStatus: confirmed ? ("CONFIRMED_BY_LABEL" as const) : ("NOT_ESTABLISHED" as const),
-    printedLabel: confirmed ? mapping.evidenceLabel : null
+    printedLabel: confirmed ? mapping.evidenceLabel : null,
+    rowAttribution: sanitizeRow(rowAttribution)
   };
   return { ...base, reportText: reportTextFor(base) };
 }
@@ -100,6 +123,7 @@ export function guardFormFieldFacts(report: Record<string, any>): Record<string,
       labelRole: confirmed ? (raw.labelRole as PdfSemanticRole) : null,
       labelRoleStatus: confirmed ? "CONFIRMED_BY_LABEL" : "NOT_ESTABLISHED",
       printedLabel: confirmed ? String(raw.printedLabel) : null,
+      rowAttribution: sanitizeRow(raw?.rowAttribution),
       reportText: ""
     };
     fact.reportText = reportTextFor(fact);

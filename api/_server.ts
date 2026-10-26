@@ -27,6 +27,7 @@ import { registerLawyerDirectoryRoutes } from "./lawyerDirectoryRoutes.js";
 import { registerProfessionalWorkspaceRoutes } from "./professionalWorkspaceRoutes.js";
 import { registerMatterLegalDiscoveryRoutes } from "./matterLegalDiscoveryRoutes.js";
 import { registerOfficialFormRoutes } from "./officialFormRoutes.js";
+import { registerAcroFormRoutes } from "./acroFormRoutes.js";
 import { registerMatterLegalResearchCandidatesRoutes } from "./matterLegalResearchCandidatesRoutes.js";
 import { registerMatterAccessAuditRoutes } from "./matterAccessAuditRoutes.js";
 import { registerMatterAccessEventRoutes } from "./matterAccessEventRoutes.js";
@@ -1709,6 +1710,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
   registerMatterLegalDiscoveryRoutes(app);
   registerMatterLegalResearchCandidatesRoutes(app);
   registerOfficialFormRoutes(app);
+  registerAcroFormRoutes(app);
   // Stage 10: read-only matter access surfaces. Authorization stays in the services/database.
   registerMatterAccessAuditRoutes(app);
   registerMatterAccessEventRoutes(app);
