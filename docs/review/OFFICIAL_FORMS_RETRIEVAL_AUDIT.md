@@ -74,3 +74,12 @@ Result: CYFSA Navigator cannot automatically provide the correct official forms 
 ## 6. Next recommended action
 
 Place the six historical PDFs in `fixtures/official-forms/` (or set `OFFICIAL_FORMS_DIR`), then run `scripts/official-forms/verify.mjs`. Once every file passes, the 38 historical tests can run, and this document can be updated with the results.
+
+## 7. Access check for the Windows fixture ZIP (2026-10-26, this session)
+
+- `C:\Users\User\Downloads\cyfsa-historical-pdf-fixtures.zip`: not reachable. The sandbox has no Windows drive mount. `find /` for the ZIP name and for `*historical*fixture*` returned nothing.
+- `/mnt/user-data/uploads`, `/mnt/user-data/working`, `/mnt/user-data/outputs`, and `/mnt/attach`: all empty.
+- Google Drive connector (folder `1zy2jwpp-lC3zT17AGWGVpnb-y3JYQNtB`): the only tool that returns file bytes is `download_file_content`, which returns base64 text inside the chat. No tool writes a file to the workspace. Drive metadata for the six historical PDFs matches the pinned sizes (section 1), but the bytes were not transferred and no hash was checked.
+- Result: the six historical PDFs are not in this environment. The 38 historical tests remain skipped. Nothing in `fixtures/official-forms/` was created, and no test was changed.
+
+Simplest supported transfer: attach the ZIP (or the six PDFs) to the chat so it appears under `/mnt/user-data/uploads`. Alternatively, commit the six PDFs to a draft branch in a folder that the resolver will read, after the owner confirms that publishing them to the repository is acceptable.
