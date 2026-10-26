@@ -1,7 +1,7 @@
 -- PENDING OWNER APPROVAL. NOT APPLIED TO ANY DATABASE.
 -- Shared fixed-window read limiter for POST /api/acroform/ingest, so every serverless instance counts the same reads.
--- The route does not call this function yet. It stays on the per-process limiter until this migration is approved and the
--- route is updated to call it (and to fail closed if the function is missing).
+-- The route calls this function only when ACROFORM_LIMIT_BACKEND="shared" (api/services/acroFormReadLimiter.ts). The default
+-- is the per-process limiter. In "shared" mode a missing or failing function refuses the read (503); it never allows it.
 
 create table if not exists public.acroform_read_limits (
   uid text not null,

@@ -22,6 +22,7 @@ import { AcroFormError, ACROFORM_MAX_BYTES } from "./services/acroFormExtractor.
 import { ingestAcroFormPdf } from "./services/acroFormIngestion.js";
 import { applyReportGuards } from "./services/analyzerSections.js";
 import { isBase64Text } from "./services/pdfResourceLimits.js";
+import { consumeSharedRead, readLimitBackend, ReadLimiterUnavailable } from "./services/acroFormReadLimiter.js";
 
 /** Large enough for a 10 MB PDF in base64 with its JSON envelope, and no larger. */
 export const ACROFORM_JSON_LIMIT = "14mb";
@@ -97,7 +98,13 @@ export function registerAcroFormRoutes(app: Express) {
         res.status(401).json({ code: "SIGN_IN_REQUIRED", error: "Authentication required." });
         return;
       }
-      if (!allowAcroFormRead(identity.uid)) {
+      let withinLimit: boolean;
+      if (readLimitBackend() === "shared") {
+        withinLimit = await consumeSharedRead(identity.uid, ACROFORM_READS_PER_USER, ACROFORM_USER_WINDOW_MS / 1000);
+      } else {
+        withinLimit = allowAcroFormRead(identity.uid);
+      }
+      if (!withinLimit) {
         res.status(429).json({ code: "RATE_LIMITED", error: "Too many form reads. Try again later." });
         return;
       }
@@ -112,7 +119,9 @@ export function registerAcroFormRoutes(app: Express) {
         inFlight--;
       }
     } catch (e) {
-      if (e instanceof AcroFormError) {
+      if (e instanceof ReadLimiterUnavailable) {
+        res.status(503).json({ code: "LIMITER_UNAVAILABLE", error: "Form reads are temporarily unavailable. Try again later." });
+      } else if (e instanceof AcroFormError) {
         res.status(ERROR_STATUS[e.code] ?? 422).json({ code: e.code, error: e.message });
       } else {
         // Never reveal internal detail or any document content in an error.

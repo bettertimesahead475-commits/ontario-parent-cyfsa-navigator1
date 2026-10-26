@@ -43,12 +43,12 @@ The "47 outstanding items" figure does not match any list kept in this repositor
 | ID | Item | Status | Reason and next step |
 |---|---|---|---|
 | O4 | Analyzer 64 MB bound may refuse large scanned PDFs whose images are raw Flate. | OPEN (owner decision) | Most scanner output is DCT, which is not sized (M2). Owner to confirm the limit after real-world uploads. |
-| O5 | Shared rate limiting for serverless deployments. | BLOCKED (owner approval) | The per-process limiter does not share counts across Vercel instances. A shared limiter is written as a pending, unapplied migration: `supabase/migrations_pending_approval/acroform_shared_read_limit.sql`. Applying it is a production database change, which needs your authorization. The route must then be changed to call it and fail closed if the function is missing. |
+| O5 | Shared rate limiting for serverless deployments. | PARTLY DONE; BLOCKED (owner approval) | Code is written and tested: `api/services/acroFormReadLimiter.ts` and the route switch. `ACROFORM_LIMIT_BACKEND=shared` calls `acroform_consume_read`; any error, missing function, or non-boolean answer returns 503 (`LIMITER_UNAVAILABLE`) and never allows the read. Default is still the per-process limiter. The migration (`supabase/migrations_pending_approval/acroform_shared_read_limit.sql`) is NOT applied. Applying it is a production database change and needs your authorization. Tests: `acroFormReadLimiter.test.ts` (11 cases including grants), `acroFormReadLimiterRoute.test.ts` (503 end to end, no PDF read). Not exercised against a real database yet. |
 | O9 | Table boundary detection and continuation tables. | OPEN | Not implemented. Row attribution is 0 on all six real PDFs. Next step: detect column bands from widget geometry and repeated headers, with tests on synthetic tables. |
 | O10 | Mapping coverage: 61 of 483 fields confirmed. | OPEN | Most fields lack printed-label evidence. Rules were not relaxed to raise this number. |
 | O7 | Parent-facing wording: plain-language review. | OPEN (human) | The automated estimate (D18) is a guard, not a certification. |
 | O8 | Privacy and legal review of field facts and uploads. | OPEN (human) | Required before any activation. |
-| O11 | Remaining moderate advisories. | OPEN | `npm audit` lists 13 moderate. None is critical or high. Review each before release. |
+| O11 | Remaining moderate advisories. | FIXED (commit d0b0d8a6) | Were 13 moderate: `ip-address` (override to 10.7.5), `uuid` (override to 11.1.1; Google libraries call only `uuid.v4()`), `vitest` and `@vitest/mocker` (4.1.12, dev only). The Firebase/Google findings were the same `uuid` chain. `npm audit`: 0 across all levels. |
 | O12 | Image codecs are not bounded by size. | OPEN (boundary) | See M2. Revisit if a future feature decodes images. |
 | O13 | AcroForm feature is off and not integrated into any report. | OPEN (by design) | Integration plan in `ACROFORM_INTEGRATION_PLAN.md`. Not activated. |
 | O14 | Audit-level review of the AcroForm mapping for multi-page tables and radio groups. | OPEN | Radio groups are not confirmed (by design). Multi-page tables are not linked. |
@@ -57,14 +57,24 @@ The "47 outstanding items" figure does not match any list kept in this repositor
 ## E. Verification
 | ID | Check | Status |
 |---|---|---|
-| V1 | Node 22 and Node 24 full matrices with PostgreSQL | VERIFIED on the final tree: 4,093 passed, 0 failed, 44 skipped (38 historical blocked, 6 staging blocked) on each version |
-| V2 | TypeScript (`tsc --noEmit`) | VERIFIED: exit 0 on Node 22 and Node 24 |
-| V3 | Production build | VERIFIED: exit 0 on Node 22 and Node 24 |
-| V4 | Historical pins, fixtures, and regression assertions unchanged | VERIFIED by diff against the previous commit |
-| V5 | Dependency audit | VERIFIED: 0 critical, 0 high, 13 moderate (O11) |
+| V1 | Node 22 and Node 24 full matrices | PARTLY VERIFIED on the current tree (d0b0d8a6 plus the shared-limiter change). Without PostgreSQL: Node 22 and Node 24 each 3,748 passed, 0 failed, 403 skipped (201 of 212 files run). With PostgreSQL: NOT RUN. The local cluster is up, but the `.pg.test.ts` suites need password or trusted TCP auth on 127.0.0.1, and the sandbox refused a change to `pg_hba.conf` to allow it. Those suites fail to connect here (10 files). The earlier 4,093 figure was from a run with PostgreSQL and is not reproduced. |
+| V2 | TypeScript (`tsc --noEmit`) | VERIFIED: exit 0 on Node 22 and Node 24 (current tree) |
+| V3 | Production build | VERIFIED: exit 0 on Node 22 and Node 24 (current tree) |
+| V4 | Historical pins, fixtures, and regression assertions unchanged | VERIFIED: `scripts/official-forms` pins and the six real-file tests are not edited in this change |
+| V5 | Dependency audit | VERIFIED: 0 critical, 0 high, 0 moderate, 0 low, 0 total (`npm audit --json`, Node 22) |
 | V6 | GitHub CI on the final commit | Recorded in the final report |
 | V7 | Vercel preview on the exact final commit | Recorded in the final report |
 
 ## Release readiness
-PR #106 is **not ready for final release review**. Blocking items: section A (44 skipped tests need the historical
-originals and staging credentials), O5 (needs approval of the pending migration), and the human reviews O7 and O8.
+PR #106 is **not ready for final release review**. Blocking items:
+- Section A: 44 skipped tests need the historical originals (38) and staging credentials (6).
+- PostgreSQL suites (10 files): not run in this environment. They need a password or trusted TCP auth for 127.0.0.1,
+  and the sandbox refused a change to allow it. Run them in an environment you control with
+  `NAVIGATOR_PG_TEST_ADMIN_URL` set to a disposable local database.
+- O5: applying the pending migration (needs your approval).
+- Human reviews O7 and O8.
+- V6 and V7: CI and Vercel preview on the final commit, to be recorded after the push.
+
+Counts at this commit (no PostgreSQL): 3,748 passed, 0 failed, 403 skipped, on Node 22 and Node 24.
+Open engineering items (not started or not complete): O9 table detection, O10 mapping coverage, O12 image codecs, O14
+multi-page tables and radio groups, O15 Nodemailer types residual.
