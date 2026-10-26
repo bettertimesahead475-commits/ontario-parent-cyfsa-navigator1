@@ -47,7 +47,7 @@ items below are the ones with evidence. Nothing is padded to reach 47.
 ## D. Verification
 | ID | Check | Status |
 |---|---|---|
-| V1 | Node 22 and Node 24 full matrices with PostgreSQL | VERIFIED: 4,076 passed, 0 failed, 44 skipped on each (see commit message) |
+| V1 | Node 22 and Node 24 full matrices with PostgreSQL | VERIFIED at commit 73f72a6: 4,076 passed, 0 failed, 44 skipped on each |
 | V2 | TypeScript (`tsc --noEmit`) | VERIFIED: exit 0 on both Node versions |
 | V3 | Production build | VERIFIED: exit 0 on both Node versions |
 | V4 | Historical pins, fixtures, and regression assertions unchanged | VERIFIED by diff against the previous commit |
