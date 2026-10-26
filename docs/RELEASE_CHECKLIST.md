@@ -62,8 +62,8 @@ The "47 outstanding items" figure does not match any list kept in this repositor
 | V3 | Production build | VERIFIED: exit 0 on Node 22 and Node 24 (current tree) |
 | V4 | Historical pins, fixtures, and regression assertions unchanged | VERIFIED: `scripts/official-forms` pins and the six real-file tests are not edited in this change |
 | V5 | Dependency audit | VERIFIED: 0 critical, 0 high, 0 moderate, 0 low, 0 total (`npm audit --json`, Node 22) |
-| V6 | GitHub CI on the final commit | Recorded in the final report |
-| V7 | Vercel preview on the exact final commit | Recorded in the final report |
+| V6 | GitHub CI (Actions, `CI`, Node 22) | PASSED on `d0b0d8a6` (3,614 passed, 0 failed, 523 skipped, 210 files). CI does not configure PostgreSQL, so the `.pg.test.ts` suites are skipped there too. Run for `7d11222d`: queued at the time of writing. |
+| V7 | Vercel preview on the exact commit | `309ae47a`: READY (`dpl_7qqBmtBqFKD9Cdgm2yibrMTuJRdX`). `d0b0d8a6` and `7d11222d`: QUEUED at the time of writing; not verified. |
 
 ## Release readiness
 PR #106 is **not ready for final release review**. Blocking items:
