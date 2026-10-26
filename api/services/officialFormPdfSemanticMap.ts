@@ -46,12 +46,18 @@ export interface PdfWidgetInput {
   left: string;
   /** Printed text directly above the widget. */
   above: string;
-  /** Printed text directly below the widget. */
+  /** Printed text below the widget. */
   below: string;
+  /** Checkbox or radio export value, as stored in the PDF. Null for non-button fields. */
+  exportValue?: string | null;
+  /** Nearest printed text above the widget that spans its centre (table column header). Provenance only. */
+  columnHeader?: string | null;
 }
 
 export type PdfMappingReason =
   | "NO_RULE"
+  /** Widgets share one name but carry different export values: a radio group. No radio rule exists yet. */
+  | "RADIO_GROUP_NOT_CONFIRMED"
   | "AMBIGUOUS_LABEL"
   | "CONFLICTING_WIDGET_LABELS"
   | "SIGNATURE_NO_LABEL"
@@ -69,6 +75,12 @@ export interface PdfFieldMapping {
   ruleIds: string[];
   /** The printed label text the decision was read from (first widget). */
   evidenceLabel: string;
+  /** Distinct export values across the widgets sharing this name (button fields). Empty for other types. */
+  exportValues: string[];
+  /** Distinct column headers recorded for this name's widgets. Provenance only, never used to confirm a role. */
+  columnHeaders: string[];
+  /** True when one of those column headers is printed on more than one page (a continuation table). */
+  headerRepeatsAcrossPages: boolean;
 }
 
 interface LabelledWidget extends PdfWidgetInput {
@@ -131,17 +143,34 @@ export function mapPdfFields(widgets: PdfWidgetInput[]): PdfFieldMapping[] {
 
   const out: PdfFieldMapping[] = [];
   for (const [fieldName, ws] of groups) {
-    const kind = ws[0].kind;
+    const exportValues = [...new Set(ws.map(w => w.exportValue).filter((v): v is string => typeof v === "string"))].sort();
+    // Shared name with different export values: a radio group (only one option can be chosen).
+    const isRadioGroup = ws[0].kind === "checkbox" && exportValues.length > 1;
+    const kind: PdfFieldKind = isRadioGroup ? "radio" : ws[0].kind;
     const pages = [...new Set(ws.map(w => w.page))].sort((a, b) => a - b);
     const perWidget = ws.map(rolesFor);
+    const columnHeaders = [...new Set(ws.map(w => w.columnHeader).filter((v): v is string => typeof v === "string" && v.trim() !== ""))].sort();
+    const headerPages = new Map<string, Set<number>>();
+    for (const w of ws) {
+      if (!w.columnHeader) continue;
+      (headerPages.get(w.columnHeader) ?? headerPages.set(w.columnHeader, new Set()).get(w.columnHeader)!).add(w.page);
+    }
+    const headerRepeatsAcrossPages = [...headerPages.values()].some(set => set.size > 1);
     const base = {
       fieldName,
       kind,
       pages,
       widgetCount: ws.length,
       ruleIds: [...new Set(perWidget.flatMap(p => p.ruleIds))],
-      evidenceLabel: ws[0].kind === "signature" ? ws[0].below : ws[0].left || ws[0].above
+      evidenceLabel: ws[0].kind === "signature" ? ws[0].below : ws[0].left || ws[0].above,
+      exportValues,
+      columnHeaders,
+      headerRepeatsAcrossPages
     };
+    if (isRadioGroup) {
+      out.push({ ...base, role: null, status: "UNRESOLVED", reason: "RADIO_GROUP_NOT_CONFIRMED" });
+      continue;
+    }
     const allRoles = [...new Set(perWidget.flatMap(p => p.roles))];
     const everyWidgetHit = perWidget.every(p => p.roles.length > 0);
 

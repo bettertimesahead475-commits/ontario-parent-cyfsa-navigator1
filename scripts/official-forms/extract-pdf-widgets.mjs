@@ -38,10 +38,19 @@ for (const f of manifest.files) {
       const below = texts
         .filter(t => t.y < y1 && y1 - t.y < 28 && t.x < x2 && t.x + t.w > x1)
         .sort((a, b) => b.y - a.y).map(t => t.s).join(" ");
+      // Column header: the nearest printed text above the widget whose horizontal span contains the widget's centre.
+      // It is recorded as provenance only. It is not a label role until a rule confirms it.
+      const centreX = (x1 + x2) / 2;
+      const headerCandidates = texts
+        .filter(t => t.y > y2 && t.y - y2 < 90 && t.x <= centreX && t.x + t.w >= centreX)
+        .sort((a, b) => a.y - b.y);
+      const columnHeader = headerCandidates.length ? headerCandidates[0].s : null;
       widgets.push({
         name: a.fieldName ?? "",
         page: p,
         type: a.fieldType ?? null,
+        exportValue: a.exportValue ?? a.buttonValue ?? null,
+        columnHeader,
         rect: a.rect.map(n => Math.round(n)),
         left: left.slice(0, 160),
         above: above.slice(0, 160),

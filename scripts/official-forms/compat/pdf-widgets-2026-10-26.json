@@ -80,6 +80,8 @@
      "name": "Court File Number",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       415,
       716,
@@ -94,6 +96,8 @@
      "name": "Court address",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Name of court)",
      "rect": [
       71,
       679,
@@ -108,6 +112,8 @@
      "name": "Applicant's full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       54,
       569,
@@ -122,6 +128,8 @@
      "name": "Applicant lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       329,
       569,
@@ -136,6 +144,8 @@
      "name": "Respondent's full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       54,
       483,
@@ -150,6 +160,8 @@
      "name": "Respondent lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       329,
       483,
@@ -164,6 +176,8 @@
      "name": "full legal name",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       183,
       459,
@@ -178,6 +192,8 @@
      "name": "Names of people involved in the caseRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "in the case",
      "rect": [
       54,
       317,
@@ -192,6 +208,8 @@
      "name": "Name of childrens aid societyRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       317,
@@ -206,6 +224,8 @@
      "name": "Court locationRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Court location",
      "rect": [
       323,
       317,
@@ -220,6 +240,8 @@
      "name": "Court orders made include dates of ordersRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(include dates of orders)",
      "rect": [
       458,
       317,
@@ -234,6 +256,8 @@
      "name": "Names of people involved in the caseRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "in the case",
      "rect": [
       54,
       288,
@@ -248,6 +272,8 @@
      "name": "Name of childrens aid societyRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       288,
@@ -262,6 +288,8 @@
      "name": "Court locationRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Court location",
      "rect": [
       323,
       288,
@@ -276,6 +304,8 @@
      "name": "Court orders made include dates of ordersRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(include dates of orders)",
      "rect": [
       458,
       288,
@@ -290,6 +320,8 @@
      "name": "Names of people involved in the caseRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "in the case",
      "rect": [
       54,
       259,
@@ -304,6 +336,8 @@
      "name": "Name of childrens aid societyRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       259,
@@ -318,6 +352,8 @@
      "name": "Court locationRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Court location",
      "rect": [
       323,
       259,
@@ -332,6 +368,8 @@
      "name": "Court orders made include dates of ordersRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(include dates of orders)",
      "rect": [
       458,
       259,
@@ -346,6 +384,8 @@
      "name": "Names of people involved in the caseRow4",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       54,
       229,
@@ -360,6 +400,8 @@
      "name": "Name of childrens aid societyRow4",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       189,
       229,
@@ -374,6 +416,8 @@
      "name": "Court locationRow4",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       323,
       229,
@@ -388,6 +432,8 @@
      "name": "Court orders made include dates of ordersRow4",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       458,
       229,
@@ -402,6 +448,8 @@
      "name": "Names of other people involvedRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "involved",
      "rect": [
       54,
       134,
@@ -416,6 +464,8 @@
      "name": "Name of childrens aid societyRow1_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       134,
@@ -430,6 +480,8 @@
      "name": "Location of childrens aid societyRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       323,
       134,
@@ -444,6 +496,8 @@
      "name": "Child protection services include dates of any agreements or other measuresRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "agreements or other measures)",
      "rect": [
       458,
       134,
@@ -458,6 +512,8 @@
      "name": "Names of other people involvedRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "involved",
      "rect": [
       54,
       105,
@@ -472,6 +528,8 @@
      "name": "Name of childrens aid societyRow2_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       105,
@@ -486,6 +544,8 @@
      "name": "Location of childrens aid societyRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       323,
       105,
@@ -500,6 +560,8 @@
      "name": "Child protection services include dates of any agreements or other measuresRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "agreements or other measures)",
      "rect": [
       458,
       105,
@@ -514,6 +576,8 @@
      "name": "Names of other people involvedRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "involved",
      "rect": [
       54,
       76,
@@ -528,6 +592,8 @@
      "name": "Name of childrens aid societyRow3_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       76,
@@ -542,6 +608,8 @@
      "name": "Location of childrens aid societyRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       323,
       76,
@@ -556,6 +624,8 @@
      "name": "Child protection services include dates of any agreements or other measuresRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "agreements or other measures)",
      "rect": [
       458,
       76,
@@ -570,6 +640,8 @@
      "name": "Names of other people involvedRow4",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       54,
       46,
@@ -584,6 +656,8 @@
      "name": "Name of childrens aid societyRow4_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       189,
       46,
@@ -598,6 +672,8 @@
      "name": "Location of childrens aid societyRow4",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       323,
       46,
@@ -612,6 +688,8 @@
      "name": "Child protection services include dates of any agreements or other measuresRow4",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       458,
       46,
@@ -626,6 +704,8 @@
      "name": "Name of court",
      "page": 1,
      "type": "Ch",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       53,
       715,
@@ -640,6 +720,8 @@
      "name": "name of city, town or municipality and province, state or country if outside of Ontario",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(name of city, town or municipality and province, state or country if outside of Ontario)",
      "rect": [
       51,
       427,
@@ -654,6 +736,8 @@
      "name": "Court File Number",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       415,
       720,
@@ -668,6 +752,8 @@
      "name": "Names of people involved in the caseRow1_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "in the case",
      "rect": [
       54,
       618,
@@ -682,6 +768,8 @@
      "name": "Name of childrens aid societyRow1_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       618,
@@ -696,6 +784,8 @@
      "name": "Court locationRow1_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Court location",
      "rect": [
       323,
       618,
@@ -710,6 +800,8 @@
      "name": "Court orders made include dates of ordersRow1_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(include dates of orders)",
      "rect": [
       458,
       618,
@@ -724,6 +816,8 @@
      "name": "Names of people involved in the caseRow2_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "in the case",
      "rect": [
       54,
       589,
@@ -738,6 +832,8 @@
      "name": "Name of childrens aid societyRow2_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       589,
@@ -752,6 +848,8 @@
      "name": "Court locationRow2_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Court location",
      "rect": [
       323,
       589,
@@ -766,6 +864,8 @@
      "name": "Court orders made include dates of ordersRow2_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(include dates of orders)",
      "rect": [
       458,
       589,
@@ -780,6 +880,8 @@
      "name": "Names of people involved in the caseRow3_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "in the case",
      "rect": [
       54,
       560,
@@ -794,6 +896,8 @@
      "name": "Name of childrens aid societyRow3_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       560,
@@ -808,6 +912,8 @@
      "name": "Court locationRow3_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Court location",
      "rect": [
       323,
       560,
@@ -822,6 +928,8 @@
      "name": "Court orders made include dates of ordersRow3_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(include dates of orders)",
      "rect": [
       458,
       560,
@@ -836,6 +944,8 @@
      "name": "Names of people involvedRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Names of people involved",
      "rect": [
       54,
       446,
@@ -850,6 +960,8 @@
      "name": "Name of childrens aid societyRow1_4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       446,
@@ -864,6 +976,8 @@
      "name": "Location of childrens aid societyRow1_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       323,
       446,
@@ -878,6 +992,8 @@
      "name": "Child protection services include dates of any agreements or other measuresRow1_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "agreements or other measures)",
      "rect": [
       458,
       446,
@@ -892,6 +1008,8 @@
      "name": "Names of people involvedRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Names of people involved",
      "rect": [
       54,
       417,
@@ -906,6 +1024,8 @@
      "name": "Name of childrens aid societyRow2_4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       417,
@@ -920,6 +1040,8 @@
      "name": "Location of childrens aid societyRow2_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       323,
       417,
@@ -934,6 +1056,8 @@
      "name": "Child protection services include dates of any agreements or other measuresRow2_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "agreements or other measures)",
      "rect": [
       458,
       417,
@@ -948,6 +1072,8 @@
      "name": "Names of people involvedRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Names of people involved",
      "rect": [
       54,
       388,
@@ -962,6 +1088,8 @@
      "name": "Name of childrens aid societyRow3_4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       189,
       388,
@@ -976,6 +1104,8 @@
      "name": "Location of childrens aid societyRow3_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society",
      "rect": [
       323,
       388,
@@ -990,6 +1120,8 @@
      "name": "Child protection services include dates of any agreements or other measuresRow3_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "agreements or other measures)",
      "rect": [
       458,
       388,
@@ -1004,6 +1136,8 @@
      "name": "Municipality",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       190,
       342,
@@ -1018,6 +1152,8 @@
      "name": "province state or country",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       71,
       313,
@@ -1032,6 +1168,8 @@
      "name": "Date",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "efore me",
      "rect": [
       74,
       283,
@@ -1046,6 +1184,8 @@
      "name": "Commissioner for taking affidavits",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Municipality",
      "rect": [
       212,
       283,
@@ -1060,6 +1200,8 @@
      "name": "Signature",
      "page": 2,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       432,
       301,
@@ -1130,6 +1272,8 @@
      "name": "Court File Number",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       442,
       725,
@@ -1144,6 +1288,8 @@
      "name": "Court office address",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Name of court)",
      "rect": [
       63,
       688,
@@ -1158,6 +1304,8 @@
      "name": "Applicant's full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       44,
       580,
@@ -1172,6 +1320,8 @@
      "name": "Applicant lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       323,
       580,
@@ -1186,6 +1336,8 @@
      "name": "Respondent's full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       44,
       489,
@@ -1200,6 +1352,8 @@
      "name": "Respondent lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       323,
       489,
@@ -1214,6 +1368,8 @@
      "name": "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)) and name of person represented",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers and e-",
      "rect": [
       44,
       397,
@@ -1228,6 +1384,8 @@
      "name": "full legal name",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society, state your position within the society.)",
      "rect": [
       43,
       317,
@@ -1242,6 +1400,8 @@
      "name": "Relationship to child OR position within childrens aid society_1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Relationship to child OR position within children’s aid society",
      "rect": [
       315,
       317,
@@ -1256,6 +1416,8 @@
      "name": "Signature_1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society, state your position within the society.)",
      "rect": [
       43,
       286,
@@ -1270,6 +1432,8 @@
      "name": "Date of signature",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Relationship to child OR position within children’s aid society",
      "rect": [
       315,
       286,
@@ -1284,6 +1448,8 @@
      "name": "full legal name_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "society, state your position within the society.)",
      "rect": [
       43,
       243,
@@ -1298,6 +1464,8 @@
      "name": "Relationship to child OR position within childrens aid society_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Relationship to child OR position within children’s aid society",
      "rect": [
       315,
       243,
@@ -1312,6 +1480,8 @@
      "name": "Signature_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       212,
@@ -1326,6 +1496,8 @@
      "name": "Date of signature_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Relationship to child OR position within children’s aid society",
      "rect": [
       315,
       212,
@@ -1340,6 +1512,8 @@
      "name": "full legal name_3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       168,
@@ -1354,6 +1528,8 @@
      "name": "Relationship to child OR position within childrens aid society_3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Relationship to child OR position within children’s aid society",
      "rect": [
       315,
       168,
@@ -1368,6 +1544,8 @@
      "name": "Signature_3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       138,
@@ -1382,6 +1560,8 @@
      "name": "Date of signature_3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Relationship to child OR position within children’s aid society",
      "rect": [
       315,
       138,
@@ -1396,6 +1576,8 @@
      "name": "Name of court",
      "page": 1,
      "type": "Ch",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       63,
       724,
@@ -1410,6 +1592,8 @@
      "name": "Court File Number",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       439,
       735,
@@ -1424,6 +1608,8 @@
      "name": "Full legal name of first child",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "The information about the child(ren) in thi",
      "rect": [
       70,
       666,
@@ -1438,6 +1624,8 @@
      "name": "Date of birth",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child, Youth and Family Services Act, 2017",
      "rect": [
       385,
       666,
@@ -1452,6 +1640,8 @@
      "name": "Age",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child, Youth and Family Services Act, 2017",
      "rect": [
       493,
       666,
@@ -1466,6 +1656,8 @@
      "name": "Sex",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       529,
       666,
@@ -1480,6 +1672,8 @@
      "name": "Is the child a First Nations Inuk or Métis person",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "s case is as follows:",
      "rect": [
       70,
       639,
@@ -1494,6 +1688,8 @@
      "name": "Name of each of the childs bands and First Nations Inuit or Métis communities and their representatives",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "s case is as follows:",
      "rect": [
       70,
       613,
@@ -1508,6 +1704,8 @@
      "name": "If child was brought to a place of safety address and identity of place from which the child was removed",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "he child’s bands and First Nations, Inuit, or Métis communities",
      "rect": [
       70,
       587,
@@ -1522,6 +1720,8 @@
      "name": "Full legal names of childs parents List everyone who is a parent of the child as defined in section 74 of the Child Youth and Family Services Act 2017",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       70,
       550,
@@ -1536,6 +1736,8 @@
      "name": "Full legal name of second child",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       70,
       517,
@@ -1550,6 +1752,8 @@
      "name": "Date of birth_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       385,
       517,
@@ -1564,6 +1768,8 @@
      "name": "Age_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       493,
       517,
@@ -1578,6 +1784,8 @@
      "name": "Sex_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child, Youth",
      "rect": [
       529,
       517,
@@ -1592,6 +1800,8 @@
      "name": "Is the child a First Nations Inuk or Métis person_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       70,
       491,
@@ -1606,6 +1816,8 @@
      "name": "Name of each of the childs bands and First Nations Inuit or Métis communities and their representatives_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       70,
       465,
@@ -1620,6 +1832,8 @@
      "name": "If child was brought to a place of safety address and identity of place from which the child was removed_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name of each of the child’s bands and First Nations, Inuit, or Métis communities and their representative(s)",
      "rect": [
       70,
       438,
@@ -1634,6 +1848,8 @@
      "name": "Full legal names of childs parents List everyone who is a parent of the child as defined in section 74 of the Child Youth and Family Services Act 2017_2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       70,
       402,
@@ -1648,6 +1864,8 @@
      "name": "Full legal name of third child",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       70,
       369,
@@ -1662,6 +1880,8 @@
      "name": "Date of birth_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       385,
       369,
@@ -1676,6 +1896,8 @@
      "name": "Age_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       493,
       369,
@@ -1690,6 +1912,8 @@
      "name": "Sex_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child, Youth",
      "rect": [
       529,
       369,
@@ -1704,6 +1928,8 @@
      "name": "Is the child a First Nations Inuk or Métis person_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       70,
       343,
@@ -1718,6 +1944,8 @@
      "name": "Name of each of the childs bands and First Nations Inuit or Métis communities and their representatives_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       70,
       316,
@@ -1732,6 +1960,8 @@
      "name": "If child was brought to a place of safety address and identity of place from which the child was removed_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name of each of the child’s bands and First Nations, Inuit, or Métis communities and their representative(s)",
      "rect": [
       70,
       290,
@@ -1746,6 +1976,8 @@
      "name": "Full legal names of childs parents List everyone who is a parent of the child as defined in section 74 of the Child Youth and Family Services Act 2017_3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the",
      "rect": [
       70,
       253,
@@ -1760,6 +1992,8 @@
      "name": "Court File Number",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       440,
       736,
@@ -1774,6 +2008,8 @@
      "name": "The details of the children’s aid society’s previous involvement with one or more of these children in this case are as follows:",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "not set out something as a fact if another party disagrees with it. If you cannot agree at all about anything, write: “No",
      "rect": [
       75,
       633,
@@ -1788,6 +2024,8 @@
      "name": "The child(ren) was/were brought to a place of safety because:",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "point on which there is disagreement must be excluded. If there is no agreement at all on anything, write:",
      "rect": [
       75,
       567,
@@ -1802,6 +2040,8 @@
      "name": "We agree that the court should make a finding that the child(ren) is/are in need of protection on the following reasons:",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "excluded. If there is no agreement at all, write: “No agreement reached.” In any event, the court can always make some other",
      "rect": [
       75,
       489,
@@ -1816,6 +2056,8 @@
      "name": "The following important events relating to the child(ren)'s best interests have occurred since the date this application began:",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "The following important events relating to the child(ren)’s best interests have occurred since the date this",
      "rect": [
       76,
       443,
@@ -1830,6 +2072,8 @@
      "name": "We agree that the order that would best serve the best interests of the child(ren) is:",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "disruptive options would not be enough to protect the child(ren).)",
      "rect": [
       75,
       368,
@@ -2030,6 +2274,8 @@
      "name": "Court File Number",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       442,
       725,
@@ -2044,6 +2290,8 @@
      "name": "Court office address",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Name of court)",
      "rect": [
       63,
       688,
@@ -2058,6 +2306,8 @@
      "name": "Applicant's full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       44,
       587,
@@ -2072,6 +2322,8 @@
      "name": "Applicant lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       326,
       587,
@@ -2086,6 +2338,8 @@
      "name": "Respondent's full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       44,
       496,
@@ -2100,6 +2354,8 @@
      "name": "Respondent lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       326,
       496,
@@ -2114,6 +2370,8 @@
      "name": "Name  address for service for Childrens Lawyers agent  street  number municipality postal code telephone  fax numbers and email address if any and name of person representedRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name & address for service for Children’s Lawyer’s agent — street & number, municipality, postal code, telephone & fax numbers and e-mail address",
      "rect": [
       44,
       405,
@@ -2128,6 +2386,8 @@
      "name": "full legal name",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Note to the respondent(s): If you are making a claim against someone who is not an applicant, insert the person’s name and address here.)",
      "rect": [
       161,
       347,
@@ -2142,6 +2402,8 @@
      "name": "full legal name(s)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Note to the respondent(s): You must complete, serve, file and update this form if any significant changes regarding the child(ren)occur",
      "rect": [
       182,
       238,
@@ -2156,6 +2418,8 @@
      "name": "Name of court",
      "page": 1,
      "type": "Ch",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       64,
       724,
@@ -2170,6 +2434,8 @@
      "name": "address for service of added party",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Note to the respondent(s): If you are making a claim against someone who is not an applicant, insert the person’s name and address here.)",
      "rect": [
       46,
       283,
@@ -2184,6 +2450,8 @@
      "name": "state your relationship to the child(ren)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Note to the respondent(s): You must complete, serve, file and update this form if any significant changes regarding the child(ren)occur",
      "rect": [
       45,
       39,
@@ -2198,6 +2466,8 @@
      "name": "Childs Full Legal NameRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       43,
       619,
@@ -2212,6 +2482,8 @@
      "name": "BirthdateRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       154,
       619,
@@ -2226,6 +2498,8 @@
      "name": "AgeRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Age",
      "rect": [
       211,
       619,
@@ -2240,6 +2514,8 @@
      "name": "SexRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       248,
       619,
@@ -2254,6 +2530,8 @@
      "name": "Full Legal Names of Parent 1Row1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       276,
       619,
@@ -2268,6 +2546,8 @@
      "name": "Full Legal Names of Parent 2Row1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       357,
       619,
@@ -2282,6 +2562,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       438,
       619,
@@ -2296,6 +2578,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       488,
       619,
@@ -2310,6 +2594,8 @@
      "name": "Childs Full Legal NameRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       43,
       601,
@@ -2324,6 +2610,8 @@
      "name": "BirthdateRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       154,
       601,
@@ -2338,6 +2626,8 @@
      "name": "AgeRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Age",
      "rect": [
       211,
       601,
@@ -2352,6 +2642,8 @@
      "name": "SexRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       248,
       601,
@@ -2366,6 +2658,8 @@
      "name": "Full Legal Names of Parent 1Row2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       276,
       601,
@@ -2380,6 +2674,8 @@
      "name": "Full Legal Names of Parent 2Row2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       357,
       601,
@@ -2394,6 +2690,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       438,
       601,
@@ -2408,6 +2706,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       488,
       601,
@@ -2422,6 +2722,8 @@
      "name": "Childs Full Legal NameRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       43,
       582,
@@ -2436,6 +2738,8 @@
      "name": "BirthdateRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       154,
       582,
@@ -2450,6 +2754,8 @@
      "name": "AgeRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Age",
      "rect": [
       211,
       582,
@@ -2464,6 +2770,8 @@
      "name": "SexRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       248,
       582,
@@ -2478,6 +2786,8 @@
      "name": "Full Legal Names of Parent 1Row3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       276,
       582,
@@ -2492,6 +2802,8 @@
      "name": "Full Legal Names of Parent 2Row3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       357,
       582,
@@ -2506,6 +2818,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       438,
       582,
@@ -2520,6 +2834,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       488,
       582,
@@ -2534,6 +2850,8 @@
      "name": "Childs Full Legal NameRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       43,
       564,
@@ -2548,6 +2866,8 @@
      "name": "BirthdateRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       154,
       564,
@@ -2562,6 +2882,8 @@
      "name": "AgeRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Age",
      "rect": [
       211,
       564,
@@ -2576,6 +2898,8 @@
      "name": "SexRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       248,
       564,
@@ -2590,6 +2914,8 @@
      "name": "Full Legal Names of Parent 1Row4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       276,
       564,
@@ -2604,6 +2930,8 @@
      "name": "Full Legal Names of Parent 2Row4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       357,
       564,
@@ -2618,6 +2946,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       438,
       564,
@@ -2632,6 +2962,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       488,
       564,
@@ -2646,6 +2978,8 @@
      "name": "Childs Full Legal NameRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       545,
@@ -2660,6 +2994,8 @@
      "name": "BirthdateRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       154,
       545,
@@ -2674,6 +3010,8 @@
      "name": "AgeRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       211,
       545,
@@ -2688,6 +3026,8 @@
      "name": "SexRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       248,
       545,
@@ -2702,6 +3042,8 @@
      "name": "Full Legal Names of Parent 1Row5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       276,
       545,
@@ -2716,6 +3058,8 @@
      "name": "Full Legal Names of Parent 2Row5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       357,
       545,
@@ -2730,6 +3074,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       438,
       545,
@@ -2744,6 +3090,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       488,
       545,
@@ -2758,6 +3106,8 @@
      "name": "Childs Full Legal NameRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       527,
@@ -2772,6 +3122,8 @@
      "name": "BirthdateRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       154,
       527,
@@ -2786,6 +3138,8 @@
      "name": "AgeRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       211,
       527,
@@ -2800,6 +3154,8 @@
      "name": "SexRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       248,
       527,
@@ -2814,6 +3170,8 @@
      "name": "Full Legal Names of Parent 1Row6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       276,
       527,
@@ -2828,6 +3186,8 @@
      "name": "Full Legal Names of Parent 2Row6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       357,
       527,
@@ -2842,6 +3202,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       438,
       527,
@@ -2856,6 +3218,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       488,
       527,
@@ -2870,6 +3234,8 @@
      "name": "Childs Full Legal NameRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       508,
@@ -2884,6 +3250,8 @@
      "name": "BirthdateRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       154,
       508,
@@ -2898,6 +3266,8 @@
      "name": "AgeRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       211,
       508,
@@ -2912,6 +3282,8 @@
      "name": "SexRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       248,
       508,
@@ -2926,6 +3298,8 @@
      "name": "Full Legal Names of Parent 1Row7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       276,
       508,
@@ -2940,6 +3314,8 @@
      "name": "Full Legal Names of Parent 2Row7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       357,
       508,
@@ -2954,6 +3330,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       438,
       508,
@@ -2968,6 +3346,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       488,
       508,
@@ -2982,6 +3362,8 @@
      "name": "Childs Full Legal NameRow8",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       490,
@@ -2996,6 +3378,8 @@
      "name": "BirthdateRow8",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       154,
       490,
@@ -3010,6 +3394,8 @@
      "name": "AgeRow8",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       211,
       490,
@@ -3024,6 +3410,8 @@
      "name": "SexRow8",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       248,
       490,
@@ -3038,6 +3426,8 @@
      "name": "Full Legal Names of Parent 1Row8",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       276,
       490,
@@ -3052,6 +3442,8 @@
      "name": "Full Legal Names of Parent 2Row8",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       357,
       490,
@@ -3066,6 +3458,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow8",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       438,
       490,
@@ -3080,6 +3474,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow8",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       488,
       490,
@@ -3094,6 +3490,8 @@
      "name": "Childs Full Legal NameRow9",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       471,
@@ -3108,6 +3506,8 @@
      "name": "BirthdateRow9",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       154,
       471,
@@ -3122,6 +3522,8 @@
      "name": "AgeRow9",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       211,
       471,
@@ -3136,6 +3538,8 @@
      "name": "SexRow9",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       248,
       471,
@@ -3150,6 +3554,8 @@
      "name": "Full Legal Names of Parent 1Row9",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       276,
       471,
@@ -3164,6 +3570,8 @@
      "name": "Full Legal Names of Parent 2Row9",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       357,
       471,
@@ -3178,6 +3586,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow9",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       438,
       471,
@@ -3192,6 +3602,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow9",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       488,
       471,
@@ -3206,6 +3618,8 @@
      "name": "Childs Full Legal NameRow10",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       453,
@@ -3220,6 +3634,8 @@
      "name": "BirthdateRow10",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       154,
       453,
@@ -3234,6 +3650,8 @@
      "name": "AgeRow10",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       211,
       453,
@@ -3248,6 +3666,8 @@
      "name": "SexRow10",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       248,
       453,
@@ -3262,6 +3682,8 @@
      "name": "Full Legal Names of Parent 1Row10",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       276,
       453,
@@ -3276,6 +3698,8 @@
      "name": "Full Legal Names of Parent 2Row10",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       357,
       453,
@@ -3290,6 +3714,8 @@
      "name": "Is the Child First Nations Inuk or MétisRow10",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       438,
       453,
@@ -3304,6 +3730,8 @@
      "name": "Childs Bands and First Nations Inuit or Métis CommunitiesRow10",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       488,
       453,
@@ -3318,6 +3746,8 @@
      "name": "Childs NameRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child’s Name",
      "rect": [
       43,
       271,
@@ -3332,6 +3762,8 @@
      "name": "Name of Other CaregiversRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name of Other Caregiver(s)",
      "rect": [
       210,
       271,
@@ -3346,6 +3778,8 @@
      "name": "Period of Time with Caregivers dmy to dmyRow1",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(d,m,y to d,m,y)",
      "rect": [
       376,
       271,
@@ -3360,6 +3794,8 @@
      "name": "Childs NameRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child’s Name",
      "rect": [
       43,
       252,
@@ -3374,6 +3810,8 @@
      "name": "Name of Other CaregiversRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name of Other Caregiver(s)",
      "rect": [
       210,
       252,
@@ -3388,6 +3826,8 @@
      "name": "Period of Time with Caregivers dmy to dmyRow2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(d,m,y to d,m,y)",
      "rect": [
       376,
       252,
@@ -3402,6 +3842,8 @@
      "name": "Childs NameRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child’s Name",
      "rect": [
       43,
       233,
@@ -3416,6 +3858,8 @@
      "name": "Name of Other CaregiversRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name of Other Caregiver(s)",
      "rect": [
       210,
       233,
@@ -3430,6 +3874,8 @@
      "name": "Period of Time with Caregivers dmy to dmyRow3",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(d,m,y to d,m,y)",
      "rect": [
       376,
       233,
@@ -3444,6 +3890,8 @@
      "name": "Childs NameRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child’s Name",
      "rect": [
       43,
       214,
@@ -3458,6 +3906,8 @@
      "name": "Name of Other CaregiversRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name of Other Caregiver(s)",
      "rect": [
       210,
       214,
@@ -3472,6 +3922,8 @@
      "name": "Period of Time with Caregivers dmy to dmyRow4",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(d,m,y to d,m,y)",
      "rect": [
       376,
       214,
@@ -3486,6 +3938,8 @@
      "name": "Childs NameRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       195,
@@ -3500,6 +3954,8 @@
      "name": "Name of Other CaregiversRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       210,
       195,
@@ -3514,6 +3970,8 @@
      "name": "Period of Time with Caregivers dmy to dmyRow5",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(d,m,y to d,m,y)",
      "rect": [
       376,
       195,
@@ -3528,6 +3986,8 @@
      "name": "Childs NameRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       176,
@@ -3542,6 +4002,8 @@
      "name": "Name of Other CaregiversRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       210,
       176,
@@ -3556,6 +4018,8 @@
      "name": "Period of Time with Caregivers dmy to dmyRow6",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       376,
       176,
@@ -3570,6 +4034,8 @@
      "name": "Childs NameRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       43,
       157,
@@ -3584,6 +4050,8 @@
      "name": "Name of Other CaregiversRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       210,
       157,
@@ -3598,6 +4066,8 @@
      "name": "Period of Time with Caregivers dmy to dmyRow7",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       376,
       157,
@@ -3612,6 +4082,8 @@
      "name": "Court File Number",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       439,
       736,
@@ -3626,6 +4098,8 @@
      "name": "paragraph 6 of the application Form 8B",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "I/We agr",
      "rect": [
       103,
       629,
@@ -3640,6 +4114,8 @@
      "name": "paragraph 3 of the application Form 8B1",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "I/We agr",
      "rect": [
       103,
       612,
@@ -3654,6 +4130,8 @@
      "name": "paragraph 6 of the application Form 8B_2",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "I/We disagree with the following facts in",
      "rect": [
       103,
       368,
@@ -3668,6 +4146,8 @@
      "name": "paragraph 3 of the application Form 8B1_2",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "I/We disagree with the following facts in",
      "rect": [
       103,
       350,
@@ -3682,6 +4162,8 @@
      "name": "Court File Number",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       442,
       736,
@@ -3696,6 +4178,8 @@
      "name": "I/We agree with the following facts in",
      "page": 3,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": "(Check applicable box(es).)",
      "rect": [
       79,
       646,
@@ -3710,6 +4194,8 @@
      "name": "I/We disagree with the following facts in",
      "page": 3,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": null,
      "rect": [
       79,
       386,
@@ -3724,6 +4210,8 @@
      "name": "Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.)",
      "rect": [
       102,
       402,
@@ -3738,6 +4226,8 @@
      "name": "Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application_2",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.)",
      "rect": [
       102,
       139,
@@ -3752,6 +4242,8 @@
      "name": "paragraph 6 of the application Form 8B_3",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "I/We agree with the following facts in",
      "rect": [
       103,
       629,
@@ -3766,6 +4258,8 @@
      "name": "paragraph 3 of the application Form 8B1_3",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "I/We agree with the following facts in",
      "rect": [
       103,
       612,
@@ -3780,6 +4274,8 @@
      "name": "paragraph 6 of the application Form 8B_4",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "I/We disagree with the following facts in",
      "rect": [
       103,
       352,
@@ -3794,6 +4290,8 @@
      "name": "paragraph 3 of the application Form 8B1_4",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "I/We disagree with the following facts in",
      "rect": [
       103,
       335,
@@ -3808,6 +4306,8 @@
      "name": "Court File Number",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       439,
       737,
@@ -3822,6 +4322,8 @@
      "name": "I/We agree with the following facts in_2",
      "page": 4,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": "(Check applicable box(es).)",
      "rect": [
       80,
       647,
@@ -3836,6 +4338,8 @@
      "name": "Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application_3",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.)",
      "rect": [
       102,
       389,
@@ -3850,6 +4354,8 @@
      "name": "I/We disagree with the following facts_2",
      "page": 4,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": null,
      "rect": [
       80,
       369,
@@ -3864,6 +4370,8 @@
      "name": "Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application_4",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.)",
      "rect": [
       103,
       105,
@@ -3878,6 +4386,8 @@
      "name": "Court File Number",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       439,
       737,
@@ -3892,6 +4402,8 @@
      "name": "What placement and terms of placement do you believe would be in the child(ren)’s best interests? (You should include in your plan of care at least the following information. If your plan is not the same for a particular child, then complete a separate plan for that child.)",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "If you go to work or school, what are the details, including the days and hours you work or go to school, and who will",
      "rect": [
       100,
       404,
@@ -3906,6 +4418,8 @@
      "name": "State why you feel that this plan would be in the child(ren)’s best interests.  (Attach an additional page and number it if you need more space.)",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Attach an additional page and number it if you need more space.)",
      "rect": [
       100,
       39,
@@ -3920,6 +4434,8 @@
      "name": "NameRow1",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       73,
       665,
@@ -3934,6 +4450,8 @@
      "name": "InformationRow1",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Information",
      "rect": [
       214,
       665,
@@ -3948,6 +4466,8 @@
      "name": "NameRow2",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       73,
       647,
@@ -3962,6 +4482,8 @@
      "name": "InformationRow2",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Information",
      "rect": [
       214,
       647,
@@ -3976,6 +4498,8 @@
      "name": "NameRow3",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       73,
       629,
@@ -3990,6 +4514,8 @@
      "name": "InformationRow3",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Information",
      "rect": [
       214,
       629,
@@ -4004,6 +4530,8 @@
      "name": "NameRow4",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       73,
       611,
@@ -4018,6 +4546,8 @@
      "name": "InformationRow4",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Information",
      "rect": [
       214,
       611,
@@ -4032,6 +4562,8 @@
      "name": "NameRow5",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       73,
       593,
@@ -4046,6 +4578,8 @@
      "name": "InformationRow5",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Information",
      "rect": [
       214,
       593,
@@ -4060,6 +4594,8 @@
      "name": "NameRow6",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       73,
       575,
@@ -4074,6 +4610,8 @@
      "name": "InformationRow6",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       214,
       575,
@@ -4088,6 +4626,8 @@
      "name": "NameRow7",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       73,
       557,
@@ -4102,6 +4642,8 @@
      "name": "InformationRow7",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       214,
       557,
@@ -4116,6 +4658,8 @@
      "name": "NameRow8",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       73,
       539,
@@ -4130,6 +4674,8 @@
      "name": "InformationRow8",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       214,
       539,
@@ -4144,6 +4690,8 @@
      "name": "Court File Number",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       440,
       735,
@@ -4158,6 +4706,8 @@
      "name": "THIS CLAIM IS MADE AGAINST",
      "page": 7,
      "type": "Btn",
+     "exportValue": "THE CHILDREN’S AID SOCIETY (OR OTHER APPLICANT) ",
+     "columnHeader": "THIS CLAIM IS MADE AGAINST",
      "rect": [
       78,
       649,
@@ -4172,6 +4722,8 @@
      "name": "THIS CLAIM IS MADE AGAINST",
      "page": 7,
      "type": "Btn",
+     "exportValue": "AN ADDED PARTY",
+     "columnHeader": "THIS CLAIM IS MADE AGAINST",
      "rect": [
       79,
       634,
@@ -4186,6 +4738,8 @@
      "name": "full legal name_2",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       333,
       633,
@@ -4200,6 +4754,8 @@
      "name": "access",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": "Claims relating to child protection",
      "rect": [
       76,
       528,
@@ -4214,6 +4770,8 @@
      "name": "lesser protection order",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": "Claims relating to child protection",
      "rect": [
       76,
       514,
@@ -4228,6 +4786,8 @@
      "name": "return of child(ren) to my/our care",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": "Claims relating to child protection",
      "rect": [
       76,
       501,
@@ -4242,6 +4802,8 @@
      "name": "place child(ren) into the custody of (name) (s. 102, deemed parenting order under s.28 of the Children's Law Reform Act)",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": "Claims relating to child protection",
      "rect": [
       76,
       486,
@@ -4256,6 +4818,8 @@
      "name": "name",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       279,
       485,
@@ -4270,6 +4834,8 @@
      "name": "place child(ren) into the custody of (name) (s. 116(1)(b), custody order for child formerly in extended society care)",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": "Claims relating to child protection",
      "rect": [
       76,
       462,
@@ -4284,6 +4850,8 @@
      "name": "name_2",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Children's Law Reform Act",
      "rect": [
       279,
       460,
@@ -4298,6 +4866,8 @@
      "name": "interim society care",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": null,
      "rect": [
       76,
       437,
@@ -4312,6 +4882,8 @@
      "name": "number of months",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "child",
      "rect": [
       203,
       434,
@@ -4326,6 +4898,8 @@
      "name": "place child(ren) into the care and custody of (name) subject to society supervision",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": null,
      "rect": [
       77,
       421,
@@ -4340,6 +4914,8 @@
      "name": "name_3",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "into the care and custody of",
      "rect": [
       96,
       407,
@@ -4354,6 +4930,8 @@
      "name": "costs",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": null,
      "rect": [
       76,
       389,
@@ -4368,6 +4946,8 @@
      "name": "other (specify)",
      "page": 7,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": null,
      "rect": [
       76,
       374,
@@ -4382,6 +4962,8 @@
      "name": "other (Specify)",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "subject to society supervision",
      "rect": [
       167,
       372,
@@ -4396,6 +4978,8 @@
      "name": "Give details of the order that you want the court to make. (Include the name(s) of the child(ren) relating to each claim.)",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "subject to society supervision",
      "rect": [
       75,
       281,
@@ -4410,6 +4994,8 @@
      "name": "(In numbered paragraphs, set out the facts that form the legal basis for your claim(s). Attach an additional page and number it  if you need more space.)",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(In numbered paragraphs, set out the facts that form the legal basis for your claim(s). Attach an additional page and number it",
      "rect": [
       73,
       168,
@@ -4424,6 +5010,8 @@
      "name": "Date of signature",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Put a line through any space left on this page.",
      "rect": [
       42,
       125,
@@ -4438,6 +5026,8 @@
      "name": "Signature",
      "page": 7,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       333,
       125,
@@ -4452,6 +5042,8 @@
      "name": "Date of signature_2",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Date of signature",
      "rect": [
       42,
       84,
@@ -4466,6 +5058,8 @@
      "name": "Signature_2",
      "page": 7,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": "Signature",
      "rect": [
       333,
       84,
@@ -4480,6 +5074,8 @@
      "name": "Court File Number",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       438,
       736,
@@ -4521,6 +5117,8 @@
      "name": "Court File Number",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       441,
       719,
@@ -4535,6 +5133,8 @@
      "name": "date of affidavit (d, m, y)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(general) dated",
      "rect": [
       440,
       666,
@@ -4549,6 +5149,8 @@
      "name": "Name of court",
      "page": 1,
      "type": "Ch",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       52,
       718,
@@ -4563,6 +5165,8 @@
      "name": "Court office address",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Name of court)",
      "rect": [
       68,
       674,
@@ -4577,6 +5181,8 @@
      "name": "Applicant(s) — Full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       53,
       569,
@@ -4591,6 +5197,8 @@
      "name": "Applicant(s) — Lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       325,
       569,
@@ -4605,6 +5213,8 @@
      "name": "Respondent(s) — Full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       53,
       472,
@@ -4619,6 +5229,8 @@
      "name": "Respondent(s) — Lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       325,
       473,
@@ -4633,6 +5245,8 @@
      "name": "full legal name",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       182,
       450,
@@ -4647,6 +5261,8 @@
      "name": "municipality & province",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       198,
       426,
@@ -4661,6 +5277,8 @@
      "name": "Set out the statements of fact in consecutively numbered paragraphs",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "one complete sentence and be limited to a particular statement of fact. If you learned a fact from someone else, you must give that",
      "rect": [
       54,
       34,
@@ -4675,6 +5293,8 @@
      "name": "date of affidavit (d, m, y) 2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Affidavit (general) dated",
      "rect": [
       124,
       727,
@@ -4689,6 +5309,8 @@
      "name": "Court File Number - Page 2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       441,
       728,
@@ -4703,6 +5325,8 @@
      "name": "municipality",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       186,
       184,
@@ -4717,6 +5341,8 @@
      "name": "province, state, or country",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Put a line through any blank space left on this page.",
      "rect": [
       70,
       156,
@@ -4731,6 +5357,8 @@
      "name": "Signature",
      "page": 2,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       425,
       142,
@@ -4745,6 +5373,8 @@
      "name": "date of signature",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sworn/Affirmed before me at",
      "rect": [
       69,
       113,
@@ -4759,6 +5389,8 @@
      "name": "Set out the statements of fact in consecutively numbered paragraphs - continued",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       54,
       228,
@@ -4773,6 +5405,8 @@
      "name": "Name of Commissioner for taking affidavits",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Type or print name below if signature is illegible.)",
      "rect": [
       213,
       72,
@@ -4787,6 +5421,8 @@
      "name": "Signature of Commissioner for taking affidavits",
      "page": 2,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": "municipality",
      "rect": [
       213,
       112,
@@ -4939,6 +5575,8 @@
      "name": "Court File Number, page 1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       440,
       724,
@@ -4953,6 +5591,8 @@
      "name": "Name of court",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       147,
       724,
@@ -4967,6 +5607,8 @@
      "name": "Court office address",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Name of court)",
      "rect": [
       147,
       695,
@@ -4981,6 +5623,8 @@
      "name": "Applicant(s) Full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       52,
       580,
@@ -4995,6 +5639,8 @@
      "name": "Applicant(s) Lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       324,
       580,
@@ -5009,6 +5655,8 @@
      "name": "Respondent(s) Full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       52,
       479,
@@ -5023,6 +5671,8 @@
      "name": "Respondent(s) Lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       324,
       479,
@@ -5037,6 +5687,8 @@
      "name": "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)) and name of person represented",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers",
      "rect": [
       52,
       375,
@@ -5051,6 +5703,8 @@
      "name": "Date - first court date",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE",
      "rect": [
       219,
       292,
@@ -5065,6 +5719,8 @@
      "name": "Time",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE",
      "rect": [
       426,
       292,
@@ -5079,6 +5735,8 @@
      "name": "a.m",
      "page": 1,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE",
      "rect": [
       493,
       293,
@@ -5093,6 +5751,8 @@
      "name": "p.m",
      "page": 1,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE",
      "rect": [
       542,
       293,
@@ -5107,6 +5767,8 @@
      "name": "Address - first court date",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE",
      "rect": [
       53,
       236,
@@ -5121,6 +5783,8 @@
      "name": "The children’s aid society is also making a claim for child support. You MUST fill out a Financial Statement (Form 13 – a blank copy attached), serve a copy on the society and file a copy in the court office with an Affidavit of Service even if you do not answer this case",
      "page": 1,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "NOT, THE CASE WILL GO AHEAD WITHOUT YOU AND THE COURT MAY MAKE AN ORDER AND ENFORCE IT",
      "rect": [
       155,
       83,
@@ -5135,6 +5799,8 @@
      "name": "Court File Number, page 2",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       440,
       735,
@@ -5149,6 +5815,8 @@
      "name": "Date of issue",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "to get help from your local legal aid office.",
      "rect": [
       52,
       467,
@@ -5163,6 +5831,8 @@
      "name": "Signature of clerk of the court",
      "page": 2,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": "If you cannot afford a lawyer, you may be able",
      "rect": [
       337,
       467,
@@ -5177,6 +5847,8 @@
      "name": "Court File Number, page 3",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       441,
       736,
@@ -5191,6 +5863,8 @@
      "name": "Child 1 - Full Legal Name",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       52,
       632,
@@ -5205,6 +5879,8 @@
      "name": "Child 1 - Birthdate",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       165,
       632,
@@ -5219,6 +5895,8 @@
      "name": "Child 1 - Age",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Age",
      "rect": [
       222,
       632,
@@ -5233,6 +5911,8 @@
      "name": "Child 1 - Sex",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       259,
       632,
@@ -5247,6 +5927,8 @@
      "name": "Child 1 - Full Legal Name(s) of Parent(s) 1",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       286,
       632,
@@ -5261,6 +5943,8 @@
      "name": "Child 1 - Full Legal Name(s) of Parent(s) 2",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       368,
       632,
@@ -5275,6 +5959,8 @@
      "name": "Child 1 - Is the Child First Nations, Inuk, or Métis?",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       448,
       632,
@@ -5289,6 +5975,8 @@
      "name": "Child 1 - Child’s Bands and First Nations, Inuit, or Métis Communities",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       499,
       632,
@@ -5303,6 +5991,8 @@
      "name": "Child 2 - Full Legal Name",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       52,
       613,
@@ -5317,6 +6007,8 @@
      "name": "Child 2 - Birthdate",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       165,
       613,
@@ -5331,6 +6023,8 @@
      "name": "Child 2 - Age",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Age",
      "rect": [
       222,
       613,
@@ -5345,6 +6039,8 @@
      "name": "Child 2 - Sex",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       259,
       613,
@@ -5359,6 +6055,8 @@
      "name": "Child 2 - Full Legal Name(s) of Parent(s) 1",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       287,
       613,
@@ -5373,6 +6071,8 @@
      "name": "Child 2 - Full Legal Name(s) of Parent(s) 2",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       368,
       613,
@@ -5387,6 +6087,8 @@
      "name": "Child 2 - Is the Child First Nations, Inuk, or Métis?",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       449,
       613,
@@ -5401,6 +6103,8 @@
      "name": "Child 2 - Child’s Bands and First Nations, Inuit, or Métis Communities",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       499,
       613,
@@ -5415,6 +6119,8 @@
      "name": "Child 3 - Full Legal Name",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       52,
       595,
@@ -5429,6 +6135,8 @@
      "name": "Child 3 - Birthdate",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       165,
       595,
@@ -5443,6 +6151,8 @@
      "name": "Child 3 - Age",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Age",
      "rect": [
       222,
       595,
@@ -5457,6 +6167,8 @@
      "name": "Child 3 - Sex",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       259,
       595,
@@ -5471,6 +6183,8 @@
      "name": "Child 3 - Full Legal Name(s) of Parent(s) 1",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       287,
       595,
@@ -5485,6 +6199,8 @@
      "name": "Child 3 - Full Legal Name(s) of Parent(s) 2",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       368,
       595,
@@ -5499,6 +6215,8 @@
      "name": "Child 3 - Is the Child First Nations, Inuk, or Métis?",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       449,
       595,
@@ -5513,6 +6231,8 @@
      "name": "Child 3 - Child’s Bands and First Nations, Inuit, or Métis Communities",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       499,
       595,
@@ -5527,6 +6247,8 @@
      "name": "Child 4 - Full Legal Name",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name",
      "rect": [
       52,
       576,
@@ -5541,6 +6263,8 @@
      "name": "Child 4 - Birthdate",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       165,
       576,
@@ -5555,6 +6279,8 @@
      "name": "Child 4 - Age",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Age",
      "rect": [
       222,
       576,
@@ -5569,6 +6295,8 @@
      "name": "Child 4 - Sex",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       259,
       576,
@@ -5583,6 +6311,8 @@
      "name": "Child 4 - Full Legal Name(s) of Parent(s) 1",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       286,
       576,
@@ -5597,6 +6327,8 @@
      "name": "Child 4 - Full Legal Name(s) of Parent(s) 2",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Full Legal Name(s) of Parent(s)",
      "rect": [
       367,
       576,
@@ -5611,6 +6343,8 @@
      "name": "Child 4 - Is the Child First Nations, Inuk, or Métis?",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Métis?",
      "rect": [
       449,
       576,
@@ -5625,6 +6359,8 @@
      "name": "Child 4 - Child’s Bands and First Nations, Inuit, or Métis Communities",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Communities",
      "rect": [
       499,
       576,
@@ -5639,6 +6375,8 @@
      "name": "the child(ren) has/have suffered physical harm, inflicted by the person having charge of the child(ren) or caused by that person’s",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "(Check the applicable box(es). In each checked paragraph, delete those portions of the text that are not relevant.)",
      "rect": [
       78,
       474,
@@ -5653,6 +6391,8 @@
      "name": "failure to care for, provide for, supervise or protect the child(ren) adequately [subclause 74(2)(a)(i)] 1",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "by that person’s",
      "rect": [
       98,
       449,
@@ -5667,6 +6407,8 @@
      "name": "pattern of neglect in caring for, providing for, supervising or protecting the child(ren) [subclause 74(2)(a)(ii)] 1",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "by that person’s",
      "rect": [
       98,
       435,
@@ -5681,6 +6423,8 @@
      "name": "here is a risk that the child(ren) is/are likely to suffer physical harm inflicted by the person having charge of the child(ren) or caused by that person’s",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "(Check the applicable box(es). In each checked paragraph, delete those portions of the text that are not relevant.)",
      "rect": [
       78,
       418,
@@ -5695,6 +6439,8 @@
      "name": "failure to care for, provide for, supervise or protect the child(ren) adequately [subclause 74(2)(a)(i)] 2",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "child(ren) or caused by that person’s",
      "rect": [
       98,
       391,
@@ -5709,6 +6455,8 @@
      "name": "pattern of neglect in caring for, providing for, supervising or protecting the child(ren) [subclause 74(2)(a)(ii)] 2",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "child(ren) or caused by that person’s",
      "rect": [
       98,
       375,
@@ -5723,6 +6471,8 @@
      "name": "the child(ren) has/have been sexually abused or sexually exploited, by the person having charge of the child(ren) or by another person where the person having charge knows or should know of the possibility of sexual abuse or sexual exploitation and fails to protect the child(ren) [clause 74(2)(c)]",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       358,
@@ -5737,6 +6487,8 @@
      "name": "there is a risk that the child(ren) is/are likely to be sexually abused or sexually exploited, by the person having charge of the child(ren) or by another person where the person having charge knows of should know of the possibility of sexual abuse or sexual exploitation and fails to protect the child(ren) [clause 74(2)(d)]",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       317,
@@ -5751,6 +6503,8 @@
      "name": "the child(ren) has/have been sexually exploited as a result of being subject to child sex trafficking [clause 74(2)(d.1)]",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       277,
@@ -5765,6 +6519,8 @@
      "name": "there is a risk that the child(ren) is/are likely to be sexually exploited as a result of being subjected to child sex trafficking [clause 74(2)(d.2)]",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       79,
       248,
@@ -5779,6 +6535,8 @@
      "name": "the child(ren) require(s) treatment to cure, prevent or alleviate physical harm or suffering and the child(ren)’s parent or the person having charge of the child(ren) does not provide the treatment or access to the treatment, or, where the child(ren) is/are incapable of consenting to the treatment under the Health Care Consent Act, 1996 and the parent is a substitute decision-maker for the child(ren), the parent refuses or is unavailable or unable to consent to the treatment on the child(ren)’s behalf [clause 74(2)(e)]",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       219,
@@ -5793,6 +6551,8 @@
      "name": "the child(ren) has/have suffered emotional harm, demonstrated by serious anxiety, depression, withdrawal, self-destructive or aggressive behaviour, or delayed development and there are reasonable grounds to believe that the emotional harm suffered by the child(ren) results from the actions, failure to act or pattern of neglect on the part of the child(ren)’s parent or the person having charge of the child(ren) [clause 74(2)(f)]",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       155,
@@ -5807,6 +6567,8 @@
      "name": "the child(ren) has/have suffered emotional harm, demonstrated by serious anxiety, depression, withdrawal, self-destructive or aggressive behaviour, or delayed development and the child(ren)’s parent or the person having charge of the child(ren) does not provide treatment or access to treatment, or, where the child(ren) is/are incapable of consenting to treatment under the Health Care Consent Act, 1996, refuses or is unavailable or unable to consent to the treatment to remedy or alleviate the harm [clause 74(2)(g)]",
      "page": 3,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       103,
@@ -5821,6 +6583,8 @@
      "name": "Court File Number, page 4",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       441,
       735,
@@ -5835,6 +6599,8 @@
      "name": "there is a risk that the child(ren) is/are likely to suffer emotional harm, demonstrated by serious anxiety, depression, withdrawal, self-destructive or aggressive behaviour, or delayed development resulting from the actions, failure to act or pattern of neglect on the part of the child(ren)’s parent or the person having charge of the child(ren) [clause 74(2)(h)]",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "Form 8B:",
      "rect": [
       78,
       715,
@@ -5849,6 +6615,8 @@
      "name": "there is a risk that the child(ren) is/are likely to suffer emotional harm, demonstrated by serious anxiety, depression, withdrawal, self-destructive or aggressive behaviour, or delayed development and that the child(ren)’s parent or the person having charge of the child(ren) does not provide treatment or access to treatment, or, where the child(ren) is/are incapable of consenting to treatment under the Health Care Consent Act, 1996, refuses or is unavailable or unable to consent to treatment to prevent the harm [clause 74(2)(i)]",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "Form 8B:",
      "rect": [
       78,
       667,
@@ -5863,6 +6631,8 @@
      "name": "the child(ren) suffer(s) from a mental, emotional or developmental condition that, if not remedied, could seriously impair the child(ren)’s development and the child(ren)’s parent or the person having charge of the child(ren) does not provide treatment or access to treatment, or, where the child(ren) is/are incapable of consenting to treatment under the Health Care Consent Act, 1996, refuses or is unavailable or unable to consent to the treatment to remedy or alleviate the condition [clause 74(2)(j)]",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       607,
@@ -5877,6 +6647,8 @@
      "name": "the child(ren)’s parent has died or is unavailable to exercise the rights of custody over the child(ren) and has not made adequate provision for the child(ren)’s care and custody, or the child(ren) is/are in a residential placement and the parent refuses or is unable or unwilling to resume the child(ren)’s care and custody [clause 74(2)(k)]",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       547,
@@ -5891,6 +6663,8 @@
      "name": "the child(ren) is/are younger than twelve and has/have killed or seriously injured another person or caused serious damage to another person’s property, services or treatment are necessary to prevent a recurrence and the child(ren)’s parent or the person having charge of the child(ren) does not provide services or treatment or access to services or treatment, or, where the child(ren) is/are incapable of consenting to treatment under the Health Care Consent Act, 1996, refuses or is unavailable or unable to consent to treatment [clause 74(2)(l)]",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       499,
@@ -5905,6 +6679,8 @@
      "name": "the child(ren) is/are less than twelve years old and has/have, on more than one occasion, injured another person or caused loss or damage to another person’s property, with the encouragement of the person having charge of the child(ren) or because of that person’s failure or inability to supervise the child(ren) adequately [clause 74(2)(m)]",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       440,
@@ -5919,6 +6695,8 @@
      "name": "the child(ren)’s parent is unable to care for the child(ren) and the child(ren) is/are brought before the court with the parent’s consent and, where the child(ren) is/are twelve years of age or older, with the child(ren)’s consent, for the matter to be dealt with under Part V of the Child, Youth and Family Services Act, 2017 [clause 74(2)(n)]",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       392,
@@ -5933,6 +6711,8 @@
      "name": "the child(ren) is/are sixteen or seventeen years of age and a prescribed circumstance or condition exists [clause 74(2)(o)]",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       355,
@@ -5947,6 +6727,8 @@
      "name": "Name",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "the child(ren) is/are sixteen or seventeen years of age and a prescribed circumstance or condition exists [clause",
      "rect": [
       111,
       326,
@@ -5961,6 +6743,8 @@
      "name": "that the child(ren) be placed with",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "(name)",
      "rect": [
       78,
       308,
@@ -5975,6 +6759,8 @@
      "name": "Name of parent or another person 1",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "the child(ren) is/are sixteen or seventeen years of age and a prescribed circumstance or condition exists [clause",
      "rect": [
       406,
       307,
@@ -5989,6 +6775,8 @@
      "name": "Full legal name of supervising society 1",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(full legal name of supervising society)",
      "rect": [
       94,
       276,
@@ -6003,6 +6791,8 @@
      "name": "number of months 1",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "subject to the supervision of",
      "rect": [
       163,
       259,
@@ -6017,6 +6807,8 @@
      "name": "that the child(ren) be placed in the interim society care of",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       227,
@@ -6031,6 +6823,8 @@
      "name": "Full legal name of society 1",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "that the child(ren) be placed in the interim society care of",
      "rect": [
       95,
       210,
@@ -6045,6 +6839,8 @@
      "name": "number of months 2",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "that the child(ren) be placed in the interim society care of",
      "rect": [
       164,
       194,
@@ -6059,6 +6855,8 @@
      "name": "that the child(ren) be placed in the interim society care of",
      "page": 4,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       177,
@@ -6073,6 +6871,8 @@
      "name": "Full legal name of society 2",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "that the child(ren) be placed in the interim society care of",
      "rect": [
       95,
       160,
@@ -6087,6 +6887,8 @@
      "name": "number of months 3",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "that the child(ren) be placed in the interim society care of",
      "rect": [
       164,
       144,
@@ -6101,6 +6903,8 @@
      "name": "Name of parent or another person 2",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "months and then returned to",
      "rect": [
       95,
       128,
@@ -6115,6 +6919,8 @@
      "name": "Full legal name of supervising society 2",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(full legal name of supervising society)",
      "rect": [
       94,
       96,
@@ -6129,6 +6935,8 @@
      "name": "number of months 4",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "subject to the supervision of",
      "rect": [
       164,
       80,
@@ -6143,6 +6951,8 @@
      "name": "Court File Number, page 5",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       441,
       735,
@@ -6157,6 +6967,8 @@
      "name": "that the child(ren) be placed in the extended society care of",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "Form 8B:",
      "rect": [
       78,
       715,
@@ -6171,6 +6983,8 @@
      "name": "Full legal name of caretaker society",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "that the child(ren) be placed in the extended society care of",
      "rect": [
       78,
       695,
@@ -6185,6 +6999,8 @@
      "name": "relating to access under the Child, Youth and Family Services Act, 2017, the details of which are as follows:",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "Form 8B:",
      "rect": [
       78,
       682,
@@ -6199,6 +7015,8 @@
      "name": "Access under the Child, Youth and Family Services Act, 2017 - details",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child, Youth and Family Services Act, 2017",
      "rect": [
       77,
       650,
@@ -6213,6 +7031,8 @@
      "name": "that (name of person) be restrained under s. 137 of the Child, Youth and Family Services Act, 2017 from having any contact with (name of child(ren) and/or any other caregiver)",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       633,
@@ -6227,6 +7047,8 @@
      "name": "Name of person 1",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child, Youth and Family Services Act, 2017",
      "rect": [
       191,
       631,
@@ -6241,6 +7063,8 @@
      "name": "Name of child(ren) and/or any other caregiver 1",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child, Youth and Family Services Act, 2017",
      "rect": [
       77,
       551,
@@ -6255,6 +7079,8 @@
      "name": "Relating to payment of support while the child(ren) is/are in care or subject to an order of supervision, the details of which are as follows:",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       538,
@@ -6269,6 +7095,8 @@
      "name": "Payment of support - details",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "relating to payment of support while the child(ren) is/are in care or subject to an order of supervision, the",
      "rect": [
       78,
       411,
@@ -6283,6 +7111,8 @@
      "name": "for court costs",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       394,
@@ -6297,6 +7127,8 @@
      "name": "Other",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       376,
@@ -6311,6 +7143,8 @@
      "name": "Other (Specify)",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       165,
       376,
@@ -6325,6 +7159,8 @@
      "name": "that the child(ren) be placed in the custody of",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       358,
@@ -6339,6 +7175,8 @@
      "name": "Name of custodian – cannot be a foster parent of the child",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(name of custodian",
      "rect": [
       94,
       340,
@@ -6353,6 +7191,8 @@
      "name": "relating to access, the details of which are as follows",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       307,
@@ -6367,6 +7207,8 @@
      "name": "Access - details",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(This order shall be deemed to be a parenting order under s. 28 of the",
      "rect": [
       79,
       187,
@@ -6381,6 +7223,8 @@
      "name": "that (name of person) be restrained under s. 102(3) of the Child, Youth and Family Services Act, 2017 from having contact with (name of child(ren) and/or any other caregiver)",
      "page": 5,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       147,
@@ -6395,6 +7239,8 @@
      "name": "Name of person 2",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(This order shall be deemed to be a parenting or contact order, as the case may be, under s. 28 of the",
      "rect": [
       187,
       147,
@@ -6409,6 +7255,8 @@
      "name": "Name of child(ren) and/or any other caregiver 2",
      "page": 5,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child, Youth and Family Services Act, 2017",
      "rect": [
       95,
       71,
@@ -6423,6 +7271,8 @@
      "name": "Court File Number, page 6",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       440,
       735,
@@ -6437,6 +7287,8 @@
      "name": "has/have never before been in the care of a society under an out-of-court agreement under s. 75 of Child, Youth and Family Services Act, 2017",
      "page": 6,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "To the applicant’s best knowledge, the child(ren)",
      "rect": [
       79,
       686,
@@ -6451,6 +7303,8 @@
      "name": "has/have been in the care of a society under an out-of-court agreement under s. 75 of the Child, Youth and Family Services Act, 2017. The details are as follows",
      "page": 6,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "To the applicant’s best knowledge, the child(ren)",
      "rect": [
       78,
       673,
@@ -6465,6 +7319,8 @@
      "name": "Number of times each child was in society care, when the care began and how long it lasted",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": ". The details are as follows:",
      "rect": [
       79,
       594,
@@ -6479,6 +7335,8 @@
      "name": "have 1",
      "page": 6,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "(Set out the number of times each child was in society care,",
      "rect": [
       380,
       576,
@@ -6493,6 +7351,8 @@
      "name": "have not 1",
      "page": 6,
      "type": "Btn",
+     "exportValue": "Yes",
+     "columnHeader": "(Set out the number of times each child was in society care,",
      "rect": [
       464,
       576,
@@ -6507,6 +7367,8 @@
      "name": "Any existing parenting or contact order - details",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "existing parenting or contact order, including whether made by a superior court or under the",
      "rect": [
       78,
       493,
@@ -6521,6 +7383,8 @@
      "name": "have 2",
      "page": 6,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "existing parenting or contact order, including whether made by a superior court or under the",
      "rect": [
       194,
       479,
@@ -6535,6 +7399,8 @@
      "name": "have not 2",
      "page": 6,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "existing parenting or contact order, including whether made by a superior court or under the",
      "rect": [
       286,
       479,
@@ -6549,6 +7415,8 @@
      "name": "Date of agreement and indicate which of its terms are in dispute",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "agreement and indicate which of its terms are in dispute. Attach an additional page if you need more space.)",
      "rect": [
       79,
       367,
@@ -6563,6 +7431,8 @@
      "name": "Facts upon which the applicant is relying in this application",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Set out the facts in numbered paragraphs. If you need more space, you may attach a page, but you must date and sign each",
      "rect": [
       78,
       181,
@@ -6577,6 +7447,8 @@
      "name": "Signature",
      "page": 6,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       342,
       138,
@@ -6591,6 +7463,8 @@
      "name": "If applicant is a children's aid society, give office or position of person signing",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Date of signature",
      "rect": [
       52,
       98,
@@ -6605,6 +7479,8 @@
      "name": "Print or type name",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Signature",
      "rect": [
       342,
       98,
@@ -6619,6 +7495,8 @@
      "name": "Date of signature",
      "page": 6,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Put a line through any blank space left on this page.",
      "rect": [
       51,
       138,
@@ -6633,6 +7511,8 @@
      "name": "Court File Number, page 7",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       441,
       735,
@@ -6647,6 +7527,8 @@
      "name": "Terms and conditions proposed for the child(ren)’s supervision",
      "page": 7,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "The terms and conditions proposed for the child(ren)’s supervision are as follows:",
      "rect": [
       52,
       53,
@@ -6726,6 +7608,8 @@
      "name": "Court File Number",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       447,
       725,
@@ -6740,6 +7624,8 @@
      "name": "Court office address",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Name of court)",
      "rect": [
       63,
       686,
@@ -6754,6 +7640,8 @@
      "name": "Applicant's full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       44,
       587,
@@ -6768,6 +7656,8 @@
      "name": "Applicant lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       325,
       587,
@@ -6782,6 +7672,8 @@
      "name": "Respondent's full legal name & address for service — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "postal code, telephone & fax numbers and e-mail address (if any).",
      "rect": [
       44,
       490,
@@ -6796,6 +7688,8 @@
      "name": "Respondent lawyer’s name & address — street & number, municipality, postal code, telephone & fax numbers and e-mail address (if any)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "telephone & fax numbers and e-mail address (if any).",
      "rect": [
       325,
       490,
@@ -6810,6 +7704,8 @@
      "name": "Name  address of Childrens Lawyers agent for service street  number municipality postal code telephone  fax numbers and email address if any and name of person representedRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers and e-",
      "rect": [
       44,
       403,
@@ -6824,6 +7720,8 @@
      "name": "full legal name",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers and e-",
      "rect": [
       203,
       363,
@@ -6838,6 +7736,8 @@
      "name": "position with children's aid society",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       329,
       344,
@@ -6852,6 +7752,8 @@
      "name": "Childs Full Legal NameRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child’s Full Legal Name",
      "rect": [
       70,
       291,
@@ -6866,6 +7768,8 @@
      "name": "BirthdateRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       288,
       291,
@@ -6880,6 +7784,8 @@
      "name": "SexRow1",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       507,
       291,
@@ -6894,6 +7800,8 @@
      "name": "Childs Full Legal NameRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child’s Full Legal Name",
      "rect": [
       70,
       273,
@@ -6908,6 +7816,8 @@
      "name": "BirthdateRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       288,
       273,
@@ -6922,6 +7832,8 @@
      "name": "SexRow2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       507,
       273,
@@ -6936,6 +7848,8 @@
      "name": "Childs Full Legal NameRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Child’s Full Legal Name",
      "rect": [
       70,
       255,
@@ -6950,6 +7864,8 @@
      "name": "BirthdateRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Birthdate",
      "rect": [
       288,
       255,
@@ -6964,6 +7880,8 @@
      "name": "SexRow3",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Sex",
      "rect": [
       507,
       255,
@@ -6978,6 +7896,8 @@
      "name": "After the court makes a finding that the children isare in need of protection under Part V of the Child Youth",
      "page": 1,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": "The child(ren) in this case is/are:",
      "rect": [
       78,
       238,
@@ -6992,6 +7912,8 @@
      "name": "The court previously found on date",
      "page": 1,
      "type": "Btn",
+     "exportValue": "On",
+     "columnHeader": null,
      "rect": [
       78,
       209,
@@ -7006,6 +7928,8 @@
      "name": "date",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": ", I/we ask the court to make an order.",
      "rect": [
       261,
       208,
@@ -7020,6 +7944,8 @@
      "name": "date_2",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "need of protection under Part V of the",
      "rect": [
       166,
       173,
@@ -7034,6 +7960,8 @@
      "name": "Name of court",
      "page": 1,
      "type": "Ch",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       63,
       724,
@@ -7048,6 +7976,8 @@
      "name": "The details of the order that I/we now ask the court to make are as follows: (Give details of the order you now want the court to make. If you want the order to include any supervision by the children’s aid society, give details of any terms and  conditions of supervision.)",
      "page": 1,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "court to make. If you want the order to include any supervision by the children’s aid society, give details of any terms and",
      "rect": [
       76,
       70,
@@ -7062,6 +7992,8 @@
      "name": "Court File Number",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       439,
       736,
@@ -7076,6 +8008,8 @@
      "name": "Give details of the service needed, who needs it and who will be providing it",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "The services that the family and child(ren) need and that will be provided are as follows:",
      "rect": [
       75,
       507,
@@ -7090,6 +8024,8 @@
      "name": "Set out conditions and estimate the time needed to achieve them",
      "page": 2,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "(Set out conditions and estimate the time needed to achieve them.)",
      "rect": [
       74,
       98,
@@ -7104,6 +8040,8 @@
      "name": "Court File Number",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       439,
       736,
@@ -7118,6 +8056,8 @@
      "name": "The child(ren) cannot be adequately protected while in the care of the respondent(s) because:",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "The child(ren) cannot be adequately protected while in the care of the respondent(s) because:",
      "rect": [
       75,
       570,
@@ -7132,6 +8072,8 @@
      "name": "(Describe the efforts made. If no efforts were made, give explanation.)",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Describe the efforts made. If no efforts were made, give explanation.)",
      "rect": [
       75,
       406,
@@ -7146,6 +8088,8 @@
      "name": "Describe plans",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "The following efforts are planned to keep up the child(ren)’s contact with the respondent(s):",
      "rect": [
       75,
       241,
@@ -7160,6 +8104,8 @@
      "name": "The following arrangements have been or are being made to recognize the importance of the child's culture and to preserve his/her heritage, traditions and cultural identity",
      "page": 3,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "The following arrangements have been or are being made to recognize the importance of the child's culture and to",
      "rect": [
       75,
       87,
@@ -7174,6 +8120,8 @@
      "name": "The children's aid society has removed the child(ren) from the care of the respondent(s) and intends to make this removal",
      "page": 4,
      "type": "Btn",
+     "exportValue": "temporary",
+     "columnHeader": "The children’s aid society has r",
      "rect": [
       145,
       673,
@@ -7188,6 +8136,8 @@
      "name": "The children's aid society has removed the child(ren) from the care of the respondent(s) and intends to make this removal",
      "page": 4,
      "type": "Btn",
+     "exportValue": "permanent",
+     "columnHeader": "The children’s aid society has r",
      "rect": [
       145,
       657,
@@ -7202,6 +8152,8 @@
      "name": "If the children's aid society is not seeking an order of extended society care, please provide details of the efforts by the children's aid society to provide a long-term, stable placement for the  child",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "provide details of the efforts by the children's aid society to provide a long-term, stable placement for the",
      "rect": [
       164,
       495,
@@ -7216,6 +8168,8 @@
      "name": "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family through one of the following methods:",
      "page": 4,
      "type": "Btn",
+     "exportValue": "adoption",
+     "columnHeader": "through one of the following methods:",
      "rect": [
       76,
       436,
@@ -7230,6 +8184,8 @@
      "name": "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family through one of the following methods:",
      "page": 4,
      "type": "Btn",
+     "exportValue": "a custody order under s. 116(1)",
+     "columnHeader": "through one of the following methods:",
      "rect": [
       179,
       436,
@@ -7244,6 +8200,8 @@
      "name": "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family through one of the following methods:",
      "page": 4,
      "type": "Btn",
+     "exportValue": "a plan for customary care",
+     "columnHeader": "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family",
      "rect": [
       384,
       436,
@@ -7258,6 +8216,8 @@
      "name": "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family through one of the following methods:",
      "page": 4,
      "type": "Btn",
+     "exportValue": "other (please provide available details",
+     "columnHeader": "through one of the following methods:",
      "rect": [
       76,
       419,
@@ -7272,6 +8232,8 @@
      "name": "Please provide available details",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family",
      "rect": [
       98,
       328,
@@ -7286,6 +8248,8 @@
      "name": "Print name of person to whom this plan was explainedRow1",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "was explained",
      "rect": [
       73,
       267,
@@ -7300,6 +8264,8 @@
      "name": "Print name of person who explained planRow1",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Print name of person who explained plan",
      "rect": [
       273,
       267,
@@ -7314,6 +8280,8 @@
      "name": "Date of explanationRow1",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Date of explanation",
      "rect": [
       475,
       267,
@@ -7328,6 +8296,8 @@
      "name": "Print name of person to whom this plan was explainedRow2",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "was explained",
      "rect": [
       73,
       249,
@@ -7342,6 +8312,8 @@
      "name": "Print name of person who explained planRow2",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Print name of person who explained plan",
      "rect": [
       273,
       249,
@@ -7356,6 +8328,8 @@
      "name": "Date of explanationRow2",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Date of explanation",
      "rect": [
       475,
       249,
@@ -7370,6 +8344,8 @@
      "name": "Print name of person to whom this plan was explainedRow3",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "was explained",
      "rect": [
       73,
       231,
@@ -7384,6 +8360,8 @@
      "name": "Print name of person who explained planRow3",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Print name of person who explained plan",
      "rect": [
       273,
       231,
@@ -7398,6 +8376,8 @@
      "name": "Date of explanationRow3",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Date of explanation",
      "rect": [
       475,
       231,
@@ -7412,6 +8392,8 @@
      "name": "Print name of person to whom this plan was explainedRow4",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "was explained",
      "rect": [
       73,
       213,
@@ -7426,6 +8408,8 @@
      "name": "Print name of person who explained planRow4",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Print name of person who explained plan",
      "rect": [
       273,
       213,
@@ -7440,6 +8424,8 @@
      "name": "Date of explanationRow4",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Date of explanation",
      "rect": [
       475,
       213,
@@ -7454,6 +8440,8 @@
      "name": "Print name of person to whom this plan was explainedRow5",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "was explained",
      "rect": [
       73,
       195,
@@ -7468,6 +8456,8 @@
      "name": "Print name of person who explained planRow5",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Print name of person who explained plan",
      "rect": [
       273,
       195,
@@ -7482,6 +8472,8 @@
      "name": "Date of explanationRow5",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Date of explanation",
      "rect": [
       475,
       195,
@@ -7496,6 +8488,8 @@
      "name": "Date of signature.0",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Put a line through any blank space left on this page.",
      "rect": [
       42,
       137,
@@ -7510,6 +8504,8 @@
      "name": "Signature",
      "page": 4,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       334,
       138,
@@ -7524,6 +8520,8 @@
      "name": "Date of signature.1",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": "Date of signature",
      "rect": [
       41,
       88,
@@ -7538,6 +8536,8 @@
      "name": "Signature_2",
      "page": 4,
      "type": "Sig",
+     "exportValue": null,
+     "columnHeader": "Signature",
      "rect": [
       334,
       88,
@@ -7552,6 +8552,8 @@
      "name": "Court File Number",
      "page": 4,
      "type": "Tx",
+     "exportValue": null,
+     "columnHeader": null,
      "rect": [
       440,
       737,

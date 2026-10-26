@@ -65,6 +65,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -80,6 +85,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality,",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -93,6 +103,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "agreements or other measures) (include dates of any Child protection service(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "agreements or other measures)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -106,6 +121,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "agreements or other measures) (include dates of any Child protection service(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "agreements or other measures)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -119,6 +139,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "agreements or other measures)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -132,6 +157,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "agreements or other measures)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -145,6 +175,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "agreements or other measures)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -158,6 +193,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "agreements or other measures)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -171,6 +211,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -186,6 +229,11 @@
       "signature-date"
      ],
      "evidenceLabel": "on",
+     "exportValues": [],
+     "columnHeaders": [
+      "Municipality"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "SIGNATURE_DATE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -201,6 +249,11 @@
       "court-office-address"
      ],
      "evidenceLabel": "at",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Name of court)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_OFFICE_ADDRESS",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -217,6 +270,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "Court File Number",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -230,6 +286,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Court location",
+     "exportValues": [],
+     "columnHeaders": [
+      "Court location"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -243,6 +304,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Court location",
+     "exportValues": [],
+     "columnHeaders": [
+      "Court location"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -256,6 +322,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Court location"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -269,6 +340,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Court location"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -282,6 +358,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Court location"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -295,6 +376,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Court location"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -308,6 +394,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -321,6 +410,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(include dates of orders) Court orders made",
+     "exportValues": [],
+     "columnHeaders": [
+      "(include dates of orders)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -334,6 +428,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(include dates of orders) Court orders made",
+     "exportValues": [],
+     "columnHeaders": [
+      "(include dates of orders)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -347,6 +446,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "(include dates of orders)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -360,6 +464,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "(include dates of orders)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -373,6 +482,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "(include dates of orders)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -386,6 +500,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "(include dates of orders)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -399,6 +518,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -414,6 +536,11 @@
       "signature-date"
      ],
      "evidenceLabel": "on",
+     "exportValues": [],
+     "columnHeaders": [
+      "efore me"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "SIGNATURE_DATE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -429,6 +556,11 @@
       "deponent-name"
      ],
      "evidenceLabel": "My name is (full legal name)",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "DEPONENT_NAME",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -442,6 +574,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "society Location of children’s aid",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -455,6 +592,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "society Location of children’s aid",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -468,6 +610,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -481,6 +628,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -494,6 +646,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -507,6 +664,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -520,6 +682,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -533,6 +698,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "efore me a t",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -546,6 +714,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "society Name of children's aid",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -559,6 +732,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "society Name of children's aid",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -572,6 +750,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "society Name of children's aid",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -585,6 +768,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "society Name of children's aid",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -598,6 +786,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -611,6 +804,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -624,6 +822,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -637,6 +840,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -650,6 +858,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -663,6 +876,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -676,6 +894,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -689,6 +912,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -702,6 +930,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -715,6 +946,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -728,6 +962,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I live in: (name of city, town or municipality and province, state or country if outside of Ontario) My name is (full legal name)",
+     "exportValues": [],
+     "columnHeaders": [
+      "(name of city, town or municipality and province, state or country if outside of Ontario)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -743,6 +982,9 @@
       "court-name"
      ],
      "evidenceLabel": "ONTARIO",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_NAME",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -756,6 +998,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "involved Names of other people",
+     "exportValues": [],
+     "columnHeaders": [
+      "involved"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -769,6 +1016,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "involved"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -782,6 +1034,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "involved"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -795,6 +1052,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -808,6 +1068,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "in the case Names of people involved",
+     "exportValues": [],
+     "columnHeaders": [
+      "in the case"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -821,6 +1086,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "in the case Names of people involved",
+     "exportValues": [],
+     "columnHeaders": [
+      "in the case"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -834,6 +1104,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "in the case"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -847,6 +1122,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "in the case"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -860,6 +1140,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "in the case"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -873,6 +1158,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "in the case"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -886,6 +1176,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -899,6 +1192,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Names of people involved",
+     "exportValues": [],
+     "columnHeaders": [
+      "Names of people involved"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -912,6 +1210,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Names of people involved"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -925,6 +1228,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Names of people involved"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -938,6 +1246,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "in",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -953,6 +1264,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -968,6 +1284,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality,",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -983,6 +1304,9 @@
       "deponent-signature"
      ],
      "evidenceLabel": "Signature (This form is to be signed in front of a",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "DEPONENT_SIGNATURE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1032,6 +1356,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child, Youth and Family Services Act, 2017"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1045,6 +1374,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1058,6 +1392,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1073,6 +1412,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1088,6 +1432,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). street & number, municipality, Full legal name & address for service —",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1105,6 +1454,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "Court File Number",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1120,6 +1472,11 @@
       "court-office-address"
      ],
      "evidenceLabel": "at",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Name of court)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_OFFICE_ADDRESS",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1133,6 +1490,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child, Youth and Family Services Act, 2017"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1146,6 +1508,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1159,6 +1526,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1172,6 +1544,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Date of signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "Relationship to child OR position within children’s aid society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1185,6 +1562,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Date of signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "Relationship to child OR position within children’s aid society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1198,6 +1580,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Date of signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "Relationship to child OR position within children’s aid society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1211,6 +1598,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Print or type full legal name society, state your position within the society.) (Give full legal name. If you are a respondent, state your relationship to the c",
+     "exportValues": [],
+     "columnHeaders": [
+      "society, state your position within the society.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1224,6 +1616,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "The information about the child(ren) in thi s case is as follows:",
+     "exportValues": [],
+     "columnHeaders": [
+      "The information about the child(ren) in thi"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1237,6 +1634,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1250,6 +1652,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1263,6 +1670,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Print or type full legal name",
+     "exportValues": [],
+     "columnHeaders": [
+      "society, state your position within the society.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1276,6 +1688,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Print or type full legal name",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1289,6 +1704,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the Child, Youth",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1302,6 +1722,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the Child, Youth",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1315,6 +1740,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the Child, Youth",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1328,6 +1758,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Name of each of t he child’s bands and First Nations, Inuit, or Métis communities and their representative(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "he child’s bands and First Nations, Inuit, or Métis communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1341,6 +1776,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Name of each of the child’s bands and First Nations, Inuit, or Métis communities and their representative(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name of each of the child’s bands and First Nations, Inuit, or Métis communities and their representative(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1354,6 +1794,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Name of each of the child’s bands and First Nations, Inuit, or Métis communities and their representative(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name of each of the child’s bands and First Nations, Inuit, or Métis communities and their representative(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1367,6 +1812,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full legal name of first child: Date of birth Age Sex",
+     "exportValues": [],
+     "columnHeaders": [
+      "s case is as follows:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1380,6 +1830,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full legal name of second child: Date of birth Age Sex",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1393,6 +1848,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full legal name of third child: Date of birth Age Sex",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full legal name(s) of child’s parent(s) (List everyone who is a parent of the child as defined in section 74 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1406,6 +1866,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "any)) and name of person represented. Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbe",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers and e-"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1421,6 +1886,9 @@
       "court-name"
      ],
      "evidenceLabel": "ONTARIO",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_NAME",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1434,6 +1902,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Is the c hild a First Nations , Inuk , or Métis person?",
+     "exportValues": [],
+     "columnHeaders": [
+      "s case is as follows:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1447,6 +1920,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Is the child a First Nations, Inuk, or Métis person?",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1460,6 +1936,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Is the child a First Nations, Inuk, or Métis person?",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1473,6 +1952,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Relationship to child OR position within children’s aid society (Give full legal name. If you are a respondent, state your relationship to the child(ren). If yo",
+     "exportValues": [],
+     "columnHeaders": [
+      "Relationship to child OR position within children’s aid society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1486,6 +1970,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Relationship to child OR position within children’s aid society",
+     "exportValues": [],
+     "columnHeaders": [
+      "Relationship to child OR position within children’s aid society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1499,6 +1988,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Relationship to child OR position within children’s aid society",
+     "exportValues": [],
+     "columnHeaders": [
+      "Relationship to child OR position within children’s aid society"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1514,6 +2008,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1529,6 +2028,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). street & number, municipality, Full legal name & address for service —",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1542,6 +2046,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1555,6 +2062,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child, Youth"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1568,6 +2080,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child, Youth"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1581,6 +2098,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "society, state your position within the society.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1594,6 +2116,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signature",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1607,6 +2132,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signature",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1620,6 +2148,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "reached.”) point on which there is disagreement must be excluded. If there is no agreement at all on anything, write: “No agreement (If the child(ren) was/were ",
+     "exportValues": [],
+     "columnHeaders": [
+      "point on which there is disagreement must be excluded. If there is no agreement at all on anything, write:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1633,6 +2166,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "agreement reached.”) not set out something as a fact if another party disagrees with it. If you cannot agree at all about anything, write: “No protection agency",
+     "exportValues": [],
+     "columnHeaders": [
+      "not set out something as a fact if another party disagrees with it. If you cannot agree at all about anything, write: “No"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1646,6 +2184,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "application began: The following important events relating to the child(ren)’s best interests have occurred since the date this",
+     "exportValues": [],
+     "columnHeaders": [
+      "The following important events relating to the child(ren)’s best interests have occurred since the date this"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1659,6 +2202,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "finding.) excluded. If there is no agreement at all, write: “No agreement reached.” In any event, the court can always make some other (Use only the reasons lis",
+     "exportValues": [],
+     "columnHeaders": [
+      "excluded. If there is no agreement at all, write: “No agreement reached.” In any event, the court can always make some other"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1672,6 +2220,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "disruptive options would not be enough to protect the child(ren).) would remove the child(ren) from the care of the person who had the child(ren) before the cas",
+     "exportValues": [],
+     "columnHeaders": [
+      "disruptive options would not be enough to protect the child(ren).)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1699,10 +2252,11 @@
    "unresolved": 163,
    "coveragePercent": 3.6,
    "unresolvedByReason": {
-    "NO_RULE": 51,
+    "NO_RULE": 50,
     "NO_PRINTED_LABEL_NEARBY": 109,
     "CONFLICTING_WIDGET_LABELS": 1,
-    "SIGNATURE_NO_LABEL": 2
+    "SIGNATURE_NO_LABEL": 2,
+    "RADIO_GROUP_NOT_CONFIRMED": 1
    },
    "docxComparison": {
     "docxFile": "df0e02ef-form-33b-1-en-dec20.docx",
@@ -1718,6 +2272,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "if you need more space.) (In numbered paragraphs, set out the facts that form the legal basis for your claim(s). Attach an additional page and number it",
+     "exportValues": [],
+     "columnHeaders": [
+      "(In numbered paragraphs, set out the facts that form the legal basis for your claim(s). Attach an additional page and number it"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1731,6 +2290,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Claims relating to child protection (Claims below include claims for temporary orders.)",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [
+      "Claims relating to child protection"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1744,6 +2310,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "of (address for service of added party) AND TO: (full legal name) , an added respondent,",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Note to the respondent(s): If you are making a claim against someone who is not an applicant, insert the person’s name and address here.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1757,6 +2328,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Age",
+     "exportValues": [],
+     "columnHeaders": [
+      "Age"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1770,6 +2346,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1783,6 +2362,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Age"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1796,6 +2380,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Age"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1809,6 +2398,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Age"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1822,6 +2416,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1835,6 +2432,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1848,6 +2448,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1861,6 +2464,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1874,6 +2480,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1889,6 +2498,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "code, telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal",
+     "exportValues": [],
+     "columnHeaders": [
+      "code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1904,6 +2518,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality,",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -1917,6 +2536,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Birthdate",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -1930,6 +2554,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1943,6 +2570,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1956,6 +2588,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1969,6 +2606,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1982,6 +2624,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -1995,6 +2640,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2008,6 +2656,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2021,6 +2672,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2034,6 +2688,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2047,6 +2704,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Communities or Métis",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2060,6 +2722,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2073,6 +2738,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2086,6 +2756,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2099,6 +2774,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2112,6 +2792,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2125,6 +2810,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2138,6 +2826,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2151,6 +2842,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2164,6 +2858,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2177,6 +2874,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Name",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2190,6 +2892,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2203,6 +2908,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2216,6 +2926,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2229,6 +2944,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2242,6 +2962,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2255,6 +2978,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2268,6 +2994,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2281,6 +3010,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2294,6 +3026,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2307,6 +3042,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Child’s Name",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child’s Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2320,6 +3060,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child’s Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2333,6 +3078,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child’s Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2346,6 +3096,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child’s Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2359,6 +3114,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2372,6 +3130,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2385,6 +3146,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2398,6 +3162,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2419,6 +3188,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "Court File Number",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "CONFLICTING_WIDGET_LABELS"
@@ -2434,6 +3206,11 @@
       "court-office-address"
      ],
      "evidenceLabel": "at",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Name of court)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_OFFICE_ADDRESS",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -2447,6 +3224,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Put a line through any space left on this page.",
+     "exportValues": [],
+     "columnHeaders": [
+      "Put a line through any space left on this page."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2460,6 +3242,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Date of signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "Date of signature"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2473,6 +3260,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "AND TO: (full legal name)",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Note to the respondent(s): If you are making a claim against someone who is not an applicant, insert the person’s name and address here.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2486,6 +3278,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "AN ADDED PARTY , whose name is (full legal name)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2499,6 +3294,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I am/We are (full legal name(s))",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Note to the respondent(s): You must complete, serve, file and update this form if any significant changes regarding the child(ren)occur"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2512,6 +3312,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full Legal Name(s) of Parent(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2525,6 +3330,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2538,6 +3346,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2551,6 +3364,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2564,6 +3382,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2577,6 +3400,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2590,6 +3416,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2603,6 +3432,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2616,6 +3448,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2629,6 +3464,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2642,6 +3480,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full Legal Name(s) of Parent(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2655,6 +3498,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2668,6 +3514,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2681,6 +3532,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2694,6 +3550,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2707,6 +3568,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2720,6 +3584,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2733,6 +3600,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2746,6 +3616,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2759,6 +3632,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2772,6 +3648,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Give details of the order that you want the court to make. (Include the name(s) of the child (ren) rela ting t o each claim .)",
+     "exportValues": [],
+     "columnHeaders": [
+      "subject to society supervision"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2785,6 +3666,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(Check applicable box(es).) then go to Part 4.)",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [
+      "(Check applicable box(es).)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2798,6 +3686,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(Check applicable box(es).) to Part 4.)",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [
+      "(Check applicable box(es).)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2811,6 +3706,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2824,6 +3724,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2837,6 +3742,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Information",
+     "exportValues": [],
+     "columnHeaders": [
+      "Information"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2850,6 +3760,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Information",
+     "exportValues": [],
+     "columnHeaders": [
+      "Information"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2863,6 +3778,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Information"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2876,6 +3796,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Information"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2889,6 +3814,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Information"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2902,6 +3832,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2915,6 +3848,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2928,6 +3864,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2941,6 +3880,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2954,6 +3898,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Métis? Inuk, or Nations,",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2967,6 +3916,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -2980,6 +3932,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Métis?",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -2993,6 +3950,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3006,6 +3968,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3019,6 +3986,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3032,6 +4004,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3045,6 +4020,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3058,6 +4036,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3071,6 +4052,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3084,6 +4068,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Claims relating to child protection",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [
+      "Claims relating to child protection"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3097,6 +4088,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "child(ren) into the custody of (name)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3110,6 +4104,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(if any)) and name of person represented. Name & address for service for Children’s Lawyer’s agent — street & number, municipality, postal code, telephone & fax",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name & address for service for Children’s Lawyer’s agent — street & number, municipality, postal code, telephone & fax numbers and e-mail address"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3125,6 +4124,9 @@
       "court-name"
      ],
      "evidenceLabel": "ONTARIO",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_NAME",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -3138,6 +4140,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Name of Other Caregiver(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name of Other Caregiver(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3151,6 +4158,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name of Other Caregiver(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3164,6 +4176,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name of Other Caregiver(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3177,6 +4194,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name of Other Caregiver(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3190,6 +4212,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3203,6 +4228,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3216,6 +4244,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3229,6 +4260,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "( name )",
+     "exportValues": [],
+     "columnHeaders": [
+      "Children's Law Reform Act"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3242,6 +4278,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "place child(ren) into the care and custody of interim society care for",
+     "exportValues": [],
+     "columnHeaders": [
+      "into the care and custody of"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3255,6 +4296,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Name",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3268,6 +4314,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Name",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3281,6 +4332,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3294,6 +4350,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3307,6 +4368,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3320,6 +4386,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3333,6 +4402,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3346,6 +4418,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3359,6 +4434,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "interim society care for",
+     "exportValues": [],
+     "columnHeaders": [
+      "child"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3372,6 +4452,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3385,6 +4470,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "other (Specify.)",
+     "exportValues": [],
+     "columnHeaders": [
+      "subject to society supervision"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3398,6 +4488,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I/We agr",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "I/We agr"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3411,6 +4508,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I/We disagree with the following facts in",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "I/We disagree with the following facts in"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3424,6 +4528,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I/We agree with the following facts in",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "I/We agree with the following facts in"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3437,6 +4548,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I/We disagree with the following facts in",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "I/We disagree with the following facts in"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3450,6 +4568,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I/We agr",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "I/We agr"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3463,6 +4588,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I/We disagree with the following facts in",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "I/We disagree with the following facts in"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3476,6 +4608,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I/We agree with the following facts in",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "I/We agree with the following facts in"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3489,6 +4628,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "I/We disagree with the following facts in",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "I/We disagree with the following facts in"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3502,6 +4648,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(d,m,y to d,m,y) Period of Time with Caregiver(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "(d,m,y to d,m,y)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3515,6 +4666,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "(d,m,y to d,m,y)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3528,6 +4684,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "(d,m,y to d,m,y)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3541,6 +4702,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "(d,m,y to d,m,y)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3554,6 +4720,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "(d,m,y to d,m,y)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3567,6 +4738,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3580,6 +4754,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3593,6 +4770,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3606,6 +4788,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [
+      "Claims relating to child protection"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3619,6 +4808,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [
+      "Claims relating to child protection"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3632,6 +4828,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.) paragraph 3 of the application (Form 8B.1).",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3645,6 +4846,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.) paragraph 3 of the application (Form 8B.1).",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3658,6 +4864,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.) paragraph 3 of the application (Form 8B.1).",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3671,6 +4882,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.) paragraph 3 of the application (Form 8B.1).",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Refer to the numbered paragraph(s) under paragraph 6/paragraph 3 of the application.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3686,6 +4902,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "code, telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal",
+     "exportValues": [],
+     "columnHeaders": [
+      "code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -3701,6 +4922,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality,",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -3714,6 +4940,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [
+      "Claims relating to child protection"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3727,6 +4960,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Sex",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3740,6 +4978,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3753,6 +4994,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3766,6 +5012,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3779,6 +5030,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3792,6 +5048,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3805,6 +5064,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3818,6 +5080,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3831,6 +5096,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3844,6 +5112,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -3857,6 +5128,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signature",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "SIGNATURE_NO_LABEL"
@@ -3870,6 +5144,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "Signature"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "SIGNATURE_NO_LABEL"
@@ -3883,6 +5162,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(Attach an additional page and number it if you need more space.) State why you feel that this plan would be in the child(ren)’s best interests.",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Attach an additional page and number it if you need more space.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3896,22 +5180,35 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "and I am/we are (state your relationship to the child(ren)) I am/We are (full legal name(s))",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Note to the respondent(s): You must complete, serve, file and update this form if any significant changes regarding the child(ren)occur"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
     },
     {
      "fieldName": "THIS CLAIM IS MADE AGAINST",
-     "kind": "checkbox",
+     "kind": "radio",
      "pages": [
       7
      ],
      "widgetCount": 2,
      "ruleIds": [],
      "evidenceLabel": "THIS CLAIM IS MADE AGAINST (Fill out a separate claim page for each person against whom you are making a claim(s).)",
+     "exportValues": [
+      "AN ADDED PARTY",
+      "THE CHILDREN’S AID SOCIETY (OR OTHER APPLICANT) "
+     ],
+     "columnHeaders": [
+      "THIS CLAIM IS MADE AGAINST"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
-     "reason": "NO_RULE"
+     "reason": "RADIO_GROUP_NOT_CONFIRMED"
     },
     {
      "fieldName": "What placement and terms of placement do you believe would be in the child(ren)’s best interests? (You should include in your plan of care at least the following information. If your plan is not the same for a particular child, then complete a separate plan for that child.)",
@@ -3922,6 +5219,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "look after your child(ren) while you are there? If you go to work or school, what are the details, including the days and hours you work or go to school, and wh",
+     "exportValues": [],
+     "columnHeaders": [
+      "If you go to work or school, what are the details, including the days and hours you work or go to school, and who will"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -3981,6 +5283,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality,",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -3996,6 +5303,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4011,6 +5323,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "Court File Number",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4026,6 +5341,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "Court File Number",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4041,6 +5359,11 @@
       "court-office-address"
      ],
      "evidenceLabel": "(Name of court)",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Name of court)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_OFFICE_ADDRESS",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4056,6 +5379,11 @@
       "affidavit-date"
      ],
      "evidenceLabel": "Court office address",
+     "exportValues": [],
+     "columnHeaders": [
+      "(general) dated"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "FORM_DATE_AFFIDAVIT",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4071,6 +5399,11 @@
       "affidavit-date"
      ],
      "evidenceLabel": "Affidavit (general) dated",
+     "exportValues": [],
+     "columnHeaders": [
+      "Affidavit (general) dated"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "FORM_DATE_AFFIDAVIT",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4086,6 +5419,11 @@
       "signature-date"
      ],
      "evidenceLabel": "on",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sworn/Affirmed before me at"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "SIGNATURE_DATE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4101,6 +5439,11 @@
       "deponent-name"
      ],
      "evidenceLabel": "My name is (full legal name)",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "DEPONENT_NAME",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4116,6 +5459,9 @@
       "sworn-municipality"
      ],
      "evidenceLabel": "Sworn/Affirmed before me at",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "SWORN_MUNICIPALITY",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4131,6 +5477,11 @@
       "deponent-residence"
      ],
      "evidenceLabel": "I live in (municipality & province)",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "DEPONENT_RESIDENCE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4146,6 +5497,11 @@
       "commissioner-name"
      ],
      "evidenceLabel": "(Type or print name below if signature is illegible.) Commissioner for taking affidavits",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Type or print name below if signature is illegible.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "COMMISSIONER_NAME",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4161,6 +5517,9 @@
       "court-name"
      ],
      "evidenceLabel": "ONTARIO",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_NAME",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4176,6 +5535,11 @@
       "sworn-province"
      ],
      "evidenceLabel": "in",
+     "exportValues": [],
+     "columnHeaders": [
+      "Put a line through any blank space left on this page."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "SWORN_PROVINCE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4191,6 +5555,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality,",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4206,6 +5575,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4219,6 +5593,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "person’s name and state that you believe that fact to be true. one complete sentence and be limited to a particular statement of fact. If you learned a fact fro",
+     "exportValues": [],
+     "columnHeaders": [
+      "one complete sentence and be limited to a particular statement of fact. If you learned a fact from someone else, you must give that"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4234,6 +5613,9 @@
       "affidavit-date"
      ],
      "evidenceLabel": "Form 14A: Affidavit (general) dated (page 2)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "FORM_DATE_AFFIDAVIT",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4249,6 +5631,9 @@
       "deponent-signature"
      ],
      "evidenceLabel": "Signature (This form is to be signed in front of a",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "DEPONENT_SIGNATURE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4264,6 +5649,11 @@
       "commissioner-signature"
      ],
      "evidenceLabel": "Commissioner for taking affidavits (Type or print name below if signature is illegible.)",
+     "exportValues": [],
+     "columnHeaders": [
+      "municipality"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "COMMISSIONER_SIGNATURE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4400,6 +5790,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "AT",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4413,6 +5810,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "relating to access, the details of which are as follows: (This order shall be deemed to be a parenting order under s. 28 of the Children's Law Reform Act. )",
+     "exportValues": [],
+     "columnHeaders": [
+      "(This order shall be deemed to be a parenting order under s. 28 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4426,6 +5828,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "relating to access under the Child, Youth and Family Services Act, 2017 , the details of which are as follows:",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child, Youth and Family Services Act, 2017"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4439,6 +5846,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(address) or as soon as possible after that time, at: THE FIRST COURT DATE IS (date) AT a.m. p.m.",
+     "exportValues": [],
+     "columnHeaders": [
+      "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4452,6 +5864,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "existing parenting or contact order, including whether made by a superior court or under the Divorce Act. ) (including decision-making responsibilities or paren",
+     "exportValues": [],
+     "columnHeaders": [
+      "existing parenting or contact order, including whether made by a superior court or under the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4467,6 +5884,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality, Applicant(s) (In most c",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4482,6 +5904,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code, (In most cases, the applicant will be",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4495,6 +5922,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Age",
+     "exportValues": [],
+     "columnHeaders": [
+      "Age"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4508,6 +5940,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Birthdate",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4521,6 +5958,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Communities or Métis",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4534,6 +5976,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Name",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4547,6 +5994,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full Legal Name(s) of Parent(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4560,6 +6012,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Full Legal Name(s) of Parent(s)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4573,6 +6030,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Métis? Inuk, or Nations,",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4586,6 +6048,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Sex",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4599,6 +6066,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Age"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4612,6 +6084,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4625,6 +6102,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4638,6 +6120,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4651,6 +6138,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4664,6 +6156,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4677,6 +6174,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Métis?",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4690,6 +6192,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4703,6 +6210,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Age"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4716,6 +6228,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4729,6 +6246,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4742,6 +6264,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4755,6 +6282,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4768,6 +6300,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4781,6 +6318,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4794,6 +6336,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4807,6 +6354,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Age"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4820,6 +6372,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4833,6 +6390,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Communities"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4846,6 +6408,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4859,6 +6426,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4872,6 +6444,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Full Legal Name(s) of Parent(s)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4885,6 +6462,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Métis?"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -4898,6 +6480,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -4913,6 +6500,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "Court File Number",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4928,6 +6518,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "and Status Review)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4943,6 +6536,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "and Status Review)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4958,6 +6554,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "and Status Review)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4973,6 +6572,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "and Status Review)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -4988,6 +6590,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "and Status Review)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -5003,6 +6608,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "and Status Review)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_FILE_NUMBER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -5018,6 +6626,11 @@
       "court-office-address"
      ],
      "evidenceLabel": "at",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Name of court)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_OFFICE_ADDRESS",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -5031,6 +6644,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "THE FIRST COURT DATE IS (date)",
+     "exportValues": [],
+     "columnHeaders": [
+      "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5044,6 +6662,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "agreement and indicate which of its terms are in dispute. Attach an additional page if you need more space.) made a written agreement dealing with any matter in",
+     "exportValues": [],
+     "columnHeaders": [
+      "agreement and indicate which of its terms are in dispute. Attach an additional page if you need more space.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5057,6 +6680,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "to get help from your local legal aid office."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5070,6 +6698,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Put a line through any blank space left on this page.",
+     "exportValues": [],
+     "columnHeaders": [
+      "Put a line through any blank space left on this page."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5083,6 +6716,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "additional page.) (Set out the facts in numbered paragraphs. If you need more space, you may attach a page, but you must date and sign each The following is a b",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Set out the facts in numbered paragraphs. If you need more space, you may attach a page, but you must date and sign each"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5096,6 +6734,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "by that person’s the child(ren) has/have suffered physical harm, inflicted by the person having charge of the child(ren) or caused",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "by that person’s"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5109,6 +6754,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "child(ren) or caused by that person’s there is a risk that the child(ren) is/are likely to suffer physical harm inflicted by the person having charge of the",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "child(ren) or caused by that person’s"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5122,6 +6774,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5135,6 +6792,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "that the child(ren) be placed in the extended society care of (full legal name of caretaker society)",
+     "exportValues": [],
+     "columnHeaders": [
+      "that the child(ren) be placed in the extended society care of"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5148,6 +6810,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "that the child(ren) be placed in the interim society care of (full legal name of society) of this Application form.",
+     "exportValues": [],
+     "columnHeaders": [
+      "that the child(ren) be placed in the interim society care of"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5161,6 +6828,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "that the child(ren) be placed in the interim society care of (full legal name of society) for a period of months",
+     "exportValues": [],
+     "columnHeaders": [
+      "that the child(ren) be placed in the interim society care of"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5174,6 +6846,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "subject to the supervision of (full legal name of supervising society) that the child(ren) be placed with (name of parent or another person)",
+     "exportValues": [],
+     "columnHeaders": [
+      "(full legal name of supervising society)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5187,6 +6864,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "subject to the supervision of (full legal name of supervising society)",
+     "exportValues": [],
+     "columnHeaders": [
+      "(full legal name of supervising society)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5200,6 +6882,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "To the applicant’s best knowledge, the child(ren)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5213,6 +6902,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "To the applicant’s best knowledge, the child(ren)",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "To the applicant’s best knowledge, the child(ren)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5226,6 +6922,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "To the applicant’s best knowledge, the parties or the child(ren)",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "(Set out the number of times each child was in society care,"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5239,6 +6942,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "5. The parties",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "existing parenting or contact order, including whether made by a superior court or under the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5252,6 +6962,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "To the applicant’s best knowledge, the parties or the child(ren) have",
+     "exportValues": [
+      "Yes"
+     ],
+     "columnHeaders": [
+      "(Set out the number of times each child was in society care,"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5265,6 +6982,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "5. The parties have",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "existing parenting or contact order, including whether made by a superior court or under the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5278,6 +7002,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "(Check the applicable box(es). In each checked paragraph, delete those portions of the text that are not relevant.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5291,6 +7022,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Date of signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "Date of signature"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5304,6 +7040,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "2. (name)",
+     "exportValues": [],
+     "columnHeaders": [
+      "the child(ren) is/are sixteen or seventeen years of age and a prescribed circumstance or condition exists [clause"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5317,6 +7058,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "any)) and name of person represented. Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbe",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5330,6 +7076,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "of child(ren) and/or any other caregiver) be restrained under s. 137 of the Child, Youth and Family Services Act, 2017 from having any contact with (name",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child, Youth and Family Services Act, 2017"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5343,6 +7094,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "child(ren) and/or any other caregiver) be restrained under s. 102(3) of the Child, Youth and Family Services Act, 2017 from having contact with (name of",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child, Youth and Family Services Act, 2017"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5356,6 +7112,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "ONTARIO",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5369,6 +7128,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "that the child(ren) be placed in the custody of (name of custodian – cannot be a foster parent of the child) : other (Specify.)",
+     "exportValues": [],
+     "columnHeaders": [
+      "(name of custodian"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5382,6 +7146,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "that the child(ren) be placed with (name of parent or another person)",
+     "exportValues": [],
+     "columnHeaders": [
+      "the child(ren) is/are sixteen or seventeen years of age and a prescribed circumstance or condition exists [clause"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5395,6 +7164,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "for a period of months and then returned to (name of parent or another person)",
+     "exportValues": [],
+     "columnHeaders": [
+      "months and then returned to"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5408,6 +7182,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "that (name of person)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child, Youth and Family Services Act, 2017"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5421,6 +7200,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "that (name of person)",
+     "exportValues": [],
+     "columnHeaders": [
+      "(This order shall be deemed to be a parenting or contact order, as the case may be, under s. 28 of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5434,6 +7218,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "for a period of",
+     "exportValues": [],
+     "columnHeaders": [
+      "subject to the supervision of"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5447,6 +7236,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "for a period of",
+     "exportValues": [],
+     "columnHeaders": [
+      "that the child(ren) be placed in the interim society care of"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5460,6 +7254,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "for a period of",
+     "exportValues": [],
+     "columnHeaders": [
+      "that the child(ren) be placed in the interim society care of"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5473,6 +7272,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "for a period of",
+     "exportValues": [],
+     "columnHeaders": [
+      "subject to the supervision of"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5486,6 +7290,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "when the care began and how long it lasted.) Family Services Act, 2017 . The details are as follows: (Set out the number of times each child was in society care",
+     "exportValues": [],
+     "columnHeaders": [
+      ". The details are as follows:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5499,6 +7308,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5512,6 +7326,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "other (Specify.)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5525,6 +7342,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "AT a.m.",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5538,6 +7362,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "by that person’s",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "by that person’s"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5551,6 +7382,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "child(ren) or caused by that person’s",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "child(ren) or caused by that person’s"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5564,6 +7402,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "details of which are as follows: relating to payment of support while the child(ren) is/are in care or subject to an order of supervision, the",
+     "exportValues": [],
+     "columnHeaders": [
+      "relating to payment of support while the child(ren) is/are in care or subject to an order of supervision, the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5577,6 +7420,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "Signature"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5590,6 +7438,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "Form 8B:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5603,6 +7458,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5616,6 +7476,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5631,6 +7496,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality, Services Act, 2017 .)",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -5646,6 +7516,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -5659,6 +7534,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signature",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "SIGNATURE_NO_LABEL"
@@ -5672,6 +7550,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Clerk of the court",
+     "exportValues": [],
+     "columnHeaders": [
+      "If you cannot afford a lawyer, you may be able"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "SIGNATURE_NO_LABEL"
@@ -5685,6 +7568,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "paragraphs. Omit this page if no supervision is sought.) The terms and conditions proposed for the child(ren)’s supervision are as follows: (Set out terms and c",
+     "exportValues": [],
+     "columnHeaders": [
+      "The terms and conditions proposed for the child(ren)’s supervision are as follows:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5698,6 +7586,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5711,6 +7604,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5724,6 +7622,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5737,6 +7640,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "Form 8B:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5750,6 +7660,11 @@
      "widgetCount": 2,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5763,6 +7678,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(name)",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "(name)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5776,6 +7698,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5789,6 +7716,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5802,6 +7734,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5815,6 +7752,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5828,6 +7770,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "(Check the applicable box(es). In each checked paragraph, delete those portions of the text that are not relevant.) Services Act, 2017",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "(Check the applicable box(es). In each checked paragraph, delete those portions of the text that are not relevant.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5841,6 +7790,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5854,6 +7808,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5867,6 +7826,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5880,6 +7844,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5893,6 +7862,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5906,6 +7880,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5919,6 +7898,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5932,6 +7916,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Check this box if this",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "NOT, THE CASE WILL GO AHEAD WITHOUT YOU AND THE COURT MAY MAKE AN ORDER AND ENFORCE IT"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -5945,6 +7936,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5958,6 +7954,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5971,6 +7972,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "Form 8B:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5984,6 +7992,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "Form 8B:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -5997,6 +8012,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "THE FIRST COURT DATE IS (date) AT",
+     "exportValues": [],
+     "columnHeaders": [
+      "A COURT CASE HAS BEEN STARTED AGAINST YOU IN THIS COURT. THE DETAILS ARE SET OUT ON THE"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6019,9 +8039,10 @@
    "unresolved": 47,
    "coveragePercent": 11.3,
    "unresolvedByReason": {
-    "NO_RULE": 33,
+    "NO_RULE": 31,
     "CONFLICTING_WIDGET_LABELS": 1,
     "NO_PRINTED_LABEL_NEARBY": 11,
+    "RADIO_GROUP_NOT_CONFIRMED": 2,
     "SIGNATURE_NO_LABEL": 2
    },
    "docxComparison": {
@@ -6038,6 +8059,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "( Describe the efforts made. If no efforts were made, give explanation.) The following efforts have been made in the past to protect the child(ren) while in the",
+     "exportValues": [],
+     "columnHeaders": [
+      "Describe the efforts made. If no efforts were made, give explanation.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6051,6 +8077,13 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "3.",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [
+      "The child(ren) in this case is/are:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6066,6 +8099,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -6081,6 +8119,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality,",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -6094,6 +8137,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Birthdate",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6107,6 +8155,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Birthdate",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6120,6 +8173,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Birthdate"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6133,6 +8191,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Child’s Full Legal Name The child(ren) in this case is/are:",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child’s Full Legal Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6146,6 +8209,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Child’s Full Legal Name",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child’s Full Legal Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6159,6 +8227,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Child’s Full Legal Name"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6177,6 +8250,9 @@
       "court-file-number"
      ],
      "evidenceLabel": "Court File Number",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "CONFLICTING_WIDGET_LABELS"
@@ -6192,6 +8268,11 @@
       "court-office-address"
      ],
      "evidenceLabel": "at",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Name of court)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_OFFICE_ADDRESS",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -6205,6 +8286,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "The court previously found on (date)",
+     "exportValues": [],
+     "columnHeaders": [
+      ", I/we ask the court to make an order."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6218,6 +8304,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Date of explanation",
+     "exportValues": [],
+     "columnHeaders": [
+      "Date of explanation"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6231,6 +8322,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Date of explanation"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6244,6 +8340,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Date of explanation"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6257,6 +8358,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Date of explanation"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6270,6 +8376,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Date of explanation"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6283,6 +8394,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Put a line through any blank space left on this page.",
+     "exportValues": [],
+     "columnHeaders": [
+      "Put a line through any blank space left on this page."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6296,6 +8412,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Date of signature",
+     "exportValues": [],
+     "columnHeaders": [
+      "Date of signature"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6309,6 +8430,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "order on (date)",
+     "exportValues": [],
+     "columnHeaders": [
+      "need of protection under Part V of the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6322,22 +8448,38 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "“Nil” if there are no plans.) The following efforts are planned to keep up the child(ren)’s contact with the respondent(s): (Describe plans. Write",
+     "exportValues": [],
+     "columnHeaders": [
+      "The following efforts are planned to keep up the child(ren)’s contact with the respondent(s):"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
     },
     {
      "fieldName": "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family through one of the following methods:",
-     "kind": "checkbox",
+     "kind": "radio",
      "pages": [
       4
      ],
      "widgetCount": 4,
      "ruleIds": [],
      "evidenceLabel": "through one of the following methods: Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family",
+     "exportValues": [
+      "a custody order under s. 116(1)",
+      "a plan for customary care",
+      "adoption",
+      "other (please provide available details"
+     ],
+     "columnHeaders": [
+      "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family",
+      "through one of the following methods:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
-     "reason": "NO_RULE"
+     "reason": "RADIO_GROUP_NOT_CONFIRMED"
     },
     {
      "fieldName": "full legal name",
@@ -6348,6 +8490,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "1. I am/We are (full legal name)",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers and e-"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6361,6 +8508,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "needed, who needs it and who will be providing it.) The services that the family and child(ren) need and that will be provided are as follows: (Give details of ",
+     "exportValues": [],
+     "columnHeaders": [
+      "The services that the family and child(ren) need and that will be provided are as follows:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6374,6 +8526,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "child.) provide details of the efforts by the children's aid society to provide a long-term, stable placement for the permanent. (If the children's aid society ",
+     "exportValues": [],
+     "columnHeaders": [
+      "provide details of the efforts by the children's aid society to provide a long-term, stable placement for the"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6387,6 +8544,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "any)) and name of person represented. Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbe",
+     "exportValues": [],
+     "columnHeaders": [
+      "Name & address of Children’s Lawyer’s agent for service (street & number, municipality, postal code, telephone & fax numbers and e-"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6402,6 +8564,9 @@
       "court-name"
      ],
      "evidenceLabel": "ONTARIO",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": "COURT_NAME",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -6415,6 +8580,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "other (Please provide available details.) adoption a custody order under s. 116(1) a plan for customary care",
+     "exportValues": [],
+     "columnHeaders": [
+      "Efforts will be made to assist the child to develop a positive, secure and enduring relationship within a family"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6428,6 +8598,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "and I am/we are (state your position with children’s aid society)",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6441,6 +8614,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "was explained Print name of person to whom this plan",
+     "exportValues": [],
+     "columnHeaders": [
+      "was explained"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6454,6 +8632,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "was explained",
+     "exportValues": [],
+     "columnHeaders": [
+      "was explained"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6467,6 +8650,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "was explained"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6480,6 +8668,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "was explained"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6493,6 +8686,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "was explained"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6506,6 +8704,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Print name of person who explained plan",
+     "exportValues": [],
+     "columnHeaders": [
+      "Print name of person who explained plan"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6519,6 +8722,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Print name of person who explained plan"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6532,6 +8740,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Print name of person who explained plan"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6545,6 +8758,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Print name of person who explained plan"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6558,6 +8776,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Print name of person who explained plan"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6573,6 +8796,11 @@
       "party-lawyer"
      ],
      "evidenceLabel": "telephone & fax numbers and e-mail address (if any). Lawyer’s name & address — street & number, municipality, postal code,",
+     "exportValues": [],
+     "columnHeaders": [
+      "telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_LAWYER",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -6588,6 +8816,11 @@
       "party-address-for-service"
      ],
      "evidenceLabel": "postal code, telephone & fax numbers and e-mail address (if any). Full legal name & address for service — street & number, municipality,",
+     "exportValues": [],
+     "columnHeaders": [
+      "postal code, telephone & fax numbers and e-mail address (if any)."
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": "PARTY_ADDRESS_FOR_SERVICE",
      "status": "CONFIRMED_BY_LABEL",
      "reason": null
@@ -6601,6 +8834,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "conditions are broken. These conditions are: (Set out conditions and estimate the time needed to achieve them.) supervision or society care of the child(ren) is",
+     "exportValues": [],
+     "columnHeaders": [
+      "(Set out conditions and estimate the time needed to achieve them.)"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6614,6 +8852,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Sex",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6627,6 +8870,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Sex",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6640,6 +8888,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [],
+     "columnHeaders": [
+      "Sex"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6653,6 +8906,9 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signature",
+     "exportValues": [],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "SIGNATURE_NO_LABEL"
@@ -6666,6 +8922,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "Signatur e",
+     "exportValues": [],
+     "columnHeaders": [
+      "Signature"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "SIGNATURE_NO_LABEL"
@@ -6679,22 +8940,35 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "The child(ren) cannot be adequately protected while in the care of the respondent(s) because: (State reasons.)",
+     "exportValues": [],
+     "columnHeaders": [
+      "The child(ren) cannot be adequately protected while in the care of the respondent(s) because:"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
     },
     {
      "fieldName": "The children's aid society has removed the child(ren) from the care of the respondent(s) and intends to make this removal",
-     "kind": "checkbox",
+     "kind": "radio",
      "pages": [
       4
      ],
      "widgetCount": 2,
      "ruleIds": [],
      "evidenceLabel": "this removal",
+     "exportValues": [
+      "permanent",
+      "temporary"
+     ],
+     "columnHeaders": [
+      "The children’s aid society has r"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
-     "reason": "NO_RULE"
+     "reason": "RADIO_GROUP_NOT_CONFIRMED"
     },
     {
      "fieldName": "The court previously found on date",
@@ -6705,6 +8979,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "",
+     "exportValues": [
+      "On"
+     ],
+     "columnHeaders": [],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_PRINTED_LABEL_NEARBY"
@@ -6718,6 +8997,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "conditions of supervision.) court to make. If you want the order to include any supervision by the children’s aid society, give details of any terms and The det",
+     "exportValues": [],
+     "columnHeaders": [
+      "court to make. If you want the order to include any supervision by the children’s aid society, give details of any terms and"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"
@@ -6731,6 +9015,11 @@
      "widgetCount": 1,
      "ruleIds": [],
      "evidenceLabel": "preserve his/her heritage, traditions and cultural identity: The following arrangements have been or are being made to recognize the importance of the child's c",
+     "exportValues": [],
+     "columnHeaders": [
+      "The following arrangements have been or are being made to recognize the importance of the child's culture and to"
+     ],
+     "headerRepeatsAcrossPages": false,
      "role": null,
      "status": "UNRESOLVED",
      "reason": "NO_RULE"

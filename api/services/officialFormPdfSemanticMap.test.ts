@@ -220,3 +220,50 @@ describe("recorded mapping record", () => {
     for (const [key, n] of Object.entries(expected)) expect(record.forms[key].confirmed, key).toBe(n);
   });
 });
+
+describe("radio groups and checkbox export values", () => {
+  it("treats widgets that share a name with different export values as a radio group, and never confirms it", () => {
+    const [m] = mapPdfFields([
+      w({ name: "placement", type: "Btn", exportValue: "temporary", above: "Court File Number" }),
+      w({ name: "placement", type: "Btn", exportValue: "permanent", above: "Court File Number" })
+    ]);
+    expect(m.kind).toBe("radio");
+    expect(m.status).toBe("UNRESOLVED");
+    expect(m.reason).toBe("RADIO_GROUP_NOT_CONFIRMED");
+    expect(m.exportValues).toEqual(["permanent", "temporary"]);
+  });
+
+  it("keeps a checkbox whose widgets share one export value as a checkbox", () => {
+    const [m] = mapPdfFields([
+      w({ name: "chk", type: "Btn", exportValue: "On", page: 1 }),
+      w({ name: "chk", type: "Btn", exportValue: "On", page: 2 })
+    ]);
+    expect(m.kind).toBe("checkbox");
+    expect(m.exportValues).toEqual(["On"]);
+  });
+});
+
+describe("column-header provenance", () => {
+  it("records column headers and flags a header printed on more than one page (a continuation table)", () => {
+    const [m] = mapPdfFields([
+      w({ name: "row-a", page: 1, columnHeader: "Child's Full Legal Name" }),
+      w({ name: "row-a", page: 2, columnHeader: "Child's Full Legal Name" })
+    ]);
+    expect(m.columnHeaders).toEqual(["Child's Full Legal Name"]);
+    expect(m.headerRepeatsAcrossPages).toBe(true);
+  });
+
+  it("does not flag a header that appears on one page only", () => {
+    const [m] = mapPdfFields([w({ name: "row-b", page: 1, columnHeader: "Birthdate" })]);
+    expect(m.headerRepeatsAcrossPages).toBe(false);
+  });
+
+  it("never confirms a role from a column header alone, even when the header repeats", () => {
+    const [m] = mapPdfFields([
+      w({ name: "row-c", page: 1, columnHeader: "Court File Number" }),
+      w({ name: "row-c", page: 2, columnHeader: "Court File Number" })
+    ]);
+    expect(m.status).toBe("UNRESOLVED");
+    expect(m.reason).toBe("NO_PRINTED_LABEL_NEARBY");
+  });
+});

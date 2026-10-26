@@ -20,6 +20,7 @@ import { AnalyzerError, logAnalyzerDiagnostic } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
 import type { AnalysisStage } from "./analyzerStreaming.js";
 import { verifyQuote } from "./pageSources.js";
+import { guardFormFieldFacts } from "./formFieldFacts.js";
 
 export type SectionKey = "overview" | "redFlags" | "chronology" | "guidance" | "thresholds" | "timeline";
 
@@ -628,6 +629,8 @@ export function applyReportGuards(
   report.citationVerification = {
     method: "Checked against CYFSA Navigator's confirmed statute reference list. No external legal database was queried.",
   };
+  // Form-field facts pass the same server boundary: a label role is shown only when the mapping confirmed it.
+  guardFormFieldFacts(report);
   return report;
 }
 
