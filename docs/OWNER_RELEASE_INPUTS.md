@@ -26,6 +26,22 @@ Install the files:
 
 Do not rename a file to make it pass. A hash mismatch means the file is not the one the tests pin.
 
+### Two separate sets: historical pins and current official PDFs
+
+- `scripts/official-forms/manifest.json` is the historical set the 11 regression pins come from. Those pins are
+  unchanged. The six PDFs in it are not present in the current official download, and the current versions differ
+  (see `scripts/official-forms/compat/pdf-compat-2026-10-26.json`). Those historical tests stay skipped until the
+  original files are supplied; they are never reported as passed.
+- `scripts/official-forms/current-manifest.json` is the current official set, retrieved 2026-10-26: six PDFs with
+  their source URL, SHA-256 and byte length. Check it with:
+
+      node scripts/official-forms/verify.mjs /path/to/current-folder --manifest=current-manifest.json
+
+  `api/services/officialFormCurrentPdfs.test.ts` tests these files. Those tests run when the files are present.
+
+Identity is established only by a SHA-256 and byte length that match a pin. Format validation alone does not establish
+identity: `identityVerifiedAgainstPin` is true only when the caller supplies a matching pin.
+
 ## 2. Staging Supabase (6 tests)
 
 Target: the staging project `cyfsa-navigator-staging` (its ref is in the URL below). It must never be the

@@ -33,7 +33,7 @@ function manifestFor(bytes: Buffer, currentnessStatus: RealArtifactByteVerificat
     byteLength: bytes.length,
     sha256Hex: sha256Hex(bytes),
     contentValidationPassed: true,
-    artifactBytesVerified: true,
+    bytesRead: true,
     verifiedAt: "2026-01-01T00:00:00.000Z",
     verificationOrigin: "TRUSTED_DEVELOPMENT_INGESTION",
     currentnessStatus

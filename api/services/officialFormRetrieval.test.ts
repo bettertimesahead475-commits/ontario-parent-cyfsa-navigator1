@@ -490,7 +490,40 @@ describe("trusted development ingestion seam", () => {
     });
     expect(result.sha256Hex).toBe(sha256OfExactBytes(SYNTHETIC_PDF));
     expect(result.verificationOrigin).toBe("TRUSTED_DEVELOPMENT_INGESTION");
-    expect(result.artifactBytesVerified).toBe(true);
+    expect(result.bytesRead).toBe(true);
+    // No pin was supplied, so format validation alone must NOT establish identity.
+    expect(result.identityVerifiedAgainstPin).toBe(false);
+    expect(result.trustedPinSha256).toBeNull();
+  });
+
+  it("establishes identity only when a supplied pin matches both SHA-256 and byte length", () => {
+    const expected = sha256OfExactBytes(SYNTHETIC_PDF);
+    const matched = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "https://ontariocourtforms.on.ca/synthetic/manual.pdf",
+      expectedFormat: "PDF",
+      bytes: SYNTHETIC_PDF,
+      trustedPin: { sha256Hex: expected, byteLength: SYNTHETIC_PDF.length }
+    });
+    expect(matched.bytesRead).toBe(true);
+    expect(matched.identityVerifiedAgainstPin).toBe(true);
+    expect(matched.trustedPinSha256).toBe(expected);
+
+    const wrongHash = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "https://ontariocourtforms.on.ca/synthetic/manual.pdf",
+      expectedFormat: "PDF",
+      bytes: SYNTHETIC_PDF,
+      trustedPin: { sha256Hex: "0".repeat(64), byteLength: SYNTHETIC_PDF.length }
+    });
+    expect(wrongHash.bytesRead).toBe(true);
+    expect(wrongHash.identityVerifiedAgainstPin).toBe(false);
+
+    const wrongLength = ingestTrustedDevelopmentArtifact({
+      sourceUrlForProvenanceOnly: "https://ontariocourtforms.on.ca/synthetic/manual.pdf",
+      expectedFormat: "PDF",
+      bytes: SYNTHETIC_PDF,
+      trustedPin: { sha256Hex: expected, byteLength: SYNTHETIC_PDF.length + 1 }
+    });
+    expect(wrongLength.identityVerifiedAgainstPin).toBe(false);
   });
 
   it("has no signature accepting a caller-supplied hash", () => {
@@ -532,7 +565,7 @@ describe("official-index vs artifact-byte verification", () => {
       docxFilename: "form-8b-feb_1_2022-en.docx"
     });
     expect(record.officialIndexVerified).toBe(true);
-    expect(record.artifactBytesVerified).toBe(false);
+    expect(record.bytesRead).toBe(false);
     expect(record.sha256Hex).toBeNull();
     expect(record.byteLengthPdf).toBeNull();
     expect(record.finalArtifactUrlPdf).toBeNull();
@@ -543,7 +576,7 @@ describe("official-index vs artifact-byte verification", () => {
   it("the real Ontario integration manifest leaves all five candidates' byte-level fields unverified", () => {
     expect(REAL_ONTARIO_FORM_CANDIDATES).toHaveLength(5);
     for (const record of REAL_ONTARIO_FORM_CANDIDATES) {
-      expect(record.artifactBytesVerified).toBe(false);
+      expect(record.bytesRead).toBe(false);
       expect(record.sha256Hex).toBeNull();
       expect(record.byteLengthPdf).toBeNull();
       expect(record.byteLengthDocx).toBeNull();

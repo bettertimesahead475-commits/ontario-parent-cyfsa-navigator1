@@ -147,21 +147,30 @@ const UNMATCHED_FILE = {
   expectedSha256: "acb30d488447bc1e044b5575d2d4a7e0d0ad0c227e58b413c35233ef21561b65"
 };
 
-const filesAvailable = SUPPLIED_FILES.every(f => fs.existsSync(f.path));
-const batch2Available =
-  SUPPLIED_FILES_BATCH_2.every(f => fs.existsSync(f.path)) && fs.existsSync(UNMATCHED_FILE.path);
+// Per-file gates. A test runs when every file it reads is present; an absent historical file skips
+// only the tests that need it. Tests whose inputs are present always execute.
+const ALL_FIXTURES = [...SUPPLIED_FILES, ...SUPPLIED_FILES_BATCH_2, UNMATCHED_FILE];
+const present = (...files: { path: string }[]) => files.every(f => fs.existsSync(f.path));
+const fixtureByLabel = (label: string) => {
+  const found = ALL_FIXTURES.find(f => f.label === label);
+  if (!found) throw new Error(`unknown fixture label: ${label}`);
+  return found;
+};
+const gateDescribe = (ok: boolean) => (ok ? describe : describe.skip);
+const gateIt = (ok: boolean) => (ok ? it : it.skip);
 
 // If the sandbox upload paths are unavailable in whatever environment runs this suite later,
 // skip rather than fail or fabricate — this keeps the frozen suite green for everyone while
 // still documenting exactly what this ingestion run established when the files WERE present.
-const describeReal = filesAvailable ? describe : describe.skip;
+// Outer blocks always register; the file-level gates below decide what actually runs.
+const describeReal = describe;
 
 describeReal("Stage 9D-4B-1R: real Ontario artifact trusted ingestion", () => {
   // -------------------------------------------------------------------------
   // STEP 2/3 — trusted ingestion + exact byte integrity, per file.
   // -------------------------------------------------------------------------
   for (const f of SUPPLIED_FILES) {
-    describe(f.label, () => {
+    gateDescribe(present(f))(f.label, () => {
       it("matches the expected byte length and SHA-256 recorded for this ingestion run", () => {
         const bytes = fs.readFileSync(f.path);
         expect(bytes.length).toBe(f.expectedByteLength);
@@ -175,12 +184,15 @@ describeReal("Stage 9D-4B-1R: real Ontario artifact trusted ingestion", () => {
         const result = ingestTrustedDevelopmentArtifact({
           sourceUrlForProvenanceOnly: `sandbox-upload:${f.path}`,
           expectedFormat: f.format,
-          bytes
+          bytes,
+          trustedPin: { sha256Hex: f.expectedSha256, byteLength: f.expectedByteLength }
         });
         expect(result.detectedFormat).toBe(f.format);
         expect(result.byteLength).toBe(f.expectedByteLength);
         expect(result.sha256Hex).toBe(f.expectedSha256);
-        expect(result.artifactBytesVerified).toBe(true);
+        expect(result.bytesRead).toBe(true);
+        expect(result.identityVerifiedAgainstPin).toBe(true);
+        expect(result.trustedPinSha256).toBe(f.expectedSha256);
         expect(result.verificationOrigin).toBe("TRUSTED_DEVELOPMENT_INGESTION");
         expect(result.isSynthetic).toBe(false);
         // Public projection excludes raw bytes, matching production contract.
@@ -236,7 +248,7 @@ describeReal("Stage 9D-4B-1R: real Ontario artifact trusted ingestion", () => {
   // -------------------------------------------------------------------------
   // STEP 4 — PDF and DOCX of the same form are distinct artifacts (35.1A, 33C).
   // -------------------------------------------------------------------------
-  it("35.1A PDF and 35.1A DOCX get distinct hashes and are never conflated", () => {
+  gateIt(present(fixtureByLabel("35.1A PDF"), fixtureByLabel("35.1A DOCX")))("35.1A PDF and 35.1A DOCX get distinct hashes and are never conflated", () => {
     const pdf = SUPPLIED_FILES.find(f => f.label === "35.1A PDF")!;
     const docx = SUPPLIED_FILES.find(f => f.label === "35.1A DOCX")!;
     expect(pdf.expectedSha256).not.toBe(docx.expectedSha256);
@@ -254,7 +266,7 @@ describeReal("Stage 9D-4B-1R: real Ontario artifact trusted ingestion", () => {
     expect(pdfResult.detectedFormat).not.toBe(docxResult.detectedFormat);
   });
 
-  it("33C PDF and 33C DOCX get distinct hashes and are never conflated", () => {
+  gateIt(present(fixtureByLabel("33C PDF"), fixtureByLabel("33C DOCX")))("33C PDF and 33C DOCX get distinct hashes and are never conflated", () => {
     const pdf = SUPPLIED_FILES.find(f => f.label === "33C PDF")!;
     const docx = SUPPLIED_FILES.find(f => f.label === "33C DOCX")!;
     expect(pdf.expectedSha256).not.toBe(docx.expectedSha256);
@@ -278,11 +290,11 @@ describeReal("Stage 9D-4B-1R: real Ontario artifact trusted ingestion", () => {
 // missing PDF, and the filename-mismatched sixth file. Same frozen pipeline, same pattern as
 // above — extended, not reinvented.
 // ===============================================================================================
-const describeBatch2 = batch2Available ? describe : describe.skip;
+const describeBatch2 = describe;
 
 describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestion", () => {
   for (const f of SUPPLIED_FILES_BATCH_2) {
-    describe(f.label, () => {
+    gateDescribe(present(f))(f.label, () => {
       it("matches the expected byte length and SHA-256 recorded for this ingestion run", () => {
         const bytes = fs.readFileSync(f.path);
         expect(bytes.length).toBe(f.expectedByteLength);
@@ -296,12 +308,15 @@ describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestio
         const result = ingestTrustedDevelopmentArtifact({
           sourceUrlForProvenanceOnly: `sandbox-upload:${f.path}`,
           expectedFormat: f.format,
-          bytes
+          bytes,
+          trustedPin: { sha256Hex: f.expectedSha256, byteLength: f.expectedByteLength }
         });
         expect(result.detectedFormat).toBe(f.format);
         expect(result.byteLength).toBe(f.expectedByteLength);
         expect(result.sha256Hex).toBe(f.expectedSha256);
-        expect(result.artifactBytesVerified).toBe(true);
+        expect(result.bytesRead).toBe(true);
+        expect(result.identityVerifiedAgainstPin).toBe(true);
+        expect(result.trustedPinSha256).toBe(f.expectedSha256);
         expect(result.verificationOrigin).toBe("TRUSTED_DEVELOPMENT_INGESTION");
         expect(result.isSynthetic).toBe(false);
         const pub = toPublicRetrievalResult(result);
@@ -347,7 +362,7 @@ describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestio
 
   // The unmatched sixth file: byte-verified via the same pipeline, but NEVER asserted to be
   // Form 33B.1 or any other specific form number here.
-  describe(UNMATCHED_FILE.label, () => {
+  gateDescribe(present(UNMATCHED_FILE))(UNMATCHED_FILE.label, () => {
     it("matches the expected byte length and SHA-256 recorded for this ingestion run", () => {
       const bytes = fs.readFileSync(UNMATCHED_FILE.path);
       expect(bytes.length).toBe(UNMATCHED_FILE.expectedByteLength);
@@ -364,7 +379,9 @@ describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestio
       });
       expect(result.detectedFormat).toBe("PDF");
       expect(result.sha256Hex).toBe(UNMATCHED_FILE.expectedSha256);
-      expect(result.artifactBytesVerified).toBe(true);
+      expect(result.bytesRead).toBe(true);
+      // No historical pin applies to this file, so identity must remain unestablished.
+      expect(result.identityVerifiedAgainstPin).toBe(false);
     });
 
     it("does NOT collide in hash with the verified 33B.1 PDF (distinct artifact, distinct identity)", () => {
@@ -376,7 +393,7 @@ describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestio
   // -------------------------------------------------------------------------
   // STEP 4 — PDF and DOCX distinct-artifact checks for the new forms.
   // -------------------------------------------------------------------------
-  it("8B PDF and 8B DOCX get distinct hashes and are never conflated", () => {
+  gateIt(present(fixtureByLabel("8B PDF"), fixtureByLabel("8B DOCX")))("8B PDF and 8B DOCX get distinct hashes and are never conflated", () => {
     const pdf = SUPPLIED_FILES_BATCH_2.find(f => f.label === "8B PDF")!;
     const docx = SUPPLIED_FILES_BATCH_2.find(f => f.label === "8B DOCX")!;
     expect(pdf.expectedSha256).not.toBe(docx.expectedSha256);
@@ -394,7 +411,7 @@ describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestio
     expect(pdfResult.detectedFormat).not.toBe(docxResult.detectedFormat);
   });
 
-  it("14A PDF and 14A DOCX get distinct hashes and are never conflated", () => {
+  gateIt(present(fixtureByLabel("14A PDF"), fixtureByLabel("14A DOCX")))("14A PDF and 14A DOCX get distinct hashes and are never conflated", () => {
     const pdf = SUPPLIED_FILES_BATCH_2.find(f => f.label === "14A PDF")!;
     const docx = SUPPLIED_FILES_BATCH_2.find(f => f.label === "14A DOCX")!;
     expect(pdf.expectedSha256).not.toBe(docx.expectedSha256);
@@ -412,7 +429,7 @@ describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestio
     expect(pdfResult.detectedFormat).not.toBe(docxResult.detectedFormat);
   });
 
-  it("33B.1 PDF (this batch) and 33B.1 DOCX (prior batch) get distinct hashes and are never conflated", () => {
+  gateIt(present(fixtureByLabel("33B.1 PDF"), fixtureByLabel("33B.1 DOCX")))("33B.1 PDF (this batch) and 33B.1 DOCX (prior batch) get distinct hashes and are never conflated", () => {
     const pdf = SUPPLIED_FILES_BATCH_2.find(f => f.label === "33B.1 PDF")!;
     const docx = SUPPLIED_FILES.find(f => f.label === "33B.1 DOCX")!;
     expect(pdf.expectedSha256).not.toBe(docx.expectedSha256);
@@ -437,11 +454,11 @@ describeBatch2("Stage 9D-4B-1R (batch 2): real Ontario artifact trusted ingestio
 // ---------------------------------------------------------------------------
 describe("Stage 9D-4B-1R: provenance boundary is modeled distinctly in the manifest", () => {
   it("A (official index) and B (byte verification) are separate data structures", () => {
-    // Index-only records (A) always have artifactBytesVerified: false and null byte/hash fields,
+    // Index-only records (A) always have bytesRead: false and null byte/hash fields,
     // regardless of what REAL_ARTIFACT_BYTE_VERIFICATIONS (B) says about the same form number.
     for (const indexRecord of REAL_ONTARIO_FORM_CANDIDATES) {
       expect(indexRecord.officialIndexVerified).toBe(true);
-      expect(indexRecord.artifactBytesVerified).toBe(false);
+      expect(indexRecord.bytesRead).toBe(false);
       expect(indexRecord.sha256Hex).toBeNull();
       expect(indexRecord.byteLengthPdf).toBeNull();
       expect(indexRecord.byteLengthDocx).toBeNull();
@@ -465,7 +482,7 @@ describe("Stage 9D-4B-1R: provenance boundary is modeled distinctly in the manif
     expect(form14a).toBeDefined();
     for (const r of [form8b!, form14a!]) {
       expect(r.officialIndexVerified).toBe(true);
-      expect(r.artifactBytesVerified).toBe(false);
+      expect(r.bytesRead).toBe(false);
       expect(r.sha256Hex).toBeNull();
       expect(r.artifactVerifiedAt).toBeNull();
     }
@@ -503,7 +520,7 @@ describe("Stage 9D-4B-1R: provenance boundary is modeled distinctly in the manif
   // -------------------------------------------------------------------------
   it("B (byte verification) never implies C (currentness) — no entry is CURRENT", () => {
     for (const entry of REAL_ARTIFACT_BYTE_VERIFICATIONS) {
-      expect(entry.artifactBytesVerified).toBe(true);
+      expect(entry.bytesRead).toBe(true);
       expect(entry.currentnessStatus).toBe("UNKNOWN");
       expect(entry.currentnessStatus).not.toBe("CURRENT");
     }

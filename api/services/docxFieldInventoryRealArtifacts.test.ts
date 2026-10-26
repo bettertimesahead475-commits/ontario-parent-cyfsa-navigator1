@@ -25,19 +25,18 @@ const REAL_DOCX_FILES: { formNumber: string; path: string }[] = [
   { formNumber: "14A", path: `${UPLOAD_DIR}/c01f056a-flr_14a_sept105_en_fil.docx` }
 ];
 
-const filesAvailable = REAL_DOCX_FILES.every(f => fs.existsSync(f.path));
-const describeReal = filesAvailable ? describe : describe.skip;
-
-if (!filesAvailable) {
+// Per-form gate: each form's tests run when its own DOCX is present. An absent file skips only that form.
+const missing = REAL_DOCX_FILES.filter(f => !fs.existsSync(f.path)).map(f => f.formNumber);
+if (missing.length > 0) {
   // eslint-disable-next-line no-console
   console.warn(
-    "Stage 9D-4B-2A-i: real DOCX upload paths not present in this environment — skipping real-artifact structural tests (this is a skip, not a pass; see officialFormRealArtifactIntegration.test.ts convention)."
+    `Stage 9D-4B-2A-i: DOCX paths not present for [${missing.join(", ")}] — those forms are skipped (a skip, not a pass).`
   );
 }
 
-describeReal("Stage 9D-4B-2A-i: real DOCX field inventory against the controlled 5-form set", () => {
+describe("Stage 9D-4B-2A-i: real DOCX field inventory against the controlled 5-form set", () => {
   for (const { formNumber, path } of REAL_DOCX_FILES) {
-    describe(`Form ${formNumber}`, () => {
+    (fs.existsSync(path) ? describe : describe.skip)(`Form ${formNumber}`, () => {
       it("byte-matches the frozen 9D-4B-1R manifest SHA-256 before any inventory is trusted", () => {
         const bytes = fs.readFileSync(path);
         const actualSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
@@ -76,7 +75,7 @@ describeReal("Stage 9D-4B-2A-i: real DOCX field inventory against the controlled
     });
   }
 
-  it("finds at least one form with a text field and at least one form with a checkbox field (real structural diversity)", () => {
+  (missing.length === 0 ? it : it.skip)("finds at least one form with a text field and at least one form with a checkbox field (real structural diversity)", () => {
     const results = REAL_DOCX_FILES.map(f => buildDocxFieldInventory(fs.readFileSync(f.path)));
     const anyText = results.some(r => r.fields.some(f => f.type === "text"));
     const anyCheckbox = results.some(r => r.fields.some(f => f.type === "checkbox"));
