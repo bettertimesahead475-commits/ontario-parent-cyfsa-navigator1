@@ -23,12 +23,14 @@ export interface ParentFindingView {
   /** Result of the independent second review, when the analyzer ran one. Empty when it did not. */
   secondReview: string;
   whatYouCanDo: string;
-  /** Expandable detail: the exact quotation and where it appears. */
-  evidenceDetail: { quote: string; location: string; citationStatus: string };
+  /** Expandable detail: the exact quotation, where it appears, and how its page was checked. */
+  evidenceDetail: { quote: string; location: string; citationStatus: string; pageCheck: string };
 }
 
 export interface ParentReportView {
   summary: { heading: string; body: string }[];
+  /** Where the text came from and how the quotes and page numbers were checked. Plain language, Grade 8 level. */
+  sourceCheck: { heading: string; lines: string[] };
   findings: ParentFindingView[];
   thresholdChecks: string[];
   timelineChecks: string[];
@@ -185,6 +187,68 @@ function lawWithStatus(flag: Loose): string {
   return unverified ? `${law} ${UNVERIFIED_CITATION}` : law;
 }
 
+/** The quote, stated by what was actually checked. Pasted text is never presented as the original record. */
+function quoteLine(flag: Loose, quote: string): string {
+  if (!quote) return "The record quote for this point was not found.";
+  if (flag.quoteVerified === true) return `The record says: "${quote}"`;
+  if (flag.quoteVerified === false) {
+    return `The analyzer quoted this point, but its exact words were not found in your record. Treat it as a paraphrase: "${quote}"`;
+  }
+  if (flag.quoteVerification === "UNAUTHENTICATED_SOURCE") {
+    const base = `The analyzer quoted this point: "${quote}". You pasted the text. We did not check it against your original file, so the quote is not confirmed.`;
+    if (flag.pastedTextMatch === true) return `${base} The words appear in the text you pasted.`;
+    if (flag.pastedTextMatch === false) return `${base} The words do not appear in the text you pasted. Treat it as a paraphrase.`;
+    return base;
+  }
+  return `The analyzer quoted this point, but we have not checked its exact words. Treat it as a paraphrase: "${quote}"`;
+}
+
+/** The page the analyzer named, checked against the pages of the uploaded file where that was possible. */
+function pageCheckLine(flag: Loose): string {
+  const check = flag.pageCitation && typeof flag.pageCitation === "object" ? flag.pageCitation : null;
+  const status = text(check?.status);
+  const sourcePages = Array.isArray(check?.sourcePages) ? check.sourcePages : [];
+  const reportedPage = typeof check?.reportedPage === "number" ? check.reportedPage : null;
+  switch (status) {
+    case "PAGE_VERIFIED":
+      return `The analyzer named page ${reportedPage ?? "?"}. We found the words on that page.`;
+    case "PAGE_CORRECTED":
+      return `We found the words on page ${sourcePages[0]}, not page ${reportedPage ?? "?"}. Check page ${sourcePages[0]}.`;
+    case "PAGE_AMBIGUOUS":
+      return "The words appear on more than one page. Check the pages yourself.";
+    case "PAGE_NOT_FOUND":
+      return "We could not find the words on the page named or on any other page.";
+    case "PAGE_UNVERIFIABLE":
+      return "We did not check the page. The text was pasted, so the page numbers are not confirmed.";
+    default:
+      return "The analyzer did not name a page for this point.";
+  }
+}
+
+/** Report-level account of where the text came from, and how many points were checked against a page. */
+function sourceCheckView(report: Loose, flags: Loose[]): { heading: string; lines: string[] } {
+  const lines: string[] = [];
+  if (report.sourceProvenance === "authenticated_pages") {
+    lines.push("We checked the quotes and page numbers against the pages of your uploaded file.");
+  } else {
+    lines.push("You pasted this text. We did not check it against your original file, so quotes and page numbers are not confirmed.");
+  }
+  const count = (status: string) => flags.filter((f) => text(f.pageCitation?.status) === status).length;
+  const named = flags.length;
+  if (named > 0) {
+    lines.push(`We looked at ${named} ${named === 1 ? "point" : "points"}.`);
+    const onPage = count("PAGE_VERIFIED");
+    const elsewhere = count("PAGE_CORRECTED");
+    const missing = count("PAGE_NOT_FOUND");
+    const unchecked = count("PAGE_UNVERIFIABLE") + count("PAGE_AMBIGUOUS") + count("NO_PAGE_CITED");
+    if (onPage) lines.push(`${onPage} ${onPage === 1 ? "point is" : "points are"} on the page named.`);
+    if (elsewhere) lines.push(`${elsewhere} ${elsewhere === 1 ? "point is" : "points are"} on a different page. Check the page we show.`);
+    if (missing) lines.push(`${missing} ${missing === 1 ? "point" : "points"} could not be found on any page.`);
+    if (unchecked) lines.push(`${unchecked} ${unchecked === 1 ? "point was" : "points were"} not checked against a page.`);
+  }
+  return { heading: "How this report was checked", lines };
+}
+
 function findingView(flag: Loose, index: number): ParentFindingView {
   const quote = text(flag.phraseDetected);
   return {
@@ -193,13 +257,7 @@ function findingView(flag: Loose, index: number): ParentFindingView {
     heading: `Point ${index + 1}`,
     evidenceLabel: evidenceLabel(flag.evidenceClassification),
     severityLabel: "",
-    whatHappened: quote
-      ? flag.quoteVerified === true
-        ? `The record says: "${quote}"`
-        : flag.quoteVerified === false
-          ? `The analyzer quoted this point, but the exact wording could not be matched to the document, so treat it as a paraphrase: "${quote}"`
-          : `The analyzer quoted this point. Its exact wording has not been checked against the document, so treat it as a paraphrase until it is: "${quote}"`
-      : "The record quote for this point was not found.",
+    whatHappened: quoteLine(flag, quote),
     // The analyzer's explanation is its reasoning about the point. The parent gets a question to check instead.
     whyItMatters: CHECK_QUESTION,
     whatTheLawSays: lawWithStatus(flag),
@@ -211,6 +269,7 @@ function findingView(flag: Loose, index: number): ParentFindingView {
       quote,
       location: text(flag.locationInDocument) || "Location not given",
       citationStatus: citationStatus(flag),
+      pageCheck: pageCheckLine(flag),
     },
   };
 }
@@ -282,6 +341,7 @@ export function buildParentReportView(report: Loose): ParentReportView {
 
   return {
     summary,
+    sourceCheck: sourceCheckView(report, redFlags),
     findings: redFlags.map((flag, i) => findingView(flag, i)),
     thresholdChecks: thresholds,
     timelineChecks: timelines,

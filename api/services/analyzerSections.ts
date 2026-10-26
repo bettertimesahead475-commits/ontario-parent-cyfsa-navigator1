@@ -20,6 +20,7 @@ import { AnalyzerError, logAnalyzerDiagnostic } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
 import type { AnalysisStage } from "./analyzerStreaming.js";
 import { verifyQuote } from "./pageSources.js";
+import { guardFormFieldFacts } from "./formFieldFacts.js";
 
 export type SectionKey = "overview" | "redFlags" | "chronology" | "guidance" | "thresholds" | "timeline";
 
@@ -485,6 +486,9 @@ export function isVerbatimQuoteStatus(status: string): boolean {
   return ["EXACT", "NORMALIZED_WHITESPACE", "AMBIGUOUS", "NORMALIZED_PUNCTUATION"].includes(status);
 }
 
+/** Recorded instead of a match result when no authenticated page text exists to check a quote against. */
+export const UNAUTHENTICATED_QUOTE_STATUS = "UNAUTHENTICATED_SOURCE";
+
 /**
  * Provisions whose text the app has compared against the bundled CYFSA text (src/utils/statuteReference.ts).
  * Only these may be labelled CONFIRMED_REFERENCE. A section number alone is not a check: 94(5) and 125(1)
@@ -531,12 +535,79 @@ export function guardCitation(text: string): { text: string; status: "CONFIRMED_
   return { text: t, status: sections.length ? "CONFIRMED_REFERENCE" : "NONE" };
 }
 
-/** Applies quote verification and citation guards across an assembled report (mutates and returns it). */
-export function applyReportGuards(report: Record<string, any>, sourceText: string): Record<string, any> {
+export type PageCitationStatus = "PAGE_VERIFIED" | "PAGE_CORRECTED" | "PAGE_AMBIGUOUS" | "PAGE_NOT_FOUND" | "PAGE_UNVERIFIABLE" | "NO_PAGE_CITED";
+
+/**
+ * Checks the page a finding cites against the page text it came from. The model's page number is kept as
+ * reported. If the quotation is found on exactly one other page, that page is recorded as a proposed correction,
+ * with the original location preserved beside it. Nothing is changed when the quotation is on several pages.
+ */
+export function verifyPageCitation(flag: Record<string, any>, sourcePages: Map<number, string> | null): void {
+  const reported = /\bpage\s+(\d+)/i.exec(String(flag.locationInDocument ?? ""));
+  if (!reported) {
+    flag.pageCitation = { status: "NO_PAGE_CITED" as PageCitationStatus };
+    return;
+  }
+  const reportedPage = Number(reported[1]);
+  // Only an authenticated, server-extracted page map can verify a page. Pasted or typed "[Page N]" text never can.
+  const pages = sourcePages ?? new Map<number, string>();
+  const phrase = String(flag.phraseDetected ?? "").trim();
+  if (pages.size === 0 || !phrase) {
+    flag.pageCitation = { status: "PAGE_UNVERIFIABLE" as PageCitationStatus, reportedPage };
+    return;
+  }
+  if (pages.has(reportedPage) && verifyQuoteAgainstSource(pages.get(reportedPage)!, phrase) !== "ABSENT") {
+    flag.pageCitation = { status: "PAGE_VERIFIED" as PageCitationStatus, reportedPage, sourcePages: [reportedPage] };
+    return;
+  }
+  const foundOn = [...pages.entries()]
+    .filter(([, text]) => verifyQuoteAgainstSource(text, phrase) !== "ABSENT")
+    .map(([page]) => page)
+    .sort((a, b) => a - b);
+  if (foundOn.length === 1) {
+    // The finding keeps the location the model reported. The page the text was found on is a separate proposal,
+    // so the report never changes its own finding silently.
+    flag.proposedLocation = `Page ${foundOn[0]}`;
+    flag.pageCitation = { status: "PAGE_CORRECTED" as PageCitationStatus, reportedPage, sourcePages: foundOn };
+    return;
+  }
+  flag.pageCitation = {
+    status: (foundOn.length > 1 ? "PAGE_AMBIGUOUS" : "PAGE_NOT_FOUND") as PageCitationStatus,
+    reportedPage,
+    sourcePages: foundOn,
+  };
+}
+
+/**
+ * Applies quote verification and citation guards across an assembled report (mutates and returns it).
+ * `sourcePages` is the authenticated page map, or null when the source has no server-verified pages. The report
+ * records which of the two it was checked against, so a reader can tell the difference.
+ */
+export function applyReportGuards(
+  report: Record<string, any>,
+  sourcePages: Map<number, string> | null = null,
+  requestText = ""
+): Record<string, any> {
+  const authenticatedPages = sourcePages !== null && sourcePages.size > 0;
+  // "authenticated_pages": quotes are checked against server-verified pages of the uploaded file.
+  // "pasted_text": the text was typed or pasted; no original file was verified, so nothing here is documentary proof.
+  report.sourceProvenance = authenticatedPages ? "authenticated_pages" : "pasted_text";
+  // A quote is documentary only when it appears in the server-authenticated page text. The request text can carry
+  // client-typed material next to an uploaded file, so it is never the basis of a documentary quote.
+  const authenticatedText = authenticatedPages ? [...sourcePages!.values()].join("\n\n") : null;
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
-    const status = verifyQuoteAgainstSource(sourceText, flag.phraseDetected);
-    flag.quoteVerification = status;
-    flag.quoteVerified = isVerbatimQuoteStatus(status);
+    if (authenticatedText !== null) {
+      const status = verifyQuoteAgainstSource(authenticatedText, flag.phraseDetected);
+      flag.quoteVerification = status;
+      flag.quoteVerified = isVerbatimQuoteStatus(status);
+      flag.pastedTextMatch = null;
+    } else {
+      // Pasted text is not evidence of what the original document says. A match against it is a text match only.
+      flag.quoteVerification = UNAUTHENTICATED_QUOTE_STATUS;
+      flag.quoteVerified = null;
+      flag.pastedTextMatch = requestText.trim() ? isVerbatimQuoteStatus(verifyQuoteAgainstSource(requestText, flag.phraseDetected)) : null;
+    }
+    verifyPageCitation(flag, authenticatedPages ? sourcePages : null);
     const g = guardCitation(flag.legalReference);
     flag.legalReference = g.text;
     flag.citationStatus = g.status;
@@ -558,6 +629,8 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
   report.citationVerification = {
     method: "Checked against CYFSA Navigator's confirmed statute reference list. No external legal database was queried.",
   };
+  // Form-field facts pass the same server boundary: a label role is shown only when the mapping confirmed it.
+  guardFormFieldFacts(report);
   return report;
 }
 
@@ -568,6 +641,8 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
 export interface SectionRunOptions {
   mode: "fast" | "full";
   documentText: string;
+  /** Authenticated page texts for citation checks. Null when the source has no server-verified pages. */
+  sourcePages?: Map<number, string> | null;
   primaryModel: string;
   verificationModel?: string;
   generate: GenerateFn;
@@ -698,7 +773,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   const failure = outcomes.find((o) => o !== null);
   if (failure) throw failure;
 
-  applyReportGuards(report, opts.documentText);
+  applyReportGuards(report, opts.sourcePages ?? null, opts.documentText);
 
   if (opts.mode === "full" && opts.verificationModel) {
     opts.onVerificationStart?.();

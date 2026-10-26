@@ -382,7 +382,7 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     delete withoutCheck.quoteVerified;
     const view = buildParentReportView({ ...REPORT, redFlags: [withoutCheck] });
     expect(view.findings[0].whatHappened).not.toMatch(/could not be matched/);
-    expect(view.findings[0].whatHappened).toMatch(/has not been checked/);
+    expect(view.findings[0].whatHappened).toMatch(/we have not checked its exact words/);
   });
 
   it("does not present a missing-records reassurance when no analysis listed any", () => {

@@ -1,0 +1,153 @@
+{
+  "version": "current",
+  "purpose": "Current official Ontario court-form PDFs, verified read-only on 2026-10-26. Separate from the historical pins in manifest.json; not used as fixtures for historical regression tests.",
+  "sourceIndex": "https://ontariocourtforms.on.ca/en/family-law-rules-forms/",
+  "retrievedAt": "2026-10-26",
+  "uploadDirectory": "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e-current",
+  "files": [
+    {
+      "label": "35.1A PDF",
+      "formNumber": "35.1A",
+      "format": "PDF",
+      "fileName": "33f4ddb3-form-35-1a-en-dec20.pdf",
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/35_1a/form-35-1a-en-dec20.pdf",
+      "byteLength": 136085,
+      "sha256": "269183d42eb6071a0c0831c212dd3ad9b08cd2d4a6fb33ca5c1bd709d630adb9",
+      "retrievedAt": "2026-10-26",
+      "pdfMetadata": {
+        "pages": 2,
+        "producer": "iLovePDF",
+        "creator": "",
+        "creationDate": "D:20250402141330-04'00'",
+        "modDate": "D:20250402141330-04'00'",
+        "acroFormFieldCount": 70,
+        "encrypted": true
+      },
+      "historicalPinFileName": "33f4ddb3-form-35-1a-en-dec20.pdf",
+      "historicalPinMatches": false,
+      "pinnedAsFixture": false,
+      "dependentTests": [],
+      "status": "CURRENT_OFFICIAL_UNADOPTED"
+    },
+    {
+      "label": "33C PDF",
+      "formNumber": "33C",
+      "format": "PDF",
+      "fileName": "89af8ff6-form_33c_2018.pdf",
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/33c/form_33c_2018.pdf",
+      "byteLength": 169341,
+      "sha256": "c02ae08fff8702431d8ced60567e4d6d7233e90fa11644a4ec0c8279e14a8a87",
+      "retrievedAt": "2026-10-26",
+      "pdfMetadata": {
+        "pages": 3,
+        "producer": "iLovePDF",
+        "creator": "",
+        "creationDate": "D:20250402101602-04'00'",
+        "modDate": "D:20250402101602-04'00'",
+        "acroFormFieldCount": 49,
+        "encrypted": true
+      },
+      "historicalPinFileName": "89af8ff6-form_33c_2018.pdf",
+      "historicalPinMatches": false,
+      "pinnedAsFixture": false,
+      "dependentTests": [],
+      "status": "CURRENT_OFFICIAL_UNADOPTED"
+    },
+    {
+      "label": "33B.1 PDF",
+      "formNumber": "33B.1",
+      "format": "PDF",
+      "fileName": "90196879-form-33b-1-en-dec20.pdf",
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/33b_1/form-33b-1-en-dec20.pdf",
+      "byteLength": 290950,
+      "sha256": "8da3f80e927567d34b970a78ec4a3e3395319d5bf3865cab3b7f0eed0808071e",
+      "retrievedAt": "2026-10-26",
+      "pdfMetadata": {
+        "pages": 7,
+        "producer": "iLovePDF",
+        "creator": "",
+        "creationDate": "D:20250402100638-04'00'",
+        "modDate": "D:20250402100638-04'00'",
+        "acroFormFieldCount": 179,
+        "encrypted": true
+      },
+      "historicalPinFileName": "90196879-form-33b-1-en-dec20.pdf",
+      "historicalPinMatches": false,
+      "pinnedAsFixture": false,
+      "dependentTests": [],
+      "status": "CURRENT_OFFICIAL_UNADOPTED"
+    },
+    {
+      "label": "14A PDF",
+      "formNumber": "14A",
+      "format": "PDF",
+      "fileName": "df9e829b-flr-14a-sept105-en-fil.pdf",
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/14a/flr-14a-sept105-en-fil.pdf",
+      "byteLength": 113949,
+      "sha256": "ff0ff2936d6f195004ba517dd32c7b89b8c8a814584437b9d27cee014a815333",
+      "retrievedAt": "2026-10-26",
+      "pdfMetadata": {
+        "pages": 2,
+        "producer": "Microsoft® Word for Microsoft 365",
+        "creator": "Microsoft® Word for Microsoft 365",
+        "creationDate": "D:20260915121929-04'00'",
+        "modDate": "D:20260916095914-04'00'",
+        "acroFormFieldCount": 20,
+        "encrypted": true
+      },
+      "historicalPinFileName": "df9e829b-flr-14a-sept105-en-fil.pdf",
+      "historicalPinMatches": false,
+      "pinnedAsFixture": false,
+      "dependentTests": [],
+      "status": "CURRENT_OFFICIAL_UNADOPTED"
+    },
+    {
+      "label": "8B PDF",
+      "formNumber": "8B",
+      "format": "PDF",
+      "fileName": "4dcaaa3e-form-8b-feb-2022-en.pdf",
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/08b/form-8b-feb-2022-en.pdf",
+      "byteLength": 320366,
+      "sha256": "5b024525e7c244bd2020ddbd871683de14b2fe84e7ad79971a8b687b89a825ff",
+      "retrievedAt": "2026-10-26",
+      "pdfMetadata": {
+        "pages": 7,
+        "producer": "Microsoft® Word for Microsoft 365",
+        "creator": "Microsoft® Word for Microsoft 365",
+        "creationDate": "D:20250729162235-04'00'",
+        "modDate": "D:20260504121012-04'00'",
+        "acroFormFieldCount": 131,
+        "encrypted": true
+      },
+      "historicalPinFileName": "4dcaaa3e-form-8b-feb-2022-en.pdf",
+      "historicalPinMatches": false,
+      "pinnedAsFixture": false,
+      "dependentTests": [],
+      "status": "CURRENT_OFFICIAL_UNADOPTED"
+    },
+    {
+      "label": "unmatched (filename claims form_33b_2018) PDF",
+      "formNumber": "unmatched (filename claims form_33b_2018)",
+      "format": "PDF",
+      "fileName": "b43d35f7-form_33b_2018.pdf",
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/33b/form_33b_2018.pdf",
+      "byteLength": 217939,
+      "sha256": "a6c6a8098a424d57bb885d65c8b56034ad0beb5874f067e5060bbf4a2b09e108",
+      "retrievedAt": "2026-10-26",
+      "pdfMetadata": {
+        "pages": 4,
+        "producer": "iLovePDF",
+        "creator": "",
+        "creationDate": "D:20250402100336-04'00'",
+        "modDate": "D:20250402100336-04'00'",
+        "acroFormFieldCount": 58,
+        "encrypted": true
+      },
+      "historicalPinFileName": "b43d35f7-form_33b_2018.pdf",
+      "historicalPinMatches": false,
+      "pinnedAsFixture": false,
+      "dependentTests": [],
+      "status": "CURRENT_OFFICIAL_UNADOPTED"
+    }
+  ]
+}

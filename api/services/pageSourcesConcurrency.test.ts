@@ -33,7 +33,7 @@ describe("extractPages OCR concurrency", () => {
     expect(elapsed).toBeLessThan(8 * 60); // faster than strictly sequential
   });
 
-  it("propagates an OCR failure instead of returning partial pages", async () => {
+  it("propagates a provider failure instead of returning partial pages", async () => {
     const ocr = async (_b: string) => {
       throw new Error("ocr down");
     };

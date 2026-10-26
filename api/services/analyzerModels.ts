@@ -2,8 +2,10 @@
  * Centralized AI Model Selection & Cost Accounting for CYFSA Document Analyzer.
  *
  * Enforces server-authoritative model routing:
- *   - Quick Document Review  -> Claude Sonnet ("claude-sonnet-5")
- *   - Forensic In-Depth       -> Claude Opus   ("claude-3-opus-20240229")
+ *   - Quick Document Review  -> Claude Sonnet (DEFAULT_QUICK_MODEL, "claude-sonnet-5")
+ *   - Forensic In-Depth       -> Claude Opus   (DEFAULT_FORENSIC_MODEL, "claude-opus-5")
+ *   Either can be overridden by ANTHROPIC_QUICK_MODEL / ANTHROPIC_FORENSIC_MODEL. An override must be
+ *   listed in CLAUDE_MODELS below; an unlisted identifier is an error, never a silent substitution.
  *
  * The frontend cannot override or tamper with model selection to obtain unauthorized Opus access.
  * Silent downgrades from Opus to Sonnet are strictly forbidden.
@@ -11,6 +13,7 @@
 
 import { Tier, hasForensicInDepthAccess } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
+import { AnalyzerError } from "./analyzerErrors.js";
 
 export const DEFAULT_QUICK_MODEL = "claude-sonnet-5";
 export const DEFAULT_FORENSIC_MODEL = "claude-opus-5";
@@ -38,6 +41,40 @@ export const CLAUDE_MODELS = new Set<string>([
   "claude-3-opus-20240229",
   "claude-3-opus-latest",
 ]);
+
+/** True only for identifiers that are explicitly listed. Anything else is refused, never substituted. */
+export function isAllowlistedModel(model: string): boolean {
+  return CLAUDE_MODELS.has(model);
+}
+
+/**
+ * Refuses a model identifier that is not allowlisted. The analysis is not run and nothing is charged. A different
+ * model is never substituted, because the report would then claim the wrong model's review.
+ */
+export function assertAllowlistedModel(model: string): void {
+  if (!isAllowlistedModel(model)) {
+    throw new AnalyzerError(
+      "AI_PROVIDER_CONFIGURATION_ERROR",
+      503,
+      "The analysis model is not configured correctly, so this analysis was not run. Nothing was charged. Please try again later.",
+      false
+    );
+  }
+}
+
+/**
+ * Fails clearly when a configured analyzer model is not allowlisted. Forensic In-Depth must never run on
+ * a different model than the one configured for it, so the check happens before any charge or model call.
+ */
+export function assertForensicModelConfigured(): void {
+  if (!isAllowlistedModel(ANALYZER_MODELS.FORENSIC)) {
+    throw new LifecycleError(
+      503,
+      "FORENSIC_MODEL_UNAVAILABLE",
+      "Forensic In-Depth is temporarily unavailable because its analysis model is not configured correctly. Nothing was charged. Please try again later, or use Quick Review."
+    );
+  }
+}
 
 /**
  * Resolves wire-level Anthropic model identifier, preserving canonical models without downgrade.
@@ -195,6 +232,7 @@ export function resolveServerAuthoritativeModel(params: {
       );
     }
 
+    assertForensicModelConfigured();
     return {
       authoritativeModel: ANALYZER_MODELS.FORENSIC,
       primaryModel: ANALYZER_MODELS.QUICK,

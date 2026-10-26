@@ -336,9 +336,14 @@ export interface RetrievalResult {
   sha256Hex: string;
   bytes: Buffer;
   verificationOrigin: ArtifactVerificationOrigin;
-  /** True only when real artifact bytes have actually been processed through this pipeline
-   * (automatic retrieval OR the trusted ingestion seam). Never true from index metadata alone. */
-  artifactBytesVerified: true;
+  /** Always true here: the bytes were read and passed format validation and hashing. This says
+   * nothing about WHICH file the bytes are. Identity is recorded separately below. */
+  bytesRead: true;
+  /** True only when a caller supplied a trusted pin and these exact bytes match its SHA-256 and
+   * byte length. Format validation alone never sets this. */
+  identityVerifiedAgainstPin: boolean;
+  /** The pinned SHA-256 the identity check was made against, or null when no pin was supplied. */
+  trustedPinSha256: string | null;
   /** A mocked/synthetic successful retrieval must never establish CURRENT status for a real
    * Ontario form; this field only ever reflects that this run's fixture was marked synthetic,
    * and is never itself sufficient to flip a real form's currentness_status. */
@@ -349,6 +354,19 @@ export interface RetrievalResult {
  * (this subsystem does not assign a storage location — that is the registration step's job —
  * but this function documents/enforces the exclusion contract regardless). */
 export type PublicRetrievalResult = Omit<RetrievalResult, "bytes">;
+
+/** A pin a caller obtained from a source it trusts (for example the owner's manifest). */
+export interface TrustedArtifactPin {
+  sha256Hex: string;
+  byteLength: number;
+}
+
+/** Identity is established only by a supplied pin whose SHA-256 and byte length both match. */
+function identityAgainstPin(sha256Hex: string, byteLength: number, pin: TrustedArtifactPin | undefined) {
+  if (!pin) return { identityVerifiedAgainstPin: false, trustedPinSha256: null };
+  const matches = sha256Hex === pin.sha256Hex && byteLength === pin.byteLength;
+  return { identityVerifiedAgainstPin: matches, trustedPinSha256: pin.sha256Hex };
+}
 
 export function toPublicRetrievalResult(result: RetrievalResult): PublicRetrievalResult {
   const { bytes, ...rest } = result;
@@ -424,6 +442,7 @@ export interface RetrieveOfficialFormArtifactOptions {
   maxBytes?: number;
   now?: () => Date;
   isSynthetic?: boolean;
+  trustedPin?: TrustedArtifactPin;
 }
 
 /**
@@ -445,6 +464,7 @@ export async function retrieveOfficialFormArtifact(opts: RetrieveOfficialFormArt
   const sha256Hex = sha256OfExactBytes(raw.bytes);
 
   return {
+    ...identityAgainstPin(sha256Hex, raw.bytes.length, opts.trustedPin),
     requestedUrl: opts.url,
     finalValidatedUrl: raw.finalUrl,
     retrievedAt: now().toISOString(),
@@ -455,7 +475,7 @@ export async function retrieveOfficialFormArtifact(opts: RetrieveOfficialFormArt
     sha256Hex,
     bytes: raw.bytes,
     verificationOrigin: "AUTOMATIC_RETRIEVAL",
-    artifactBytesVerified: true,
+    bytesRead: true,
     isSynthetic: opts.isSynthetic ?? false
   };
 }
@@ -480,6 +500,8 @@ export interface TrustedDevelopmentIngestionInput {
   bytes: Buffer;
   now?: () => Date;
   isSynthetic?: boolean;
+  /** Optional: when supplied and matched, identityVerifiedAgainstPin becomes true. */
+  trustedPin?: TrustedArtifactPin;
 }
 
 export function ingestTrustedDevelopmentArtifact(input: TrustedDevelopmentIngestionInput): RetrievalResult {
@@ -491,6 +513,7 @@ export function ingestTrustedDevelopmentArtifact(input: TrustedDevelopmentIngest
   const sha256Hex = sha256OfExactBytes(input.bytes);
 
   return {
+    ...identityAgainstPin(sha256Hex, input.bytes.length, input.trustedPin),
     requestedUrl: input.sourceUrlForProvenanceOnly,
     finalValidatedUrl: input.sourceUrlForProvenanceOnly,
     retrievedAt: now().toISOString(),
@@ -501,7 +524,7 @@ export function ingestTrustedDevelopmentArtifact(input: TrustedDevelopmentIngest
     sha256Hex,
     bytes: input.bytes,
     verificationOrigin: "TRUSTED_DEVELOPMENT_INGESTION",
-    artifactBytesVerified: true,
+    bytesRead: true,
     isSynthetic: input.isSynthetic ?? false
   };
 }
@@ -523,7 +546,9 @@ export interface OfficialIndexMetadataRecord {
   pdfFilename: string;
   docxFilename: string;
   officialIndexVerified: true; // this metadata was read off the canonical index page
-  artifactBytesVerified: false; // ALWAYS false for an index-only record — never inferred true
+  bytesRead: false; // ALWAYS false for an index-only record — no bytes were ever read
+  identityVerifiedAgainstPin: false;
+  trustedPinSha256: null;
   sha256Hex: null;
   byteLengthPdf: null;
   byteLengthDocx: null;
@@ -544,7 +569,9 @@ export function buildOfficialIndexMetadataRecord(meta: {
   return {
     ...meta,
     officialIndexVerified: true,
-    artifactBytesVerified: false,
+    bytesRead: false,
+    identityVerifiedAgainstPin: false,
+    trustedPinSha256: null,
     sha256Hex: null,
     byteLengthPdf: null,
     byteLengthDocx: null,
