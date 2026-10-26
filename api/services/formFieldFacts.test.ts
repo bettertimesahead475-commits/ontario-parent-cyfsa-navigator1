@@ -141,3 +141,25 @@ describe("analyzer boundary: applyReportGuards carries field facts through the s
     expect(report.formFieldFacts[0].labelRole).toBeNull();
   });
 });
+
+describe("displayText: untrusted PDF text is cleaned before it is shown", () => {
+  it("removes control and bidi-override characters and collapses whitespace", async () => {
+    const { displayText } = await import("./formFieldFacts");
+    expect(displayText("Court\u0000 File‮  Number\n")).toBe("Court File Number");
+    expect(displayText("\u0007\u009b")).toBe("");
+  });
+
+  it("bounds long text", async () => {
+    const { displayText, DISPLAY_TEXT_MAX_CHARS } = await import("./formFieldFacts");
+    expect(displayText("x".repeat(DISPLAY_TEXT_MAX_CHARS + 500)).length).toBe(DISPLAY_TEXT_MAX_CHARS);
+  });
+
+  it("applies the same cleaning to a fact that arrives in a report", async () => {
+    const report: Record<string, any> = {
+      formFieldFacts: [{ formNumber: "14A", fieldName: "a‮b", pages: [1], enteredValue: "x\u0000y", labelRole: null, labelRoleStatus: "NOT_ESTABLISHED", printedLabel: null, reportText: "" }]
+    };
+    guardFormFieldFacts(report);
+    expect(report.formFieldFacts[0].fieldName).toBe("a b");
+    expect(report.formFieldFacts[0].enteredValue).toBe("x y");
+  });
+});

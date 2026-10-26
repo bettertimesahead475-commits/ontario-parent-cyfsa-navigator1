@@ -12,12 +12,15 @@
  *   - An entered value that is not a short string (array, object, oversized text) becomes null and is counted.
  *   - Nothing is written anywhere. This function reads bytes and returns data.
  */
+import zlib from "node:zlib";
 import { pdfJsReady } from "./pdfPolyfill.js";
 import { extractTextFromPdfBuffer } from "./pageSources.js";
 
 export const ACROFORM_MAX_BYTES = 10 * 1024 * 1024;
 export const ACROFORM_MAX_PAGES = 20;
 export const ACROFORM_MAX_WIDGETS = 2000;
+/** Total bytes that Flate-compressed streams may expand to before any parser runs. */
+export const ACROFORM_MAX_EXPANDED_BYTES = 32 * 1024 * 1024;
 export const ACROFORM_MAX_VALUE_CHARS = 2000;
 
 const ALLOWED_FIELD_TYPES = new Set(["Tx", "Btn", "Ch", "Sig"]);
@@ -27,7 +30,8 @@ export type AcroFormErrorCode =
   | "PDF_TOO_LARGE"
   | "MALFORMED_OR_PROTECTED_PDF"
   | "UNSUPPORTED_PAGE_COUNT"
-  | "TOO_MANY_WIDGETS";
+  | "TOO_MANY_WIDGETS"
+  | "EXPANDED_CONTENT_TOO_LARGE";
 
 export class AcroFormError extends Error {
   constructor(public readonly code: AcroFormErrorCode, message: string) {
@@ -64,6 +68,33 @@ export interface ExtractionResult {
   unsupportedValues: number;
 }
 
+/**
+ * Refuses a file whose Flate-compressed streams expand past ACROFORM_MAX_EXPANDED_BYTES in total. A small file can
+ * expand about 500 to 1 (measured: 102 KB -> 50 MB, 7 s of CPU), so this runs before any parser. Inflation stops at the
+ * budget, so a bomb costs at most the budget in memory. Streams that are not Flate data are left to the PDF reader.
+ */
+export function assertBoundedExpansion(bytes: Buffer): void {
+  const text = bytes.toString("latin1");
+  const open = /(?<!end)stream\r?\n/g;
+  let total = 0;
+  let m: RegExpExecArray | null;
+  while ((m = open.exec(text)) !== null) {
+    const start = m.index + m[0].length;
+    const end = text.indexOf("endstream", start);
+    if (end < 0) break;
+    try {
+      const out = zlib.inflateSync(bytes.subarray(start, end), { maxOutputLength: ACROFORM_MAX_EXPANDED_BYTES - total + 1 });
+      total += out.length;
+      if (total > ACROFORM_MAX_EXPANDED_BYTES) throw new AcroFormError("EXPANDED_CONTENT_TOO_LARGE", "The PDF's content expands beyond the supported size.");
+    } catch (e: any) {
+      if (e instanceof AcroFormError) throw e;
+      if (e?.code === "ERR_BUFFER_TOO_LARGE") throw new AcroFormError("EXPANDED_CONTENT_TOO_LARGE", "The PDF's content expands beyond the supported size.");
+      // Not Flate data, or corrupt: the PDF reader decides.
+    }
+    open.lastIndex = end + "endstream".length;
+  }
+}
+
 function finiteRect(raw: unknown): [number, number, number, number] | null {
   if (!Array.isArray(raw) || raw.length !== 4) return null;
   if (!raw.every(n => typeof n === "number" && Number.isFinite(n))) return null;
@@ -72,6 +103,8 @@ function finiteRect(raw: unknown): [number, number, number, number] | null {
 
 function shortValue(raw: unknown): { value: string | null; unsupported: boolean } {
   if (raw === null || raw === undefined) return { value: null, unsupported: false };
+  // A combo box with nothing selected is stored as an empty array: a blank value, not an unsupported one.
+  if (Array.isArray(raw) && raw.length === 0) return { value: null, unsupported: false };
   // A single-choice field stores its selection as a one-element array. Anything longer is a multi-select value.
   if (Array.isArray(raw) && raw.length === 1 && typeof raw[0] === "string") raw = raw[0];
   if (typeof raw !== "string") return { value: null, unsupported: true };
@@ -82,6 +115,7 @@ function shortValue(raw: unknown): { value: string | null; unsupported: boolean 
 export async function extractAcroFormWidgets(bytes: Buffer): Promise<ExtractionResult> {
   if (bytes.length > ACROFORM_MAX_BYTES) throw new AcroFormError("PDF_TOO_LARGE", "The PDF is larger than the supported size.");
   if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") throw new AcroFormError("NOT_A_PDF", "The file is not a PDF.");
+  assertBoundedExpansion(bytes);
 
   await pdfJsReady;
   const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");

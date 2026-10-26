@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ingestAcroFormPdf, attributeRows, enteredValueFor, isHeaderLike } from "./acroFormIngestion";
 import type { ExtractedWidget } from "./acroFormExtractor";
 import { buildSyntheticAcroFormPdf } from "../testSupport/acroFormFixtures";
@@ -141,4 +144,24 @@ describe("analyzer boundary on ingested facts", () => {
     }
     expect(factFor(report.formFieldFacts, "court_number_field").labelRole).toBe("COURT_FILE_NUMBER");
   });
+});
+
+// Real official PDFs (when present): each blank "Name of court" combo box is blank, not withheld.
+const CURRENT_DIR = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e-current";
+const currentManifest = JSON.parse(
+  fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/official-forms/current-manifest.json"), "utf8")
+) as { files: { formNumber: string; fileName: string }[] };
+const realReady = currentManifest.files.every(f => fs.existsSync(path.join(CURRENT_DIR, f.fileName)));
+const realDescribe = realReady ? describe : describe.skip;
+
+realDescribe("real official PDFs: withheld-value regression (Phase 1)", () => {
+  for (const f of currentManifest.files) {
+    it(`${f.formNumber}: no value is withheld, and the court-name box is read as entered`, async () => {
+      const r = await ingestAcroFormPdf(fs.readFileSync(path.join(CURRENT_DIR, f.fileName)));
+      expect(r.summary.unsupportedValues).toBe(0);
+      const court = r.facts.find(x => x.fieldName === "Name of court");
+      if (f.formNumber === "14A") expect(court?.enteredValue).toBe("Name of court");
+      else if (court) expect(court.enteredValue).toBeNull();
+    });
+  }
 });

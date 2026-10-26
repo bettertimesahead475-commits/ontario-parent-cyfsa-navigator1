@@ -15,6 +15,19 @@
  */
 import { usableForAnalysis, type PdfFieldMapping, type PdfSemanticRole } from "./officialFormPdfSemanticMap";
 
+/** Text from an untrusted PDF (field names, printed labels, entered values) is shown only after this cleaning. */
+export const DISPLAY_TEXT_MAX_CHARS = 300;
+export function displayText(raw: string): string {
+  // Remove control and bidi-override characters, collapse whitespace, and bound the length.
+  const cleaned = raw.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned.length > DISPLAY_TEXT_MAX_CHARS ? cleaned.slice(0, DISPLAY_TEXT_MAX_CHARS) : cleaned;
+}
+function displayValue(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const cleaned = displayText(raw);
+  return cleaned === "" ? null : cleaned;
+}
+
 export const FIELD_NOT_ESTABLISHED_TEXT =
   "A form field could not be matched to a printed label on the form, so what it is for is not established. " +
   "Its entry is shown as entered and is not used in this analysis.";
@@ -89,15 +102,15 @@ export function buildFormFieldFact(
   const base = {
     formNumber: source.formNumber,
     sourceSha256: source.sourceSha256,
-    fieldName: mapping.fieldName,
+    fieldName: displayText(mapping.fieldName),
     pages: [...mapping.pages],
     presence: "FIELD_PRESENT" as const,
-    enteredValue: enteredValue === null || enteredValue.trim() === "" ? null : enteredValue,
+    enteredValue: displayValue(enteredValue),
     partyAttribution: "NOT_DETERMINED" as const,
     legalSignificance: "NOT_ASSESSED" as const,
     labelRole: confirmed ? mapping.role : null,
     labelRoleStatus: confirmed ? ("CONFIRMED_BY_LABEL" as const) : ("NOT_ESTABLISHED" as const),
-    printedLabel: confirmed ? mapping.evidenceLabel : null,
+    printedLabel: confirmed ? displayText(mapping.evidenceLabel) || null : null,
     rowAttribution: sanitizeRow(rowAttribution)
   };
   return { ...base, reportText: reportTextFor(base) };
@@ -114,15 +127,15 @@ export function guardFormFieldFacts(report: Record<string, any>): Record<string,
     const fact: FormFieldFact = {
       formNumber: String(raw?.formNumber ?? ""),
       sourceSha256: typeof raw?.sourceSha256 === "string" ? raw.sourceSha256 : null,
-      fieldName: String(raw?.fieldName ?? ""),
+      fieldName: displayText(String(raw?.fieldName ?? "")),
       pages: Array.isArray(raw?.pages) ? raw.pages.filter((p: unknown) => Number.isInteger(p)) : [],
       presence: "FIELD_PRESENT",
-      enteredValue: typeof raw?.enteredValue === "string" && raw.enteredValue.trim() !== "" ? raw.enteredValue : null,
+      enteredValue: displayValue(raw?.enteredValue),
       partyAttribution: "NOT_DETERMINED",
       legalSignificance: "NOT_ASSESSED",
       labelRole: confirmed ? (raw.labelRole as PdfSemanticRole) : null,
       labelRoleStatus: confirmed ? "CONFIRMED_BY_LABEL" : "NOT_ESTABLISHED",
-      printedLabel: confirmed ? String(raw.printedLabel) : null,
+      printedLabel: confirmed ? displayText(String(raw.printedLabel)) || null : null,
       rowAttribution: sanitizeRow(raw?.rowAttribution),
       reportText: ""
     };

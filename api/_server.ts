@@ -736,6 +736,8 @@ app.use(
 // Increase payload size limit to digest base64 images / text / documents easily
 const parseJson = express.json({ limit: "100mb" });
 app.use((req, res, next) => {
+  // The AcroForm route applies its own, smaller JSON limit (api/acroFormRoutes.ts). Do not parse it here.
+  if (/^\/api\/acroform\//.test(req.path)) return next();
   parseJson(req, res, (error: any) => {
     // Normalize only errors originating in this parser, on lifecycle paths.
     // CORS/rate-limit middleware and downstream application errors are untouched.

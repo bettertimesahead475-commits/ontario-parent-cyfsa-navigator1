@@ -11,6 +11,12 @@ export interface SyntheticOptions {
   radioGroup?: boolean;
   /** Add a text field that is never labelled (no printed text anywhere near it). */
   unlabelledField?: boolean;
+  /** A combo box labelled "Name of court": "blank" (nothing selected), "one" (one option), or absent. */
+  combo?: "blank" | "one";
+  /** A multi-select list box with two options selected (a value the route must withhold). */
+  multiSelect?: boolean;
+  /** A text field named "__proto__" (prototype-handling check). */
+  protoName?: boolean;
   /** Draw no printed text at all (provenance check for a file with nothing to quote). */
   bare?: boolean;
   /** Add a two-row table whose row label "Child" appears on two rows of the same page (ambiguous). */
@@ -74,6 +80,29 @@ export async function buildSyntheticAcroFormPdf(opts: SyntheticOptions = {}): Pr
     r2.addToPage(page1, { x: 200, y: 296, width: 200, height: 18 });
   }
 
+  if (opts.combo) {
+    page1.drawText("Name of court", { x: 60, y: 460, size: 9, font });
+    const dd = form.createDropdown("court_combo");
+    dd.addOptions(["Name of court", "Other court"]);
+    if (opts.combo === "one") dd.select("Name of court");
+    dd.addToPage(page1, { x: 200, y: 456, width: 200, height: 18 });
+  }
+
+  if (opts.multiSelect) {
+    page1.drawText("Several", { x: 60, y: 420, size: 9, font });
+    const list = form.createOptionList("several_list");
+    list.addOptions(["Alpha", "Beta"]);
+    list.enableMultiselect();
+    list.select(["Alpha", "Beta"]);
+    list.addToPage(page1, { x: 200, y: 400, width: 200, height: 40 });
+  }
+
+  if (opts.protoName) {
+    page1.drawText("Prototype test", { x: 60, y: 260, size: 9, font });
+    const proto = form.createTextField("__proto__");
+    proto.addToPage(page1, { x: 200, y: 256, width: 200, height: 18 });
+  }
+
   if (opts.conflictingDuplicate) {
     const page2 = pdf.addPage([612, 792]);
     page2.drawText("Court File Number", { x: 60, y: 620, size: 9, font });
@@ -82,4 +111,16 @@ export async function buildSyntheticAcroFormPdf(opts: SyntheticOptions = {}): Pr
   }
 
   return Buffer.from(await pdf.save());
+}
+
+/** A one-page PDF whose page content is a Flate stream expanding to `inflatedBytes` (for expansion-limit tests). */
+export async function buildExpansionPdf(inflatedBytes: number): Promise<Buffer> {
+  const { PDFName } = await import("pdf-lib");
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([612, 792]);
+  const unit = Buffer.from("BT /F1 1 Tf ET\n");
+  const content = Buffer.alloc(inflatedBytes);
+  for (let o = 0; o < content.length; o += unit.length) unit.copy(content, o, 0, Math.min(unit.length, content.length - o));
+  page.node.set(PDFName.of("Contents"), doc.context.register(doc.context.flateStream(content)));
+  return Buffer.from(await doc.save());
 }
