@@ -3,7 +3,12 @@
 Status: Option A is IMPLEMENTED on PR #106 (no schema change, no migration). A validated report whose billing
 finalization fails permanently is held in the job record as `billing_pending`, its reservation is kept, and the
 same analysis id recovers it after the credit is confirmed. Covered by `analyzerStreaming.billingHold.test.ts` (storage
-and hold semantics). The route-level hold and recovery flow is NOT covered by an automated test; see the release report.
+and hold semantics) and by the route-level suite "billing_pending recovery through the real routes" in `_server.test.ts`:
+successful recovery, held report not exposed through job status, wrong paid session, wrong user, expired reservation,
+storage failure at hold, storage failure after confirmation, repeated and concurrent retries. Every route case asserts
+that the model is not run again and that the reservation is consumed at most once.
+A billing outage (credit RPC failure) is distinct from a final reservation outcome (released or missing): outages are
+retried and held, final outcomes are not. A held job's sections are withheld from the public job view.
 Option B (ledger table) still needs a separately approved migration and is not implemented.
 
 ## The problem

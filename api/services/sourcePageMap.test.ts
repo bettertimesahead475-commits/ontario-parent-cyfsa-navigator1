@@ -59,7 +59,7 @@ describe("fabricated page markers in text", () => {
       redFlags: [{ locationInDocument: "Page 3", phraseDetected: "the child was locked in a room overnight", legalReference: "" }],
     };
     applyReportGuards(report, null);
-    expect(report.sourceProvenance).toBe("unauthenticated_text");
+    expect(report.sourceProvenance).toBe("pasted_text");
     expect(report.redFlags[0].pageCitation.status).toBe("PAGE_UNVERIFIABLE");
     expect(report.redFlags[0].pageCitation.status).not.toBe("PAGE_VERIFIED");
   });

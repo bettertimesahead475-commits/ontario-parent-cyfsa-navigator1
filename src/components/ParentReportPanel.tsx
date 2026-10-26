@@ -35,6 +35,7 @@ function FindingBlock({ finding }: { finding: ParentFindingView }) {
           <p>Quote: {finding.evidenceDetail.quote || "No quote was given."}</p>
           <p>Location: {finding.evidenceDetail.location}</p>
           <p>Citation: {finding.evidenceDetail.citationStatus}</p>
+          <p>Page check: {finding.evidenceDetail.pageCheck}</p>
         </div>
       </div>
     </details>
@@ -61,6 +62,16 @@ function ParentReportPanel({ report }: Props) {
       <p className="mt-1 text-sm text-slate-700">
         This is organised from the analyzer&apos;s own findings. It adds no new legal conclusions. Check each point with a lawyer before relying on it.
       </p>
+      <section aria-labelledby="source-check-heading" className="mt-4 rounded-lg bg-white p-3">
+        <h3 id="source-check-heading" className="font-semibold text-slate-900">
+          {view.sourceCheck.heading}
+        </h3>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-800">
+          {view.sourceCheck.lines.map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
+      </section>
       {view.secondReviewNotice && (
         <p role="note" className="mt-3 rounded bg-amber-50 p-2 text-sm text-amber-900">
           {view.secondReviewNotice}

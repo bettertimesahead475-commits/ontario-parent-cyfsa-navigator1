@@ -1960,7 +1960,7 @@ describe("authenticated source pages through the real routes", () => {
     const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: CLIENT_FABRICATED, sourcePageMap: forged, mode: "fast" });
     expect(res.status).toBe(200);
     expect(res.body.sourcePageMapStatus).toBe("rejected:bad-signature");
-    expect(res.body.sourceProvenance).toBe("unauthenticated_text");
+    expect(res.body.sourceProvenance).toBe("pasted_text");
     expect(sentToModel()).not.toContain("FABRICATED-EDIT");
   });
 
@@ -1970,7 +1970,7 @@ describe("authenticated source pages through the real routes", () => {
     const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: CLIENT_FABRICATED, mode: "fast" });
     expect(res.status).toBe(200);
     expect(res.body.sourcePageMapStatus).toBe("absent");
-    expect(res.body.sourceProvenance).toBe("unauthenticated_text");
+    expect(res.body.sourceProvenance).toBe("pasted_text");
   });
 });
 
@@ -2178,6 +2178,52 @@ describe("billing_pending recovery through the real routes", () => {
     expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
     expect(reservationState(id)).toBe("reservation:consumed");
     expect(countedFor(id)).toBe(1);
+  });
+  it("does not expose a held report through the job-status endpoint before billing is confirmed", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await analyze(id);
+
+    const status = await request(app).get(`/api/analyze/job/${id}`).set(paid());
+    expect(status.status).toBe(200);
+    expect(status.body.status).toBe("billing_pending");
+    expect(status.body.report).toBeUndefined();
+    expect(status.body.heldReport).toBeUndefined();
+    expect(JSON.stringify(status.body)).not.toContain("documentTitle");
+  });
+
+  it("delivers the report once when storage fails after billing is confirmed, and a retry neither re-runs nor re-charges", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await analyze(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    // The confirmed record cannot be written back to storage. The in-process record still records it as completed.
+    dbHolder.db.storage._faults.failUploadMatching = (body: string) => body.includes('"status":"completed"');
+    const recovered = await analyze(id);
+    expect(recovered.status).toBe(200);
+
+    const retry = await analyze(id);
+    expect(retry.status).toBe(200);
+    expect(retry.body).toEqual(recovered.body);
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(reservationState(id)).toBe("reservation:consumed");
+  });
+
+  it("concurrent recovery requests confirm the credit once and never run the model again", async () => {
+    const id = newAnalysisId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await analyze(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    const results = await Promise.all([analyze(id), analyze(id), analyze(id)]);
+    for (const res of results) {
+      expect(res.status).toBe(200);
+    }
+    expect(results[1].body).toEqual(results[0].body);
+    expect(results[2].body).toEqual(results[0].body);
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(reservationState(id)).toBe("reservation:consumed");
   });
 });
 

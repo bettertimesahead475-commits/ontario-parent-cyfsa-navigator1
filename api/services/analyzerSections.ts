@@ -584,22 +584,27 @@ export function verifyPageCitation(flag: Record<string, any>, sourcePages: Map<n
  */
 export function applyReportGuards(
   report: Record<string, any>,
-  sourcePages: Map<number, string> | null = null
+  sourcePages: Map<number, string> | null = null,
+  requestText = ""
 ): Record<string, any> {
   const authenticatedPages = sourcePages !== null && sourcePages.size > 0;
-  report.sourceProvenance = authenticatedPages ? "authenticated_pages" : "unauthenticated_text";
+  // "authenticated_pages": quotes are checked against server-verified pages of the uploaded file.
+  // "pasted_text": the text was typed or pasted; no original file was verified, so nothing here is documentary proof.
+  report.sourceProvenance = authenticatedPages ? "authenticated_pages" : "pasted_text";
   // A quote is documentary only when it appears in the server-authenticated page text. The request text can carry
-  // client-typed material next to an uploaded file, so it is never the basis of a verified quote.
+  // client-typed material next to an uploaded file, so it is never the basis of a documentary quote.
   const authenticatedText = authenticatedPages ? [...sourcePages!.values()].join("\n\n") : null;
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
     if (authenticatedText !== null) {
       const status = verifyQuoteAgainstSource(authenticatedText, flag.phraseDetected);
       flag.quoteVerification = status;
       flag.quoteVerified = isVerbatimQuoteStatus(status);
+      flag.pastedTextMatch = null;
     } else {
-      // Client-supplied text is not evidence of what the document says, so no match is reported as verified.
+      // Pasted text is not evidence of what the original document says. A match against it is a text match only.
       flag.quoteVerification = UNAUTHENTICATED_QUOTE_STATUS;
       flag.quoteVerified = null;
+      flag.pastedTextMatch = requestText.trim() ? isVerbatimQuoteStatus(verifyQuoteAgainstSource(requestText, flag.phraseDetected)) : null;
     }
     verifyPageCitation(flag, authenticatedPages ? sourcePages : null);
     const g = guardCitation(flag.legalReference);
@@ -765,7 +770,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   const failure = outcomes.find((o) => o !== null);
   if (failure) throw failure;
 
-  applyReportGuards(report, opts.sourcePages ?? null);
+  applyReportGuards(report, opts.sourcePages ?? null, opts.documentText);
 
   if (opts.mode === "full" && opts.verificationModel) {
     opts.onVerificationStart?.();

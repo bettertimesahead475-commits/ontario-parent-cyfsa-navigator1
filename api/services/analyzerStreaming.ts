@@ -355,6 +355,9 @@ export async function completeHeldAnalysisJob(job: AnalysisJob): Promise<any | n
 /** The job as a status read may show it. The held report and the billing record are never included. */
 export function publicAnalysisJob(job: AnalysisJob): Omit<AnalysisJob, "heldReport" | "billing"> {
   const { heldReport: _held, billing: _billing, ...rest } = job;
+  // A held job has finished its analysis, and its sections are the complete report. They are withheld until the credit
+  // is confirmed and the job is completed. Progress is still reported through the stage and percent fields.
+  if (job.status === "billing_pending") return { ...rest, sections: {} };
   return rest;
 }
 
