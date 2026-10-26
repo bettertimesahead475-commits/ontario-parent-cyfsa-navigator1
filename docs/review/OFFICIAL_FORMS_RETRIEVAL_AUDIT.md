@@ -83,3 +83,10 @@ Place the six historical PDFs in `fixtures/official-forms/` (or set `OFFICIAL_FO
 - Result: the six historical PDFs are not in this environment. The 38 historical tests remain skipped. Nothing in `fixtures/official-forms/` was created, and no test was changed.
 
 Simplest supported transfer: attach the ZIP (or the six PDFs) to the chat so it appears under `/mnt/user-data/uploads`. Alternatively, commit the six PDFs to a draft branch in a folder that the resolver will read, after the owner confirms that publishing them to the repository is acceptable.
+
+## 8. Second access check (2026-10-26, after the owner reported the ZIP attached)
+
+- `/mnt/user-data/uploads`, `/mnt/user-data/working`, `/mnt/user-data/outputs`, `/mnt/attach`: still empty. No ZIP is present in the sandbox.
+- A filesystem search for `*fixture*.zip` and `cyfsa*.zip` found nothing.
+- All 18 PDF and ZIP files of 50 KB to 2 MB were hashed. None matches a historical pin in `scripts/official-forms/manifest.json`.
+- Result: the six historical PDFs are not in this environment. No fixture directory, resolver change, or test change was made. The 38 historical tests remain skipped.
