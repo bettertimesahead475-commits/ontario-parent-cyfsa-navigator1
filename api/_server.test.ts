@@ -1882,15 +1882,18 @@ describe("Credit ownership at the route level", () => {
     expect(first.status).toBe(200);
     const callsAfterFirst = mockCreateMessage.mock.calls.length;
 
+    // The completed report is stored with its job, so a replay returns it. The model is not run again and nothing is counted again.
     const replay = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
-    expect(replay.status).toBe(409);
-    expect(replay.body.code).toBe("ANALYSIS_ALREADY_COMPLETED");
+    expect(replay.status).toBe(200);
+    expect(replay.body.disclaimer).toBe(first.body.disclaimer);
     expect(mockCreateMessage.mock.calls.length).toBe(callsAfterFirst);
+    expect(mockUsage.recordPaidUse.mock.calls.filter((call: any[]) => call[4] === ID)).toHaveLength(1);
   });
 
   it("a second Deep Scan that joins a running reservation does not run the model", async () => {
+    const JOIN_ID = "req_1770000000222_join2222"; // its own id: the stored job of the test above must not be reused
     mockCreateMessage.mockResolvedValue(claudeJsonResponse(DEEP_SCAN));
-    await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
+    await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": JOIN_ID }).send({ documentText: "Notes." });
     // Make the stored reservation look like a live analysis that has not finished.
     const marker = markerRows()[0];
     expect(marker).toBeDefined();
@@ -1899,9 +1902,9 @@ describe("Credit ownership at the route level", () => {
     marker.last_analysis_at = new Date().toISOString();
     const callsBefore = mockCreateMessage.mock.calls.length;
 
-    const joined = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": ID }).send({ documentText: "Notes." });
-    expect(joined.status).toBe(409);
-    expect(joined.body.code).toBe("ANALYSIS_IN_PROGRESS");
+    // The stored job is completed, so the join returns its report. It does not start or join a model run.
+    const joined = await request(app).post("/api/deep-scan").set({ ...paid(), "x-analysis-id": JOIN_ID }).send({ documentText: "Notes." });
+    expect(joined.status).toBe(200);
     expect(mockCreateMessage.mock.calls.length).toBe(callsBefore);
   });
 });
@@ -2244,5 +2247,205 @@ describe("billing outages during finalization", () => {
     const job = [...dbHolder.db.storage._objects.entries()].find(([k]: [string, string]) => k.endsWith(`${id}.json`));
     expect(JSON.parse(job![1]).status).toBe("completed");
     expect(mockUsage.recordPaidUse.mock.calls.filter((call: any[]) => call[4] === id)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deep Scan billing recovery through the real route. A validated Deep Scan whose credit cannot be confirmed is held
+// under its analysis id. A retry with the same id recovers it through the shared rules, and never runs the model again.
+// ---------------------------------------------------------------------------
+describe("deep-scan billing recovery through the real routes", () => {
+  const DS_RESULT = {
+    gaps: [],
+    missingEvidence: [],
+    retorts: [],
+    thresholdAnalysis: [],
+    proceduralTimelineViolations: [],
+    charterAndHumanRightsIssues: [],
+    whatToVerify: [],
+    whatToAskALawyer: [],
+    whatIsMissing: [],
+    lawyerCaseBrief: [],
+    disclaimer: "This document is generated for informational/educational purposes only. disclaimer",
+  };
+  const OTHER_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-other-deep-user";
+  const OTHER_UID = "other-deep-uid";
+  const OTHER_SESSION_TOKEN = "other-deep-session-token";
+  const OTHER_SESSION_JTI = "session-row-deep-other";
+  const SAME_USER_SECOND_TOKEN = "same-user-second-deep-session";
+  const SAME_USER_SECOND_JTI = "session-row-deep-same-user";
+  let deepCounter = 0;
+  const newDeepId = () => {
+    deepCounter += 1;
+    return `req_${String(1_780_000_000_000 + deepCounter).padStart(13, "0")}_deep${deepCounter}`;
+  };
+  const deepScan = (id: string, headers: Record<string, string> = {}) =>
+    request(app)
+      .post("/api/deep-scan")
+      .set({ ...paid(), "x-analysis-id": id, ...headers })
+      .send({ documentText: "Deep scan document text for billing recovery.", documentName: "notes.txt" });
+  const markerState = (id: string): string | null => {
+    const hash = createHash("sha256").update(id).digest("hex").slice(0, 32);
+    const marker: string | undefined = dbHolder.db._freeUsage.get(`paid_res_${PAID_JTI}_${hash}`)?.email;
+    return marker ? marker.split(":").slice(0, 2).join(":") : null;
+  };
+  const storedDeepJob = (id: string): any => {
+    const key = [...dbHolder.db.storage._objects.keys()].find((k: string) => k.endsWith(`${id}.json`));
+    return key ? JSON.parse(dbHolder.db.storage._objects.get(key)) : null;
+  };
+  const countedDeep = (id: string) => mockUsage.recordPaidUse.mock.calls.filter((call: any[]) => call[4] === id).length;
+
+  beforeEach(() => {
+    mockAccess.verifySessionToken.mockImplementation((token: string) =>
+      token === PAID_SESSION_TOKEN ? { jti: PAID_JTI }
+        : token === OTHER_SESSION_TOKEN ? { jti: OTHER_SESSION_JTI }
+          : token === SAME_USER_SECOND_TOKEN ? { jti: SAME_USER_SECOND_JTI }
+            : null
+    );
+    mockAccess.getActivePaidSession.mockImplementation(async (jti: string) =>
+      jti === PAID_JTI
+        ? { id: PAID_JTI, firebaseUid: PAID_FIREBASE_UID, tier: "Pro" }
+        : jti === OTHER_SESSION_JTI
+          ? { id: OTHER_SESSION_JTI, firebaseUid: OTHER_UID, tier: "Pro" }
+          : jti === SAME_USER_SECOND_JTI
+            ? { id: SAME_USER_SECOND_JTI, firebaseUid: PAID_FIREBASE_UID, tier: "Pro" }
+            : null
+    );
+    mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (header: string | undefined) => {
+      if (header === PAID_FIREBASE_TOKEN) return { uid: PAID_FIREBASE_UID, email: "paid@example.com" };
+      if (header === OTHER_FIREBASE_TOKEN) return { uid: OTHER_UID, email: "other@example.com" };
+      return null;
+    });
+    mockCreateMessage.mockReset();
+    mockCreateMessage.mockImplementation(async () => claudeJsonResponse(DS_RESULT));
+  });
+
+  it("holds a validated Deep Scan when the credit cannot be confirmed, then delivers it on retry without running the model again", async () => {
+    const id = newDeepId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+
+    const first = await deepScan(id);
+    expect(first.status).toBe(503);
+    expect(first.body.code).toBe("BILLING_PENDING");
+    expect(first.body.disclaimer).toBeUndefined();
+    const modelCalls = mockCreateMessage.mock.calls.length;
+    expect(modelCalls).toBeGreaterThan(0);
+    expect(markerState(id)).toBe("reservation:reserved");
+    expect(storedDeepJob(id)).toMatchObject({ status: "billing_pending" });
+    expect(countedDeep(id)).toBe(0);
+
+    const retry = await deepScan(id);
+    expect(retry.status).toBe(200);
+    expect(retry.body.disclaimer).toContain("informational/educational purposes only");
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(markerState(id)).toBe("reservation:consumed");
+    expect(storedDeepJob(id)).toMatchObject({ status: "completed" });
+    expect(countedDeep(id)).toBe(1);
+  });
+
+  it("refuses a held Deep Scan to another user, and keeps it held", async () => {
+    const id = newDeepId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await deepScan(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    // Another person presenting a paid session is refused before any recovery. Nothing is delivered and nothing runs.
+    const intruder = await deepScan(id, { Authorization: OTHER_FIREBASE_TOKEN });
+    expect(intruder.status).not.toBe(200);
+    expect(intruder.body.disclaimer).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(markerState(id)).toBe("reservation:reserved");
+    expect(countedDeep(id)).toBe(0);
+  });
+
+  it("refuses a held Deep Scan without a paid session, and with another paid session of the same person", async () => {
+    const id = newDeepId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await deepScan(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    const anonymous = await request(app)
+      .post("/api/deep-scan")
+      .set({ Authorization: PAID_FIREBASE_TOKEN, "x-analysis-id": id })
+      .send({ documentText: "x" });
+    expect(anonymous.status).not.toBe(200);
+    expect(anonymous.body.disclaimer).toBeUndefined();
+
+    // A second paid session of the same person passes the session check, so the held report's own session is required.
+    const otherSameUser = await deepScan(id, { "x-ps-session": SAME_USER_SECOND_TOKEN });
+    expect(otherSameUser.status).toBe(403);
+    expect(otherSameUser.body.code).toBe("BILLING_SESSION_REQUIRED");
+    expect(otherSameUser.body.disclaimer).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(countedDeep(id)).toBe(0);
+  });
+
+  it("delivers nothing when the reservation expired before recovery, and runs nothing", async () => {
+    const id = newDeepId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await deepScan(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+    const hash = createHash("sha256").update(id).digest("hex").slice(0, 32);
+    dbHolder.db._freeUsage.get(`paid_res_${PAID_JTI}_${hash}`).email = "reservation:released";
+
+    const recovery = await deepScan(id);
+    expect(recovery.status).toBe(409);
+    expect(recovery.body.code).toBe("RESERVATION_RELEASED");
+    expect(recovery.body.disclaimer).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(countedDeep(id)).toBe(0);
+  });
+
+  it("does not hold the report when storage refuses the hold: the reservation is released and nothing is delivered", async () => {
+    const id = newDeepId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    dbHolder.db.storage._faults.failUploadMatching = (body: string) => body.includes('"status":"billing_pending"');
+
+    const res = await deepScan(id);
+    expect(res.status).not.toBe(200);
+    expect(res.body.code).not.toBe("BILLING_PENDING");
+    expect(res.body.disclaimer).toBeUndefined();
+    expect(storedDeepJob(id)?.status ?? null).not.toBe("billing_pending");
+    expect(markerState(id)).toBe("reservation:released");
+    expect(countedDeep(id)).toBe(0);
+  });
+
+  it("keeps the held report while the credit is still unavailable, and never runs the model", async () => {
+    const id = newDeepId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await deepScan(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    const retry = await deepScan(id);
+    expect(retry.status).toBe(503);
+    expect(retry.body.code).toBe("BILLING_PENDING");
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(storedDeepJob(id)).toMatchObject({ status: "billing_pending" });
+  });
+
+  it("does not expose the held Deep Scan through the job-status endpoint", async () => {
+    const id = newDeepId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await deepScan(id);
+
+    const status = await request(app).get(`/api/analyze/job/${id}`).set(paid());
+    expect(status.status).toBe(200);
+    expect(status.body.status).toBe("billing_pending");
+    expect(status.body.report).toBeUndefined();
+    expect(status.body.heldReport).toBeUndefined();
+    expect(JSON.stringify(status.body)).not.toContain("disclaimer");
+  });
+
+  it("concurrent retries of a held Deep Scan deliver once and never run the model again", async () => {
+    const id = newDeepId();
+    dbHolder.db._faults.failNextRpc.paid_finalize_credit = 3;
+    await deepScan(id);
+    const modelCalls = mockCreateMessage.mock.calls.length;
+
+    const results = await Promise.all([deepScan(id), deepScan(id), deepScan(id)]);
+    for (const res of results) expect(res.status).toBe(200);
+    expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    expect(markerState(id)).toBe("reservation:consumed");
   });
 });

@@ -89,6 +89,7 @@ import {
   holdAnalysisJobForBilling,
   completeHeldAnalysisJob,
   publicAnalysisJob,
+  type AnalysisJob,
 } from "./services/analyzerStreaming.js";
 import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
@@ -1902,6 +1903,95 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
   }
 
+  /**
+   * Delivers a validated report that was held because its billing could not be confirmed. Shared by /api/analyze and
+   * /api/deep-scan, so the recovery rules live in one place: the caller must present the paid session the analysis was
+   * made with, that session must belong to the caller, and the credit is confirmed by an idempotent finalize. The model
+   * is never run here. Returns the report to deliver, or the refusal to send.
+   */
+  async function deliverHeldReport(params: {
+    job: AnalysisJob;
+    identity: Awaited<ReturnType<typeof verifyFirebaseIdentity>>;
+    presentedToken: string | undefined;
+    analysisRequestId: string;
+  }): Promise<{ ok: true; report: any } | { ok: false; status: number; body: Record<string, unknown> }> {
+    const { job, identity, presentedToken, analysisRequestId } = params;
+    const billing = job.billing!;
+    const presentedSession = presentedToken ? verifySessionToken(presentedToken) : null;
+    if (!identity || !presentedSession || presentedSession.jti !== billing.sessionId) {
+      return {
+        ok: false,
+        status: 403,
+        body: { error: "Present the paid session this analysis was made with to receive its report.", code: "BILLING_SESSION_REQUIRED" },
+      };
+    }
+    let heldSession: Awaited<ReturnType<typeof lookupPaidSession>>;
+    try {
+      heldSession = await lookupPaidSession(presentedSession.jti);
+    } catch {
+      // Fail closed: if access cannot be verified, the held report is not released.
+      return {
+        ok: false,
+        status: 503,
+        body: {
+          error: "We couldn't verify your access right now. Please retry in a moment.",
+          code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
+          retryable: true,
+        },
+      };
+    }
+    if (!heldSession || !isSessionBoundToIdentity(heldSession, identity)) {
+      return { ok: false, status: 403, body: { error: "This paid session is not active for your account.", code: "ACCESS_DENIED" } };
+    }
+    try {
+      await finalizeAnalysisCreditWithRetry({
+        sessionId: billing.sessionId,
+        firebaseUid: identity.uid,
+        requestId: analysisRequestId,
+        reservationId: billing.reservationId,
+        tier: billing.tier,
+        documentName: billing.documentName,
+      });
+    } catch (billingErr: any) {
+      if (billingErr instanceof LifecycleError && !isBillingOutage(billingErr)) {
+        // The reservation was released or never existed. Nothing is delivered and nothing is charged.
+        return {
+          ok: false,
+          status: 409,
+          body: {
+            error: "The credit reservation for this analysis expired before it could be recorded. No report was released and nothing was charged. Start a new analysis if you still need one.",
+            code: billingErr.code,
+          },
+        };
+      }
+      return {
+        ok: false,
+        status: 503,
+        body: {
+          error: "Your analysis is ready, but its billing record is still being confirmed. Retry in a moment.",
+          code: "BILLING_PENDING",
+          retryable: true,
+        },
+      };
+    }
+    // The credit is now confirmed, so the analysis is counted here (once, keyed by its id), not on the held attempt.
+    if (billing.usageType) {
+      await countDeliveredPaidAnalysis({
+        sessionId: billing.sessionId,
+        tier: billing.tier,
+        email: identity.email || null,
+        usageType: billing.usageType,
+        idempotencyKey: analysisRequestId,
+        billingCycle: billing.billingCycle ?? null,
+      });
+    }
+    const delivered = await completeHeldAnalysisJob(job);
+    if (delivered === null) {
+      return { ok: false, status: 409, body: { error: "This analysis has no held report.", code: "ANALYSIS_NOT_HELD" } };
+    }
+    return { ok: true, report: delivered };
+  }
+
   function sendAccessCheckUnavailable(res: Response) {
     res.status(503).json({
       code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
@@ -2088,70 +2178,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             });
           }
           if (existingJob.status === "billing_pending" && existingJob.heldReport !== undefined && existingJob.billing) {
-            // The analysis already ran and was validated. Only its credit is outstanding, so confirm that credit and
-            // return the held report. The model is never run again for this analysis id.
-            const billing = existingJob.billing;
-            const presentedToken = req.header("x-ps-session");
-            const presentedSession = presentedToken ? verifySessionToken(presentedToken) : null;
-            if (!identity || !presentedSession || presentedSession.jti !== billing.sessionId) {
-              return res.status(403).json({
-                error: "Present the paid session this analysis was made with to receive its report.",
-                code: "BILLING_SESSION_REQUIRED",
-              });
-            }
-            let heldSession: Awaited<ReturnType<typeof lookupPaidSession>>;
-            try {
-              heldSession = await lookupPaidSession(presentedSession.jti);
-            } catch {
-              // Fail closed: if access cannot be verified, the held report is not released.
-              return res.status(503).json({
-                error: "We couldn't verify your access right now. Please retry in a moment.",
-                code: "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE",
-                retryable: true,
-              });
-            }
-            if (!heldSession || !isSessionBoundToIdentity(heldSession, identity)) {
-              return res.status(403).json({ error: "This paid session is not active for your account.", code: "ACCESS_DENIED" });
-            }
-            try {
-              await finalizeAnalysisCreditWithRetry({
-                sessionId: billing.sessionId,
-                firebaseUid: identity.uid,
-                requestId: analysisRequestId,
-                reservationId: billing.reservationId,
-                tier: billing.tier,
-                documentName: billing.documentName,
-              });
-            } catch (billingErr: any) {
-              if (billingErr instanceof LifecycleError && !isBillingOutage(billingErr)) {
-                // The reservation was released or never existed. Nothing is delivered and nothing is charged.
-                return res.status(409).json({
-                  error: "The credit reservation for this analysis expired before it could be recorded. No report was released and nothing was charged. Start a new analysis if you still need one.",
-                  code: billingErr.code,
-                });
-              }
-              return res.status(503).json({
-                error: "Your analysis is ready, but its billing record is still being confirmed. Retry in a moment.",
-                code: "BILLING_PENDING",
-                retryable: true,
-              });
-            }
-            // The credit is now confirmed, so the analysis is counted here (once, keyed by its id), not on the held attempt.
-            if (billing.usageType) {
-              await countDeliveredPaidAnalysis({
-                sessionId: billing.sessionId,
-                tier: billing.tier,
-                email: identity.email || null,
-                usageType: billing.usageType,
-                idempotencyKey: analysisRequestId,
-                billingCycle: billing.billingCycle ?? null,
-              });
-            }
-            const delivered = await completeHeldAnalysisJob(existingJob);
-            if (delivered === null) {
-              return res.status(409).json({ error: "This analysis has no held report.", code: "ANALYSIS_NOT_HELD" });
-            }
-            return res.json(redactCustomerReport(delivered));
+            // The analysis already ran and was validated. Only its credit is outstanding. The model is never run again.
+            const held = await deliverHeldReport({
+              job: existingJob,
+              identity,
+              presentedToken: req.header("x-ps-session") || undefined,
+              analysisRequestId,
+            });
+            if (held.ok === false) return res.status(held.status).json(held.body);
+            return res.json(redactCustomerReport(held.report));
           }
           if (existingJob.status === "completed" && existingJob.report) {
             return res.json(redactCustomerReport(existingJob.report));
@@ -3270,6 +3305,37 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       req.body?.requestId ||
       null;
 
+    // A retry with the same analysis id is answered from the durable job record, never re-run. A held report is
+    // delivered only through the shared recovery rules (paid session presented, owned by the caller, idempotent credit).
+    if (isValidAnalysisJobId(idempotencyKey)) {
+      const existingJob = await getAnalysisJobDurable(idempotencyKey);
+      if (existingJob) {
+        if (!existingJob.uid || existingJob.uid !== identity.uid) {
+          return res.status(409).json({ error: "This analysis id is already in use. Please start a new analysis.", code: "ANALYSIS_ID_CONFLICT" });
+        }
+        if (existingJob.status === "billing_pending" && existingJob.heldReport !== undefined && existingJob.billing) {
+          const held = await deliverHeldReport({
+            job: existingJob,
+            identity,
+            presentedToken: req.header("x-ps-session") || undefined,
+            analysisRequestId: idempotencyKey,
+          });
+          if (held.ok === false) return res.status(held.status).json(held.body);
+          return res.json(redactCustomerReport(held.report));
+        }
+        if (existingJob.status === "completed" && existingJob.report) {
+          return res.json(redactCustomerReport(existingJob.report));
+        }
+        if (existingJob.status === "analyzing" && Date.now() - existingJob.updatedAt < 6 * 60 * 1000) {
+          return res.status(409).json({
+            error: "This deep scan is still running. We'll show the results as soon as it finishes.",
+            code: "ANALYSIS_IN_PROGRESS",
+            jobId: idempotencyKey,
+          });
+        }
+      }
+    }
+
     if (sessionInfo) {
       const check = await checkPaidUsage(sessionInfo.sessionId, sessionInfo.tier, "forensic", idempotencyKey);
       if (!check.allowed) {
@@ -3313,6 +3379,11 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
         error: "This analysis is already running. We'll show the results as soon as it finishes.",
         code: "ANALYSIS_IN_PROGRESS",
       });
+    }
+
+    let billingHeld = false;
+    if (isValidAnalysisJobId(idempotencyKey)) {
+      await createAnalysisJobDurable({ jobId: analysisRequestId, uid: identity.uid, mode: "full" });
     }
 
     try {
@@ -3523,15 +3594,41 @@ OUTPUT — return strictly this JSON schema, nothing else:
       const durationMs = Date.now() - startTime;
       let credits: CreditStatus | null = null;
       if (sessionInfo) {
+        const billing = {
+          sessionId: sessionInfo.sessionId,
+          tier: sessionInfo.tier,
+          reservationId: creditReservation?.reservationId ?? "",
+          documentName: req.body?.documentName || "deep-scan-document",
+          usageType: "forensic" as const,
+          billingCycle: creditReservation?.billingCycle ?? null,
+        };
         if (creditReservation) {
-          await finalizeAnalysisCreditWithRetry({
-            sessionId: sessionInfo.sessionId,
-            firebaseUid: sessionInfo.uid,
-            requestId: analysisRequestId,
-            reservationId: creditReservation.reservationId,
-            tier: sessionInfo.tier,
-            documentName: req.body?.documentName || "deep-scan-document",
-          });
+          try {
+            await finalizeAnalysisCreditWithRetry({
+              sessionId: sessionInfo.sessionId,
+              firebaseUid: sessionInfo.uid,
+              requestId: analysisRequestId,
+              reservationId: creditReservation.reservationId,
+              tier: sessionInfo.tier,
+              documentName: billing.documentName,
+            });
+          } catch (billingErr: any) {
+            // A released or missing reservation is final: nothing is delivered, and the error path releases nothing.
+            if (billingErr instanceof LifecycleError && !isBillingOutage(billingErr)) throw billingErr;
+            // Billing is uncertain after retries. The reservation stays, and the validated report is held for recovery
+            // rather than discarded. Without a durable job record there is nothing to hold, so the error path runs.
+            if (!isValidAnalysisJobId(idempotencyKey)) throw billingErr;
+            const held = await holdAnalysisJobForBilling(analysisRequestId, report, billing);
+            if (!held) throw billingErr;
+            billingHeld = true;
+            console.error(`[deep scan] billing finalization failed for ${analysisRequestId}; report held for recovery.`);
+            throw new AnalyzerError(
+              "BILLING_PENDING",
+              503,
+              "Your analysis is ready, but its billing record could not be confirmed yet. Retry with the same analysis to receive it. The analysis is not run again.",
+              true
+            );
+          }
         }
         // Counted only after the credit is confirmed, so an analysis whose reservation was released is not shown as used.
         await countDeliveredPaidAnalysis({
@@ -3548,9 +3645,14 @@ OUTPUT — return strictly this JSON schema, nothing else:
           console.error("[deep scan] Failed to read paid usage status (non-fatal):", usageErr);
         }
       }
+      // The delivered report is stored, so a retry with the same id returns it rather than running again.
+      if (isValidAnalysisJobId(idempotencyKey)) {
+        await completeAnalysisJobDurable(analysisRequestId, report);
+      }
       res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
     } catch (error: any) {
-      if (creditReservation && sessionInfo) {
+      // A held report keeps its reservation: releasing it could hand the report to a user who was never charged.
+      if (creditReservation && sessionInfo && !billingHeld) {
         try {
           await releaseAnalysisReservation({
             sessionId: sessionInfo.sessionId,
@@ -3570,6 +3672,15 @@ OUTPUT — return strictly this JSON schema, nothing else:
         ) {
           return res.status(error.statusCode).json({ error: error.message, code: error.code });
         }
+      }
+      if (!billingHeld && isValidAnalysisJobId(idempotencyKey) && getAnalysisJob(analysisRequestId)) {
+        const failed = formatAnalyzerErrorResponse(error);
+        await failAnalysisJobDurable(analysisRequestId, {
+          code: failed.code,
+          message: failed.error,
+          statusCode: failed.statusCode,
+          retryable: failed.retryable,
+        }).catch(() => {});
       }
       console.error("[deep scan] API error, returning honest failure (no fabricated fallback):", error);
       handleAIError(error, "deep scan", res);

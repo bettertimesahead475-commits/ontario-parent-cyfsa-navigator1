@@ -52,6 +52,7 @@ import {
   ArrowRight
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
+import { deepScanIdFor, clearDeepScanId, type DeepScanPendingIds } from "../utils/deepScanAttempt";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
 import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED } from "../config/featureFlags";
@@ -202,6 +203,33 @@ const GLOSSARY_TERMS = [
     triggers: ["scfa", "futures act", "children's futures", "ombudsman", "bill 33"]
   }
 ];
+
+const DEEP_SCAN_PENDING_STORAGE_KEY = "OPA_DEEPSCAN_PENDING";
+
+function readPendingDeepScanIds(): DeepScanPendingIds {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getUserKey(DEEP_SCAN_PENDING_STORAGE_KEY) || DEEP_SCAN_PENDING_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePendingDeepScanIds(pending: DeepScanPendingIds): void {
+  try {
+    localStorage.setItem(getUserKey(DEEP_SCAN_PENDING_STORAGE_KEY) || DEEP_SCAN_PENDING_STORAGE_KEY, JSON.stringify(pending));
+  } catch (error) {
+    // Storage can be unavailable. The id then lives only for this page, which is still correct for an in-page retry.
+    console.warn("Unable to persist a pending deep scan id", error);
+  }
+}
+
+/** True when the server may still hold or be running this analysis, so its id must be kept for a safe retry. */
+function deepScanMayStillBeRunning(err: any): boolean {
+  if (err?.code === "BILLING_PENDING" || err?.code === "ANALYSIS_IN_PROGRESS") return true;
+  if (err?.code === "STREAM_INTERRUPTED") return true;
+  return err?.retryable === true || (typeof err?.status === "number" && err.status >= 500);
+}
 
 export default function DocumentAnalyzerTab() {
   const { resetAll } = useAppReset();
@@ -523,10 +551,15 @@ export default function DocumentAnalyzerTab() {
     setDeepScanFileId(file.id);
     setDeepScanError(null);
 
+    // One id per file until the scan completes or fails terminally. A retry of a held scan sends the same id, so the
+    // server recovers the report instead of running the model again.
+    const attempt = deepScanIdFor(readPendingDeepScanIds(), file.id);
+    writePendingDeepScanIds(attempt.pending);
+
     try {
       const response = await apiFetch("/api/deep-scan", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-analysis-id": attempt.id },
         body: JSON.stringify({
           documentText: file.content,
           documentName: file.name,
@@ -543,6 +576,7 @@ export default function DocumentAnalyzerTab() {
         throw new Error(data.error || `Deep scan failed (${response.status})`);
       }
       const report = { ...data, timestamp: new Date().toLocaleDateString() };
+      writePendingDeepScanIds(clearDeepScanId(attempt.pending, file.id));
 
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
@@ -559,7 +593,17 @@ export default function DocumentAnalyzerTab() {
       setSelectedReport(prev => prev ? { ...prev, ...report } : report);
     } catch (err: any) {
       console.error("[deep scan] request failed:", err);
-      setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
+      if (deepScanMayStillBeRunning(err)) {
+        // Keep the id: a retry with it is recovered by the server, never run a second time.
+        setDeepScanError(
+          err?.code === "BILLING_PENDING"
+            ? "Your deep scan is ready, but its billing record is still being confirmed. Press Deep Scan again to receive it. It will not be run again."
+            : "This deep scan is still running or its outcome is not yet known. Press Deep Scan again to check it. It will not be run again."
+        );
+      } else {
+        writePendingDeepScanIds(clearDeepScanId(attempt.pending, file.id));
+        setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
+      }
     } finally {
       setIsDeepScanning(false);
       setDeepScanFileId(null);
