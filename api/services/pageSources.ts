@@ -2,6 +2,7 @@ import './pdfPolyfill.js';
 import { createHash } from 'node:crypto';
 import zlib from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
+import { isBase64Text, expandedBytesWithin, ANALYZER_MAX_EXPANDED_BYTES } from './pdfResourceLimits.js';
 import { PDFParse } from 'pdf-parse';
 import { LifecycleError } from './lifecycleErrors.js';
 import { AnalyzerError } from './analyzerErrors.js';
@@ -182,7 +183,8 @@ export async function extractTextFromPdfBuffer(
       };
     }
   } catch (err) {
-    console.warn('[PDFParse] Full layout extraction encountered an issue, falling back:', err);
+    // Log the error type only. The error text can quote document content, so it is not written out.
+    console.warn('[PDFParse] Full layout extraction encountered an issue, falling back:', err instanceof Error ? err.name : 'unknown error');
   }
   return null;
 }
@@ -197,7 +199,7 @@ export function clearPageExtractionCacheForTesting(): void {
 export function decodeSource(base64: unknown, mime: unknown): { bytes: Buffer; mime: string; checksum: string } {
   if (typeof base64 !== 'string' || base64.length > 30_000_000 || typeof mime !== 'string') throw invalid('Invalid or oversized source.');
   const encoded = base64.replace(/^data:[^,]*;base64,/, '').replace(/\s/g,'');
-  if (!encoded || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) throw invalid('Invalid base64 source.');
+  if (!encoded || !isBase64Text(encoded)) throw invalid('Invalid base64 source.');
   if (![...ALLOWED_SOURCE_MIMES].includes(mime)) throw invalid('Unsupported file type for extraction.');
   const bytes = Buffer.from(encoded,'base64');
   return {bytes,mime,checksum:hash(bytes)};
@@ -217,6 +219,9 @@ export async function extractPages(bytes: Buffer, mime: string, ocr: OCR): Promi
 
   const inputs: {bytes: Uint8Array; method: string; preExtractedText?: string}[] = [];
   if (mime === 'application/pdf') {
+    // Refuse a file whose Flate streams expand past the analyzer budget, before any parser runs. A small file can expand
+    // about 500 to 1 (measured), so the compressed size alone does not bound the work.
+    if (!expandedBytesWithin(bytes, ANALYZER_MAX_EXPANDED_BYTES)) throw invalid("This PDF content is too large to read. Save a smaller copy and try again.");
     // Load and page count share one guard. A malformed file can load and then fail when its page tree is read,
     // which used to escape as an unclassified TypeError.
     let pdf: PDFDocument;

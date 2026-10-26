@@ -21,19 +21,12 @@ import { acroFormFieldIngestionEnabled } from "./services/featureFlags.js";
 import { AcroFormError, ACROFORM_MAX_BYTES } from "./services/acroFormExtractor.js";
 import { ingestAcroFormPdf } from "./services/acroFormIngestion.js";
 import { applyReportGuards } from "./services/analyzerSections.js";
+import { isBase64Text } from "./services/pdfResourceLimits.js";
 
 /** Large enough for a 10 MB PDF in base64 with its JSON envelope, and no larger. */
 export const ACROFORM_JSON_LIMIT = "14mb";
 export const ACROFORM_MAX_CONCURRENT = 2;
 
-/**
- * Canonical base64, checked in linear time. A backtracking pattern over a 12 MB string overflowed the call stack, so the
- * check is a simple character-class test, a length check, and a decode-and-re-encode round trip.
- */
-function isCanonicalBase64(s: string): boolean {
-  if (s.length === 0 || s.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(s)) return false;
-  return Buffer.from(s, "base64").toString("base64") === s;
-}
 
 const ERROR_STATUS: Record<string, number> = {
   NOT_A_PDF: 415,
@@ -45,6 +38,33 @@ const ERROR_STATUS: Record<string, number> = {
 };
 
 let inFlight = 0;
+
+/** Reads allowed per verified user in a sliding window. Per process, so each serverless instance keeps its own count. */
+export const ACROFORM_READS_PER_USER = 20;
+export const ACROFORM_USER_WINDOW_MS = 15 * 60 * 1000;
+const READS_TRACKED_MAX = 50_000;
+const readsByUser = new Map<string, number[]>();
+
+export function allowAcroFormRead(uid: string, now: number = Date.now()): boolean {
+  const recent = (readsByUser.get(uid) ?? []).filter(t => now - t < ACROFORM_USER_WINDOW_MS);
+  if (recent.length >= ACROFORM_READS_PER_USER) {
+    readsByUser.set(uid, recent);
+    return false;
+  }
+  recent.push(now);
+  readsByUser.set(uid, recent);
+  if (readsByUser.size > READS_TRACKED_MAX) {
+    // Drop the users whose reads have all aged out, then the oldest, so memory stays bounded.
+    for (const [key, times] of readsByUser) if (times.every(t => now - t >= ACROFORM_USER_WINDOW_MS)) readsByUser.delete(key);
+    while (readsByUser.size > READS_TRACKED_MAX) readsByUser.delete(readsByUser.keys().next().value as string);
+  }
+  return true;
+}
+
+/** Test helper: clears the per-user counters. */
+export function resetAcroFormReadLimits(): void {
+  readsByUser.clear();
+}
 
 const acroFormJson = express.json({ limit: ACROFORM_JSON_LIMIT });
 
@@ -75,6 +95,10 @@ export function registerAcroFormRoutes(app: Express) {
       const identity = await verifyFirebaseToken(req.header("authorization"));
       if (!identity) {
         res.status(401).json({ code: "SIGN_IN_REQUIRED", error: "Authentication required." });
+        return;
+      }
+      if (!allowAcroFormRead(identity.uid)) {
+        res.status(429).json({ code: "RATE_LIMITED", error: "Too many form reads. Try again later." });
         return;
       }
       if (inFlight >= ACROFORM_MAX_CONCURRENT) {
@@ -109,7 +133,7 @@ async function readAndRespond(req: Request, res: Response) {
     res.status(413).json({ code: "PDF_TOO_LARGE", error: "The PDF is larger than the supported size." });
     return;
   }
-  if (!isCanonicalBase64(encoded)) {
+  if (!isBase64Text(encoded)) {
     res.status(400).json({ code: "INVALID_INPUT", error: "The file data is not valid base64." });
     return;
   }

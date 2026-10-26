@@ -12,7 +12,7 @@
  *   - An entered value that is not a short string (array, object, oversized text) becomes null and is counted.
  *   - Nothing is written anywhere. This function reads bytes and returns data.
  */
-import zlib from "node:zlib";
+import { expandedBytesWithin } from "./pdfResourceLimits.js";
 import { pdfJsReady } from "./pdfPolyfill.js";
 import { extractTextFromPdfBuffer } from "./pageSources.js";
 
@@ -68,30 +68,10 @@ export interface ExtractionResult {
   unsupportedValues: number;
 }
 
-/**
- * Refuses a file whose Flate-compressed streams expand past ACROFORM_MAX_EXPANDED_BYTES in total. A small file can
- * expand about 500 to 1 (measured: 102 KB -> 50 MB, 7 s of CPU), so this runs before any parser. Inflation stops at the
- * budget, so a bomb costs at most the budget in memory. Streams that are not Flate data are left to the PDF reader.
- */
+/** Refuses a file whose Flate streams expand past ACROFORM_MAX_EXPANDED_BYTES. Runs before any parser. */
 export function assertBoundedExpansion(bytes: Buffer): void {
-  const text = bytes.toString("latin1");
-  const open = /(?<!end)stream\r?\n/g;
-  let total = 0;
-  let m: RegExpExecArray | null;
-  while ((m = open.exec(text)) !== null) {
-    const start = m.index + m[0].length;
-    const end = text.indexOf("endstream", start);
-    if (end < 0) break;
-    try {
-      const out = zlib.inflateSync(bytes.subarray(start, end), { maxOutputLength: ACROFORM_MAX_EXPANDED_BYTES - total + 1 });
-      total += out.length;
-      if (total > ACROFORM_MAX_EXPANDED_BYTES) throw new AcroFormError("EXPANDED_CONTENT_TOO_LARGE", "The PDF's content expands beyond the supported size.");
-    } catch (e: any) {
-      if (e instanceof AcroFormError) throw e;
-      if (e?.code === "ERR_BUFFER_TOO_LARGE") throw new AcroFormError("EXPANDED_CONTENT_TOO_LARGE", "The PDF's content expands beyond the supported size.");
-      // Not Flate data, or corrupt: the PDF reader decides.
-    }
-    open.lastIndex = end + "endstream".length;
+  if (!expandedBytesWithin(bytes, ACROFORM_MAX_EXPANDED_BYTES)) {
+    throw new AcroFormError("EXPANDED_CONTENT_TOO_LARGE", "The PDF's content expands beyond the supported size.");
   }
 }
 

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { registerAcroFormRoutes, ACROFORM_MAX_CONCURRENT } from "./acroFormRoutes.js";
+import { registerAcroFormRoutes, ACROFORM_MAX_CONCURRENT, ACROFORM_READS_PER_USER, ACROFORM_USER_WINDOW_MS, allowAcroFormRead, resetAcroFormReadLimits } from "./acroFormRoutes.js";
 import { verifyFirebaseToken } from "./services/firebaseAdmin.js";
 import { getSupabase } from "./services/access.js";
 import { ingestAcroFormPdf } from "./services/acroFormIngestion.js";
@@ -47,6 +47,7 @@ const realIt = realPresent ? it : it.skip;
 describe("AcroForm ingestion route: flag defaults OFF", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAcroFormReadLimits();
     delete process.env.ACROFORM_FIELD_INGESTION;
   });
   afterEach(() => {
@@ -76,6 +77,7 @@ describe("AcroForm ingestion route: flag defaults OFF", () => {
 describe("AcroForm ingestion route: enabled", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAcroFormReadLimits();
     ON();
     (verifyFirebaseToken as any).mockResolvedValue({ uid: "user-1" });
   });
@@ -324,6 +326,7 @@ describe("AcroForm ingestion route: enabled", () => {
 describe("AcroForm ingestion route: expansion limit", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAcroFormReadLimits();
     ON();
     (verifyFirebaseToken as any).mockResolvedValue({ uid: "user-1" });
   });
@@ -337,4 +340,42 @@ describe("AcroForm ingestion route: expansion limit", () => {
     expect(res.status).toBe(413);
     expect(res.body.code).toBe("EXPANDED_CONTENT_TOO_LARGE");
   }, 60000);
+});
+
+describe("AcroForm ingestion route: per-user rate limit", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetAcroFormReadLimits();
+    ON();
+    resetAcroFormReadLimits();
+  });
+  afterEach(() => {
+    delete process.env.ACROFORM_FIELD_INGESTION;
+    resetAcroFormReadLimits();
+  });
+
+  it("allows the documented number of reads per user, then answers 429 for that user only", async () => {
+    const pdf = await buildSyntheticAcroFormPdf({ courtFileValue: "CV-1" });
+    const body = { mimeType: "application/pdf", base64: toBase64(pdf) };
+    (verifyFirebaseToken as any).mockResolvedValue({ uid: "limited-user" });
+    for (let i = 0; i < ACROFORM_READS_PER_USER; i++) {
+      const ok = await request(app).post("/api/acroform/ingest").set(AUTH).send(body);
+      expect(ok.status).toBe(200);
+    }
+    const blocked = await request(app).post("/api/acroform/ingest").set(AUTH).send(body);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.code).toBe("RATE_LIMITED");
+    expect(ingestAcroFormPdf).toHaveBeenCalledTimes(ACROFORM_READS_PER_USER);
+
+    (verifyFirebaseToken as any).mockResolvedValue({ uid: "other-user" });
+    const other = await request(app).post("/api/acroform/ingest").set(AUTH).send(body);
+    expect(other.status).toBe(200);
+  }, 120000);
+
+  it("counts reads in a sliding window: old reads age out", () => {
+    const t0 = 1_000_000;
+    for (let i = 0; i < ACROFORM_READS_PER_USER; i++) expect(allowAcroFormRead("window-user", t0 + i)).toBe(true);
+    expect(allowAcroFormRead("window-user", t0 + 1)).toBe(false);
+    expect(allowAcroFormRead("window-user", t0 + ACROFORM_USER_WINDOW_MS + 1000)).toBe(true);
+  });
 });
