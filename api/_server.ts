@@ -83,7 +83,7 @@ import {
   isValidAnalysisJobId,
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
-import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
+import { runSectionedAnalysis, sectionTitle, parseJsonLenient } from "./services/analyzerSections.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -483,13 +483,13 @@ function extractJson(text: string): any {
   const trimmed = text.trim();
 
   try {
-    return JSON.parse(trimmed);
+    return parseJsonLenient(trimmed);
   } catch { /* fall through to next strategy */ }
 
   const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (fenceMatch) {
     try {
-      return JSON.parse(fenceMatch[1].trim());
+      return parseJsonLenient(fenceMatch[1].trim());
     } catch { /* fenced block itself wasn't valid/complete JSON — keep trying */ }
   }
 
@@ -497,7 +497,7 @@ function extractJson(text: string): any {
   const endIndex = trimmed.lastIndexOf('}');
   if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
     try {
-      return JSON.parse(trimmed.substring(startIndex, endIndex + 1));
+      return parseJsonLenient(trimmed.substring(startIndex, endIndex + 1));
     } catch { /* still not parseable — keep trying */ }
   }
 
