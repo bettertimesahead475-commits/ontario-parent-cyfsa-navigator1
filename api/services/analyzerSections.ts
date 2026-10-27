@@ -433,6 +433,47 @@ export function buildSectionPrompt(key: SectionKey, mode: "fast" | "full", docum
   ].join("\n");
 }
 
+/**
+ * Makes model JSON parseable without changing its content. Models sometimes write a raw newline or tab inside a string,
+ * or a trailing comma before } or ]. Strict JSON rejects both, so an otherwise complete section would fail every retry.
+ * Applied only after strict parsing fails.
+ */
+export function repairJsonText(text: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      else if (ch === "\n") { out += "\\n"; continue; }
+      else if (ch === "\r") { out += "\\r"; continue; }
+      else if (ch === "\t") { out += "\\t"; continue; }
+      out += ch;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < text.length && /\s/.test(text[j])) j++;
+      if (text[j] === "}" || text[j] === "]") continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/** Strict JSON first; the repaired form only when strict parsing fails. Throws when neither parses. */
+export function parseJsonLenient(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return JSON.parse(repairJsonText(text));
+  }
+}
+
 /** Extracts the first complete JSON object from model text. Returns null when there is none. */
 export function parseJsonObject(text: string): any | null {
   if (!text) return null;
@@ -458,7 +499,7 @@ export function parseJsonObject(text: string): any | null {
       depth--;
       if (depth === 0) {
         try {
-          return JSON.parse(t.slice(start, i + 1));
+          return parseJsonLenient(t.slice(start, i + 1));
         } catch {
           return null;
         }
