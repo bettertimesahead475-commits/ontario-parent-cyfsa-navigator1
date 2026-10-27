@@ -51,8 +51,10 @@ begin
 end
 $$;
 
--- Releases reservations of one account, other than the caller's, that were not touched within p_ttl.
--- The range predicate uses the uid primary key index (a LIKE or left() predicate would scan the table).
+-- Releases reservations of THIS account (p_uid) that were not touched within p_ttl.
+-- The range predicate uses the uid primary key index (a LIKE or left() predicate would scan the table). The length
+-- check makes the match exact: a marker is 'free_res_<uid>_' plus 32 hex characters, so a marker of another account
+-- whose uid merely starts with p_uid || '_' can never be released against p_uid's counter.
 create or replace function public.free_reconcile(p_uid text, p_own_marker text, p_now timestamptz, p_ttl interval)
 returns void
 language plpgsql
@@ -65,6 +67,7 @@ begin
   for r in
     select uid from public.free_usage
      where uid >= lo and uid < hi
+       and length(uid) = length(lo) + 32
        and uid <> p_own_marker
        and email like 'reservation:reserved%'
        and coalesce(last_analysis_at, first_analysis_at) <= p_now - p_ttl

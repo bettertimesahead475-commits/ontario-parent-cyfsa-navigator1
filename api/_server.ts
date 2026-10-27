@@ -39,7 +39,7 @@ import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./servic
 import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
-import { reserveFreeScan, finalizeFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
+import { reserveFreeScan, settleFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
@@ -1949,7 +1949,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let uid: string | null = null;
     // A free scan reserved for this request. It is released if the analysis fails, and finalized once delivered.
     let freeScanReservation: { reservationId: string } | null = null;
-    let freeScanFinalized = false;
+    // Set once the finished report is saved as completed. From then on the free scan is settled, never released.
+    let reportPersisted = false;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -2010,6 +2011,39 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             });
           }
           if (existingJob.status === "completed" && existingJob.report) {
+            // A free report is handed over again only once its scan is recorded as delivered. A reservation that
+            // expired in the meantime is taken again here, or the report is withheld if the allowance is used up.
+            if (existingJob.billing === "free" && existingJob.uid) {
+              const settled = await settleFreeScan({
+                uid: existingJob.uid,
+                requestId: analysisRequestId,
+                limit: FREE_ANALYSES_LIMIT,
+              }).catch((settleErr) => {
+                console.error("[document analysis] Could not settle the free scan for a saved report:", settleErr);
+                return null;
+              });
+              if (settled === "limit") {
+                return res.status(402).json({
+                  error: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access to continue.",
+                  code: "FREE_LIMIT_REACHED",
+                  limit: FREE_ANALYSES_LIMIT,
+                });
+              }
+              if (settled === "in_progress") {
+                return res.status(409).json({
+                  error: "This analysis is already running. We'll show the results as soon as it finishes.",
+                  code: "ANALYSIS_IN_PROGRESS",
+                  jobId: analysisRequestId,
+                });
+              }
+              if (settled !== "delivered") {
+                return res.status(503).json({
+                  error: "We couldn't confirm your free analysis just yet. Please try again in a moment.",
+                  code: "FREE_SCAN_NOT_RECORDED",
+                  retryable: true,
+                });
+              }
+            }
             return res.json(redactCustomerReport(existingJob.report));
           }
           if (existingJob.status === "analyzing" && Date.now() - existingJob.updatedAt < 6 * 60 * 1000) {
@@ -2298,6 +2332,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         jobId: analysisRequestId,
         uid: identity ? identity.uid : (uid || null),
         mode: mode === "full" ? "full" : "fast",
+        billing: isPaid ? "paid" : "free",
       });
 
       const wantsStream = Boolean(
@@ -2533,24 +2568,45 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // Persist the finished report before responding, so a browser that lost the stream can
       // still recover it after a refresh (the instance may freeze once the response ends).
       await completeAnalysisJobDurable(analysisRequestId, report);
+      reportPersisted = true;
+
+      // The free scan must be recorded as delivered before the report is handed over. If that cannot be recorded,
+      // the report is withheld and the scan is kept: the saved report is settled when the client retries this id.
+      if (freeScanReservation && uid) {
+        const settled = await settleFreeScan({ uid, requestId: analysisRequestId, limit: FREE_ANALYSES_LIMIT }).catch(
+          (settleErr) => {
+            console.error("[document analysis] Could not record the free scan; report kept for retry:", settleErr);
+            return null;
+          }
+        );
+        if (settled !== "delivered") {
+          const limited = settled === "limit";
+          const failure = limited
+            ? {
+                statusCode: 402,
+                code: "FREE_LIMIT_REACHED",
+                retryable: false,
+                message: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access to continue.",
+              }
+            : {
+                statusCode: 503,
+                code: "FREE_SCAN_NOT_RECORDED",
+                retryable: true,
+                message: "We couldn't confirm your free analysis just yet. Please try again in a moment.",
+              };
+          if (streamEmitter) {
+            streamEmitter.emitError({ code: failure.code, message: failure.message, statusCode: failure.statusCode, retryable: failure.retryable });
+          } else {
+            res.status(failure.statusCode).json({ error: failure.message, code: failure.code, retryable: failure.retryable });
+          }
+          return;
+        }
+      }
 
       if (streamEmitter) {
         streamEmitter.emitComplete(report, credits);
       } else {
         res.json(report);
-      }
-
-      // The report has been handed to the parent: the free scan is now used up. Until this point a failure
-      // releases the reservation, so a scan is never lost to a delivery that did not happen.
-      if (freeScanReservation && uid) {
-        try {
-          await finalizeFreeScan({ uid, requestId: analysisRequestId });
-          freeScanFinalized = true;
-        } catch (finalizeErr) {
-          // The report is already delivered and must not be withheld. The reservation expires and is released
-          // by reconciliation, which can return this scan. Logged so the gap is visible.
-          console.error("[document analysis] Failed to finalize free scan (non-fatal):", finalizeErr);
-        }
       }
 
     } catch (error: any) {
@@ -2567,13 +2623,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         }
       }
 
-      if (freeScanReservation && uid && !freeScanFinalized) {
+      // Released only while no report is saved: a saved report keeps its scan (settled on retry).
+      if (freeScanReservation && uid && !reportPersisted) {
         await releaseFreeScan({ uid, requestId: analysisRequestId, reservationId: freeScanReservation.reservationId }).catch(
           (releaseErr) => console.error("[document analysis] Failed to release free scan:", releaseErr)
         );
       }
 
-      if (getAnalysisJob(analysisRequestId)) {
+      // A job whose report is saved stays completed, whatever happens to the response that follows it.
+      if (!reportPersisted && getAnalysisJob(analysisRequestId)) {
         const failed = formatAnalyzerErrorResponse(error);
         await failAnalysisJobDurable(analysisRequestId, {
           code: failed.code,

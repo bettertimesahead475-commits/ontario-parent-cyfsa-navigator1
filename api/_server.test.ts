@@ -182,17 +182,11 @@ vi.mock("nodemailer", () => ({
 
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
-const mockFreeScan = vi.hoisted(() => ({
-  // Mirrors free_reserve_scan: refuses at the allowance, otherwise reserves one unit. Reads the counter through the
-  // mocked usage store, so the limit and fail-closed scenarios below still drive the route.
-  reserveFreeScan: vi.fn(async ({ uid, limit }: { uid: string; limit: number }) => {
-    const used = await (mockUsage.getFreeUsage as (uid: string) => Promise<number>)(uid);
-    if (used >= limit) return { status: "limit", reservationId: null, used };
-    return { status: "reserved", reservationId: `res_${uid}`, used: used + 1 };
-  }),
-  finalizeFreeScan: vi.fn(async () => {}),
-  releaseFreeScan: vi.fn(async () => {}),
-}));
+const mockFreeScan = await vi.hoisted(async () => {
+  const { createFreeScanEmulator } = await import("./testSupport/freeScanEmulator.js");
+  // Reads the stored counter through the mocked usage store, so the limit and fail-closed tests still drive the route.
+  return createFreeScanEmulator((uid: string) => (mockUsage.getFreeUsage as unknown as (uid: string) => Promise<number>)(uid));
+});
 vi.mock("./services/freeScanReservation.js", () => mockFreeScan);
 vi.mock("./services/usage.js", () => mockUsage);
 vi.mock("./services/gmailAgent.js", () => mockGmailAgent);
@@ -259,6 +253,7 @@ const PAID_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-paid-user";
 const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FIREBASE_TOKEN });
 
 beforeEach(() => {
+  mockFreeScan.reset();
   dbHolder.db = createProductionLikeDb({
     // Paid sessions as the database holds them: monthly plans need their renewal anchor (issued_at).
     sessions: [

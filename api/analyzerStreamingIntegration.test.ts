@@ -93,17 +93,11 @@ vi.mock("@google/genai", () => ({
 
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
-const mockFreeScan = vi.hoisted(() => ({
-  // Mirrors free_reserve_scan: refuses at the allowance, otherwise reserves one unit. Reads the counter through the
-  // mocked usage store, so the limit and fail-closed scenarios below still drive the route.
-  reserveFreeScan: vi.fn(async ({ uid, limit }: { uid: string; limit: number }) => {
-    const used = await (mockUsage.getFreeUsage as (uid: string) => Promise<number>)(uid);
-    if (used >= limit) return { status: "limit", reservationId: null, used };
-    return { status: "reserved", reservationId: `res_${uid}`, used: used + 1 };
-  }),
-  finalizeFreeScan: vi.fn(async () => {}),
-  releaseFreeScan: vi.fn(async () => {}),
-}));
+const mockFreeScan = await vi.hoisted(async () => {
+  const { createFreeScanEmulator } = await import("./testSupport/freeScanEmulator.js");
+  // Reads the stored counter through the mocked usage store, so the limit and fail-closed tests still drive the route.
+  return createFreeScanEmulator((uid: string) => (mockUsage.getFreeUsage as unknown as (uid: string) => Promise<number>)(uid));
+});
 vi.mock("./services/freeScanReservation.js", () => mockFreeScan);
 vi.mock("./services/usage.js", () => mockUsage);
 
@@ -175,6 +169,7 @@ const STREAM_REPORT = { ...COMPLETE_ANALYSIS, documentTitle: MINIMAL_ANALYSIS.do
 
 describe("Analyzer Streaming & Job Recovery Integration", () => {
   beforeEach(() => {
+  mockFreeScan.reset();
   dbHolder.db = createProductionLikeDb({
     sessions: [
       { id: "jti-1", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },

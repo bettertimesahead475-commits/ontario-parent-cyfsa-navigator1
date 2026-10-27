@@ -61,17 +61,9 @@ const mockFirebaseAdmin = vi.hoisted(() => ({
   }),
 }));
 
-let freeUsesCount = 0;
-let decrementCalls = 0;
+// Free scans are held and consumed by the reservation model (mockFreeScan), not by the usage store.
 const mockUsage = vi.hoisted(() => ({
-  getFreeUsage: vi.fn(async () => freeUsesCount),
-  recordFreeUse: vi.fn(async () => {
-    freeUsesCount++;
-  }),
-  decrementFreeUse: vi.fn(async () => {
-    decrementCalls++;
-    if (freeUsesCount > 0) freeUsesCount--;
-  }),
+  getFreeUsage: vi.fn(async () => 0),
   FREE_ANALYSES_LIMIT: 1,
   BASIC_QUICK_REVIEWS_LIMIT: 3,
   PREMIUM_FORENSIC_ANALYSES_LIMIT: 3,
@@ -108,17 +100,11 @@ vi.mock("@google/genai", () => ({
 
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
-const mockFreeScan = vi.hoisted(() => ({
-  // Mirrors free_reserve_scan: refuses at the allowance, otherwise reserves one unit. Reads the counter through the
-  // mocked usage store, so the limit and fail-closed scenarios below still drive the route.
-  reserveFreeScan: vi.fn(async ({ uid, limit }: { uid: string; limit: number }) => {
-    const used = await (mockUsage.getFreeUsage as (uid: string) => Promise<number>)(uid);
-    if (used >= limit) return { status: "limit", reservationId: null, used };
-    return { status: "reserved", reservationId: `res_${uid}`, used: used + 1 };
-  }),
-  finalizeFreeScan: vi.fn(async () => {}),
-  releaseFreeScan: vi.fn(async () => {}),
-}));
+const mockFreeScan = await vi.hoisted(async () => {
+  const { createFreeScanEmulator } = await import("./testSupport/freeScanEmulator.js");
+  // Reads the stored counter through the mocked usage store, so the limit and fail-closed tests still drive the route.
+  return createFreeScanEmulator((uid: string) => (mockUsage.getFreeUsage as unknown as (uid: string) => Promise<number>)(uid));
+});
 vi.mock("./services/freeScanReservation.js", () => mockFreeScan);
 vi.mock("./services/usage.js", () => mockUsage);
 
@@ -255,9 +241,8 @@ const { COMPLETE_ANALYSIS, sectionResponder } = await import("./analyzerTestFixt
 
 describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
   beforeEach(() => {
+    mockFreeScan.reset();
     vi.clearAllMocks();
-    freeUsesCount = 0;
-    decrementCalls = 0;
 
     mockFirebaseAdmin.verifyFirebaseToken.mockImplementation(async (authHeader: string | undefined) => {
       if (authHeader === "Bearer owner-token") {
@@ -400,7 +385,9 @@ describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
 
     expect(fullRes.status).toBe(200);
     expect(fullRes.body.documentTitle).toBeDefined();
-    expect(freeUsesCount).toBe(0); // Free usage was NOT consumed
+    // The site owner is entitled without a free scan: nothing is reserved, held or consumed.
+    expect(mockFreeScan.reserveFreeScan).not.toHaveBeenCalled();
+    expect(mockFreeScan.consumedFor("owner-uid-123")).toBe(0);
   });
 
   it("3. Regular parent without paid access cannot run Forensic In-Depth and is gated with 403", async () => {
@@ -416,7 +403,7 @@ describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
     expect(res.body.code).toBe("FORENSIC_UPGRADE_REQUIRED");
   });
 
-  it("4. Failed analysis rolls back free use cleanly without double-decrement", async () => {
+  it("4. A free analysis that fails returns its reserved scan, so the parent keeps the allowance", async () => {
     // Simulate Claude failure on regular parent
     mockCreateMessage.mockRejectedValue(new Error("AI service temporary timeout"));
 
@@ -431,9 +418,42 @@ describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
     expect(res.status).toBe(503);
     expect(res.body.error).toBeDefined();
 
-    // Because Claude failed before the free reservation was finalized, freeUsesCount remains 0 and decrementCalls is 0
-    expect(freeUsesCount).toBe(0);
-    expect(decrementCalls).toBe(0);
+    // The scan was reserved for this request, then returned once the analysis failed. Nothing is held or consumed.
+    expect(mockFreeScan.reserveFreeScan).toHaveBeenCalledWith(expect.objectContaining({ uid: "parent-uid-789" }));
+    expect(mockFreeScan.releaseFreeScan).toHaveBeenCalledWith(expect.objectContaining({ uid: "parent-uid-789" }));
+    expect(mockFreeScan.heldFor("parent-uid-789")).toBe(0);
+    expect(mockFreeScan.consumedFor("parent-uid-789")).toBe(0);
+  });
+
+  it("4b. A delivered free analysis consumes exactly one scan; a repeat of it is not charged again", async () => {
+    const analysisId = `req_${Date.now()}_freeone1`;
+    const first = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer regular-parent-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "Parent statement for free analysis.", mode: "fast" });
+    expect(first.status).toBe(200);
+    expect(mockFreeScan.consumedFor("parent-uid-789")).toBe(1);
+    expect(mockFreeScan.heldFor("parent-uid-789")).toBe(1);
+
+    // The same request again returns the saved report: still one scan, no second model run.
+    const callsAfterFirst = mockCreateMessage.mock.calls.length;
+    const repeat = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer regular-parent-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "Parent statement for free analysis.", mode: "fast" });
+    expect(repeat.status).toBe(200);
+    expect(mockCreateMessage.mock.calls.length).toBe(callsAfterFirst);
+    expect(mockFreeScan.consumedFor("parent-uid-789")).toBe(1);
+
+    // A new analysis is refused: the one free scan is used.
+    const second = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer regular-parent-token")
+      .send({ textContent: "A second statement.", mode: "fast" });
+    expect(second.status).toBe(402);
+    expect(second.body.code).toBe("FREE_LIMIT_REACHED");
   });
 
   it("5. Retrying with identical idempotency key is safely deduplicated", async () => {

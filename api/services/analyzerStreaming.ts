@@ -67,6 +67,8 @@ export interface AnalysisJob {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
+  /** How the analysis was paid for. A free scan is settled (recorded as delivered) before its report is handed over again. */
+  billing?: "free" | "paid";
   status: "pending" | "analyzing" | "completed" | "failed";
   currentStage: AnalysisStage;
   percent: number;
@@ -180,6 +182,7 @@ export function createAnalysisJob(params: {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
+  billing?: "free" | "paid";
   currentStage?: AnalysisStage;
   percent?: number;
 }): AnalysisJob {
@@ -200,6 +203,7 @@ export function createAnalysisJob(params: {
     jobId: params.jobId,
     uid: params.uid,
     mode: params.mode,
+    billing: params.billing,
     status: "analyzing",
     currentStage: initialStage,
     percent: initialPercent,
@@ -216,6 +220,7 @@ export async function createAnalysisJobDurable(params: {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
+  billing?: "free" | "paid";
   currentStage?: AnalysisStage;
   percent?: number;
 }): Promise<AnalysisJob> {

@@ -104,8 +104,42 @@ begin
   if r->>'status' <> 'reserved' then raise exception 'check 7: expected reserved for another account, got %', r; end if;
 end $$;
 
+-- 8. An account whose uid starts with another uid and '_' is never reconciled against the other account's counter.
+do $$
+declare r jsonb; old_ts timestamptz := now() - interval '20 minutes'; now_ts timestamptz := now();
+begin
+  r := public.free_reserve_scan('test-free-scan-account_x', 'req_y', 5, old_ts, interval '15 minutes');
+  if r->>'status' <> 'reserved' then raise exception 'check 8a: expected reserved, got %', r; end if;
+  r := public.free_reserve_scan('test-free-scan-account', 'req_z', 5, now_ts, interval '15 minutes');
+  if (select email from public.free_usage where uid = public.free_marker_uid('test-free-scan-account_x', 'req_y')) <> 'reservation:reserved' then
+    raise exception 'check 8b: a reservation of another account was released by reconcile';
+  end if;
+  if (select analyses_used from public.free_usage where uid = 'test-free-scan-account_x') <> 1 then
+    raise exception 'check 8c: counter of the other account changed';
+  end if;
+end $$;
+
+-- 9. A reservation returned by reconciliation can never be delivered for free: finalize reports "released" (and
+--    counts nothing), and a new reservation is refused when the allowance is taken by another request.
+do $$
+declare r jsonb; old_ts timestamptz := now() - interval '20 minutes'; now_ts timestamptz := now();
+begin
+  r := public.free_reserve_scan('test-free-scan-b', 'req_p', 1, old_ts, interval '15 minutes');
+  if r->>'status' <> 'reserved' then raise exception 'check 9a: expected reserved, got %', r; end if;
+  r := public.free_reserve_scan('test-free-scan-b', 'req_q', 1, now_ts, interval '15 minutes');
+  if r->>'status' <> 'reserved' then raise exception 'check 9b: expected reserved after reconcile, got %', r; end if;
+  r := public.free_finalize_scan('test-free-scan-b', 'req_p', now_ts);
+  if r->>'status' <> 'released' then raise exception 'check 9c: expected released, got %', r; end if;
+  if (select analyses_used from public.free_usage where uid = 'test-free-scan-b') <> 1 then
+    raise exception 'check 9d: finalize of a returned reservation changed the counter';
+  end if;
+  r := public.free_reserve_scan('test-free-scan-b', 'req_p', 1, now_ts, interval '15 minutes');
+  if r->>'status' <> 'limit' then raise exception 'check 9e: expected limit for the returned request, got %', r; end if;
+end $$;
+
 delete from public.free_usage where uid like 'test-free-scan-account%' or uid like 'free_res_test-free-scan-account%'
-  or uid like 'test-free-scan-other%' or uid like 'free_res_test-free-scan-other%';
+  or uid like 'test-free-scan-other%' or uid like 'free_res_test-free-scan-other%'
+  or uid like 'test-free-scan-b%' or uid like 'free_res_test-free-scan-b%';
 
 select 'ALL FREE SCAN RESERVATION CHECKS PASSED' as result;
 
