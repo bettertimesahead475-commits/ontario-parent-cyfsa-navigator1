@@ -39,11 +39,10 @@ Main, `api/_server.ts`:
 
 Existing tests pass on main (`api/analyzerStreamingIntegration.test.ts`, 7 passed, 2 skipped): 401 unauthenticated, 403 cross-user, 200 owner. Anonymous and cross-user reads are not reproducible.
 
-**CONFIRMED defect (synthetic probe, main):** a caller holding only a paid-session token (no Firebase identity) cannot read back a job whose `uid` is null. The probe returned `403 FORBIDDEN`.
-- Cause: a job's `uid` is `identity ? identity.uid : (uid || null)` (`api/_server.ts:2259`), and on the paid-session path `uid` stays null (`:1972`). The 403 check at `:2607` then rejects every non-admin caller for a null-uid job.
-- Impact: a paying user who lost the streaming connection and has no Firebase sign-in in that browser cannot recover the report.
-- The end-to-end creation of such a job was inferred from the code, not run through the full analyze route.
-- The probe was a temporary test file, removed afterwards. Working tree is clean.
+**Correction (later pass):** the earlier "confirmed defect" for paid-session-only callers was overstated and is withdrawn.
+- A synthetic probe that inserts a null-uid job directly returns 403, but the analyze route cannot create such a job. Its paid branch requires a valid session and a Firebase identity (`api/_server.ts`, around L2030), and the only job-creation site (`_server.ts:2257-2259`) takes `uid` from that identity.
+- The reachable case is a job created under a Firebase identity, then polled with a valid paid session but an expired or missing Firebase token. A probe on main returns `403 FORBIDDEN` (`_server.ts:2607`), where `401 SIGN_IN_REQUIRED` would let the client re-authenticate. This is a status-code problem, not a security defect.
+- Denying session-only reads is the intended fail-closed behaviour. Allowing them would let a bearer session token read a customer's report.
 
 ## 4. Payment activation paths (step 6)
 
@@ -150,7 +149,7 @@ The Data Deletion page (`src/components/DataDeletionPage.tsx:40-41`, `:79`) says
 - UNVERIFIED: official e-Laws text. Not reachable from this environment.
 
 **Payment**
-- CONFIRMED (synthetic probe, main): paid-session-only callers get `403 FORBIDDEN` reading their own uid-less analysis job (section 3). Read-authorization defect, not an entitlement change.
+- WITHDRAWN: the earlier claim that paid-session-only callers cannot read their own jobs is not reachable through the route (see section 3). The reachable issue is a 403 instead of 401 for an expired or missing Firebase token. UX, not security.
 - CONFIRMED on `0d8156cd`: email-triggered automatic activation path behind an environment flag (section 8). Not on main.
 - Correction: `payment_requests_request_key_unique` was applied on 2026-10-23 and targets `public.payments`. The earlier note that it targeted a missing table was wrong. Corrected in `VERIFIED_P0_FINDINGS.md`, `DATABASE_MIGRATION_DECISION_MATRIX.md` and `CONTROLLED_REMEDIATION_PLAN.md`.
 
@@ -189,8 +188,8 @@ The Data Deletion page (`src/components/DataDeletionPage.tsx:40-41`, `:79`) says
 
 ## 14. Single highest-priority implementation task
 
-**Make a paid-session analysis job readable by the paid session that created it, and add a regression test.**
-- Store the creating session's `jti` on the job when the `uid` is null (`api/_server.ts:2259`), and allow the read at `:2607` when the presented paid session matches. Do not change grant or entitlement logic.
-- Add the probe from section 3 as a permanent test in `api/analyzerStreamingIntegration.test.ts`, with the expected status changed to 200 for the owning session and 403 for any other session.
-- Branch: create `fix/paid-job-recovery` from `origin/main` (`0130a96f`). Do not start from `feat/payment-identity-rebased` or the analyzer branch.
-- Needs your approval before implementation: it changes an authorization rule on a production path.
+**Return 401 instead of 403 for a job poll with an owner but no matching Firebase identity.**
+- Change `api/_server.ts:2607` so that a caller with no identity gets `401 SIGN_IN_REQUIRED`, and a signed-in non-owner keeps `403 FORBIDDEN`.
+- Do not allow session-only reads. Add tests for owner, non-owner, anonymous, expired session, and revoked session.
+- Branch: `fix/paid-job-recovery` from `origin/main` (`0130a96f`). Local branch exists with no commits.
+- Status-code change only. No grant, price, credit or entitlement change. Needs your approval.
