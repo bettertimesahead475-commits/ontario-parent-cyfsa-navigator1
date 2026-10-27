@@ -464,6 +464,36 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
 
     // Duplicate retries. A retry sends the analysis id of an earlier attempt. The server answers it from the saved
     // record and must not start, charge, or call the model again.
+    it("two simultaneous starts with one analysis id: the second is refused while the first is still starting", async () => {
+      // Hold the first request at its free-usage check, so the second arrives before the first has saved its job.
+      mockUsage.getFreeUsage.mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve(0), 80)));
+      const id = "req_1700000000005_race000001";
+      const body = { textContent: "A short parent statement used only in this test.", mode: "fast" };
+      const [first, second] = await Promise.all([
+        request(app).post("/api/analyze").set("Authorization", "Bearer test-token").set("x-analysis-id", id).send(body),
+        request(app).post("/api/analyze").set("Authorization", "Bearer test-token").set("x-analysis-id", id).send(body),
+      ]);
+      const codes = [first, second].map((r) => r.body?.code);
+      expect(codes.filter((c) => c === "ANALYSIS_IN_PROGRESS")).toHaveLength(1);
+    });
+
+    it("a job that has made no progress for six minutes is not treated as running, so a retry is not blocked forever", async () => {
+      const start = Date.now();
+      const spy = vi.spyOn(Date, "now").mockReturnValue(start);
+      try {
+        createAnalysisJob({ jobId: "req_1700000000006_stale00001", uid: "test-parent-uid", mode: "fast" });
+        spy.mockReturnValue(start + 7 * 60 * 1000);
+        const res = await request(app)
+          .post("/api/analyze")
+          .set("Authorization", "Bearer test-token")
+          .set("x-analysis-id", "req_1700000000006_stale00001")
+          .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+        expect(res.body.code).not.toBe("ANALYSIS_IN_PROGRESS");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it("a retry of a running analysis is refused as in progress, with no second analysis", async () => {
       createAnalysisJob({ jobId: "req_1700000000002_running001", uid: "test-parent-uid", mode: "fast" });
       const res = await request(app)
@@ -474,6 +504,7 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
       expect(res.status).toBe(409);
       expect(res.body.code).toBe("ANALYSIS_IN_PROGRESS");
       expect(mockCreateMessage).not.toHaveBeenCalled();
+      expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
     });
 
     it("a retry of a completed analysis returns its saved report, with no second analysis", async () => {
@@ -487,6 +518,7 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
       expect(res.status).toBe(200);
       expect(res.body.documentTitle).toBe("Saved report");
       expect(mockCreateMessage).not.toHaveBeenCalled();
+      expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
     });
 
     it("a retry by a different account never reads or re-runs another account's analysis", async () => {

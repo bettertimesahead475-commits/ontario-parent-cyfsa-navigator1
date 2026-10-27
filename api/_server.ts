@@ -1932,6 +1932,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     return !!(await requireSession(req, res, identity));
   }
 
+  // Analysis ids whose start is in progress on this instance. Checked and set synchronously, before any await, so
+  // two requests with the same id cannot both pass the saved-job check below and both start a free scan or a model
+  // call. The entry is released when the response closes; from then on the saved job record guards the id.
+  const analysisStartsInProgress = new Set<string>();
+
   app.post("/api/analyze", async (req: Request, res: Response) => {
     let targetText = "";
     let fileDataObj: any = null;
@@ -1978,6 +1983,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // charge for - a second analysis. A finished report is returned as-is; a running one is
       // reported so the browser polls it instead.
       if (isValidAnalysisJobId(idempotencyKey)) {
+        if (analysisStartsInProgress.has(analysisRequestId)) {
+          return res.status(409).json({
+            error: "This analysis is already starting. We'll show the results as soon as it finishes.",
+            code: "ANALYSIS_IN_PROGRESS",
+            jobId: analysisRequestId,
+          });
+        }
+        analysisStartsInProgress.add(analysisRequestId);
+        res.once("close", () => analysisStartsInProgress.delete(analysisRequestId));
         const existingJob = await getAnalysisJobDurable(analysisRequestId);
         if (existingJob) {
           const ownedByCaller = Boolean(existingJob.uid && identity && existingJob.uid === identity.uid);
