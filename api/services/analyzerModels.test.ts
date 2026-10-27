@@ -150,6 +150,17 @@ describe("analyzerModels service", () => {
       expect(buildThinkingRequestFields("claude-opus-5", false)).toEqual({ thinking: { type: "disabled" } });
     });
 
+    it("enables thinking as adaptive on current models; budget_tokens is a 400 there", () => {
+      expect(buildThinkingRequestFields("claude-opus-5", true)).toEqual({ thinking: { type: "adaptive" } });
+      expect(buildThinkingRequestFields("claude-sonnet-5", true)).toEqual({ thinking: { type: "adaptive" } });
+    });
+
+    it("keeps budget_tokens only for pre-4.6 models that still take it", () => {
+      expect(buildThinkingRequestFields("claude-haiku-4-5-20251001", true, 4096)).toEqual({
+        thinking: { type: "enabled", budget_tokens: 4096 },
+      });
+    });
+
     it("never sends disabled thinking to the 5.5 family (it is a 400 there)", () => {
       for (const model of ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]) {
         const fields = buildThinkingRequestFields(model, false);
@@ -158,10 +169,9 @@ describe("analyzerModels service", () => {
       }
     });
 
-    it("uses budgeted thinking only on models that still accept budget_tokens", () => {
-      expect(buildThinkingRequestFields("claude-sonnet-5", true, 4096)).toEqual({
-        thinking: { type: "enabled", budget_tokens: 4096 },
-      });
+    it("never sends budget_tokens to current models (the API rejects it on Sonnet 5 and Opus 5)", () => {
+      // The earlier expectation sent budget_tokens to claude-sonnet-5; the model documentation says that is a 400.
+      expect(buildThinkingRequestFields("claude-sonnet-5", true, 4096)).toEqual({ thinking: { type: "adaptive" } });
       expect(buildThinkingRequestFields("claude-opus-5-5", true, 4096)).toEqual({});
     });
   });

@@ -2,8 +2,8 @@
  * Centralized AI Model Selection & Cost Accounting for CYFSA Document Analyzer.
  *
  * Enforces server-authoritative model routing:
- *   - Quick Document Review  -> Claude Sonnet ("claude-sonnet-5")
- *   - Forensic In-Depth       -> Claude Opus   ("claude-3-opus-20240229")
+ *   - Quick Document Review  -> Claude Sonnet ("claude-sonnet-5", or ANTHROPIC_QUICK_MODEL)
+ *   - Forensic In-Depth       -> Claude Opus   ("claude-opus-5", or ANTHROPIC_FORENSIC_MODEL)
  *
  * The frontend cannot override or tamper with model selection to obtain unauthorized Opus access.
  * Silent downgrades from Opus to Sonnet are strictly forbidden.
@@ -76,6 +76,9 @@ export const MODELS_REJECTING_DISABLED_THINKING = new Set<string>([
   "claude-haiku-5-5",
 ]);
 
+/** Claude 4.6 and later, which take adaptive thinking; older models still take budget_tokens. */
+const CURRENT_GENERATION_MODEL = /^claude-(fable|opus|sonnet|haiku)-(5|4-[6-9])/;
+
 /**
  * Builds the model-aware `thinking` / `output_config` request fields. Analyzer output is structured
  * JSON, so thinking is off where the model allows it and effort is set to "low" on the always-on
@@ -89,6 +92,10 @@ export function buildThinkingRequestFields(
   if (enableThinking) {
     if (MODELS_REJECTING_DISABLED_THINKING.has(model)) {
       return {};
+    }
+    // Current-generation models take adaptive thinking only: budget_tokens is rejected with a 400 on them.
+    if (CURRENT_GENERATION_MODEL.test(model)) {
+      return { thinking: { type: "adaptive" } };
     }
     return { thinking: { type: "enabled", budget_tokens: thinkingBudget || 2048 } };
   }
