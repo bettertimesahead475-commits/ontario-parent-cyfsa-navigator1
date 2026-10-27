@@ -602,15 +602,21 @@ const DEV_ORIGINS = process.env.NODE_ENV === "production"
 const ALLOWED_ORIGINS = new Set([...DEFAULT_PRODUCTION_ORIGINS, ...EXTRA_ALLOWED_ORIGINS, ...DEV_ORIGINS]);
 
 app.use(cors({
+  // A listed origin is echoed. Any other origin gets no CORS header, so a browser will not read the response.
+  // This must not be an error: Express turned a CORS error into a 500, which broke the app's own assets.
   origin(origin, callback) {
-    if (!origin || ALLOWED_ORIGINS.has(origin)) return callback(null, true);
-    // Refused without an error: an error made Express answer 500, so any page loaded from an origin that is not
-    // listed (a preview deployment, a same-origin asset request) broke. The browser still blocks the cross-origin
-    // read because no Access-Control-Allow-Origin header is sent.
-    return callback(null, false);
+    return callback(null, !origin || ALLOWED_ORIGINS.has(origin));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
+// The API refuses an unlisted origin before any handler runs, as a 403. Static pages and assets are not gated here.
+app.use("/api", (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && !ALLOWED_ORIGINS.has(origin)) {
+    return res.status(403).json({ code: "ORIGIN_NOT_ALLOWED", error: "This website is not allowed to use this service." });
+  }
+  next();
+});
 
 // Rate limiting for API endpoints
 const apiLimiter = rateLimit({
