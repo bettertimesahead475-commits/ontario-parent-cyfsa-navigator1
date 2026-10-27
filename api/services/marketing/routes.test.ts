@@ -70,6 +70,12 @@ describe("auth gating", () => {
     const res = await request(app).get("/api/admin/marketing/channels").set("x-admin-secret", "nope");
     expect(res.status).toBe(401);
   });
+
+  it("refuses a secret of the right length that is still wrong", async () => {
+    const wrongSameLength = "x".repeat("test-admin-secret".length);
+    const res = await request(app).get("/api/admin/marketing/channels").set("x-admin-secret", wrongSameLength);
+    expect(res.status).toBe(401);
+  });
 });
 
 describe("channels — honest status with no credentials", () => {

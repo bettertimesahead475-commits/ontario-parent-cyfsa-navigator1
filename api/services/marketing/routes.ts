@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 // ---------------------------------------------------------------------------
 // routes.ts — the Marketing Agent's Express router, mounted at
 // /api/admin/marketing in api/_server.ts.
@@ -41,11 +42,18 @@ export const marketingRouter = express.Router();
 
 // --- Auth -------------------------------------------------------------------
 
+// Constant-time comparison: a plain === reveals how many leading characters of a secret were guessed right.
+function secretMatches(provided: unknown, expected: string | undefined): boolean {
+  if (!expected || typeof provided !== "string") return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 function adminOk(req: Request): boolean {
-  return Boolean(process.env.ADMIN_SECRET) && req.headers["x-admin-secret"] === process.env.ADMIN_SECRET;
+  return secretMatches(req.headers["x-admin-secret"], process.env.ADMIN_SECRET);
 }
 function cronOk(req: Request): boolean {
-  return Boolean(process.env.CRON_SECRET) && req.headers["authorization"] === `Bearer ${process.env.CRON_SECRET}`;
+  return secretMatches(req.headers["authorization"], process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : undefined);
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
