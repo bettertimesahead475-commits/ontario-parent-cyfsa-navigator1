@@ -139,7 +139,7 @@ There is no CYFSA section that grants a parent a specific "right to counsel befo
       {
         fiction: "If I don't let CAS in immediately, police can force entry without a warrant.",
         fact: "Police cannot force entry for a child-protection matter absent a judicial warrant or true exigent circumstances (e.g., an immediate life-threatening emergency) — the same general Charter and common-law limits on police entry apply here as elsewhere.",
-        sourceExplanation: "Charter s. 8; general Canadian common-law limits on warrantless entry (e.g., R. v. Feeney, 1997 CanLII 158 (SCC))."
+        sourceExplanation: "Charter s. 8; general Canadian common-law limits on warrantless entry into a home."
       }
     ]
   },

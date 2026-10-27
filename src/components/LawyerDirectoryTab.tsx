@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { MapPin, Phone, Search, Globe, Shield, Video, Users, ExternalLink } from "lucide-react";
 import { PublicDirectoryProfile } from "../../api/services/lawyerDirectory";
+import { PUBLIC_DIRECTORY_VISIBLE, DIRECTORY_PAUSED_MESSAGE } from "../../shared/lawyerDirectoryPolicy";
 import { isSafeWebsiteUrl } from "../utils/urlValidator";
 
 const MATCH_REASON_LABELS: Record<string, string> = {
@@ -58,6 +59,19 @@ export default function LawyerDirectoryTab() {
     // Initial fetch
     handleSearch();
   }, []);
+
+  if (!PUBLIC_DIRECTORY_VISIBLE) {
+    return (
+      <div className="space-y-6" id="lawyer-directory-tab">
+        <div className="text-left max-w-3xl">
+          <h2 className="font-display text-2xl font-bold text-slate-900">Ontario Child Welfare Lawyer Directory</h2>
+        </div>
+        <div role="status" className="max-w-3xl bg-amber-50 border border-amber-200 text-amber-900 p-5 rounded-xl text-sm leading-relaxed">
+          {DIRECTORY_PAUSED_MESSAGE}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8" id="lawyer-directory-tab">
