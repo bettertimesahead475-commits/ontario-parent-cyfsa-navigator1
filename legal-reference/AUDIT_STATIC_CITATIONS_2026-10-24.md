@@ -37,7 +37,7 @@ Date: 2026-10-24. Source of truth for CYFSA text: `legal-reference/CYFSA_full_te
 
 1. **Sidebar, "Supervision Order":** cited `CYFSA s. 102` (custody order). Now `s. 101(1), para. 1`, with the 3-to-12-month period from the text. Unsupported "usually with counselling conditions" is now labelled as practice, not statute.
 2. **Sidebar, "Child's Right to be Heard & Counsel":** attributed legal counsel through the Office of the Children's Lawyer and an age-12 rule to s. 3. Neither appears in the bundled text. Now cites s. 3 for rights and s. 78 for representation.
-3. **Sidebar, s. 81(7):** "children's aid worker" replaced with the statutory term "child protection worker", with the s. 81(12) peace-officer extension stated.
+3. **Sidebar, s. 81(7):** "children's aid worker" replaced with the statutory term "child protection worker", with the peace-officer power stated as s. 136(5). An earlier draft cited s. 81(12), which is Crown liability; that citation was wrong and is removed.
 4. **Sidebar, s. 74(2):** "General concerns like home clutter or poverty do not meet this legal standard" replaced. Poverty and housing are not listed grounds; the sentence no longer states a legal conclusion the text does not contain.
 5. **Sidebar, "Least Intrusive Course":** replaced "CAS must prove … thoroughly tried and failed" with the s. 101(3) test and the s. 1(2) para. 2 purpose ("should be considered").
 6. **data.ts, s. 81(13):** good-faith immunity now includes the neglect-or-default clause; the unsupported court-process sentence was removed.
