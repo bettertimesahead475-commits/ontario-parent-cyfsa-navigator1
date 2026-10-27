@@ -60,6 +60,7 @@ import {
 import {
   ANALYZER_MODELS,
   CLAUDE_MODELS,
+  requireApprovedModel,
   TOKEN_BUDGETS,
   MODEL_TIMEOUTS,
   resolveServerAuthoritativeModel,
@@ -329,7 +330,7 @@ async function generateContentWithFallback(
   stopReason?: string;
 }> {
   const client = getAnthropicClient();
-  const model = CLAUDE_MODELS.has(primaryModel) ? primaryModel : ANALYZER_MODELS.QUICK;
+  const model = requireApprovedModel(primaryModel);
   const wireModel = resolveAnthropicWireModel(model);
   const messages = params.messages.map((message: any) => ({
     role: (message.role === "assistant" ? "assistant" : "user") as "user" | "assistant",

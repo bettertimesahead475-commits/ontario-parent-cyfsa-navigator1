@@ -11,6 +11,7 @@
 
 import { Tier, hasForensicInDepthAccess } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
+import { AnalyzerError } from "./analyzerErrors.js";
 
 export const DEFAULT_QUICK_MODEL = "claude-sonnet-5";
 export const DEFAULT_FORENSIC_MODEL = "claude-opus-5";
@@ -38,6 +39,22 @@ export const CLAUDE_MODELS = new Set<string>([
   "claude-3-opus-20240229",
   "claude-3-opus-latest",
 ]);
+
+/**
+ * Returns the requested model only if it is on the approved list. An unlisted model stops the call rather than running
+ * the analysis on a different model: the report must never describe one model while another produced it.
+ */
+export function requireApprovedModel(model: string): string {
+  if (!CLAUDE_MODELS.has(model)) {
+    throw new AnalyzerError(
+      "AI_PROVIDER_CONFIGURATION_ERROR",
+      500,
+      "The configured analyzer model is not on the approved list, so the analysis was stopped rather than run on a different model. Nothing was charged.",
+      false
+    );
+  }
+  return model;
+}
 
 /**
  * Resolves wire-level Anthropic model identifier, preserving canonical models without downgrade.
