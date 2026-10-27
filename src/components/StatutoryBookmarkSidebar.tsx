@@ -45,7 +45,7 @@ export const PRELOADED_ITEMS: LegalItem[] = [
     // BUG FIX (flagged in audit): "immediate risk of serious harm" is not the statutory wording —
     // the real s.81(7) threshold is "substantial risk to the child's health or safety," and it only
     // applies to children under 16 (this power isn't available at all for a 16/17 year old).
-    content: "A child protection worker (and, under s. 81(12), a peace officer) may bring a child to a place of safety without a warrant only if there are reasonable and probable grounds to believe the child is in need of protection, is younger than 16, and there would be a substantial risk to the child's health or safety during the time it would take to get a warrant or hearing. Not available for 16/17 year olds under this subsection.",
+    content: "A child protection worker may bring a child to a place of safety without a warrant under s. 81(7) only if there are reasonable and probable grounds to believe the child is in need of protection, is younger than 16, and there would be a substantial risk to the child's health or safety during the time it would take to get a warrant or hearing. Separately, under s. 136(5), a peace officer may bring a child younger than 16 who is in a public place between midnight and 6 a.m., and is not accompanied as described in s. 136(4)(b), to a place of safety without a warrant.",
     isPreloaded: true
   },
   {

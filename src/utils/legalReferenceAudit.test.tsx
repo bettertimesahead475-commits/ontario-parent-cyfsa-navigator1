@@ -232,7 +232,10 @@ describe("corrected statements", () => {
   it("uses the statutory child protection worker term for s. 81(7)", () => {
     const content = itemById("cyfsa-81");
     expect(content).toContain("child protection worker");
-    expect(content).toContain("s. 81(12)");
+    expect(content).toContain("s. 81(7)");
+    // The peace officer's power is s. 136(5). s. 81(12) is Crown liability, not a warrantless power.
+    expect(content).toContain("s. 136(5)");
+    expect(content).not.toContain("s. 81(12)");
     expect(content).not.toMatch(/children[’']s aid worker/i);
   });
 
