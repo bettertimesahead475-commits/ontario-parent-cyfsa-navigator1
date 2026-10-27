@@ -1,4 +1,4 @@
-# TEMPORARY verification workflow for draft/official-forms-audit. Manual run only (workflow_dispatch).
+# TEMPORARY verification workflow for draft/official-forms-audit only (runs on that branch's pushes, or manually).
 # Purpose: show whether a GitHub-hosted runner can retrieve and verify the 11 retrievable official forms.
 # It writes only to runner temporary folders, uploads nothing, caches nothing, and deploys nothing.
 # It prints statuses and counts only. Delete this file once the connectivity result is recorded.
@@ -6,6 +6,9 @@ name: Official-form connectivity check (temporary)
 
 on:
   workflow_dispatch:
+  # GitHub accepts workflow_dispatch only for files on the default branch, so this branch-scoped push trigger starts the run.
+  push:
+    branches: [draft/official-forms-audit]
 
 permissions:
   contents: read
