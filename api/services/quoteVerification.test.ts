@@ -162,3 +162,31 @@ describe("what each status may claim", () => {
     expect(severityCeiling("ABSENT")).toBe("Affects Evidentiary Weight");
   });
 });
+
+describe("quotations across page breaks", () => {
+  const source = "[Page 1]\nThe worker attended the home on Monday and\n[Page 2]\nspoke with the mother for an hour.";
+  const quote = "The worker attended the home on Monday and spoke with the mother for an hour.";
+
+  it("a quotation that runs across a page break is found, not reported as absent", () => {
+    const r = locateQuote(source, quote);
+    expect(r.status).toBe("NORMALIZED_WHITESPACE");
+    expect(r.page).toBe(1);
+  });
+
+  it("the reported span points at the quoted words in the original source", () => {
+    const r = locateQuote(source, quote);
+    expect(r.startOffset).not.toBeNull();
+    const spanned = Array.from(source).slice(r.startOffset!, r.endOffset!).join("");
+    // The span includes the page marker it crosses; without markers and with collapsed whitespace it is the quotation.
+    expect(spanned.replace(/\[Page \d+\]/g, "").replace(/\s+/g, " ").trim()).toBe(quote);
+  });
+
+  it("a quotation that copies a page marker from the source is still matched", () => {
+    const r = locateQuote(source, "[Page 2] spoke with the mother for an hour.");
+    expect(r.status).not.toBe("ABSENT");
+  });
+
+  it("a source that holds only page markers has no text to match", () => {
+    expect(locateQuote("[Page 1]\n[Page 2]", "anything").status).toBe("ABSENT");
+  });
+});

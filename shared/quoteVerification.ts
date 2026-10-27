@@ -126,27 +126,52 @@ export function pageAtOffset(source: string, codePointOffset: number): number | 
   return page;
 }
 
+/**
+ * The source with "[Page N]" markers removed, and the original code-point index of each remaining character. A
+ * quotation that runs across a page break has no marker inside it, so it can only be matched on this text.
+ */
+function withoutPageMarkers(source: string): { body: string; originalIndex: number[] } {
+  const cps = Array.from(source);
+  const kept: string[] = [];
+  const originalIndex: number[] = [];
+  for (let k = 0; k < cps.length; ) {
+    if (cps[k] === "[") {
+      const marker = cps.slice(k, k + 20).join("").match(/^\[Page \d+\]/);
+      if (marker) {
+        k += Array.from(marker[0]).length;
+        continue;
+      }
+    }
+    kept.push(cps[k]);
+    originalIndex.push(k);
+    k++;
+  }
+  return { body: kept.join(""), originalIndex };
+}
+
 /** Locates a quotation in the source text and reports the strictest match type that applies. */
 export function locateQuote(source: string, quote: string): QuoteLocation {
   const absent: QuoteLocation = { status: "ABSENT", page: null, startOffset: null, endOffset: null };
-  const q = unwrapQuote(quote);
+  const q = withoutPageMarkers(unwrapQuote(quote)).body.trim();
   if (!q || !source || !source.trim()) return absent;
+  const { body, originalIndex } = withoutPageMarkers(source);
+  if (!body.trim()) return absent;
 
-  const sourceCp = Array.from(source);
+  const bodyCp = Array.from(body);
   const quoteCp = Array.from(q);
-  const found = (status: QuoteMatchStatus, start: number, end: number): QuoteLocation => ({
-    status,
-    page: pageAtOffset(source, start),
-    startOffset: start,
-    endOffset: end,
-  });
+  // Offsets in the matching text are mapped back to the original source, so the page and span refer to the document.
+  const found = (status: QuoteMatchStatus, start: number, end: number): QuoteLocation => {
+    const from = originalIndex[start];
+    const to = originalIndex[end - 1] + 1;
+    return { status, page: pageAtOffset(source, from), startOffset: from, endOffset: to };
+  };
   const ambiguous: QuoteLocation = { status: "AMBIGUOUS", page: null, startOffset: null, endOffset: null };
 
-  const exact = occurrences(sourceCp, quoteCp);
+  const exact = occurrences(bodyCp, quoteCp);
   if (exact.length === 1) return found("EXACT", exact[0], exact[0] + quoteCp.length);
   if (exact.length > 1) return ambiguous;
 
-  const ws = canonicalize(source, "whitespace");
+  const ws = canonicalize(body, "whitespace");
   const wq = canonicalize(q, "whitespace");
   const wsHits = occurrences(ws.chars, wq.chars);
   if (wsHits.length === 1) {
@@ -155,7 +180,7 @@ export function locateQuote(source: string, quote: string): QuoteLocation {
   }
   if (wsHits.length > 1) return ambiguous;
 
-  const vs = canonicalize(source, "variant");
+  const vs = canonicalize(body, "variant");
   const vq = canonicalize(q, "variant");
   const vHits = occurrences(vs.chars, vq.chars);
   if (vHits.length === 1) {
