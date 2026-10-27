@@ -84,6 +84,7 @@ import {
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
 import { applyCitationGuards, runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
+import { PROVIDER_ATTEMPTS, SECTION_ATTEMPTS, TRANSIENT_HTTP_STATUSES } from "../shared/analyzerRetryPolicy.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -346,7 +347,7 @@ async function generateContentWithFallback(
   const providerStart = Date.now();
   let response: any;
   let attempts = 0;
-  const maxAttempts = params.retries ?? (process.env.NODE_ENV === "test" || process.env.VITEST ? 1 : 2);
+  const maxAttempts = params.retries ?? (process.env.NODE_ENV === "test" || process.env.VITEST ? 1 : PROVIDER_ATTEMPTS);
   let delayMs = 1000;
   const timeoutMs =
     params.timeoutMs ||
@@ -382,10 +383,7 @@ async function generateContentWithFallback(
       // Permanent failures (400/401/402/403/404/413/422) are never retried.
       const isTransient =
         status === 429 ||
-        status === 500 ||
-        status === 502 ||
-        status === 503 ||
-        status === 529 ||
+        (status !== undefined && TRANSIENT_HTTP_STATUSES.includes(status)) ||
         isConnection;
       // A timeout that already consumed a full minute of the per-attempt budget is not retried: a
       // second attempt would push the request past the function's duration limit.
@@ -3020,8 +3018,10 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
       }
     }
 
-    const analysisRequestId =
-      idempotencyKey || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // Same id rule as /api/analyze: a valid client id is kept, so a retry recognises this analysis.
+    const analysisRequestId = isValidAnalysisJobId(idempotencyKey) ? idempotencyKey : generateAnalysisJobId();
+    // The job record lets a client recover this report after a dropped connection (see pollAnalysisJob).
+    let jobCreated = false;
     let creditReservation: ReservationResult | null = null;
     if (sessionInfo) try {
       creditReservation = await reserveAnalysisCredit({
@@ -3052,6 +3052,13 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
     }
 
     try {
+      // Inside the try, so a failure here still releases the credit held above.
+      await createAnalysisJobDurable({
+        jobId: analysisRequestId,
+        uid: identity?.uid ?? null,
+        mode: "full",
+      });
+      jobCreated = true;
       const startTime = Date.now();
       const { documentText, documentName, category, priorAnalysis } = req.body || {};
       if (!documentText || !String(documentText).trim()) {
@@ -3155,7 +3162,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         ["proceduralTimelineViolations"],
         ["charterAndHumanRightsIssues", "whatToAskALawyer", "lawyerCaseBrief"]
       ] as const;
-      const FORENSIC_SECTION_ATTEMPTS = 2;
+      const FORENSIC_SECTION_ATTEMPTS = SECTION_ATTEMPTS;
       const generateForensicSection = async (
         keys: readonly string[],
         index: number,
@@ -3283,8 +3290,19 @@ OUTPUT — return strictly this JSON schema, nothing else:
       }
       // Same citation terms as Quick Review and Forensic In-Depth: an internal-reference match is not shown as verified.
       applyCitationGuards(report);
-      res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
+      const response = { ...report, timing: { durationMs }, ...(credits ? { credits } : {}) };
+      if (jobCreated) await completeAnalysisJobDurable(analysisRequestId, response);
+      res.json(response);
     } catch (error: any) {
+      if (jobCreated) {
+        const failed = formatAnalyzerErrorResponse(error);
+        await failAnalysisJobDurable(analysisRequestId, {
+          code: failed.code,
+          message: failed.error,
+          statusCode: failed.statusCode,
+          retryable: failed.retryable,
+        }).catch(() => {});
+      }
       if (creditReservation && sessionInfo) {
         try {
           await releaseAnalysisReservation({

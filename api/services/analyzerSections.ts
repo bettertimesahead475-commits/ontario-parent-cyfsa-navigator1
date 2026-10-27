@@ -20,6 +20,10 @@ import { AnalyzerError, logAnalyzerDiagnostic } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
 import type { AnalysisStage } from "./analyzerStreaming.js";
 import {
+  SECTION_ATTEMPTS,
+  VERIFICATION_ATTEMPTS,
+} from "../../shared/analyzerRetryPolicy.js";
+import {
   classifyCitation,
   type CitationStatus,
   type IdentifiedAct,
@@ -626,7 +630,7 @@ async function runOneSection(
   let retryNote: string | undefined;
   let lastProblem = "";
   let lastProviderError: AnalyzerError | null = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= SECTION_ATTEMPTS; attempt++) {
     const remaining = opts.deadlineAt - now();
     if (attempt > 1 && remaining < MIN_RETRY_BUDGET_MS) break;
     if (remaining < 5_000) break;
@@ -825,7 +829,7 @@ async function runForensicVerification(
     return { status: "completed", checkedFindings: 0, overallAssessment: "There were no findings to verify.", durationMs: 0 };
   }
   let reason = "";
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= VERIFICATION_ATTEMPTS; attempt++) {
     const remaining = opts.deadlineAt - now();
     if (remaining < (attempt === 1 ? 30_000 : MIN_RETRY_BUDGET_MS)) {
       reason = reason || "not enough time remained within the analysis time limit";

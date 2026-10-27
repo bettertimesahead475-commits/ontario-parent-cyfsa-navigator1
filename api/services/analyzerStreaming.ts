@@ -90,7 +90,7 @@ export interface AnalysisJob {
  * analyzer ("req_<epoch ms>_<random>") is accepted; anything else gets a server-generated id.
  */
 export function isValidAnalysisJobId(id: unknown): id is string {
-  return typeof id === "string" && /^req_\d{10,16}_[a-z0-9]{4,24}$/i.test(id);
+  return isAnalysisJobId(id);
 }
 
 export function generateAnalysisJobId(): string {
@@ -98,6 +98,7 @@ export function generateAnalysisJobId(): string {
 }
 
 import { getSupabase } from "./access.js";
+import { isAnalysisJobId } from "../../shared/analyzerRetryPolicy.js";
 
 const jobStore = new Map<string, AnalysisJob>();
 const JOB_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
