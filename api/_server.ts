@@ -2600,10 +2600,14 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
 
     // Access control: prevent users from accessing another user's analysis jobs (unless admin)
-    // A job is readable only by the Firebase account that owns it (or the admin secret). The
-    // previous check skipped ownership entirely when the caller had only a paid-session token
-    // (callerUid undefined), so any job could be read by id.
+    // A job is readable only by the Firebase account that owns it (or the admin secret). A paid-session
+    // token on its own never releases a report. When the job has an owner but the caller presents no
+    // valid Firebase identity (absent, expired or invalid token), the caller must sign in again (401),
+    // not be told the job belongs to someone else (403).
     const callerUid = identity?.uid;
+    if (!isAdmin && job.uid && !callerUid) {
+      return res.status(401).json({ error: "Please sign in again to see this analysis.", code: "SIGN_IN_REQUIRED" });
+    }
     if (!isAdmin && (!job.uid || job.uid !== callerUid)) {
       return res.status(403).json({ error: "Access denied. You cannot access another user's analysis job.", code: "FORBIDDEN" });
     }

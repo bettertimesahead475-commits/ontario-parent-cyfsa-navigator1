@@ -56,6 +56,18 @@ describe("pollAnalysisJob", () => {
     await expect(pollAnalysisJob("req_1_abc", { intervalMs: 1 })).rejects.toMatchObject({ code: "SIGN_IN_REQUIRED" });
   });
 
+  it("after sign-in, polls the same saved job id again and never posts a new analysis", async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(401, { code: "SIGN_IN_REQUIRED" }))
+      .mockResolvedValueOnce(json(200, { jobId: "req_1_abc", status: "completed", report: { documentTitle: "Saved" } }));
+    await expect(pollAnalysisJob("req_1_abc", { intervalMs: 1 })).rejects.toMatchObject({ code: "SIGN_IN_REQUIRED" });
+    const outcome = await pollAnalysisJob("req_1_abc", { intervalMs: 1 });
+    expect(outcome).toEqual({ status: "completed", report: { documentTitle: "Saved" } });
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls).toEqual(["/api/analyze/job/req_1_abc", "/api/analyze/job/req_1_abc"]);
+    expect(fetchMock.mock.calls.every(([, init]) => !init || !init.method || init.method === "GET")).toBe(true);
+  });
+
   it("gives up with RECOVERY_TIMEOUT (outcome unknown) after the wait limit", async () => {
     fetchMock.mockImplementation(async () => json(200, { jobId: "j", status: "analyzing", percent: 40 }));
     const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1, maxWaitMs: 20 }).catch((e) => e);

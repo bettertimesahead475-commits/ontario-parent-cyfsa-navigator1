@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
+import { signInMinimal } from "../utils/firebase";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -388,6 +389,8 @@ export default function DocumentAnalyzerTab() {
   // Error code of the last failed run. Lets the UI say "nothing was charged" only when the server
   // confirmed the failure (a failed job releases its credit), not when the outcome is unknown.
   const [singleAnalysisErrorCode, setSingleAnalysisErrorCode] = useState<string | null>(null);
+  // Bumped after the parent signs in again, so the saved job is polled once more (never restarted).
+  const [jobResumeAttempt, setJobResumeAttempt] = useState(0);
   // Report sections the server has validated so far (real progress, from stream or job record).
   const [completedSections, setCompletedSections] = useState<string[]>([]);
   // True while a reloaded page follows an analysis that was started before the reload.
@@ -445,7 +448,8 @@ export default function DocumentAnalyzerTab() {
         setAnalyzerState("ERROR");
         setSingleAnalysisErrorCode(err?.code || null);
         setSingleAnalysisError(err?.message || "We couldn't check on your analysis. Your document is safe.");
-        clearActiveJob();
+        // A sign-in problem keeps the saved job, so polling can resume it once the parent signs in again.
+        if (err?.code !== "SIGN_IN_REQUIRED") clearActiveJob();
       })
       .finally(() => {
         if (!cancelled) setIsRecoveringJob(false);
@@ -453,7 +457,7 @@ export default function DocumentAnalyzerTab() {
     return () => {
       cancelled = true;
     };
-  }, [activeJobId, setSelectedReport, applyJobProgress]);
+  }, [activeJobId, jobResumeAttempt, setSelectedReport, applyJobProgress]);
 
   // Server-authoritative credit ledger balance
   interface CreditBalanceInfo {
@@ -1973,10 +1977,18 @@ export default function DocumentAnalyzerTab() {
       }
       setAnalyzerState("ERROR");
       setSingleAnalysisErrorCode(err?.code || null);
-      try {
-        localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-        setActiveJobId(null);
-      } catch {}
+      if (err?.code === "SIGN_IN_REQUIRED") {
+        // The analysis is saved on the server and may already be paid for. Keep it: the parent signs in
+        // again and polling resumes this same job. Retry would start a new analysis, so it is not offered.
+        try {
+          setActiveJobId(analysisId);
+        } catch {}
+      } else {
+        try {
+          localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
+          setActiveJobId(null);
+        } catch {}
+      }
       if (err.isRateLimit || err.status === 429) {
         setRateLimitCountdown(30);
       }
@@ -4596,13 +4608,34 @@ export default function DocumentAnalyzerTab() {
                               {activeSelectedFile.analysisError || singleAnalysisError || "The AI analysis engine is temporarily busy or unreachable. Your document is safe."}
                             </p>
                           </div>
-                          {singleAnalysisErrorCode !== "STOPPED_WAITING" && !UNCONFIRMED_OUTCOME_CODES.has(singleAnalysisErrorCode || "") && (
+                          {singleAnalysisErrorCode === "SIGN_IN_REQUIRED" ? (
+                            <div className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                              Your analysis is saved and will not be started again. Sign in to see it.
+                            </div>
+                          ) : singleAnalysisErrorCode !== "STOPPED_WAITING" && !UNCONFIRMED_OUTCOME_CODES.has(singleAnalysisErrorCode || "") && (
                             <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg p-2.5 text-xs font-medium flex items-center justify-center gap-1.5">
                               <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                               <span>This attempt did not use a credit.</span>
                             </div>
                           )}
-                          {rateLimitCountdown !== null && rateLimitCountdown > 0 ? (
+                          {singleAnalysisErrorCode === "SIGN_IN_REQUIRED" ? (
+                            <button
+                              onClick={async () => {
+                                // Signing in does not start anything. The saved job is polled again (same id, no new charge).
+                                try {
+                                  await signInMinimal();
+                                } catch {
+                                  return;
+                                }
+                                setSingleAnalysisErrorCode(null);
+                                setSingleAnalysisError("");
+                                setJobResumeAttempt(n => n + 1);
+                              }}
+                              className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                            >
+                              <span>Sign in to see this analysis</span>
+                            </button>
+                          ) : rateLimitCountdown !== null && rateLimitCountdown > 0 ? (
                             <div className="text-xs text-amber-700 font-sans font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
                               ⏳ Rate limit in effect. Retrying in {rateLimitCountdown}s...
                             </div>

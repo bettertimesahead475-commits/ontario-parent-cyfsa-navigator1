@@ -327,6 +327,104 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     expect(res.body.code).toBe("FORBIDDEN");
   });
 
+  // Job poll authorization. A job is released only to the Firebase account that owns it. A paid-session token
+  // never releases a report by itself, and a missing, expired or invalid Firebase token is a sign-in problem (401),
+  // not an access-denied one (403). The verifier returns null for expired and invalid tokens alike.
+  describe("job poll authorization", () => {
+    it("releases the job to its valid owner", async () => {
+      createAnalysisJob({ jobId: "job-auth-owner", uid: "test-parent-uid", mode: "fast" });
+      const res = await request(app).get("/api/analyze/job/job-auth-owner");
+      expect(res.status).toBe(200);
+      expect(res.body.jobId).toBe("job-auth-owner");
+    });
+
+    it("refuses a job owned by another account to a valid non-owner with 403 FORBIDDEN", async () => {
+      createAnalysisJob({ jobId: "job-auth-other", uid: "other-parent-uid", mode: "fast" });
+      const res = await request(app).get("/api/analyze/job/job-auth-other");
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("FORBIDDEN");
+    });
+
+    it("refuses an anonymous caller with 401 SIGN_IN_REQUIRED", async () => {
+      createAnalysisJob({ jobId: "job-auth-anon", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-anon");
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    });
+
+    it("answers an expired Firebase token with 401 SIGN_IN_REQUIRED, not 403, even with a valid paid session", async () => {
+      createAnalysisJob({ jobId: "job-auth-expired", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-expired").set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(res.body).not.toHaveProperty("report");
+    });
+
+    it("answers an invalid Firebase token with 401 SIGN_IN_REQUIRED, not 403, even with a valid paid session", async () => {
+      createAnalysisJob({ jobId: "job-auth-invalid", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const res = await request(app)
+        .get("/api/analyze/job/job-auth-invalid")
+        .set("Authorization", "Bearer not-a-real-token")
+        .set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(res.body).not.toHaveProperty("report");
+    });
+
+    it("never releases report content to a paid-session token alone (no Firebase identity)", async () => {
+      createAnalysisJob({ jobId: "job-auth-session-only", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-session-only").set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body).not.toHaveProperty("report");
+      expect(res.body).not.toHaveProperty("jobId");
+    });
+
+    it("refuses a session-only caller whose paid session has expired, with 401 SIGN_IN_REQUIRED", async () => {
+      createAnalysisJob({ jobId: "job-auth-expired-session", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      mockAccess.getActivePaidSession.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-expired-session").set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    });
+
+    it("refuses a session-only caller whose paid session was revoked, with 401 SIGN_IN_REQUIRED", async () => {
+      createAnalysisJob({ jobId: "job-auth-revoked-session", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      mockAccess.getActivePaidSession.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-revoked-session").set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    });
+
+    it("keeps the owner's own report readable with a valid Firebase identity (existing behaviour, unchanged)", async () => {
+      createAnalysisJob({ jobId: "job-auth-owner-session-ended", uid: "test-parent-uid", mode: "fast" });
+      mockAccess.getActivePaidSession.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-owner-session-ended").set(paid());
+      expect(res.status).toBe(200);
+      expect(res.body.jobId).toBe("job-auth-owner-session-ended");
+    });
+
+    it("recovers after reauthentication by polling the same job, without starting another analysis", async () => {
+      createAnalysisJob({ jobId: "job-auth-resume", uid: "test-parent-uid", mode: "fast" });
+
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const signedOut = await request(app).get("/api/analyze/job/job-auth-resume").set(paid());
+      expect(signedOut.status).toBe(401);
+      expect(signedOut.body.code).toBe("SIGN_IN_REQUIRED");
+
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "test-parent-uid", email: "parent@example.com" });
+      const resumed = await request(app).get("/api/analyze/job/job-auth-resume").set(paid());
+      expect(resumed.status).toBe(200);
+      expect(resumed.body.jobId).toBe("job-auth-resume");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+  });
+
   it("GET /api/analyze/job/:jobId recovers own completed job with 200 OK", async () => {
     createAnalysisJob({
       jobId: "job-owned-by-me",
