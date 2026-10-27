@@ -7,6 +7,8 @@
  */
 
 import { titleSuggestsCourtOrder } from "../../shared/documentTitle";
+import { effectiveCitationStatus } from "../../shared/citationVerification";
+import { effectiveQuoteStatus, type DisplayQuoteStatus } from "../../shared/quoteVerification";
 
 export interface ParentFindingView {
   id: string;
@@ -46,6 +48,7 @@ export interface ParentReportView {
   questionsForCourt: string[];
 }
 
+
 const CASE_LAW_LIMITATION =
   "No verified court decision has been attached to this point yet, so this report does not say what courts have decided on it.";
 const UNVERIFIED_CITATION = "Citation unverified. Confirm the exact section with a lawyer before relying on it.";
@@ -60,9 +63,12 @@ function list(value: unknown): string[] {
   return Array.isArray(value) ? value.map(text).filter(Boolean) : [];
 }
 
+const INTERNAL_MATCH_LINE =
+  "Matches the analyzer's internal reference text only. It has not been checked against official e-Laws, and it does not show that this section applies to these facts.";
+
 function citationStatus(flag: Loose): string {
-  if (flag.citationStatus === "CONFIRMED_REFERENCE") return "Listed as a confirmed reference in the analyzer's internal list; not checked against the statute text in this report.";
-  if (flag.citationStatus === "UNVERIFIED") return UNVERIFIED_CITATION;
+  const status = effectiveCitationStatus(flag);
+  if (status === "INTERNAL_REFERENCE_MATCH") return INTERNAL_MATCH_LINE;
   // A citation with no recorded verification status is unverified, never confirmed.
   return text(flag.legalReference) ? UNVERIFIED_CITATION : "No statute cited for this point.";
 }
@@ -133,7 +139,10 @@ function thresholdLine(check: Loose): string {
   const name = text(check.thresholdChecked);
   const source = text(check.primarySourceLaw);
   // A source with no recorded verification status is unverified, the same as for red flags and timeline checks.
-  const unverified = source && check.citationStatus !== "CONFIRMED_REFERENCE" ? "The statute reference for this check is unverified; confirm it with counsel." : "";
+  const unverified =
+    source && effectiveCitationStatus({ legalReference: source, citationStatus: check.citationStatus }) !== "INTERNAL_REFERENCE_MATCH"
+      ? "The statute reference for this check is unverified; confirm it with counsel."
+      : "";
   const review = secondReviewLine(check);
   return [name, `Question to check: ${THRESHOLD_QUESTION}`, review, source ? `Source: ${source}.` : "", unverified].filter(Boolean).join(" ");
 }
@@ -185,6 +194,40 @@ function lawWithStatus(flag: Loose): string {
   return unverified ? `${law} ${UNVERIFIED_CITATION}` : law;
 }
 
+/** Sentence for the quoted point. Only an exact match is presented as the record's own words. */
+function quoteSentence(status: DisplayQuoteStatus, quote: string): string {
+  switch (status) {
+    case "EXACT":
+      return `The record says: "${quote}"`;
+    case "NORMALIZED_WHITESPACE":
+      return `The record says (line breaks or spacing differ from the source text): "${quote}"`;
+    case "CASE_OR_PUNCTUATION_VARIANT":
+      return `The analyzer quoted this point, but its capitalisation or punctuation does not match the record exactly. Treat the wording as a paraphrase until it is checked: "${quote}"`;
+    case "AMBIGUOUS":
+      return `The analyzer quoted this point. The same wording appears in more than one place in the record, so confirm which passage it refers to: "${quote}"`;
+    case "ABSENT":
+      return `The analyzer quoted this point, but the quoted passage could not be found in the record. Treat it as an unverified allegation: "${quote}"`;
+    case "UNRECORDED_MATCH":
+      return `The analyzer quoted this point. The type of match was not recorded, so check the wording against the record: "${quote}"`;
+    default:
+      return `The analyzer quoted this point. Its exact wording has not been checked against the record, so treat it as a paraphrase until it is: "${quote}"`;
+  }
+}
+
+/** Analyzer warnings that qualify the point (unlocated passage, ambiguous or changed wording, unverified corroboration). */
+function warningSuffix(flag: Loose): string {
+  return [text(flag.verificationNote), text(flag.classificationCaveat)].filter(Boolean).map((w) => ` ${w}`).join("");
+}
+
+/** The model's locator, with the page of the quoted passage when the source shows one. */
+function locationText(flag: Loose): string {
+  const given = text(flag.locationInDocument);
+  const page = typeof flag.quoteLocation?.page === "number" ? flag.quoteLocation.page : null;
+  if (given && page !== null) return `${given} (quoted passage: page ${page})`;
+  if (given) return given;
+  return page !== null ? `Page ${page} (quoted passage)` : "Location not given";
+}
+
 function findingView(flag: Loose, index: number): ParentFindingView {
   const quote = text(flag.phraseDetected);
   return {
@@ -193,13 +236,7 @@ function findingView(flag: Loose, index: number): ParentFindingView {
     heading: `Point ${index + 1}`,
     evidenceLabel: evidenceLabel(flag.evidenceClassification),
     severityLabel: "",
-    whatHappened: quote
-      ? flag.quoteVerified === true
-        ? `The record says: "${quote}"`
-        : flag.quoteVerified === false
-          ? `The analyzer quoted this point, but the exact wording could not be matched to the document, so treat it as a paraphrase: "${quote}"`
-          : `The analyzer quoted this point. Its exact wording has not been checked against the document, so treat it as a paraphrase until it is: "${quote}"`
-      : "The record quote for this point was not found.",
+    whatHappened: quote ? quoteSentence(effectiveQuoteStatus(flag), quote) + warningSuffix(flag) : "The record quote for this point was not found.",
     // The analyzer's explanation is its reasoning about the point. The parent gets a question to check instead.
     whyItMatters: CHECK_QUESTION,
     whatTheLawSays: lawWithStatus(flag),
@@ -209,7 +246,7 @@ function findingView(flag: Loose, index: number): ParentFindingView {
     whatYouCanDo: text(flag.parentActionStep),
     evidenceDetail: {
       quote,
-      location: text(flag.locationInDocument) || "Location not given",
+      location: locationText(flag),
       citationStatus: citationStatus(flag),
     },
   };

@@ -52,7 +52,7 @@ export const CAS_AFFIDAVIT_FIXTURE = {
   completenessScore: 62,
   redFlags: [
     { id: "rf1", category: "Hearsay", severity: "Affects Evidentiary Weight", evidenceClassification: "HEARSAY", phraseDetected: "a neighbour told me the child was left alone", explanation: "Second-hand account.", verifyRequirement: "Identify the neighbour and what they saw.", legalReference: "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.", citationStatus: "UNVERIFIED", locationInDocument: "Page 1, Paragraph 2", parentActionStep: "Ask counsel about weight.", quoteVerified: true },
-    { id: "rf2", category: "Unsupported Claim", severity: "Worth Raising With Counsel", evidenceClassification: "UNSUPPORTED", phraseDetected: "The child was at risk.", explanation: "No record supports this statement.", verifyRequirement: "Request the risk assessment.", legalReference: "CYFSA s. 74(2)", citationStatus: "CONFIRMED_REFERENCE", locationInDocument: "Page 2", parentActionStep: "Ask for the risk assessment.", quoteVerified: false },
+    { id: "rf2", category: "Unsupported Claim", severity: "Worth Raising With Counsel", evidenceClassification: "UNSUPPORTED", phraseDetected: "The child was at risk.", explanation: "No record supports this statement.", verifyRequirement: "Request the risk assessment.", legalReference: "CYFSA s. 74(2)", citationStatus: "INTERNAL_REFERENCE_MATCH", locationInDocument: "Page 2", parentActionStep: "Ask for the risk assessment.", quoteVerified: false },
   ],
   contradictions: [],
   whatIsMissing: ["Worker notes."],

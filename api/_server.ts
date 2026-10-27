@@ -82,7 +82,7 @@ import {
   isValidAnalysisJobId,
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
-import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
+import { applyCitationGuards, runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -3280,6 +3280,8 @@ OUTPUT — return strictly this JSON schema, nothing else:
           console.error("[deep scan] Failed to read paid usage status (non-fatal):", usageErr);
         }
       }
+      // Same citation terms as Quick Review and Forensic In-Depth: an internal-reference match is not shown as verified.
+      applyCitationGuards(report);
       res.json({ ...report, timing: { durationMs }, ...(credits ? { credits } : {}) });
     } catch (error: any) {
       if (creditReservation && sessionInfo) {

@@ -6,53 +6,28 @@
  * of the report independently. Edit the legal wording here, in one place.
  */
 
+import { INTERNAL_CYFSA_SECTION_KEYS } from "../../shared/citationVerification.js";
+
+/** The internal reference list the model may cite as CYFSA sections. Generated from the shared list so they cannot drift. */
+const INTERNAL_REFERENCE_LIST = INTERNAL_CYFSA_SECTION_KEYS.map((key) => `CYFSA s.${key}`).join(", ");
+
 export const ANALYSIS_RULES = `CORE RULES (non-negotiable)
 1. Every flag requires three things, all present or the flag is not shown:
 - Document quote: the exact phrase from the uploaded document, with page/paragraph locator.
-- Statute citation: the specific CYFSA section, ONLY if verified (see Rule 2).
+- Statute citation: the specific CYFSA section, ONLY if on the internal reference list (see Rule 2).
 - Match explanation: one sentence connecting the specific document language to the specific statutory requirement — not a general summary of the section.
 
-2. Statute verification is mandatory before displaying any citation.
-- BUG FIX (flagged in audit, Aug 29 2026): this rule used to tell you to check citations against
-  "CYFSA-Statute-Reference.md" and, failing that, to run a live web search — but no such file
-  ever existed in this codebase and no web-search tool is wired into this endpoint. Both
-  verification paths this rule described were fictional, which is how a wrong citation
-  (s.94(5) mislabeled as a "5-day post-apprehension hearing" rule — it is actually the
-  placement-with-relative provision) made it into a real audit with full confidence and no
-  hedge. The CONFIRMED STATUTE REFERENCE below is real, verified section text — this is the
-  only list you may treat as confirmed.
-- CONFIRMED STATUTE REFERENCE (verified Aug 29 2026 — cite these freely, with this exact text):
-  * CYFSA s.74(2): defines "child in need of protection."
-  * CYFSA s.94(1): "The court shall not adjourn a hearing for more than 30 days, (a) unless all
-    the parties present and the person who will be caring for the child during the adjournment
-    consent; or (b) if the court is aware that a party who is not present at the hearing
-    objects to the longer adjournment."
-  * CYFSA s.94(5): "Before making a temporary order for care and custody under clause (2)(d),
-    the court shall consider whether it is in the child's best interests to make an order under
-    clause (2)(c) to place the child in the care and custody of a person who is a relative of
-    the child or a member of the child's extended [family/community]." This is a
-    placement-with-relative consideration clause tied to temporary care orders during an
-    adjournment — it is NOT a "5-day post-apprehension hearing" rule. Never cite s.94(5) for a
-    hearing-timeline argument.
-  * CYFSA s.125(1): the duty-to-report section — reasonable-grounds-to-suspect standard.
-  * Bill 188, Supporting Children's Futures Act, 2024 (S.O. 2024, c. 17): amended CYFSA Part II
-    with respect to children's rights to be informed about the Ombudsman, among other things.
-  * Bill 33, Supporting Children and Students Act, 2025 (S.O. 2025, c. 12), Schedule 4:
-    separately expands the Ombudsman's own mandate to investigate CAS/licensed-provider
-    services under CYFSA. These are two distinct acts passed a year apart — never cite them
-    together as one hyphenated "SCFA 2024 / Bill 33 2025" label; name whichever one actually
-    supports the specific point being made, or both by their separate full names if both apply.
-- Every other CYFSA/CLRA section (including s.70, s.81, and CLRA s.8(1)) is NOT in the confirmed
-  list above. For any of these, you MUST show: "⚠️ Statute citation unverified — confirm exact
-  section with counsel before relying on this." Do not state a specific subsection number for
-  them as if it were confirmed fact.
-- Never generate a plausible-sounding section number from pattern-matching. A wrong citation is worse than no citation — it undermines the parent's credibility if raised in court.
+2. Statute citations.
+- A CYFSA section may be cited only if it is on the internal reference list: ${INTERNAL_REFERENCE_LIST}. Describe the list as CYFSA Navigator's internal reference text. It has NOT been checked against official e-Laws, and a section on the list does not show that it applies to these facts.
+- Every other citation must carry this warning, unchanged: "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this." This covers a section number given without the Act it belongs to; any other Act (such as the Family Law Act, the Criminal Code, or the Children's Law Reform Act); any regulation; and any CYFSA section not on the list.
+- Do not reproduce statute wording. Give the section number and the warning.
+- Never generate a plausible-sounding section number from pattern-matching. A wrong citation is worse than no citation, and it undermines the parent's credibility if it is raised in court.
 
 3. Severity labels must be calibrated, not maximal.
 Replace absolute language with hedged, accurate framing:
 - Do NOT use "[CRITICAL]", "unlawful", "illegal", or "violates" unless the document contains an explicit admission of a clear procedural failure (e.g., "we did not inform the court...") — i.e., the CAS's own words concede the point.
 - For anything involving legal interpretation, an untested theory, or a matter courts have ruled inconsistently on (e.g., informal safety-plan advice, the boundary between access restriction and apprehension), use: "[Worth Raising With Counsel]" and explain that the law is not settled on this exact point.
-- For hearsay/weight arguments, use: "[Affects Evidentiary Weight]" rather than "[CRITICAL]" / "Hearsay" — under Family Law Rules 14(19), hearsay in motion affidavits is often permitted if the source is disclosed; the real argument is usually about how much weight it should get, not whether it's admissible at all.
+- For hearsay/weight arguments, use: "[Affects Evidentiary Weight]" rather than "[CRITICAL]" / "Hearsay" — under Family Law Rules 14(19) (not checked against the official rules text), hearsay in motion affidavits is often permitted if the source is disclosed; the real argument is usually about how much weight it should get, not whether it's admissible at all.
 
 4. No invented legal theories presented as established law.
 If you construct a novel argument (e.g., "informal access restriction = de facto apprehension triggering the 5-day hearing rule"), explicitly label it as a theory to test, not a rule: "This is an argument your lawyer could make — it has not been confirmed as settled law in this fact pattern. Ask your lawyer whether Ontario courts have accepted this reasoning."
@@ -61,12 +36,12 @@ If you construct a novel argument (e.g., "informal access restriction = de facto
 "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."
 
 6. STATUTORY ISSUES REGISTER AND ANSWERED QUESTIONS (required in every report):
-- In thresholdAnalysis and statutory timeline entries, list each applicable legal issue separately: provision/rule and precise subsection if confirmed, document locator and short evidence quotation, factual concern, what the provision actually requires, preliminary outcome (Supported / Not supported / Inconclusive / Not applicable), verification status (Verified / Citation unverified), and the specific missing record needed to resolve it. Do not conflate a documentation gap with a statutory breach.
+- In thresholdAnalysis and statutory timeline entries, list each applicable legal issue separately: provision/rule and precise subsection if on the internal reference list, document locator and short evidence quotation, factual concern, what the provision actually requires, preliminary outcome (Supported / Not supported / Inconclusive / Not applicable), verification status (Verified / Citation unverified), and the specific missing record needed to resolve it. Do not conflate a documentation gap with a statutory breach.
 - For every question in whatToAskALawyer, include an evidence-grounded preliminary answer in the SAME string immediately after the question using the format 'Question: ... | What the uploaded record shows: ... | Still unknown: ... | Source: page/paragraph/exhibit ...'. If the record does not answer it, write 'Not determinable from the uploaded documents' rather than guessing. The question remains for counsel even when a provisional answer is supplied.
 - In whatToVerify, connect each unresolved statutory issue to a concrete record to obtain and state what answer that record could supply.
 - In lawyerCaseBrief, distinguish NEW document-supported findings from expanded legal interpretations. If a prior Quick Review is not included in the provided input, do NOT claim to have compared reports or invent a difference; say a comparison is unavailable.
 - Never mark an issue 'No' or 'Violation' solely because a document omits evidence of compliance. If the record does not establish the legal test, use Inconclusive and state why.
-- For Ontario Family Law Rules 14(18) and 14(19), the confirmed rule is that motion affidavits should as far as possible be firsthand, but information from another named source may be included if the affiant states a belief that it is true; secondhand material is not automatically inadmissible.
+- For Ontario Family Law Rules 14(18) and 14(19), the rule as commonly summarised is that motion affidavits should as far as possible be firsthand, but information from another named source may be included if the affiant states a belief that it is true; secondhand material is not automatically inadmissible.
 - Keep every finding and answer within the existing report schema; do not invent new top-level JSON keys.
 
 THINGS TO NEVER DO
@@ -166,7 +141,7 @@ export const FIELD_SCHEMAS: Record<string, string> = {
     {
       "timelineRule": "Court hearing timeline following apprehension without warrant",
       "documentAssertion": "E.g. dates of removal or court schedules.",
-      "evaluation": "BUG FIX (flagged in audit): this checkpoint previously cited CYFSA s.94(5) for a '5-day post-apprehension hearing rule.' s.94(5) is confirmed to actually be a placement-with-relative consideration clause, not a hearing-timeline rule — that citation was wrong, not just unverified, and must never be used again. A statutory deadline for bringing an apprehended child before the court does exist under CYFSA, but its exact current section number is not in the confirmed reference and must be verified with counsel before being cited by number. Evaluate the document on its facts (was the child taken without a warrant, and how long before a court appearance) without asserting a specific section number.",
+      "evaluation": "BUG FIX (flagged in audit): this checkpoint previously cited CYFSA s.94(5) for a '5-day post-apprehension hearing rule.' s.94(5) is not on the internal reference list and has not been checked against official text. Do not cite it for a hearing-timeline rule. A statutory deadline for bringing an apprehended child before the court does exist under CYFSA, but its exact section number is not on the internal reference list and must be verified with counsel before being cited by number. Evaluate the document on its facts (was the child taken without a warrant, and how long before a court appearance) without asserting a specific section number.",
       "citation": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.",
       "locationInDocument": "Page X, Paragraph Y, or state 'Not applicable - child in home care'",
       "parentActionStep": "Verify immediate court scheduling if a sudden take occurs. Ask your lawyer to confirm the exact CYFSA section governing the post-apprehension hearing deadline. Keep court liaison logs."

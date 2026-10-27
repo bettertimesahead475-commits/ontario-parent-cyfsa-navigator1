@@ -61,6 +61,8 @@ import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
+import { effectiveCitationStatus } from "../../shared/citationVerification";
+import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -2598,8 +2600,9 @@ export default function DocumentAnalyzerTab() {
                   <div class="threat-body">
                     <strong>Quote Detected in File:</strong><br/>
                     <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div>
-                    ${rf.quoteVerified === true ? `<div style="font-size:11px; color:#047857; margin-top:4px;">Found word-for-word in the document.</div>` : ""}
-                    ${rf.quoteVerified === false ? `<div style="font-size:11px; color:#92400e; margin-top:4px;"><strong>Not found word-for-word in the document</strong> - treat as a paraphrase and check the original wording.</div>` : ""}
+                    <div style="font-size:11px; color:${QUOTE_DISPLAY[effectiveQuoteStatus(rf)].verified ? "#047857" : "#92400e"}; margin-top:4px;">${escapeHtml(QUOTE_DISPLAY[effectiveQuoteStatus(rf)].label)}${rf.quoteLocation?.page ? ` (page ${escapeHtml(String(rf.quoteLocation.page))})` : ""}</div>
+                    ${rf.verificationNote ? `<div style="font-size:11px; color:#92400e; margin-top:4px;">${escapeHtml(rf.verificationNote)}</div>` : ""}
+                    ${rf.classificationCaveat ? `<div style="font-size:11px; color:#92400e; margin-top:4px;">${escapeHtml(rf.classificationCaveat)}</div>` : ""}
                     ${rf.forensicVerification ? `<div style="font-size:11px; color:#334155; margin-top:4px;"><strong>Independent second review: ${escapeHtml(rf.forensicVerification.verdict)}</strong>${rf.forensicVerification.note ? ` - ${escapeHtml(rf.forensicVerification.note)}` : ""}</div>` : ""}
                     <br/><br/>
                     <strong>Educational Advisory:</strong> ${escapeHtml(rf.explanation)}<br/><br/>
@@ -4198,6 +4201,11 @@ export default function DocumentAnalyzerTab() {
                                   }`}>
                                     {flag.severity}
                                   </span>
+                                  {flag.modelSeverity && flag.modelSeverity !== flag.severity && (
+                                    <span className="text-[10px] font-sans text-slate-600" title={flag.severityCapReason || ""}>
+                                      Model severity: {flag.modelSeverity}. {flag.severityCapReason || "Limited by the quotation check."}
+                                    </span>
+                                  )}
                                   <span className="font-sans font-bold text-rose-800 text-xs px-2 py-0.5 bg-rose-50 rounded-md border border-rose-100">
                                     {flag.category}
                                   </span>
@@ -4207,18 +4215,18 @@ export default function DocumentAnalyzerTab() {
                                     </span>
                                   )}
                                   {factCheckEnabled && (() => {
-                                    // "Confirmed" means the section is in CYFSA Navigator's confirmed statute
-                                    // reference list - not that an external legal database was checked.
-                                    const confirmed = flag.citationStatus === "CONFIRMED_REFERENCE";
-                                    const unverified = flag.citationStatus === "UNVERIFIED" || /unverified/i.test(flag.legalReference || "");
+                                    // An internal-reference match is NOT verification against official legislation.
+                                    const status = effectiveCitationStatus(flag);
+                                    const matched = status === "INTERNAL_REFERENCE_MATCH";
+                                    const none = status === "NONE";
                                     return (
                                       <span
                                         className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
-                                          confirmed ? "bg-emerald-100 text-emerald-800" : unverified ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700"
+                                          matched ? "bg-sky-100 text-sky-800" : none ? "bg-slate-100 text-slate-700" : "bg-rose-100 text-rose-800"
                                         }`}
-                                        title={confirmed ? "Section is in the confirmed statute reference list" : "Confirm this citation with counsel"}
+                                        title={flag.citationReason || "Confirm this citation with counsel"}
                                       >
-                                        {confirmed ? "Citation in confirmed reference" : unverified ? "Citation unverified" : "No citation"}
+                                        {matched ? "Internal reference match (not verified)" : none ? "No statute cited" : "Citation unverified"}
                                       </span>
                                     );
                                   })()}
@@ -4265,15 +4273,24 @@ export default function DocumentAnalyzerTab() {
                                   <p className="italic text-slate-800 leading-relaxed font-sans bg-white p-3 border-l-4 border-amber-400 rounded-r-lg border-y border-r border-slate-200 text-xs shadow-2xs">
                                     "{flag.phraseDetected}"
                                   </p>
-                                  {flag.quoteVerified === true && (
-                                    <p className="text-[10.5px] font-sans text-emerald-700 flex items-center gap-1">
-                                      <Check className="w-3 h-3 shrink-0" /> Found word-for-word in your document.
-                                    </p>
+                                  {(() => {
+                                    const display = QUOTE_DISPLAY[effectiveQuoteStatus(flag)];
+                                    const page = flag.quoteLocation?.page;
+                                    return display.verified ? (
+                                      <p className="text-[10.5px] font-sans text-emerald-700 flex items-center gap-1">
+                                        <Check className="w-3 h-3 shrink-0" /> {display.label}{page ? ` (page ${page})` : ""}
+                                      </p>
+                                    ) : (
+                                      <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                                        ⚠️ {display.label}{page ? ` (page ${page})` : ""}
+                                      </p>
+                                    );
+                                  })()}
+                                  {flag.verificationNote && (
+                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800">{flag.verificationNote}</p>
                                   )}
-                                  {flag.quoteVerified === false && (
-                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                                      ⚠️ Not found word-for-word in your document. Treat this as a paraphrase and check the original wording before relying on it.
-                                    </p>
+                                  {flag.classificationCaveat && (
+                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800">{flag.classificationCaveat}</p>
                                   )}
                                 </div>
                               )}

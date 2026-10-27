@@ -19,7 +19,19 @@
 import { AnalyzerError, logAnalyzerDiagnostic } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
 import type { AnalysisStage } from "./analyzerStreaming.js";
-import { verifyQuote } from "./pageSources.js";
+import {
+  classifyCitation,
+  type CitationStatus,
+  type IdentifiedAct,
+} from "../../shared/citationVerification.js";
+import {
+  isVerbatimQuoteStatus,
+  locateQuote,
+  severityCeiling,
+  VERIFICATION_STATUS,
+} from "../../shared/quoteVerification.js";
+
+export { isVerbatimQuoteStatus };
 
 export type SectionKey = "overview" | "redFlags" | "chronology" | "guidance" | "thresholds" | "timeline";
 
@@ -458,95 +470,100 @@ export function parseJsonObject(text: string): any | null {
 
 export type QuoteStatus = string;
 
-function normalizeForQuote(s: string): string {
-  return s
-    .replace(/[‘’‚‛]/g, "'")
-    .replace(/[“”„‟]/g, '"')
-    .replace(/[–—]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-/** Checks a claimed quotation against the source text. Only EXACT/NORMALIZED_WHITESPACE count as verbatim. */
+/** Checks a claimed quotation against the source text. Match rules live in shared/quoteVerification.ts. */
 export function verifyQuoteAgainstSource(source: string, quote: string): QuoteStatus {
-  const q = (quote || "").trim().replace(/^["'“‘]+|["'”’]+$/g, "").trim();
-  if (!q || !source) return "ABSENT";
-  // The app-wide verifier first (EXACT / NORMALIZED_WHITESPACE / AMBIGUOUS = present more than
-  // once), then a punctuation-normalized fallback for curly quotes and dashes that OCR or the
-  // model may have straightened.
-  const status = verifyQuote(source, q).status;
-  if (status === "EXACT" || status === "NORMALIZED_WHITESPACE" || status === "AMBIGUOUS") return status;
-  if (normalizeForQuote(source).includes(normalizeForQuote(q))) return "NORMALIZED_PUNCTUATION";
-  return "ABSENT";
+  return locateQuote(source, quote).status;
 }
 
-export function isVerbatimQuoteStatus(status: string): boolean {
-  return ["EXACT", "NORMALIZED_WHITESPACE", "AMBIGUOUS", "NORMALIZED_PUNCTUATION"].includes(status);
-}
+/** Customer-facing reason a red flag's severity was limited. Only set when the displayed severity is lowered. */
+const SEVERITY_CAP_REASON: Record<string, string> = {
+  ABSENT: "The quoted passage could not be located in the uploaded text, so the severity is limited until it is found.",
+  AMBIGUOUS: "The quoted wording appears in more than one place, so the severity is limited until the passage is confirmed.",
+  CASE_OR_PUNCTUATION_VARIANT: "The quoted wording does not match the document exactly, so the severity is limited until it is checked.",
+};
+
+const VERIFICATION_NOTE: Record<string, string> = {
+  ABSENT:
+    "The quoted passage could not be located in the uploaded document. This point is the analyzer's reading, not a located passage. Treat it as an unverified allegation.",
+  AMBIGUOUS: "The quoted wording appears in more than one place. Confirm which passage this point refers to.",
+  CASE_OR_PUNCTUATION_VARIANT:
+    "The quoted wording differs from the document in capitalisation or punctuation. Check the passage before relying on this point.",
+};
+
+const CORROBORATION_LABELS = new Set(["CORROBORATED", "DOCUMENTARY", "DIRECT"]);
 
 /**
- * Provisions whose text the app has compared against the bundled CYFSA text (src/utils/statuteReference.ts).
- * Only these may be labelled CONFIRMED_REFERENCE. A section number alone is not a check: 94(5) and 125(1)
- * exist in the bundled text but have no compared entry here, so they stay UNVERIFIED. This must mirror
- * the keys of BUNDLED_STATUTE_ENTRIES; a test enforces that. This is a local reference list, not an
- * external legal database lookup, and the report says so.
+ * Citation check for one statute reference. Classification is in shared/citationVerification.ts.
+ * Returns the text (with the unverified note appended when the citation is not an internal-reference match), the status,
+ * the identified Act, and the reason. The original text is kept; nothing is removed.
  */
-export const CONFIRMED_SECTION_KEYS = ["74(2)", "81(7)", "88", "94(1)", "94(2)"] as const;
-const CONFIRMED_SECTION_PATTERNS = CONFIRMED_SECTION_KEYS.map((key) => new RegExp(`^${key.replace(/[()]/g, "\\$&")}$`));
-
-/**
- * Every section number a citation names, including lists such as "ss. 74(2) and 125(1)" or
- * "s. 74(2), 94(5)". Only numbers introduced by a section keyword count, so "S.O. 2017, c. 14" adds nothing.
- */
-function citedSections(text: string): string[] {
-  const out: string[] = [];
-  // Keyword, then a list of items: "74(2)" or a bare subsection "(5)" continuing the previous section.
-  const list = /\b(?:s|ss|sec|secs|section|sections|subs?|subsections?)\.?\s*((?:(?:\d{1,3}(?:\(\d+\))*|\(\d+\))(?:\([a-z]\))*(?:\s*(?:,|and|or|&|to|-|–)\s*)?)+)/gi;
-  for (const m of text.matchAll(list)) {
-    let base = "";
-    for (const item of m[1].matchAll(/(\d{1,3})((?:\(\d+\))*)|\((\d+)\)/g)) {
-      if (item[1]) {
-        base = item[1];
-        out.push(item[1] + item[2]);
-      } else if (base) {
-        out.push(`${base}(${item[3]})`);
-      }
-    }
-  }
-  return out;
-}
-
-/** Returns the citation text, with the unverified note appended when it names an unconfirmed section. */
-export function guardCitation(text: string): { text: string; status: "CONFIRMED_REFERENCE" | "UNVERIFIED" | "NONE" } {
+export function guardCitation(text: string): {
+  text: string;
+  status: CitationStatus;
+  identifiedAct: IdentifiedAct;
+  reason: string;
+} {
   const t = str(text);
-  if (!t) return { text: t, status: "NONE" };
-  if (/unverified/i.test(t)) return { text: t, status: "UNVERIFIED" };
-  const sections = citedSections(t);
-  const clra = /\bCLRA\b|Children's Law Reform Act/i.test(t);
-  // A regulation's subsection can share a number with a CYFSA section, so a citation naming one is never confirmed.
-  const otherInstrument = /\bregulations?\b|\breg\b/i.test(t);
-  const unconfirmed = clra || otherInstrument || sections.some((s) => !CONFIRMED_SECTION_PATTERNS.some((p) => p.test(s)));
-  if (unconfirmed) return { text: `${t} ${UNVERIFIED_CITATION_NOTE}`, status: "UNVERIFIED" };
-  return { text: t, status: sections.length ? "CONFIRMED_REFERENCE" : "NONE" };
+  const c = classifyCitation(t);
+  if (c.status === "UNVERIFIED" && !/unverified/i.test(t)) {
+    return { text: `${t} ${UNVERIFIED_CITATION_NOTE}`, status: "UNVERIFIED", identifiedAct: c.identifiedAct, reason: c.reason };
+  }
+  return { text: t, status: c.status, identifiedAct: c.identifiedAct, reason: c.reason };
 }
 
-/** Applies quote verification and citation guards across an assembled report (mutates and returns it). */
+/**
+ * Applies quote verification and citation checks across an assembled report (mutates and returns it).
+ *
+ * Red flags keep the model's original severity in `modelSeverity` and every model-written field. Only the displayed
+ * severity can be lowered, and only when the quotation is not located exactly. A point whose quoted passage is not
+ * found is kept, marked as an unverified allegation, and cannot be shown as corroborated.
+ */
 export function applyReportGuards(report: Record<string, any>, sourceText: string): Record<string, any> {
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
-    const status = verifyQuoteAgainstSource(sourceText, flag.phraseDetected);
-    flag.quoteVerification = status;
-    flag.quoteVerified = isVerbatimQuoteStatus(status);
+    if (!flag || typeof flag !== "object") continue;
+    if (flag.modelSeverity === undefined) flag.modelSeverity = flag.severity;
+    const loc = locateQuote(sourceText, flag.phraseDetected);
+    flag.quoteVerification = loc.status;
+    flag.quoteVerified = isVerbatimQuoteStatus(loc.status);
+    flag.verificationStatus = VERIFICATION_STATUS[loc.status];
+    flag.quoteLocation = { page: loc.page, startOffset: loc.startOffset, endOffset: loc.endOffset };
+
+    const ceiling = severityCeiling(loc.status);
+    const current = typeof flag.severity === "string" ? flag.severity : "";
+    if (current && (SEVERITY_RANK[current] ?? 0) > SEVERITY_RANK[ceiling]) {
+      flag.severity = ceiling;
+      flag.severityCapReason = SEVERITY_CAP_REASON[loc.status];
+    }
+    const note = VERIFICATION_NOTE[loc.status];
+    if (note) flag.verificationNote = note;
+    if (loc.status === "ABSENT" && CORROBORATION_LABELS.has(flag.evidenceClassification)) {
+      flag.classificationCaveat = `The analyzer labelled this point ${flag.evidenceClassification}, but the passage behind that label was not located. It is not shown as corroborated.`;
+    }
+
     const g = guardCitation(flag.legalReference);
     flag.legalReference = g.text;
     flag.citationStatus = g.status;
+    flag.citationReason = g.reason;
+    flag.identifiedAct = g.identifiedAct;
   }
+  applyCitationGuards(report);
+  return report;
+}
+
+/**
+ * Citation checks for the threshold and timeline sections. Used by the sectioned pipeline and by Deep Scan, so both
+ * report the same citation terms. Mutates and returns the report.
+ */
+export function applyCitationGuards(report: Record<string, any>): Record<string, any> {
   for (const t of Array.isArray(report.thresholdAnalysis) ? report.thresholdAnalysis : []) {
+    if (!t || typeof t !== "object") continue;
     const g = guardCitation(t.primarySourceLaw);
     t.primarySourceLaw = g.text;
     t.citationStatus = g.status;
+    t.citationReason = g.reason;
   }
   for (const item of Array.isArray(report.proceduralTimelineViolations) ? report.proceduralTimelineViolations : []) {
+    if (!item || typeof item !== "object") continue;
     // s.94(5) is the relative-placement clause, never a "5-day hearing" rule.
     if (/94\(5\)/.test(`${item.evaluation} ${item.citation}`) && /5-day|five-day|five day/i.test(item.evaluation)) {
       item.citation = UNVERIFIED_CITATION_NOTE;
@@ -554,9 +571,11 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
     const g = guardCitation(item.citation);
     item.citation = g.text;
     item.citationStatus = g.status;
+    item.citationReason = g.reason;
   }
   report.citationVerification = {
-    method: "Checked against CYFSA Navigator's confirmed statute reference list. No external legal database was queried.",
+    method:
+      "Each citation was matched to CYFSA Navigator's internal reference text. That text has not been checked against official e-Laws, and no external legal database was queried.",
   };
   return report;
 }

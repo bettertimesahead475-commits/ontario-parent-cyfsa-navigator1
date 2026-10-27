@@ -175,7 +175,7 @@ describe("legacy adapter: source and authority preservation", () => {
   it("maps citation status to an explicit authority status", () => {
     const c = adaptLegacyReport(ORDINARY_AFFIDAVIT);
     expect(c.findings.find((x) => x.legacyId === "rf1")!.authorities[0].status).toBe("CITATION_UNVERIFIED");
-    expect(c.findings.find((x) => x.legacyId === "rf2")!.authorities[0].status).toBe("CONFIRMED_SECTION_NUMBER");
+    expect(c.findings.find((x) => x.legacyId === "rf2")!.authorities[0].status).toBe("INTERNAL_REFERENCE_MATCH");
   });
 
   it("keeps the analyzer's statutory test result as given", () => {

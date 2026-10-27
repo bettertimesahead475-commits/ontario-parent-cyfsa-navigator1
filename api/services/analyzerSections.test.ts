@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { INTERNAL_CYFSA_SECTION_KEYS } from "../../shared/citationVerification";
 import { BUNDLED_STATUTE_ENTRIES } from "../../src/utils/statuteReference";
 import {
   runSectionedAnalysis,
   parseJsonObject,
   guardCitation,
-  CONFIRMED_SECTION_KEYS,
   verifyQuoteAgainstSource,
   mergeVerification,
   buildSectionPrompt,
@@ -223,23 +223,23 @@ describe("deterministic guards", () => {
     expect(parseJsonObject("no json")).toBeNull();
   });
 
-  it("confirms only the sections whose text is compared against the bundled statute", () => {
-    expect([...CONFIRMED_SECTION_KEYS].sort()).toEqual(Object.keys(BUNDLED_STATUTE_ENTRIES).sort());
+  it("matches only the sections whose text is in the bundled internal reference", () => {
+    expect([...INTERNAL_CYFSA_SECTION_KEYS].sort()).toEqual(Object.keys(BUNDLED_STATUTE_ENTRIES).sort());
   });
 
-  it("marks citations outside the confirmed reference as unverified", () => {
+  it("marks citations outside the internal reference as unverified", () => {
     expect(guardCitation("CYFSA 2017, Section 74").status).toBe("UNVERIFIED");
-    expect(guardCitation("CYFSA s. 74(2)").status).toBe("CONFIRMED_REFERENCE");
-    expect(guardCitation("CYFSA, S.O. 2017, c. 14, s. 94(1)").status).toBe("CONFIRMED_REFERENCE");
+    expect(guardCitation("CYFSA s. 74(2)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(guardCitation("CYFSA, S.O. 2017, c. 14, s. 94(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
     const s81 = guardCitation("CYFSA s. 81(7)");
-    expect(s81.status).toBe("CONFIRMED_REFERENCE");
+    expect(s81.status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA s. 94(5)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 125(1)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA ss. 74(2) and 125(1)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 74(2), 94(5)").status).toBe("UNVERIFIED");
-    expect(guardCitation("CYFSA ss. 74(2) and 94(1)").status).toBe("CONFIRMED_REFERENCE");
+    expect(guardCitation("CYFSA ss. 74(2) and 94(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA ss. 94(1) and (5)").status).toBe("UNVERIFIED");
-    expect(guardCitation("CYFSA ss. 94(1) and (2)").status).toBe("CONFIRMED_REFERENCE");
+    expect(guardCitation("CYFSA ss. 94(1) and (2)").status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA s. 94(1) and (2) of the Regulation").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 94(1) of O. Reg. 1/18").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 94(1), R.R.O. 1990, Reg. 1").status).toBe("UNVERIFIED");
@@ -255,7 +255,7 @@ describe("deterministic guards", () => {
   it("only treats a quotation as verified when it is in the source", () => {
     expect(verifyQuoteAgainstSource(DOC, "a neighbour told me")).toBe("EXACT");
     expect(verifyQuoteAgainstSource(DOC, "a  neighbour\ntold me")).toBe("NORMALIZED_WHITESPACE");
-    expect(verifyQuoteAgainstSource("He said “left alone”.", 'He said "left alone".')).toBe("NORMALIZED_PUNCTUATION");
+    expect(verifyQuoteAgainstSource("He said “left alone”.", 'He said "left alone".')).toBe("CASE_OR_PUNCTUATION_VARIANT");
     expect(verifyQuoteAgainstSource(DOC, "the parent admitted neglect")).toBe("ABSENT");
   });
 

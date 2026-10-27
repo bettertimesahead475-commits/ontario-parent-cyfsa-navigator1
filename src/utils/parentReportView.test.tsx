@@ -121,7 +121,7 @@ describe("buildParentReportView - accuracy of parent-facing claims", () => {
     });
     const whatHappened = view.findings[0].whatHappened;
     expect(whatHappened).not.toMatch(/^The record says/);
-    expect(whatHappened).toMatch(/paraphrase/);
+    expect(whatHappened).toMatch(/could not be found|unverified allegation/);
   });
 
   it("does not say no rights were identified when the rights section was never run", () => {
