@@ -184,3 +184,31 @@ describe("duplicate retries", () => {
     expect(analyzeIds().every((id) => id === firstId)).toBe(true);
   });
 });
+
+describe("removing a document while its analysis runs", () => {
+  it("warns that removing it does not cancel the analysis or restore a credit, and removes nothing until confirmed", async () => {
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === "/api/extract-text") return jsonResponse(200, { extractedText: "A neighbour told me the child was unsafe.", pages: [] });
+      if (url === "/api/analyze") return new Promise(() => {});
+      return jsonResponse(404, {});
+    });
+    const { container } = render(<DocumentAnalyzerTab />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["statement"], "statement.txt", { type: "text/plain" })] } });
+
+    const removeButton = await waitFor(() => {
+      const button = container.querySelector('button[class*="hover:bg-rose-50"]') as HTMLButtonElement | null;
+      if (!button) throw new Error("no remove button yet");
+      return button;
+    });
+    fireEvent.click(removeButton);
+
+    expect(await screen.findByText(/analysis is still running/i)).toBeTruthy();
+    expect(screen.getByText(/does not cancel the analysis on our server/i)).toBeTruthy();
+    expect(screen.getByText(/does not restore the analysis credit/i)).toBeTruthy();
+    expect(screen.getAllByText("statement.txt").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(screen.getAllByText("statement.txt").length).toBeGreaterThan(0);
+  });
+});

@@ -2046,9 +2046,13 @@ export default function DocumentAnalyzerTab() {
 
   // Delete document
   const handleDeleteFile = (id: string, name: string) => {
+    const target = organizedFiles.find(f => f.id === id);
+    const isRunning = target?.analysisStatus === "analyzing" || (id === selectedFileId && (isSingleAnalyzing || isRecoveringJob));
     setConfirmModal({
       message: `Remove "${name}"?`,
-      description: "This will remove the file from your local Case File Organizer. You will need to upload it again to run future audits.",
+      description: isRunning
+        ? "This document's analysis is still running. Removing it does not cancel the analysis on our server, and it does not restore the analysis credit this run used. The result may still finish on the server, but it will not appear here."
+        : "This will remove the file from your local Case File Organizer. You will need to upload it again to run future audits.",
       onConfirm: () => {
         setOrganizedFiles(prev => prev.filter(f => f.id !== id));
         if (selectedFileId === id) {

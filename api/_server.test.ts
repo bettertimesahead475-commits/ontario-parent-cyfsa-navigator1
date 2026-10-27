@@ -182,6 +182,18 @@ vi.mock("nodemailer", () => ({
 
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
+const mockFreeScan = vi.hoisted(() => ({
+  // Mirrors free_reserve_scan: refuses at the allowance, otherwise reserves one unit. Reads the counter through the
+  // mocked usage store, so the limit and fail-closed scenarios below still drive the route.
+  reserveFreeScan: vi.fn(async ({ uid, limit }: { uid: string; limit: number }) => {
+    const used = await (mockUsage.getFreeUsage as (uid: string) => Promise<number>)(uid);
+    if (used >= limit) return { status: "limit", reservationId: null, used };
+    return { status: "reserved", reservationId: `res_${uid}`, used: used + 1 };
+  }),
+  finalizeFreeScan: vi.fn(async () => {}),
+  releaseFreeScan: vi.fn(async () => {}),
+}));
+vi.mock("./services/freeScanReservation.js", () => mockFreeScan);
 vi.mock("./services/usage.js", () => mockUsage);
 vi.mock("./services/gmailAgent.js", () => mockGmailAgent);
 vi.mock("./services/cases.js", () => mockCases);
@@ -862,7 +874,7 @@ describe("POST /api/analyze", () => {
       .set("Authorization", "Bearer valid-firebase-token")
       .send({ textContent: "some text" });
     expect(res.status).toBe(200);
-    expect(mockUsage.recordFreeUse).toHaveBeenCalledWith("uid-1", "parent@example.com");
+    expect(mockFreeScan.finalizeFreeScan).toHaveBeenCalledWith(expect.objectContaining({ uid: "uid-1" }));
 
     mockUsage.getFreeUsage.mockResolvedValue(1); // already used their one free analysis
     const res2 = await request(app)

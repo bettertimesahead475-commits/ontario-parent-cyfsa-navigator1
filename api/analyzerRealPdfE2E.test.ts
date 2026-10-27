@@ -108,6 +108,18 @@ vi.mock("@google/genai", () => ({
 
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
+const mockFreeScan = vi.hoisted(() => ({
+  // Mirrors free_reserve_scan: refuses at the allowance, otherwise reserves one unit. Reads the counter through the
+  // mocked usage store, so the limit and fail-closed scenarios below still drive the route.
+  reserveFreeScan: vi.fn(async ({ uid, limit }: { uid: string; limit: number }) => {
+    const used = await (mockUsage.getFreeUsage as (uid: string) => Promise<number>)(uid);
+    if (used >= limit) return { status: "limit", reservationId: null, used };
+    return { status: "reserved", reservationId: `res_${uid}`, used: used + 1 };
+  }),
+  finalizeFreeScan: vi.fn(async () => {}),
+  releaseFreeScan: vi.fn(async () => {}),
+}));
+vi.mock("./services/freeScanReservation.js", () => mockFreeScan);
 vi.mock("./services/usage.js", () => mockUsage);
 
 process.env.VERCEL = "1";
@@ -419,7 +431,7 @@ describe("Authentic End-to-End Real PDF Analyzer Verification", () => {
     expect(res.status).toBe(503);
     expect(res.body.error).toBeDefined();
 
-    // Because Claude failed before recordFreeUse succeeded, freeUsesCount remains 0 and decrementCalls is 0
+    // Because Claude failed before the free reservation was finalized, freeUsesCount remains 0 and decrementCalls is 0
     expect(freeUsesCount).toBe(0);
     expect(decrementCalls).toBe(0);
   });

@@ -38,7 +38,8 @@ import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.j
 import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./services/pageSources.js";
 import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
-import { getFreeUsage, recordFreeUse, decrementFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
+import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
+import { reserveFreeScan, finalizeFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
@@ -1946,7 +1947,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let streamEmitter: SseStreamEmitter | null = null;
     let isPaid = false;
     let uid: string | null = null;
-    let freeUseRecorded = false;
+    // A free scan reserved for this request. It is released if the analysis fails, and finalized once delivered.
+    let freeScanReservation: { reservationId: string } | null = null;
+    let freeScanFinalized = false;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -2233,8 +2236,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           httpStatus: 200,
           dbProjectRef,
         });
-        const used = await getFreeUsage(uid, userEmail);
-        if (used >= FREE_ANALYSES_LIMIT) {
+        // Reserve this free scan before the analysis runs. The reservation is one atomic database step, so requests
+        // on any instance cannot take more scans than the allowance. It is released if the analysis or its delivery
+        // fails, and finalized once the report has been delivered. A database failure refuses the request (503).
+        const scan = await reserveFreeScan({ uid, requestId: analysisRequestId, limit: FREE_ANALYSES_LIMIT });
+        if (scan.status === "limit") {
           logAnalyzerTraceStage({
             requestId: analysisRequestId,
             stage: 6,
@@ -2242,7 +2248,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             httpStatus: 402,
             errorCode: "FREE_LIMIT_REACHED",
             dbProjectRef,
-            details: { used, limit: FREE_ANALYSES_LIMIT },
+            details: { used: scan.used, limit: FREE_ANALYSES_LIMIT },
           });
           logAnalyzerTraceStage({
             requestId: analysisRequestId,
@@ -2256,10 +2262,25 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           return res.status(402).json({
             error: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access to continue.",
             code: "FREE_LIMIT_REACHED",
-            usedCount: used,
+            usedCount: scan.used,
             limit: FREE_ANALYSES_LIMIT
           });
         }
+        if (scan.status === "consumed") {
+          return res.status(409).json({
+            error: "This analysis was already completed. Open its saved report instead.",
+            code: "ANALYSIS_ALREADY_COMPLETED",
+          });
+        }
+        if (scan.status !== "reserved" || !scan.reservationId) {
+          // The same request is already running (or its reservation is still live): one scan, one analysis.
+          return res.status(409).json({
+            error: "This analysis is already running. We'll show the results as soon as it finishes.",
+            code: "ANALYSIS_IN_PROGRESS",
+            jobId: analysisRequestId,
+          });
+        }
+        freeScanReservation = { reservationId: scan.reservationId };
       }
 
       logAnalyzerTraceStage({
@@ -2462,8 +2483,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         };
       } else if (!isPaid && uid) {
         try {
-          await recordFreeUse(uid, userEmail);
-          freeUseRecorded = true;
+          // The scan was counted when it was reserved; this only reads the count for the response.
           const used = await getFreeUsage(uid);
           credits = {
             tier: "Free",
@@ -2520,6 +2540,19 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         res.json(report);
       }
 
+      // The report has been handed to the parent: the free scan is now used up. Until this point a failure
+      // releases the reservation, so a scan is never lost to a delivery that did not happen.
+      if (freeScanReservation && uid) {
+        try {
+          await finalizeFreeScan({ uid, requestId: analysisRequestId });
+          freeScanFinalized = true;
+        } catch (finalizeErr) {
+          // The report is already delivered and must not be withheld. The reservation expires and is released
+          // by reconciliation, which can return this scan. Logged so the gap is visible.
+          console.error("[document analysis] Failed to finalize free scan (non-fatal):", finalizeErr);
+        }
+      }
+
     } catch (error: any) {
       if (creditReservation && paidSessionId) {
         try {
@@ -2534,8 +2567,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         }
       }
 
-      if (freeUseRecorded && uid) {
-        await decrementFreeUse(uid).catch(() => {});
+      if (freeScanReservation && uid && !freeScanFinalized) {
+        await releaseFreeScan({ uid, requestId: analysisRequestId, reservationId: freeScanReservation.reservationId }).catch(
+          (releaseErr) => console.error("[document analysis] Failed to release free scan:", releaseErr)
+        );
       }
 
       if (getAnalysisJob(analysisRequestId)) {
