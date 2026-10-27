@@ -20,6 +20,8 @@ import {
   analysisIdForRetry,
   type RecoveryState,
 } from "../utils/analysisJobResume";
+import { runAnalysisWithRetry, recoverAnalysisReport } from "../utils/analysisRetry";
+import { newAnalysisJobId } from "../../shared/analyzerRetryPolicy";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -73,6 +75,8 @@ import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
+import { effectiveCitationStatus } from "../../shared/citationVerification";
+import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -533,24 +537,29 @@ export default function DocumentAnalyzerTab() {
     setDeepScanError(null);
 
     try {
-      const response = await apiFetch("/api/deep-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          documentText: file.content,
-          documentName: file.name,
-          category: file.category,
-          model: claudeModel,
-          // Gives the deep scan the first-pass report already run for this file, so it can
-          // dig into what that pass missed instead of re-finding the same red flags.
-          priorAnalysis: file.analysisReport || null
-        })
+      // One id per Deep Scan click, reused by every retry, so the server answers a retry with the saved report or the
+      // running job rather than running (and charging for) the scan again.
+      const scanId = newAnalysisJobId();
+      const data = await runAnalysisWithRetry({
+        attempt: async () => {
+          const response = await apiFetch("/api/deep-scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Analysis-Id": scanId },
+            body: JSON.stringify({
+              documentText: file.content,
+              documentName: file.name,
+              category: file.category,
+              model: claudeModel,
+              // Gives the deep scan the first-pass report already run for this file, so it can
+              // dig into what that pass missed instead of re-finding the same red flags.
+              priorAnalysis: file.analysisReport || null
+            })
+          });
+          // A non-2xx response throws an ApiResponseError that the shared policy classifies.
+          return safeReadJson(response);
+        },
+        recover: () => recoverAnalysisReport(scanId),
       });
-
-      const data = await safeReadJson(response);
-      if (!response.ok) {
-        throw new Error(data.error || `Deep scan failed (${response.status})`);
-      }
       const report = { ...data, timestamp: new Date().toLocaleDateString() };
 
       const updated = { ...deepScanReports, [file.id]: report };
@@ -1686,96 +1695,81 @@ export default function DocumentAnalyzerTab() {
             activeCount++;
 
             (async () => {
-              let attempts = 0;
-              const maxAttempts = 3;
-              let success = false;
-              let delayMs = 1500;
+              // One id for every attempt on this file. A retry therefore reaches the same analysis on the server: a
+              // saved report is returned, a running job is followed, and nothing is charged twice.
+              const fileAnalysisId = newAnalysisJobId();
+              let textForFile = file.content;
+              try {
+                const dataResult = await runAnalysisWithRetry({
+                  attempt: async () => {
+                    const payload: any = {};
+                    let extractedText = file.content;
+                    if (extractedContentById[file.id]) {
+                      extractedText = extractedContentById[file.id];
+                    }
 
-              while (attempts < maxAttempts && !success) {
-                try {
-                  const payload: any = {};
-                  let extractedText = file.content;
-                  if (extractedContentById[file.id]) {
-                    extractedText = extractedContentById[file.id];
-                  }
+                    const isRawBase64 = file.mimeType !== "text/plain" &&
+                      (extractedText.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(extractedText.slice(0, 100)));
 
-                  const isRawBase64 = file.mimeType !== "text/plain" && 
-                    (extractedText.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(extractedText.slice(0, 100)));
+                    if (!isRawBase64) {
+                      payload.textContent = extractedText;
+                    } else {
+                      const extractResponse = await apiFetch("/api/extract-text", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          fileData: { base64: file.content, mimeType: file.mimeType, fileName: file.name },
+                        }),
+                      });
+                      // safeReadJson throws an ApiResponseError (status, code, retryable) for any non-2xx response.
+                      const extractResult = await safeReadJson(extractResponse);
+                      if (!extractResult.extractedText) {
+                        throw new Error("No readable text could be extracted from this document.");
+                      }
+                      payload.textContent = extractResult.extractedText;
+                      extractedContentById[file.id] = extractResult.extractedText;
+                      setOrganizedFiles(prev => prev.map(f => f.id === file.id
+                        ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+                    }
+                    textForFile = payload.textContent;
 
-                  if (!isRawBase64) {
-                    payload.textContent = extractedText;
-                  } else {
-                    const extractResponse = await apiFetch("/api/extract-text", {
+                    const response = await apiFetch("/api/analyze", {
                       method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        fileData: { base64: file.content, mimeType: file.mimeType, fileName: file.name },
-                      }),
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-Analysis-Id": fileAnalysisId,
+                      },
+                      body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
                     });
-                    const extractResult = await safeReadJson(extractResponse);
-                    if (!extractResponse.ok) {
-                      throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
-                    }
-                    if (!extractResult.extractedText) {
-                      throw new Error("No readable text could be extracted from this document.");
-                    }
-                    payload.textContent = extractResult.extractedText;
-                    extractedContentById[file.id] = extractResult.extractedText;
-                    setOrganizedFiles(prev => prev.map(f => f.id === file.id
-                      ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
-                  }
+                    // A non-2xx response throws an ApiResponseError that the shared policy classifies.
+                    return safeReadJson(response);
+                  },
+                  recover: () => recoverAnalysisReport(fileAnalysisId),
+                  onWait: (wait) => {
+                    setBulkProgress(`${file.name}: ${wait.reason} Trying again in ${Math.round(wait.waitMs / 1000)} seconds.`);
+                  },
+                });
 
-                  const response = await apiFetch("/api/analyze", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
-                  });
+                // Update UI for this individual file as soon as it's done. The real extracted text is persisted onto
+                // content, so downstream features (Cross-Document Timeline, case chat) read the document's text.
+                setOrganizedFiles(prev => prev.map(f =>
+                  f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: dataResult, analysisError: undefined, content: textForFile || f.content } : f
+                ));
+                // Show the first completed report so its case brief and handover are usable,
+                // including when an earlier file in the batch failed.
+                setSelectedReport(current => current ?? dataResult);
+                autoUploadToTemplates(dataResult, file.name, file.id);
+                extractedContentById[file.id] = textForFile || file.content;
 
-                  // safeReadJson throws an ApiResponseError (status/code/retryable) for any
-                  // non-2xx response; the catch below decides whether a retry can help. The
-                  // status checks that used to sit here ran only after that throw, so they were
-                  // unreachable: "sign in" / "free limit reached" were retried three times and the
-                  // reason never reached the parent.
-                  const dataResult = await safeReadJson(response);
-
-                  // Update UI for this individual file as soon as it's done
-                  // BUG FIX (flagged in audit): this used to leave f.content as the original
-                  // raw base64 for every non-text upload forever, even after the real text was
-                  // just extracted above for the analyze call. Every feature that reads
-                  // organizedFiles[i].content downstream of upload (Cross-Document Timeline,
-                  // RAG case chat) was silently being fed base64 garbage instead of the
-                  // document's actual text for every PDF/image, which is nearly all real
-                  // uploads. Persisting payload.textContent here (the real extracted text used
-                  // for this very analysis) is the fix.
-                  setOrganizedFiles(prev => prev.map(f =>
-                    f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: dataResult, analysisError: undefined, content: payload.textContent || f.content } : f
-                  ));
-                  // Show the first completed report so its case brief and handover are usable,
-                  // including when an earlier file in the batch failed.
-                  setSelectedReport(current => current ?? dataResult);
-                  autoUploadToTemplates(dataResult, file.name, file.id);
-                  extractedContentById[file.id] = payload.textContent || file.content;
-
-                  completedCount++;
-                  success = true;
-
-                  setBulkProgress(`Audited ${completedCount} of ${totalFiles} files.`);
-
-                } catch (error: any) {
-                  console.error(`Analysis failed for ${file.name}:`, error);
-                  attempts++;
-                  // Do not retry fatal format/truncation errors
-                  const canRetry = error instanceof ApiResponseError ? (error.retryable && error.code !== "AI_RESPONSE_INVALID") : true;
-                  if (!canRetry || attempts >= maxAttempts) {
-                    const reason = error?.message || "Analysis failed. Please retry.";
-                    setOrganizedFiles(prev => prev.map(f =>
-                      f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: reason } : f
-                    ));
-                    break;
-                  }
-                  await new Promise(r => setTimeout(r, delayMs));
-                  delayMs = Math.min(delayMs * 1.5, 10000);
-                }
+                completedCount++;
+                setBulkProgress(`Audited ${completedCount} of ${totalFiles} files.`);
+              } catch (error: any) {
+                console.error(`Analysis failed for ${file.name}:`, error);
+                const reason = error?.message || "Analysis failed. Please retry.";
+                setOrganizedFiles(prev => prev.map(f =>
+                  f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: reason } : f
+                ));
               }
               activeCount--;
               processNext();
@@ -1855,9 +1849,7 @@ export default function DocumentAnalyzerTab() {
 
     // A Retry of a file already started under an id reuses that id: the server answers it from the saved record
     // (or re-runs it under the same credit reservation) instead of charging a second analysis.
-    const analysisId = analysisIdForRetry(file.analysisId, () =>
-      "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9)
-    );
+    const analysisId = analysisIdForRetry(file.analysisId, newAnalysisJobId);
     setOrganizedFiles(prev => prev.map(f => (f.id === file.id ? { ...f, analysisId } : f)));
     // Persist the job ID so it can be recovered after a page reload. Do NOT set activeJobId here:
     // that starts the recovery poller alongside this live request, which overwrote real progress
@@ -1900,78 +1892,39 @@ export default function DocumentAnalyzerTab() {
           ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
       }
 
-      // One analysis per click. If the live connection drops, the analysis keeps running on the
-      // server, so we follow its job record instead of re-sending the request - a re-send could
-      // start (and charge for) a second analysis. A failure the server reports is shown with a
-      // Retry button rather than retried automatically for the same reason.
-      const followServerJob = async () => {
+      // One analysis per click, retried under the shared policy (shared/analyzerRetryPolicy.ts). Every attempt carries
+      // this analysisId, so the server returns the saved report or the running job instead of charging twice. A dropped
+      // connection follows the job record; it never re-sends a new analysis.
+      const followServerJob = () => {
         setStreamingProgress(prev => ({ ...prev, message: "Reconnecting to your analysis on the server..." }));
-        const outcome = await pollAnalysisJob(analysisId, {
-          onProgress: applyJobProgress,
-          isCancelled: () => stopWaitingRef.current,
-          fetcher: apiFetch,
-        });
-        if (outcome.status === "completed") return outcome.report;
-        throw new ApiResponseError(outcome.error.message, outcome.error.statusCode, outcome.error.code, outcome.error.retryable);
+        return recoverAnalysisReport(analysisId, { isCancelled: () => stopWaitingRef.current, onProgress: applyJobProgress });
       };
 
       let report: any = null;
       setAnalyzerState("AUTHENTICATING");
       setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
-      try {
-        // A refusal before the analysis starts (e.g. 503 access service, 429) has no job and no
-        // charge, so it is retried up to 3 times. Retries reuse analysisId: if the first attempt
-        // did start, the server answers 409 ANALYSIS_IN_PROGRESS (or returns the finished report)
-        // instead of running it twice.
-        const postAnalysis = () => apiFetch("/api/analyze", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream, application/json",
-            "X-Analysis-Id": analysisId,
-          },
-          body: JSON.stringify({
-            ...payload,
-            mode: analysisMode,
-            model: claudeModel,
-            stream: true,
-            analysisId,
-          })
-        });
-        let response = await postAnalysis();
-        for (let attempt = 1; ; attempt++) {
+      const postAnalysis = () => apiFetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream, application/json",
+          "X-Analysis-Id": analysisId,
+        },
+        body: JSON.stringify({
+          ...payload,
+          mode: analysisMode,
+          model: claudeModel,
+          stream: true,
+          analysisId,
+        })
+      });
+      report = await runAnalysisWithRetry({
+        attempt: async () => {
+          const response = await postAnalysis();
           const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
-          if (isStream || response.ok || response.status === 409) break;
-          const body: any = await response.json().catch(() => null);
-          const status = response.status;
-          const retryable = typeof body?.retryable === "boolean" ? body.retryable : status >= 500 || status === 408;
-          if (!retryable || status === 429 || attempt >= 3) {
-            const fallbackMessage =
-              status === 502 || status === 504
-                ? "The server took too long to respond. Your document is safe - please try again in a moment."
-                : status >= 500
-                  ? `The server is temporarily unavailable (${status}). Your document is safe - please try again in a moment.`
-                  : `Server error (${status})`;
-            throw new ApiResponseError(
-              body?.error || fallbackMessage,
-              status,
-              typeof body?.code === "string" ? body.code : null,
-              retryable,
-              status === 429 || body?.isRateLimit === true
-            );
-          }
-          await new Promise(r => setTimeout(r, 1500 * attempt));
-          response = await postAnalysis();
-        }
-
-        if (response.status === 409) {
-          const body = await response.json().catch(() => ({}));
-          if (body?.code !== "ANALYSIS_IN_PROGRESS") {
-            throw new ApiResponseError(body?.error || "This analysis could not be started.", 409, body?.code || null, false);
-          }
-          report = await followServerJob();
-        } else {
-          report = await readAnalysisEventStream(response, {
+          // A JSON reply is a saved report (200) or an error (thrown by safeReadJson with its code and retryable flag).
+          if (!isStream) return safeReadJson(response);
+          return readAnalysisEventStream(response, {
             onStage: (stage, percent, message) => {
               if (stage === "extracting") setAnalyzerState("EXTRACTING");
               else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
@@ -1987,16 +1940,13 @@ export default function DocumentAnalyzerTab() {
               setAnalyzerState("ERROR");
             }
           });
-        }
-      } catch (streamErr: any) {
-        // fetch() rejecting (TypeError) means the network failed; the request may or may not have
-        // reached the server, so ask the server rather than guessing.
-        const interrupted =
-          (streamErr instanceof ApiResponseError && streamErr.code === STREAM_INTERRUPTED) ||
-          streamErr instanceof TypeError;
-        if (!interrupted) throw streamErr;
-        report = await followServerJob();
-      }
+        },
+        recover: followServerJob,
+        isCancelled: () => stopWaitingRef.current,
+        onWait: (wait) => {
+          setStreamingProgress(prev => ({ ...prev, message: `${wait.reason} Trying again in ${Math.round(wait.waitMs / 1000)} seconds.` }));
+        },
+      });
 
       setSelectedReport(report);
       setAnalyzerState("COMPLETE");
@@ -2654,8 +2604,9 @@ export default function DocumentAnalyzerTab() {
                   <div class="threat-body">
                     <strong>Quote Detected in File:</strong><br/>
                     <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div>
-                    ${rf.quoteVerified === true ? `<div style="font-size:11px; color:#047857; margin-top:4px;">Found word-for-word in the document.</div>` : ""}
-                    ${rf.quoteVerified === false ? `<div style="font-size:11px; color:#92400e; margin-top:4px;"><strong>Not found word-for-word in the document</strong> - treat as a paraphrase and check the original wording.</div>` : ""}
+                    <div style="font-size:11px; color:${QUOTE_DISPLAY[effectiveQuoteStatus(rf)].verified ? "#047857" : "#92400e"}; margin-top:4px;">${escapeHtml(QUOTE_DISPLAY[effectiveQuoteStatus(rf)].label)}${rf.quoteLocation?.page ? ` (page ${escapeHtml(String(rf.quoteLocation.page))})` : ""}</div>
+                    ${rf.verificationNote ? `<div style="font-size:11px; color:#92400e; margin-top:4px;">${escapeHtml(rf.verificationNote)}</div>` : ""}
+                    ${rf.classificationCaveat ? `<div style="font-size:11px; color:#92400e; margin-top:4px;">${escapeHtml(rf.classificationCaveat)}</div>` : ""}
                     ${rf.forensicVerification ? `<div style="font-size:11px; color:#334155; margin-top:4px;"><strong>Independent second review: ${escapeHtml(rf.forensicVerification.verdict)}</strong>${rf.forensicVerification.note ? ` - ${escapeHtml(rf.forensicVerification.note)}` : ""}</div>` : ""}
                     <br/><br/>
                     <strong>Educational Advisory:</strong> ${escapeHtml(rf.explanation)}<br/><br/>
@@ -4275,6 +4226,11 @@ export default function DocumentAnalyzerTab() {
                                   }`}>
                                     {flag.severity}
                                   </span>
+                                  {flag.modelSeverity && flag.modelSeverity !== flag.severity && (
+                                    <span className="text-[10px] font-sans text-slate-600" title={flag.severityCapReason || ""}>
+                                      Model severity: {flag.modelSeverity}. {flag.severityCapReason || "Limited by the quotation check."}
+                                    </span>
+                                  )}
                                   <span className="font-sans font-bold text-rose-800 text-xs px-2 py-0.5 bg-rose-50 rounded-md border border-rose-100">
                                     {flag.category}
                                   </span>
@@ -4284,18 +4240,18 @@ export default function DocumentAnalyzerTab() {
                                     </span>
                                   )}
                                   {factCheckEnabled && (() => {
-                                    // "Confirmed" means the section is in CYFSA Navigator's confirmed statute
-                                    // reference list - not that an external legal database was checked.
-                                    const confirmed = flag.citationStatus === "CONFIRMED_REFERENCE";
-                                    const unverified = flag.citationStatus === "UNVERIFIED" || /unverified/i.test(flag.legalReference || "");
+                                    // An internal-reference match is NOT verification against official legislation.
+                                    const status = effectiveCitationStatus(flag);
+                                    const matched = status === "INTERNAL_REFERENCE_MATCH";
+                                    const none = status === "NONE";
                                     return (
                                       <span
                                         className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
-                                          confirmed ? "bg-emerald-100 text-emerald-800" : unverified ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700"
+                                          matched ? "bg-sky-100 text-sky-800" : none ? "bg-slate-100 text-slate-700" : "bg-rose-100 text-rose-800"
                                         }`}
-                                        title={confirmed ? "Section is in the confirmed statute reference list" : "Confirm this citation with counsel"}
+                                        title={flag.citationReason || "Confirm this citation with counsel"}
                                       >
-                                        {confirmed ? "Citation in confirmed reference" : unverified ? "Citation unverified" : "No citation"}
+                                        {matched ? "Internal reference match (not verified)" : none ? "No statute cited" : "Citation unverified"}
                                       </span>
                                     );
                                   })()}
@@ -4342,15 +4298,24 @@ export default function DocumentAnalyzerTab() {
                                   <p className="italic text-slate-800 leading-relaxed font-sans bg-white p-3 border-l-4 border-amber-400 rounded-r-lg border-y border-r border-slate-200 text-xs shadow-2xs">
                                     "{flag.phraseDetected}"
                                   </p>
-                                  {flag.quoteVerified === true && (
-                                    <p className="text-[10.5px] font-sans text-emerald-700 flex items-center gap-1">
-                                      <Check className="w-3 h-3 shrink-0" /> Found word-for-word in your document.
-                                    </p>
+                                  {(() => {
+                                    const display = QUOTE_DISPLAY[effectiveQuoteStatus(flag)];
+                                    const page = flag.quoteLocation?.page;
+                                    return display.verified ? (
+                                      <p className="text-[10.5px] font-sans text-emerald-700 flex items-center gap-1">
+                                        <Check className="w-3 h-3 shrink-0" /> {display.label}{page ? ` (page ${page})` : ""}
+                                      </p>
+                                    ) : (
+                                      <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                                        ⚠️ {display.label}{page ? ` (page ${page})` : ""}
+                                      </p>
+                                    );
+                                  })()}
+                                  {flag.verificationNote && (
+                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800">{flag.verificationNote}</p>
                                   )}
-                                  {flag.quoteVerified === false && (
-                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                                      ⚠️ Not found word-for-word in your document. Treat this as a paraphrase and check the original wording before relying on it.
-                                    </p>
+                                  {flag.classificationCaveat && (
+                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800">{flag.classificationCaveat}</p>
                                   )}
                                 </div>
                               )}

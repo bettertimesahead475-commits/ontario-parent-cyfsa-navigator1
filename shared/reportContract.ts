@@ -40,6 +40,9 @@ export const REPORT_SECTIONS = [
   { id: "S16", slug: "sources_record", number: 16, title: "Sources, Verification and Full Forensic Record" },
 ] as const;
 
+import { effectiveCitationStatus } from "./citationVerification";
+import { effectiveQuoteStatus, type DisplayQuoteStatus } from "./quoteVerification";
+
 export type ReportSectionId = (typeof REPORT_SECTIONS)[number]["id"];
 
 /** A section is EMPTY when its source exists but has no entries; NOT_GENERATED when the analyzer has no source for it yet. */
@@ -65,9 +68,9 @@ export type ConcernStatus =
   | "NOT_APPLICABLE";
 
 /** Whether a quotation was found in the uploaded text. */
-export type QuoteStatus = "CONFIRMED_FROM_SOURCE" | "NOT_FOUND_IN_SOURCE" | "NOT_CHECKED";
+export type QuoteStatus = DisplayQuoteStatus;
 
-export type AuthorityStatus = "CONFIRMED_SECTION_NUMBER" | "CITATION_UNVERIFIED" | "NOT_CHECKED";
+export type AuthorityStatus = "INTERNAL_REFERENCE_MATCH" | "CITATION_UNVERIFIED" | "NOT_CHECKED";
 
 export interface SourceReference {
   documentId: string;
@@ -149,11 +152,12 @@ function text(value: unknown): string {
 
 const UNVERIFIED_LAW = "Citation unverified. Confirm the exact section with a lawyer before relying on it.";
 
-/** The statute text, with the unverified warning attached unless the analyzer's internal list confirms it. */
+/** The statute text, with the unverified warning attached unless it matches the internal reference text. */
 function lawWithStatus(flag: Loose): string {
   const law = text(flag.legalReference);
   if (!law) return "";
-  return text(flag.citationStatus) === "CONFIRMED_REFERENCE" || /unverified/i.test(law) ? law : `${law} ${UNVERIFIED_LAW}`;
+  const internal = effectiveCitationStatus(flag) === "INTERNAL_REFERENCE_MATCH";
+  return internal || /unverified/i.test(law) ? law : `${law} ${UNVERIFIED_LAW}`;
 }
 
 function strings(value: unknown): string[] {
@@ -175,9 +179,10 @@ function sectionOf(id: ReportSectionId) {
 }
 
 function authorityStatus(citationText: string, citationStatus?: string): AuthorityStatus {
-  if (citationStatus === "CONFIRMED_REFERENCE") return "CONFIRMED_SECTION_NUMBER";
-  if (citationStatus === "UNVERIFIED" || /unverified/i.test(citationText)) return "CITATION_UNVERIFIED";
-  return "NOT_CHECKED";
+  const status = effectiveCitationStatus({ legalReference: citationText, citationStatus });
+  if (status === "INTERNAL_REFERENCE_MATCH") return "INTERNAL_REFERENCE_MATCH";
+  if (status === "NONE") return "NOT_CHECKED";
+  return "CITATION_UNVERIFIED";
 }
 
 function authorities(citation: string, citationStatus?: string): LegalAuthorityRef[] {
@@ -185,10 +190,8 @@ function authorities(citation: string, citationStatus?: string): LegalAuthorityR
   return [{ citation, status: authorityStatus(citation, citationStatus) }];
 }
 
-function quoteStatus(value: unknown): QuoteStatus {
-  if (value === true) return "CONFIRMED_FROM_SOURCE";
-  if (value === false) return "NOT_FOUND_IN_SOURCE";
-  return "NOT_CHECKED";
+function quoteStatus(flag: Loose): QuoteStatus {
+  return effectiveQuoteStatus(flag);
 }
 
 function kindFromClassification(classification: string | null): FindingKind {
@@ -353,7 +356,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
         evidenceClassification: classification,
         severity: text(flag.severity) || null,
         concern: isCourtRecord && kindFromClassification(classification) === "EVIDENCE" ? "NOT_APPLICABLE" : concern,
-        quote: quoteStatus(flag.quoteVerified),
+        quote: quoteStatus(flag),
         sources: [{ documentId, locator: text(flag.locationInDocument) || "Location not given", quote: text(flag.phraseDetected) }],
         authorities: authorities(text(flag.legalReference), text(flag.citationStatus)),
       })

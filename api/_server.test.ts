@@ -1078,6 +1078,41 @@ describe("POST /api/deep-scan", () => {
     expect(res.body.gaps).toBeUndefined();
   });
 
+  // Deep Scan results are recoverable like /api/analyze results: the report is saved under the analysis id, so a client
+  // that lost the connection follows the job instead of starting (and paying for) the scan again.
+  it("saves a completed deep scan under its analysis id, so it can be recovered", async () => {
+    mockCreateMessage.mockResolvedValue(claudeJsonResponse(MINIMAL_DEEP_SCAN));
+    const analysisId = `req_${Date.now()}_deepscan01`;
+    const res = await request(app)
+      .post("/api/deep-scan")
+      .set(paid())
+      .set("X-Analysis-Id", analysisId)
+      .send({ documentText: "Some CAS worker observation notes.", documentName: "notes.txt" });
+    expect(res.status).toBe(200);
+
+    const job = await request(app).get(`/api/analyze/job/${analysisId}`).set(paid());
+    expect(job.status).toBe(200);
+    expect(job.body.status).toBe("completed");
+    expect(job.body.report.disclaimer).toContain("informational/educational purposes only");
+  });
+
+  it("records a failed deep scan on its job with the classified error, rather than leaving it running", async () => {
+    // Every section and every retry gets the same unusable reply, so the final error is the one the parent would see.
+    mockCreateMessage.mockImplementation(async () => claudeTextResponse("not json at all"));
+    const analysisId = `req_${Date.now()}_deepscan02`;
+    const res = await request(app)
+      .post("/api/deep-scan")
+      .set(paid())
+      .set("X-Analysis-Id", analysisId)
+      .send({ documentText: "Some document text." });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+
+    const job = await request(app).get(`/api/analyze/job/${analysisId}`).set(paid());
+    expect(job.body.status).toBe("failed");
+    expect(job.body.error.code).toBe("AI_RESPONSE_INVALID");
+    expect(job.body.error.retryable).toBe(true);
+  });
+
   describe("section truncation and retry", () => {
     afterEach(() => {
       mockCreateMessage.mockReset();

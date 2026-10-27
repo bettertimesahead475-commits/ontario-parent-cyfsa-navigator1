@@ -19,13 +19,17 @@ export const CONCERN_LABEL: Record<ConcernStatus, string> = {
 };
 
 export const QUOTE_LABEL: Record<QuoteStatus, string> = {
-  CONFIRMED_FROM_SOURCE: "Quotation confirmed in the uploaded text",
-  NOT_FOUND_IN_SOURCE: "Quotation not found in the uploaded text",
+  EXACT: "Quotation found word-for-word in the uploaded text",
+  NORMALIZED_WHITESPACE: "Quotation found in the uploaded text; line breaks or spacing differ",
+  CASE_OR_PUNCTUATION_VARIANT: "Close match only: capitalisation or punctuation differs from the uploaded text",
+  AMBIGUOUS: "Quotation appears in more than one place in the uploaded text",
+  ABSENT: "Quotation not found in the uploaded text",
+  UNRECORDED_MATCH: "Quotation found; the type of match was not recorded",
   NOT_CHECKED: "Quotation not checked",
 };
 
 export const AUTHORITY_LABEL: Record<AuthorityStatus, string> = {
-  CONFIRMED_SECTION_NUMBER: "Section number is on the app's list of confirmed section numbers. The section text was not compared. Confirm with counsel.",
+  INTERNAL_REFERENCE_MATCH: "Matches CYFSA Navigator's internal reference text only. Not checked against official e-Laws, and not a finding that the section applies. Confirm with counsel.",
   CITATION_UNVERIFIED: "Citation unverified: confirm with counsel",
   NOT_CHECKED: "Citation not checked",
 };

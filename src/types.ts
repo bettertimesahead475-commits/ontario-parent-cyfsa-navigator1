@@ -131,21 +131,36 @@ export interface AnalysisReport {
     locationInDocument?: string; // Exact page or section location where violation is found
     parentActionStep?: string; // Step-by-step visual instruction for parents to debunk this violation
     evidenceClassification?: AuthoritativeEvidenceClassification;
-    /** Server check of phraseDetected against the source text; false = not found verbatim. */
+    /** True only when the quoted words are in the document (exact, or equal after whitespace only). */
     quoteVerified?: boolean;
+    /** Match type from the server's quotation check; see shared/quoteVerification.ts. */
     quoteVerification?: string;
-    /** "UNVERIFIED" when the citation is outside the confirmed statute reference. */
-    citationStatus?: "CONFIRMED_REFERENCE" | "UNVERIFIED" | "NONE";
+    /** Where the quoted passage sits in the source text, when the source carries page markers. */
+    quoteLocation?: { page: number | null; startOffset: number | null; endOffset: number | null };
+    /** LOCATED_EXACT, LOCATED_SPACING_DIFFERS, LOCATED_WORDING_DIFFERS, LOCATED_MULTIPLE_PLACES or NOT_LOCATED. */
+    verificationStatus?: string;
+    verificationNote?: string;
+    /** Set when the quoted passage was not located as the analyzer's original label implies. */
+    classificationCaveat?: string;
+    /** Citation status: an internal-reference match is not verification against official e-Laws. */
+    citationStatus?: "INTERNAL_REFERENCE_MATCH" | "UNVERIFIED" | "NONE" | "CONFIRMED_REFERENCE";
+    citationReason?: string;
+    identifiedAct?: "CYFSA" | "OTHER" | "MULTIPLE" | "NONE";
     forensicVerification?: ForensicFindingVerification;
     /** Severity before the independent verification pass calibrated it down. */
     originalSeverity?: string;
+    /** The model's own severity, kept for audit. The displayed severity may be lower. */
+    modelSeverity?: string;
+    /** Why the displayed severity was limited, when it was. */
+    severityCapReason?: string;
   }[];
   thresholdAnalysis: {
     thresholdChecked: string;
     isMet: "Yes" | "No" | "Inconclusive" | "Not Determinable From This Document";
     reasoning: string;
     primarySourceLaw: string;
-    citationStatus?: "CONFIRMED_REFERENCE" | "UNVERIFIED" | "NONE";
+    citationStatus?: "INTERNAL_REFERENCE_MATCH" | "UNVERIFIED" | "NONE" | "CONFIRMED_REFERENCE";
+    citationReason?: string;
     forensicVerification?: ForensicFindingVerification;
   }[];
   proceduralTimelineViolations: {
