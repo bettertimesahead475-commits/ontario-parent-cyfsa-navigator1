@@ -13,7 +13,7 @@ Nothing here has been implemented. Each step is ordered by risk. Steps marked **
 ## Requires approval (production or external)
 
 6. **Revoke anon/authenticated grants** on the seven tables listed in `DATABASE_MIGRATION_DECISION_MATRIX.md`. Write as a new, reviewed migration. Test on a Supabase branch first. Expected impact: none on RLS-protected reads; server code uses the service role.
-7. **Retire `payment_requests_request_key_unique`** after confirming `payments.reference_number` uniqueness on live. Do not apply the file as-is.
+7. **Move `payment_requests_request_key_unique` out of the pending folder** (already applied on live per migration history; index confirmed). Do not re-run the SQL.
 8. **Reconcile repo migration history** with live (mark applied items, add the five missing ones). No SQL execution.
 9. **Confirm `document_walkthroughs` public read** is intended.
 10. **Split PR #107** into reviewable pieces. Payment and entitlement changes reviewed separately. Owner approves each merge.

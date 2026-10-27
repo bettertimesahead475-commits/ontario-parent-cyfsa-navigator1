@@ -44,7 +44,7 @@ Confirmed on live (read-only):
 - Applied migration `20260909144539` (the `enable_rls_free_usage_gmail_stale` content) is already on live. The repo's pending folder still lists it as blocked.
 - Policies on other tables (`payments`, `users`, `cases`, `documents`, etc.) are keyed to `auth.uid()`. Anonymous callers get no rows.
 - One exception to review: `document_walkthroughs` has `walkthroughs_public` (SELECT, `qual = true`). That may be intentional public content; confirm.
-- Live has **no `payment_requests` table**. The app code uses `payments` (`api/services/access.ts`, `api/_server.ts`). `payment_requests_request_key_unique.sql` targets a table that does not exist on live.
+- **Correction (2026-10-27, release baseline pass):** the earlier note that `payment_requests_request_key_unique.sql` targets a missing table was wrong. The file alters and indexes `public.payments`, which exists on live. Live has `payments.request_key`, `payments.firebase_uid` and unique index `payments_firebase_uid_request_key_uidx`, and migration history records `payment_requests_request_key_unique` (20261023024505) as applied. Live has no `payment_requests` table, but nothing in the app or the migration needs one.
 
 ## P0-5: Email-driven payment activation
 

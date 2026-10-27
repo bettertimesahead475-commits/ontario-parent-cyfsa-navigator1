@@ -13,7 +13,8 @@ Latest applied: `20261025142350` `paid_credit_reservation_functions`. Also appli
 | Pending file | Live state | Decision | Owner approval needed |
 |---|---|---|---|
 | `enable_rls_free_usage_gmail_stale.sql` | Already applied (`20260909144539`). RLS on, 0 policies, anon/authenticated grants remain. | Do **not** re-run. Remove from pending. Add a narrow follow-up migration that REVOKEs `anon`/`authenticated` on `free_usage`, `gmail_processed_messages`, `stale_payment_alerts`, `submissions`, `free_tool_usage`, `access_codes`, `cyfsa_300rule_access_codes`. | Yes |
-| `payment_requests_request_key_unique.sql` (+ rollback, test) | `payment_requests` table does **not exist** on live. App uses `payments`. | Do not apply. Retire it, or rewrite against `payments` after checking `reference_number` uniqueness on live. | Yes |
+| `payment_requests_request_key_unique.sql` (+ rollback, test) | **Recorded as applied** (`20261023024505`). The index it creates, `payments_firebase_uid_request_key_uidx`, exists on live. (Earlier note saying the target table was missing was wrong; it targets `public.payments`.) | No SQL run. Repo bookkeeping only: move the file out of the pending folder. The pending copy is stale. | No (bookkeeping) |
+| `20261005_marketing_agent.sql` (repo `supabase/migrations/`) | **Not in migration history.** No `marketing_*` tables exist on live. | Do not deploy marketing features until this is reviewed and applied to the correct project. | Yes |
 | `create_accounts_foundation.sql` | Applied per earlier check | Mark as applied in repo; no SQL run | No (repo bookkeeping) |
 | `create_navigator_case_ownership_foundation.sql` | Applied per earlier check | Mark as applied in repo | No |
 | `create_navigator_matters_foundation.sql` | Applied per earlier check; `navigator_matters` present, RLS on, 0 policies | Mark as applied in repo | No |
