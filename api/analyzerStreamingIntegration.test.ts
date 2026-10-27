@@ -462,6 +462,47 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
       expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
+    // Duplicate retries. A retry sends the analysis id of an earlier attempt. The server answers it from the saved
+    // record and must not start, charge, or call the model again.
+    it("a retry of a running analysis is refused as in progress, with no second analysis", async () => {
+      createAnalysisJob({ jobId: "req_1700000000002_running001", uid: "test-parent-uid", mode: "fast" });
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer test-token")
+        .set("x-analysis-id", "req_1700000000002_running001")
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("ANALYSIS_IN_PROGRESS");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
+    it("a retry of a completed analysis returns its saved report, with no second analysis", async () => {
+      createAnalysisJob({ jobId: "req_1700000000003_done000001", uid: "test-parent-uid", mode: "fast" });
+      completeAnalysisJob("req_1700000000003_done000001", { documentTitle: "Saved report" });
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer test-token")
+        .set("x-analysis-id", "req_1700000000003_done000001")
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(200);
+      expect(res.body.documentTitle).toBe("Saved report");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
+    it("a retry by a different account never reads or re-runs another account's analysis", async () => {
+      createAnalysisJob({ jobId: "req_1700000000004_other000001", uid: "other-parent-uid", mode: "fast" });
+      completeAnalysisJob("req_1700000000004_other000001", { documentTitle: "Someone else's report" });
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer test-token")
+        .set("x-analysis-id", "req_1700000000004_other000001")
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("ANALYSIS_ID_CONFLICT");
+      expect(res.body).not.toHaveProperty("documentTitle");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
     it("recovers after reauthentication by polling the same job, without starting another analysis", async () => {
       createAnalysisJob({ jobId: "job-auth-resume", uid: "test-parent-uid", mode: "fast" });
 

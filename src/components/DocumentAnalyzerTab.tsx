@@ -9,7 +9,17 @@ import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
-import { readSavedAnalysisJobId, saveAnalysisJobId, forgetAnalysisJobId, keepsSavedJobAfterError, SIGN_IN_REQUIRED_CODE } from "../utils/analysisJobResume";
+import {
+  readSavedAnalysisJobId,
+  saveAnalysisJobId,
+  forgetAnalysisJobId,
+  keepsSavedJobAfterError,
+  recoveryStateFor,
+  showsSavedJobBanner,
+  recoveryCopy,
+  analysisIdForRetry,
+  type RecoveryState,
+} from "../utils/analysisJobResume";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -75,7 +85,7 @@ const REPORT_SECTION_LABELS: Record<string, string> = {
 };
 
 /** Failures the server confirmed (job failed => credit released). Unknown outcomes are excluded. */
-const UNCONFIRMED_OUTCOME_CODES = new Set(["RECOVERY_TIMEOUT", "NETWORK_ERROR", STREAM_INTERRUPTED]);
+const UNCONFIRMED_OUTCOME_CODES = new Set(["RECOVERY_TIMEOUT", "NETWORK_ERROR", STREAM_INTERRUPTED, "ANALYSIS_IN_PROGRESS", "JOB_NOT_FOUND", "ANALYSIS_ALREADY_COMPLETED"]);
 
 // Escapes a value for safe interpolation into the raw HTML strings the print/export
 // views build (both as element text and inside HTML attributes like `class="..."`).
@@ -114,6 +124,9 @@ interface OrganizedFile {
   analysisReport?: AnalysisReport;
   // Why the last analysis attempt failed, as reported by the server (shown to the parent).
   analysisError?: string;
+  // The analysis id this file was last started under, kept until it completes. Saved with the file list, so a
+  // Retry after a reload reuses it too (see analysisIdForRetry).
+  analysisId?: string;
   // Legacy local workspace retains structural page attribution. Persistent UUIDs
   // are issued only by the matter-scoped document API, never invented here.
   sourcePages?: { pageNumber: number; text: string; extractionMethod: string; checksum: string }[];
@@ -421,6 +434,8 @@ export default function DocumentAnalyzerTab() {
       setActiveJobId(null);
     };
     setIsRecoveringJob(true);
+    setSingleAnalysisErrorCode(null);
+    setSingleAnalysisError("");
     setAnalyzerState("ANALYZING");
     setStreamingProgress({ stage: "reviewing_evidence", percent: 0, message: "Reconnecting to your analysis on the server..." });
     pollAnalysisJob(activeJobId, { isCancelled: () => cancelled, onProgress: applyJobProgress, fetcher: apiFetch })
@@ -1800,6 +1815,27 @@ export default function DocumentAnalyzerTab() {
     setJobResumeAttempt(n => n + 1);
   };
 
+  // The saved-job banner shows only for states where the job may still be on the server.
+  const recoveryState = recoveryStateFor(singleAnalysisErrorCode);
+  const savedJobBannerState: RecoveryState | null = showsSavedJobBanner(recoveryState) ? recoveryState : null;
+
+  // Polls the saved job again. The job id is the one already on the server; nothing new is started.
+  const checkSavedJobAgain = (jobId: string) => {
+    setSingleAnalysisErrorCode(null);
+    setSingleAnalysisError("");
+    setActiveJobId(jobId);
+    setJobResumeAttempt(n => n + 1);
+  };
+
+  // The parent chose to stop following a job the server no longer has. Only the saved pointer is removed;
+  // the file's in-session analysis id stays so an explicit Start again reuses it.
+  const dismissSavedJob = () => {
+    forgetAnalysisJobId();
+    setActiveJobId(null);
+    setSingleAnalysisErrorCode(null);
+    setSingleAnalysisError("");
+  };
+
   // Re-run single analysis on demand
   const triggerSingleAnalysis = async (file: OrganizedFile) => {
     if (analysisInFlightRef.current || isRecoveringJob) return; // never two analyses at once
@@ -1817,7 +1853,12 @@ export default function DocumentAnalyzerTab() {
       f.id === file.id ? { ...f, analysisStatus: "analyzing", analysisError: undefined } : f
     ));
 
-    const analysisId = "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+    // A Retry of a file already started under an id reuses that id: the server answers it from the saved record
+    // (or re-runs it under the same credit reservation) instead of charging a second analysis.
+    const analysisId = analysisIdForRetry(file.analysisId, () =>
+      "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9)
+    );
+    setOrganizedFiles(prev => prev.map(f => (f.id === file.id ? { ...f, analysisId } : f)));
     // Persist the job ID so it can be recovered after a page reload. Do NOT set activeJobId here:
     // that starts the recovery poller alongside this live request, which overwrote real progress
     // (e.g. during text extraction) with status-endpoint data and left the UI stuck at 45%.
@@ -1966,7 +2007,7 @@ export default function DocumentAnalyzerTab() {
       // real extracted text onto content, not just the analysis report, so the Cross-Document
       // Timeline and RAG case chat get real text instead of leftover raw base64 for this file.
       setOrganizedFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: report, analysisError: undefined, content: payload.textContent || f.content } : f
+        f.id === file.id ? { ...f, analysisStatus: "completed", analysisReport: report, analysisError: undefined, analysisId: undefined, content: payload.textContent || f.content } : f
       ));
       autoUploadToTemplates(report, file.name, file.id);
       autoBuildCaseTimeline(
@@ -3406,15 +3447,25 @@ export default function DocumentAnalyzerTab() {
           {/* TAB 1: FILE ORGANIZER DETAILS & ACTIVE DOCUMENT AUDIT */}
           {activeTab === "organizer" && (
             <div className="h-full space-y-4">
-              {singleAnalysisErrorCode === SIGN_IN_REQUIRED_CODE && activeJobId && !activeSelectedFile && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3 text-center">
-                  <p className="text-sm text-slate-700">Your analysis is saved and will not be started again. Sign in to see it.</p>
-                  <button
-                    onClick={resumeAfterSignIn}
-                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
-                  >
-                    <span>Sign in to continue</span>
-                  </button>
+              {savedJobBannerState && activeJobId && !activeSelectedFile && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3 text-center" role="status">
+                  <p className="text-sm font-semibold text-slate-800">{recoveryCopy(savedJobBannerState).title}</p>
+                  <p className="text-sm text-slate-700">{recoveryCopy(savedJobBannerState).body}</p>
+                  {savedJobBannerState === "sign_in" && (
+                    <button onClick={resumeAfterSignIn} className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-all">
+                      Sign in to continue
+                    </button>
+                  )}
+                  {(savedJobBannerState === "network" || savedJobBannerState === "processing") && (
+                    <button onClick={() => checkSavedJobAgain(activeJobId)} className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-all">
+                      Check again
+                    </button>
+                  )}
+                  {savedJobBannerState === "unavailable" && (
+                    <button onClick={dismissSavedJob} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer transition-all">
+                      Dismiss
+                    </button>
+                  )}
                 </div>
               )}
               {activeSelectedFile ? (
@@ -4618,9 +4669,9 @@ export default function DocumentAnalyzerTab() {
                               {activeSelectedFile.analysisError || singleAnalysisError || "The AI analysis engine is temporarily busy or unreachable. Your document is safe."}
                             </p>
                           </div>
-                          {singleAnalysisErrorCode === "SIGN_IN_REQUIRED" ? (
+                          {recoveryState && recoveryState !== "completed" && recoveryState !== "failed" ? (
                             <div className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                              Your analysis is saved and will not be started again. Sign in to see it.
+                              {recoveryCopy(recoveryState).body}
                             </div>
                           ) : singleAnalysisErrorCode !== "STOPPED_WAITING" && !UNCONFIRMED_OUTCOME_CODES.has(singleAnalysisErrorCode || "") && (
                             <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg p-2.5 text-xs font-medium flex items-center justify-center gap-1.5">
@@ -4628,12 +4679,20 @@ export default function DocumentAnalyzerTab() {
                               <span>This attempt did not use a credit.</span>
                             </div>
                           )}
-                          {singleAnalysisErrorCode === "SIGN_IN_REQUIRED" ? (
+                          {recoveryState === "sign_in" ? (
                             <button
                               onClick={resumeAfterSignIn}
                               className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
                             >
                               <span>Sign in to continue</span>
+                            </button>
+                          ) : (recoveryState === "network" || recoveryState === "processing" || recoveryState === "completed") && activeJobId ? (
+                            <button
+                              onClick={() => checkSavedJobAgain(activeJobId)}
+                              className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                              <span>{recoveryState === "completed" ? "Open saved report" : "Check again"}</span>
                             </button>
                           ) : rateLimitCountdown !== null && rateLimitCountdown > 0 ? (
                             <div className="text-xs text-amber-700 font-sans font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">
