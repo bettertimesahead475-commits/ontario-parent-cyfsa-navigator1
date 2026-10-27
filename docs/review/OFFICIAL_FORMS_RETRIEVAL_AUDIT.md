@@ -171,3 +171,51 @@ Interpretation of the corrupted run: every test that recomputes fixture bytes fa
 - No historical real-artifact test runs in pull-request CI.
 - The release asset does not exist yet. Creating it, and confirming the repository's visibility, is an owner action. This session's GitHub access cannot check either.
 - The structural test's internal-consistency assertion still passes without any file. That is intended, and it is labelled as internal consistency, not artifact verification.
+
+## 11. CI fixture provisioning (prepared, not enabled)
+
+### Verified facts
+- Repository visibility: **public** (`GET /repos/…` returns `private: false`).
+- Actions settings, environments, and releases are not readable from this session (HTTP 403 through the proxy). The GitHub connector failed to connect. Their state is unknown here.
+- `ci.yml` provides no fixtures and no PostgreSQL. Pull-request CI runs zero historical real-artifact tests.
+
+### What changed
+- `scripts/official-forms/fetch-fixtures.mjs`: takes one source folder per set (the two sets share six file names with different bytes, so one folder cannot serve both). Verifies every pinned file in both manifests before writing anything; stages and re-verifies both sets; then moves them into place. Any missing, altered, or unsafe file writes nothing. Output names only the manifest names.
+- `api/services/officialFormFixtureFetch.test.ts` (8 tests): all-or-nothing behaviour, a missing file, a corrupted file in each set, unrelated files ignored, and command-line exit codes. Uses temporary folders only.
+- `api/services/officialFormFixtureRequirement.test.ts`: now covers 18 checks (folder check, 11 historical, 6 current). Off unless `REQUIRE_OFFICIAL_FORMS_FIXTURES=1`.
+- `docs/ci/OFFICIAL_FORMS_FIXTURES_CI.md`: rewritten. The earlier release-asset option is withdrawn, because the repository is public.
+- `docs/ci/official-forms-fixtures.workflow.template.yml`: an inactive template outside `.github/workflows/`. It uses OIDC to Google Cloud, no stored key, `persist-credentials: false`, and `workflow_dispatch` only. Its environment must be restricted to `main` with required reviewers.
+- Not changed: `ci.yml`, all frozen files, and the four comment-only source files.
+
+### Results (current tree)
+Typecheck and build: exit 0 on Node 22 and Node 24.
+
+| Condition | Node | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|---|
+| Fixtures present, PostgreSQL on | 22 | 213 pass, 2 skip | 4,164 | 0 | 24 (6 staging, 18 requirement off) |
+| Fixtures present, PostgreSQL on | 24 | 213 pass, 2 skip | 4,164 | 0 | 24 |
+| Fixtures present, PostgreSQL off | 22 | 202 pass, 13 skip | 3,796 | 0 | 392 (374 + 18 requirement off) |
+| Fixtures present, `REQUIRE_OFFICIAL_FORMS_FIXTURES=1`, PostgreSQL off | 22 | 203 pass, 12 skip | 3,814 | 0 | 374 |
+| Fixtures ABSENT, requirement off (clean machine) | 22 | 200 pass, 15 skip | 3,629 | 0 | 559 |
+| Fixtures ABSENT, requirement ON | 22 | requirement file | 0 | 18 | — (fails closed) |
+| Current fixtures corrupted, requirement ON | 22 | requirement file | 12 | 6 | — (fails closed) |
+| Historical + current fixtures present, fetch script run via tests | 22 | 8 tests | 8 | 0 | 0 |
+
+Checksum pins: no pin changed in this step. All 10 frozen-map pins were re-verified against their files.
+
+### Local verification versus CI coverage
+- Local: all 11 historical and all 6 current fixtures verify against their pins (SHA-256 and byte length) in gitignored folders.
+- CI today: none of these are present. The historical and current real-artifact tests skip. Nothing in CI verifies the historical or current bytes.
+- Proposed CI: the protected manual job in the template. It provides verification only once the owner has created the cloud storage and approved the environment.
+
+### Remaining blockers (owner actions; none performed here)
+1. Confirm the repository's Actions settings and create the `official-forms-fixtures` environment: required reviewers, and deployment branches restricted to `main`.
+2. Create a private Google Cloud bucket and a reader service account (`storage.objectViewer` on the bucket only), and a Workload Identity provider limited to this repository and environment.
+3. Upload the 17 verified files once, under `historical/` and `current/`. This is a one-time upload, not a recurring step.
+4. Set three repository or environment variables (not secrets): `OFFICIAL_FORMS_BUCKET`, `OFFICIAL_FORMS_WIF_PROVIDER`, `OFFICIAL_FORMS_READER_SA`.
+5. Review and copy the template into `.github/workflows/` in a separate change, then run it once from `main`.
+
+### Residual risks
+- After the auth step, repository code runs with a token that can read the bucket. Restricting the environment to `main` is what limits this. The job must never be dispatched from a branch.
+- Pull-request CI still does not run the historical tests.
+- The fixtures are public government forms. The private bucket is an access-control choice, not a confidentiality guarantee.

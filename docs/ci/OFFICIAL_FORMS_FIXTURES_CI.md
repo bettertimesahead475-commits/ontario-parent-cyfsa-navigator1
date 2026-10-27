@@ -1,74 +1,58 @@
-# Providing the historical official-form fixtures to CI (design, not enabled)
+# CI provisioning of the official-form fixtures (design, not enabled)
 
-Status: proposal. No workflow is enabled, no secret is added, and no fixture is committed. Needs a separate review before any step below is turned on.
+Status: design and an inactive template. Nothing is enabled, no secret or variable is created, no fixture is uploaded or committed. Sections 6 and 7 list the owner actions required.
 
-## 1. What CI runs today
+## 1. Verified repository facts (this session)
 
-- `.github/workflows/ci.yml` runs on pull requests and on pushes to `main`. It runs `npm ci`, `npm run lint`, `npm test`, and `npm run build`.
-- It does not set `OFFICIAL_FORMS_DIR` or provide any fixture. Every historical real-artifact test therefore skips in CI.
-- It does not configure PostgreSQL, so the 9 PostgreSQL-gated files skip there too.
-- Measured at CI commit `d0b0d8a6` (3,614 passed, 0 failed, 523 skipped). Historical real-artifact coverage in CI is zero.
+- `GET /repos/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1` returns `private: false, visibility: "public"`. The repository is **public**.
+- The Actions permissions endpoint and the environments and releases endpoints return HTTP 403 through this session's proxy. The GitHub connector failed to connect. So this session cannot read Actions settings, environments, or branch-protection rules. Their state is unknown here and must be checked in the GitHub settings UI by the owner.
+- `.github/workflows/ci.yml` runs `npm test` on pull requests and on pushes to `main`. It provides no fixtures and no PostgreSQL. Historical real-artifact coverage in that CI is zero.
 
-## 2. Options evaluated
+## 2. Consequence of the repository being public
 
-| Option | Keeps binaries out of git | Access control | New secret | Verdict |
-|---|---|---|---|---|
-| A. Release asset on this repository, downloaded with the job's `GITHUB_TOKEN` (read-only) | yes | repository read access; the release is not public if the repository is private | no | Recommended. Needs the owner to create the release, and the repository's visibility must be confirmed first |
-| B. Actions cache | yes | not tied to a reviewed approval; can be overwritten by a branch that can run workflows | no | Rejected |
-| C. Commit the binaries to the repository | no | repository | no | Rejected (not permitted) |
-| D. Private cloud bucket with OIDC federation | yes | bucket IAM | no static secret, but cloud setup needed | Viable later. Needs infrastructure approval |
-| E. Manual, environment-protected job (like `staging-credit-verification.yml`) | depends on A or D | environment reviewers | depends | Recommended as the way to run it |
+- A GitHub release asset on this repository is publicly downloadable. It is not an access-controlled source. **The release-asset option in the earlier draft of this document is withdrawn.**
+- Workflow artifacts of a public repository are also not access-controlled, so the design must not pass fixtures between jobs as artifacts.
+- Fixtures must therefore come from storage with its own access control, read by the workflow with a short-lived identity.
 
-Recommended combination: A used through E. The job runs only on manual dispatch, after a reviewer approves the protected environment.
+## 3. Options
 
-## 3. Fail-closed behaviour required
+| Option | Access control | Stored secret | Verdict |
+|---|---|---|---|
+| Release asset on this public repository | none (public) | no | Rejected |
+| Actions cache | not reviewed; writable by runs | no | Rejected |
+| Commit binaries | public | no | Rejected |
+| Actions secret holding the archive | secret store | yes; 48 KB limit is below the ~2 MB archive | Rejected |
+| Private Google Cloud Storage bucket, read through Workload Identity Federation (OIDC) | bucket IAM, restricted to one service account, one repository, one environment | no (OIDC, no key) | **Recommended** |
+| Private repository holding fixtures, read by a deploy key or GitHub App token | repository access | yes | Viable, but needs a stored credential; not recommended |
 
-1. The download step fails if the release asset is missing.
-2. `scripts/official-forms/verify.mjs` fails if any file's SHA-256 or length differs from `manifest.json`. A file is never accepted by name alone.
-3. `REQUIRE_OFFICIAL_FORMS_FIXTURES=1` is set for the test step, so `api/services/officialFormFixtureRequirement.test.ts` runs. A missing or altered fixture fails the run instead of skipping.
-4. The job never runs on pull requests, and it does not run with any secret.
+Recommended: a private bucket, one reader service account with `roles/storage.objectViewer` on the bucket only, and a Workload Identity Federation provider whose attribute condition is limited to this repository and the `official-forms-fixtures` environment.
 
-## 4. Example workflow (NOT ACTIVE; kept as text, not in `.github/workflows/`)
+## 4. Fail-closed chain
 
-```yaml
-name: Official-form fixtures (protected, manual)
-on:
-  workflow_dispatch:
-permissions:
-  contents: read
-jobs:
-  historical-fixtures:
-    runs-on: ubuntu-latest
-    environment: official-forms-fixtures   # reviewers required; created by the owner
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-      - run: npm ci
-      - name: Download the fixture release asset (fail closed)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release download official-forms-historical-v1 \
-            --pattern official-forms-historical.zip --dir "$RUNNER_TEMP"
-          python3 -c "import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); \
-            assert all('/' not in n and '..' not in n for n in z.namelist()), 'unsafe path'; \
-            z.extractall(sys.argv[2])" "$RUNNER_TEMP/official-forms-historical.zip" fixtures/official-forms
-      - name: Verify SHA-256 and length against the committed pins (fail closed)
-        run: node scripts/official-forms/verify.mjs fixtures/official-forms
-      - name: Test with fixtures required
-        env:
-          REQUIRE_OFFICIAL_FORMS_FIXTURES: "1"
-        run: npm test
-```
+1. The download copies the two prefixes (`historical/`, `current/`) into empty folders. A missing object is a job failure.
+2. `scripts/official-forms/fetch-fixtures.mjs` checks every pinned file in both manifests, by SHA-256 and byte length, before writing anything. Any missing or altered file makes the job fail and writes nothing. The two sets are all-or-nothing (verified by `api/services/officialFormFixtureFetch.test.ts`).
+3. `REQUIRE_OFFICIAL_FORMS_FIXTURES=1` runs `api/services/officialFormFixtureRequirement.test.ts`, which re-checks every pin. A skip cannot pass silently in this job.
+4. `persist-credentials: false` keeps the repository token out of the checkout.
 
-## 5. Remaining limitations after this design
+## 5. Residual risks (stated, not hidden)
 
-- Pull-request CI still does not run the historical tests. Only the protected manual job does.
-- The release asset does not exist yet. The owner must create it from the verified bytes. This session cannot create it.
-- Repository visibility could not be confirmed from this session. The GitHub API rejects the environment and release calls it would need. If the repository is public, option A publishes the fixture PDFs, which are public government forms, but the owner must accept that.
-- PostgreSQL suites and staging scenarios still need their own CI plan.
+- **Code runs with the cloud identity.** After the auth step, `npm test` runs repository code with a token that can read the bucket. This is why the environment must restrict deployment to `main` and require reviewers. Anyone who can change `main` controls what runs. The job must not be triggered on a branch.
+- Pull-request CI does not run the historical tests. The protected job runs them only when a reviewer dispatches it.
+- The fixture contents are public government forms, but the owner chose a private store; that choice does not make the content confidential.
+
+## 6. Owner actions required before enabling (not performed here)
+
+1. Confirm the GitHub settings: repository visibility (public, per section 1), Actions settings, and the `official-forms-fixtures` environment with required reviewers and "deployment branches: main only".
+2. In a Google Cloud project the owner controls: create a private bucket (uniform access, public access prevention enforced); upload `historical/*` (the 11 files verified in this session) and `current/*` (the 6 current PDFs) once; create a reader service account with `storage.objectViewer` on the bucket only; create a Workload Identity pool and provider whose condition limits it to this repository and environment.
+3. Set environment variables (not secrets): `OFFICIAL_FORMS_BUCKET`, `OFFICIAL_FORMS_WIF_PROVIDER`, `OFFICIAL_FORMS_READER_SA`.
+4. Copy `docs/ci/official-forms-fixtures.workflow.template.yml` to `.github/workflows/official-forms-fixtures.yml` in a reviewed change.
+5. Run the workflow once from `main` and confirm the job passes and the historical tests are not skipped.
+
+## 7. What is automated versus what the owner must do
+
+- Automated (done in this change): the verified fetch and install script, its tests, the fixture requirement test, the inactive workflow template, and this design.
+- Owner-only: the cloud project, bucket, identities, environment, and variables. These need the owner's authorization and cannot be created from this session.
+
+## 8. Current CI coverage (unchanged by this change)
+
+No change to `ci.yml`. Pull-request CI: historical real-artifact tests skipped; PostgreSQL suites skipped; staging suites skipped.
