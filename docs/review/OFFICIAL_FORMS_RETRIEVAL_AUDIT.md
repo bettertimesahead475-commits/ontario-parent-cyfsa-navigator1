@@ -122,3 +122,52 @@ Remaining sandbox paths, on purpose:
 Not done in this change:
 - No merge, no deployment, no production change, no migration.
 - The `draft/official-forms-audit` branch is the only branch changed.
+
+## 10. Historical fixture portability (applied)
+
+Scope: the approved three-file patch, the checksum pins, and a fail-closed change to the structural test. Frozen comment-only source files are byte-identical to the previous commit.
+
+### Changes
+- `form8bAdminChildPartySemanticFieldMap.test.ts`, `form8bRequestedOrderSemanticFieldMap.test.ts`, `form8bStructuralManifest.test.ts`: the sandbox path is replaced by `officialFormFile("d39f83dd-form-8b-feb_1_2022-en.docx")`, with the required import.
+- `form8bStructuralManifest.test.ts`: the `try/catch` that passed silently when the file was missing is replaced. The internal-consistency assertion now always runs as its own test. The real-bytes assertion is gated with `existsSync` and reports as skipped when absent. Its assertions are unchanged.
+- `api/services/officialFormFixtureRequirement.test.ts` (new): fail-closed. Off unless `REQUIRE_OFFICIAL_FORMS_FIXTURES=1`. When on, every manifest file must exist with the pinned SHA-256 and length.
+- Four comment-only source files left unchanged: `form14aSemanticFieldMap.ts`, `form33cSemanticFieldMap.ts`, `form351aSemanticFieldMap.ts`, `form8bAdminChildPartySemanticFieldMap.ts`.
+
+### Checksum changes (frozen pins; test assertions unchanged)
+The earlier investigation listed `ab2d7df4…` for the structural test. That value was superseded by the gating edit above.
+
+| Pin location | Pinned file | Old SHA-256 | New SHA-256 |
+|---|---|---|---|
+| `form8bFinalSemanticFieldMap.test.ts` (FROZEN map) | `form8bStructuralManifest.test.ts` | `436413c2573c28cb2bd46df5525ecdf6ce84b961f9cebae8fc54d541ae8db7b8` | `7e3e2a3a5ddd13ac28de9ae94b1e7d34b6280921947e8afb9bc24e4244881f08` |
+| `form8bFinalSemanticFieldMap.test.ts` (FROZEN map) | `form8bAdminChildPartySemanticFieldMap.test.ts` | `649716b6dbb48eed4d6dc2e88860490c84bb4d1ccdf430cc31235dff0a3d7509` | `a7b1645d031ab5a221a6b4e6dd5884e990241d5e2c523996b661c73f702fc2e2` |
+| `form8bRequestedOrderSemanticFieldMap.test.ts` (`B4BI_TEST_SHA`) | `form8bAdminChildPartySemanticFieldMap.test.ts` | `649716b6dbb48eed4d6dc2e88860490c84bb4d1ccdf430cc31235dff0a3d7509` | `a7b1645d031ab5a221a6b4e6dd5884e990241d5e2c523996b661c73f702fc2e2` |
+| `form8bFinalSemanticFieldMap.test.ts` (FROZEN map) | `form8bRequestedOrderSemanticFieldMap.test.ts` | `e162d39b526d33dca26a737ebd82868e553604894ccf7bb307b7ff14cde8eedb` | `213fe0cc198770b28dc620aa7551eb8d263dd079561724373194eed422e08633` |
+
+All ten FROZEN-map entries were re-computed after the change and match their files (0 mismatches). Hashes use the tests' own normalization (UTF-8, CRLF converted to LF).
+
+### Results (commit recorded in the final report)
+Typecheck (`tsc --noEmit`): exit 0 on Node 22 and Node 24. Build: exit 0 on Node 22 and Node 24.
+
+| Condition | Node | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|---|
+| Fixtures present, PostgreSQL on | 22 | 212 pass, 2 skip | 4,156 | 0 | 18 (6 staging, 12 requirement tests off) |
+| Fixtures present, PostgreSQL on | 24 | 212 pass, 2 skip | 4,156 | 0 | 18 |
+| Fixtures present, PostgreSQL off | 22 | 201 pass, 13 skip | 3,788 | 0 | 386 (374 + 12 requirement tests off) |
+| Fixtures present, `REQUIRE_OFFICIAL_FORMS_FIXTURES=1`, PostgreSQL off | 22 | 202 pass, 12 skip | 3,800 | 0 | 374 |
+| Fixtures ABSENT, PostgreSQL off (clean machine) | 22 | 200 pass, 14 skip | 3,629 | 0 | 545 |
+| Four frozen Form 8B files, fixtures present | 22 | 4 | 171 | 0 | 0 |
+| Four frozen Form 8B files, fixtures absent | 22 | 4 | 163 | 0 | 8 (real-bytes checks reported as skipped, not passed) |
+| All 11 fixtures corrupted (one byte flipped each), nine fixture-dependent files | 22 | 9 | 354 | 62 | — |
+| Requirement test, fixtures corrupted | 22 | 1 | 1 | 11 | — |
+
+Interpretation of the corrupted run: every test that recomputes fixture bytes fails. Passing tests on corrupted fixtures check only repository-stored hashes or synthetic inputs, which do not read the fixture files. `verify.mjs` on the corrupted folder reports 0 of 11 and exits 1.
+
+### Local verification versus CI coverage
+- Local: all 11 historical fixtures verify (SHA-256 and length) in `fixtures/official-forms/`, and all 6 current PDFs verify in `fixtures/official-forms-current/`. Both folders are gitignored.
+- CI today (`.github/workflows/ci.yml`): no fixtures, no PostgreSQL. The historical real-artifact tests skip there. Nothing in CI verifies the historical bytes.
+- Proposed (not enabled): see `docs/ci/OFFICIAL_FORMS_FIXTURES_CI.md`. A protected, manual job that downloads a release asset, verifies each file against the committed pins, and runs with `REQUIRE_OFFICIAL_FORMS_FIXTURES=1`.
+
+### Remaining limits
+- No historical real-artifact test runs in pull-request CI.
+- The release asset does not exist yet. Creating it, and confirming the repository's visibility, is an owner action. This session's GitHub access cannot check either.
+- The structural test's internal-consistency assertion still passes without any file. That is intended, and it is labelled as internal consistency, not artifact verification.
