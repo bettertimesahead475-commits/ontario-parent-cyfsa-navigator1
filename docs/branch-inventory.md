@@ -1,0 +1,83 @@
+# Branch inventory (remote, measured against main)
+
+Measured 2026-10-27T22:58Z with the GitHub compare API. Counts: 100 branches listed by the API (first page only; more may exist).
+
+- Fully merged into main (0 commits ahead): 34. Safe to delete after approval; no unique work.
+- Unmerged with an open PR: 28. Triage with that PR.
+- Unmerged with no open PR: 38. Unique work not represented by a PR. Needs a decision per branch.
+
+## Unmerged, no open PR (ahead of main)
+- `approve-staging-sha-c59a3f5a` (1 commits)
+- `archive/pr78-81-docs` (1 commits)
+- `audit/independent-whole-rebuild-review` (1 commits)
+- `audit/legal-reference` (10 commits)
+- `claude/continue-previous-work-ga3n17` (2 commits)
+- `claude/cyfsa-legal-content-expansion` (1 commits)
+- `claude/fix-fabricated-lawyer-directory` (2 commits)
+- `claude/full-repo-audit-20260829` (4 commits)
+- `claude/ontario-parent-cyfsa-navigator-ios8i0` (2 commits)
+- `claude/session-token-gated-routes-e2fggb` (8 commits)
+- `claude/stage-10-governance-docs` (2 commits)
+- `design/homepage-reference-hero` (3 commits)
+- `feat/integrate-69-chain` (20 commits)
+- `feat/parent-analyzer-integration` (3 commits)
+- `feat/parent-case-attribution` (9 commits)
+- `feat/parent-report-ui` (58 commits)
+- `feat/post-audit-remediation` (21 commits)
+- `feat/prod-security-fix` (1 commits)
+- `feat/prod-security-proposals-rebased` (2 commits)
+- `feat/security-hardening-prep` (23 commits)
+- `feat/staging-readiness` (22 commits)
+- `feature/analyzer-v2-rebuild` (2 commits)
+- `feature/court-form-export-safety-gates` (2 commits)
+- `feature/meta-data-deletion-page` (2 commits)
+- `fix/analyzer-audit-findings` (3 commits)
+- `fix/analyzer-error-leak` (2 commits)
+- `fix/audit-model-ids-and-payment-guard` (1 commits)
+- `fix/customer-cost-redaction` (1 commits)
+- `fix/cyfsa-branding-lady-justice` (2 commits)
+- `fix/deep-scan-bounded-sections-oct11` (7 commits)
+- `fix/deep-scan-retry-validation` (1 commits)
+- `fix/deep-scan-section-truncation` (1 commits)
+- `fix/forensic-json-recovery-oct11` (6 commits)
+- `fix/gmail-no-auto-activation` (2 commits)
+- `fix/production-lighthouse-font-layout` (1 commits)
+- `fix/production-supabase-credential-resolution` (1 commits)
+- `fix/redact-persisted-reports` (2 commits)
+- `fix/report-hardening` (67 commits)
+
+## Fully merged (candidates for deletion)
+- `audit/full-project-autonomous-repair`
+- `audit-fixes-sept-2026`
+- `claude/add-mental-health-content`
+- `claude/continue-72vx1p`
+- `claude/cyfsa-navigator-release-8lnh1a`
+- `claude/funny-einstein-gbh16d`
+- `claude/stage-7b-access-lifecycle-remediation`
+- `claude/stage-10-access-event-log`
+- `claude/stage-10-access-history`
+- `claude/stage-10-access-integration`
+- `claude/stage-10-completion-decisions`
+- `claude/stage-10-lifecycle-audit`
+- `claude/stage-10-lifecycle-http-adapter`
+- `claude/stage-10-slice-7-recipient-bound-lifecycle`
+- `claude/stage-10-slice-8-activation`
+- `claude/stage-11-slice-1-professional-workspace`
+- `claude/stage-11-slice-2-professional-review`
+- `claude/stage-11-slice-3-parent-professional-collaboration`
+- `claude/stage-11-slice-4-professional-outputs`
+- `claude/stage-11-slice-5-product-completion-hardening`
+- `claude/youthful-newton-d1jxff`
+- `design/analyzer-readable-workspace-oct11`
+- `docs/stage9-roadmap-decision`
+- `feature/automated-activation-credit-enforcement`
+- `feature/brand-payment-email-update`
+- `feature/membership-pricing-page`
+- `feature/official-form-reviewed-draft`
+- `feature/production-monitoring-observability`
+- `feature/restore-approved-lady-justice-homepage`
+- `fix/analyzer-recovery-live-verify`
+- `fix/analyzer-speed-reliability-streaming`
+- `fix/analyzer-stuck-progress`
+- `fix/credit-atomic-claim`
+- `fix/owner-deep-scan-pr50`
