@@ -1,0 +1,60 @@
+# PROPOSED replacement for .github/workflows/ci.yml. NOT ACTIVE. Do not copy into .github/workflows until the owner
+# approves activation (see docs/ci/OFFICIAL_FORMS_CI_ACTIVATION.md).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  official-forms:
+    # Isolated so an outage at the official source cannot fail the main test job. Fail-closed: any unverified
+    # retrievable file fails this job, and the fixture-dependent tests then run with REQUIRE_OFFICIAL_FORMS_FIXTURES=retrievable.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Download and verify the 11 retrievable official forms (no pin is updated)
+        run: node scripts/official-forms/fetch-official.mjs --report "$RUNNER_TEMP/fetch-report.json"
+
+      - name: Test with the retrievable fixtures required
+        env:
+          REQUIRE_OFFICIAL_FORMS_FIXTURES: retrievable
+        run: npm test

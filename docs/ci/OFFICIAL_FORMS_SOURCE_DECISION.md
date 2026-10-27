@@ -1,6 +1,6 @@
 # Official-form fixtures: distribution decision and CI design
 
-Status: decision record, revised 2026-10-27. Draft branch only. No workflow is active, no fixture binary is published or
+Status: decision record, revised 2026-10-27. Draft branch only. No production workflow is active (a temporary connectivity check ran once on a branch push), no fixture binary is published or
 committed, and no infrastructure was created.
 
 Labels used throughout:
@@ -98,7 +98,7 @@ What this design does and does not do:
 | Pins are never updated automatically; a changed upstream file is reported as `CHANGED_UPSTREAM` and nothing is installed | [V] Done and tested |
 | `REQUIRE_OFFICIAL_FORMS_FIXTURES=retrievable` checks only the 11 retrievable entries; `=1` checks all 17 | [V] Done and tested |
 | `docs/ci/official-forms-fetch.workflow.template.yml` | [V] Template only. It sits outside `.github/workflows` and is not active |
-| Reachability of `ontariocourtforms.on.ca` from GitHub-hosted runners | [V] Not tested. Only tested through this session's sandbox proxy |
+| Reachability of `ontariocourtforms.on.ca` from GitHub-hosted runners | [V] Verified once: run `40499435116` (`ubuntu-latest`, Node 22, commit `c7dab049`) downloaded and verified 11 of 11. One run, not a guarantee |
 | Counsel review of section 1.2 | [C] Open |
 | CODEOWNERS review rule for `scripts/official-forms/**` | Not added. Owner decision |
 
@@ -114,6 +114,7 @@ What this design does and does not do:
   test code, so the fetch adds no new exposure. The workflow must keep `permissions: contents: read` and no secrets.
 
 ## 6. Limits of this evidence
-- Reachability from GitHub-hosted runners is untested (section 4).
+- Reachability from GitHub-hosted runners was observed once (section 4). It is not a guarantee of future availability.
+- Temporary runner copies: the bytes exist on the hosted runner's disk during a job. Nothing in this design uploads or caches them. Whether that copy is permitted is open (section 1.2, Q2 and Q3). No exemption is claimed.
 - The Ontario terms reading is a summary of the published pages on the date above. Counsel must confirm it.
 - The historical PDFs' origin is recorded by the owner, not by an official source.

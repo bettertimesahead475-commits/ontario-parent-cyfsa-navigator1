@@ -222,6 +222,8 @@ Checksum pins: no pin changed in this step. All 10 frozen-map pins were re-verif
 
 ## 12. Official-source downloader (implemented on the draft branch, workflow inactive)
 
+> Superseded by section 13 for test counts, defects, and blockers. The design notes below still apply.
+
 ### What changed
 - `scripts/official-forms/fetch-official.mjs` (v2): downloads the 11 `retrievable: true` entries from their official URLs and verifies each one against its pinned SHA-256 and byte length. It installs only when every retrievable file passes.
 - Install is staged. Each destination folder is replaced only after the staged copy verifies, and the previous folder is kept as a backup until the swap completes. If a later rename fails, the earlier renames are reversed. A rollback that itself fails is reported as `rolledBack: false` with the error. Other files in a destination are never deleted.
@@ -264,3 +266,59 @@ Checksum pins: no pin changed in this step. All 10 frozen-map pins were re-verif
 3. Counsel's review of the temporary-copy question in `docs/ci/OFFICIAL_FORMS_SOURCE_DECISION.md` section 1.2. Not yet obtained. Until then, no claim that the temporary CI copy is exempt is made.
 4. CODEOWNERS (or branch protection with required review) for `scripts/official-forms/**`, so a pull request cannot change a pin or a URL without review. Requires the owner's repository settings.
 5. Owner decision on the 38 superseded-PDF tests: keep them local-only, or pursue a King's Printer licence.
+
+## 13. Final CI readiness audit (2026-10-27)
+
+Verified on commit `c7dab049` plus the final commit that records this section. Each claim names its evidence.
+
+### Phases
+- **Phase 1, implementation review: PASS after fixes.** Five engineering defects were found and fixed, each with a regression test (see below). Pins: both manifests are byte-identical to `739c8646` (17 entries). Retrievable set: 11 (5 DOCX, 6 current PDFs). Frozen files and the 38 superseded-PDF tests are unchanged.
+- **Phase 2, GitHub-hosted connectivity: PASS (one run).** Temporary check on `ubuntu-latest`, Node 22, run `40499435116` (commit `c7dab049`): 11 of 11 `PASS`, conclusion `success`. The temporary workflow was removed afterwards. `workflow_dispatch` alone could not start it, because GitHub accepts that trigger only for workflows on the default branch. A push trigger filtered to this draft branch was used instead.
+- **Phase 3, CI preparation: PREPARED, NOT ACTIVE.** `docs/ci/ci.workflow.proposed.yml` (adds `permissions: contents: read` and a separate `official-forms` job). Activation checklist in `docs/ci/OFFICIAL_FORMS_CI_ACTIVATION.md`. `.github/workflows/ci.yml` is unchanged.
+- **Phase 4, regression: PASS** (counts below).
+- **Phase 5, legal and security readiness: BLOCKED on counsel.** See the activation doc, section 4 and section 5.
+- **Phase 6, commit and PR:** see the final report.
+
+### Defects found and fixed (each has a regression test)
+1. A partial staged write was not removed on rollback. Test: `removes a partially written staged file...`.
+2. An interrupted install could be silently continued. The downloader now refuses to start while `.stage-` or `.backup-` files exist. Tests: `refuses to start when an interrupted install left...`, `does not treat ordinary fixture names as leftovers`.
+3. A 200 response with no body was reported as CHANGED_UPSTREAM. Now PARTIAL_DOWNLOAD. Test: `reports PARTIAL_DOWNLOAD, not a changed source...`.
+4. Compressed responses could be compared on the wrong length. Now `accept-encoding: identity` is sent and any other encoding is refused (UNEXPECTED_ENCODING, no retry). Tests: `asks for identity encoding...`, `refuses a compressed response...`.
+5. Programming errors were reported as network errors. Now only DownloadError is a download outcome. Covered by the failure-class tests.
+
+Backup-failure rollback (first and second existing file) was tested and already correct. Tests added as regression coverage.
+
+### Test results (commit `c7dab049`, final code)
+| Run | Passed | Failed | Skipped |
+|---|---|---|---|
+| Downloader tests (`officialFormDownloader.test.ts`) | 60 | 0 | 0 |
+| Full suite, Node 22.22.0, PostgreSQL 16 on 127.0.0.1:5433, fixtures present | 4,224 | 0 | 18 |
+| Full suite, Node 24.22.1, same setup | 4,224 | 0 | 18 |
+| Fixtures absent, fixture-dependent files, default mode (Node 22) | 440 | 0 | 171 |
+| Fixtures absent, `REQUIRE_OFFICIAL_FORMS_FIXTURES=1` | 440 | 18 (intended, fail closed) | 159 |
+| Fixtures absent, `=retrievable` | 440 | 12 (intended, fail closed) | 159 |
+| Corrupted fixtures (one byte in a DOCX, one PDF truncated), default | 591 | 8 (intended) | 12 |
+| Corrupted fixtures, `=retrievable` | 601 | 10 (intended) | 0 |
+
+The fixture-dependent subset is the 16 files listed in the audit's earlier sections (requirement, current-PDF, real-artifact, semantic-map, structural, and downloader tests).
+- Typecheck (`tsc --noEmit`): exit 0 on Node 22.22.0 and Node 24.22.1.
+- Build (`npm run build`): exit 0 on both. The Node 22 build warns about chunk size and about `import.meta` in the CJS server bundle. Both warnings are pre-existing and unrelated to this work.
+- Run on Node 22, the full suite exited 1 at first, with 11 failing PostgreSQL files. The cause was environmental: the scratch PostgreSQL cluster had stopped (connection refused). It was restarted and the Node 22 suite was rerun, which gave the result in the table. The earlier failing output was not hidden.
+- Not run: a PostgreSQL-off full run and a full fixtures-absent run on the final code.
+
+### Remaining skips
+- 6 `creditStaging.test.ts` tests: need staging credentials.
+- 12 requirement tests in default mode (18 in mode `1`): off unless `REQUIRE_OFFICIAL_FORMS_FIXTURES` is set.
+- 38 superseded-PDF tests: local only. No official source serves those bytes.
+
+### Crash and rollback limits (documented in the script header and `OFFICIAL_FORMS_CI_ACTIVATION.md`)
+- A crash between moving a destination to backup and placing the new file leaves the destination missing. There is no journal. The next run refuses to start until the operator restores the file from its `.backup`.
+- Rollback covers failures the process can observe, not process death.
+- A clean upstream close without Content-Length can be labelled CHANGED_UPSTREAM rather than PARTIAL_DOWNLOAD. It still fails closed.
+
+### Blockers before CI activation
+1. Counsel's review of the temporary-copy question (decision doc, section 1.2). No exemption is claimed.
+2. Independent human code review.
+3. CODEOWNERS or required review on `scripts/official-forms/**` and `.github/workflows/**`.
+4. Owner approval to change `ci.yml`.
+5. Owner decision on the 38 superseded-PDF tests.
