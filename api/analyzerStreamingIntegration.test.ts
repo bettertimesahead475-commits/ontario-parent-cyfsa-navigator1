@@ -101,7 +101,7 @@ process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-key";
 
 const { default: app } = await import("./_server.js");
-import { createAnalysisJob } from "./services/analyzerStreaming.js";
+import { completeAnalysisJob, createAnalysisJob, failAnalysisJob } from "./services/analyzerStreaming.js";
 
 const MINIMAL_ANALYSIS = {
   documentTitle: "Society Protection Application",
@@ -407,6 +407,59 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
       const res = await request(app).get("/api/analyze/job/job-auth-owner-session-ended").set(paid());
       expect(res.status).toBe(200);
       expect(res.body.jobId).toBe("job-auth-owner-session-ended");
+    });
+
+    it("after reauthentication, a completed, running, or failed saved job is returned as it stands", async () => {
+      createAnalysisJob({ jobId: "job-state-done", uid: "test-parent-uid", mode: "fast" });
+      completeAnalysisJob("job-state-done", { documentTitle: "Saved report" });
+      createAnalysisJob({ jobId: "job-state-running", uid: "test-parent-uid", mode: "fast" });
+      createAnalysisJob({ jobId: "job-state-failed", uid: "test-parent-uid", mode: "fast" });
+      failAnalysisJob("job-state-failed", { code: "AI_RATE_LIMITED", message: "slow down", statusCode: 429, retryable: true });
+
+      const done = await request(app).get("/api/analyze/job/job-state-done");
+      expect(done.status).toBe(200);
+      expect(done.body.status).toBe("completed");
+      expect(done.body.report).toBeTruthy();
+
+      const running = await request(app).get("/api/analyze/job/job-state-running");
+      expect(running.status).toBe(200);
+      expect(running.body.status).not.toBe("completed");
+
+      const failed = await request(app).get("/api/analyze/job/job-state-failed");
+      expect(failed.status).toBe(200);
+      expect(failed.body.status).toBe("failed");
+      expect(failed.body.error.code).toBe("AI_RATE_LIMITED");
+    });
+
+    it("reports a job that no longer exists as JOB_NOT_FOUND, not as access denied", async () => {
+      const res = await request(app).get("/api/analyze/job/req_1000000000000_expired0001").set(paid());
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("JOB_NOT_FOUND");
+    });
+
+    it("an expired sign-in on a retried analysis answers SIGN_IN_REQUIRED and starts nothing", async () => {
+      createAnalysisJob({ jobId: "req_1700000000000_owned0001", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce(null);
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("x-analysis-id", "req_1700000000000_owned0001")
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(res.body.code).not.toBe("ANALYSIS_ID_CONFLICT");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
+    it("an expired sign-in on a new analysis answers SIGN_IN_REQUIRED before any credit is reserved", async () => {
+      mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce(null);
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("x-analysis-id", "req_1700000000001_newjob0002")
+        .set(paid())
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
     it("recovers after reauthentication by polling the same job, without starting another analysis", async () => {

@@ -9,6 +9,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
+import { readSavedAnalysisJobId, saveAnalysisJobId, forgetAnalysisJobId, keepsSavedJobAfterError, SIGN_IN_REQUIRED_CODE } from "../utils/analysisJobResume";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -355,13 +356,7 @@ export default function DocumentAnalyzerTab() {
     | "ERROR";
 
   const [analyzerState, setAnalyzerState] = useState<AnalyzerProcessingState>("IDLE");
-  const [activeJobId, setActiveJobId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem("OPA_ACTIVE_ANALYZER_JOB_ID") || null;
-    } catch {
-      return null;
-    }
-  });
+  const [activeJobId, setActiveJobId] = useState<string | null>(() => readSavedAnalysisJobId());
   const [streamingProgress, setStreamingProgress] = useState<{
     stage: string;
     percent: number;
@@ -422,9 +417,7 @@ export default function DocumentAnalyzerTab() {
     if (!activeJobId) return;
     let cancelled = false;
     const clearActiveJob = () => {
-      try {
-        localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-      } catch {}
+      forgetAnalysisJobId();
       setActiveJobId(null);
     };
     setIsRecoveringJob(true);
@@ -449,7 +442,7 @@ export default function DocumentAnalyzerTab() {
         setSingleAnalysisErrorCode(err?.code || null);
         setSingleAnalysisError(err?.message || "We couldn't check on your analysis. Your document is safe.");
         // A sign-in problem keeps the saved job, so polling can resume it once the parent signs in again.
-        if (err?.code !== "SIGN_IN_REQUIRED") clearActiveJob();
+        if (!keepsSavedJobAfterError(err?.code)) clearActiveJob();
       })
       .finally(() => {
         if (!cancelled) setIsRecoveringJob(false);
@@ -1793,6 +1786,20 @@ export default function DocumentAnalyzerTab() {
     }
   };
 
+  // After a sign-in problem, the parent signs in again and the same saved job is polled once more. Nothing is
+  // started or charged: the analysis id and the job id are unchanged.
+  const resumeAfterSignIn = async () => {
+    try {
+      await signInMinimal();
+    } catch {
+      // Sign-in was cancelled or blocked. The saved job stays, and the same action is offered again.
+      return;
+    }
+    setSingleAnalysisErrorCode(null);
+    setSingleAnalysisError("");
+    setJobResumeAttempt(n => n + 1);
+  };
+
   // Re-run single analysis on demand
   const triggerSingleAnalysis = async (file: OrganizedFile) => {
     if (analysisInFlightRef.current || isRecoveringJob) return; // never two analyses at once
@@ -1814,9 +1821,7 @@ export default function DocumentAnalyzerTab() {
     // Persist the job ID so it can be recovered after a page reload. Do NOT set activeJobId here:
     // that starts the recovery poller alongside this live request, which overwrote real progress
     // (e.g. during text extraction) with status-endpoint data and left the UI stuck at 45%.
-    try {
-      localStorage.setItem("OPA_ACTIVE_ANALYZER_JOB_ID", analysisId);
-    } catch {}
+    saveAnalysisJobId(analysisId);
 
     try {
       const payload: any = {};
@@ -1954,10 +1959,8 @@ export default function DocumentAnalyzerTab() {
 
       setSelectedReport(report);
       setAnalyzerState("COMPLETE");
-      try {
-        localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-        setActiveJobId(null);
-      } catch {}
+      forgetAnalysisJobId();
+      setActiveJobId(null);
 
       // BUG FIX (flagged in audit, same root cause as the bulk-upload path above): persist the
       // real extracted text onto content, not just the analysis report, so the Cross-Document
@@ -1977,17 +1980,13 @@ export default function DocumentAnalyzerTab() {
       }
       setAnalyzerState("ERROR");
       setSingleAnalysisErrorCode(err?.code || null);
-      if (err?.code === "SIGN_IN_REQUIRED") {
+      if (keepsSavedJobAfterError(err?.code)) {
         // The analysis is saved on the server and may already be paid for. Keep it: the parent signs in
         // again and polling resumes this same job. Retry would start a new analysis, so it is not offered.
-        try {
-          setActiveJobId(analysisId);
-        } catch {}
+        setActiveJobId(analysisId);
       } else {
-        try {
-          localStorage.removeItem("OPA_ACTIVE_ANALYZER_JOB_ID");
-          setActiveJobId(null);
-        } catch {}
+        forgetAnalysisJobId();
+        setActiveJobId(null);
       }
       if (err.isRateLimit || err.status === 429) {
         setRateLimitCountdown(30);
@@ -3407,6 +3406,17 @@ export default function DocumentAnalyzerTab() {
           {/* TAB 1: FILE ORGANIZER DETAILS & ACTIVE DOCUMENT AUDIT */}
           {activeTab === "organizer" && (
             <div className="h-full space-y-4">
+              {singleAnalysisErrorCode === SIGN_IN_REQUIRED_CODE && activeJobId && !activeSelectedFile && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-3 text-center">
+                  <p className="text-sm text-slate-700">Your analysis is saved and will not be started again. Sign in to see it.</p>
+                  <button
+                    onClick={resumeAfterSignIn}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                  >
+                    <span>Sign in to continue</span>
+                  </button>
+                </div>
+              )}
               {activeSelectedFile ? (
                 <div className="space-y-4 text-left">
                   
@@ -4620,20 +4630,10 @@ export default function DocumentAnalyzerTab() {
                           )}
                           {singleAnalysisErrorCode === "SIGN_IN_REQUIRED" ? (
                             <button
-                              onClick={async () => {
-                                // Signing in does not start anything. The saved job is polled again (same id, no new charge).
-                                try {
-                                  await signInMinimal();
-                                } catch {
-                                  return;
-                                }
-                                setSingleAnalysisErrorCode(null);
-                                setSingleAnalysisError("");
-                                setJobResumeAttempt(n => n + 1);
-                              }}
+                              onClick={resumeAfterSignIn}
                               className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
                             >
-                              <span>Sign in to see this analysis</span>
+                              <span>Sign in to continue</span>
                             </button>
                           ) : rateLimitCountdown !== null && rateLimitCountdown > 0 ? (
                             <div className="text-xs text-amber-700 font-sans font-semibold bg-amber-50 p-2 rounded-lg border border-amber-200">

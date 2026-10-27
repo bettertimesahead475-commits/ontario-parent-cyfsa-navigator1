@@ -1981,6 +1981,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         const existingJob = await getAnalysisJobDurable(analysisRequestId);
         if (existingJob) {
           const ownedByCaller = Boolean(existingJob.uid && identity && existingJob.uid === identity.uid);
+          if (!ownedByCaller && existingJob.uid && !identity) {
+            // Owned by a signed-in account and this request has no valid sign-in. Answer with the sign-in
+            // requirement, not an id conflict: a conflict would lead the client to start a new analysis.
+            return res.status(401).json({ error: "Please sign in again to see this analysis.", code: "SIGN_IN_REQUIRED" });
+          }
           if (!ownedByCaller) {
             return res.status(409).json({
               error: "This analysis id is already in use. Please start a new analysis.",
