@@ -443,6 +443,7 @@ describe("analysis provider responses", () => {
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("AI_RESPONSE_INVALID");
     expect(res.body.error).toMatch(/incomplete/i);
+    expect(res.body.retryable).toBe(true);
   });
 
   it("reports a model refusal clearly", async () => {
