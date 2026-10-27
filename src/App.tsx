@@ -353,7 +353,7 @@ export default function App() {
       </nav>
 
       {/* Primary Main Content Area container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10" id="main-frame-area">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10 pb-32 md:pb-10" id="main-frame-area">
         <Suspense fallback={<div className="min-h-48" aria-busy="true" />}>
           <Switch>
           <Route path="/"><ParentJourney page="home" /></Route>
@@ -485,7 +485,7 @@ export default function App() {
       </main>
 
       {/* Professional Legal Footnote footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 md:py-8 mt-12 no-print" id="app-footer">
+      <footer className="bg-white border-t border-slate-200 py-6 md:py-8 pb-32 md:pb-8 mt-12 no-print" id="app-footer">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
           
           {/* Real-time PDF / Printexport contextual launcher block */}
