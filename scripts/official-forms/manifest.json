@@ -1,0 +1,155 @@
+{
+  "source": "api/services/officialFormRealArtifactIntegration.test.ts (pins); dependent tests found by filename",
+  "sourceIndex": "https://ontariocourtforms.on.ca/en/family-law-rules-forms/",
+  "uploadDirectory": "fixtures/official-forms",
+  "files": [
+    {
+      "label": "35.1A PDF",
+      "formNumber": "35.1A",
+      "format": "PDF",
+      "fileName": "33f4ddb3-form-35-1a-en-dec20.pdf",
+      "byteLength": 208594,
+      "sha256": "288882fe64111160104f47ce9eeda758843b7d22d925bcb121f877a0ea711650",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts"
+      ],
+      "retrievable": false
+    },
+    {
+      "label": "35.1A DOCX",
+      "formNumber": "35.1A",
+      "format": "DOCX",
+      "fileName": "48d81005-form-35-1a-en-dec20.docx",
+      "byteLength": 39464,
+      "sha256": "4efdb1baabe0e621caceb73b0b9924b414665d9872e5f280a29e3ff61b28fbcc",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts",
+        "api/services/docxFieldInventoryRealArtifacts.test.ts",
+        "api/services/form351aSemanticFieldMap.test.ts"
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/35_1a/form-35-1a-en-dec20.docx"
+    },
+    {
+      "label": "33C DOCX",
+      "formNumber": "33C",
+      "format": "DOCX",
+      "fileName": "3bf6f793-form_33c_2018.docx",
+      "byteLength": 41730,
+      "sha256": "d73d4f9d8641616fe502ec0dd2f67511e424e69a1a7fff68015d403f5645407b",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts",
+        "api/services/docxFieldInventoryRealArtifacts.test.ts",
+        "api/services/form33cSemanticFieldMap.test.ts"
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/33c/form_33c_2018.docx"
+    },
+    {
+      "label": "33C PDF",
+      "formNumber": "33C",
+      "format": "PDF",
+      "fileName": "89af8ff6-form_33c_2018.pdf",
+      "byteLength": 224841,
+      "sha256": "73ff6adc549ae0fa70ec1de3f335058a7d7cdc80ac0c2918f87ad87993499bfe",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts"
+      ],
+      "retrievable": false
+    },
+    {
+      "label": "33B.1 DOCX",
+      "formNumber": "33B.1",
+      "format": "DOCX",
+      "fileName": "df0e02ef-form-33b-1-en-dec20.docx",
+      "byteLength": 55033,
+      "sha256": "79d718a2de8be55001b47649a34366613b7050a69f98dfb6a4fd394870908a6e",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts",
+        "api/services/docxFieldInventoryRealArtifacts.test.ts"
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/33b_1/form-33b-1-en-dec20.docx"
+    },
+    {
+      "label": "33B.1 PDF",
+      "formNumber": "33B.1",
+      "format": "PDF",
+      "fileName": "90196879-form-33b-1-en-dec20.pdf",
+      "byteLength": 456688,
+      "sha256": "a78a4b2e337b5a08c4645c6744a2c5b57e892bcdcb7fb410d3ab9fd82dbfe52b",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts"
+      ],
+      "retrievable": false
+    },
+    {
+      "label": "14A DOCX",
+      "formNumber": "14A",
+      "format": "DOCX",
+      "fileName": "c01f056a-flr_14a_sept105_en_fil.docx",
+      "byteLength": 29561,
+      "sha256": "bfc552bf54c5972700759e455e5782e5cdec7f8affaa5e822e89e07681801261",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts",
+        "api/services/docxFieldInventoryRealArtifacts.test.ts",
+        "api/services/form14aSemanticFieldMap.test.ts"
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/14a/flr_14a_sept105_en_fil.docx"
+    },
+    {
+      "label": "14A PDF",
+      "formNumber": "14A",
+      "format": "PDF",
+      "fileName": "df9e829b-flr-14a-sept105-en-fil.pdf",
+      "byteLength": 150386,
+      "sha256": "84d443426575f4a0e94e70fac73cd02106172fc00aa1578ca40db7628ef907fd",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts"
+      ],
+      "retrievable": false
+    },
+    {
+      "label": "8B DOCX",
+      "formNumber": "8B",
+      "format": "DOCX",
+      "fileName": "d39f83dd-form-8b-feb_1_2022-en.docx",
+      "byteLength": 59408,
+      "sha256": "02a5c3fdc32b42ed1f2db20115c1ff8bb9cf0233aa510a48063af9a10c5e7799",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts",
+        "api/services/docxFieldInventoryRealArtifacts.test.ts",
+        "api/services/form8bAdminChildPartySemanticFieldMap.test.ts",
+        "api/services/form8bFinalSemanticFieldMap.test.ts",
+        "api/services/form8bRequestedOrderSemanticFieldMap.test.ts"
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/08b/form-8b-feb_1_2022-en.docx"
+    },
+    {
+      "label": "8B PDF",
+      "formNumber": "8B",
+      "format": "PDF",
+      "fileName": "4dcaaa3e-form-8b-feb-2022-en.pdf",
+      "byteLength": 549760,
+      "sha256": "da5ed87cdf454c77af04c255b9b7be44a2f08aa837a6bb3715ab0d0dcb8bdd6c",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts"
+      ],
+      "retrievable": false
+    },
+    {
+      "label": "unmatched file (filename claims form_33b_2018)",
+      "formNumber": "33B.1 (unmatched; not asserted)",
+      "format": "PDF",
+      "fileName": "b43d35f7-form_33b_2018.pdf",
+      "byteLength": 276848,
+      "sha256": "acb30d488447bc1e044b5575d2d4a7e0d0ad0c227e58b413c35233ef21561b65",
+      "dependentTests": [
+        "api/services/officialFormRealArtifactIntegration.test.ts"
+      ],
+      "retrievable": false
+    }
+  ]
+}

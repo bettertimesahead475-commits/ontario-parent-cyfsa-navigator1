@@ -207,7 +207,7 @@ function streamInterrupted(): ApiResponseError {
 
 export interface AnalysisJobSnapshot {
   jobId: string;
-  status: "pending" | "analyzing" | "completed" | "failed";
+  status: "pending" | "analyzing" | "completed" | "failed" | "billing_pending";
   currentStage?: string;
   percent?: number;
   message?: string;
@@ -297,6 +297,19 @@ export async function pollAnalysisJob(
     }
     const job = (await res.json().catch(() => null)) as AnalysisJobSnapshot | null;
     if (job?.status === "completed" && job.report) return { status: "completed", report: job.report };
+    // The analysis is finished and held. Only its billing record is outstanding, so polling cannot make progress:
+    // stop and let the parent retry with the same analysis id (no second model run).
+    if (job?.status === "billing_pending") {
+      return {
+        status: "failed",
+        error: {
+          code: "BILLING_PENDING",
+          message: "Your analysis is ready, but its billing record is still being confirmed. Retry to receive it. The analysis is not run again.",
+          statusCode: 503,
+          retryable: true,
+        },
+      };
+    }
     if (job?.status === "failed") {
       return {
         status: "failed",

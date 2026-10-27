@@ -1,7 +1,8 @@
+import { officialFormFile } from "../testSupport/officialFormFixtures.js";
 // Stage 9D-4B-2A-ii-b4A tests — Form 8B structural + pleading-decision boundary manifest.
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -17,24 +18,20 @@ import { REVIEW_SENSITIVITY_CATEGORIES } from "./semanticFieldMap.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const FORM_8B_DOCX_PATH =
-  "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/d39f83dd-form-8b-feb_1_2022-en.docx";
+const FORM_8B_DOCX_PATH = officialFormFile("d39f83dd-form-8b-feb_1_2022-en.docx");
 
 const frozenInventory = DOCX_FIELD_INVENTORIES.find(i => i.formNumber === "8B");
 if (!frozenInventory) throw new Error("Frozen Form 8B inventory entry not found");
 
 describe("Form 8B — exact real-artifact identity (2)", () => {
-  it("independently recomputes the SHA-256 of the real uploaded bytes and it matches the frozen inventory and the manifest binding", () => {
-    let bytes: Buffer;
-    try {
-      bytes = readFileSync(FORM_8B_DOCX_PATH);
-    } catch {
-      // Artifact not present in this execution sandbox — this test then only checks internal
-      // consistency between the frozen inventory and the manifest's declared source hash, which
-      // must always hold regardless of filesystem availability.
-      expect(FORM_8B_STRUCTURAL_MANIFEST_SOURCE_SHA256).toBe(frozenInventory.sha256Hex);
-      return;
-    }
+  // Always runs: the manifest's declared source hash must agree with the frozen inventory, with or without the file.
+  it("manifest source hash equals the frozen inventory hash (internal consistency, no file needed)", () => {
+    expect(FORM_8B_STRUCTURAL_MANIFEST_SOURCE_SHA256).toBe(frozenInventory.sha256Hex);
+  });
+
+  // Gated: when the fixture is absent this test is reported as SKIPPED, never as passed.
+  (existsSync(FORM_8B_DOCX_PATH) ? it : it.skip)("independently recomputes the SHA-256 of the real uploaded bytes and it matches the frozen inventory and the manifest binding", () => {
+    const bytes = readFileSync(FORM_8B_DOCX_PATH);
     const sha = createHash("sha256").update(bytes).digest("hex");
     expect(sha).toBe(frozenInventory.sha256Hex);
     expect(sha).toBe(FORM_8B_STRUCTURAL_MANIFEST_SOURCE_SHA256);

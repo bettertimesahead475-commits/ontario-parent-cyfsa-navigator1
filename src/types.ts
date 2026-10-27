@@ -131,8 +131,11 @@ export interface AnalysisReport {
     locationInDocument?: string; // Exact page or section location where violation is found
     parentActionStep?: string; // Step-by-step visual instruction for parents to debunk this violation
     evidenceClassification?: AuthoritativeEvidenceClassification;
-    /** Server check of phraseDetected against the source text; false = not found verbatim. */
-    quoteVerified?: boolean;
+    /**
+     * Server check of phraseDetected against the authenticated page text. true = found verbatim, false = not found,
+     * null = not checked because the source was not authenticated (quoteVerification says UNAUTHENTICATED_SOURCE).
+     */
+    quoteVerified?: boolean | null;
     quoteVerification?: string;
     /** "UNVERIFIED" when the citation is outside the confirmed statute reference. */
     citationStatus?: "CONFIRMED_REFERENCE" | "UNVERIFIED" | "NONE";

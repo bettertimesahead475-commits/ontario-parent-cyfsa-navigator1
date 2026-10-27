@@ -1,0 +1,150 @@
+{
+  "recordedAt": "2026-10-26",
+  "purpose": "Field-level compatibility of the current official PDFs (AcroForm) against the verified DOCX originals. Counts and flags only; no equivalence is claimed.",
+  "method": "DOCX: buildDocxFieldInventory on the five verified DOCX originals. PDF: pdfjs getFieldObjects on the six current PDFs (unique names). Matching: lowercase, alphanumeric-only, trailing 'RowN' removed.",
+  "finding": "Name identity is not usable as a key. DOCX names are generic (e.g. Text1, Check46, CourtFileNo) and repeat; PDF names are human labels. Any field correspondence must come from the semantic maps, which are per form and are not yet extended to the current PDFs.",
+  "forms": {
+    "35.1A": {
+      "docx": {
+        "legacyFields": 68,
+        "uniqueNames": 3,
+        "duplicateNameGroups": 1,
+        "types": {
+          "dropdown": 1,
+          "text": 67
+        }
+      },
+      "pdf": {
+        "uniqueAcroFormNames": 70,
+        "types": {
+          "text": 67,
+          "signature": 1,
+          "combobox": 1,
+          "": 1
+        }
+      },
+      "normalizedNameMatches": 0,
+      "flags": [
+        "DOCX field names are not unique (68 fields, 3 unique names); name identity cannot key fields",
+        "no usable name correspondence between DOCX and AcroForm",
+        "1 AcroForm field(s) report no type; not classified",
+        "1 signature field(s) in PDF with no DOCX counterpart type"
+      ],
+      "equivalence": "NOT ESTABLISHED"
+    },
+    "33C": {
+      "docx": {
+        "legacyFields": 46,
+        "uniqueNames": 2,
+        "duplicateNameGroups": 0,
+        "types": {
+          "dropdown": 1,
+          "text": 45
+        }
+      },
+      "pdf": {
+        "uniqueAcroFormNames": 49,
+        "types": {
+          "text": 47,
+          "combobox": 1,
+          "": 1
+        }
+      },
+      "normalizedNameMatches": 1,
+      "flags": [
+        "DOCX field names are not unique (46 fields, 2 unique names); name identity cannot key fields",
+        "no usable name correspondence between DOCX and AcroForm",
+        "1 AcroForm field(s) report no type; not classified"
+      ],
+      "equivalence": "NOT ESTABLISHED"
+    },
+    "33B.1": {
+      "docx": {
+        "legacyFields": 169,
+        "uniqueNames": 16,
+        "duplicateNameGroups": 4,
+        "types": {
+          "dropdown": 1,
+          "text": 145,
+          "checkbox": 23
+        }
+      },
+      "pdf": {
+        "uniqueAcroFormNames": 179,
+        "types": {
+          "text": 143,
+          "checkbox": 21,
+          "signature": 2,
+          "combobox": 1,
+          "": 12
+        }
+      },
+      "normalizedNameMatches": 0,
+      "flags": [
+        "DOCX field names are not unique (169 fields, 16 unique names); name identity cannot key fields",
+        "no usable name correspondence between DOCX and AcroForm",
+        "12 AcroForm field(s) report no type; not classified",
+        "2 signature field(s) in PDF with no DOCX counterpart type"
+      ],
+      "equivalence": "NOT ESTABLISHED"
+    },
+    "14A": {
+      "docx": {
+        "legacyFields": 13,
+        "uniqueNames": 7,
+        "duplicateNameGroups": 2,
+        "types": {
+          "dropdown": 1,
+          "text": 12
+        }
+      },
+      "pdf": {
+        "uniqueAcroFormNames": 20,
+        "types": {
+          "text": 16,
+          "signature": 2,
+          "combobox": 1,
+          "": 1
+        }
+      },
+      "normalizedNameMatches": 0,
+      "flags": [
+        "DOCX field names are not unique (13 fields, 7 unique names); name identity cannot key fields",
+        "no usable name correspondence between DOCX and AcroForm",
+        "1 AcroForm field(s) report no type; not classified",
+        "2 signature field(s) in PDF with no DOCX counterpart type"
+      ],
+      "equivalence": "NOT ESTABLISHED"
+    },
+    "8B": {
+      "docx": {
+        "legacyFields": 115,
+        "uniqueNames": 7,
+        "duplicateNameGroups": 4,
+        "types": {
+          "dropdown": 1,
+          "text": 72,
+          "checkbox": 42
+        }
+      },
+      "pdf": {
+        "uniqueAcroFormNames": 131,
+        "types": {
+          "text": 78,
+          "checkbox": 40,
+          "signature": 2,
+          "": 11
+        }
+      },
+      "normalizedNameMatches": 0,
+      "flags": [
+        "DOCX field names are not unique (115 fields, 7 unique names); name identity cannot key fields",
+        "no usable name correspondence between DOCX and AcroForm",
+        "11 AcroForm field(s) report no type; not classified",
+        "2 signature field(s) in PDF with no DOCX counterpart type"
+      ],
+      "equivalence": "NOT ESTABLISHED"
+    }
+  },
+  "decision": "NO FIELD MAP ADOPTED FOR CURRENT PDFS. Requires a per-form semantic mapping and a review before any PDF-backed field test claims equivalence."
+}

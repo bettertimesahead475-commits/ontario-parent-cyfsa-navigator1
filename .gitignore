@@ -8,3 +8,6 @@ coverage/
 !.env.example
 .vercel/
 supabase/.temp/
+
+# Official court-form fixtures: local only, never committed (verified by SHA-256 against scripts/official-forms/*.json)
+fixtures/

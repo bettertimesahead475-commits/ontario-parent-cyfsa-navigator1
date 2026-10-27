@@ -1,3 +1,4 @@
+import { officialFormFile } from "../testSupport/officialFormFixtures.js";
 // Stage 9D-4B-2A-ii-b4B-ii — Form 8B pass-2 (requested-order) semantic map tests.
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
@@ -34,7 +35,7 @@ import { FORM_14A_SEMANTIC_FIELD_MAP, FORM_14A_EXACT_TEMPLATE_BINDING } from "./
 import { FORM_351A_SEMANTIC_FIELD_MAP, FORM_351A_EXACT_TEMPLATE_BINDING } from "./form351aSemanticFieldMap.js";
 import { FORM_33C_SEMANTIC_FIELD_MAP, FORM_33C_EXACT_TEMPLATE_BINDING } from "./form33cSemanticFieldMap.js";
 
-const REAL_PATH = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e/d39f83dd-form-8b-feb_1_2022-en.docx";
+const REAL_PATH = officialFormFile("d39f83dd-form-8b-feb_1_2022-en.docx");
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 const sha = (p: string) => crypto.createHash("sha256").update(fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n")).digest("hex");
 
@@ -413,4 +414,4 @@ describe("pass 2: frozen stages + other forms", () => {
 });
 
 const B4BI_SHA = "1ad761ea6408db6dfef373e4208fd38f34941ba0b3103f4b08a08f646d131543";
-const B4BI_TEST_SHA = "649716b6dbb48eed4d6dc2e88860490c84bb4d1ccdf430cc31235dff0a3d7509";
+const B4BI_TEST_SHA = "a7b1645d031ab5a221a6b4e6dd5884e990241d5e2c523996b661c73f702fc2e2";

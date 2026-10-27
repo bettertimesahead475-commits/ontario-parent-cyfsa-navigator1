@@ -1,0 +1,61 @@
+# TEMPLATE — NOT ACTIVE. This file is deliberately outside .github/workflows/.
+# Copy it to .github/workflows/official-forms-fixtures.yml only after the owner has verified every item in
+# docs/ci/OFFICIAL_FORMS_FIXTURES_CI.md section 6 (bucket, identity provider, environment, branch restriction).
+name: Official-form fixtures (protected, manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # OIDC token exchange with Google Cloud. No stored key or secret.
+
+concurrency:
+  group: official-forms-fixtures
+  cancel-in-progress: false
+
+jobs:
+  fixture-tests:
+    runs-on: ubuntu-latest
+    # The environment must have required reviewers and deployment branches restricted to "main".
+    # Its variables (not secrets) are the only configuration this job reads.
+    environment: official-forms-fixtures
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Exchange OIDC token for read-only Google Cloud access
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.OFFICIAL_FORMS_WIF_PROVIDER }}
+          service_account: ${{ vars.OFFICIAL_FORMS_READER_SA }}
+
+      - name: Download the two fixture sets into empty folders (fail closed)
+        env:
+          BUCKET: ${{ vars.OFFICIAL_FORMS_BUCKET }}
+        run: |
+          set -euo pipefail
+          test -n "$BUCKET"
+          mkdir -p "$RUNNER_TEMP/hist" "$RUNNER_TEMP/curr"
+          gcloud storage cp "gs://$BUCKET/historical/*" "$RUNNER_TEMP/hist/"
+          gcloud storage cp "gs://$BUCKET/current/*" "$RUNNER_TEMP/curr/"
+
+      - name: Verify every pinned SHA-256 and length, then install (fail closed)
+        run: |
+          node scripts/official-forms/fetch-fixtures.mjs \
+            --historical-source "$RUNNER_TEMP/hist" \
+            --current-source "$RUNNER_TEMP/curr"
+
+      - name: Test with fixtures required
+        env:
+          REQUIRE_OFFICIAL_FORMS_FIXTURES: "1"
+        run: npm test

@@ -364,8 +364,41 @@ export async function finalizeAnalysisCredit(params: {
 }
 
 /**
+ * A database outage on a credit call. Every failed RPC is reported this way, so it is distinct from a business outcome
+ * (missing or released reservation), which is final. Only an outage is transient: it may be retried, and if it persists
+ * the caller holds the validated report instead of discarding it.
+ */
+export function isBillingOutage(err: unknown): boolean {
+  return err instanceof LifecycleError && err.code === "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE";
+}
+
+/**
+ * Finalizes a reservation, retrying transient write failures. Safe to repeat: paid_finalize_credit maps a consumed
+ * marker to consumed, so a retry after an uncertain first attempt cannot charge twice. Business outcomes (missing,
+ * released) are final and are never retried.
+ */
+export async function finalizeAnalysisCreditWithRetry(
+  params: Parameters<typeof finalizeAnalysisCredit>[0],
+  options: { attempts?: number; delayMs?: number; finalize?: typeof finalizeAnalysisCredit } = {}
+): Promise<CreditBalance | null> {
+  const attempts = options.attempts ?? 3;
+  const delayMs = options.delayMs ?? 300;
+  const finalize = options.finalize ?? finalizeAnalysisCredit;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await finalize(params);
+    } catch (err) {
+      const finalOutcome = err instanceof LifecycleError && !isBillingOutage(err);
+      if (finalOutcome || attempt >= attempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+}
+
+/**
  * Releases a reservation when processing fails before a billable result is produced, returning the unit.
  * Only the attempt that owns the reservation may release it: a missing or different reservation id does nothing.
+ * A consumed (finalized) reservation is never released: paid_release_marker only acts on reserved markers.
  */
 export async function releaseAnalysisReservation(params: {
   sessionId: string;

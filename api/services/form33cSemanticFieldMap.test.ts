@@ -41,6 +41,7 @@ import {
   FORM_351A_EXACT_TEMPLATE_BINDING,
   FORM_351A_SOURCE_SHA256_HEX
 } from "./form351aSemanticFieldMap.js";
+import { OFFICIAL_FORMS_DIR } from "../testSupport/officialFormFixtures.js";
 
 function form33cInventoryFromFrozenData(): DocxFieldInventoryResult {
   const record = DOCX_FIELD_INVENTORIES.find(f => f.formNumber === "33C");
@@ -474,7 +475,7 @@ describe("Form 33C: determinism and immutability", () => {
 });
 
 describe("Form 33C: real-artifact validation", () => {
-  const UPLOAD_DIR = "/root/.claude/uploads/f5b74824-3969-5f04-a809-1a60f42bc26e";
+  const UPLOAD_DIR = OFFICIAL_FORMS_DIR;
   const REAL_PATH = `${UPLOAD_DIR}/3bf6f793-form_33c_2018.docx`;
   const available = fs.existsSync(REAL_PATH);
   const d = available ? describe : describe.skip;

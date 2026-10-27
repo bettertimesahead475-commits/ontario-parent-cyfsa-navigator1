@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
+import { canSendForAnalysis, interpretTranscription, NO_READABLE_CONTENT_MESSAGE, TRANSCRIPTION_FAILED_MESSAGE } from "../utils/analyzerUploadGuards";
 import { useLocation } from "wouter";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
@@ -51,6 +52,7 @@ import {
   ArrowRight
 } from "lucide-react";
 import { getUserKey } from "../utils/storage";
+import { deepScanIdFor, clearDeepScanId, type DeepScanPendingIds } from "../utils/deepScanAttempt";
 import { normalizeAnalysisReport } from "../utils/analysisReport";
 import { ReportSections } from "./ReportSections";
 import { REPORT_SECTIONS_UI_ENABLED, COURT_PREP_UI_ENABLED, PARENT_QA_UI_ENABLED, PARENT_REPORT_UI_ENABLED } from "../config/featureFlags";
@@ -112,6 +114,8 @@ interface OrganizedFile {
   analysisReport?: AnalysisReport;
   // Why the last analysis attempt failed, as reported by the server (shown to the parent).
   analysisError?: string;
+  // The analysis id of a finished analysis whose billing is still being confirmed. Retry reuses it.
+  heldAnalysisId?: string;
   // Legacy local workspace retains structural page attribution. Persistent UUIDs
   // are issued only by the matter-scoped document API, never invented here.
   sourcePages?: { pageNumber: number; text: string; extractionMethod: string; checksum: string }[];
@@ -199,6 +203,33 @@ const GLOSSARY_TERMS = [
     triggers: ["scfa", "futures act", "children's futures", "ombudsman", "bill 33"]
   }
 ];
+
+const DEEP_SCAN_PENDING_STORAGE_KEY = "OPA_DEEPSCAN_PENDING";
+
+function readPendingDeepScanIds(): DeepScanPendingIds {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getUserKey(DEEP_SCAN_PENDING_STORAGE_KEY) || DEEP_SCAN_PENDING_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePendingDeepScanIds(pending: DeepScanPendingIds): void {
+  try {
+    localStorage.setItem(getUserKey(DEEP_SCAN_PENDING_STORAGE_KEY) || DEEP_SCAN_PENDING_STORAGE_KEY, JSON.stringify(pending));
+  } catch (error) {
+    // Storage can be unavailable. The id then lives only for this page, which is still correct for an in-page retry.
+    console.warn("Unable to persist a pending deep scan id", error);
+  }
+}
+
+/** True when the server may still hold or be running this analysis, so its id must be kept for a safe retry. */
+function deepScanMayStillBeRunning(err: any): boolean {
+  if (err?.code === "BILLING_PENDING" || err?.code === "ANALYSIS_IN_PROGRESS") return true;
+  if (err?.code === "STREAM_INTERRUPTED") return true;
+  return err?.retryable === true || (typeof err?.status === "number" && err.status >= 500);
+}
 
 export default function DocumentAnalyzerTab() {
   const { resetAll } = useAppReset();
@@ -520,10 +551,15 @@ export default function DocumentAnalyzerTab() {
     setDeepScanFileId(file.id);
     setDeepScanError(null);
 
+    // One id per file until the scan completes or fails terminally. A retry of a held scan sends the same id, so the
+    // server recovers the report instead of running the model again.
+    const attempt = deepScanIdFor(readPendingDeepScanIds(), file.id);
+    writePendingDeepScanIds(attempt.pending);
+
     try {
       const response = await apiFetch("/api/deep-scan", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-analysis-id": attempt.id },
         body: JSON.stringify({
           documentText: file.content,
           documentName: file.name,
@@ -540,6 +576,7 @@ export default function DocumentAnalyzerTab() {
         throw new Error(data.error || `Deep scan failed (${response.status})`);
       }
       const report = { ...data, timestamp: new Date().toLocaleDateString() };
+      writePendingDeepScanIds(clearDeepScanId(attempt.pending, file.id));
 
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
@@ -556,7 +593,17 @@ export default function DocumentAnalyzerTab() {
       setSelectedReport(prev => prev ? { ...prev, ...report } : report);
     } catch (err: any) {
       console.error("[deep scan] request failed:", err);
-      setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
+      if (deepScanMayStillBeRunning(err)) {
+        // Keep the id: a retry with it is recovered by the server, never run a second time.
+        setDeepScanError(
+          err?.code === "BILLING_PENDING"
+            ? "Your deep scan is ready, but its billing record is still being confirmed. Press Deep Scan again to receive it. It will not be run again."
+            : "This deep scan is still running or its outcome is not yet known. Press Deep Scan again to check it. It will not be run again."
+        );
+      } else {
+        writePendingDeepScanIds(clearDeepScanId(attempt.pending, file.id));
+        setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
+      }
     } finally {
       setIsDeepScanning(false);
       setDeepScanFileId(null);
@@ -1503,6 +1550,8 @@ export default function DocumentAnalyzerTab() {
 
     const loadedFiles: OrganizedFile[] = await Promise.all(filesArray.map(async (f) => {
       let parsedContent = "";
+      // Set when the file cannot be turned into text. Such a file is listed with its error and is never analyzed.
+      let extractionError: string | null = null;
       let finalName = f.name;
       const nameL = f.name.toLowerCase();
       // Some browsers leave File.type empty for PDFs, DOCX, and common image formats.
@@ -1568,14 +1617,19 @@ export default function DocumentAnalyzerTab() {
           });
 
           const responseData = await safeReadJson(response);
-          parsedContent = responseData.transcribedText;
-          finalName = responseData.fileName;
-          finalMimeType = "application/pdf"; // Stored in PDF format
+          const outcome = interpretTranscription(responseData);
+          if (outcome.ok && outcome.text !== undefined) {
+            parsedContent = outcome.text;
+            finalName = responseData.fileName || f.name;
+            finalMimeType = "application/pdf"; // Stored in PDF format
+          } else {
+            // A response with no text is a failed transcription, so it must not be analyzed.
+            extractionError = outcome.error ?? TRANSCRIPTION_FAILED_MESSAGE;
+          }
         } catch (error: any) {
           console.error("Automated audio transcription failed:", error);
-          parsedContent = `IN THE ONTARIO FAMILY COURT OF JUSTICE\n\nRECORDING STATEMENT FOR: ${f.name}\n\n[SYSTEM TRANSCRIBING PIPE WARNING]: The automated transcription queue failed to reach the model. Falling back to parent raw audio metadata representation.\nReason: ${error.message || error}\nPencil notes: Please contact your legal advisor.`;
-          finalName = `Transcript - ${f.name.replace(/\.[^/.]+$/, "")}.pdf`;
-          finalMimeType = "application/pdf";
+          // No placeholder text. A placeholder would be analyzed as if it were the recording's content.
+          extractionError = TRANSCRIPTION_FAILED_MESSAGE;
         }
       } else if (finalMimeType === "text/plain") {
         parsedContent = await new Promise<string>((resolve) => {
@@ -1613,11 +1667,12 @@ export default function DocumentAnalyzerTab() {
         name: finalName,
         type: finalMimeType,
         size: processedFile.size,
-        content: parsedContent,
+        content: extractionError ? "" : parsedContent,
         category: categoryIndex,
         uploadedAt: new Date().toISOString(),
         mimeType: finalMimeType,
-        analysisStatus: "pending"
+        analysisStatus: extractionError ? "failed" : "pending",
+        analysisError: extractionError ?? undefined
       };
     }));
 
@@ -1626,11 +1681,13 @@ export default function DocumentAnalyzerTab() {
     setSelectedFileId(chunkedFiles[0]?.id || null);
     setSelectedReport(null);
     e.target.value = "";
+    // Files that failed to become text are listed with their error and never sent for analysis.
+    const analyzableFiles = chunkedFiles.filter(file => file.analysisStatus !== "failed");
     // Single-file uploads use full streaming and stage callbacks; batches use parallel engine
-    if (chunkedFiles.length === 1) {
-      await triggerSingleAnalysis(chunkedFiles[0]);
-    } else if (chunkedFiles.length > 1) {
-      await runParallelBulkAnalysis(chunkedFiles);
+    if (analyzableFiles.length === 1) {
+      await triggerSingleAnalysis(analyzableFiles[0]);
+    } else if (analyzableFiles.length > 1) {
+      await runParallelBulkAnalysis(analyzableFiles);
     } else {
       setBulkProgress(null);
     }
@@ -1657,6 +1714,9 @@ export default function DocumentAnalyzerTab() {
     // making the whole batch slower the more files it had. One call after the batch settles
     // gets the same up-to-date timeline for a fraction of the requests.
     const extractedContentById: Record<string, string> = {};
+    // The server-signed page map for each file's extraction. Sent back with the analysis so page numbers come from the
+    // server, never from the text. Kept per file, so it always matches the text it was issued for.
+    const extractedSourceMapById: Record<string, unknown> = {};
     try {
       const concurrencyLimit = 5;
       const queue = [...filesToAnalyzeList];
@@ -1709,6 +1769,7 @@ export default function DocumentAnalyzerTab() {
                     }
                     payload.textContent = extractResult.extractedText;
                     extractedContentById[file.id] = extractResult.extractedText;
+                    extractedSourceMapById[file.id] = extractResult.sourcePageMap ?? undefined;
                     setOrganizedFiles(prev => prev.map(f => f.id === file.id
                       ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
                   }
@@ -1716,7 +1777,7 @@ export default function DocumentAnalyzerTab() {
                   const response = await apiFetch("/api/analyze", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
+                    body: JSON.stringify({ ...payload, sourcePageMap: extractedSourceMapById[file.id], mode: analysisMode, model: claudeModel })
                   });
 
                   // safeReadJson throws an ApiResponseError (status/code/retryable) for any
@@ -1792,6 +1853,13 @@ export default function DocumentAnalyzerTab() {
   // Re-run single analysis on demand
   const triggerSingleAnalysis = async (file: OrganizedFile) => {
     if (analysisInFlightRef.current || isRecoveringJob) return; // never two analyses at once
+    if (!canSendForAnalysis(file)) {
+      // Nothing to analyze. Never send an empty document for analysis.
+      setOrganizedFiles(prev => prev.map(f => f.id === file.id
+        ? { ...f, analysisStatus: "failed", analysisError: f.analysisError || NO_READABLE_CONTENT_MESSAGE }
+        : f));
+      return;
+    }
     analysisInFlightRef.current = true;
     stopWaitingRef.current = false;
     setIsSingleAnalyzing(true);
@@ -1803,10 +1871,12 @@ export default function DocumentAnalyzerTab() {
     setStreamingProgress({ stage: "uploading", percent: 10, message: "Preparing document for analysis..." });
 
     setOrganizedFiles(prev => prev.map(f => 
-      f.id === file.id ? { ...f, analysisStatus: "analyzing", analysisError: undefined } : f
+      f.id === file.id ? { ...f, analysisStatus: "analyzing", analysisError: undefined, heldAnalysisId: undefined } : f
     ));
 
-    const analysisId = "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+    // A retry of a finished analysis whose billing was not confirmed reuses its id, so the server returns the held
+    // report instead of running the model again.
+    const analysisId = file.heldAnalysisId || "req_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
     // Persist the job ID so it can be recovered after a page reload. Do NOT set activeJobId here:
     // that starts the recovery poller alongside this live request, which overwrote real progress
     // (e.g. during text extraction) with status-endpoint data and left the UI stuck at 45%.
@@ -1846,6 +1916,8 @@ export default function DocumentAnalyzerTab() {
           throw new Error("No readable text could be extracted from this document.");
         }
         payload.textContent = extractResult.extractedText;
+        // Server-signed page map for this extraction. Undefined for plain text and DOCX, which are unpaginated.
+        payload.sourcePageMap = extractResult.sourcePageMap ?? undefined;
         setOrganizedFiles(prev => prev.map(f => f.id === file.id
           ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
       }
@@ -1982,8 +2054,10 @@ export default function DocumentAnalyzerTab() {
       }
       const errMsg = err.message || "Failed single scan.";
       setSingleAnalysisError(errMsg);
-      setOrganizedFiles(prev => prev.map(f => 
-        f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: errMsg } : f
+      // A finished analysis whose billing is still being confirmed keeps its id, so Retry recovers the held report.
+      const heldAnalysisId = err?.code === "BILLING_PENDING" ? analysisId : undefined;
+      setOrganizedFiles(prev => prev.map(f =>
+        f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: errMsg, heldAnalysisId } : f
       ));
     } finally {
       analysisInFlightRef.current = false;
@@ -2600,6 +2674,7 @@ export default function DocumentAnalyzerTab() {
                     <div class="threat-phrase">"${escapeHtml(rf.phraseDetected)}"</div>
                     ${rf.quoteVerified === true ? `<div style="font-size:11px; color:#047857; margin-top:4px;">Found word-for-word in the document.</div>` : ""}
                     ${rf.quoteVerified === false ? `<div style="font-size:11px; color:#92400e; margin-top:4px;"><strong>Not found word-for-word in the document</strong> - treat as a paraphrase and check the original wording.</div>` : ""}
+                    ${rf.quoteVerified == null && rf.quoteVerification === "UNAUTHENTICATED_SOURCE" ? `<div style="font-size:11px; color:#475569; margin-top:4px;"><strong>Not verified against the original file</strong> - this quote is not confirmed as evidence.</div>` : ""}
                     ${rf.forensicVerification ? `<div style="font-size:11px; color:#334155; margin-top:4px;"><strong>Independent second review: ${escapeHtml(rf.forensicVerification.verdict)}</strong>${rf.forensicVerification.note ? ` - ${escapeHtml(rf.forensicVerification.note)}` : ""}</div>` : ""}
                     <br/><br/>
                     <strong>Educational Advisory:</strong> ${escapeHtml(rf.explanation)}<br/><br/>
@@ -4273,6 +4348,11 @@ export default function DocumentAnalyzerTab() {
                                   {flag.quoteVerified === false && (
                                     <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
                                       ⚠️ Not found word-for-word in your document. Treat this as a paraphrase and check the original wording before relying on it.
+                                    </p>
+                                  )}
+                                  {flag.quoteVerified == null && flag.quoteVerification === "UNAUTHENTICATED_SOURCE" && (
+                                    <p className="text-[10.5px] font-sans font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-md px-2 py-1">
+                                      Not verified against your original file. The text was not authenticated as the document, so this quote is not confirmed as evidence.
                                     </p>
                                   )}
                                 </div>

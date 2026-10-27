@@ -1,16 +1,24 @@
 import {describe,it,expect,vi} from 'vitest';
 import {PDFDocument} from 'pdf-lib';
-import {decodeSource,extractPages,verifyQuote,validateEvidence,validateQuoteCoordinates,normalizeQuoteWhitespace,SOURCE_SYSTEM,hash} from './pageSources.js';
+import {decodeSource,extractPages,verifyQuote,validateEvidence,validateQuoteCoordinates,normalizeQuoteWhitespace,SOURCE_SYSTEM,hash,BLANK_PAGE_MARKER} from './pageSources.js';
 
 describe('deterministic page attribution',()=>{
  it('physically splits a real multipage PDF in order including blank pages',async()=>{
   const pdf=await PDFDocument.create();pdf.addPage([100,200]);pdf.addPage([300,400]);
   const seen:number[]=[];
   const pages=await extractPages(Buffer.from(await pdf.save()),'application/pdf',async base64=>{
-   const part=await PDFDocument.load(Buffer.from(base64,'base64'));expect(part.getPageCount()).toBe(1);seen.push(part.getPage(0).getWidth());return seen.length===1?'page one':'';
+   const part=await PDFDocument.load(Buffer.from(base64,'base64'));expect(part.getPageCount()).toBe(1);seen.push(part.getPage(0).getWidth());return seen.length===1?'page one':BLANK_PAGE_MARKER;
   });
   expect(seen).toEqual([100,300]);expect(pages.map(p=>p.pageNumber)).toEqual([1,2]);expect(pages[1].text).toBe('');
   expect(pages[0].checksum).toBe(hash('page one'));
+  // A page is blank only when the model says so explicitly.
+  expect(pages.map(p=>p.status)).toEqual(['text','blank']);
+ });
+ it('treats empty OCR output as an unreadable page, never as a blank page',async()=>{
+  const pdf=await PDFDocument.create();pdf.addPage([100,200]);pdf.addPage([300,400]);
+  await expect(extractPages(Buffer.from(await pdf.save()),'application/pdf',async base64=>
+   (await PDFDocument.load(Buffer.from(base64,'base64'))).getPage(0).getWidth()===100?'page one':''
+  )).rejects.toMatchObject({code:'EXTRACTION_INCOMPLETE',statusCode:422});
  });
  it('keeps a text source as one page without inventing physical pagination',async()=>{
   const ocr=vi.fn();const pages=await extractPages(Buffer.from('one\ftwo'),'text/plain',ocr);
