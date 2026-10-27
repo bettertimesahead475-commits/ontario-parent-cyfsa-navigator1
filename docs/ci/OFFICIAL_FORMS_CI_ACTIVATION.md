@@ -43,7 +43,7 @@ Backup-failure rollback (a failure moving the first or second existing file to i
 File: `docs/ci/ci.workflow.proposed.yml`. The changes from the current `ci.yml`:
 - Adds `permissions: contents: read`. The current file has no `permissions` block, so it inherits the repository default token scope.
 - Adds `persist-credentials: false` to checkout.
-- Adds a separate `official-forms` job. It downloads and verifies the 11 files, then runs `npm test` with `REQUIRE_OFFICIAL_FORMS_FIXTURES=retrievable`.
+- Adds a separate `official-forms` job. Its steps: fetch and verify the 11 files (any failure stops the job); run the fixture gate and prove it executed, with `scripts/official-forms/assertFixtureGate.mjs` checking the exact pass and labelled-skip counts; then run `npm test` with `REQUIRE_OFFICIAL_FORMS_FIXTURES=retrievable`. It downloads and verifies the 11 files, then runs `npm test` with `REQUIRE_OFFICIAL_FORMS_FIXTURES=retrievable`.
 - Keeps the existing `test` job unchanged in behaviour, so an official-site outage cannot fail it.
 
 Why a separate job: the official site becomes a dependency of that one job only. The alternative (one job with the download step) makes every PR depend on an external site.
@@ -67,3 +67,7 @@ Engineering is in good shape: the downloader is tested, the defects above are fi
 5. **Remove the temporary connectivity workflow** from the branch before merge. It stays only as evidence of the run above.
 
 Once items 1 to 4 are done, the proposed file can be copied into `.github/workflows/ci.yml` in a reviewed pull request, after confirming the `official-forms` job passes on that branch.
+
+## 6. Full 17-fixture mode
+
+It is not run in CI. The six superseded PDFs have no official source, so CI cannot obtain them. For controlled testing on a machine that holds the verified bytes, run `REQUIRE_OFFICIAL_FORMS_FIXTURES=1 npm test` with `OFFICIAL_FORMS_DIR` and `OFFICIAL_FORMS_CURRENT_DIR` pointing at the folders. Verified on 2026-10-27: 617 of 617 fixture-dependent tests pass in this mode.

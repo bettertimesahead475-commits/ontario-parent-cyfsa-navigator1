@@ -52,7 +52,7 @@ Earlier drafts of this record said the approach was "consistent with the terms".
 |---|---|---|---|
 | Current PDFs | 6 | all six, HTTP 200 | 6 of 6 |
 | Historical DOCX | 5 | all five, HTTP 200 | 5 of 5 |
-| Historical PDFs | 6 | the same URLs serve different bytes | 0 of 6 (superseded) |
+| Historical PDFs | 6 | the official paths for the same form names serve the current versions (HTTP 200), with different bytes. No URL for the superseded versions is recorded in this repo | 0 of 6 (superseded) |
 
 The six historical PDFs cannot be obtained from the official source. Their pinned bytes are superseded versions, and the
 owner recorded their origin. No official source serves them now.

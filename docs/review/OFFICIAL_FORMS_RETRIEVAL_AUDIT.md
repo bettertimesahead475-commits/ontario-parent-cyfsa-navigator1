@@ -322,3 +322,13 @@ The fixture-dependent subset is the 16 files listed in the audit's earlier secti
 3. CODEOWNERS or required review on `scripts/official-forms/**` and `.github/workflows/**`.
 4. Owner approval to change `ci.yml`.
 5. Owner decision on the 38 superseded-PDF tests.
+
+## 14. Requirement tests and fixture verification (2026-10-27)
+
+- All 18 requirement tests are now registered in every mode. Before this change the unset run registered 12 and the retrievable run left 6 unregistered. Each test either runs or is a labelled skip (`[skipped: reason]`). Detail: `docs/review/OFFICIAL_FORMS_REQUIREMENT_TESTS.md`.
+- Mode `1`: 18 of 18 execute and pass. Mode `retrievable`: 12 of 18 execute and pass, and the 6 superseded PDF checks are labelled skips. Unset: all 18 are labelled skips, by design.
+- The default-run skip count rose from 18 to 24 (the 6 additional labels are the superseded PDF checks, now visible). No test was removed or made to pass by a change of mode.
+- A new CI gate, `scripts/official-forms/assertFixtureGate.mjs`, reads the vitest JSON for the requirement file and fails unless the mode's exact checks passed and every skip is labelled. Tested by `api/services/officialFormFixtureGate.test.ts` (11 tests).
+- The six superseded PDFs were probed live (hashes only): the official paths serve current versions with different bytes. They are not replaced.
+- The 38 PDF-dependent tests in `officialFormRealArtifactIntegration.test.ts` execute and pass with the local verified fixtures (full mode). They skip only when the superseded PDFs are absent. That file is not frozen and was not edited.
+- Results: see the report in the conversation and `OFFICIAL_FORMS_REQUIREMENT_TESTS.md` section 5.

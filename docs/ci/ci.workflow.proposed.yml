@@ -51,8 +51,15 @@ jobs:
 
       - run: npm ci
 
-      - name: Download and verify the 11 retrievable official forms (no pin is updated)
+      - name: "Download and verify the 11 retrievable official forms (no pin is updated; any failure stops the job)"
         run: node scripts/official-forms/fetch-official.mjs --report "$RUNNER_TEMP/fetch-report.json"
+
+      - name: "Prove the fixture gate executed (retrievable mode: 12 checks pass, 6 labelled skips)"
+        env:
+          REQUIRE_OFFICIAL_FORMS_FIXTURES: retrievable
+        run: |
+          npx vitest run api/services/officialFormFixtureRequirement.test.ts --reporter=json --outputFile="$RUNNER_TEMP/gate.json"
+          node scripts/official-forms/assertFixtureGate.mjs retrievable "$RUNNER_TEMP/gate.json"
 
       - name: Test with the retrievable fixtures required
         env:
