@@ -2,7 +2,27 @@
 
 Living log for PR #109 (`fix/paid-job-recovery`, draft). Update it as work lands so a resumed session can continue.
 
-## Status (latest first)
+## Current state (latest)
+
+- **PR #109** `fix/paid-job-recovery`: draft, head `37d5a69c`. Checks: `test` and Vercel preview passed; CodeRabbit skipped.
+- **Release candidate** `release/candidate-audit-integration` at `67aa70da`: PR #109 plus `origin/fix/analyzer-audit-findings`
+  (citation and quote verification, unified retry policy, unlisted-model refusal). Tests: 180 files passed, 3540 tests
+  passed, 0 failed, 433 skipped. Typecheck and production build pass. Not merged to `main`; not deployed.
+- **Integration conflict resolved.** The one conflict in `DocumentAnalyzerTab.tsx` was the analysis id source. The branch
+  always generated a fresh id, which would bring back the duplicate-charge defect. Retry keeps the saved id (`analysisIdForRetry`),
+  and fresh ids come from the shared generator.
+- **Truncated analysis output** now returns `retryable: true`, matching its own "try again" message. Test asserts it.
+- **Branch inventory:** `docs/branch-inventory.md`. 34 branches fully merged into main; 28 unmerged with an open PR;
+  38 unmerged with no open PR, each needing a keep / merge / close decision.
+
+## Known gap: 422 AI_RESPONSE_INVALID
+
+No live API key is available in this environment, so the model-side cause cannot be reproduced here. Confirmed from code:
+truncated output and refusals both reach this error, and the sectioned Forensic path already retries each section once.
+Needed to close: a captured truncated response (stop reason and length) from staging logs, to confirm the token budget
+is the cause and not a parser fault.
+
+## Status (earlier)
 
 - **Streamed free reports are withheld safely.** A finished free report is saved as completed, its scan is recorded
   as delivered, and only then is the report sent. If recording fails, the stream sends a retryable
