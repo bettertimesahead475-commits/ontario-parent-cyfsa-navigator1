@@ -512,7 +512,8 @@ function extractJson(text: string): any {
       "The analysis response was incomplete — it looks like it was cut off before finishing, " +
       "likely because the document was long or complex enough to need more output room than was " +
       "allotted. Try again; if it keeps happening on this document, try a shorter excerpt.",
-      false
+      // Retryable: truncation is a property of this one response, and the message tells the parent to try again.
+      true
     );
   }
   throw new AnalyzerError(
