@@ -220,44 +220,47 @@ Checksum pins: no pin changed in this step. All 10 frozen-map pins were re-verif
 - Pull-request CI still does not run the historical tests.
 - The fixtures are public government forms. The private bucket is an access-control choice, not a confidentiality guarantee.
 
-## 12. Official-source downloader (implemented, workflow inactive)
+## 12. Official-source downloader (implemented on the draft branch, workflow inactive)
 
 ### What changed
-- `scripts/official-forms/fetch-official.mjs`: downloads the 11 `retrievable: true` entries from their official URLs and verifies each against its pinned SHA-256 and length. Writes only when every retrievable file passes. Writes never delete other files.
-- Safeguards, each with a test: HTTPS only; exact allowlisted host (`ontariocourtforms.on.ca`); no credentials; no non-default port; **no redirects at all** (a redirect means the pinned URL is stale, so it is reported for review); declared-length and streamed size limit (5 MB per file); timeout (60 s); bounded retries (3 attempts, backoff 1 s and 3 s) for transport failures only (network error, timeout, truncated body, 429, 5xx).
-- Changed content (complete response, different bytes or length) is reported as `CHANGED_UPSTREAM`. It is not retried, not written, and the bytes are not kept. Exit code 2. **No pin is ever updated automatically.**
+- `scripts/official-forms/fetch-official.mjs` (v2): downloads the 11 `retrievable: true` entries from their official URLs and verifies each one against its pinned SHA-256 and byte length. It installs only when every retrievable file passes.
+- Install is staged. Each destination folder is replaced only after the staged copy verifies, and the previous folder is kept as a backup until the swap completes. If a later rename fails, the earlier renames are reversed. A rollback that itself fails is reported as `rolledBack: false` with the error. Other files in a destination are never deleted.
+- Safeguards, each with a test: HTTPS only; exact allowlisted host (`ontariocourtforms.on.ca`); path prefix check; no credentials; no non-default port; **every redirect refused** (a redirect means the pinned URL is stale, so it is reported for review); declared-length and streamed size limit of **10 MB per file**; 60 s timeout; bounded retries (3 attempts, backoff 1 s and 3 s) for transport failures only (network error, timeout, truncated body, 429, 5xx); file names restricted to a safe pattern before any request or write.
+- Status codes: `SOURCE_NOT_FOUND` (404/410) and `SOURCE_UNAVAILABLE` (429/5xx after retries) explain that the official source changed or is unavailable. `UNEXPECTED_REDIRECT`, `HTTP_ERROR`, `NETWORK_ERROR`, `TIMEOUT`, `PARTIAL_DOWNLOAD`, `SIZE_LIMIT` each have a plain-language message.
+- Changed content (complete response, different bytes or length) is reported as `CHANGED_UPSTREAM`. It is not retried, not written, and the bytes are not kept. **No pin is ever updated automatically.** Exit code 2.
+- If no retrievable entries exist, the downloader throws rather than report success.
 - `--report <file>` writes statuses, attempt counts, observed hashes, and transport codes. It contains no file content.
-- `manifest.json` and `current-manifest.json`: added `sourceUrl` (historical DOCX) and `retrievable` on every entry. Every `sha256` and `byteLength` is unchanged (checked against the previous commit).
-- The six superseded historical PDFs: `retrievable: false`. They stay in `fixtures/official-forms/` and are not touched by the downloader. Their 38 integration tests are unchanged.
-- `api/services/officialFormFixtureRequirement.test.ts`: `REQUIRE_OFFICIAL_FORMS_FIXTURES=1` still checks all 17 pins. `=retrievable` checks only the 11 retrievable pins.
+- `scripts/official-forms/verifyLib.mjs`: new `checkBytes()` holds the single length-then-SHA-256 rule. The downloader and `verifyDirectory` both use it.
+- `manifest.json` and `current-manifest.json`: `sourceUrl` (historical DOCX) and `retrievable` on every entry. Every `sha256` and `byteLength` is unchanged.
+- The six superseded historical PDFs: `retrievable: false`. The downloader never touches them. Their 38 integration tests are unchanged.
+- `api/services/officialFormFixtureRequirement.test.ts`: `REQUIRE_OFFICIAL_FORMS_FIXTURES=1` checks all 17 pins. `=retrievable` checks the 11 retrievable pins.
 - `api/services/officialFormCurrentPdfs.test.ts`: corrected a defect from an earlier commit. It built paths from the manifest's relative `uploadDirectory` and skipped silently when a file was missing. It now uses the fixture resolver.
-- `api/services/officialFormDownloader.test.ts` (26 tests): no network. A fake `fetch` covers every listed failure class.
+- `api/services/officialFormDownloader.test.ts` (52 tests, no network): a fake `fetch` covers every failure class listed above, plus staged-install rollback, partial install failure, preservation of unrelated and superseded files, and no destination change on failure.
 - Workflow: NOT ACTIVE. `ci.yml` is unchanged. The template is `docs/ci/official-forms-fetch.workflow.template.yml`.
 
 ### Live verification (this sandbox, via the documented proxy setting)
-- The first live attempt returned `NETWORK_ERROR` for all 11 files. The sandbox routes HTTPS through a proxy, and Node's built-in `fetch` ignores it unless `NODE_USE_ENV_PROXY=1` is set (the sandbox's documented setting for Node 22.21 and later). With that setting: 11 of 11 `PASS`, exit 0, 5 historical DOCX and 6 current PDFs written to temporary folders.
-- This proves connectivity from this sandbox only. GitHub-hosted runners are not tested.
+- The first attempt, against the v1 code, returned `NETWORK_ERROR` for all 11 files. Node's built-in `fetch` ignores the sandbox proxy unless `NODE_USE_ENV_PROXY=1` is set.
+- With that setting, the v2 downloader on Node 22.22.0 returned 11 of 11 `PASS` and exit 0. The 5 DOCX went to one temporary folder and the 6 current PDFs to another. Both folders match the repository's pinned fixtures byte for byte (`sha256sum`).
+- This shows connectivity from this sandbox only. GitHub-hosted runners were not tested.
 
-### Test results (current tree)
-- Typecheck (`tsc --noEmit`): exit 0 on Node 22 and Node 24. Build: exit 0 on both.
-- Fixture-dependent tests (15 files, Node 22): 565 passed, 0 failed, 12 skipped (the requirement tests, which are off by default).
-- Full suite, Node 22, PostgreSQL on, fixtures present: 4,190 passed, 0 failed, 18 skipped (6 staging, 12 requirement tests off).
-- Full suite, Node 24, PostgreSQL on, fixtures present: 4,190 passed, 0 failed, 18 skipped (same).
-- Full suite, Node 22, PostgreSQL off, fixtures present: 3,822 passed, 0 failed, 386 skipped (368 PostgreSQL-gated, 6 staging, 12 requirement off).
-- Requirement mode `1`, fixtures present: 18 of 18 pass. Mode `retrievable`, fixtures present: 12 of 12 pass.
-- Negative: mode `retrievable` with the current set corrupted: 6 fail, 6 pass (exit 1). Mode `retrievable` with the fixtures folder absent: 12 fail (exit 1).
-- Clean machine (fixtures absent, requirement off, no PostgreSQL): 3,654 passed, 0 failed, 554 skipped.
+### Test results (draft branch, measured 2026-10-27)
+- Downloader tests (`officialFormDownloader.test.ts`): 52 passed, 0 failed. The first run had 7 failures, all caused by the test file and fixed there: one same-length fixture pair was not the same length, and six assertions checked whether a temp folder existed, which it always does, instead of whether it contained any file. No downloader code change was needed for them.
+- Typecheck (`tsc --noEmit`): exit 0 on Node 22.22.0 and Node 24.22.1. Build (`npm run build`): exit 0 on both.
+- Full suite, Node 22.22.0, PostgreSQL 16 on 127.0.0.1:5433, fixtures present: **4,216 passed, 0 failed, 18 skipped** (216 files: 214 passed, 2 skipped). Exit 0.
+- Full suite, Node 24.22.1, same setup: **4,216 passed, 0 failed, 18 skipped**. Exit 0.
+- Requirement tests with fixtures present, across the requirement, current-PDF and downloader files: mode `1` 120 of 120 pass; mode `retrievable` 114 of 114 pass. The 6-test difference is the six superseded PDFs.
+- Fixtures absent (`OFFICIAL_FORMS_DIR` and `OFFICIAL_FORMS_CURRENT_DIR` pointed at empty folders), fixture-dependent files: default mode 432 passed, 171 skipped, 0 failed. Mode `1`: 18 failed, which is the fail-closed result. Mode `retrievable`: 12 failed, also fail-closed.
+- Corrupted fixtures (one byte changed in a historical DOCX, one current PDF truncated by one byte): default mode 8 failed, 583 passed, 12 skipped. These are the pinned-hash and real-artifact tests, and they fail rather than pass. Mode `retrievable`: 10 failed (the same 8, plus the two requirement tests for those files).
+- Not run in this session: the full suite with PostgreSQL off, and a clean full run with fixtures absent. The earlier numbers for those modes were measured before the v2 downloader and are not restated here.
 
-### Exact remaining skips
-- Always skipped in this environment without staging credentials: 6 `creditStaging.test.ts` tests.
-- Skipped unless `REQUIRE_OFFICIAL_FORMS_FIXTURES` is set: 12 requirement tests in default mode, 18 in mode `1`.
-- Skipped without PostgreSQL: 368 PostgreSQL-gated tests.
-- Skipped when fixtures are absent: the fixture-dependent tests.
-- Skipped in every CI run: the 38 superseded-PDF integration tests, because no official source serves those bytes. They run locally only.
+### Exact remaining skips (full suite, Node 22 and 24)
+- 6 `creditStaging.test.ts` tests: require staging credentials.
+- 12 requirement tests in default mode (18 in mode `1`): off unless `REQUIRE_OFFICIAL_FORMS_FIXTURES` is set.
+- The 38 superseded-PDF integration tests run locally only. No official source serves those bytes, so CI cannot run them.
 
 ### Remaining blockers before the workflow may be enabled
 1. Independent review of the downloader and its tests. Not yet performed.
 2. GitHub-hosted runner connectivity to `ontariocourtforms.on.ca`. Not yet demonstrated. Demonstrate it in a manual run on a non-`main` branch before enabling anything.
-3. Counsel's review of the temporary-copy question in `docs/ci/OFFICIAL_FORMS_SOURCE_DECISION.md` section 1.2. Not yet obtained.
+3. Counsel's review of the temporary-copy question in `docs/ci/OFFICIAL_FORMS_SOURCE_DECISION.md` section 1.2. Not yet obtained. Until then, no claim that the temporary CI copy is exempt is made.
 4. CODEOWNERS (or branch protection with required review) for `scripts/official-forms/**`, so a pull request cannot change a pin or a URL without review. Requires the owner's repository settings.
 5. Owner decision on the 38 superseded-PDF tests: keep them local-only, or pursue a King's Printer licence.
