@@ -7,6 +7,21 @@ import {
   claimProfile
 } from './services/lawyerDirectory.js';
 
+// Expected failures keep their customer message. Anything else is logged in full and answered generically, so raw
+// database or configuration text never reaches a parent's screen.
+function sendDirectoryError(res: Response, e: unknown, context: string) {
+  if (e instanceof LifecycleError) {
+    res.status(e.statusCode).json({ code: e.code, error: e.message });
+    return;
+  }
+  console.error(`[lawyer directory] ${context} failed:`, e);
+  res.status(503).json({
+    code: 'DIRECTORY_UNAVAILABLE',
+    error: 'The lawyer directory is unavailable right now. Please try again shortly.',
+    retryable: true,
+  });
+}
+
 export function registerLawyerDirectoryRoutes(app: Express) {
   // Public, unauthenticated search
   app.post('/api/directory/search', async (req: Request, res: Response) => {
@@ -14,8 +29,8 @@ export function registerLawyerDirectoryRoutes(app: Express) {
       const filters = req.body;
       const results = await searchDirectory(filters);
       res.json(results);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
+    } catch (e: unknown) {
+      sendDirectoryError(res, e, 'search');
     }
   });
 
@@ -25,8 +40,8 @@ export function registerLawyerDirectoryRoutes(app: Express) {
       const profile = await getPublicProfile(req.params.id);
       if (!profile) res.status(404).json({ error: 'Not found' });
       else res.json(profile);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
+    } catch (e: unknown) {
+      sendDirectoryError(res, e, 'profile');
     }
   });
 
@@ -41,12 +56,8 @@ export function registerLawyerDirectoryRoutes(app: Express) {
       }
       const result = await claimProfile(identity.uid, req.params.id);
       res.json(result);
-    } catch (e: any) {
-      if (e instanceof LifecycleError) {
-        res.status(e.statusCode).json({ code: e.code, error: e.message });
-      } else {
-        res.status(500).json({ error: e.message });
-      }
+    } catch (e: unknown) {
+      sendDirectoryError(res, e, 'claim');
     }
   });
 }

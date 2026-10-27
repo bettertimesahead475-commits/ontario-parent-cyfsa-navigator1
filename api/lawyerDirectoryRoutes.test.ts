@@ -71,3 +71,31 @@ describe("Stage 7E API Discovery and Privacy Tests", () => {
     expect(res.body.matterIntelligence).toBeUndefined();
   });
 });
+
+describe("Directory errors never expose internal configuration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("a configuration failure is a generic, retryable 503 with no internal setup text", async () => {
+    vi.mocked(searchDirectory).mockRejectedValueOnce(
+      new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not configured. Set them in Vercel → Project → Settings.")
+    );
+    const res = await request(app).post("/api/directory/search").send({ city: "London" });
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("DIRECTORY_UNAVAILABLE");
+    expect(res.body.retryable).toBe(true);
+    expect(JSON.stringify(res.body)).not.toMatch(/SUPABASE|Vercel|Settings|configured/i);
+  });
+
+  it("an expected lifecycle failure keeps its customer message and status", async () => {
+    const { LifecycleError } = await import("./services/lifecycleErrors.js");
+    vi.mocked(searchDirectory).mockRejectedValueOnce(
+      new LifecycleError(429, "DIRECTORY_RATE_LIMITED", "Too many searches. Please wait a minute.")
+    );
+    const res = await request(app).post("/api/directory/search").send({ city: "London" });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("DIRECTORY_RATE_LIMITED");
+    expect(res.body.error).toBe("Too many searches. Please wait a minute.");
+  });
+});

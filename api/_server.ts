@@ -604,7 +604,10 @@ const ALLOWED_ORIGINS = new Set([...DEFAULT_PRODUCTION_ORIGINS, ...EXTRA_ALLOWED
 app.use(cors({
   origin(origin, callback) {
     if (!origin || ALLOWED_ORIGINS.has(origin)) return callback(null, true);
-    return callback(new Error(`Origin ${origin} is not allowed by CORS.`));
+    // Refused without an error: an error made Express answer 500, so any page loaded from an origin that is not
+    // listed (a preview deployment, a same-origin asset request) broke. The browser still blocks the cross-origin
+    // read because no Access-Control-Allow-Origin header is sent.
+    return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));

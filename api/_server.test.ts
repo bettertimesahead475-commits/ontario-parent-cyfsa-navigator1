@@ -284,6 +284,19 @@ beforeEach(() => {
   mockGmailAgent.verifyOAuthState.mockReturnValue(false);
 });
 
+describe("CORS for unlisted origins", () => {
+  it("answers a request from an unlisted origin without a server error and without granting it access", async () => {
+    const res = await request(app).get("/api/health").set("Origin", "https://attacker.example.com");
+    expect(res.status).not.toBe(500);
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("still grants the production origin", async () => {
+    const res = await request(app).get("/api/health").set("Origin", "https://cyfsanavigator.com");
+    expect(res.headers["access-control-allow-origin"]).toBe("https://cyfsanavigator.com");
+  });
+});
+
 describe("GET /api/health", () => {
   it("reports healthy with a timestamp", async () => {
     const res = await request(app).get("/api/health");
