@@ -17,12 +17,18 @@
 //   - All 11 files are downloaded and verified before any destination file is touched.
 //   - Installation is staged, then applied file by file with backups. If any step fails, every change is rolled back, so
 //     the destination is restored to its prior state. Installation never deletes a file it did not replace.
+//   - Requests ask for identity encoding. A compressed response is refused, so declared and decoded lengths always agree.
+//   - Before any request, the script refuses to run if an earlier install left .stage or .backup files behind.
+//   - Limits, stated plainly: a crash or power loss between the backup step and the swap can leave a destination missing,
+//     with its original in a .backup file. Nothing is journaled, so the restore is manual. Rollback covers failures the
+//     process can observe (write, rename, and remove errors), not a process that dies mid-install. The run also has no
+//     upper bound on total time beyond its per-request timeout (up to 3 attempts per file, 60 s each).
 //   - The six superseded historical PDFs have no official source. They are not in the retrievable set and are never touched.
 //   - Output names come only from the manifests and must match a strict pattern. Reports hold statuses and hashes only.
 // Exit codes: 0 = all retrievable files verified and installed. 2 = at least one CHANGED_UPSTREAM (review required).
 //             1 = any other failure. In every non-zero case nothing was installed.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkBytes } from "./verifyLib.mjs";
@@ -103,7 +109,11 @@ async function fetchOnce(url, deps) {
     res = await deps.fetchImpl(url, {
       redirect: "manual",
       signal: AbortSignal.timeout(deps.timeoutMs),
-      headers: { accept: "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,*/*;q=0.1" },
+      // Identity encoding keeps the declared Content-Length equal to the bytes read. A compressed body is refused below.
+      headers: {
+        accept: "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,*/*;q=0.1",
+        "accept-encoding": "identity",
+      },
     });
   } catch (e) {
     if (e?.name === "TimeoutError" || e?.name === "AbortError") throw new DownloadError("TIMEOUT", "the request timed out");
@@ -121,10 +131,15 @@ async function fetchOnce(url, deps) {
   }
   if (res.status !== 200) throw new DownloadError("HTTP_ERROR", "the official source returned an unexpected status", String(res.status));
 
+  const encoding = res.headers.get("content-encoding");
+  if (encoding && encoding.trim().toLowerCase() !== "identity") {
+    throw new DownloadError("UNEXPECTED_ENCODING", "the official source sent a compressed body; only identity encoding is accepted", encoding.slice(0, 32));
+  }
   const declared = res.headers.get("content-length");
   if (declared !== null && Number(declared) > deps.maxBytes) {
     throw new DownloadError("SIZE_LIMIT", "the declared size is over the 10 MB limit", declared);
   }
+  if (!res.body) throw new DownloadError("PARTIAL_DOWNLOAD", "the response had no body");
 
   const chunks = [];
   let total = 0;
@@ -183,8 +198,10 @@ export async function downloadEntry(entry, options = {}) {
       }
       return { status: "PASS", bytes, observedSha256: check.actualSha256, observedBytes: bytes.length, attempts: attempt };
     } catch (e) {
-      const code = e instanceof DownloadError ? e.code : "NETWORK_ERROR";
-      const detail = e instanceof DownloadError ? e.detail : null;
+      // Only DownloadError is a download outcome. Anything else is a programming error and must not be reported as a network fault.
+      if (!(e instanceof DownloadError)) throw e;
+      const code = e.code;
+      const detail = e.detail;
       if (!RETRYABLE.has(code)) return { status: code, detail, attempts: attempt };
       last = code;
       lastDetail = detail;
@@ -220,6 +237,8 @@ export function messageFor(row) {
       return `${row.fileName} timed out after ${row.attempts} attempts (60 s each). Retry later. Nothing was installed.`;
     case "NETWORK_ERROR":
       return `could not reach the official source for ${row.fileName}${row.detail ? ` (${row.detail})` : ""}. Check connectivity. Nothing was installed.`;
+    case "UNEXPECTED_ENCODING":
+      return `the official source sent ${row.fileName} compressed (${row.detail ?? "unknown encoding"}). The downloader accepts identity encoding only, so the bytes cannot be checked. Nothing was installed.`;
     case "NO_SOURCE_URL":
       return `${row.fileName} has no sourceUrl in its manifest entry. Nothing was installed.`;
     case "HTTP_ERROR":
@@ -252,8 +271,9 @@ export function installVerified(installs, fsOps = defaultFsOps) {
     for (const { dest, bytes } of installs) {
       mkdirSync(dirname(dest), { recursive: true });
       const stage = `${dest}.stage-${stamp}`;
-      fsOps.writeFile(stage, bytes);
+      // Recorded before the write, so a partially written stage is removed by the rollback too.
       staged.push({ dest, stage });
+      fsOps.writeFile(stage, bytes);
     }
     for (const s of staged) {
       if (existsSync(s.dest)) {
@@ -283,6 +303,22 @@ export function installVerified(installs, fsOps = defaultFsOps) {
   }
 }
 
+const INTERRUPTED = /\.(stage|backup)-\d+-\d+-\d+$/;
+
+/**
+ * Returns the stage and backup files left behind by an install that was interrupted (for example, by a crash or a power
+ * loss between the backup step and the swap). A destination can be missing while its backup exists, so the operator must
+ * restore it by hand. The downloader refuses to run while any such file is present.
+ */
+export function findInterruptedInstallFiles(dirs) {
+  const found = [];
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) if (INTERRUPTED.test(name)) found.push(join(dir, name));
+  }
+  return found;
+}
+
 /**
  * Downloads every retrievable entry of every set, verifies each, and installs all of them or none.
  * Returns { ok, changed, report, written }. The report has one row per retrievable entry; it holds no file content.
@@ -294,6 +330,13 @@ export async function fetchRetrievable({ sets = SETS, options = {} } = {}) {
     for (const entry of manifest.files.filter(f => f.retrievable)) pending.push({ set, entry });
   }
   if (pending.length === 0) throw new Error("no retrievable entries; refusing to report success");
+  const interrupted = findInterruptedInstallFiles(sets.map(set => set.target));
+  if (interrupted.length) {
+    throw new Error(
+      `an earlier install was interrupted and left ${interrupted.map(p => basename(p)).join(", ")}. ` +
+      "Restore each destination from its .backup file by hand, remove the leftovers, and run again. Nothing was downloaded or changed."
+    );
+  }
 
   const report = [];
   const downloads = [];

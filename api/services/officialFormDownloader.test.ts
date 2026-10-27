@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   DEFAULTS,
   downloadEntry,
+  findInterruptedInstallFiles,
   fetchRetrievable,
   installVerified,
   InstallError,
@@ -477,5 +478,105 @@ describe.skipIf(!haveFixtures)("fetchRetrievable against the real pins (fake net
     expect(fs.readFileSync(path.join(roots.historical, "33f4ddb3-form-35-1a-en-dec20.pdf"), "utf8")).toBe("superseded sentinel");
     expect(fs.readdirSync(roots.historical).length).toBe(6);
     expect(fs.readdirSync(roots.current).length).toBe(6);
+  });
+});
+
+describe("Phase 1 regressions: partial writes, backup failures, interrupted installs, and response framing", () => {
+  it("removes a partially written staged file when the staging write fails mid-write", () => {
+    const dir = tmp("oforms-partial-");
+    fs.writeFileSync(path.join(dir, "a.pdf"), "OLD-A");
+    const fsOps = {
+      writeFile: (p: string, bytes: Buffer) => {
+        fs.writeFileSync(p, bytes.subarray(0, 2), { flag: "wx" });
+        throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+      },
+      rename: (from: string, to: string) => fs.renameSync(from, to),
+      remove: (p: string) => fs.rmSync(p, { force: true }),
+    };
+    expect(() => installVerified([{ dest: path.join(dir, "a.pdf"), bytes: Buffer.from("NEW-AAAA") }], fsOps)).toThrow(InstallError);
+    expect(fs.readdirSync(dir).sort()).toEqual(["a.pdf"]);
+    expect(fs.readFileSync(path.join(dir, "a.pdf"), "utf8")).toBe("OLD-A");
+  });
+
+  it("a failure moving the first existing file to its backup changes nothing and leaves no backup or stage file", () => {
+    const dir = tmp("oforms-backupfail-");
+    fs.writeFileSync(path.join(dir, "a.pdf"), "OLD-A");
+    fs.writeFileSync(path.join(dir, "b.pdf"), "OLD-B");
+    const fsOps = {
+      writeFile: (p: string, bytes: Buffer) => fs.writeFileSync(p, bytes, { flag: "wx" }),
+      rename: (from: string, to: string) => {
+        if (from.endsWith("a.pdf")) throw Object.assign(new Error("busy"), { code: "EBUSY" });
+        fs.renameSync(from, to);
+      },
+      remove: (p: string) => fs.rmSync(p, { force: true }),
+    };
+    let caught: InstallError | undefined;
+    try { installVerified([{ dest: path.join(dir, "a.pdf"), bytes: Buffer.from("NEW-A") }, { dest: path.join(dir, "b.pdf"), bytes: Buffer.from("NEW-B") }], fsOps); } catch (e) { caught = e as InstallError; }
+    expect(caught).toBeInstanceOf(InstallError);
+    expect(caught!.rolledBack).toBe(true);
+    expect(fs.readdirSync(dir).sort()).toEqual(["a.pdf", "b.pdf"]);
+    expect(fs.readFileSync(path.join(dir, "a.pdf"), "utf8")).toBe("OLD-A");
+    expect(fs.readFileSync(path.join(dir, "b.pdf"), "utf8")).toBe("OLD-B");
+  });
+
+  it("a failure moving the second existing file to its backup restores the first file's original", () => {
+    const dir = tmp("oforms-backupfail2-");
+    fs.writeFileSync(path.join(dir, "a.pdf"), "OLD-A");
+    fs.writeFileSync(path.join(dir, "b.pdf"), "OLD-B");
+    const fsOps = {
+      writeFile: (p: string, bytes: Buffer) => fs.writeFileSync(p, bytes, { flag: "wx" }),
+      rename: (from: string, to: string) => {
+        if (from.endsWith("b.pdf")) throw Object.assign(new Error("busy"), { code: "EBUSY" });
+        fs.renameSync(from, to);
+      },
+      remove: (p: string) => fs.rmSync(p, { force: true }),
+    };
+    let caught: InstallError | undefined;
+    try { installVerified([{ dest: path.join(dir, "a.pdf"), bytes: Buffer.from("NEW-A") }, { dest: path.join(dir, "b.pdf"), bytes: Buffer.from("NEW-B") }], fsOps); } catch (e) { caught = e as InstallError; }
+    expect(caught!.rolledBack).toBe(true);
+    expect(fs.readdirSync(dir).sort()).toEqual(["a.pdf", "b.pdf"]);
+    expect(fs.readFileSync(path.join(dir, "a.pdf"), "utf8")).toBe("OLD-A");
+    expect(fs.readFileSync(path.join(dir, "b.pdf"), "utf8")).toBe("OLD-B");
+  });
+
+  it("refuses to start when an interrupted install left stage or backup files, before any request", async () => {
+    const target = tmp("oforms-leftover-");
+    fs.writeFileSync(path.join(target, "a.pdf.backup-123-1700000000000-4567"), "OLD-A");
+    const a = Buffer.from("aaaa");
+    const f = fakeFetch([ok(a)]);
+    const sets = oneSet([{ fileName: "a.pdf", sha256: sha(a), byteLength: a.length, sourceUrl: HOST, retrievable: true }], target);
+    await expect(fetchRetrievable({ sets, options: { fetchImpl: f.fn, sleep: noSleep } })).rejects.toThrow(/interrupted/);
+    expect(f.calls.length).toBe(0);
+    expect(fs.readdirSync(target)).toEqual(["a.pdf.backup-123-1700000000000-4567"]);
+  });
+
+  it("does not treat ordinary fixture names as leftovers", () => {
+    const dir = tmp("oforms-noleftover-");
+    fs.writeFileSync(path.join(dir, "form-8b.pdf"), "x");
+    fs.writeFileSync(path.join(dir, "stage-notes.docx"), "x");
+    expect(findInterruptedInstallFiles([dir, path.join(dir, "missing")])).toEqual([]);
+  });
+
+  it("reports PARTIAL_DOWNLOAD, not a changed source, when a 200 response has no body", async () => {
+    const f = fakeFetch([new Response(null, { status: 200 })]);
+    const r = await downloadEntry(entryFor(Buffer.from("x")), { fetchImpl: f.fn, sleep: noSleep, attempts: 1 });
+    expect(r.status).toBe("PARTIAL_DOWNLOAD");
+  });
+
+  it("asks for identity encoding, so declared and decoded lengths are the same bytes", async () => {
+    const bytes = Buffer.from("%PDF-1.4 sample");
+    const f = fakeFetch([ok(bytes)]);
+    const r = await downloadEntry(entryFor(bytes), { fetchImpl: f.fn, sleep: noSleep });
+    expect(r.status).toBe("PASS");
+    expect(f.calls[0].init.headers["accept-encoding"]).toBe("identity");
+  });
+
+  it("refuses a compressed response, without retrying, rather than comparing compressed and decoded lengths", async () => {
+    const bytes = Buffer.from("%PDF-1.4 sample");
+    const f = fakeFetch([ok(bytes, { "content-encoding": "gzip" })]);
+    const r = await downloadEntry(entryFor(bytes), { fetchImpl: f.fn, sleep: noSleep });
+    expect(r.status).toBe("UNEXPECTED_ENCODING");
+    expect(r.attempts).toBe(1);
+    expect(messageFor({ ...r, fileName: "sample.pdf", status: r.status })).toMatch(/compressed/);
   });
 });
