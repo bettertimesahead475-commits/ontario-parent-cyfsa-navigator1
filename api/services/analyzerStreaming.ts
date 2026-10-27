@@ -438,7 +438,19 @@ export class SseStreamEmitter {
   public emitError(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {
     if (this.isClosed) return;
     failAnalysisJob(this.jobId, error);
+    this.writeError(error);
+  }
 
+  /**
+   * Tells the client that a finished report is being held back, without marking the job failed. The job's report is
+   * already saved as completed, and a retry of the same analysis id must settle that report, not run it again.
+   */
+  public emitWithheld(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {
+    if (this.isClosed) return;
+    this.writeError(error);
+  }
+
+  private writeError(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {
     const payload = {
       type: "error",
       jobId: this.jobId,

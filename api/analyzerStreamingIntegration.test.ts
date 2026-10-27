@@ -234,6 +234,42 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     expect(res.body.status).toBe("analyzing");
   });
 
+  it("a streamed free report that cannot be recorded sends a retryable error, never complete, and keeps the job completed", async () => {
+    const analysisId = `req_${Date.now()}_streamfin1`;
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-stream-uid", email: "free-stream@example.com" });
+    mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
+    mockFreeScan.finalizeFreeScan.mockRejectedValueOnce(new Error("database unavailable"));
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer free-stream-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast", stream: true });
+
+    const events: any[] = res.text
+      .split("\n\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.replace("data: ", "")));
+    expect(events.some((e) => e.type === "complete")).toBe(false);
+    const withheld = events.find((e) => e.type === "error");
+    expect(withheld?.code).toBe("FREE_SCAN_NOT_RECORDED");
+    expect(withheld?.retryable).toBe(true);
+    expect(mockFreeScan.releaseFreeScan).not.toHaveBeenCalled();
+
+    // The job was not marked failed: a retry of the same id is served the saved report, with no second model run.
+    const callsBeforeRetry = mockCreateMessage.mock.calls.length;
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-stream-uid", email: "free-stream@example.com" });
+    const retry = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer free-stream-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast" });
+    expect(retry.status).toBe(200);
+    expect(retry.body.documentTitle).toBeDefined();
+    expect(mockCreateMessage.mock.calls.length).toBe(callsBeforeRetry);
+    expect(mockFreeScan.consumedFor("free-stream-uid")).toBe(1);
+  });
+
   it("POST /api/analyze with stream: true emits SSE stream events with real stages", async () => {
     mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
 

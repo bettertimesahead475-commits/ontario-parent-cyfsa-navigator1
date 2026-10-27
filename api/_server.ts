@@ -2595,7 +2595,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
                 message: "We couldn't confirm your free analysis just yet. Please try again in a moment.",
               };
           if (streamEmitter) {
-            streamEmitter.emitError({ code: failure.code, message: failure.message, statusCode: failure.statusCode, retryable: failure.retryable });
+            streamEmitter.emitWithheld({ code: failure.code, message: failure.message, statusCode: failure.statusCode, retryable: failure.retryable });
           } else {
             res.status(failure.statusCode).json({ error: failure.message, code: failure.code, retryable: failure.retryable });
           }
