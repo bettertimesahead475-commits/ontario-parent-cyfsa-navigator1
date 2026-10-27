@@ -302,7 +302,7 @@ Backup-failure rollback (first and second existing file) was tested and already 
 
 The fixture-dependent subset is the 16 files listed in the audit's earlier sections (requirement, current-PDF, real-artifact, semantic-map, structural, and downloader tests).
 - Typecheck (`tsc --noEmit`): exit 0 on Node 22.22.0 and Node 24.22.1.
-- Build (`npm run build`): exit 0 on both. The Node 22 build warns about chunk size and about `import.meta` in the CJS server bundle. Both warnings are pre-existing and unrelated to this work.
+- Build (`npm run build`): exit 0 on both. The Node 22 build warns about chunk size and about `import.meta` in the CJS server bundle. Neither warning was compared against a pre-change baseline. Neither file touched by this work (`server.ts` and the frontend) is in the warning text, but this was not verified by building the old commit.
 - Run on Node 22, the full suite exited 1 at first, with 11 failing PostgreSQL files. The cause was environmental: the scratch PostgreSQL cluster had stopped (connection refused). It was restarted and the Node 22 suite was rerun, which gave the result in the table. The earlier failing output was not hidden.
 - Not run: a PostgreSQL-off full run and a full fixtures-absent run on the final code.
 
