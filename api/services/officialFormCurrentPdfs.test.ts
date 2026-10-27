@@ -15,6 +15,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { ingestTrustedDevelopmentArtifact, toPublicRetrievalResult } from "./officialFormRetrieval";
 import { pdfJsReady } from "./pdfPolyfill";
+import { officialFormCurrentFile } from "../testSupport/officialFormFixtures.js";
 
 interface CurrentManifestFile {
   label: string;
@@ -49,7 +50,8 @@ const PAGE_ONE_IDENTIFIER: Record<string, string> = {
 };
 
 function filePath(f: CurrentManifestFile): string {
-  return path.join(manifest.uploadDirectory, f.fileName);
+  // Resolved through the fixture resolver, never through a path relative to the working directory.
+  return officialFormCurrentFile(f.fileName);
 }
 
 function gateFor(f: CurrentManifestFile) {

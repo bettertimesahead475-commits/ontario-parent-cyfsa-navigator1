@@ -27,7 +27,8 @@
       "historicalPinMatches": false,
       "pinnedAsFixture": false,
       "dependentTests": [],
-      "status": "CURRENT_OFFICIAL_UNADOPTED"
+      "status": "CURRENT_OFFICIAL_UNADOPTED",
+      "retrievable": true
     },
     {
       "label": "33C PDF",
@@ -51,7 +52,8 @@
       "historicalPinMatches": false,
       "pinnedAsFixture": false,
       "dependentTests": [],
-      "status": "CURRENT_OFFICIAL_UNADOPTED"
+      "status": "CURRENT_OFFICIAL_UNADOPTED",
+      "retrievable": true
     },
     {
       "label": "33B.1 PDF",
@@ -75,7 +77,8 @@
       "historicalPinMatches": false,
       "pinnedAsFixture": false,
       "dependentTests": [],
-      "status": "CURRENT_OFFICIAL_UNADOPTED"
+      "status": "CURRENT_OFFICIAL_UNADOPTED",
+      "retrievable": true
     },
     {
       "label": "14A PDF",
@@ -99,7 +102,8 @@
       "historicalPinMatches": false,
       "pinnedAsFixture": false,
       "dependentTests": [],
-      "status": "CURRENT_OFFICIAL_UNADOPTED"
+      "status": "CURRENT_OFFICIAL_UNADOPTED",
+      "retrievable": true
     },
     {
       "label": "8B PDF",
@@ -123,7 +127,8 @@
       "historicalPinMatches": false,
       "pinnedAsFixture": false,
       "dependentTests": [],
-      "status": "CURRENT_OFFICIAL_UNADOPTED"
+      "status": "CURRENT_OFFICIAL_UNADOPTED",
+      "retrievable": true
     },
     {
       "label": "unmatched (filename claims form_33b_2018) PDF",
@@ -147,7 +152,8 @@
       "historicalPinMatches": false,
       "pinnedAsFixture": false,
       "dependentTests": [],
-      "status": "CURRENT_OFFICIAL_UNADOPTED"
+      "status": "CURRENT_OFFICIAL_UNADOPTED",
+      "retrievable": true
     }
   ]
 }

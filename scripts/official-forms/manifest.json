@@ -12,7 +12,8 @@
       "sha256": "288882fe64111160104f47ce9eeda758843b7d22d925bcb121f877a0ea711650",
       "dependentTests": [
         "api/services/officialFormRealArtifactIntegration.test.ts"
-      ]
+      ],
+      "retrievable": false
     },
     {
       "label": "35.1A DOCX",
@@ -25,7 +26,9 @@
         "api/services/officialFormRealArtifactIntegration.test.ts",
         "api/services/docxFieldInventoryRealArtifacts.test.ts",
         "api/services/form351aSemanticFieldMap.test.ts"
-      ]
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/35_1a/form-35-1a-en-dec20.docx"
     },
     {
       "label": "33C DOCX",
@@ -38,7 +41,9 @@
         "api/services/officialFormRealArtifactIntegration.test.ts",
         "api/services/docxFieldInventoryRealArtifacts.test.ts",
         "api/services/form33cSemanticFieldMap.test.ts"
-      ]
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/33c/form_33c_2018.docx"
     },
     {
       "label": "33C PDF",
@@ -49,7 +54,8 @@
       "sha256": "73ff6adc549ae0fa70ec1de3f335058a7d7cdc80ac0c2918f87ad87993499bfe",
       "dependentTests": [
         "api/services/officialFormRealArtifactIntegration.test.ts"
-      ]
+      ],
+      "retrievable": false
     },
     {
       "label": "33B.1 DOCX",
@@ -61,7 +67,9 @@
       "dependentTests": [
         "api/services/officialFormRealArtifactIntegration.test.ts",
         "api/services/docxFieldInventoryRealArtifacts.test.ts"
-      ]
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/33b_1/form-33b-1-en-dec20.docx"
     },
     {
       "label": "33B.1 PDF",
@@ -72,7 +80,8 @@
       "sha256": "a78a4b2e337b5a08c4645c6744a2c5b57e892bcdcb7fb410d3ab9fd82dbfe52b",
       "dependentTests": [
         "api/services/officialFormRealArtifactIntegration.test.ts"
-      ]
+      ],
+      "retrievable": false
     },
     {
       "label": "14A DOCX",
@@ -85,7 +94,9 @@
         "api/services/officialFormRealArtifactIntegration.test.ts",
         "api/services/docxFieldInventoryRealArtifacts.test.ts",
         "api/services/form14aSemanticFieldMap.test.ts"
-      ]
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/14a/flr_14a_sept105_en_fil.docx"
     },
     {
       "label": "14A PDF",
@@ -96,7 +107,8 @@
       "sha256": "84d443426575f4a0e94e70fac73cd02106172fc00aa1578ca40db7628ef907fd",
       "dependentTests": [
         "api/services/officialFormRealArtifactIntegration.test.ts"
-      ]
+      ],
+      "retrievable": false
     },
     {
       "label": "8B DOCX",
@@ -111,7 +123,9 @@
         "api/services/form8bAdminChildPartySemanticFieldMap.test.ts",
         "api/services/form8bFinalSemanticFieldMap.test.ts",
         "api/services/form8bRequestedOrderSemanticFieldMap.test.ts"
-      ]
+      ],
+      "retrievable": true,
+      "sourceUrl": "https://ontariocourtforms.on.ca/static/media/uploads/courtforms/family/08b/form-8b-feb_1_2022-en.docx"
     },
     {
       "label": "8B PDF",
@@ -122,7 +136,8 @@
       "sha256": "da5ed87cdf454c77af04c255b9b7be44a2f08aa837a6bb3715ab0d0dcb8bdd6c",
       "dependentTests": [
         "api/services/officialFormRealArtifactIntegration.test.ts"
-      ]
+      ],
+      "retrievable": false
     },
     {
       "label": "unmatched file (filename claims form_33b_2018)",
@@ -133,7 +148,8 @@
       "sha256": "acb30d488447bc1e044b5575d2d4a7e0d0ad0c227e58b413c35233ef21561b65",
       "dependentTests": [
         "api/services/officialFormRealArtifactIntegration.test.ts"
-      ]
+      ],
+      "retrievable": false
     }
   ]
 }

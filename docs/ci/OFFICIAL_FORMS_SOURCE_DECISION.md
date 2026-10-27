@@ -1,6 +1,8 @@
 # Official-form fixtures: distribution decision and recommended CI design
 
-Status: decision record. No file is published, no workflow is enabled, and no infrastructure is created. Legal conclusions below are a factual summary for counsel to confirm, not legal advice.
+Status: decision record, revised 2026-10-27. No file is published, no workflow is enabled, and no infrastructure is created.
+This record separates three things: (A) facts confirmed from primary sources, (B) published terms quoted as written, and
+(C) legal interpretations that require review by counsel. Nothing in (C) is a conclusion of this project.
 
 ## 1. Evidence gathered (2026-10-27)
 
@@ -11,12 +13,21 @@ Status: decision record. No file is published, no workflow is enabled, and no in
 - DOCX `creator` and `lastModifiedBy` name individual Ministry staff. These are in the official files and in the pinned bytes, so they cannot be stripped without breaking the SHA-256 pins. This is a reason not to republish the DOCX files.
 - Limit: field values were checked by machine. Printed page text was not reviewed line by line.
 
-### 1.2 Source terms (`https://www.ontario.ca/page/copyright-information`, read 2026-10-27)
-- Content is protected by Crown copyright held by the King's Printer for Ontario.
-- Non-commercial reproduction is permitted if credit is given, Crown copyright is acknowledged, and no changes are made.
-- Commercial reproduction requires a licence from the King's Printer. The exception covers statutes, regulations, judicial decisions, and material labelled under the Open Government Licence.
-- The court-forms index page contains no Open Government Licence label, so the exception is not shown to apply.
-- The copyright page gives a route to request a licence. CYFSA Navigator is a commercial product.
+### 1.2 Published terms (B: quoted from the source; not a legal conclusion)
+Source: `https://www.ontario.ca/page/copyright-information`, read 2026-10-27. Quoted in substance:
+- "Unless otherwise indicated, the materials on this website are protected by Crown copyright, which is held by the King's Printer for Ontario."
+- "If credit is given and Crown copyright is acknowledged, the materials may be reproduced for non-commercial purposes if no changes are made to the original content."
+- "The materials may only be reproduced for commercial purposes under a licence from the King's Printer, with the exception of Government of Ontario legal materials (statutes, regulations and judicial decisions) and materials covered under the Open Government Licence – Ontario."
+- The same page names a route for requesting a licence for commercial reproduction.
+
+Fact (A): the court-forms index page (`https://ontariocourtforms.on.ca/en/family-law-rules-forms/`) contains no text "Open Government" in the copy read on 2026-10-27. The forms are not statutes, regulations, or judicial decisions.
+
+Interpretation (C), for counsel:
+- Whether the court forms fall under Crown copyright as published on that site, and whether any other notice applies on the court-forms site.
+- Whether a copy made by CYFSA's CI runner for automated testing is a "reproduction" under the terms, and whether it is "commercial" when CYFSA is a commercial product.
+- Whether a temporary copy that is never published or kept after the run changes that analysis.
+- Whether a licence is required for any use of these files in the product, including the form-field analysis.
+- Earlier drafts of this record called the approach "consistent with the terms". That was too strong and is withdrawn. No conclusion about temporary CI downloads is claimed here.
 
 ### 1.3 Whether the official site serves the same bytes (direct HTTP fetch, 2026-10-27)
 
@@ -36,18 +47,18 @@ The six historical PDFs are not available from the official source. Their pinned
 
 | Option | Lawful? | Complexity | Security posture | Verdict |
 |---|---|---|---|---|
-| Public GitHub release asset | No. Public redistribution of Crown copyright material by a commercial entity without a licence. The repository is public. | Low | Public | Rejected |
-| Private GCS bucket with OIDC | Storing a copy for commercial use still needs a licence. It is not needed for retrievable files, because the source serves them. | High (cloud project, IAM, WIF, environment, variables) | Good, but it adds an unnecessary copy | Rejected for these files |
-| Actions cache or artifacts | Same copy problem; artifacts are not access-controlled on a public repository | Low | Weak | Rejected |
-| Fetch from the official source at run time, verified by pinned SHA-256 and length | Consistent with the terms: no copy is stored or published; CI reads the public site and keeps the copy only for the run | Low | No secret, no cloud identity, fail-closed on any hash change | **Recommended** |
-| Obtain a King's Printer licence for the superseded PDFs | Could legally permit storing them | Business and legal process | Depends | Owner decision, optional |
+| Public GitHub release asset | Publishing the files would be public distribution. The published terms require a licence for commercial reproduction. Whether this use is commercial is for counsel (C). | Low | Public | Rejected (not defensible without counsel's view) |
+| Private GCS bucket with OIDC | Stores a copy; the same question (C) applies. Not needed for the retrievable files, which the source serves. | High (cloud project, IAM, WIF, environment, variables) | Good access control, but it adds a stored copy | Rejected for these files |
+| Actions cache or artifacts | Stores a copy (C). Artifacts are not access-controlled on a public repository | Low | Weak | Rejected |
+| Fetch from the official source at run time, verified by pinned SHA-256 and length | Creates a temporary copy during each run (C). It stores and publishes nothing beyond the run. Counsel should confirm that this is acceptable | Low | No secret, no cloud identity, fail-closed on any hash change | **Recommended, subject to counsel's review of the temporary copy** |
+| Obtain a King's Printer licence (for any stored or commercial copy) | Would address the licence question directly. Its scope is for counsel and the King's Printer | Business and legal process | Depends | Owner decision |
 
-## 3. Recommendation
+## 3. Recommendation (subject to counsel's review of section 1.2)
 
 Fetch the 11 retrievable files directly from the official source in CI, verify each against its pinned SHA-256 and length before any test runs, and keep the six superseded historical PDFs local-only. Do not store, publish, or cache copies. The workflow needs no secret, no cloud identity, and no environment, and it reads only public URLs.
 
 Why this is the simplest defensible design:
-- It matches the terms: no commercial copy is stored or published.
+- It stores and publishes no copy beyond the run. Whether the temporary run copy is permitted is a question for counsel (section 1.2, C).
 - It needs no infrastructure, and no recurring upload.
 - It is fail-closed: any byte change makes the job fail, and the pins are the control.
 - It covers all current-form tests and every DOCX-based historical test: 451 of 507 tests.

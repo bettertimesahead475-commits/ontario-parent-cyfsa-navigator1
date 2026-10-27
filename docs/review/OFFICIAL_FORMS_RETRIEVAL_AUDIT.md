@@ -219,3 +219,45 @@ Checksum pins: no pin changed in this step. All 10 frozen-map pins were re-verif
 - After the auth step, repository code runs with a token that can read the bucket. Restricting the environment to `main` is what limits this. The job must never be dispatched from a branch.
 - Pull-request CI still does not run the historical tests.
 - The fixtures are public government forms. The private bucket is an access-control choice, not a confidentiality guarantee.
+
+## 12. Official-source downloader (implemented, workflow inactive)
+
+### What changed
+- `scripts/official-forms/fetch-official.mjs`: downloads the 11 `retrievable: true` entries from their official URLs and verifies each against its pinned SHA-256 and length. Writes only when every retrievable file passes. Writes never delete other files.
+- Safeguards, each with a test: HTTPS only; exact allowlisted host (`ontariocourtforms.on.ca`); no credentials; no non-default port; **no redirects at all** (a redirect means the pinned URL is stale, so it is reported for review); declared-length and streamed size limit (5 MB per file); timeout (60 s); bounded retries (3 attempts, backoff 1 s and 3 s) for transport failures only (network error, timeout, truncated body, 429, 5xx).
+- Changed content (complete response, different bytes or length) is reported as `CHANGED_UPSTREAM`. It is not retried, not written, and the bytes are not kept. Exit code 2. **No pin is ever updated automatically.**
+- `--report <file>` writes statuses, attempt counts, observed hashes, and transport codes. It contains no file content.
+- `manifest.json` and `current-manifest.json`: added `sourceUrl` (historical DOCX) and `retrievable` on every entry. Every `sha256` and `byteLength` is unchanged (checked against the previous commit).
+- The six superseded historical PDFs: `retrievable: false`. They stay in `fixtures/official-forms/` and are not touched by the downloader. Their 38 integration tests are unchanged.
+- `api/services/officialFormFixtureRequirement.test.ts`: `REQUIRE_OFFICIAL_FORMS_FIXTURES=1` still checks all 17 pins. `=retrievable` checks only the 11 retrievable pins.
+- `api/services/officialFormCurrentPdfs.test.ts`: corrected a defect from an earlier commit. It built paths from the manifest's relative `uploadDirectory` and skipped silently when a file was missing. It now uses the fixture resolver.
+- `api/services/officialFormDownloader.test.ts` (26 tests): no network. A fake `fetch` covers every listed failure class.
+- Workflow: NOT ACTIVE. `ci.yml` is unchanged. The template is `docs/ci/official-forms-fetch.workflow.template.yml`.
+
+### Live verification (this sandbox, via the documented proxy setting)
+- The first live attempt returned `NETWORK_ERROR` for all 11 files. The sandbox routes HTTPS through a proxy, and Node's built-in `fetch` ignores it unless `NODE_USE_ENV_PROXY=1` is set (the sandbox's documented setting for Node 22.21 and later). With that setting: 11 of 11 `PASS`, exit 0, 5 historical DOCX and 6 current PDFs written to temporary folders.
+- This proves connectivity from this sandbox only. GitHub-hosted runners are not tested.
+
+### Test results (current tree)
+- Typecheck (`tsc --noEmit`): exit 0 on Node 22 and Node 24. Build: exit 0 on both.
+- Fixture-dependent tests (15 files, Node 22): 565 passed, 0 failed, 12 skipped (the requirement tests, which are off by default).
+- Full suite, Node 22, PostgreSQL on, fixtures present: 4,190 passed, 0 failed, 18 skipped (6 staging, 12 requirement tests off).
+- Full suite, Node 24, PostgreSQL on, fixtures present: 4,190 passed, 0 failed, 18 skipped (same).
+- Full suite, Node 22, PostgreSQL off, fixtures present: 3,822 passed, 0 failed, 386 skipped (368 PostgreSQL-gated, 6 staging, 12 requirement off).
+- Requirement mode `1`, fixtures present: 18 of 18 pass. Mode `retrievable`, fixtures present: 12 of 12 pass.
+- Negative: mode `retrievable` with the current set corrupted: 6 fail, 6 pass (exit 1). Mode `retrievable` with the fixtures folder absent: 12 fail (exit 1).
+- Clean machine (fixtures absent, requirement off, no PostgreSQL): 3,654 passed, 0 failed, 554 skipped.
+
+### Exact remaining skips
+- Always skipped in this environment without staging credentials: 6 `creditStaging.test.ts` tests.
+- Skipped unless `REQUIRE_OFFICIAL_FORMS_FIXTURES` is set: 12 requirement tests in default mode, 18 in mode `1`.
+- Skipped without PostgreSQL: 368 PostgreSQL-gated tests.
+- Skipped when fixtures are absent: the fixture-dependent tests.
+- Skipped in every CI run: the 38 superseded-PDF integration tests, because no official source serves those bytes. They run locally only.
+
+### Remaining blockers before the workflow may be enabled
+1. Independent review of the downloader and its tests. Not yet performed.
+2. GitHub-hosted runner connectivity to `ontariocourtforms.on.ca`. Not yet demonstrated. Demonstrate it in a manual run on a non-`main` branch before enabling anything.
+3. Counsel's review of the temporary-copy question in `docs/ci/OFFICIAL_FORMS_SOURCE_DECISION.md` section 1.2. Not yet obtained.
+4. CODEOWNERS (or branch protection with required review) for `scripts/official-forms/**`, so a pull request cannot change a pin or a URL without review. Requires the owner's repository settings.
+5. Owner decision on the 38 superseded-PDF tests: keep them local-only, or pursue a King's Printer licence.

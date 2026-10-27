@@ -1,3 +1,5 @@
+> **Superseded in part.** The current design is in `docs/ci/OFFICIAL_FORMS_SOURCE_DECISION.md` (fetch from the official source; no storage). The cloud-bucket option below is no longer recommended.
+
 # CI provisioning of the official-form fixtures (design, not enabled)
 
 Status: design and an inactive template. Nothing is enabled, no secret or variable is created, no fixture is uploaded or committed. Sections 6 and 7 list the owner actions required.
