@@ -47,7 +47,7 @@ describe("Stage 7E UI Tests - LawyerDirectoryTab", () => {
       });
     });
 
-    render(<LawyerDirectoryTab />);
+    render(<LawyerDirectoryTab publicVisible />);
     
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -83,7 +83,7 @@ describe("Stage 7E UI Tests - LawyerDirectoryTab", () => {
       status: 500
     });
 
-    render(<LawyerDirectoryTab />);
+    render(<LawyerDirectoryTab publicVisible />);
     
     await waitFor(() => {
       expect(screen.getByText("Failed to search directory.")).toBeTruthy();

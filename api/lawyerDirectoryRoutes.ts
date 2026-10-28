@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { verifyFirebaseToken } from './services/firebaseAdmin.js';
+import { PUBLIC_DIRECTORY_VISIBLE } from '../shared/lawyerDirectoryPolicy.js';
 import { LifecycleError } from './services/lifecycleErrors.js';
 import {
   searchDirectory,
@@ -22,9 +23,16 @@ function sendDirectoryError(res: Response, e: unknown, context: string) {
   });
 }
 
-export function registerLawyerDirectoryRoutes(app: Express) {
+export function registerLawyerDirectoryRoutes(app: Express, options: { publicVisible?: boolean } = {}) {
+  // Defaults to the shared switch (paused). Tests that exercise the matching and privacy contract pass true.
+  const publicVisible = options.publicVisible ?? PUBLIC_DIRECTORY_VISIBLE;
   // Public, unauthenticated search
   app.post('/api/directory/search', async (req: Request, res: Response) => {
+    // Paused: no listing is shown to the public until every listing is verified (shared/lawyerDirectoryPolicy.ts).
+    if (!publicVisible) {
+      res.json([]);
+      return;
+    }
     try {
       const filters = req.body;
       const results = await searchDirectory(filters);
@@ -36,6 +44,10 @@ export function registerLawyerDirectoryRoutes(app: Express) {
 
   // Public, unauthenticated profile
   app.get('/api/directory/profiles/:id', async (req: Request, res: Response) => {
+    if (!publicVisible) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
     try {
       const profile = await getPublicProfile(req.params.id);
       if (!profile) res.status(404).json({ error: 'Not found' });

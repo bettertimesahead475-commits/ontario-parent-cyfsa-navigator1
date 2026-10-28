@@ -1,6 +1,5 @@
 import { getSupabase } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
-import { PUBLIC_DIRECTORY_VISIBLE } from "../../shared/lawyerDirectoryPolicy.js";
 import { withTransientRetry } from "./transientRetry.js";
 
 export interface PublicDirectoryProfile {
@@ -36,8 +35,6 @@ export async function searchDirectory(filters: {
   isOntarioWide?: boolean;
   requiresCyfsa?: boolean;
 }): Promise<PublicDirectoryProfile[]> {
-  // Paused: no listing is returned to the public until every listing is verified (see shared/lawyerDirectoryPolicy.ts).
-  if (!PUBLIC_DIRECTORY_VISIBLE) return [];
   const data = await withTransientRetry(async () => {
     const db = getSupabase();
 
@@ -134,7 +131,6 @@ export async function searchDirectory(filters: {
 }
 
 export async function getPublicProfile(profileId: string): Promise<PublicDirectoryProfile | null> {
-  if (!PUBLIC_DIRECTORY_VISIBLE) return null;
   const db = getSupabase();
   const { data, error } = await db.from('professional_profiles').select("id, account_id, display_name, professional_type, public_phone, public_email, lifecycle_state, identity_verified, licence_verified, practice_verified, platform_participating, professional_office_locations ( id, address, locality, province, postal_code, lat, lng ), professional_service_areas ( id, coverage_type, locality_name, region_name ), professional_practice_areas ( id, practice_area, provenance_type )")
     .eq('id', profileId)

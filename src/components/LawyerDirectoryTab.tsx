@@ -15,7 +15,8 @@ const MATCH_REASON_LABELS: Record<string, string> = {
   PARTICIPATING_PROFESSIONAL: "Participating CYFSA Navigator professional",
 };
 
-export default function LawyerDirectoryTab() {
+// publicVisible defaults to the shared switch (paused). Tests of the search form pass true.
+export default function LawyerDirectoryTab({ publicVisible = PUBLIC_DIRECTORY_VISIBLE }: { publicVisible?: boolean } = {}) {
   const [locality, setLocality] = useState("");
   const [requiresCyfsa, setRequiresCyfsa] = useState(false);
   const [isVirtual, setIsVirtual] = useState(false);
@@ -60,7 +61,7 @@ export default function LawyerDirectoryTab() {
     handleSearch();
   }, []);
 
-  if (!PUBLIC_DIRECTORY_VISIBLE) {
+  if (!publicVisible) {
     return (
       <div className="space-y-6" id="lawyer-directory-tab">
         <div className="text-left max-w-3xl">

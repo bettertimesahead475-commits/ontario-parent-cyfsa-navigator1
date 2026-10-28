@@ -16,7 +16,7 @@ vi.mock("./services/firebaseAdmin.js", () => ({
 
 const app = express();
 app.use(express.json());
-registerLawyerDirectoryRoutes(app);
+registerLawyerDirectoryRoutes(app, { publicVisible: true });
 
 describe("Stage 7E API Discovery and Privacy Tests", () => {
   beforeEach(() => {

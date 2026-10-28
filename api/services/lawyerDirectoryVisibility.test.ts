@@ -1,28 +1,42 @@
-// While the public directory is paused, no listing reaches a visitor and no database query runs for one.
+// While the public directory is paused, the public routes return no listing and the service is never asked for one.
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import express from "express";
+import request from "supertest";
 
-const { mockGetSupabase } = vi.hoisted(() => ({ mockGetSupabase: vi.fn() }));
-vi.mock("./access.js", () => ({ getSupabase: mockGetSupabase }));
+vi.mock("./lawyerDirectory.js", () => ({
+  searchDirectory: vi.fn(async () => [{ id: "listing-1" }]),
+  getPublicProfile: vi.fn(async () => ({ id: "listing-1" })),
+  claimProfile: vi.fn(),
+}));
+vi.mock("./firebaseAdmin.js", () => ({ verifyFirebaseToken: vi.fn() }));
 
+const { registerLawyerDirectoryRoutes } = await import("../lawyerDirectoryRoutes.js");
 const { searchDirectory, getPublicProfile } = await import("./lawyerDirectory.js");
 const { PUBLIC_DIRECTORY_VISIBLE } = await import("../../shared/lawyerDirectoryPolicy.js");
 
+const app = express();
+app.use(express.json());
+registerLawyerDirectoryRoutes(app);
+
 describe("public lawyer directory visibility", () => {
   beforeEach(() => {
-    mockGetSupabase.mockClear();
+    vi.clearAllMocks();
   });
 
   it("the directory is paused: the policy switch is off", () => {
     expect(PUBLIC_DIRECTORY_VISIBLE).toBe(false);
   });
 
-  it("search returns no listings and reads nothing from the database", async () => {
-    await expect(searchDirectory({ locality: "London" })).resolves.toEqual([]);
-    expect(mockGetSupabase).not.toHaveBeenCalled();
+  it("search returns no listings and does not query the directory", async () => {
+    const res = await request(app).post("/api/directory/search").send({ locality: "London" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+    expect(searchDirectory).not.toHaveBeenCalled();
   });
 
-  it("a profile lookup returns nothing and reads nothing from the database", async () => {
-    await expect(getPublicProfile("00000000-0000-4000-8000-000000000001")).resolves.toBeNull();
-    expect(mockGetSupabase).not.toHaveBeenCalled();
+  it("a profile lookup is not found and does not query the directory", async () => {
+    const res = await request(app).get("/api/directory/profiles/listing-1");
+    expect(res.status).toBe(404);
+    expect(getPublicProfile).not.toHaveBeenCalled();
   });
 });
