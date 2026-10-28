@@ -1060,6 +1060,38 @@ describe("Forensic Engine on the analyze route (FORENSIC_ENGINE_ENABLED)", () =>
     expect(mockCreateMessage.mock.calls.some((c) => stageOf(c[0]) === "investigation")).toBe(false);
   });
 
+  it("investigates additional documents of the same case together", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    try {
+      const res = await request(app)
+        .post("/api/analyze")
+        .set(paid())
+        .send({ textContent: DOC, mode: "full", additionalDocuments: [{ title: "Case note", text: "Case note — home visit March 5. Children supervised by father." }] });
+      expect(res.status).toBe(200);
+      const investigation = mockCreateMessage.mock.calls.find((c) => stageOf(c[0]) === "investigation")![0];
+      const content = JSON.stringify(investigation.messages);
+      expect(content).toContain('id=\\"document\\"');
+      expect(content).toContain('id=\\"doc2\\"');
+      expect(res.body.forensicEngine.caseModel.documents.map((d: any) => d.id)).toEqual(["document", "doc2"]);
+    } finally {
+      off();
+    }
+  });
+
+  it("rejects malformed additional documents with 400 and releases the credit", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    try {
+      const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "full", additionalDocuments: "not a list" });
+      expect(res.status).toBe(400);
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+      expect(calls).not.toContain("paid_finalize_credit");
+      if (calls.includes("paid_reserve_credit")) expect(calls).toContain("paid_release_credit");
+    } finally {
+      off();
+    }
+  });
+
   it("still refuses Forensic mode to an unpaid user before any model call", async () => {
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-parent-uid", email: "parent@example.com" });
     try {

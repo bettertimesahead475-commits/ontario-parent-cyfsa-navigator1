@@ -58,6 +58,27 @@ export interface UploadInput {
   /** Text the user pasted, if any. Treated as its own document. */
   pastedText: string;
   fileData?: { base64?: string; mimeType?: string; name?: string; fileName?: string } | null;
+  /** Further documents of the same case, already validated by parseAdditionalDocuments. */
+  additional?: CaseDocument[];
+}
+
+export const MAX_ADDITIONAL_DOCUMENTS = 9;
+const MAX_ADDITIONAL_CHARS = 300_000;
+
+/**
+ * Validates the optional `additionalDocuments` request field: up to 9 further text documents of the same case, each
+ * `{ title, text }`. Anything else is rejected rather than repaired. Only the Forensic Engine path reads it.
+ */
+export function parseAdditionalDocuments(raw: unknown): CaseDocument[] {
+  if (raw === undefined || raw === null) return [];
+  const invalid = () =>
+    new AnalyzerError("UPLOAD_FAILED", 400, `Additional documents must be a list of up to ${MAX_ADDITIONAL_DOCUMENTS} items with a title and text. Nothing was charged.`, false);
+  if (!Array.isArray(raw) || raw.length > MAX_ADDITIONAL_DOCUMENTS) throw invalid();
+  return raw.map((d: any, i: number): CaseDocument => {
+    if (!d || typeof d !== "object" || typeof d.text !== "string" || !d.text.trim() || d.text.length > MAX_ADDITIONAL_CHARS) throw invalid();
+    const title = typeof d.title === "string" && d.title.trim() ? d.title.trim().slice(0, 200) : `Additional document ${i + 1}`;
+    return { id: `doc${i + 2}`, title, kind: guessDocumentKind(title, d.text), text: d.text, extractionMethod: "MANUAL_TRANSCRIPTION" };
+  });
 }
 
 /** Builds the engine's documents from the existing upload. The original PDF or image is kept for visual checks. */
@@ -84,6 +105,7 @@ export function buildCaseDocuments(input: UploadInput): CaseDocument[] {
   if (pasted) {
     docs.push({ id: docs.length ? "pasted" : "document", title: "Pasted text", kind: guessDocumentKind("", pasted), text: pasted, extractionMethod: "MANUAL_TRANSCRIPTION" });
   }
+  docs.push(...(input.additional ?? []));
   return docs;
 }
 

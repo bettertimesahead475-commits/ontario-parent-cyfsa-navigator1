@@ -40,7 +40,7 @@ import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { reserveFreeScan, settleFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
-import { buildCaseDocuments, isForensicEngineEnabled, runForensicEngineForRoute } from "./services/forensic/integration.js";
+import { buildCaseDocuments, isForensicEngineEnabled, parseAdditionalDocuments, runForensicEngineForRoute } from "./services/forensic/integration.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
@@ -2440,7 +2440,12 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const useForensicEngine = isForensic && isForensicEngineEnabled();
       const run = useForensicEngine
         ? await runForensicEngineForRoute({
-            documents: buildCaseDocuments({ extractedText, pastedText: textContent || "", fileData }),
+            documents: buildCaseDocuments({
+              extractedText,
+              pastedText: textContent || "",
+              fileData,
+              additional: parseAdditionalDocuments(req.body?.additionalDocuments),
+            }),
             generate: generateContentWithFallback,
             // Claude Opus does the investigation and the adversarial review; the mode's primary model only extracts.
             investigatorModel: verificationModel || ANALYZER_MODELS.FORENSIC,

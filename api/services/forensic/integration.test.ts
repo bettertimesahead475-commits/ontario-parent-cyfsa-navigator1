@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaseDocuments, guessDocumentKind, isForensicEngineEnabled, runForensicEngineForRoute, toLegacyReport } from "./integration";
+import { buildCaseDocuments, guessDocumentKind, isForensicEngineEnabled, parseAdditionalDocuments, runForensicEngineForRoute, toLegacyReport } from "./integration";
 import type { CaseDocument } from "./caseModel";
 import { AnalyzerError } from "../analyzerErrors";
 
@@ -109,5 +109,20 @@ describe("toLegacyReport", () => {
 
   it("is an AnalyzerError subclass on failure", () => {
     expect(new AnalyzerError("AI_PROVIDER_TEMPORARILY_UNAVAILABLE", 503, "x", true)).toBeInstanceOf(Error);
+  });
+});
+
+describe("parseAdditionalDocuments", () => {
+  it("accepts up to nine titled text documents and gives them stable ids", () => {
+    const docs = parseAdditionalDocuments([{ title: "Case note", text: "Case note — home visit" }, { text: "Dear Ms. X,\nPlease call me.\nYours truly" }]);
+    expect(docs.map((d) => [d.id, d.title, d.kind])).toEqual([["doc2", "Case note", "CAS_RECORD"], ["doc3", "Additional document 2", "CORRESPONDENCE"]]);
+  });
+
+  it("rejects anything malformed instead of repairing it", async () => {
+    const { parseAdditionalDocuments } = await import("./integration");
+    expect(parseAdditionalDocuments(undefined)).toEqual([]);
+    for (const bad of ["text", [{ title: "x" }], [{ text: "" }], Array.from({ length: 10 }, () => ({ text: "t" })), [{ text: "x".repeat(300_001) }]]) {
+      expect(() => parseAdditionalDocuments(bad)).toThrow(/Additional documents/);
+    }
   });
 });
