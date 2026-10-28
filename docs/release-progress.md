@@ -103,3 +103,71 @@ Branch inventory (`docs/branch-inventory.md`) is the first-page count; the compl
 main, 35 unmerged with an open PR, 61 unmerged without one. Of the 61, 11 are already in main by patch content and 13
 are covered by the release candidate. The remaining 37 are stacked duplicates of the report-feature chain, unrelated
 feature streams (Stage 9D to 11, forms, design), or the release-relevant items listed above.
+
+## Final release state: `release/candidate-audit-integration` at 914376d8
+
+Verification on this commit:
+- Typecheck clean. Full Vitest: 183 files passed, 11 skipped; 3566 tests passed, 0 failed, 433 skipped.
+- Production build succeeds. Headless Chromium on the production build: 12 page checks (6 pages x desktop and phone) pass,
+  no failed requests, no horizontal overflow. Phone footer and disclaimer clear the floating controls.
+- Migration re-verified on local PostgreSQL 16 against the final SQL: checks pass; 40-way race gives one reservation;
+  rollback leaves no `free_*` functions. Not run on Supabase staging: no approved staging project was available.
+
+Decisions applied (from release owner):
+1. Lawyer directory paused publicly: routes return no listings (404 for a profile) and the page shows a notice with the
+   Legal Aid Ontario line. Data and code preserved. Switch: `shared/lawyerDirectoryPolicy.ts`.
+2. R. v. Feeney citation removed from customer-facing text (could not be verified from CanLII or the SCC site).
+3. No pricing, payment, or entitlement change.
+4. No branch or PR deletion.
+5. Model IDs verified against the Claude API reference in this environment (cached 2026-10-06): `claude-sonnet-5` and
+   `claude-opus-5` are valid IDs in that table. `claude-opus-5-5` is the current Opus ($4 in / $20 out per MTok, against $5 / $25)
+   and `claude-sonnet-5-5` is the current Sonnet (same price as Sonnet 5). No ID was changed. Recommended optional change:
+   set `ANTHROPIC_FORENSIC_MODEL=claude-opus-5-5` after review; the code already keeps 5.5 requests valid (no disabled
+   thinking, no forced tool choice, effort set). Requires your approval.
+
+Fixed in this stretch:
+- Current models sent `budget_tokens` on the enabled-thinking path (a 400 per the model reference). No caller enables
+  thinking today; the path now sends adaptive thinking. One existing test encoded the wrong behavior and was corrected
+  against the reference; the reason is in the test.
+- Stale routing comment named a retired model.
+- Mobile footer and disclaimer hidden behind floating controls.
+- A repairable model reply now has an end-to-end test (four Quick Review sections, one call each, no retry).
+
+Limitations and unverified items:
+- **Production function duration:** `api/index.ts` = 300 s in `vercel.json`. The project and deployment records (`dpl_65asc…`,
+  main `0130a96`, PR #103) carry no function duration field. Confirm in Vercel → Settings → Functions.
+- **Production 422 rate:** runtime logs for the last 3 days have no `AI_RESPONSE_INVALID` entries. Two error entries fall in the
+  3–7 day range; the 7-day query timed out and could not be listed. Attribution of earlier 422s is not established.
+- **ALLOWED_ORIGINS:** set for the preview target only; its value is secret and was not read. Production uses the built-in
+  `cyfsanavigator.com` allowlist. Confirm the preview value covers the preview domains you test from.
+- **Forensic Deep Scan integration:** covered by the existing section, validation and persistence tests in `_server.test.ts`
+  and `analyzerStreamingIntegration.test.ts`; no new Forensic-specific test added in this stretch.
+- **Blocked on your approval** (not done): merging the release candidate to `main` (auto-deploys), applying the migration to
+  staging and production, the optional model change, and making the release candidate the PR #109 head.
+
+## Consolidated production release checklist (not executed)
+
+Pre-merge
+1. Apply `supabase/migrations_pending_approval/free_scan_reservation_functions.sql` to a Supabase staging project. Run
+   `free_scan_reservation_functions.test.sql` (must print the pass line) and the 40-way race. sha256 of the SQL:
+   `3b98bab6029d80dbdab0abc7bc21f5661ea5657447c931c38f2ce934bc7f8bc1`.
+2. Confirm `ALLOWED_ORIGINS` (preview) includes the preview domains used for testing.
+3. Confirm the Vercel function duration for `api/index.ts` (Settings → Functions = 300 s).
+4. Decide the optional `ANTHROPIC_FORENSIC_MODEL=claude-opus-5-5` change.
+
+Production order
+1. Apply the migration to production (separate approval). Re-run the `.test.sql` checks read-only where possible.
+2. Merge `release/candidate-audit-integration` to `main`. Vercel builds production from `main`.
+3. Confirm the new deployment is READY and aliased to cyfsanavigator.com.
+
+Smoke tests (production)
+- `GET /api/health` returns 200. Same request with `Origin: https://evil.example` returns 403 `ORIGIN_NOT_ALLOWED`.
+- `/`, `/rights`, `/pricing`, `/templates` load; `/document-analyzer` shows the sign-in gate when signed out; `/lawyers` shows the pause notice.
+- Signed-in test account, one free Quick Review: 200; `free_usage` shows one consumed reservation; a second request returns 402.
+- Failed analysis (induced in staging, not production) returns the scan.
+- Runtime logs for 48 hours: watch `AI_RESPONSE_INVALID`, `FREE_SCAN_NOT_RECORDED`, `DIRECTORY_UNAVAILABLE`.
+
+Rollback
+1. Promote the previous production deployment (`dpl_65ascLewK5AowJVifiZxAtpgo4vF`, main `0130a96`) in Vercel. Do this first.
+2. Only after step 1, run `free_scan_reservation_functions.down.sql` if the migration must be removed. Reservation marker rows stay in `free_usage`; they are harmless.
+3. Revert the release branch on `main` with a revert commit, not a force push.
