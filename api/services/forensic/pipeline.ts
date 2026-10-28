@@ -1,25 +1,26 @@
 /**
- * Forensic Engine pipeline. Separate from the existing sectioned analyzer (api/services/analyzerSections.ts), which
- * keeps serving Quick Review and the current Forensic report unchanged. The server calls it only when the
- * FORENSIC_ENGINE_ENABLED flag is on (api/services/forensic/integration.ts).
+ * Forensic Engine pipeline, as a sequence of serializable steps.
  *
- * Stages:
- *   1. EXTRACTION (auxiliary model, one call per document): the document's own date, people, dated events, claims,
- *      each with a quotation. Items whose quotation is not in the document are dropped and counted.
- *   2. Case model (deterministic): people merged across documents, chronology, chronology anomalies and conflict
- *      leads (caseAnalysis.ts). Leads are hints for the investigator, never findings.
- *   3. INVESTIGATION (Claude Opus): open-ended hypotheses and findings over the whole record. When the record is
- *      larger than one pass allows, each document is investigated separately and a SYNTHESIS pass (Claude Opus)
- *      looks for what only the whole record shows.
- *   4. ADVERSARIAL_REVIEW (Claude Opus, separate call and prompt): tries to falsify each finding, with the verbatim
- *      statute text for every verified provision a finding cites.
- *   5. VISUAL_VERIFICATION (multimodal): findings that depend on the page (check boxes, handwriting, stamps) are
- *      checked against the original PDF or image, or supplied page images.
- *   6. GROUNDING (deterministic): grounding.ts rules, duplicate merge, appendix for everything not material.
+ * The engine state (EngineState) is plain JSON. Each step reads it and returns a new state, so a run can stop after
+ * any step, be saved (resumableRunner.ts), and continue in another serverless invocation. `runForensicInvestigation`
+ * runs every step in one go for callers that do not need to resume (tests, the benchmark).
+ *
+ * Steps, in order:
+ *   extract:<docId>   EXTRACTION (auxiliary model): the document's own date, people, dated events, claims, each
+ *                     with a quotation. Items whose quotation is not in the document are dropped and counted.
+ *   build             Case model (deterministic): people merged, chronology, chronology anomalies, conflict leads.
+ *   investigate       INVESTIGATION (Claude Opus) over the whole record, or, for a record larger than one pass,
+ *   investigate:<id>  one Opus investigation per document followed by
+ *   synthesize        SYNTHESIS (Claude Opus) for findings only the whole record shows.
+ *   review            ADVERSARIAL_REVIEW (Claude Opus, separate prompt) with verbatim statute text.
+ *   visual            VISUAL_VERIFICATION against page images or the original PDF/image.
+ *   ground            GROUNDING (deterministic): grounding.ts rules, duplicate merge, appendix.
  *
  * Failure handling: a failed stage is recorded and the report is PARTIAL with a plain statement of what is missing.
- * A failed investigation produces no findings; it never produces findings from a weaker stage instead.
- * Cost controls: a call budget, a per-document character cap, per-stage output caps, and an overall deadline.
+ * A failed investigation produces no findings; it never produces findings from a weaker stage instead. In resumable
+ * mode a transient failure is retried on a later invocation before it is recorded as a failure.
+ * Cost controls: a call budget (carried across invocations), a per-document character cap, per-stage output caps,
+ * and a deadline.
  */
 
 import type { GenerateFn, GenerateResult } from "../analyzerSections.js";
@@ -34,6 +35,7 @@ import {
   type Finding,
   type ForensicReport,
   type Hypothesis,
+  type InjectionWarning,
   type StageRecord,
 } from "./caseModel.js";
 import { buildChronology, findChronologyAnomalies, findConflictLeads, type DocumentDate } from "./caseAnalysis.js";
@@ -77,6 +79,9 @@ export const DEFAULT_LIMITS: ForensicLimits = {
   stageTimeoutMs: 240_000,
 };
 
+/** A transient step failure is retried this many times in resumable mode before it is recorded as a failure. */
+export const MAX_STEP_ATTEMPTS = 3;
+
 export interface ForensicProgress {
   stage: StageRecord["stage"];
   message: string;
@@ -84,62 +89,188 @@ export interface ForensicProgress {
   fraction: number;
 }
 
-export interface ForensicRunOptions {
-  documents: CaseDocument[];
-  generate: GenerateFn;
-  models: ForensicModels;
-  limits?: Partial<ForensicLimits>;
-  deadlineAt: number;
+/** Original files (PDF or image) and page images, kept out of the saved state so each checkpoint stays small. */
+export type EngineMedia = Record<string, Pick<CaseDocument, "sourceFile" | "pageImages">>;
+
+export interface EngineState {
+  schema: "forensic-engine-state-v1";
   requestId: string;
-  now?: () => number;
-  onProgress?: (p: ForensicProgress) => void | Promise<void>;
+  models: ForensicModels;
+  limits: ForensicLimits;
+  /** Documents without their original files or page images (see EngineMedia). */
+  documents: CaseDocument[];
+  plan: string[];
+  done: string[];
+  /** Failed attempts per step, counted across invocations. */
+  attempts: Record<string, number>;
+  calls: number;
+  budgetExhausted: boolean;
+  startedAt: number;
+  stages: StageRecord[];
+  incompleteness: string[];
+  injectionWarnings: InjectionWarning[];
+  extraction: { people: CasePerson[]; events: CaseEvent[]; claims: CaseClaim[]; documentDates: DocumentDate[]; dropped: number };
+  caseModel: CaseModel | null;
+  findings: Finding[];
+  hypotheses: Hypothesis[];
+  openQuestions: string[];
+  investigatedDocuments: number;
+  report: ForensicReport | null;
 }
 
-class BudgetExceeded extends Error {}
+export interface StepDeps {
+  generate: GenerateFn;
+  /** Absolute epoch-ms deadline for this invocation's AI calls. */
+  deadlineAt: number;
+  media?: EngineMedia;
+  now?: () => number;
+  onProgress?: (p: ForensicProgress) => void | Promise<void>;
+  /** True when a later invocation can retry a transient failure. */
+  resumable?: boolean;
+}
+
+export type StepOutcome = "DONE" | "RETRY_LATER";
+
+export class BudgetExceeded extends Error {}
+/** Not enough time is left in this invocation to start a model call. Never counted as a failed attempt. */
+export class DeadlineReached extends Error {}
 
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
   (allowed as readonly string[]).includes(String(v ?? "").toUpperCase()) ? (String(v).toUpperCase() as T) : fallback;
 
-export async function runForensicInvestigation(opts: ForensicRunOptions): Promise<ForensicReport> {
-  const limits = { ...DEFAULT_LIMITS, ...opts.limits };
-  const now = opts.now ?? Date.now;
-  const started = now();
-  const stages: StageRecord[] = [];
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
+// ---------------------------------------------------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------------------------------------------------
+
+export function createEngineState(params: {
+  documents: CaseDocument[];
+  models: ForensicModels;
+  limits?: Partial<ForensicLimits>;
+  requestId: string;
+  now?: number;
+}): { state: EngineState; media: EngineMedia } {
+  const limits = { ...DEFAULT_LIMITS, ...params.limits };
+  const media: EngineMedia = {};
+  const documents = params.documents.map((d) => {
+    const { sourceFile, pageImages, ...rest } = d;
+    if (sourceFile || pageImages) media[d.id] = { ...(sourceFile ? { sourceFile } : {}), ...(pageImages ? { pageImages } : {}) };
+    return rest;
+  });
+  const totalChars = documents.reduce((s, d) => s + Math.min(d.text.length, limits.maxCharsPerDocument), 0);
+  const multiPass = totalChars > limits.singlePassMaxChars && documents.length > 1;
+  const plan = [
+    ...documents.map((d) => `extract:${d.id}`),
+    "build",
+    ...(multiPass ? [...documents.map((d) => `investigate:${d.id}`), "synthesize"] : ["investigate"]),
+    "review",
+    "visual",
+    "ground",
+  ];
   const incompleteness: string[] = [];
-  const docs = opts.documents;
-  let calls = 0;
+  const injectionWarnings = detectInstructionLikeText(documents);
+  if (injectionWarnings.length > 0) {
+    incompleteness.push(
+      `${injectionWarnings.length} passage(s) in the documents read like instructions to an AI. They were treated as evidence and not followed.`
+    );
+  }
+  for (const d of documents) {
+    if (d.text.length > limits.maxCharsPerDocument) {
+      incompleteness.push(`Document "${d.title}" was truncated at ${limits.maxCharsPerDocument} characters; the remainder was not analyzed.`);
+    }
+  }
+  return {
+    media,
+    state: {
+      schema: "forensic-engine-state-v1",
+      requestId: params.requestId,
+      models: params.models,
+      limits,
+      documents,
+      plan,
+      done: [],
+      attempts: {},
+      calls: 0,
+      budgetExhausted: false,
+      startedAt: params.now ?? Date.now(),
+      stages: [],
+      incompleteness,
+      injectionWarnings,
+      extraction: { people: [], events: [], claims: [], documentDates: [], dropped: 0 },
+      caseModel: null,
+      findings: [],
+      hypotheses: [],
+      openQuestions: [],
+      investigatedDocuments: 0,
+      report: null,
+    },
+  };
+}
+
+export function nextStep(state: EngineState): string | null {
+  return state.plan.find((s) => !state.done.includes(s)) ?? null;
+}
+
+const withMedia = (docs: CaseDocument[], media: EngineMedia = {}): CaseDocument[] => docs.map((d) => ({ ...d, ...media[d.id] }));
+
+function stageRecord(state: EngineState, stage: StageRecord["stage"], model: string | null): StageRecord {
+  let r = state.stages.find((s) => s.stage === stage);
+  if (!r) {
+    r = { stage, status: "COMPLETED", model, calls: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, error: null };
+    state.stages.push(r);
+  }
+  return r;
+}
+
+function fail(state: EngineState, r: StageRecord, err: unknown, consequence: string) {
+  r.status = "FAILED";
+  r.error = err instanceof Error ? err.message : String(err);
+  state.incompleteness.push(consequence);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// One step
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Runs one step and returns the new state. RETRY_LATER means a transient failure in resumable mode (or not enough
+ * time left in this invocation): the state records the attempt but the step is not done, so a later invocation
+ * repeats it. The input state is never modified.
+ */
+export async function runEngineStep(input: EngineState, step: string, deps: StepDeps): Promise<{ state: EngineState; outcome: StepOutcome }> {
+  const state = clone(input);
+  const now = deps.now ?? Date.now;
+  const limits = state.limits;
+  const docs = withMedia(state.documents, deps.media);
   const progress = async (stage: StageRecord["stage"], message: string, fraction: number) => {
     try {
-      await opts.onProgress?.({ stage, message, fraction });
+      await deps.onProgress?.({ stage, message, fraction });
     } catch {
       // Progress reporting never affects the analysis.
     }
   };
-
   const call = async (stage: StageRecord["stage"], model: string, system: string, content: any, maxTokens: number): Promise<GenerateResult> => {
-    if (calls >= limits.maxCalls) throw new BudgetExceeded(`Call budget of ${limits.maxCalls} reached.`);
-    const remaining = opts.deadlineAt - now();
-    if (remaining <= 1_000) throw new BudgetExceeded("Analysis deadline reached.");
-    calls++;
-    return opts.generate(
+    if (state.calls >= limits.maxCalls) {
+      state.budgetExhausted = true;
+      throw new BudgetExceeded(`Call budget of ${limits.maxCalls} reached.`);
+    }
+    const remaining = deps.deadlineAt - now();
+    if (remaining <= 1_000) throw new DeadlineReached("Analysis deadline reached.");
+    state.calls++;
+    return deps.generate(
       {
         system,
         messages: [{ role: "user", content }],
         max_tokens: maxTokens,
         timeoutMs: Math.min(limits.stageTimeoutMs, remaining),
         retries: 1,
-        requestId: opts.requestId,
+        requestId: state.requestId,
         stage: `forensic_${stage.toLowerCase()}`,
         mode: "full",
       },
       model
     );
-  };
-
-  const record = (stage: StageRecord["stage"], model: string | null): StageRecord => {
-    const r: StageRecord = { stage, status: "COMPLETED", model, calls: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, error: null };
-    stages.push(r);
-    return r;
   };
   const account = (r: StageRecord, res: GenerateResult) => {
     r.calls++;
@@ -147,128 +278,71 @@ export async function runForensicInvestigation(opts: ForensicRunOptions): Promis
     r.outputTokens += res.usage?.output_tokens ?? 0;
     r.durationMs += res.durationMs ?? 0;
   };
-  const fail = (r: StageRecord, err: unknown, consequence: string) => {
-    r.status = "FAILED";
-    r.error = err instanceof Error ? err.message : String(err);
-    incompleteness.push(consequence);
+
+  /**
+   * Shared failure policy. Resumable mode retries a transient error later; a budget stop, or a step that has used its
+   * attempts, is recorded with its consequence. A deadline stop in resumable mode is an interruption, not a failure.
+   */
+  const onError = (err: unknown, r: StageRecord, consequence: string): StepOutcome => {
+    if (deps.resumable && err instanceof DeadlineReached) return "RETRY_LATER";
+    if (deps.resumable && !(err instanceof BudgetExceeded)) {
+      state.attempts[step] = (state.attempts[step] ?? 0) + 1;
+      if (state.attempts[step] < MAX_STEP_ATTEMPTS) return "RETRY_LATER";
+    }
+    fail(state, r, err, consequence);
+    return "DONE";
+  };
+  const finish = (outcome: StepOutcome) => {
+    if (outcome === "DONE") state.done.push(step);
+    return { state, outcome };
   };
 
-  const injectionWarnings = detectInstructionLikeText(docs);
-  if (injectionWarnings.length > 0) {
-    incompleteness.push(
-      `${injectionWarnings.length} passage(s) in the documents read like instructions to an AI. They were treated as evidence and not followed.`
-    );
-  }
-  for (const d of docs) {
-    if (d.text.length > limits.maxCharsPerDocument) {
-      incompleteness.push(`Document "${d.title}" was truncated at ${limits.maxCharsPerDocument} characters; the remainder was not analyzed.`);
-    }
-  }
+  const [kind, docId] = step.split(":");
 
-  // 1. Extraction ----------------------------------------------------------------------------------------------
-  await progress("EXTRACTION", "Indexing people, dates and claims in each document...", 0.05);
-  const extraction = record("EXTRACTION", opts.models.extractor);
-  const people = new Map<string, CasePerson>();
-  const events: CaseEvent[] = [];
-  const claims: CaseClaim[] = [];
-  const documentDates: DocumentDate[] = [];
-  let dropped = 0;
-  for (const doc of docs) {
+  if (kind === "extract") {
+    const doc = docs.find((d) => d.id === docId)!;
+    const r = stageRecord(state, "EXTRACTION", state.models.extractor);
+    if (state.done.length === 0) await progress("EXTRACTION", "Indexing people, dates and claims in each document...", 0.05);
+    if (state.budgetExhausted) return finish("DONE");
     try {
       const iso = isolateDocuments([doc], limits.maxCharsPerDocument);
-      const res = await call("EXTRACTION", opts.models.extractor, `${EXTRACTION_SYSTEM}\n\n${iso.systemNotice}`, iso.content, limits.extractionMaxTokens);
-      account(extraction, res);
-      const raw = parseJsonLenient(res.text) ?? {};
-      const dd = raw.documentDate;
-      if (dd && String(dd.quote ?? "").trim()) {
-        const ref = resolveEvidenceRef(docs, doc.id, String(dd.quote));
-        if (ref.verified) {
-          documentDates.push({
-            documentId: doc.id,
-            kind: oneOf(dd.kind, ["SWORN", "ISSUED", "ENDORSED", "WRITTEN"] as const, "UNKNOWN"),
-            date: /^\d{4}-\d{2}-\d{2}$/.test(String(dd.isoDate ?? "")) ? String(dd.isoDate) : null,
-            dateText: String(dd.dateText ?? ""),
-            source: ref,
-          });
-        } else {
-          dropped++;
-        }
-      }
-      for (const p of Array.isArray(raw.people) ? raw.people : []) {
-        const ref = resolveEvidenceRef(docs, doc.id, String(p?.quote ?? p?.name ?? ""));
-        if (!ref.verified) { dropped++; continue; }
-        const name = String(p?.name ?? "").trim();
-        const key = name.toLowerCase().replace(/[^a-z]/g, "");
-        if (!key) { dropped++; continue; }
-        const existing = people.get(key);
-        const roles = (Array.isArray(p?.roles) ? p.roles : []).map(String).filter(Boolean);
-        if (existing) {
-          existing.mentions.push(ref);
-          for (const r of roles) if (!existing.roles.includes(r)) existing.roles.push(r);
-        } else {
-          people.set(key, { id: `P${people.size + 1}`, name, roles, mentions: [ref] });
-        }
-      }
-      for (const e of Array.isArray(raw.events) ? raw.events : []) {
-        const ref = resolveEvidenceRef(docs, doc.id, String(e?.quote ?? ""));
-        if (!ref.verified) { dropped++; continue; }
-        events.push({
-          id: `E${events.length + 1}`,
-          description: String(e?.description ?? ""),
-          date: /^\d{4}-\d{2}-\d{2}$/.test(String(e?.isoDate ?? "")) ? String(e.isoDate) : null,
-          dateText: String(e?.dateText ?? ""),
-          dateSource: oneOf(e?.dateSource, ["COURT_RECORD", "DOCUMENT_BODY", "FILENAME", "METADATA"] as const, "UNKNOWN" as any) as CaseEvent["dateSource"],
-          participants: (Array.isArray(e?.participants) ? e.participants : []).map(String),
-          sources: [ref],
-        });
-      }
-      for (const c of Array.isArray(raw.claims) ? raw.claims : []) {
-        const ref = resolveEvidenceRef(docs, doc.id, String(c?.quote ?? ""));
-        if (!ref.verified) { dropped++; continue; }
-        claims.push({
-          id: `C${claims.length + 1}`,
-          assertedBy: String(c?.assertedBy ?? ""),
-          statement: String(c?.statement ?? ""),
-          basis: oneOf(c?.basis, ["FIRSTHAND", "NAMED_SOURCE", "UNNAMED_SOURCE", "OPINION"] as const, "UNCLEAR" as any) as CaseClaim["basis"],
-          sources: [ref],
-        });
-      }
+      const res = await call("EXTRACTION", state.models.extractor, `${EXTRACTION_SYSTEM}\n\n${iso.systemNotice}`, iso.content, limits.extractionMaxTokens);
+      account(r, res);
+      ingestExtraction(state, docs, doc, parseJsonLenient(res.text) ?? {});
+      return finish("DONE");
     } catch (err) {
-      fail(extraction, err, `Extraction did not complete for "${doc.title}". The investigation read the document directly without an index for it.`);
-      if (err instanceof BudgetExceeded) break;
+      return finish(onError(err, r, `Extraction did not complete for "${doc.title}". The investigation read the document directly without an index for it.`));
     }
   }
 
-  // 2. Case model ----------------------------------------------------------------------------------------------
-  const chronology = buildChronology(events);
-  const caseModel: CaseModel = {
-    documents: docs.map(({ id, title, kind, extractionMethod }) => ({ id, title, kind, extractionMethod })),
-    people: [...people.values()],
-    events: chronology.map((c) => events.find((e) => e.id === c.eventId)!),
-    claims,
-    relations: [],
-    documentDates,
-    chronology,
-    chronologyAnomalies: findChronologyAnomalies(events, documentDates),
-    conflictLeads: findConflictLeads(events, claims),
-    openQuestions: [],
-    droppedUngrounded: dropped,
-  };
-  const index = (docFilter?: string) =>
-    JSON.stringify({
-      documentDates: caseModel.documentDates.map((d) => ({ document: d.documentId, kind: d.kind, date: d.date, dateText: d.dateText })),
-      people: caseModel.people.map((p) => ({ name: p.name, roles: p.roles })),
-      chronology: caseModel.chronology.filter((c) => !docFilter || c.documentId === docFilter),
-      claims: caseModel.claims
-        .filter((c) => !docFilter || c.sources[0]?.documentId === docFilter)
-        .map((c) => ({ id: c.id, assertedBy: c.assertedBy, basis: c.basis, statement: c.statement, document: c.sources[0]?.documentId, page: c.sources[0]?.page })),
-      leads: [...caseModel.chronologyAnomalies, ...caseModel.conflictLeads],
-    });
+  if (kind === "build") {
+    const x = state.extraction;
+    const chronology = buildChronology(x.events);
+    state.caseModel = {
+      documents: state.documents.map(({ id, title, kind: k, extractionMethod }) => ({ id, title, kind: k, extractionMethod })),
+      people: x.people,
+      events: chronology.map((c) => x.events.find((e) => e.id === c.eventId)!),
+      claims: x.claims,
+      relations: [],
+      documentDates: x.documentDates,
+      chronology,
+      chronologyAnomalies: findChronologyAnomalies(x.events, x.documentDates),
+      conflictLeads: findConflictLeads(x.events, x.claims),
+      openQuestions: [],
+      droppedUngrounded: x.dropped,
+    };
+    return finish("DONE");
+  }
 
-  // 3. Investigation (single pass, or per document + synthesis) -------------------------------------------------
-  const investigation = record("INVESTIGATION", opts.models.investigator);
-  let findings: Finding[] = [];
-  let hypotheses: Hypothesis[] = [];
+  const cm = state.caseModel!;
+  const index = () =>
+    JSON.stringify({
+      documentDates: cm.documentDates.map((d) => ({ document: d.documentId, kind: d.kind, date: d.date, dateText: d.dateText })),
+      people: cm.people.map((p) => ({ name: p.name, roles: p.roles })),
+      chronology: cm.chronology,
+      claims: cm.claims.map((c) => ({ id: c.id, assertedBy: c.assertedBy, basis: c.basis, statement: c.statement, document: c.sources[0]?.documentId, page: c.sources[0]?.page })),
+      leads: [...cm.chronologyAnomalies, ...cm.conflictLeads],
+    });
   const takeHypotheses = (raw: any, prefix: string) =>
     (Array.isArray(raw?.hypotheses) ? raw.hypotheses : []).map((h: any, i: number): Hypothesis => ({
       id: `${prefix}${String(h?.id ?? `H${i + 1}`)}`,
@@ -281,140 +355,140 @@ export async function runForensicInvestigation(opts: ForensicRunOptions): Promis
     parseFindingCandidates(raw.findings, docs).map((f) => ({ ...f, id: `${prefix}${f.id}`, hypothesisId: f.hypothesisId ? `${prefix}${f.hypothesisId}` : null }));
   const takeQuestions = (raw: any) => (Array.isArray(raw?.openQuestions) ? raw.openQuestions : []).map(String).filter(Boolean);
 
-  const totalChars = docs.reduce((s, d) => s + Math.min(d.text.length, limits.maxCharsPerDocument), 0);
-  const multiPass = totalChars > limits.singlePassMaxChars && docs.length > 1;
-  await progress("INVESTIGATION", "Claude Opus is investigating the record...", 0.2);
-  if (!multiPass) {
+  if (kind === "investigate") {
+    const r = stageRecord(state, "INVESTIGATION", state.models.investigator);
+    const perDoc = Boolean(docId);
+    const doc = perDoc ? docs.find((d) => d.id === docId)! : null;
+    const position = perDoc ? state.documents.findIndex((d) => d.id === docId) : 0;
+    await progress("INVESTIGATION", perDoc ? `Investigating document ${position + 1} of ${docs.length}...` : "Claude Opus is investigating the record...", 0.2 + (perDoc ? 0.35 * (position / docs.length) : 0));
+    if (perDoc && state.budgetExhausted) return finish("DONE");
     try {
-      const iso = isolateDocuments(docs, limits.maxCharsPerDocument);
+      const iso = isolateDocuments(perDoc ? [doc!] : docs, limits.maxCharsPerDocument);
       const res = await call(
         "INVESTIGATION",
-        opts.models.investigator,
+        state.models.investigator,
         `${INVESTIGATION_SYSTEM}\n\n${iso.systemNotice}`,
-        `CASE MODEL AND LEADS (machine-extracted; verify against the documents):\n${index()}\n\nDOCUMENTS:\n${iso.content}`,
+        perDoc
+          ? `CASE MODEL AND LEADS for the whole record (machine-extracted; verify against the documents):\n${index()}\n\nDOCUMENT ${position + 1} of ${docs.length}:\n${iso.content}`
+          : `CASE MODEL AND LEADS (machine-extracted; verify against the documents):\n${index()}\n\nDOCUMENTS:\n${iso.content}`,
         limits.investigationMaxTokens
       );
-      account(investigation, res);
+      account(r, res);
       const raw = parseJsonLenient(res.text);
-      if (!raw || !Array.isArray(raw.findings)) throw new Error("Investigation returned no findings array.");
-      findings = takeFindings(raw, "");
-      hypotheses = takeHypotheses(raw, "");
-      caseModel.openQuestions = takeQuestions(raw);
+      if (!raw || !Array.isArray(raw.findings)) throw new Error(perDoc ? `Investigation of "${doc!.title}" returned no findings array.` : "Investigation returned no findings array.");
+      const prefix = perDoc ? `${doc!.id}:` : "";
+      state.findings.push(...takeFindings(raw, prefix));
+      state.hypotheses.push(...takeHypotheses(raw, prefix));
+      state.openQuestions.push(...takeQuestions(raw));
+      state.investigatedDocuments++;
+      return finish("DONE");
     } catch (err) {
-      fail(investigation, err, "The investigation stage did not complete, so this report contains no findings. Re-run the analysis.");
-    }
-  } else {
-    let completedDocs = 0;
-    for (const [i, doc] of docs.entries()) {
-      try {
-        const iso = isolateDocuments([doc], limits.maxCharsPerDocument);
-        const res = await call(
-          "INVESTIGATION",
-          opts.models.investigator,
-          `${INVESTIGATION_SYSTEM}\n\n${iso.systemNotice}`,
-          `CASE MODEL AND LEADS for the whole record (machine-extracted; verify against the documents):\n${index()}\n\nDOCUMENT ${i + 1} of ${docs.length}:\n${iso.content}`,
-          limits.investigationMaxTokens
-        );
-        account(investigation, res);
-        const raw = parseJsonLenient(res.text);
-        if (!raw || !Array.isArray(raw.findings)) throw new Error(`Investigation of "${doc.title}" returned no findings array.`);
-        findings.push(...takeFindings(raw, `${doc.id}:`));
-        hypotheses.push(...takeHypotheses(raw, `${doc.id}:`));
-        caseModel.openQuestions.push(...takeQuestions(raw));
-        completedDocs++;
-      } catch (err) {
-        fail(investigation, err, `The investigation of "${doc.title}" did not complete; it has no document-level findings.`);
-        if (err instanceof BudgetExceeded) break;
-      }
-      await progress("INVESTIGATION", `Investigated ${i + 1} of ${docs.length} documents...`, 0.2 + 0.35 * ((i + 1) / docs.length));
-    }
-    const synthesis = record("SYNTHESIS", opts.models.investigator);
-    if (completedDocs === 0) {
-      synthesis.status = "SKIPPED";
-    } else {
-      try {
-        const perDoc = Math.max(4_000, Math.floor(limits.singlePassMaxChars / docs.length));
-        const iso = isolateDocuments(docs, perDoc);
-        const summary = findings.map((f) => ({ id: f.id, title: f.title, statement: f.statement, class: f.evidenceClass, quotes: f.supporting.map((r) => ({ documentId: r.documentId, page: r.page, quote: r.quote })) }));
-        const res = await call(
-          "SYNTHESIS",
-          opts.models.investigator,
-          `${SYNTHESIS_SYSTEM}\n\n${iso.systemNotice}`,
-          `CASE MODEL AND LEADS:\n${index()}\n\nPER-DOCUMENT FINDINGS:\n${JSON.stringify(summary)}\n\nDOCUMENTS (each truncated to ${perDoc} characters for this pass):\n${iso.content}`,
-          limits.synthesisMaxTokens
-        );
-        account(synthesis, res);
-        const raw = parseJsonLenient(res.text);
-        if (!raw || !Array.isArray(raw.findings)) throw new Error("Synthesis returned no findings array.");
-        findings.push(...takeFindings(raw, "case:"));
-        hypotheses.push(...takeHypotheses(raw, "case:"));
-        caseModel.openQuestions.push(...takeQuestions(raw));
-      } catch (err) {
-        fail(synthesis, err, "The case-level synthesis did not complete. Cross-document findings may be missing.");
-      }
+      return finish(
+        onError(
+          err,
+          r,
+          perDoc
+            ? `The investigation of "${doc!.title}" did not complete; it has no document-level findings.`
+            : "The investigation stage did not complete, so this report contains no findings. Re-run the analysis."
+        )
+      );
     }
   }
 
-  // 4. Adversarial review ---------------------------------------------------------------------------------------
-  await progress("ADVERSARIAL_REVIEW", "Independent adversarial review is trying to falsify each finding...", 0.6);
-  const review = record("ADVERSARIAL_REVIEW", opts.models.reviewer);
-  if (findings.length === 0) {
-    review.status = "SKIPPED";
-  } else {
+  if (kind === "synthesize") {
+    const r = stageRecord(state, "SYNTHESIS", state.models.investigator);
+    if (state.investigatedDocuments === 0) {
+      r.status = "SKIPPED";
+      return finish("DONE");
+    }
+    try {
+      const perDocChars = Math.max(4_000, Math.floor(limits.singlePassMaxChars / docs.length));
+      const iso = isolateDocuments(docs, perDocChars);
+      const summary = state.findings.map((f) => ({ id: f.id, title: f.title, statement: f.statement, class: f.evidenceClass, quotes: f.supporting.map((s) => ({ documentId: s.documentId, page: s.page, quote: s.quote })) }));
+      const res = await call(
+        "SYNTHESIS",
+        state.models.investigator,
+        `${SYNTHESIS_SYSTEM}\n\n${iso.systemNotice}`,
+        `CASE MODEL AND LEADS:\n${index()}\n\nPER-DOCUMENT FINDINGS:\n${JSON.stringify(summary)}\n\nDOCUMENTS (each truncated to ${perDocChars} characters for this pass):\n${iso.content}`,
+        limits.synthesisMaxTokens
+      );
+      account(r, res);
+      const raw = parseJsonLenient(res.text);
+      if (!raw || !Array.isArray(raw.findings)) throw new Error("Synthesis returned no findings array.");
+      state.findings.push(...takeFindings(raw, "case:"));
+      state.hypotheses.push(...takeHypotheses(raw, "case:"));
+      state.openQuestions.push(...takeQuestions(raw));
+      return finish("DONE");
+    } catch (err) {
+      return finish(onError(err, r, "The case-level synthesis did not complete. Cross-document findings may be missing."));
+    }
+  }
+
+  if (kind === "review") {
+    await progress("ADVERSARIAL_REVIEW", "Independent adversarial review is trying to falsify each finding...", 0.6);
+    const r = stageRecord(state, "ADVERSARIAL_REVIEW", state.models.reviewer);
+    if (state.findings.length === 0) {
+      r.status = "SKIPPED";
+      return finish("DONE");
+    }
     try {
       const iso = isolateDocuments(docs, limits.maxCharsPerDocument);
-      const proposed = findings.map((f) => ({
+      const proposed = state.findings.map((f) => ({
         findingId: f.id,
         title: f.title,
         statement: f.statement,
         evidenceClass: f.evidenceClass,
-        supporting: f.supporting.map((r) => ({ documentId: r.documentId, quote: r.quote, page: r.page, foundInSource: r.verified })),
-        contradicting: f.contradicting.map((r) => ({ documentId: r.documentId, quote: r.quote, page: r.page, foundInSource: r.verified })),
+        supporting: f.supporting.map((s) => ({ documentId: s.documentId, quote: s.quote, page: s.page, foundInSource: s.verified })),
+        contradicting: f.contradicting.map((s) => ({ documentId: s.documentId, quote: s.quote, page: s.page, foundInSource: s.verified })),
         legalIssues: f.legalIssues.map((l) => ({ citation: l.citation, explanation: l.explanation, citationStatus: l.citationStatus })),
       }));
       const statutes = new Map<string, string>();
-      for (const f of findings) for (const l of f.legalIssues) if (l.statuteText) statutes.set(l.citation, l.statuteText);
+      for (const f of state.findings) for (const l of f.legalIssues) if (l.statuteText) statutes.set(l.citation, l.statuteText);
       const statuteBlock = statutes.size
         ? `\n\nSTATUTE TEXT (verbatim from the bundled CYFSA consolidation):\n${[...statutes].map(([c, t]) => `[${c}]\n${t}`).join("\n\n")}`
         : "\n\nSTATUTE TEXT: none supplied; every cited provision is unverified.";
       const res = await call(
         "ADVERSARIAL_REVIEW",
-        opts.models.reviewer,
+        state.models.reviewer,
         `${REVIEW_SYSTEM}\n\n${iso.systemNotice}`,
         `PROPOSED FINDINGS:\n${JSON.stringify(proposed)}${statuteBlock}\n\nDOCUMENTS:\n${iso.content}`,
         limits.reviewMaxTokens
       );
-      account(review, res);
+      account(r, res);
       const raw = parseJsonLenient(res.text);
       if (!raw || !Array.isArray(raw.reviews)) throw new Error("Review returned no reviews array.");
-      findings = applyReview(findings, raw.reviews, docs);
-      const unreviewed = findings.filter((f) => f.review.verdict === "NOT_REVIEWED").length;
-      if (unreviewed > 0) incompleteness.push(`${unreviewed} finding(s) were not addressed by the adversarial review.`);
+      state.findings = applyReview(state.findings, raw.reviews, docs);
+      const unreviewed = state.findings.filter((f) => f.review.verdict === "NOT_REVIEWED").length;
+      if (unreviewed > 0) state.incompleteness.push(`${unreviewed} finding(s) were not addressed by the adversarial review.`);
+      return finish("DONE");
     } catch (err) {
-      fail(review, err, "The adversarial review did not complete. Findings are unreviewed; none can be reported as confirmed noncompliance.");
+      return finish(onError(err, r, "The adversarial review did not complete. Findings are unreviewed; none can be reported as confirmed noncompliance."));
     }
   }
 
-  // 5. Visual verification ----------------------------------------------------------------------------------------
-  await progress("VISUAL_VERIFICATION", "Checking page-dependent findings against the original pages...", 0.85);
-  const visual = record("VISUAL_VERIFICATION", opts.models.visual ?? opts.models.reviewer);
-  const needsVisual = findings.filter((f) => f.dependsOnVisual && f.review.verdict !== "REJECTED");
-  const visualSource = (f: Finding) => {
-    for (const r of f.supporting) {
-      const d = docs.find((x) => x.id === r.documentId);
-      if (!d) continue;
-      if (r.page !== null && d.pageImages?.[r.page]) return { doc: d, page: r.page, kind: "page" as const };
-      if (d.sourceFile) return { doc: d, page: r.page, kind: "file" as const };
+  if (kind === "visual") {
+    await progress("VISUAL_VERIFICATION", "Checking page-dependent findings against the original pages...", 0.85);
+    const r = stageRecord(state, "VISUAL_VERIFICATION", state.models.visual ?? state.models.reviewer);
+    const needsVisual = state.findings.filter((f) => f.dependsOnVisual && f.review.verdict !== "REJECTED");
+    const visualSource = (f: Finding) => {
+      for (const ref of f.supporting) {
+        const d = docs.find((x) => x.id === ref.documentId);
+        if (!d) continue;
+        if (ref.page !== null && d.pageImages?.[ref.page]) return { doc: d, page: ref.page, kind: "page" as const };
+        if (d.sourceFile) return { doc: d, page: ref.page, kind: "file" as const };
+      }
+      return null;
+    };
+    const checkable = needsVisual.filter((f) => visualSource(f) !== null);
+    if (needsVisual.length === 0) {
+      r.status = "SKIPPED";
+      return finish("DONE");
     }
-    return null;
-  };
-  const checkable = needsVisual.filter((f) => visualSource(f) !== null);
-  if (needsVisual.length === 0) {
-    visual.status = "SKIPPED";
-  } else if (checkable.length === 0) {
-    visual.status = "SKIPPED";
-    incompleteness.push(`${needsVisual.length} finding(s) depend on the page itself, but no page image or original file was available. They are marked uncertain.`);
-  } else {
+    if (checkable.length === 0) {
+      r.status = "SKIPPED";
+      state.incompleteness.push(`${needsVisual.length} finding(s) depend on the page itself, but no page image or original file was available. They are marked uncertain.`);
+      return finish("DONE");
+    }
     try {
       const content: any[] = [];
       const sentFiles = new Set<string>();
@@ -438,55 +512,143 @@ export async function runForensicInvestigation(opts: ForensicRunOptions): Promis
         questions.push({ findingId: f.id, documentId: src.doc.id, page: src.page, statement: f.statement });
       }
       content.push({ type: "text", text: `QUESTIONS (look at the named page of the named document):\n${JSON.stringify(questions)}` });
-      const res = await call("VISUAL_VERIFICATION", visual.model!, VISUAL_SYSTEM, content, limits.visualMaxTokens);
-      account(visual, res);
+      const res = await call("VISUAL_VERIFICATION", r.model!, VISUAL_SYSTEM, content, limits.visualMaxTokens);
+      account(r, res);
       const raw = parseJsonLenient(res.text);
-      const results = new Map<string, any>((Array.isArray(raw?.results) ? raw.results : []).map((r: any) => [String(r?.findingId), r]));
-      findings = findings.map((f) => {
-        const r = results.get(f.id);
-        if (!r) return f;
+      const results = new Map<string, any>((Array.isArray(raw?.results) ? raw.results : []).map((x: any) => [String(x?.findingId), x]));
+      state.findings = state.findings.map((f) => {
+        const v = results.get(f.id);
+        if (!v) return f;
         return {
           ...f,
-          visualVerification: oneOf(r.verdict, ["CONFIRMED", "CONTRADICTED"] as const, "INCONCLUSIVE" as any) as Finding["visualVerification"],
-          visualNote: String(r.observation ?? ""),
+          visualVerification: oneOf(v.verdict, ["CONFIRMED", "CONTRADICTED"] as const, "INCONCLUSIVE" as any) as Finding["visualVerification"],
+          visualNote: String(v.observation ?? ""),
         };
       });
       if (checkable.length < needsVisual.length) {
-        incompleteness.push(`${needsVisual.length - checkable.length} page-dependent finding(s) had no page image or original file and are marked uncertain.`);
+        state.incompleteness.push(`${needsVisual.length - checkable.length} page-dependent finding(s) had no page image or original file and are marked uncertain.`);
       }
+      return finish("DONE");
     } catch (err) {
-      fail(visual, err, "Page verification did not complete. Findings that depend on the page itself are marked uncertain.");
+      return finish(onError(err, r, "Page verification did not complete. Findings that depend on the page itself are marked uncertain."));
     }
   }
 
-  // 6. Grounding -------------------------------------------------------------------------------------------------
-  await progress("GROUNDING", "Checking every quotation against the source and applying evidence rules...", 0.95);
-  const grounding = record("GROUNDING", null);
-  const t0 = now();
-  const grounded = dedupeFindings(findings.map(groundFinding));
-  grounding.durationMs = now() - t0;
-  const material = grounded.filter(isMaterial);
-  const appendix = grounded.filter((f) => !isMaterial(f));
-  for (const h of hypotheses) h.findingIds = material.filter((f) => f.hypothesisId === h.id).map((f) => f.id);
-  if (caseModel.droppedUngrounded > 0) {
-    incompleteness.push(`${caseModel.droppedUngrounded} extracted item(s) were dropped because their quotation was not found in the source.`);
+  if (kind === "ground") {
+    await progress("GROUNDING", "Checking every quotation against the source and applying evidence rules...", 0.95);
+    const r = stageRecord(state, "GROUNDING", null);
+    const t0 = now();
+    const grounded = dedupeFindings(state.findings.map(groundFinding));
+    r.durationMs = now() - t0;
+    const material = grounded.filter(isMaterial);
+    const appendix = grounded.filter((f) => !isMaterial(f));
+    for (const h of state.hypotheses) h.findingIds = material.filter((f) => f.hypothesisId === h.id).map((f) => f.id);
+    if (cm.droppedUngrounded > 0) {
+      state.incompleteness.push(`${cm.droppedUngrounded} extracted item(s) were dropped because their quotation was not found in the source.`);
+    }
+    cm.openQuestions = state.openQuestions;
+    const totals = state.stages.reduce(
+      (t, s) => ({ calls: t.calls + s.calls, inputTokens: t.inputTokens + s.inputTokens, outputTokens: t.outputTokens + s.outputTokens, durationMs: t.durationMs }),
+      { calls: 0, inputTokens: 0, outputTokens: 0, durationMs: now() - state.startedAt }
+    );
+    state.report = {
+      schema: "forensic-engine-v1",
+      status: state.stages.some((s) => s.status === "FAILED") ? "PARTIAL" : "COMPLETE",
+      incompleteness: state.incompleteness,
+      caseModel: cm,
+      hypotheses: state.hypotheses,
+      findings: material,
+      appendix,
+      injectionWarnings: state.injectionWarnings,
+      stages: state.stages,
+      totals,
+    };
+    return finish("DONE");
   }
 
-  const totals = stages.reduce(
-    (t, s) => ({ calls: t.calls + s.calls, inputTokens: t.inputTokens + s.inputTokens, outputTokens: t.outputTokens + s.outputTokens, durationMs: t.durationMs }),
-    { calls: 0, inputTokens: 0, outputTokens: 0, durationMs: now() - started }
-  );
-  const failed = stages.some((s) => s.status === "FAILED");
-  return {
-    schema: "forensic-engine-v1",
-    status: failed ? "PARTIAL" : "COMPLETE",
-    incompleteness,
-    caseModel,
-    hypotheses,
-    findings: material,
-    appendix,
-    injectionWarnings,
-    stages,
-    totals,
-  };
+  throw new Error(`Unknown engine step "${step}".`);
+}
+
+function ingestExtraction(state: EngineState, docs: CaseDocument[], doc: CaseDocument, raw: any) {
+  const x = state.extraction;
+  const dd = raw.documentDate;
+  if (dd && String(dd.quote ?? "").trim()) {
+    const ref = resolveEvidenceRef(docs, doc.id, String(dd.quote));
+    if (ref.verified) {
+      x.documentDates.push({
+        documentId: doc.id,
+        kind: oneOf(dd.kind, ["SWORN", "ISSUED", "ENDORSED", "WRITTEN"] as const, "UNKNOWN" as any) as DocumentDate["kind"],
+        date: /^\d{4}-\d{2}-\d{2}$/.test(String(dd.isoDate ?? "")) ? String(dd.isoDate) : null,
+        dateText: String(dd.dateText ?? ""),
+        source: ref,
+      });
+    } else {
+      x.dropped++;
+    }
+  }
+  for (const p of Array.isArray(raw.people) ? raw.people : []) {
+    const ref = resolveEvidenceRef(docs, doc.id, String(p?.quote ?? p?.name ?? ""));
+    if (!ref.verified) { x.dropped++; continue; }
+    const name = String(p?.name ?? "").trim();
+    const key = name.toLowerCase().replace(/[^a-z]/g, "");
+    if (!key) { x.dropped++; continue; }
+    const existing = x.people.find((q) => q.name.toLowerCase().replace(/[^a-z]/g, "") === key);
+    const roles = (Array.isArray(p?.roles) ? p.roles : []).map(String).filter(Boolean);
+    if (existing) {
+      existing.mentions.push(ref);
+      for (const role of roles) if (!existing.roles.includes(role)) existing.roles.push(role);
+    } else {
+      x.people.push({ id: `P${x.people.length + 1}`, name, roles, mentions: [ref] });
+    }
+  }
+  for (const e of Array.isArray(raw.events) ? raw.events : []) {
+    const ref = resolveEvidenceRef(docs, doc.id, String(e?.quote ?? ""));
+    if (!ref.verified) { x.dropped++; continue; }
+    x.events.push({
+      id: `E${x.events.length + 1}`,
+      description: String(e?.description ?? ""),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(e?.isoDate ?? "")) ? String(e.isoDate) : null,
+      dateText: String(e?.dateText ?? ""),
+      dateSource: oneOf(e?.dateSource, ["COURT_RECORD", "DOCUMENT_BODY", "FILENAME", "METADATA"] as const, "UNKNOWN" as any) as CaseEvent["dateSource"],
+      participants: (Array.isArray(e?.participants) ? e.participants : []).map(String),
+      sources: [ref],
+    });
+  }
+  for (const c of Array.isArray(raw.claims) ? raw.claims : []) {
+    const ref = resolveEvidenceRef(docs, doc.id, String(c?.quote ?? ""));
+    if (!ref.verified) { x.dropped++; continue; }
+    x.claims.push({
+      id: `C${x.claims.length + 1}`,
+      assertedBy: String(c?.assertedBy ?? ""),
+      statement: String(c?.statement ?? ""),
+      basis: oneOf(c?.basis, ["FIRSTHAND", "NAMED_SOURCE", "UNNAMED_SOURCE", "OPINION"] as const, "UNCLEAR" as any) as CaseClaim["basis"],
+      sources: [ref],
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Whole run in one invocation
+// ---------------------------------------------------------------------------------------------------------------------
+
+export interface ForensicRunOptions {
+  documents: CaseDocument[];
+  generate: GenerateFn;
+  models: ForensicModels;
+  limits?: Partial<ForensicLimits>;
+  deadlineAt: number;
+  requestId: string;
+  now?: () => number;
+  onProgress?: (p: ForensicProgress) => void | Promise<void>;
+}
+
+/** Runs every step in this invocation. A stage that fails is recorded, never retried, and the report says so. */
+export async function runForensicInvestigation(opts: ForensicRunOptions): Promise<ForensicReport> {
+  const created = createEngineState({ documents: opts.documents, models: opts.models, limits: opts.limits, requestId: opts.requestId, now: (opts.now ?? Date.now)() });
+  let state = created.state;
+  const deps: StepDeps = { generate: opts.generate, deadlineAt: opts.deadlineAt, media: created.media, now: opts.now, onProgress: opts.onProgress, resumable: false };
+  for (let step = nextStep(state); step; step = nextStep(state)) {
+    ({ state } = await runEngineStep(state, step, deps));
+  }
+  return state.report!;
 }
