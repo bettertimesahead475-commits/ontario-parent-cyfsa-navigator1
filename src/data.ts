@@ -151,9 +151,9 @@ There is no CYFSA section that grants a parent a specific "right to counsel befo
     summary: "CYFSA s. 78 gives a child a right to legal representation in a protection proceeding, and sets out when the court MUST direct it. A parent's right to retain their own counsel isn't a numbered CYFSA section — it comes from general legal aid access and party status under s. 79.",
     fullBody: `**The child's right to legal representation (s. 78):** A child may have legal representation at any stage of a protection proceeding. Where a child doesn't have representation, the court must, as soon as practicable, and may at any later stage, determine whether representation is desirable to protect the child's interests — and if it decides representation IS desirable, the court must direct that it be provided.
 
-**s. 78(4) — when representation is deemed desirable** (i.e., presumed necessary unless the court is satisfied, given the child's views and weight due to age/maturity, that the child's interests are otherwise adequately protected):
+**s. 78(4) — when representation is deemed desirable** (the statute's wording is that representation is deemed desirable, unless the court is satisfied, given the child's views and weight due to age/maturity, that the child's interests are otherwise adequately protected):
 - there's a difference of views between the child and a parent or the society, and the society proposes removal or interim/extended society care;
-- the child is in the society's care and either no parent appears, or the alleged protection ground is (a), (c), (f), (g), or (j) of s. 74(2) (the harm-based grounds); or
+- the child is in the society's care and either no parent appears, or the alleged protection ground is one listed in clause 74(2)(a), (c), (f), (g) or (j); or
 - the child isn't permitted to be present at the hearing.
 
 **s. 78(5) — where a parent is themselves a minor:** if a child's parent is younger than 18, the Office of the Children's Lawyer represents that parent in the proceeding, unless the court orders otherwise.
@@ -165,8 +165,8 @@ There is no CYFSA section that grants a parent a specific "right to counsel befo
       { label: "Legal Aid Ontario", url: "https://www.legalaid.on.ca/", citation: "General eligibility and certificate process — not a CYFSA-numbered right" }
     ],
     guidelines: [
-      "If your child is in the society's care and any of the s. 78(4) triggers apply, legal representation for the child is presumed necessary — ask whether the court has made that determination.",
-      "If you are yourself under 18, you are entitled to representation by the Office of the Children's Lawyer under s. 78(5) unless the court orders otherwise.",
+      "If your child is in the society's care and any of the s. 78(4) triggers apply, legal representation for the child is deemed desirable under s. 78(4) — ask whether the court has made that determination.",
+      "If you are under 18, s. 78(5) says the Office of the Children's Lawyer shall represent you in the proceeding, unless the court orders otherwise.",
       "Contact Legal Aid Ontario (1-800-668-8258) as early as possible — being a party under s. 79(1) gives you the right to participate, but doesn't provide a lawyer automatically."
     ],
     checklistItems: [

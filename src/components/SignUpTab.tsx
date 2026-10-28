@@ -294,7 +294,7 @@ export default function SignUpTab() {
       doc.setFont("courier", "italic");
       doc.setFontSize(8);
       doc.text("PREPARED AND CERTIFIED BY CYFSA NAVIGATOR ONTARIO CASE COMPLIANCE ENGINE", 105, y + 12, { align: "center" });
-      doc.text("RESTRICTED DIRECT EVIDENCE RECORD - SUBJECT TO SECTION 94(2) BURDEN STANDARDS", 105, y + 17, { align: "center" });
+      doc.text("RESTRICTED DIRECT EVIDENCE RECORD", 105, y + 17, { align: "center" });
       
       doc.save(`${note.title.toLowerCase().replace(/[^a-z0-9]+/g, "_")}.pdf`);
     } catch (error) {

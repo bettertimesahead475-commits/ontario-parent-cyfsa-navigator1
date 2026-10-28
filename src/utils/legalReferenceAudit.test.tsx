@@ -233,9 +233,9 @@ describe("corrected statements", () => {
     const content = itemById("cyfsa-81");
     expect(content).toContain("child protection worker");
     expect(content).toContain("s. 81(7)");
-    // The peace officer's power is s. 136(5). s. 81(12) is Crown liability, not a warrantless power.
+    // s. 81(12) applies subsection (7) to peace officers (checked against the bundled text above). The peace officer's
+    // separate midnight-to-6 a.m. power is s. 136(5).
     expect(content).toContain("s. 136(5)");
-    expect(content).not.toContain("s. 81(12)");
     expect(content).not.toMatch(/children[’']s aid worker/i);
   });
 

@@ -130,7 +130,7 @@ describe("citations inside red flags", () => {
     const [f] = run([flag({ legalReference: "CYFSA, s. 88" })]);
     expect(f.citationStatus).toBe("INTERNAL_REFERENCE_MATCH");
     expect(f.legalReference).toBe("CYFSA, s. 88");
-    expect(f.citationReason).toMatch(/Not checked against official e-Laws/);
+    expect(f.citationReason).toMatch(/Not checked against live e-Laws/);
   });
 
   it("a section number with no Act is unverified", () => {
