@@ -1289,6 +1289,16 @@ describe("Forensic Engine on the analyze route (FORENSIC_ENGINE_ENABLED)", () =>
     }
   });
 
+  it("tells the client whether multi-document Forensic analysis is available", async () => {
+    try {
+      expect((await request(app).get("/api/analyze/capabilities")).body).toEqual({ forensicEngine: true, maxAdditionalDocuments: 9 });
+      off();
+      expect((await request(app).get("/api/analyze/capabilities")).body.forensicEngine).toBe(false);
+    } finally {
+      off();
+    }
+  });
+
   it("still refuses Forensic mode to an unpaid user before any model call", async () => {
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-parent-uid", email: "parent@example.com" });
     try {

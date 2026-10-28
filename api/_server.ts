@@ -2794,6 +2794,12 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
   });
 
+  // API: what the analyzer can do on this server. The client offers multi-document Forensic analysis only when the
+  // Forensic Engine is on, because the existing analyzer reads one document and would ignore the others.
+  app.get("/api/analyze/capabilities", (_req: Request, res: Response) => {
+    res.json({ forensicEngine: isForensicEngineEnabled(), maxAdditionalDocuments: 9 });
+  });
+
   // API: continue a resumable Forensic Engine job. Each call runs as many saved steps as fit in this invocation.
   // 200 = the report (delivered and charged exactly once); 202 = progress saved, call again; 409 = another call is
   // running a step of this job; 410 = the job failed and its credit was released. A failure inside a call releases

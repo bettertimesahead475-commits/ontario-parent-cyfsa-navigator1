@@ -78,6 +78,8 @@ import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedact
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
 import { ForensicEngineRecord } from "./ForensicEngineRecord";
+import { AdditionalDocumentsPicker } from "./AdditionalDocumentsPicker";
+import { buildAdditionalDocuments } from "../utils/caseDocumentsSelection";
 import { buildEngineRecordView, engineStatusSummary, renderEngineRecordHtml, renderEngineStatusHtml } from "../utils/forensicEngineView";
 
 /** Parent-facing names for the report sections the server validates and streams. */
@@ -358,6 +360,17 @@ export default function DocumentAnalyzerTab() {
   // Forensic In-Depth uses Claude Opus (claude-3-opus-20240229). The server authoritatively
   // enforces this assignment so the frontend cannot override engine tier boundaries.
   const [analysisMode, setAnalysisMode] = useState<"fast" | "full">("fast");
+  // Other case documents to compare in a Forensic In-Depth analysis; offered only when the server's engine is on.
+  const [additionalDocIds, setAdditionalDocIds] = useState<string[]>([]);
+  const [forensicEngineOn, setForensicEngineOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    apiFetch("/api/analyze/capabilities")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => { if (live) setForensicEngineOn(Boolean(c?.forensicEngine)); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
   const [claudeModel, setClaudeModel] = useState<string>("claude-3-5-sonnet-20241022");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
@@ -1872,6 +1885,9 @@ export default function DocumentAnalyzerTab() {
 
     try {
       const payload: any = {};
+      if (analysisMode === "full" && forensicEngineOn && additionalDocIds.length > 0) {
+        payload.additionalDocuments = buildAdditionalDocuments(organizedFiles, additionalDocIds, file.id);
+      }
       let extractedText = file.content;
       const isRawBase64 = file.mimeType !== "text/plain" && 
         (extractedText.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(extractedText.slice(0, 100)));
@@ -2967,6 +2983,10 @@ export default function DocumentAnalyzerTab() {
               <option value="full">Forensic In-Depth (Full Dual-Pass Audit)</option>
             </select>
           </div>
+
+          {analysisMode === "full" && forensicEngineOn && (
+            <AdditionalDocumentsPicker files={organizedFiles} primaryId={selectedFileId} selectedIds={additionalDocIds} onChange={setAdditionalDocIds} />
+          )}
 
           {/* Active AI Engine Indicator */}
           <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl px-2.5 py-1.5 border border-slate-200">
