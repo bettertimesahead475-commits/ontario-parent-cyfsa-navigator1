@@ -78,7 +78,7 @@ import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedact
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
 import { ForensicEngineRecord } from "./ForensicEngineRecord";
-import { renderEngineRecordHtml } from "../utils/forensicEngineView";
+import { buildEngineRecordView, engineStatusSummary, renderEngineRecordHtml, renderEngineStatusHtml } from "../utils/forensicEngineView";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -717,6 +717,18 @@ export default function DocumentAnalyzerTab() {
             reportText += `>>> ANALYSIS AUDIT REPORT: ${redacting ? "Analysis report" : report.documentTitle || file.name}\n`;
             reportText += `Document Type : ${report.documentType || "N/A"}\n`;
             reportText += `Completeness / Reliability Score: ${typeof report.completenessScore === "number" ? `${report.completenessScore}/100` : "Not scored"}\n\n`;
+            // Forensic Engine status comes from the original record: it identifies no one, and a redacted copy must
+            // still say when an analysis is partial. The details are free text and are removed when redacting.
+            const engineStatus = engineStatusSummary((file.analysisReport as any).forensicEngine);
+            if (engineStatus) {
+              reportText += `Forensic Engine : ${engineStatus.status === "PARTIAL" ? "PARTIAL ANALYSIS" : "Complete"}\n`;
+              if (redacting) {
+                if (engineStatus.status === "PARTIAL") reportText += `  - ${engineStatus.gaps} part(s) of the analysis did not complete (details removed from redacted copy).\n`;
+              } else {
+                for (const gap of buildEngineRecordView((file.analysisReport as any).forensicEngine)?.incompleteness ?? []) reportText += `  - Not done: ${gap}\n`;
+              }
+              reportText += "\n";
+            }
 
             // Red Flags
             reportText += `  * RED FLAGS IDENTIFIED (${report.redFlags?.length || 0}):\n`;
@@ -2766,7 +2778,9 @@ export default function DocumentAnalyzerTab() {
               </ul>
             </div>
           ` : ""}
-          ${renderEngineRecordHtml(reportForExport.forensicEngine, escapeHtml)}
+          ${redactedReport && sourceReport
+            ? renderEngineStatusHtml((sourceReport as any).forensicEngine, escapeHtml)
+            : renderEngineRecordHtml(reportForExport.forensicEngine, escapeHtml)}
         </div>
       `;
     } else {

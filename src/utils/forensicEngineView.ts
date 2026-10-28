@@ -127,3 +127,23 @@ export function renderEngineRecordHtml(record: any, esc: (v: string) => string):
     ${v.openQuestions.length ? `<p><strong>Open questions:</strong></p>${list(v.openQuestions)}` : ""}
   </div>`;
 }
+
+
+/**
+ * The engine status alone, for redacted copies: whether the analysis is complete and how many gaps it reports. It
+ * carries no document text, names or titles, so a redacted copy still says when an analysis is partial.
+ */
+export function engineStatusSummary(record: any): { status: "COMPLETE" | "PARTIAL"; gaps: number } | null {
+  if (!isEngineRecord(record)) return null;
+  return { status: record.status === "PARTIAL" ? "PARTIAL" : "COMPLETE", gaps: arr(record.incompleteness).length };
+}
+
+export function renderEngineStatusHtml(record: any, esc: (v: string) => string): string {
+  const s = engineStatusSummary(record);
+  if (!s) return "";
+  const line =
+    s.status === "PARTIAL"
+      ? `Partial analysis: ${s.gaps} part(s) of the analysis did not complete. Details are removed from this redacted copy.`
+      : "Complete. Details are removed from this redacted copy.";
+  return `<div class="section-card"><h3 class="section-title">Forensic Engine record</h3><p><strong>Status:</strong> ${esc(line)}</p></div>`;
+}
