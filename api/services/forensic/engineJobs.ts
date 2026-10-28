@@ -20,6 +20,18 @@ import { CheckpointStore, SupabaseObjectStore, type EngineJobMeta } from "./chec
 import { toLegacyReport, type ThinkingGenerateFn } from "./integration.js";
 import { createEngineState, type ForensicLimits, type ForensicProgress } from "./pipeline.js";
 import { advanceEngine, type AdvanceResult } from "./resumableRunner.js";
+import { corpusSources } from "./legalCorpusAdapter.js";
+
+/** The database corpus is consulted only when FORENSIC_CORPUS_CYFSA_SOURCE_ID is set; the bundled text always is. */
+function engineCorpus() {
+  let db: any = null;
+  try {
+    db = process.env.FORENSIC_CORPUS_CYFSA_SOURCE_ID ? getSupabase() : null;
+  } catch {
+    db = null;
+  }
+  return corpusSources(db);
+}
 
 let storeOverride: CheckpointStore | null = null;
 let defaultStore: CheckpointStore | null = null;
@@ -84,7 +96,7 @@ export async function advanceEngineJob(params: {
     store: params.store,
     jobId: params.jobId,
     owner: `${params.jobId}:${randomUUID()}`,
-    deps: { generate, deadlineAt: params.deadlineAt, now: params.now, onProgress: params.onProgress },
+    deps: { generate, deadlineAt: params.deadlineAt, now: params.now, onProgress: params.onProgress, corpus: engineCorpus() },
     minModelStepMs: params.minModelStepMs ?? STEP_MIN_MS,
     leaseTtlMs: LEASE_TTL_MS,
     maxSteps: params.maxSteps,

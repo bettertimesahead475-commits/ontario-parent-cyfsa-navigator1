@@ -56,6 +56,7 @@ export function ForensicEngineRecord({ record }: { record: unknown }) {
             {f.citations.map((c, k) => (
               <details key={k} className="mt-2">
                 <summary className="cursor-pointer text-xs">{c.citation} — {c.status}</summary>
+                {c.corpusNote && <p className="mt-1 text-xs text-slate-600">{c.corpusNote}</p>}
                 {c.statuteText && <pre className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{c.statuteText}</pre>}
               </details>
             ))}

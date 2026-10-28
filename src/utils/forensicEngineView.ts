@@ -33,7 +33,7 @@ export interface EngineFindingView {
   counter: Array<{ where: string; quote: string }>;
   alternatives: string[];
   missing: string[];
-  citations: Array<{ citation: string; status: string; statuteText: string | null }>;
+  citations: Array<{ citation: string; status: string; statuteText: string | null; corpusNote: string | null }>;
   visual: string;
   notes: string[];
 }
@@ -74,6 +74,9 @@ export function buildEngineRecordView(record: any): EngineRecordView | null {
       citation: s(l.citation),
       status: s(l.citationStatus) === "INTERNAL_REFERENCE_MATCH" ? "Checked against bundled statute text" : "Unverified — confirm with counsel",
       statuteText: typeof l.statuteText === "string" ? l.statuteText : null,
+      corpusNote: l.corpus && typeof l.corpus.note === "string"
+        ? `${l.corpus.note}${l.corpus.caseDate ? ` (case date ${l.corpus.caseDate}` : ""}${l.corpus.effectiveFrom ? `${l.corpus.caseDate ? "; " : " ("}text held from ${l.corpus.effectiveFrom}` : ""}${l.corpus.caseDate || l.corpus.effectiveFrom ? ")" : ""}`
+        : null,
     })),
     visual:
       f.visualVerification === "CONFIRMED" ? "Confirmed on the page"
@@ -108,7 +111,7 @@ export function renderEngineRecordHtml(record: any, esc: (v: string) => string):
         ${f.counter.length ? `<div><strong>Contrary or explaining text:</strong>${list(f.counter.map((c) => `${c.where}: "${c.quote}"`))}</div>` : ""}
         ${f.alternatives.length ? `<div><strong>Other explanations:</strong>${list(f.alternatives)}</div>` : ""}
         ${f.missing.length ? `<div><strong>Missing information:</strong>${list(f.missing)}</div>` : ""}
-        ${f.citations.length ? `<div><strong>Law:</strong>${list(f.citations.map((c) => `${c.citation} — ${c.status}`))}</div>` : ""}
+        ${f.citations.length ? `<div><strong>Law:</strong>${list(f.citations.map((c) => `${c.citation} — ${c.status}${c.corpusNote ? ` — ${c.corpusNote}` : ""}`))}</div>` : ""}
         ${f.notes.length ? `<div style="font-size:11px;color:#92400e;">${list(f.notes)}</div>` : ""}
       </div></div>`
     )

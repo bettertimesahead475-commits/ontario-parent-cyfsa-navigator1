@@ -191,7 +191,7 @@ export function toLegacyReport(r: ForensicReport, docs: CaseDocument[]): Record<
       verifyRequirement: f.missingInformation.join(" ") || "Check the cited pages of the original document.",
       legalReference: citation?.citation ?? "",
       citationStatus: citation?.citationStatus ?? "NONE",
-      citationReason: citation?.citationReason ?? "",
+      citationReason: [citation?.citationReason, citation?.corpus?.note].filter(Boolean).join(" "),
       locationInDocument: where(f, titles),
       parentActionStep: "Ask your lawyer to review this finding against the cited pages.",
       verificationNote: [f.uncertainty !== "LOW" ? `Uncertainty: ${f.uncertainty.toLowerCase()}.` : "", ...f.grounding.notes, f.visualNote ? `Page check: ${f.visualNote}` : ""].filter(Boolean).join(" "),

@@ -42,6 +42,8 @@ import { buildChronology, findChronologyAnomalies, findConflictLeads, type Docum
 import { detectInstructionLikeText, isolateDocuments } from "./documentIsolation.js";
 import { applyReview, dedupeFindings, groundFinding, isMaterial, parseFindingCandidates } from "./grounding.js";
 import { EXTRACTION_SYSTEM, INVESTIGATION_SYSTEM, REVIEW_SYSTEM, SYNTHESIS_SYSTEM, VISUAL_SYSTEM } from "./prompts.js";
+import { corpusSources, lookupCitation, type CorpusSource } from "./legalCorpusAdapter.js";
+import type { CaseDate } from "../legalAuthority.js";
 
 export interface ForensicModels {
   /** Auxiliary model for extraction. */
@@ -127,6 +129,21 @@ export interface StepDeps {
   onProgress?: (p: ForensicProgress) => void | Promise<void>;
   /** True when a later invocation can retry a transient failure. */
   resumable?: boolean;
+  /** Legal corpus sources for citation lookup. Defaults to the bundled CYFSA consolidation only. */
+  corpus?: CorpusSource[];
+}
+
+/**
+ * The date the legal question is assessed at: the latest date a document states for itself (sworn, issued, endorsed,
+ * written), else the latest court-record date in the chronology. Filename and metadata dates never count.
+ */
+export function caseDateFor(cm: CaseModel): CaseDate {
+  const own = cm.documentDates.map((d) => d.date).filter((d): d is string => Boolean(d));
+  const court = cm.chronology
+    .filter((c) => c.date && cm.events.find((e) => e.id === c.eventId)?.dateSource === "COURT_RECORD")
+    .map((c) => c.date as string);
+  const all = (own.length ? own : court).sort();
+  return all.length ? { kind: "EXACT", date: all[all.length - 1] } : { kind: "UNKNOWN" };
 }
 
 export type StepOutcome = "DONE" | "RETRY_LATER";
@@ -538,6 +555,23 @@ export async function runEngineStep(input: EngineState, step: string, deps: Step
     await progress("GROUNDING", "Checking every quotation against the source and applying evidence rules...", 0.95);
     const r = stageRecord(state, "GROUNDING", null);
     const t0 = now();
+    // Legal corpus: each single-section CYFSA citation is looked up for the case date (deterministic lookup).
+    const caseDate = caseDateFor(cm);
+    const sources = deps.corpus ?? corpusSources();
+    for (const f of state.findings) {
+      for (const l of f.legalIssues) {
+        if (!l.citation) continue;
+        try {
+          const found = await lookupCitation(l.citation, caseDate, sources);
+          l.corpus = found ? { ...found, caseDate: caseDate.kind === "UNKNOWN" ? null : caseDate.date } : null;
+          if (found?.outcome === "BEFORE_EARLIEST_VERSION") {
+            f.grounding.notes.push(`${l.citation}: the case date ${caseDate.kind === "UNKNOWN" ? "" : caseDate.date + " "}is before the consolidation held (from ${found.effectiveFrom}); the version in force then was not checked.`);
+          }
+        } catch {
+          l.corpus = { outcome: "LOOKUP_FAILED", requiresResearch: true, source: "legal corpus", effectiveFrom: null, verificationStatus: null, note: "The legal corpus could not be consulted; confirm with counsel.", caseDate: null };
+        }
+      }
+    }
     const grounded = dedupeFindings(state.findings.map(groundFinding));
     r.durationMs = now() - t0;
     const material = grounded.filter(isMaterial);

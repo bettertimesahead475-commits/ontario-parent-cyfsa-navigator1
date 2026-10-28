@@ -177,6 +177,16 @@ export interface LegalIssue {
   citationReason: string;
   /** Verbatim bundled statute text for a verified provision, attached by code. Null when none is held. */
   statuteText: string | null;
+  /** Stage 6 corpus lookup for the case date (legalCorpusAdapter.ts). Absent when the citation was not looked up. */
+  corpus?: {
+    outcome: string;
+    requiresResearch: boolean;
+    source: string;
+    effectiveFrom: string | null;
+    verificationStatus: string | null;
+    note: string;
+    caseDate: string | null;
+  } | null;
 }
 
 export interface Finding {
