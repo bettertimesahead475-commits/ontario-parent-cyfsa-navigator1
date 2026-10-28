@@ -43,8 +43,8 @@ describe("classifyCitation: the citation must identify the correct statute", () 
     expect(c.status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(c.identifiedAct).toBe("CYFSA");
     expect(c.sections).toEqual(["88"]);
-    expect(c.officialVerification).toBe("NOT_CHECKED");
-    expect(c.reason).toMatch(/Not checked against official e-Laws/);
+    expect(c.officialVerification).toBe("BUNDLED_TEXT_CHECKED");
+    expect(c.reason).toMatch(/Not checked against live e-Laws/);
     expect(c.reason).toMatch(/not a finding that the section applies/);
   });
 
@@ -118,8 +118,8 @@ describe("classifyCitation: incorrect or unsupported section numbers", () => {
     expect(c.reason).toMatch(/does not show whether the section exists or applies/);
   });
 
-  it("s.94(5) is unverified: it is not on the internal list, and the list is not an official source", () => {
-    expect(classifyCitation("CYFSA s. 94(5)").status).toBe("UNVERIFIED");
+  it("s.94(3) is unverified: it is not on the bundled list", () => {
+    expect(classifyCitation("CYFSA s. 94(3)").status).toBe("UNVERIFIED");
   });
 
   it("s.125(1) is unverified", () => {

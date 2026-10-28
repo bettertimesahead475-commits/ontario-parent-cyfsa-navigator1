@@ -175,11 +175,11 @@ const GLOSSARY_TERMS = [
     triggers: ["double hearsay", "landlord tells worker neighbors reported", "friend told worker a cousin said"]
   },
   {
-    term: "Section 94(2) Onus",
-    abbreviation: "Burden of Proof",
-    definition: "Forces CAS to satisfy the complete legal burden/onus of proof during interim removals. The parent does NOT carry the burden of proving children are safe; CAS must prove a risk exists.",
+    term: "Section 94(2) Temporary Care and Custody",
+    abbreviation: "Adjournment Order",
+    definition: "When a hearing is adjourned, the court must make a temporary order for care and custody. The order can keep or return the child to the person who had charge before intervention, subject to society supervision where applicable, or place the child with another person who consents. It can also leave the child with the society, without placing the child in temporary detention or in open or secure custody. This is a placement rule. It does not set the burden of proof.",
     section: "CYFSA, s. 94(2)",
-    triggers: ["onus", "burden of proof", "s.94(2)", "interim care"]
+    triggers: ["temporary care", "adjourned", "custody during adjournment", "s.94(2)", "interim care"]
   },
   {
     term: "Part X Access",

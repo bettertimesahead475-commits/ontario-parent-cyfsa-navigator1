@@ -1,17 +1,17 @@
 /**
  * Citation classification for analyzer reports. Pure, so the server and the UI apply the same rules.
  *
- * What this module does: it decides whether a citation can be matched to CYFSA Navigator's INTERNAL reference text.
- * It identifies which Act a citation names, then checks the section numbers against the internal list.
+ * What this module does: it identifies which Act a citation names, then checks the section numbers against the list of
+ * provisions CYFSA Navigator holds bundled text for. Each listed provision was checked word-for-word against the
+ * bundled CYFSA consolidation (legal-reference/CYFSA_full_text_2026-06-24_consolidation.txt), and a test fails if a
+ * quotation is not in that file.
  *
- * What this module does NOT do: it does not verify anything against official legislation. The internal list has
- * not been checked against e-Laws. A match here does not show that a section exists in its current form, and it does
- * not show that the section applies to the facts of any case. Official verification is a separate step that has not
- * been performed.
+ * What this module does NOT do: it does not query e-Laws live. The bundled file's consolidation date and its currency
+ * are not confirmed against e-Laws. A match here does not show that a section applies to the facts of any case.
  */
 
-/** Section keys present in the internal reference text (src/utils/statuteReference.ts). Keep the two in step; a test checks it. */
-export const INTERNAL_CYFSA_SECTION_KEYS = ["74(2)", "81(7)", "88", "94(1)", "94(2)"] as const;
+/** Section keys with bundled statute text (src/utils/statuteReference.ts). Keep the two in step; a test checks it. */
+export const INTERNAL_CYFSA_SECTION_KEYS = ["74(2)", "78(4)", "78(5)", "81(7)", "81(12)", "88", "94(1)", "94(2)", "94(4)", "94(5)"] as const;
 
 export const CITATION_UNVERIFIED_NOTE =
   "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.";
@@ -24,8 +24,11 @@ export interface CitationClassification {
   identifiedAct: IdentifiedAct;
   /** Section keys the citation names, such as "74(2)" or "88". */
   sections: string[];
-  /** Always NOT_CHECKED: no official legislation was consulted. */
-  officialVerification: "NOT_CHECKED";
+  /**
+   * BUNDLED_TEXT_CHECKED: the provision matched is one whose quoted text is checked against the bundled consolidation.
+   * NOT_CHECKED: nothing was checked against any official text.
+   */
+  officialVerification: "BUNDLED_TEXT_CHECKED" | "NOT_CHECKED";
   /** Plain-language reason, shown to the user with the status. */
   reason: string;
 }
@@ -146,9 +149,9 @@ export function classifyCitation(text: string | null | undefined): CitationClass
     status: "INTERNAL_REFERENCE_MATCH",
     identifiedAct: "CYFSA",
     sections,
-    officialVerification: "NOT_CHECKED",
+    officialVerification: "BUNDLED_TEXT_CHECKED",
     reason:
-      "Matches CYFSA Navigator's internal reference text. Not checked against official e-Laws, and not a finding that the section applies to these facts.",
+      "Matches a provision whose text CYFSA Navigator checked against the bundled CYFSA consolidation. Not checked against live e-Laws, and not a finding that the section applies to these facts.",
   };
 }
 

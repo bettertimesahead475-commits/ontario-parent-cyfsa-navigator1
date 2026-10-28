@@ -17,7 +17,7 @@ describe("bundled statute quotations", () => {
   });
 
   it("covers exactly the sections the bundled text supports", () => {
-    expect(Object.keys(BUNDLED_STATUTE_ENTRIES).sort()).toEqual(["74(2)", "81(7)", "88", "94(1)", "94(2)"]);
+    expect(Object.keys(BUNDLED_STATUTE_ENTRIES).sort()).toEqual(["74(2)", "78(4)", "78(5)", "81(12)", "81(7)", "88", "94(1)", "94(2)", "94(4)", "94(5)"]);
   });
 });
 

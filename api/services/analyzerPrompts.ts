@@ -44,6 +44,13 @@ If you construct a novel argument (e.g., "informal access restriction = de facto
 - For Ontario Family Law Rules 14(18) and 14(19), the rule as commonly summarised is that motion affidavits should as far as possible be firsthand, but information from another named source may be included if the affiant states a belief that it is true; secondhand material is not automatically inadmissible.
 - Keep every finding and answer within the existing report schema; do not invent new top-level JSON keys.
 
+7. FACTUAL EXTRACTION AND EVIDENCE CLASSES (apply before writing any finding):
+- Check boxes: a box is marked only where the page shows a visible mark (tick, X, or fill). Read each attendance or presence box individually. Never state that boxes are unmarked, and never infer attendance from a name's absence. If a mark cannot be read, say so.
+- Dates: the court's dates are the dates written in the endorsement, order, or notice itself. A date in a filename or scan label is a filename date, not a court date. Label it as one.
+- File numbers: join a file number split by a line break or a hyphen before comparing it with another. "FC-26-" followed by "1234" on the next line is one number. Flag a discrepancy only after this normalization.
+- Classify each significant finding in its text as one of: A (confirmed fact in the source, with page reference), B (information not recorded in the source), C (inference requiring verification), D (potential legal issue), or E (confirmed legal noncompliance, only where the source itself admits it). Absent documentation is class B. It is never proof that a procedural obligation was breached.
+- Consolidate repeated allegations into one finding that cites all its pages. Do not restate the same point under several headings.
+
 THINGS TO NEVER DO
 - Never assert that a document violates a law unless the violation is admitted in the document's own words.
 - Never present an unverified statute citation as fact.

@@ -47,6 +47,36 @@ export const BUNDLED_STATUTE_ENTRIES: Record<string, BundledStatuteEntry> = {
     text: "(2)  Where a hearing is adjourned, the court shall make a temporary order for care and custody providing that the child,\n  (a)  remain in or be returned to the care and custody of the person who had charge of the child immediately before intervention under this Part;\n  (b)  remain in or be returned to the care and custody of the person referred to in clause (a), subject to the society’s supervision and on such reasonable terms and conditions as the court considers appropriate;\n  (c)  be placed in the care and custody of a person other than the person referred to in clause (a), with the consent of that other person, subject to the society’s supervision and on such reasonable terms and conditions as the court considers appropriate; or\n  (d)  remain or be placed in the care and custody of the society, but not be placed in a place of temporary detention, of open or of secure custody.",
     note: "The court must make one of the temporary orders in clauses (a) to (d). Clauses (c) and (d) are limited by subsection (4).",
   },
+  "78(4)": {
+    citation: "CYFSA s. 78(4)",
+    heading: "Legal representation of child",
+    text: "(4)  Where,\n  (a)  the court is of the opinion that there is a difference of views between the child and a parent or a society, and the society proposes that the child be removed from a person’s care or be placed in interim or extended society care under paragraph 2 or 3 of subsection 101 (1);\n  (b)  the child is in the society’s care and,\n  (i)  no parent appears before the court, or\n  (ii)  it is alleged that the child is in need of protection within the meaning of clause 74 (2) (a), (c), (f), (g) or (j); or\n  (c)  the child is not permitted to be present at the hearing,\n\nlegal representation is deemed to be desirable to protect the child’s interests, unless the court is satisfied, taking into account the child’s views and wishes, given due weight in accordance with the child’s age and maturity, that the child’s interests are otherwise adequately protected.",
+    note: "Three situations in which legal representation for the child is deemed desirable, unless the court is satisfied the child's interests are otherwise adequately protected.",
+  },
+  "78(5)": {
+    citation: "CYFSA s. 78(5)",
+    heading: "Where parent a minor",
+    text: "(5)  Where a child’s parent is younger than 18, the Children’s Lawyer shall represent the parent in a proceeding under this Part unless the court orders otherwise.",
+    note: "If the parent is younger than 18, the Children's Lawyer represents that parent unless the court orders otherwise.",
+  },
+  "81(12)": {
+    citation: "CYFSA s. 81(12)",
+    heading: "Warrants, orders, etc.",
+    text: "(12)  Subsections (2), (6), (7), (10) and (11) apply to a peace officer as if the peace officer were a child protection worker.",
+    note: "Extends the powers in these subsections to a peace officer. Subsection (7), the warrantless power, is one of them.",
+  },
+  "94(4)": {
+    citation: "CYFSA s. 94(4)",
+    heading: "Adjournments",
+    text: "(4)  The court shall not make an order under clause (2) (c) or (d) unless the court is satisfied that there are reasonable grounds to believe that there is a risk that the child is likely to suffer harm and that the child cannot be protected adequately by an order under clause (2) (a) or (b).",
+    note: "Limits the placement orders in clauses (2)(c) and (d) to cases where the risk test is met.",
+  },
+  "94(5)": {
+    citation: "CYFSA s. 94(5)",
+    heading: "Placement with relative, etc.",
+    text: "(5)  Before making a temporary order for care and custody under clause (2) (d), the court shall consider whether it is in the child’s best interests to make an order under clause (2) (c) to place the child in the care and custody of a person who is a relative of the child or a member of the child’s extended family or community.",
+    note: "A placement-with-relative consideration. It is not a hearing-timeline rule. The five-day rule is s. 88.",
+  },
 };
 
 /**

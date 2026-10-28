@@ -111,6 +111,6 @@ describe("bundled reference text is shown only for an unambiguous CYFSA match", 
   });
 
   it("an unlisted CYFSA section returns nothing", () => {
-    expect(findBundledStatute("CYFSA s. 94(5)")).toBeNull();
+    expect(findBundledStatute("CYFSA s. 94(3)")).toBeNull();
   });
 });

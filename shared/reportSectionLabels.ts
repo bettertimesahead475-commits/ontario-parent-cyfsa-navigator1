@@ -29,7 +29,7 @@ export const QUOTE_LABEL: Record<QuoteStatus, string> = {
 };
 
 export const AUTHORITY_LABEL: Record<AuthorityStatus, string> = {
-  INTERNAL_REFERENCE_MATCH: "Matches CYFSA Navigator's internal reference text only. Not checked against official e-Laws, and not a finding that the section applies. Confirm with counsel.",
+  INTERNAL_REFERENCE_MATCH: "Matches a provision whose quoted text was checked against the bundled CYFSA consolidation. Not checked against live e-Laws, and not a finding that the section applies. Confirm with counsel.",
   CITATION_UNVERIFIED: "Citation unverified: confirm with counsel",
   NOT_CHECKED: "Citation not checked",
 };

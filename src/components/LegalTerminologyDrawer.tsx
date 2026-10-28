@@ -69,9 +69,9 @@ const GLOSSARY_ITEMS: TerminologyItem[] = [
   {
     id: "term-apprehension",
     term: "Emergency Apprehension",
-    shortDefinition: "The immediate removal of a child by CAS or police without a prior warrant under strict imminent danger conditions.",
-    fullDefinition: "Under s. 81(1) of the CYFSA, a child protection worker or peace officer may apprehend a child without a warrant ONLY if they have reasonable and probable grounds to believe the child is in immediate danger of serious harm, and that waiting to obtain a warrant from a judge would jeopardize the child's safety. This is an extraordinary emergency power.",
-    sectionReference: "CYFSA s. 81(1)",
+    shortDefinition: "The removal of a child to a place of safety without a prior warrant, allowed only for a child younger than 16 where a substantial risk would arise before a hearing or warrant could be obtained.",
+    fullDefinition: "Under s. 81(7) of the CYFSA, a child protection worker may bring a child to a place of safety without a warrant only if they have reasonable and probable grounds to believe the child is in need of protection, the child is younger than 16, and there would be a substantial risk to the child's health or safety during the time needed to bring the matter before the court or obtain a warrant. Under s. 81(12), a peace officer may use the same power. For a child younger than 16 in a public place between midnight and 6 a.m., s. 136(5) separately allows a peace officer to bring the child to a place of safety. This is an exceptional power, and it does not apply to children 16 or older.",
+    sectionReference: "CYFSA s. 81(7) and s. 81(12)",
     category: "Procedure",
     implications: "CAS must prove that there was a genuine emergency. S. 81 does not allow removals based on historical, vague, or slow-moving concerns. Once a child is apprehended, Ontario child protection law requires a formal court review within a short statutory window (commonly referred to as the 5-day rule) — the exact current section number is unverified in this tool; confirm it with your lawyer rather than relying on a section number stated elsewhere in this app.",
     tips: "If an apprehension occurs, remain completely calm in front of workers to avoid 'hostility' allegations. Demand to know the exact 'imminent risk' grounds, write down every detail immediately, and contact a child welfare lawyer to prepare for the 5-Day Temporary Care Hearing.",
