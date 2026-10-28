@@ -1,0 +1,13 @@
+{
+  "status": "NOT_RUN",
+  "reason": "ANTHROPIC_API_KEY is not set.",
+  "cases": [
+    "affidavit-hearsay",
+    "application-relief-unsupported",
+    "chronology-impossible",
+    "clean-consent-adjournment",
+    "endorsement-attendance",
+    "injection-affidavit",
+    "multi-doc-contradiction"
+  ]
+}

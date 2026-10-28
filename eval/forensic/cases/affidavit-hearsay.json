@@ -1,0 +1,71 @@
+{
+  "id": "affidavit-hearsay",
+  "category": "AFFIDAVIT",
+  "description": "Worker affidavit whose central allegation rests on an unnamed caller.",
+  "annotation": {
+    "annotatedBy": "Engineering author (Claude Code session). Synthetic, fictional record.",
+    "independentlyReviewed": false,
+    "notes": "Gold issues reflect the author's reading. Must be reviewed by an Ontario child protection lawyer before results are relied on."
+  },
+  "documents": [
+    {
+      "id": "aff",
+      "title": "Affidavit of Dana Reyes, sworn August 2, 2026",
+      "kind": "AFFIDAVIT",
+      "extractionMethod": "TEXT_LAYER",
+      "text": "[Page 1]\nI, Dana Reyes, of the City of Hamilton, make oath and say:\n1. I am a child protection worker with the Society and have been assigned to this family since June 2026.\n2. On July 14, 2026, the Society received a call from a community member who wished to remain anonymous. The caller reported that the children were often left without supervision in the evenings.\n3. I verily believe the children are at risk of harm if they remain in the father's care.\n[Page 2]\n4. On July 20, 2026, I attended the home. The father was present with both children. The home was clean and there was food in the refrigerator.\n5. I have not personally observed the children without supervision.\nSworn before me at Hamilton on August 2, 2026."
+    }
+  ],
+  "expected": [
+    {
+      "id": "anonymous-source",
+      "description": "Supervision allegation rests on an anonymous caller; the source of information and belief is not identified.",
+      "anchors": [
+        "a community member who wished to remain anonymous"
+      ],
+      "acceptableClasses": [
+        "A",
+        "C",
+        "D"
+      ],
+      "required": true
+    },
+    {
+      "id": "own-observation-contradicts",
+      "description": "Worker's own visit and admission that she did not observe lack of supervision cut against the risk conclusion.",
+      "anchors": [
+        "I have not personally observed the children without supervision.",
+        "The home was clean and there was food in the refrigerator."
+      ],
+      "acceptableClasses": [
+        "A",
+        "C"
+      ],
+      "required": true
+    },
+    {
+      "id": "opinion-risk",
+      "description": "Risk statement is opinion, not observation.",
+      "anchors": [
+        "I verily believe the children are at risk of harm"
+      ],
+      "acceptableClasses": [
+        "A",
+        "C"
+      ],
+      "required": false
+    }
+  ],
+  "forbidden": [
+    {
+      "id": "worker-lied",
+      "description": "Accuses the worker of lying or bad faith.",
+      "pattern": "\\b(lied|lying|perjur|bad faith|dishonest)"
+    },
+    {
+      "id": "neglect-confirmed",
+      "description": "Treats neglect as established.",
+      "pattern": "neglect (is|was) (established|proven|confirmed)"
+    }
+  ]
+}

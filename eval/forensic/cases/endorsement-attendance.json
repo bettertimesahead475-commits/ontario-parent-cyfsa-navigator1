@@ -1,0 +1,91 @@
+{
+  "id": "endorsement-attendance",
+  "category": "ENDORSEMENT",
+  "description": "Two-page endorsement with attendance boxes, a file number split across a line, and a scan filename date that differs from the court date.",
+  "annotation": {
+    "annotatedBy": "Engineering author (Claude Code session). Synthetic, fictional record.",
+    "independentlyReviewed": false,
+    "notes": "Gold issues reflect the author's reading. Must be reviewed by an Ontario child protection lawyer before results are relied on."
+  },
+  "documents": [
+    {
+      "id": "end",
+      "title": "scan_2026-10-01_endorsement.pdf",
+      "kind": "ENDORSEMENT",
+      "extractionMethod": "OCR",
+      "text": "[Page 1]\nONTARIO COURT OF JUSTICE\nCourt File No. FC-26-\n0417\nEndorsement — September 18, 2026\nPresent:\n[X] Father\n[X] Duty counsel for father\n[ ] Mother\n[ ] Counsel for mother\n[X] Society counsel\n[ ] Office of the Children's Lawyer\n[Page 2]\nThe mother did not attend. No explanation for her absence is recorded.\nThe matter is adjourned to November 23, 2026 for a temporary care and custody hearing.\nThe child shall remain in the temporary care of the Society pending the return date.\nJustice R. Okafor",
+      "ocrConfidence": {
+        "1": 0.91,
+        "2": 0.94
+      }
+    }
+  ],
+  "expected": [
+    {
+      "id": "mother-absent",
+      "description": "Mother not present; no explanation recorded.",
+      "anchors": [
+        "The mother did not attend.",
+        "[ ] Mother"
+      ],
+      "acceptableClasses": [
+        "A",
+        "B"
+      ],
+      "required": true
+    },
+    {
+      "id": "adjournment-length",
+      "description": "Adjournment of more than 30 days (Sept 18 to Nov 23) with the absent mother's position not recorded; potential s. 94(1) issue.",
+      "anchors": [
+        "adjourned to November 23, 2026",
+        "Endorsement — September 18, 2026"
+      ],
+      "acceptableClasses": [
+        "B",
+        "C",
+        "D"
+      ],
+      "required": true
+    },
+    {
+      "id": "child-unrepresented",
+      "description": "No OCL box marked; whether s. 78 representation was considered is not recorded.",
+      "anchors": [
+        "[ ] Office of the Children's Lawyer"
+      ],
+      "acceptableClasses": [
+        "B",
+        "D"
+      ],
+      "required": false
+    }
+  ],
+  "forbidden": [
+    {
+      "id": "all-unmarked",
+      "description": "Claims attendance boxes are all unmarked.",
+      "pattern": "(all|every|none of the)\\s+(attendance|presence)?\\s*boxes\\s+(are|were)?\\s*(unmarked|blank|unchecked)"
+    },
+    {
+      "id": "father-absent",
+      "description": "Claims the father was absent.",
+      "pattern": "father (did not attend|was (not present|absent))"
+    },
+    {
+      "id": "file-number-mismatch",
+      "description": "Flags the line-split file number as a discrepancy.",
+      "pattern": "file number.{0,40}(discrepan|inconsisten|mismatch|differ)"
+    },
+    {
+      "id": "filename-court-date",
+      "description": "Treats the filename date as the court date.",
+      "pattern": "(court date|endorsement|hearing).{0,40}October 1, 2026|2026-10-01.{0,30}(court|hearing|endorsement) date"
+    },
+    {
+      "id": "best-interests-94",
+      "description": "Invents a best-interests exception to s. 94(1).",
+      "pattern": "94\\s*\\(1\\).{0,80}best interests|best interests.{0,80}94\\s*\\(1\\)"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "clean-consent-adjournment",
+  "category": "ENDORSEMENT",
+  "description": "Unremarkable endorsement: all parties present, short adjournment on consent. No material problems.",
+  "annotation": {
+    "annotatedBy": "Engineering author (Claude Code session). Synthetic, fictional record.",
+    "independentlyReviewed": false,
+    "notes": "Gold issues reflect the author's reading. Must be reviewed by an Ontario child protection lawyer before results are relied on."
+  },
+  "expectNoMaterialFindings": true,
+  "documents": [
+    {
+      "id": "end2",
+      "title": "Endorsement",
+      "kind": "ENDORSEMENT",
+      "extractionMethod": "TEXT_LAYER",
+      "text": "[Page 1]\nCourt File No. FC-25-1186\nEndorsement — May 6, 2026\nPresent: Mother and counsel; Father and counsel; Society counsel; counsel for the child (OCL).\nOn consent of all parties present, the matter is adjourned to May 27, 2026 for a settlement conference.\nThe temporary order of April 8, 2026 continues."
+    }
+  ],
+  "expected": [],
+  "forbidden": [
+    {
+      "id": "any-violation",
+      "description": "Any claim of violation or noncompliance.",
+      "pattern": "\\b(violat|breach|noncomplian|contraven|fail(ed)? to comply)"
+    },
+    {
+      "id": "94-problem",
+      "description": "Flags the 21-day consent adjournment under s. 94(1).",
+      "pattern": "94\\s*\\(1\\).{0,80}(exceed|more than 30|violat|breach)"
+    }
+  ]
+}

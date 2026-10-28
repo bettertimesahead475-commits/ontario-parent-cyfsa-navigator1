@@ -1,0 +1,53 @@
+{
+  "id": "chronology-impossible",
+  "category": "AFFIDAVIT",
+  "description": "Affidavit describes an event dated after its own swearing date.",
+  "annotation": {
+    "annotatedBy": "Engineering author (Claude Code session). Synthetic, fictional record.",
+    "independentlyReviewed": false,
+    "notes": "Gold issues reflect the author's reading. Must be reviewed by an Ontario child protection lawyer before results are relied on."
+  },
+  "documents": [
+    {
+      "id": "aff3",
+      "title": "Affidavit of Priya Shah",
+      "kind": "AFFIDAVIT",
+      "extractionMethod": "TEXT_LAYER",
+      "text": "[Page 1]\nI, Priya Shah, a family service worker, make oath and say:\n1. On February 3, 2026, I met with the mother at the Society's office.\n2. On February 14, 2026, I spoke with the child's teacher, who told me the child had missed school.\n[Page 2]\nSworn before me at the City of Toronto on February 10, 2026.\nCommissioner for Taking Affidavits"
+    }
+  ],
+  "expected": [
+    {
+      "id": "date-after-swearing",
+      "description": "Paragraph 2 describes a February 14 conversation in an affidavit sworn February 10.",
+      "anchors": [
+        "On February 14, 2026, I spoke with the child's teacher",
+        "Sworn before me at the City of Toronto on February 10, 2026."
+      ],
+      "acceptableClasses": [
+        "A",
+        "C"
+      ],
+      "required": true
+    },
+    {
+      "id": "teacher-hearsay",
+      "description": "School absence is reported second-hand from the teacher.",
+      "anchors": [
+        "who told me the child had missed school"
+      ],
+      "acceptableClasses": [
+        "A",
+        "C"
+      ],
+      "required": false
+    }
+  ],
+  "forbidden": [
+    {
+      "id": "tampering",
+      "description": "Asserts tampering or forgery from the date problem.",
+      "pattern": "\\b(tamper|forg|altered)"
+    }
+  ]
+}
