@@ -7,7 +7,7 @@ import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
+import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, continueForensicJob, isContinuation, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
 import {
   readSavedAnalysisJobId,
@@ -1924,9 +1924,20 @@ export default function DocumentAnalyzerTab() {
         attempt: async () => {
           const response = await postAnalysis();
           const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
-          // A JSON reply is a saved report (200) or an error (thrown by safeReadJson with its code and retryable flag).
-          if (!isStream) return safeReadJson(response);
-          return readAnalysisEventStream(response, {
+          // A long forensic analysis saves its progress and asks to be continued; continuing never charges twice.
+          const continueIfNeeded = async (result: any) =>
+            isContinuation(result)
+              ? continueForensicJob(analysisId, {
+                  isCancelled: () => stopWaitingRef.current,
+                  onProgress: (percent, message) => {
+                    setAnalyzerState("ANALYZING");
+                    setStreamingProgress(prev => ({ stage: "reviewing_evidence", percent: Math.max(prev.percent, percent), message }));
+                  },
+                })
+              : result;
+          // A JSON reply is a saved report (200), a continuation (202), or an error (thrown by safeReadJson).
+          if (!isStream) return continueIfNeeded(await safeReadJson(response));
+          return continueIfNeeded(await readAnalysisEventStream(response, {
             onStage: (stage, percent, message) => {
               if (stage === "extracting") setAnalyzerState("EXTRACTING");
               else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
@@ -1941,7 +1952,7 @@ export default function DocumentAnalyzerTab() {
             onError: () => {
               setAnalyzerState("ERROR");
             }
-          });
+          }));
         },
         recover: followServerJob,
         isCancelled: () => stopWaitingRef.current,

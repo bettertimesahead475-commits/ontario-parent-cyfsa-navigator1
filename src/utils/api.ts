@@ -161,6 +161,10 @@ export async function readAnalysisEventStream(
           } else if (payload.type === "complete") {
             finalReport = payload.report;
             callbacks?.onComplete?.(payload.report, payload.credits);
+          } else if (payload.type === "continue") {
+            // A resumable forensic analysis saved its progress; the caller continues it (continueForensicJob).
+            callbacks?.onStage?.("reviewing_evidence", payload.percent ?? 50, payload.message);
+            return { __continueJobId: payload.jobId };
           } else if (payload.type === "error") {
             callbacks?.onError?.({
               code: payload.code,
@@ -215,6 +219,8 @@ export interface AnalysisJobSnapshot {
   sectionsTotal?: number;
   report?: any;
   error?: { code: string; message: string; statusCode: number; retryable: boolean };
+  /** A resumable forensic job: it advances only when continued (continueForensicJob). */
+  resumable?: boolean;
 }
 
 export type AnalysisJobOutcome =
@@ -297,6 +303,15 @@ export async function pollAnalysisJob(
     }
     const job = (await res.json().catch(() => null)) as AnalysisJobSnapshot | null;
     if (job?.status === "completed" && job.report) return { status: "completed", report: job.report };
+    if (job?.status === "analyzing" && job.resumable) {
+      // Nothing advances a resumable job on its own; continuing it is what moves it forward.
+      const report = await continueForensicJob(jobId, {
+        fetcher,
+        isCancelled: options.isCancelled,
+        onProgress: (percent, message) => options.onProgress?.({ ...job, percent, message }),
+      });
+      return { status: "completed", report };
+    }
     if (job?.status === "failed") {
       return {
         status: "failed",
@@ -316,5 +331,75 @@ export async function pollAnalysisJob(
       options.onProgress?.(job);
     }
     await sleep(intervalMs);
+  }
+}
+
+
+/** True for a server reply that says a resumable forensic analysis must be continued. */
+export function isContinuation(result: any): result is { __continueJobId: string } | { code: "ANALYSIS_CONTINUING"; jobId: string } {
+  return Boolean(result && (typeof result.__continueJobId === "string" || result.code === "ANALYSIS_CONTINUING"));
+}
+
+/**
+ * Drives a resumable forensic analysis to its report by calling POST /api/analyze/job/:jobId/continue until it
+ * answers with the report. Each call runs as many saved steps as fit in one server invocation, so a long analysis is
+ * never cut off by the server's time limit. Never starts or pays for a new analysis: the server charges the analysis
+ * once, when the report is delivered.
+ */
+export async function continueForensicJob(
+  jobId: string,
+  options: {
+    fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+    isCancelled?: () => boolean;
+    onProgress?: (percent: number, message: string) => void;
+    /** Pause between calls while the server reports progress. */
+    pauseMs?: number;
+    maxWaitMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {}
+): Promise<any> {
+  const fetcher = options.fetcher ?? apiFetch;
+  const sleep = options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const pauseMs = options.pauseMs ?? 1000;
+  const maxWaitMs = options.maxWaitMs ?? 45 * 60 * 1000;
+  const started = Date.now();
+  let failures = 0;
+  while (true) {
+    if (options.isCancelled?.()) throw new ApiResponseError("Cancelled.", 0, "CANCELLED", false);
+    if (Date.now() - started > maxWaitMs) {
+      throw new ApiResponseError(
+        "Your forensic analysis is saved but is taking longer than expected. Reopen this page to continue it; it will not be charged twice.",
+        504,
+        "RECOVERY_TIMEOUT",
+        true
+      );
+    }
+    let res: Response;
+    try {
+      res = await fetcher(`/api/analyze/job/${encodeURIComponent(jobId)}/continue`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    } catch {
+      if (++failures >= 10) {
+        throw new ApiResponseError("We lost the connection while continuing your analysis. It is saved; reopen this page to continue it.", 0, "NETWORK_ERROR", true);
+      }
+      await sleep(5000);
+      continue;
+    }
+    const body = await res.json().catch(() => null);
+    if (res.status === 200 && body) return body;
+    if (res.status === 202) {
+      failures = 0;
+      options.onProgress?.(Number(body?.percent ?? 50), String(body?.message ?? "Continuing your forensic analysis..."));
+      await sleep(pauseMs);
+      continue;
+    }
+    if (res.status === 409 || (res.status >= 500 && body?.retryable !== false)) {
+      // Another call is running a step of this job, or a temporary failure: the saved progress is kept.
+      if (res.status !== 409 && ++failures >= 6) {
+        throw new ApiResponseError(body?.error || "The analysis service is temporarily unavailable. Your analysis is saved.", res.status, body?.code ?? "AI_PROVIDER_TEMPORARILY_UNAVAILABLE", true);
+      }
+      await sleep(Number(body?.retryAfterMs ?? 5000));
+      continue;
+    }
+    throw new ApiResponseError(body?.error || "The analysis could not be continued.", res.status, body?.code ?? null, Boolean(body?.retryable));
   }
 }
