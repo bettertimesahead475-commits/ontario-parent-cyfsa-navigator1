@@ -182,6 +182,12 @@ vi.mock("nodemailer", () => ({
 
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
+const mockFreeScan = await vi.hoisted(async () => {
+  const { createFreeScanEmulator } = await import("./testSupport/freeScanEmulator.js");
+  // Reads the stored counter through the mocked usage store, so the limit and fail-closed tests still drive the route.
+  return createFreeScanEmulator((uid: string) => (mockUsage.getFreeUsage as unknown as (uid: string) => Promise<number>)(uid));
+});
+vi.mock("./services/freeScanReservation.js", () => mockFreeScan);
 vi.mock("./services/usage.js", () => mockUsage);
 vi.mock("./services/gmailAgent.js", () => mockGmailAgent);
 vi.mock("./services/cases.js", () => mockCases);
@@ -247,6 +253,7 @@ const PAID_FIREBASE_TOKEN = "Bearer valid-firebase-token-for-paid-user";
 const paid = () => ({ "x-ps-session": PAID_SESSION_TOKEN, Authorization: PAID_FIREBASE_TOKEN });
 
 beforeEach(() => {
+  mockFreeScan.reset();
   dbHolder.db = createProductionLikeDb({
     // Paid sessions as the database holds them: monthly plans need their renewal anchor (issued_at).
     sessions: [
@@ -862,7 +869,7 @@ describe("POST /api/analyze", () => {
       .set("Authorization", "Bearer valid-firebase-token")
       .send({ textContent: "some text" });
     expect(res.status).toBe(200);
-    expect(mockUsage.recordFreeUse).toHaveBeenCalledWith("uid-1", "parent@example.com");
+    expect(mockFreeScan.finalizeFreeScan).toHaveBeenCalledWith(expect.objectContaining({ uid: "uid-1" }));
 
     mockUsage.getFreeUsage.mockResolvedValue(1); // already used their one free analysis
     const res2 = await request(app)

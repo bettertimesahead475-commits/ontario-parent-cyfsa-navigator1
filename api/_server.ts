@@ -38,7 +38,8 @@ import { registerCaseActionWorkspaceRoutes } from "./caseActionWorkspaceRoutes.j
 import { decodeSource, extractPages, SOURCE_SYSTEM, verifyQuote } from "./services/pageSources.js";
 import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
-import { getFreeUsage, recordFreeUse, decrementFreeUse, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
+import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
+import { reserveFreeScan, settleFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
@@ -82,7 +83,7 @@ import {
   isValidAnalysisJobId,
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
-import { runSectionedAnalysis, sectionTitle } from "./services/analyzerSections.js";
+import { runSectionedAnalysis, sectionTitle, parseJsonLenient } from "./services/analyzerSections.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
@@ -482,13 +483,13 @@ function extractJson(text: string): any {
   const trimmed = text.trim();
 
   try {
-    return JSON.parse(trimmed);
+    return parseJsonLenient(trimmed);
   } catch { /* fall through to next strategy */ }
 
   const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (fenceMatch) {
     try {
-      return JSON.parse(fenceMatch[1].trim());
+      return parseJsonLenient(fenceMatch[1].trim());
     } catch { /* fenced block itself wasn't valid/complete JSON — keep trying */ }
   }
 
@@ -496,7 +497,7 @@ function extractJson(text: string): any {
   const endIndex = trimmed.lastIndexOf('}');
   if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
     try {
-      return JSON.parse(trimmed.substring(startIndex, endIndex + 1));
+      return parseJsonLenient(trimmed.substring(startIndex, endIndex + 1));
     } catch { /* still not parseable — keep trying */ }
   }
 
@@ -511,7 +512,8 @@ function extractJson(text: string): any {
       "The analysis response was incomplete — it looks like it was cut off before finishing, " +
       "likely because the document was long or complex enough to need more output room than was " +
       "allotted. Try again; if it keeps happening on this document, try a shorter excerpt.",
-      false
+      // Retryable: truncation is a property of this one response, and the message tells the parent to try again.
+      true
     );
   }
   throw new AnalyzerError(
@@ -1932,6 +1934,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     return !!(await requireSession(req, res, identity));
   }
 
+  // Analysis ids whose start is in progress on this instance. Checked and set synchronously, before any await, so
+  // two requests with the same id cannot both pass the saved-job check below and both start a free scan or a model
+  // call. The entry is released when the response closes; from then on the saved job record guards the id.
+  const analysisStartsInProgress = new Set<string>();
+
   app.post("/api/analyze", async (req: Request, res: Response) => {
     let targetText = "";
     let fileDataObj: any = null;
@@ -1941,7 +1948,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     let streamEmitter: SseStreamEmitter | null = null;
     let isPaid = false;
     let uid: string | null = null;
-    let freeUseRecorded = false;
+    // A free scan reserved for this request. It is released if the analysis fails, and finalized once delivered.
+    let freeScanReservation: { reservationId: string } | null = null;
+    // Set once the finished report is saved as completed. From then on the free scan is settled, never released.
+    let reportPersisted = false;
     const dbProjectRef = getConfiguredProjectRef();
     const idempotencyKey =
       (req.header("x-analysis-id") as string) ||
@@ -1978,9 +1988,23 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // charge for - a second analysis. A finished report is returned as-is; a running one is
       // reported so the browser polls it instead.
       if (isValidAnalysisJobId(idempotencyKey)) {
+        if (analysisStartsInProgress.has(analysisRequestId)) {
+          return res.status(409).json({
+            error: "This analysis is already starting. We'll show the results as soon as it finishes.",
+            code: "ANALYSIS_IN_PROGRESS",
+            jobId: analysisRequestId,
+          });
+        }
+        analysisStartsInProgress.add(analysisRequestId);
+        res.once("close", () => analysisStartsInProgress.delete(analysisRequestId));
         const existingJob = await getAnalysisJobDurable(analysisRequestId);
         if (existingJob) {
           const ownedByCaller = Boolean(existingJob.uid && identity && existingJob.uid === identity.uid);
+          if (!ownedByCaller && existingJob.uid && !identity) {
+            // Owned by a signed-in account and this request has no valid sign-in. Answer with the sign-in
+            // requirement, not an id conflict: a conflict would lead the client to start a new analysis.
+            return res.status(401).json({ error: "Please sign in again to see this analysis.", code: "SIGN_IN_REQUIRED" });
+          }
           if (!ownedByCaller) {
             return res.status(409).json({
               error: "This analysis id is already in use. Please start a new analysis.",
@@ -1988,6 +2012,39 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             });
           }
           if (existingJob.status === "completed" && existingJob.report) {
+            // A free report is handed over again only once its scan is recorded as delivered. A reservation that
+            // expired in the meantime is taken again here, or the report is withheld if the allowance is used up.
+            if (existingJob.billing === "free" && existingJob.uid) {
+              const settled = await settleFreeScan({
+                uid: existingJob.uid,
+                requestId: analysisRequestId,
+                limit: FREE_ANALYSES_LIMIT,
+              }).catch((settleErr) => {
+                console.error("[document analysis] Could not settle the free scan for a saved report:", settleErr);
+                return null;
+              });
+              if (settled === "limit") {
+                return res.status(402).json({
+                  error: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access to continue.",
+                  code: "FREE_LIMIT_REACHED",
+                  limit: FREE_ANALYSES_LIMIT,
+                });
+              }
+              if (settled === "in_progress") {
+                return res.status(409).json({
+                  error: "This analysis is already running. We'll show the results as soon as it finishes.",
+                  code: "ANALYSIS_IN_PROGRESS",
+                  jobId: analysisRequestId,
+                });
+              }
+              if (settled !== "delivered") {
+                return res.status(503).json({
+                  error: "We couldn't confirm your free analysis just yet. Please try again in a moment.",
+                  code: "FREE_SCAN_NOT_RECORDED",
+                  retryable: true,
+                });
+              }
+            }
             return res.json(redactCustomerReport(existingJob.report));
           }
           if (existingJob.status === "analyzing" && Date.now() - existingJob.updatedAt < 6 * 60 * 1000) {
@@ -2214,8 +2271,11 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           httpStatus: 200,
           dbProjectRef,
         });
-        const used = await getFreeUsage(uid, userEmail);
-        if (used >= FREE_ANALYSES_LIMIT) {
+        // Reserve this free scan before the analysis runs. The reservation is one atomic database step, so requests
+        // on any instance cannot take more scans than the allowance. It is released if the analysis or its delivery
+        // fails, and finalized once the report has been delivered. A database failure refuses the request (503).
+        const scan = await reserveFreeScan({ uid, requestId: analysisRequestId, limit: FREE_ANALYSES_LIMIT });
+        if (scan.status === "limit") {
           logAnalyzerTraceStage({
             requestId: analysisRequestId,
             stage: 6,
@@ -2223,7 +2283,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             httpStatus: 402,
             errorCode: "FREE_LIMIT_REACHED",
             dbProjectRef,
-            details: { used, limit: FREE_ANALYSES_LIMIT },
+            details: { used: scan.used, limit: FREE_ANALYSES_LIMIT },
           });
           logAnalyzerTraceStage({
             requestId: analysisRequestId,
@@ -2237,10 +2297,25 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           return res.status(402).json({
             error: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access to continue.",
             code: "FREE_LIMIT_REACHED",
-            usedCount: used,
+            usedCount: scan.used,
             limit: FREE_ANALYSES_LIMIT
           });
         }
+        if (scan.status === "consumed") {
+          return res.status(409).json({
+            error: "This analysis was already completed. Open its saved report instead.",
+            code: "ANALYSIS_ALREADY_COMPLETED",
+          });
+        }
+        if (scan.status !== "reserved" || !scan.reservationId) {
+          // The same request is already running (or its reservation is still live): one scan, one analysis.
+          return res.status(409).json({
+            error: "This analysis is already running. We'll show the results as soon as it finishes.",
+            code: "ANALYSIS_IN_PROGRESS",
+            jobId: analysisRequestId,
+          });
+        }
+        freeScanReservation = { reservationId: scan.reservationId };
       }
 
       logAnalyzerTraceStage({
@@ -2258,6 +2333,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         jobId: analysisRequestId,
         uid: identity ? identity.uid : (uid || null),
         mode: mode === "full" ? "full" : "fast",
+        billing: isPaid ? "paid" : "free",
       });
 
       const wantsStream = Boolean(
@@ -2443,8 +2519,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         };
       } else if (!isPaid && uid) {
         try {
-          await recordFreeUse(uid, userEmail);
-          freeUseRecorded = true;
+          // The scan was counted when it was reserved; this only reads the count for the response.
           const used = await getFreeUsage(uid);
           credits = {
             tier: "Free",
@@ -2494,6 +2569,40 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // Persist the finished report before responding, so a browser that lost the stream can
       // still recover it after a refresh (the instance may freeze once the response ends).
       await completeAnalysisJobDurable(analysisRequestId, report);
+      reportPersisted = true;
+
+      // The free scan must be recorded as delivered before the report is handed over. If that cannot be recorded,
+      // the report is withheld and the scan is kept: the saved report is settled when the client retries this id.
+      if (freeScanReservation && uid) {
+        const settled = await settleFreeScan({ uid, requestId: analysisRequestId, limit: FREE_ANALYSES_LIMIT }).catch(
+          (settleErr) => {
+            console.error("[document analysis] Could not record the free scan; report kept for retry:", settleErr);
+            return null;
+          }
+        );
+        if (settled !== "delivered") {
+          const limited = settled === "limit";
+          const failure = limited
+            ? {
+                statusCode: 402,
+                code: "FREE_LIMIT_REACHED",
+                retryable: false,
+                message: "You've used your free analysis. Upgrade to Document Analyzer or Individual Case Access to continue.",
+              }
+            : {
+                statusCode: 503,
+                code: "FREE_SCAN_NOT_RECORDED",
+                retryable: true,
+                message: "We couldn't confirm your free analysis just yet. Please try again in a moment.",
+              };
+          if (streamEmitter) {
+            streamEmitter.emitWithheld({ code: failure.code, message: failure.message, statusCode: failure.statusCode, retryable: failure.retryable });
+          } else {
+            res.status(failure.statusCode).json({ error: failure.message, code: failure.code, retryable: failure.retryable });
+          }
+          return;
+        }
+      }
 
       if (streamEmitter) {
         streamEmitter.emitComplete(report, credits);
@@ -2515,11 +2624,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         }
       }
 
-      if (freeUseRecorded && uid) {
-        await decrementFreeUse(uid).catch(() => {});
+      // Released only while no report is saved: a saved report keeps its scan (settled on retry).
+      if (freeScanReservation && uid && !reportPersisted) {
+        await releaseFreeScan({ uid, requestId: analysisRequestId, reservationId: freeScanReservation.reservationId }).catch(
+          (releaseErr) => console.error("[document analysis] Failed to release free scan:", releaseErr)
+        );
       }
 
-      if (getAnalysisJob(analysisRequestId)) {
+      // A job whose report is saved stays completed, whatever happens to the response that follows it.
+      if (!reportPersisted && getAnalysisJob(analysisRequestId)) {
         const failed = formatAnalyzerErrorResponse(error);
         await failAnalysisJobDurable(analysisRequestId, {
           code: failed.code,
@@ -2600,10 +2713,14 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     }
 
     // Access control: prevent users from accessing another user's analysis jobs (unless admin)
-    // A job is readable only by the Firebase account that owns it (or the admin secret). The
-    // previous check skipped ownership entirely when the caller had only a paid-session token
-    // (callerUid undefined), so any job could be read by id.
+    // A job is readable only by the Firebase account that owns it (or the admin secret). A paid-session
+    // token on its own never releases a report. When the job has an owner but the caller presents no
+    // valid Firebase identity (absent, expired or invalid token), the caller must sign in again (401),
+    // not be told the job belongs to someone else (403).
     const callerUid = identity?.uid;
+    if (!isAdmin && job.uid && !callerUid) {
+      return res.status(401).json({ error: "Please sign in again to see this analysis.", code: "SIGN_IN_REQUIRED" });
+    }
     if (!isAdmin && (!job.uid || job.uid !== callerUid)) {
       return res.status(403).json({ error: "Access denied. You cannot access another user's analysis job.", code: "FORBIDDEN" });
     }

@@ -93,6 +93,12 @@ vi.mock("@google/genai", () => ({
 
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
+const mockFreeScan = await vi.hoisted(async () => {
+  const { createFreeScanEmulator } = await import("./testSupport/freeScanEmulator.js");
+  // Reads the stored counter through the mocked usage store, so the limit and fail-closed tests still drive the route.
+  return createFreeScanEmulator((uid: string) => (mockUsage.getFreeUsage as unknown as (uid: string) => Promise<number>)(uid));
+});
+vi.mock("./services/freeScanReservation.js", () => mockFreeScan);
 vi.mock("./services/usage.js", () => mockUsage);
 
 process.env.VERCEL = "1";
@@ -101,7 +107,7 @@ process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-key";
 
 const { default: app } = await import("./_server.js");
-import { createAnalysisJob } from "./services/analyzerStreaming.js";
+import { completeAnalysisJob, createAnalysisJob, failAnalysisJob } from "./services/analyzerStreaming.js";
 
 const MINIMAL_ANALYSIS = {
   documentTitle: "Society Protection Application",
@@ -163,6 +169,7 @@ const STREAM_REPORT = { ...COMPLETE_ANALYSIS, documentTitle: MINIMAL_ANALYSIS.do
 
 describe("Analyzer Streaming & Job Recovery Integration", () => {
   beforeEach(() => {
+  mockFreeScan.reset();
   dbHolder.db = createProductionLikeDb({
     sessions: [
       { id: "jti-1", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
@@ -225,6 +232,42 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     expect(res.body.jobId).toBe("test-durable-job-123");
     expect(res.body.mode).toBe("fast");
     expect(res.body.status).toBe("analyzing");
+  });
+
+  it("a streamed free report that cannot be recorded sends a retryable error, never complete, and keeps the job completed", async () => {
+    const analysisId = `req_${Date.now()}_streamfin1`;
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-stream-uid", email: "free-stream@example.com" });
+    mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
+    mockFreeScan.finalizeFreeScan.mockRejectedValueOnce(new Error("database unavailable"));
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer free-stream-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast", stream: true });
+
+    const events: any[] = res.text
+      .split("\n\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.replace("data: ", "")));
+    expect(events.some((e) => e.type === "complete")).toBe(false);
+    const withheld = events.find((e) => e.type === "error");
+    expect(withheld?.code).toBe("FREE_SCAN_NOT_RECORDED");
+    expect(withheld?.retryable).toBe(true);
+    expect(mockFreeScan.releaseFreeScan).not.toHaveBeenCalled();
+
+    // The job was not marked failed: a retry of the same id is served the saved report, with no second model run.
+    const callsBeforeRetry = mockCreateMessage.mock.calls.length;
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-stream-uid", email: "free-stream@example.com" });
+    const retry = await request(app)
+      .post("/api/analyze")
+      .set("Authorization", "Bearer free-stream-token")
+      .set("x-analysis-id", analysisId)
+      .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast" });
+    expect(retry.status).toBe(200);
+    expect(retry.body.documentTitle).toBeDefined();
+    expect(mockCreateMessage.mock.calls.length).toBe(callsBeforeRetry);
+    expect(mockFreeScan.consumedFor("free-stream-uid")).toBe(1);
   });
 
   it("POST /api/analyze with stream: true emits SSE stream events with real stages", async () => {
@@ -325,6 +368,230 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("FORBIDDEN");
+  });
+
+  // Job poll authorization. A job is released only to the Firebase account that owns it. A paid-session token
+  // never releases a report by itself, and a missing, expired or invalid Firebase token is a sign-in problem (401),
+  // not an access-denied one (403). The verifier returns null for expired and invalid tokens alike.
+  describe("job poll authorization", () => {
+    it("releases the job to its valid owner", async () => {
+      createAnalysisJob({ jobId: "job-auth-owner", uid: "test-parent-uid", mode: "fast" });
+      const res = await request(app).get("/api/analyze/job/job-auth-owner");
+      expect(res.status).toBe(200);
+      expect(res.body.jobId).toBe("job-auth-owner");
+    });
+
+    it("refuses a job owned by another account to a valid non-owner with 403 FORBIDDEN", async () => {
+      createAnalysisJob({ jobId: "job-auth-other", uid: "other-parent-uid", mode: "fast" });
+      const res = await request(app).get("/api/analyze/job/job-auth-other");
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("FORBIDDEN");
+    });
+
+    it("refuses an anonymous caller with 401 SIGN_IN_REQUIRED", async () => {
+      createAnalysisJob({ jobId: "job-auth-anon", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-anon");
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    });
+
+    it("answers an expired Firebase token with 401 SIGN_IN_REQUIRED, not 403, even with a valid paid session", async () => {
+      createAnalysisJob({ jobId: "job-auth-expired", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-expired").set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(res.body).not.toHaveProperty("report");
+    });
+
+    it("answers an invalid Firebase token with 401 SIGN_IN_REQUIRED, not 403, even with a valid paid session", async () => {
+      createAnalysisJob({ jobId: "job-auth-invalid", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const res = await request(app)
+        .get("/api/analyze/job/job-auth-invalid")
+        .set("Authorization", "Bearer not-a-real-token")
+        .set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(res.body).not.toHaveProperty("report");
+    });
+
+    it("never releases report content to a paid-session token alone (no Firebase identity)", async () => {
+      createAnalysisJob({ jobId: "job-auth-session-only", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-session-only").set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body).not.toHaveProperty("report");
+      expect(res.body).not.toHaveProperty("jobId");
+    });
+
+    it("refuses a session-only caller whose paid session has expired, with 401 SIGN_IN_REQUIRED", async () => {
+      createAnalysisJob({ jobId: "job-auth-expired-session", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      mockAccess.getActivePaidSession.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-expired-session").set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    });
+
+    it("refuses a session-only caller whose paid session was revoked, with 401 SIGN_IN_REQUIRED", async () => {
+      createAnalysisJob({ jobId: "job-auth-revoked-session", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      mockAccess.getActivePaidSession.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-revoked-session").set(paid());
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+    });
+
+    it("keeps the owner's own report readable with a valid Firebase identity (existing behaviour, unchanged)", async () => {
+      createAnalysisJob({ jobId: "job-auth-owner-session-ended", uid: "test-parent-uid", mode: "fast" });
+      mockAccess.getActivePaidSession.mockResolvedValueOnce(null);
+      const res = await request(app).get("/api/analyze/job/job-auth-owner-session-ended").set(paid());
+      expect(res.status).toBe(200);
+      expect(res.body.jobId).toBe("job-auth-owner-session-ended");
+    });
+
+    it("after reauthentication, a completed, running, or failed saved job is returned as it stands", async () => {
+      createAnalysisJob({ jobId: "job-state-done", uid: "test-parent-uid", mode: "fast" });
+      completeAnalysisJob("job-state-done", { documentTitle: "Saved report" });
+      createAnalysisJob({ jobId: "job-state-running", uid: "test-parent-uid", mode: "fast" });
+      createAnalysisJob({ jobId: "job-state-failed", uid: "test-parent-uid", mode: "fast" });
+      failAnalysisJob("job-state-failed", { code: "AI_RATE_LIMITED", message: "slow down", statusCode: 429, retryable: true });
+
+      const done = await request(app).get("/api/analyze/job/job-state-done");
+      expect(done.status).toBe(200);
+      expect(done.body.status).toBe("completed");
+      expect(done.body.report).toBeTruthy();
+
+      const running = await request(app).get("/api/analyze/job/job-state-running");
+      expect(running.status).toBe(200);
+      expect(running.body.status).not.toBe("completed");
+
+      const failed = await request(app).get("/api/analyze/job/job-state-failed");
+      expect(failed.status).toBe(200);
+      expect(failed.body.status).toBe("failed");
+      expect(failed.body.error.code).toBe("AI_RATE_LIMITED");
+    });
+
+    it("reports a job that no longer exists as JOB_NOT_FOUND, not as access denied", async () => {
+      const res = await request(app).get("/api/analyze/job/req_1000000000000_expired0001").set(paid());
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("JOB_NOT_FOUND");
+    });
+
+    it("an expired sign-in on a retried analysis answers SIGN_IN_REQUIRED and starts nothing", async () => {
+      createAnalysisJob({ jobId: "req_1700000000000_owned0001", uid: "test-parent-uid", mode: "fast" });
+      mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce(null);
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("x-analysis-id", "req_1700000000000_owned0001")
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(res.body.code).not.toBe("ANALYSIS_ID_CONFLICT");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
+    it("an expired sign-in on a new analysis answers SIGN_IN_REQUIRED before any credit is reserved", async () => {
+      mockFirebaseAdmin.verifyFirebaseIdentity.mockResolvedValueOnce(null);
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("x-analysis-id", "req_1700000000001_newjob0002")
+        .set(paid())
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("SIGN_IN_REQUIRED");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
+    // Duplicate retries. A retry sends the analysis id of an earlier attempt. The server answers it from the saved
+    // record and must not start, charge, or call the model again.
+    it("two simultaneous starts with one analysis id: the second is refused while the first is still starting", async () => {
+      // Hold the first request at its free-usage check, so the second arrives before the first has saved its job.
+      mockUsage.getFreeUsage.mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve(0), 80)));
+      const id = "req_1700000000005_race000001";
+      const body = { textContent: "A short parent statement used only in this test.", mode: "fast" };
+      const [first, second] = await Promise.all([
+        request(app).post("/api/analyze").set("Authorization", "Bearer test-token").set("x-analysis-id", id).send(body),
+        request(app).post("/api/analyze").set("Authorization", "Bearer test-token").set("x-analysis-id", id).send(body),
+      ]);
+      const codes = [first, second].map((r) => r.body?.code);
+      expect(codes.filter((c) => c === "ANALYSIS_IN_PROGRESS")).toHaveLength(1);
+    });
+
+    it("a job that has made no progress for six minutes is not treated as running, so a retry is not blocked forever", async () => {
+      const start = Date.now();
+      const spy = vi.spyOn(Date, "now").mockReturnValue(start);
+      try {
+        createAnalysisJob({ jobId: "req_1700000000006_stale00001", uid: "test-parent-uid", mode: "fast" });
+        spy.mockReturnValue(start + 7 * 60 * 1000);
+        const res = await request(app)
+          .post("/api/analyze")
+          .set("Authorization", "Bearer test-token")
+          .set("x-analysis-id", "req_1700000000006_stale00001")
+          .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+        expect(res.body.code).not.toBe("ANALYSIS_IN_PROGRESS");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("a retry of a running analysis is refused as in progress, with no second analysis", async () => {
+      createAnalysisJob({ jobId: "req_1700000000002_running001", uid: "test-parent-uid", mode: "fast" });
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer test-token")
+        .set("x-analysis-id", "req_1700000000002_running001")
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("ANALYSIS_IN_PROGRESS");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+      expect(mockFreeScan.finalizeFreeScan).not.toHaveBeenCalled();
+    });
+
+    it("a retry of a completed analysis returns its saved report, with no second analysis", async () => {
+      createAnalysisJob({ jobId: "req_1700000000003_done000001", uid: "test-parent-uid", mode: "fast" });
+      completeAnalysisJob("req_1700000000003_done000001", { documentTitle: "Saved report" });
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer test-token")
+        .set("x-analysis-id", "req_1700000000003_done000001")
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(200);
+      expect(res.body.documentTitle).toBe("Saved report");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+      expect(mockFreeScan.finalizeFreeScan).not.toHaveBeenCalled();
+    });
+
+    it("a retry by a different account never reads or re-runs another account's analysis", async () => {
+      createAnalysisJob({ jobId: "req_1700000000004_other000001", uid: "other-parent-uid", mode: "fast" });
+      completeAnalysisJob("req_1700000000004_other000001", { documentTitle: "Someone else's report" });
+      const res = await request(app)
+        .post("/api/analyze")
+        .set("Authorization", "Bearer test-token")
+        .set("x-analysis-id", "req_1700000000004_other000001")
+        .send({ textContent: "A short parent statement used only in this test.", mode: "fast" });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("ANALYSIS_ID_CONFLICT");
+      expect(res.body).not.toHaveProperty("documentTitle");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
+
+    it("recovers after reauthentication by polling the same job, without starting another analysis", async () => {
+      createAnalysisJob({ jobId: "job-auth-resume", uid: "test-parent-uid", mode: "fast" });
+
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce(null);
+      const signedOut = await request(app).get("/api/analyze/job/job-auth-resume").set(paid());
+      expect(signedOut.status).toBe(401);
+      expect(signedOut.body.code).toBe("SIGN_IN_REQUIRED");
+
+      mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "test-parent-uid", email: "parent@example.com" });
+      const resumed = await request(app).get("/api/analyze/job/job-auth-resume").set(paid());
+      expect(resumed.status).toBe(200);
+      expect(resumed.body.jobId).toBe("job-auth-resume");
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    });
   });
 
   it("GET /api/analyze/job/:jobId recovers own completed job with 200 OK", async () => {

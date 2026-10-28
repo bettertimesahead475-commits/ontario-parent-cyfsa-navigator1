@@ -146,6 +146,12 @@ vi.mock("@google/genai", () => ({
 vi.mock("nodemailer", () => ({ default: { createTransport: () => ({ sendMail: vi.fn() }) } }));
 vi.mock("./services/access.js", () => mockAccess);
 vi.mock("./services/firebaseAdmin.js", () => mockFirebaseAdmin);
+const mockFreeScan = await vi.hoisted(async () => {
+  const { createFreeScanEmulator } = await import("./testSupport/freeScanEmulator.js");
+  // Reads the stored counter through the mocked usage store, so the limit and fail-closed tests still drive the route.
+  return createFreeScanEmulator((uid: string) => (mockUsage.getFreeUsage as unknown as (uid: string) => Promise<number>)(uid));
+});
+vi.mock("./services/freeScanReservation.js", () => mockFreeScan);
 vi.mock("./services/usage.js", () => mockUsage);
 vi.mock("./services/gmailAgent.js", () => ({
   getGmailAuthUrl: vi.fn(),
@@ -213,6 +219,7 @@ const SAMPLE_DEEP_DIVE = {
 const claudeText = (text: string, stop_reason = "end_turn") => ({ content: [{ type: "text", text }], stop_reason, usage: {} });
 
 beforeEach(() => {
+  mockFreeScan.reset();
   dbHolder.db = createProductionLikeDb({
     sessions: [
       { id: "jti-1", tier: "Pro", revoked_at: null, issued_at: "2026-01-01T00:00:00Z" },
@@ -267,7 +274,7 @@ describe("analyzer access validation", () => {
     // The index is the sum of its components (10+8+7+8+6+5+4+2), never a free-standing number.
     expect(res.body.evidenceStrengthIndex.score).toBe(50);
     expect(res.body.timing.mode).toBe("fast");
-    expect(mockUsage.recordFreeUse).toHaveBeenCalledWith("free-uid", "free@example.com");
+    expect(mockFreeScan.finalizeFreeScan).toHaveBeenCalledWith(expect.objectContaining({ uid: "free-uid" }));
   });
 
   it("blocks a free user whose free analysis is exhausted", async () => {
@@ -276,6 +283,79 @@ describe("analyzer access validation", () => {
     expect(res.status).toBe(402);
     expect(res.body.code).toBe("FREE_LIMIT_REACHED");
     expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("returns the reserved free scan when the analysis fails, and never when it was delivered", async () => {
+    mockCreateMessage.mockRejectedValue(new Error("upstream unavailable"));
+    const failed = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
+    expect(failed.status).toBeGreaterThanOrEqual(500);
+    expect(mockFreeScan.releaseFreeScan).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: "free-uid", requestId: expect.any(String), reservationId: expect.any(String) })
+    );
+    expect(mockFreeScan.finalizeFreeScan).not.toHaveBeenCalled();
+
+    mockCreateMessage.mockReset();
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
+    mockFreeScan.releaseFreeScan.mockClear();
+    const delivered = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
+    expect(delivered.status).toBe(200);
+    expect(mockFreeScan.finalizeFreeScan).toHaveBeenCalledTimes(1);
+    expect(mockFreeScan.releaseFreeScan).not.toHaveBeenCalled();
+  });
+
+  it("withholds a finished free report when its scan cannot be recorded, keeps the scan, and settles it on retry", async () => {
+    const analysisId = `req_${Date.now()}_settle01`;
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
+    mockFreeScan.finalizeFreeScan.mockRejectedValueOnce(new Error("database unavailable"));
+
+    const first = await request(app).post("/api/analyze").set(free()).set("x-analysis-id", analysisId).send({ textContent: "text", mode: "fast" });
+    expect(first.status).toBe(503);
+    expect(first.body.code).toBe("FREE_SCAN_NOT_RECORDED");
+    expect(first.body.retryable).toBe(true);
+    expect(first.body.documentTitle).toBeUndefined();
+    // The scan is kept for the saved report, not returned: it is held, not released, and not yet consumed.
+    expect(mockFreeScan.releaseFreeScan).not.toHaveBeenCalled();
+    expect(mockFreeScan.heldFor("free-uid")).toBe(1);
+    expect(mockFreeScan.consumedFor("free-uid")).toBe(0);
+
+    // The retry with the same id records the scan and hands over the saved report, with no second model run.
+    const callsBeforeRetry = mockCreateMessage.mock.calls.length;
+    const retry = await request(app).post("/api/analyze").set(free()).set("x-analysis-id", analysisId).send({ textContent: "text", mode: "fast" });
+    expect(retry.status).toBe(200);
+    expect(retry.body.documentTitle).toBe("Affidavit of a worker");
+    expect(mockCreateMessage.mock.calls.length).toBe(callsBeforeRetry);
+    expect(mockFreeScan.consumedFor("free-uid")).toBe(1);
+  });
+
+  it("settles a saved free report whose reservation was returned in the meantime, by reserving the scan again", async () => {
+    const analysisId = `req_${Date.now()}_settle02`;
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
+    mockFreeScan.finalizeFreeScan.mockRejectedValueOnce(new Error("database unavailable"));
+    await request(app).post("/api/analyze").set(free()).set("x-analysis-id", analysisId).send({ textContent: "text", mode: "fast" });
+
+    // Reconciliation returns the unit (the reservation went quiet). The allowance is free again.
+    mockFreeScan.expire("free-uid", analysisId);
+    const retry = await request(app).post("/api/analyze").set(free()).set("x-analysis-id", analysisId).send({ textContent: "text", mode: "fast" });
+    expect(retry.status).toBe(200);
+    expect(mockFreeScan.consumedFor("free-uid")).toBe(1);
+  });
+
+  it("refuses to hand over a saved free report when its scan was returned and the allowance is used up by another analysis", async () => {
+    const analysisId = `req_${Date.now()}_settle03`;
+    mockCreateMessage.mockImplementation(sectionResponder(CORE));
+    mockFreeScan.finalizeFreeScan.mockRejectedValueOnce(new Error("database unavailable"));
+    await request(app).post("/api/analyze").set(free()).set("x-analysis-id", analysisId).send({ textContent: "text", mode: "fast" });
+
+    // The unit is returned, and another analysis of the same parent takes it.
+    mockFreeScan.expire("free-uid", analysisId);
+    const other = await request(app).post("/api/analyze").set(free()).send({ textContent: "another statement", mode: "fast" });
+    expect(other.status).toBe(200);
+
+    const retry = await request(app).post("/api/analyze").set(free()).set("x-analysis-id", analysisId).send({ textContent: "text", mode: "fast" });
+    expect(retry.status).toBe(402);
+    expect(retry.body.code).toBe("FREE_LIMIT_REACHED");
+    expect(retry.body.documentTitle).toBeUndefined();
+    expect(mockFreeScan.consumedFor("free-uid")).toBe(1);
   });
 
   it("fails CLOSED with a JSON 503 when the usage service is unreachable (no fail-open)", async () => {
@@ -287,7 +367,7 @@ describe("analyzer access validation", () => {
     expect(res.body.code).toBe("USAGE_SERVICE_TEMPORARILY_UNAVAILABLE");
     expect(res.body.retryable).toBe(true);
     expect(mockCreateMessage).not.toHaveBeenCalled();
-    expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
+    expect(mockFreeScan.finalizeFreeScan).not.toHaveBeenCalled();
   });
 
   it("fails CLOSED when the paid-session lookup errors, without falling back to the free tier", async () => {
@@ -304,7 +384,7 @@ describe("analyzer access validation", () => {
     const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(200);
     expect(mockUsage.getFreeUsage).not.toHaveBeenCalled();
-    expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
+    expect(mockFreeScan.finalizeFreeScan).not.toHaveBeenCalled();
   });
 
   it("does not treat a session token bound to a different user as paid", async () => {
@@ -323,7 +403,7 @@ describe("analysis provider responses", () => {
     expect(res.status).toBe(503);
     expect(res.body.code).toBe("AI_PROVIDER_CONFIGURATION_ERROR");
     expect(res.body.error).not.toMatch(/sign in/i);
-    expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
+    expect(mockFreeScan.finalizeFreeScan).not.toHaveBeenCalled();
   });
 
   it("reports an unknown-model 404 as a provider configuration problem", async () => {
@@ -354,7 +434,7 @@ describe("analysis provider responses", () => {
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("AI_RESPONSE_INVALID");
-    expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
+    expect(mockFreeScan.finalizeFreeScan).not.toHaveBeenCalled();
   });
 
   it("reports truncated model output as incomplete", async () => {
@@ -363,6 +443,7 @@ describe("analysis provider responses", () => {
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("AI_RESPONSE_INVALID");
     expect(res.body.error).toMatch(/incomplete/i);
+    expect(res.body.retryable).toBe(true);
   });
 
   it("reports a model refusal clearly", async () => {
@@ -811,7 +892,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       expect(res.body.forensicVerification.model).toBeUndefined();
       expect(res.body.credits.tier).toBe("Admin Testing Access");
       expect(res.body.credits.quickReviewsRemaining).toBe(999);
-      expect(mockUsage.recordFreeUse).not.toHaveBeenCalled();
+      expect(mockFreeScan.finalizeFreeScan).not.toHaveBeenCalled();
       expect(mockUsage.recordPaidUse).not.toHaveBeenCalled();
     });
 

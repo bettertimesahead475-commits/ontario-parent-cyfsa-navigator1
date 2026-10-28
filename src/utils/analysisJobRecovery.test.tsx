@@ -56,6 +56,55 @@ describe("pollAnalysisJob", () => {
     await expect(pollAnalysisJob("req_1_abc", { intervalMs: 1 })).rejects.toMatchObject({ code: "SIGN_IN_REQUIRED" });
   });
 
+  it("after sign-in, polls the same saved job id again and never posts a new analysis", async () => {
+    fetchMock
+      .mockResolvedValueOnce(json(401, { code: "SIGN_IN_REQUIRED" }))
+      .mockResolvedValueOnce(json(200, { jobId: "req_1_abc", status: "completed", report: { documentTitle: "Saved" } }));
+    await expect(pollAnalysisJob("req_1_abc", { intervalMs: 1 })).rejects.toMatchObject({ code: "SIGN_IN_REQUIRED" });
+    const outcome = await pollAnalysisJob("req_1_abc", { intervalMs: 1 });
+    expect(outcome).toEqual({ status: "completed", report: { documentTitle: "Saved" } });
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls).toEqual(["/api/analyze/job/req_1_abc", "/api/analyze/job/req_1_abc"]);
+    expect(fetchMock.mock.calls.every(([, init]) => !init || !init.method || init.method === "GET")).toBe(true);
+  });
+
+  // Ambiguous outcomes. Polling only ever reads the job; it never sends the analysis again.
+  const onlyReads = (mock: ReturnType<typeof vi.fn>) =>
+    mock.mock.calls.every(([url, init]) => String(url).startsWith("/api/analyze/job/") && (!init || !init.method || init.method === "GET"));
+
+  it("a connection that drops and then recovers resolves with the job's real outcome, not a new analysis", async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("network"))
+      .mockRejectedValueOnce(new TypeError("network"))
+      .mockResolvedValueOnce(json(200, { jobId: "req_1_abc", status: "completed", report: { documentTitle: "Done" } }));
+    const outcome = await pollAnalysisJob("req_1_abc", { intervalMs: 1 });
+    expect(outcome).toEqual({ status: "completed", report: { documentTitle: "Done" } });
+    expect(onlyReads(fetchMock)).toBe(true);
+  });
+
+  it("a connection that never recovers ends as NETWORK_ERROR, retryable, with reads only", async () => {
+    fetchMock.mockRejectedValue(new TypeError("network"));
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1 }).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect(err.code).toBe("NETWORK_ERROR");
+    expect(err.retryable).toBe(true);
+    expect(onlyReads(fetchMock)).toBe(true);
+  });
+
+  it("a job the server cannot find after the checks ends as JOB_NOT_FOUND, with reads only", async () => {
+    fetchMock.mockResolvedValue(json(404, { code: "JOB_NOT_FOUND" }));
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1 }).catch((e) => e);
+    expect(err.code).toBe("JOB_NOT_FOUND");
+    expect(onlyReads(fetchMock)).toBe(true);
+  });
+
+  it("a job still running when the wait runs out ends as RECOVERY_TIMEOUT, with reads only", async () => {
+    fetchMock.mockImplementation(async () => json(200, { jobId: "req_1_abc", status: "analyzing", percent: 50 }));
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1, maxWaitMs: 20 }).catch((e) => e);
+    expect(err.code).toBe("RECOVERY_TIMEOUT");
+    expect(onlyReads(fetchMock)).toBe(true);
+  });
+
   it("gives up with RECOVERY_TIMEOUT (outcome unknown) after the wait limit", async () => {
     fetchMock.mockImplementation(async () => json(200, { jobId: "j", status: "analyzing", percent: 40 }));
     const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1, maxWaitMs: 20 }).catch((e) => e);

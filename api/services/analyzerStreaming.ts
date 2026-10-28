@@ -67,6 +67,8 @@ export interface AnalysisJob {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
+  /** How the analysis was paid for. A free scan is settled (recorded as delivered) before its report is handed over again. */
+  billing?: "free" | "paid";
   status: "pending" | "analyzing" | "completed" | "failed";
   currentStage: AnalysisStage;
   percent: number;
@@ -180,6 +182,7 @@ export function createAnalysisJob(params: {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
+  billing?: "free" | "paid";
   currentStage?: AnalysisStage;
   percent?: number;
 }): AnalysisJob {
@@ -200,6 +203,7 @@ export function createAnalysisJob(params: {
     jobId: params.jobId,
     uid: params.uid,
     mode: params.mode,
+    billing: params.billing,
     status: "analyzing",
     currentStage: initialStage,
     percent: initialPercent,
@@ -216,6 +220,7 @@ export async function createAnalysisJobDurable(params: {
   jobId: string;
   uid: string | null;
   mode: "fast" | "full";
+  billing?: "free" | "paid";
   currentStage?: AnalysisStage;
   percent?: number;
 }): Promise<AnalysisJob> {
@@ -433,7 +438,19 @@ export class SseStreamEmitter {
   public emitError(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {
     if (this.isClosed) return;
     failAnalysisJob(this.jobId, error);
+    this.writeError(error);
+  }
 
+  /**
+   * Tells the client that a finished report is being held back, without marking the job failed. The job's report is
+   * already saved as completed, and a retry of the same analysis id must settle that report, not run it again.
+   */
+  public emitWithheld(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {
+    if (this.isClosed) return;
+    this.writeError(error);
+  }
+
+  private writeError(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {
     const payload = {
       type: "error",
       jobId: this.jobId,
