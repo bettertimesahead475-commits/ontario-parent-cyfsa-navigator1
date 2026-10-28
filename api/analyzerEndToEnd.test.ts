@@ -950,3 +950,124 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
   });
 });
 
+
+describe("Forensic Engine on the analyze route (FORENSIC_ENGINE_ENABLED)", () => {
+  const DOC =
+    "[Page 1]\nI, Dana Reyes, make oath and say:\nA caller who wished to remain anonymous reported that the children were left alone.\n[Page 2]\nI have not personally observed the children without supervision.";
+  const stageOf = (body: any) => {
+    const sys = String(body.system ?? "");
+    if (sys.includes("Your job in this stage is extraction only")) return "extraction";
+    if (sys.includes("Your job in this stage is adversarial review")) return "review";
+    if (sys.includes("Your job in this stage is independent forensic investigation")) return "investigation";
+    if (sys.includes("Your job in this stage is to check specific findings against page images")) return "visual";
+    return "legacy";
+  };
+  const FINDING = {
+    id: "F1", title: "Allegation rests on an anonymous caller",
+    statement: "The supervision allegation comes from an anonymous caller; the worker did not observe it.",
+    evidenceClass: "A", significance: "HIGH",
+    supporting: [
+      { documentId: "document", quote: "A caller who wished to remain anonymous reported that the children were left alone." },
+      { documentId: "document", quote: "I have not personally observed the children without supervision." },
+    ],
+  };
+  const FABRICATED = { id: "F2", title: "Invented", statement: "x", evidenceClass: "E", supporting: [{ documentId: "document", quote: "The worker admitted the allegation was false." }] };
+  const respond = (overrides: Partial<Record<string, (body: any) => any>> = {}) => async (body: any) => {
+    const st = stageOf(body);
+    if (overrides[st]) return overrides[st]!(body);
+    if (st === "extraction") return claudeJson({ people: [{ name: "Dana Reyes", roles: ["worker"], quote: "I, Dana Reyes" }] }, { input_tokens: 100, output_tokens: 50 });
+    if (st === "investigation") return claudeJson({ hypotheses: [{ id: "H1", question: "Is the allegation firsthand?", outcome: "UNDERMINED" }], findings: [FINDING, FABRICATED], openQuestions: ["Who was the caller?"] }, { input_tokens: 2000, output_tokens: 800 });
+    if (st === "review") return claudeJson({ reviews: [{ findingId: "F1", verdict: "UPHELD", reasons: ["Quotations accurate."] }, { findingId: "F2", verdict: "REJECTED" }] }, { input_tokens: 1500, output_tokens: 300 });
+    return sectionResponder(CORE)(body);
+  };
+  const rpcNames = () => {
+    const names: string[] = [];
+    const original = dbHolder.db.rpc.bind(dbHolder.db);
+    dbHolder.db.rpc = (name: string, args: any) => {
+      names.push(name);
+      return original(name, args);
+    };
+    return names;
+  };
+
+  beforeEach(() => {
+    process.env.FORENSIC_ENGINE_ENABLED = "true";
+  });
+  const off = () => delete process.env.FORENSIC_ENGINE_ENABLED;
+
+  it("runs Opus investigation and review, grounds findings, renders the existing report shape, and finalizes the credit", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    try {
+      const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "full" });
+      expect(res.status).toBe(200);
+      const byStage = (st: string) => mockCreateMessage.mock.calls.filter((c) => stageOf(c[0]) === st).map((c) => c[0]);
+      expect(byStage("extraction")[0].model).toBe("claude-sonnet-5");
+      expect(byStage("investigation")[0].model).toBe("claude-opus-5");
+      expect(byStage("investigation")[0].thinking).toEqual({ type: "adaptive" });
+      expect(byStage("review")[0].model).toBe("claude-opus-5");
+      expect(byStage("legacy")).toHaveLength(0);
+
+      expect(res.body.forensicEngine.schema).toBe("forensic-engine-v1");
+      expect(res.body.redFlags.map((r: any) => r.id)).toEqual(["F1"]);
+      expect(res.body.redFlags[0]).toMatchObject({ quoteVerified: true, severity: "Worth Raising With Counsel" });
+      expect(res.body.redFlags[0].forensicVerification.verdict).toBe("UPHELD");
+      expect(res.body.forensicEngine.appendix.map((f: any) => f.id)).toEqual(["F2"]);
+      expect(res.body.completenessScore).toBeNull();
+      expect(JSON.stringify(res.body)).not.toMatch(/claude-|totalCost|inputTokens|outputTokens|costUsd|costCad/);
+
+      expect(calls).toContain("paid_reserve_credit");
+      expect(calls).toContain("paid_finalize_credit");
+      expect(calls).not.toContain("paid_release_credit");
+    } finally {
+      off();
+    }
+  });
+
+  it("fails with a retryable 503 and releases the credit when the adversarial review cannot complete", async () => {
+    mockCreateMessage.mockImplementation(respond({ review: () => { throw Object.assign(new Error("overloaded"), { status: 529 }); } }));
+    const calls = rpcNames();
+    try {
+      const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "full" });
+      expect(res.status).toBe(503);
+      expect(res.body.retryable).toBe(true);
+      expect(calls).toContain("paid_reserve_credit");
+      expect(calls).toContain("paid_release_credit");
+      expect(calls).not.toContain("paid_finalize_credit");
+    } finally {
+      off();
+    }
+  });
+
+  it("leaves Quick Review on the existing analyzer even when the flag is on", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    try {
+      const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "fast" });
+      expect(res.status).toBe(200);
+      expect(res.body.forensicEngine).toBeUndefined();
+      expect(mockCreateMessage.mock.calls.every((c) => stageOf(c[0]) === "legacy")).toBe(true);
+    } finally {
+      off();
+    }
+  });
+
+  it("uses the existing Forensic analyzer when the flag is off", async () => {
+    off();
+    mockCreateMessage.mockImplementation(respond());
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "full" });
+    expect(res.status).toBe(200);
+    expect(res.body.forensicEngine).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.some((c) => stageOf(c[0]) === "investigation")).toBe(false);
+  });
+
+  it("still refuses Forensic mode to an unpaid user before any model call", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-parent-uid", email: "parent@example.com" });
+    try {
+      const res = await request(app).post("/api/analyze").set("Authorization", "Bearer free-parent-token").send({ textContent: DOC, mode: "full" });
+      expect(res.status).toBe(403);
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    } finally {
+      off();
+    }
+  });
+});

@@ -40,6 +40,7 @@ import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { reserveFreeScan, settleFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
+import { buildCaseDocuments, isForensicEngineEnabled, runForensicEngineForRoute } from "./services/forensic/integration.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
@@ -337,10 +338,13 @@ async function generateContentWithFallback(
   const messages = params.messages.map((message: any) => ({
     role: (message.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
     content: Array.isArray(message.content)
-      ? message.content.map((part: any) => ({
-          type: "text" as const,
-          text: part.type === "text" ? part.text : JSON.stringify(part),
-        }))
+      ? message.content.map((part: any) =>
+          // Image and document (PDF) blocks go to the model as they are, so it examines the actual pages. Every
+          // other non-text part is still sent as text, as before.
+          part?.type === "image" || part?.type === "document"
+            ? part
+            : { type: "text" as const, text: part.type === "text" ? part.text : JSON.stringify(part) }
+        )
       : String(message.content),
   }));
 
@@ -2429,7 +2433,31 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // Every AI call is clamped to this deadline so retries can never run past the function's
       // 300 s limit (vercel.json maxDuration) - leaving time to persist and deliver the result.
       const aiDeadlineAt = requestStartedAt + 265_000;
-      const run = await runSectionedAnalysis({
+      // Forensic Engine (server flag FORENSIC_ENGINE_ENABLED, off by default): Forensic In-Depth only, after the
+      // entitlement and credit checks above. It returns the same shape as runSectionedAnalysis, so cost, credits,
+      // persistence and settlement below are unchanged. An incomplete investigation or review throws a retryable
+      // error and the existing failure path releases the credit.
+      const useForensicEngine = isForensic && isForensicEngineEnabled();
+      const run = useForensicEngine
+        ? await runForensicEngineForRoute({
+            documents: buildCaseDocuments({ extractedText, pastedText: textContent || "", fileData }),
+            generate: generateContentWithFallback,
+            // Claude Opus does the investigation and the adversarial review; the mode's primary model only extracts.
+            investigatorModel: verificationModel || ANALYZER_MODELS.FORENSIC,
+            extractorModel: primaryModel,
+            deadlineAt: aiDeadlineAt,
+            requestId: analysisRequestId,
+            onProgress: (p) => {
+              const stage =
+                p.stage === "ADVERSARIAL_REVIEW" || p.stage === "VISUAL_VERIFICATION"
+                  ? "verifying_findings"
+                  : p.stage === "GROUNDING"
+                    ? "preparing_report"
+                    : "reviewing_evidence";
+              streamEmitter?.emitStage(stage, p.message, 35 + Math.round(p.fraction * 60));
+            },
+          })
+        : await runSectionedAnalysis({
         mode: modelResolution.mode,
         documentText: targetText,
         primaryModel,

@@ -1,0 +1,113 @@
+import { describe, expect, it } from "vitest";
+import { buildCaseDocuments, guessDocumentKind, isForensicEngineEnabled, runForensicEngineForRoute, toLegacyReport } from "./integration";
+import type { CaseDocument } from "./caseModel";
+import { AnalyzerError } from "../analyzerErrors";
+
+describe("feature flag", () => {
+  it("is off unless FORENSIC_ENGINE_ENABLED is exactly true", () => {
+    expect(isForensicEngineEnabled({})).toBe(false);
+    expect(isForensicEngineEnabled({ FORENSIC_ENGINE_ENABLED: "1" })).toBe(false);
+    expect(isForensicEngineEnabled({ FORENSIC_ENGINE_ENABLED: "true" })).toBe(true);
+  });
+});
+
+describe("buildCaseDocuments", () => {
+  it("keeps the original PDF for visual checks and marks Gemini text as OCR", () => {
+    const [d] = buildCaseDocuments({ extractedText: "Endorsement text", pastedText: "", fileData: { base64: "data:application/pdf;base64,JVBERi0=", mimeType: "application/pdf", name: "e.pdf" } });
+    expect(d).toMatchObject({ id: "upload", extractionMethod: "OCR", kind: "ENDORSEMENT", sourceFile: { mediaType: "application/pdf", data: "JVBERi0=" } });
+  });
+
+  it("treats pasted text as its own document", () => {
+    const docs = buildCaseDocuments({ extractedText: "File text", pastedText: "Pasted affidavit. Sworn before me.", fileData: { base64: "eA==", mimeType: "text/plain", name: "a.txt" } });
+    expect(docs.map((d) => [d.id, d.extractionMethod])).toEqual([["upload", "TEXT_LAYER"], ["pasted", "MANUAL_TRANSCRIPTION"]]);
+    expect(docs[0].sourceFile).toBeUndefined();
+  });
+
+  it("does not attach an original larger than the input limit", () => {
+    const big = "A".repeat(21 * 1024 * 1024);
+    const [d] = buildCaseDocuments({ extractedText: "t", pastedText: "", fileData: { base64: big, mimeType: "application/pdf" } });
+    expect(d.sourceFile).toBeUndefined();
+  });
+
+  it("guesses document kinds from content", () => {
+    expect(guessDocumentKind("x", "I make oath and say")).toBe("AFFIDAVIT");
+    expect(guessDocumentKind("note.pdf", "Case note — home visit")).toBe("CAS_RECORD");
+    expect(guessDocumentKind("x", "nothing")).toBe("OTHER");
+  });
+});
+
+const DOCS: CaseDocument[] = [{ id: "document", title: "Affidavit", kind: "AFFIDAVIT", extractionMethod: "TEXT_LAYER", text: "[Page 1]\nI did not attend the home." }];
+const ok = (text: string) => ({ text, model: "m", durationMs: 1, usage: { input_tokens: 10, output_tokens: 5 } });
+
+describe("runForensicEngineForRoute", () => {
+  it("returns the analyzer's run shape, per-model usage, and thinking only on Opus stages", async () => {
+    const seen: Array<[string, string, boolean | undefined]> = [];
+    const run = await runForensicEngineForRoute({
+      documents: DOCS,
+      investigatorModel: "claude-opus-5",
+      extractorModel: "claude-sonnet-5",
+      deadlineAt: Date.now() + 60_000,
+      requestId: "r",
+      generate: async (p, model) => {
+        seen.push([String(p.stage), model, p.enableThinking]);
+        if (p.stage === "forensic_investigation") return ok(JSON.stringify({ findings: [{ id: "F1", title: "t", statement: "s", evidenceClass: "A", supporting: [{ documentId: "document", quote: "I did not attend the home." }] }] }));
+        if (p.stage === "forensic_adversarial_review") return ok(JSON.stringify({ reviews: [{ findingId: "F1", verdict: "UPHELD" }] }));
+        return ok("{}");
+      },
+    });
+    expect(seen).toEqual([
+      ["forensic_extraction", "claude-sonnet-5", false],
+      ["forensic_investigation", "claude-opus-5", true],
+      ["forensic_adversarial_review", "claude-opus-5", true],
+    ]);
+    expect(run.usageByModel).toEqual({ "claude-sonnet-5": { input_tokens: 10, output_tokens: 5 }, "claude-opus-5": { input_tokens: 20, output_tokens: 10 } });
+    expect(run.report.redFlags).toHaveLength(1);
+  });
+
+  it("throws a retryable error when the investigation fails, so the route releases the credit", async () => {
+    await expect(
+      runForensicEngineForRoute({
+        documents: DOCS, investigatorModel: "o", extractorModel: "s", deadlineAt: Date.now() + 60_000, requestId: "r",
+        generate: async (p) => { if (p.stage === "forensic_investigation") throw new Error("down"); return ok("{}"); },
+      })
+    ).rejects.toMatchObject({ retryable: true, statusCode: 503 });
+  });
+
+  it("delivers a report when only the page check fails, marking findings uncertain", async () => {
+    const docs: CaseDocument[] = [{ ...DOCS[0], sourceFile: { mediaType: "application/pdf", data: "JVBERi0=" } }];
+    const run = await runForensicEngineForRoute({
+      documents: docs, investigatorModel: "o", extractorModel: "s", deadlineAt: Date.now() + 60_000, requestId: "r",
+      generate: async (p) => {
+        if (p.stage === "forensic_investigation") return ok(JSON.stringify({ findings: [{ id: "F1", title: "t", statement: "s", evidenceClass: "A", dependsOnVisual: true, supporting: [{ documentId: "document", quote: "I did not attend the home." }] }] }));
+        if (p.stage === "forensic_adversarial_review") return ok(JSON.stringify({ reviews: [{ findingId: "F1", verdict: "UPHELD" }] }));
+        if (p.stage === "forensic_visual_verification") throw new Error("pdf too large");
+        return ok("{}");
+      },
+    });
+    expect(run.engine.status).toBe("PARTIAL");
+    expect(run.engine.findings[0].uncertainty).toBe("HIGH");
+  });
+});
+
+describe("toLegacyReport", () => {
+  it("never grades a finding CRITICAL, never invents a score, and keeps usage out of the customer copy", async () => {
+    const run = await runForensicEngineForRoute({
+      documents: DOCS, investigatorModel: "o", extractorModel: "s", deadlineAt: Date.now() + 60_000, requestId: "r",
+      generate: async (p) => {
+        if (p.stage === "forensic_investigation") return ok(JSON.stringify({ findings: [{ id: "F1", title: "t", statement: "s", evidenceClass: "E", significance: "HIGH", supporting: [{ documentId: "document", quote: "I did not attend the home." }] }] }));
+        if (p.stage === "forensic_adversarial_review") return ok(JSON.stringify({ reviews: [{ findingId: "F1", verdict: "UPHELD" }] }));
+        return ok("{}");
+      },
+    });
+    const legacy = toLegacyReport(run.engine, DOCS);
+    expect(legacy.redFlags[0].severity).toBe("Worth Raising With Counsel");
+    expect(legacy.completenessScore).toBeNull();
+    expect(legacy.forensicEngine.totals).toBeUndefined();
+    expect(JSON.stringify(legacy.forensicEngine.stages)).not.toMatch(/inputTokens|model/);
+    expect(legacy.redFlags[0].locationInDocument).toBe("Affidavit, page 1");
+  });
+
+  it("is an AnalyzerError subclass on failure", () => {
+    expect(new AnalyzerError("AI_PROVIDER_TEMPORARILY_UNAVAILABLE", 503, "x", true)).toBeInstanceOf(Error);
+  });
+});

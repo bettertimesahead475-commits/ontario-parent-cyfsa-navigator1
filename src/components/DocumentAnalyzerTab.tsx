@@ -77,6 +77,8 @@ import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
+import { ForensicEngineRecord } from "./ForensicEngineRecord";
+import { renderEngineRecordHtml } from "../utils/forensicEngineView";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -714,7 +716,7 @@ export default function DocumentAnalyzerTab() {
             const report = redacting ? redactForExport(file.analysisReport) : file.analysisReport;
             reportText += `>>> ANALYSIS AUDIT REPORT: ${redacting ? "Analysis report" : report.documentTitle || file.name}\n`;
             reportText += `Document Type : ${report.documentType || "N/A"}\n`;
-            reportText += `Completeness / Reliability Score: ${report.completenessScore}/100\n\n`;
+            reportText += `Completeness / Reliability Score: ${typeof report.completenessScore === "number" ? `${report.completenessScore}/100` : "Not scored"}\n\n`;
 
             // Red Flags
             reportText += `  * RED FLAGS IDENTIFIED (${report.redFlags?.length || 0}):\n`;
@@ -2472,6 +2474,8 @@ export default function DocumentAnalyzerTab() {
         evidenceScore >= 50 ? "#d97706" :
         "#dc2626";
 
+      // The Forensic Engine does not compute this score; a missing score is shown as not scored, never as 0.
+      const hasCompletenessScore = typeof reportForExport.completenessScore === "number";
       const completenessScore = Number(reportForExport.completenessScore) || 0;
       const components = evidenceIndex.components || {};
 
@@ -2566,7 +2570,7 @@ export default function DocumentAnalyzerTab() {
             </strong>
 
             <span style="font-size:12px; color:#475569;">
-              ${completenessScore}/100
+              ${hasCompletenessScore ? `${completenessScore}/100` : "Not scored"}
             </span>
 
             <div style="font-size:11px; color:#64748b; margin-top:4px;">
@@ -2751,6 +2755,7 @@ export default function DocumentAnalyzerTab() {
               </ul>
             </div>
           ` : ""}
+          ${renderEngineRecordHtml(reportForExport.forensicEngine, escapeHtml)}
         </div>
       `;
     } else {
@@ -3868,7 +3873,7 @@ export default function DocumentAnalyzerTab() {
                             <span className="text-xs text-slate-500">Credibility Index</span>
                           </div>
                           <div className="w-9 h-9 rounded-full bg-brand-900 flex items-center justify-center font-display font-extrabold text-white text-xs">
-                            {selectedReport.completenessScore}%
+                            {typeof selectedReport.completenessScore === "number" ? `${selectedReport.completenessScore}%` : "—"}
                           </div>
                         </div>
                       </div>
@@ -3994,6 +3999,9 @@ export default function DocumentAnalyzerTab() {
                                                   <span>Handover to Templates</span>
                         </button>
                       </div>
+
+                      {/* Forensic Engine record: shown only for reports produced by the engine. */}
+                      <ForensicEngineRecord record={(selectedReport as any).forensicEngine} />
 
                       {/* Lawyer Detailed Case Brief in bullet-form structure */}
                       {selectedReport.lawyerCaseBrief && selectedReport.lawyerCaseBrief.length > 0 && (
@@ -4963,14 +4971,14 @@ export default function DocumentAnalyzerTab() {
                                           }
                                           strokeWidth="4"
                                           strokeDasharray={2 * Math.PI * 20}
-                                          strokeDashoffset={2 * Math.PI * 20 * (1 - report.completenessScore / 100)}
+                                          strokeDashoffset={2 * Math.PI * 20 * (1 - (Number(report.completenessScore) || 0) / 100)}
                                           strokeLinecap="round"
                                           stroke="currentColor"
                                           fill="transparent"
                                         />
                                       </svg>
                                       <span className="absolute text-xs font-sans font-bold text-gray-800">
-                                        {report.completenessScore}%
+                                        {typeof report.completenessScore === "number" ? `${report.completenessScore}%` : "—"}
                                       </span>
                                     </div>
                                     <span className="text-[10px] font-sans text-slate-500 uppercase font-bold leading-none">
