@@ -8,152 +8,160 @@ to be repeated.
 | Item | Value |
 |---|---|
 | Branch | `feat/forensic-engine` (pushed to `origin`) |
-| Latest code commit described here | `0a02eccdc5f6b24df3b82aa6845a6a6cad03c9a5` (this document is committed on top of it) |
+| Latest code commit described here | `d1efff3cf7b8a1b596e38d1dd6472c9aea6bc975` (this document is committed on top of it) |
 | Draft PR | #111, base `fix/forensic-accuracy` (draft PR #110), which is based on `main` @ `e2bbc76f` (production) |
 | Production | Unchanged. Nothing merged, nothing deployed. |
-| Feature flag | `FORENSIC_ENGINE_ENABLED=true` (server env). **Off by default and not set anywhere.** With it off, the route behaves exactly as before. |
-| Approval needed for | Merging, deploying, setting the flag in any Vercel environment, live (billable) benchmark runs. |
+| Feature flag | `FORENSIC_ENGINE_ENABLED=true` (server env). **Off by default and not set in any environment.** With it off, Forensic In-Depth uses the existing analyzer exactly as before, and the multi-document picker is hidden. |
+| Owner direction followed | Resumable, stage-by-stage execution instead of raising the Vercel timeout. |
+| Approval needed for | Merging, deploying, setting the flag anywhere, applying any migration, billable benchmark runs (needs an explicit spending cap). |
 
-Merge order: PR #110 first, then #111. This branch contains #110's statute corrections.
+Merge order: PR #110 first, then #111.
 
-Usage allowance: this environment exposes no remaining-usage or reset information. No live API calls were made, so
-there are no measured API costs.
+Usage allowance: this environment exposes no remaining-usage or reset information. No live API calls were made.
+There are no measured API costs.
 
-## Test results at `0a02eccd`
+## Test results at `d1efff3c`
 
 - `npx tsc --noEmit`: clean.
-- `npx vitest run`: 191 files passed, 3,654 tests passed, 0 failed, 433 skipped.
-  Engine-specific: `api/services/forensic` 55 tests, `src/components/ForensicEngineRecord.test.tsx` 4,
-  `api/analyzerEndToEnd.test.ts` 8 engine route tests (55 in the file).
+- `npx vitest run`: 198 files passed, 3,712 tests passed, 0 failed, 433 skipped.
 - `npm run build`: exit 0.
-- **Live benchmark: NOT RUN** (no `ANTHROPIC_API_KEY` here; billable runs need owner approval). No accuracy,
+- Engine-specific: 107 tests in `api/services/forensic`, `src/components/ForensicEngineRecord.test.tsx`,
+  `src/components/DocumentAnalyzerTab.engineExport.test.tsx`, `src/components/AdditionalDocumentsPicker.test.tsx`,
+  `src/utils/continueForensicJob.test.tsx`; plus 17 engine route tests in `api/analyzerEndToEnd.test.ts` (64 in the file).
+- All provider responses are mocked. **Live benchmark: NOT RUN** (no approved spending cap). No accuracy,
   false-positive, cost or latency figures exist. Do not quote any.
 
-## Completed
+## Resumable execution (this session's main work)
 
-### Engine (`api/services/forensic/`)
-- `caseModel.ts` — case-level evidence model. Every `EvidenceRef` (document, verbatim quote, page, code-point span,
-  match status, extraction method, OCR confidence) is located by code, never taken from model output.
-- `caseAnalysis.ts` — deterministic chronology; events dated after the document's own date (sworn/issued/endorsed);
-  same-date and same-asserter conflict leads. Leads go to Opus as hints to verify; they are never findings.
-- `documentIsolation.ts` — random-nonce boundaries per call; instruction-like text detected and reported, never followed.
-- `grounding.ts` — nine deterministic rules (see file header); verbatim bundled statute text attached to verified
-  citations (legal-source retrieval by lookup, not model judgement).
-- `prompts.ts` — EXTRACTION (auxiliary), INVESTIGATION (Opus, open hypotheses, no quota/cap), SYNTHESIS (Opus,
-  cross-document), REVIEW (Opus, falsification, checks legal characterisation against supplied statute text),
-  VISUAL (page check; no tampering claims).
-- `pipeline.ts` — extraction → case model → investigation (single pass, or per-document + synthesis above
-  `singlePassMaxChars`) → adversarial review → visual verification (page images, or the original PDF as a
-  `document` block, or the original image) → grounding + duplicate merge. Call budget, deadline, per-stage caps,
-  progress callbacks, PARTIAL status with plain-language `incompleteness`.
-- `integration.ts` — flag; `buildCaseDocuments` from the existing upload extraction (keeps the original PDF/image,
-  ≤ 20 MB base64, for visual checks); `parseAdditionalDocuments` (≤ 9 `{title,text}`, else 400);
-  `ROUTE_LIMITS` for the 300 s function; `toLegacyReport` (existing report shape + `forensicEngine` record, usage and
-  model ids stripped); `runForensicEngineForRoute` (returns `runSectionedAnalysis`'s shape; throws retryable 503 if
-  investigation, synthesis or review failed).
-- `evaluation.ts` + `eval/forensic/cases/*.json` (7 author-annotated synthetic cases) + `scripts/forensicBenchmark.ts`.
-- `shared/bundledLegalSources.ts` — bundled CYFSA text pinned by SHA-256.
+### Design
+- `api/services/forensic/pipeline.ts` — the engine is a sequence of serializable steps:
+  `extract:<docId>` × n → `build` → `investigate` (or `investigate:<docId>` × n → `synthesize`) → `review` →
+  `visual` → `ground`. `EngineState` is plain JSON; `runEngineStep(state, step, deps)` returns a new state.
+  Original files and page images are kept out of the state (`EngineMedia`, stored once). In resumable mode a
+  transient failure returns `RETRY_LATER` (counted, up to `MAX_STEP_ATTEMPTS` = 3) and a deadline stop is an
+  interruption that is never counted. `runForensicInvestigation` still runs everything in one go.
+- `api/services/forensic/checkpointStore.ts` — one primitive: create-if-absent (`putIfAbsent`). Supabase Storage
+  gives it atomically (`upload` with `upsert: false` → 409 on conflict). Private bucket `forensic_engine_jobs`
+  (refuses to write to a public bucket). Layout per job: `meta.json`, `media.json`, `state/<seq>.json`,
+  `lease/<step>/<attempt>.json` (+ `.released`), `settled.json`. Versioned state means a stale worker can never
+  overwrite newer state; attempt-numbered leases mean only one worker runs a step. Storage errors throw (no silent
+  memory fallback). `purgeExpired` deletes whole jobs after retention.
+- `api/services/forensic/resumableRunner.ts` — `advanceEngine` runs steps from the latest checkpoint under a lease;
+  starts a model step only with `minModelStepMs` left; returns `COMPLETE | PENDING | BUSY | MISSING`.
+- `api/services/forensic/engineJobs.ts` — route operations: `startEngineJob`, `advanceEngineJob` (adaptive thinking
+  on Opus stages, corpus sources), `isFatal`, `engineRunShape`, `settleDelivered` (finalize; if the reservation
+  lapsed, reserve again under the same id, then finalize; 402 withholds if the allowance is gone),
+  `settleFailed` (release once), `RESUMABLE_LIMITS` (investigation 24k, review 12k, synthesis 16k output tokens;
+  200 s step timeout), `STEP_MIN_MS` 200 s, `LEASE_TTL_MS` 260 s, `ENGINE_JOB_RETENTION_MS` 24 h.
 
-### Route and UI integration
-- `api/_server.ts`:
-  - `generateContentWithFallback` now passes `image` and `document` message parts through unchanged (previously
-    every non-text part was JSON-stringified). Text-only callers are unaffected.
-  - In `/api/analyze`, one guarded branch: `isForensic && isForensicEngineEnabled()` → engine; else the existing
-    `runSectionedAnalysis`. It runs after authentication, entitlement (`resolveServerAuthoritativeModel`) and credit
-    reservation, and returns the same shape, so cost logging, `recordPaidUse`, `finalizeAnalysisCredit`,
-    `completeAnalysisJobDurable` and free-scan settlement are unchanged.
-  - Model routing: Claude Opus (`verificationModel || ANALYZER_MODELS.FORENSIC`, i.e. `claude-opus-5`) investigates
-    and reviews with adaptive thinking; the mode's primary model (`claude-sonnet-5`) only extracts. No model or
-    pricing change.
-- `src/components/ForensicEngineRecord.tsx` + `src/utils/forensicEngineView.ts` — screen section and PDF-export HTML
-  for the engine record: status, what the analysis did not do, injection warnings, findings with evidence class,
-  review verdict, uncertainty, page check, quotations with document and page, contrary text, alternatives, missing
-  information, citations with bundled statute text, grounding notes, set-aside findings, hypotheses.
-- `src/components/DocumentAnalyzerTab.tsx` — renders the record on screen and in the export; a missing
-  `completenessScore` shows as "Not scored"/"—" instead of 0 or "undefined" (the engine does not invent a score).
+### Route behaviour (`api/_server.ts`)
+- `POST /api/analyze`, Forensic In-Depth with the flag on: after auth, entitlement and the existing credit
+  reservation, starts the engine job (meta stores uid, billing, session, tier, reservation id, billing cycle) and
+  advances it within the 265 s AI deadline. Complete → the existing delivery path (finalize, persist, settle marker).
+  Not complete → job marked `resumable`, response `202 ANALYSIS_CONTINUING` (or a streamed `continue` event); the
+  credit stays reserved. Investigation/synthesis/review failed → settle marker RELEASED, the existing catch
+  releases the credit. A resubmission of the same id returns 202 (never restarts); an id whose job failed is never
+  run again (409, non-retryable).
+- `POST /api/analyze/job/:jobId/continue`: Firebase identity must own the job (else 404); paid jobs require the same
+  paid session, bound to the identity (else 403); admin jobs require the site owner. Responses: 200 report (charged
+  exactly once; repeat continues return the saved report without charging or running anything), 202 progress saved,
+  409 another call holds the step, 410 failed and released once, 402 allowance gone at delivery (report withheld,
+  stays saved). Any error inside a call releases nothing; the next call resumes from the last checkpoint. An
+  abandoned job's reservation lapses after 15 minutes (existing reconciliation), so nobody pays for unfinished work.
+- `GET /api/analyze/capabilities` → `{ forensicEngine, maxAdditionalDocuments: 9 }`.
+- `GET /api/admin/forensic-engine/purge` (CRON_SECRET or ADMIN_SECRET, constant-time): deletes engine jobs older
+  than 24 h. Scheduled hourly in `vercel.json` (`17 * * * *`) — this takes effect only on merge and deploy.
+- `generateContentWithFallback` passes `image` and `document` parts through; text callers unchanged.
 
-### Verified by tests (mocked provider, production-like credit DB)
-- Opus routing and adaptive thinking on investigation/review; Sonnet extraction; no legacy section calls.
-- Credit: `paid_reserve_credit` + `paid_finalize_credit` on success; `paid_release_credit` (no finalize) when review fails.
-- Retry of a completed engine job returns the saved report: no new model calls, no second reservation.
-- Quick Review unaffected with the flag on; Forensic uses the existing analyzer with the flag off; unpaid users still get
-  403 before any model call; malformed `additionalDocuments` → 400, nothing charged.
-- Multi-document requests reach Opus together; case model lists every document.
-- Grounding rules, isolation, chronology anomalies, conflict leads, synthesis, PDF document blocks, statute text to
-  the reviewer, report adapter, view escaping, redacted export omitting the engine record.
+### Client
+- `src/utils/api.ts`: `continueForensicJob` (loop until report; waits on 202/409/5xx; stops on 410/403/401/404
+  with the server's code), `isContinuation`, SSE `continue` event, and `pollAnalysisJob` continues a resumable job
+  instead of polling one nothing advances.
+- `DocumentAnalyzerTab.tsx`: continues after a 202 or `continue` event; multi-document picker
+  (`AdditionalDocumentsPicker.tsx`, `src/utils/caseDocumentsSelection.ts`) in Forensic mode when the engine is on,
+  offering only case files whose text has been read (never raw upload data), up to 9.
 
-## Incomplete / not built
+### Verified by tests (mocked provider, production-like credit DB, in-memory object store)
+- Interrupted after every step and resumed to the same result as a single run, each model step run once.
+- Credit reserved once and finalized once across invocations; a resubmission continues; a repeat continue on a
+  delivered job neither charges nor runs anything.
+- Two simultaneous continue calls: one runs the step, the other gets 409 and makes no model call.
+- Expired lease taken over; stale worker's result discarded; storage outage before and after the model call
+  (the lost step re-runs; the job is still delivered once).
+- Review failing on every attempt: retried 3 times across invocations, then 410 with the credit released once;
+  the id is never re-run.
+- Reservation lapsed mid-run: re-reserved under the same id at delivery and charged once.
+- Access: another account → 404; no paid session → 403; signed out → 401; no model call in any of them.
+- Streamed start ends with a `continue` event, not an error.
 
-1. **Live evaluation.** Benchmark never run against real models. No measured accuracy, false-positive or missed-issue
-   rates, cost or latency.
-2. **Independent review** of benchmark gold and sample reports by an Ontario child protection lawyer.
-3. **Execution time — OWNER DECISION NEEDED.** The route runs inside a 300 s function with a 265 s AI deadline. Extraction + Opus
-   investigation (12k output cap) + Opus review (6k) + visual may not fit for long documents; when the deadline is hit
-   the run throws a retryable 503 and releases the credit, so it fails safe but may fail often on large files.
-   Two options, both needing owner approval: (a) raise `functions["api/index.ts"].maxDuration` in `vercel.json`
-   (hosting cost and plan limits apply; production value was never verified), or (b) build resumable execution:
-   run one engine stage per invocation, persist the intermediate state in the job record, and continue on the
-   client's next poll, reserving the credit once and finalizing or releasing it at the end. (b) touches the job
-   state machine and credit flow and needs its own design review. Neither is built.
-4. **UI for multiple documents.** The server accepts `additionalDocuments`; the upload screen still sends one file.
-5. **Page images.** Not rendered. Visual checks use the original PDF/image (`document`/`image` blocks). PDFs over
-   ~20 MB base64 or over the provider's page limit get no visual check (findings stay HIGH uncertainty).
-6. **OCR confidence.** Extraction (`api/services/pageSources.ts` `extractPages`) reports `confidence: null`, so rule 7
-   never fires on live uploads. Page markers are fine: extraction emits `[Page N]` per PDF page, and the per-page
-   method (text layer vs OCR) is recorded in provenance (`pageExtractionMethods`, read from the extraction cache
-   without re-running OCR). PDFs are limited to 20 pages by the existing extractor.
-7. **Live progress sections.** The engine reports stage progress over SSE but does not stream partial findings.
-8. **Corpus integration.** Statute retrieval uses the 10 bundled verified provisions only; the Stage 6 corpus
-   (`api/services/legalCorpus*.ts`, `legalAuthority.ts`) is not connected.
-9. **Comparable systems** not benchmarked.
+## Other gaps closed this session
 
-## Architecture decisions
+1. **Multi-document upload interface** — see Client above. The server already accepted `additionalDocuments`.
+2. **OCR confidence and provenance** — `api/services/pageSources.ts`: OCR functions may return
+   `{ text, confidence }`; `ocrSingleSourceWithGemini` reports `exp(candidates[0].avgLogprobs)` per OCR page (null if
+   absent; out-of-range values dropped). It is the model's token certainty, **not verified accuracy**. Text-layer
+   pages have null confidence (not applicable). `pageProvenance` (in `integration.ts`) reads per-page method and
+   confidence from the extraction cache without re-running OCR; grounding rule 7 (confidence < 0.8 raises
+   uncertainty) now applies to live uploads. The 0.8 threshold is a heuristic, not calibrated.
+3. **Legal corpus** — `api/services/forensic/legalCorpusAdapter.ts` implements the Stage 6 `LegalCorpusRepository`:
+   `BundledCyfsaRepository` (bundled, SHA-pinned text as `COMMITTED_INSPECTION` — checked word-for-word by test,
+   never person-verified, so Stage 6 always reports `requiresResearch`) and `SupabaseLegalCorpusRepository` for the
+   pending `navigator_legal_provision(_versions)` tables (used only when `FORENSIC_CORPUS_CYFSA_SOURCE_ID` is set;
+   missing tables fall back to the bundled text). The corpus tables do **not** exist in production (checked
+   read-only). Grounding looks up each single-section CYFSA citation for the case date (`caseDateFor`: latest date a
+   document states for itself, else latest court-record date; never filename dates) and notes a case date before
+   the held consolidation (from 2026-07-01).
+4. **End-to-end interrupted/resumed tests** — see "Verified by tests" above.
+5. **Partial-failure report and exports** — the summary log states the engine status and every gap; the print export
+   shows the full record; redacted copies keep only the status (complete/partial and how many parts did not
+   complete), which identifies no one. Tested by driving the real engine to a PARTIAL report.
+6. **Retention** — engine jobs, including documents and original files, are deleted after 24 h (see purge route).
 
-1. Separate pipeline, existing route contract. The engine returns `runSectionedAnalysis`'s shape so no billing,
-   persistence or settlement code changed.
-2. Opus investigates (open-ended hypotheses over the whole record); an auxiliary model only indexes. Deterministic
-   leads are hints, explicitly not findings, so no hard-coded checklist constrains Opus.
-3. Adversarial review is a separate call with its own prompt and the verbatim statute text.
-4. Safety in code: quotations re-located; unsupported findings to the appendix; E requires verbatim support and an
-   upheld review; absence never proves breach; visual findings uncertain until the page confirms.
-5. Fail closed on what the product promises: no completed investigation or review → no report, credit released.
-   Missing visual checks or extraction degrade to PARTIAL with explicit statements, not failure.
-6. Customer copy carries no tokens, costs or model ids (existing test regex enforced on the engine route).
-7. Redaction: the existing recursive redactor removes the engine record's schema marker, so redacted exports omit
-   the record entirely rather than showing half-redacted text.
+## Known issues and limitations
 
-## Security and privacy notes
-
-- Uploaded documents are wrapped in nonce boundaries and treated as evidence; instruction-like text is reported.
-  Pattern-based detection is not complete; the structural defences are the boundary and code-side grounding.
-- The original PDF/image is sent to Anthropic for the visual stage (as the extracted text already is). It is not
-  stored in the report or job record.
-- `additionalDocuments` is validated (count, type, size) and only read on the engine path.
-- The engine record in the saved report contains quotations from the documents, like the existing report.
-- No new endpoints, no new secrets, no database schema changes.
+- **Not run against real models.** Prompt quality, Opus latency per step, and real cost are unmeasured.
+- **Step timing:** a model step starts only with 200 s left in an invocation, so most model steps get their own
+  invocation (5–6 invocations for a single document). Whether 200 s suffices for a 24k-token Opus investigation is
+  unmeasured; a step that times out is retried up to 3 times and then recorded as failed (release).
+- **Retention of existing analysis jobs:** the pre-existing `analysis_jobs` bucket's 24 h retention only clears
+  memory; stored job records are never deleted. Pre-existing, not changed here; flag for the owner.
+- **Supabase Storage atomicity** is relied on for `upsert: false` (documented behaviour, unique object name). Not
+  tested against a live project here.
+- **Lease timing:** `LEASE_TTL_MS` (260 s) must exceed the longest step; a function killed mid-step holds the lease
+  until it expires, delaying (not breaking) the next continue.
+- **Provider cost on lost saves:** if a step's result cannot be saved after the model answered, that step re-runs
+  (provider cost twice, customer charged once).
+- **Corpus:** only the 10 bundled provisions; none person-verified. Stage 6 tables pending approval.
+- **OCR confidence** is model certainty, not accuracy; Gemini may omit `avgLogprobs` for some models.
+- **Multi-document picker** depends on other files' text having been extracted (e.g. by a Quick Review); there is no
+  in-picker extraction. The analyzer-tab wiring of the picker payload is covered by unit tests of the payload
+  builder, not by a full component test of the click-to-analyze flow.
+- Benchmark gold is author-annotated, not reviewed by counsel. Vercel previews show "Account is blocked"
+  (account-level, not code).
 
 ## Exact next steps for Google Antigravity
 
-1. `git fetch origin && git checkout feat/forensic-engine` (head is this document's commit on top of `0a02eccd`).
+1. `git fetch origin && git checkout feat/forensic-engine` (head is this document's commit on top of `d1efff3c`).
 2. `npm ci && npx tsc --noEmit && npx vitest run && npm run build` — expect all green as above.
-3. With owner approval and a **non-production** key: `ANTHROPIC_API_KEY=... npx tsx scripts/forensicBenchmark.ts --cases=affidavit-hearsay`,
-   then the full set. Commit `eval/forensic/results/*.json`. Record cost and latency per case honestly.
-4. Get the owner's decision on execution time (Incomplete item 3). Then measure route timing on a preview with the flag on (owner approval to set `FORENSIC_ENGINE_ENABLED=true` on a
-   **preview** environment only; never production) using a 2-page and a 30-page document. If runs exceed ~240 s,
-   implement background execution (step 5) before anything else.
-5. Background execution: create the job as now, run `runForensicEngineForRoute` in a worker that writes the result
-   with `completeAnalysisJobDurable`, and let the client poll the existing job endpoint. Reuse credit reservation
-   and release exactly as the route does.
-6. Multi-document upload UI in `DocumentAnalyzerTab.tsx`: send extra files' extracted text as `additionalDocuments`.
-7. Report OCR confidence from the extraction step (`PageSource.confidence`) so low-confidence pages are flagged.
-8. Connect Stage 6 corpus retrieval for effective-date-aware statute text; keep the verbatim test for every entry.
-9. Lawyer review of benchmark gold; add the real two-page endorsement fixture (redacted) when the owner supplies it.
-10. Only then prepare a release recommendation, with measured false-positive and missed-issue rates.
+3. Owner approval and a spending cap, then a **non-production** key:
+   `ANTHROPIC_API_KEY=... npx tsx scripts/forensicBenchmark.ts --cases=affidavit-hearsay`, then all cases. Note that
+   the benchmark runner uses the single-invocation path (`runForensicInvestigation`, offline limits); record cost and
+   latency per stage from the results file.
+4. With owner approval, set `FORENSIC_ENGINE_ENABLED=true` on a **preview** environment only (never production) and
+   run a 2-page and a 20-page PDF through the UI: count invocations, measure each step's duration, confirm one
+   reservation and one finalize in the credit tables, confirm `forensic_engine_jobs` is private and purged.
+5. Tune `RESUMABLE_LIMITS` / `STEP_MIN_MS` from step 4's measurements.
+6. Decide (owner) on deleting stored `analysis_jobs` records after retention (pre-existing gap).
+7. Apply the Stage 6 corpus migrations (owner approval), load person-verified CYFSA versions, set
+   `FORENSIC_CORPUS_CYFSA_SOURCE_ID`; citations then resolve as VERIFIED for the case date.
+8. Lawyer review of benchmark gold; add the real two-page endorsement (redacted) as a case when supplied.
+9. Only then a release recommendation, with measured false-positive and missed-issue rates.
 
 ## Do not
 
-- Merge, deploy, or set `FORENSIC_ENGINE_ENABLED` in production without explicit owner approval.
+- Merge, deploy, apply migrations, or set `FORENSIC_ENGINE_ENABLED` in production without explicit owner approval.
+- Run billable benchmarks without an approved spending cap.
 - Claim the engine is elite, production-ready, or better than competitors on the basis of these tests.
-- Mark any benchmark case as independently reviewed unless it has been.
+- Mark benchmark cases or corpus versions as verified unless a person has verified them.
 - Change Quick Review, authentication, payments, pricing, existing model routing, or the production Vercel project
   `cyfsanavigator` (prj_wbNOXbsCWbj7vyu7JjxlXwt4WQpR).
