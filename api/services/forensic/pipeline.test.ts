@@ -109,7 +109,7 @@ describe("runForensicInvestigation", () => {
     const { generate } = scripted({ forensic_extraction: () => EXTRACTION, forensic_investigation: () => inv, forensic_adversarial_review: () => JSON.stringify({ reviews: [{ findingId: "F1", verdict: "UPHELD" }] }) });
     const r = await runForensicInvestigation({ documents: DOCS, generate, models: MODELS, deadlineAt: Date.now() + 60_000, requestId: "t5" });
     expect(r.findings[0].uncertainty).toBe("HIGH");
-    expect(r.incompleteness.join(" ")).toMatch(/no page images were supplied/);
+    expect(r.incompleteness.join(" ")).toMatch(/no page image or original file was available/);
   });
 
   it("sends page images to the visual stage when they exist", async () => {
@@ -137,5 +137,109 @@ describe("runForensicInvestigation", () => {
     const r = await runForensicInvestigation({ documents: docs, generate, models: MODELS, deadlineAt: Date.now() + 60_000, requestId: "t7" });
     expect(r.injectionWarnings.length).toBeGreaterThan(0);
     expect(r.findings.length).toBe(1);
+  });
+});
+
+describe("advanced investigation", () => {
+  const AFF: CaseDocument = {
+    id: "aff",
+    title: "Affidavit",
+    kind: "AFFIDAVIT",
+    extractionMethod: "TEXT_LAYER",
+    text: "[Page 1]\nOn February 14, 2026, I spoke with the teacher.\n[Page 2]\nSworn before me on February 10, 2026.",
+  };
+  const NOTE: CaseDocument = {
+    id: "note",
+    title: "Case note",
+    kind: "CAS_RECORD",
+    extractionMethod: "TEXT_LAYER",
+    text: "[Page 1]\nFebruary 14, 2026: teacher not reached by phone.",
+  };
+  const extractionFor = (p: any) => {
+    const isNote = String(p.messages[0].content).includes('id="note"');
+    return JSON.stringify(
+      isNote
+        ? { events: [{ description: "Teacher not reached", isoDate: "2026-02-14", dateSource: "DOCUMENT_BODY", quote: "February 14, 2026: teacher not reached by phone." }] }
+        : {
+            documentDate: { kind: "SWORN", isoDate: "2026-02-10", dateText: "February 10, 2026", quote: "Sworn before me on February 10, 2026." },
+            events: [{ description: "Spoke with teacher", isoDate: "2026-02-14", dateSource: "DOCUMENT_BODY", quote: "On February 14, 2026, I spoke with the teacher." }],
+          }
+    );
+  };
+
+  it("builds a chronology, flags an event dated after the document's own date, and passes leads to Opus", async () => {
+    let investigationInput = "";
+    const { generate } = scripted({
+      forensic_extraction: extractionFor,
+      forensic_investigation: (p) => {
+        investigationInput = String(p.messages[0].content);
+        return JSON.stringify({ findings: [] });
+      },
+    });
+    const r = await runForensicInvestigation({ documents: [AFF, NOTE], generate, models: MODELS, deadlineAt: Date.now() + 60_000, requestId: "a1" });
+    expect(r.caseModel.documentDates[0]).toMatchObject({ documentId: "aff", kind: "SWORN", date: "2026-02-10" });
+    expect(r.caseModel.chronologyAnomalies.map((a) => a.kind)).toEqual(["EVENT_AFTER_DOCUMENT_DATE"]);
+    expect(r.caseModel.conflictLeads.map((l) => l.kind)).toContain("SAME_DATE_DIFFERENT_DOCUMENTS");
+    expect(investigationInput).toContain("EVENT_AFTER_DOCUMENT_DATE");
+    expect(investigationInput).toContain("SAME_DATE_DIFFERENT_DOCUMENTS");
+  });
+
+  it("investigates each document and then synthesizes across the record when the record is large", async () => {
+    const stages: string[] = [];
+    const { generate } = scripted({
+      forensic_extraction: extractionFor,
+      forensic_investigation: (p) => {
+        stages.push("investigation");
+        const isNote = String(p.messages[0].content).includes('id="note"');
+        return JSON.stringify({ findings: [{ id: "F1", title: isNote ? "Note" : "Aff", statement: "doc-level", evidenceClass: "A", supporting: [{ documentId: isNote ? "note" : "aff", quote: isNote ? "teacher not reached by phone" : "I spoke with the teacher" }] }] });
+      },
+      forensic_synthesis: () => {
+        stages.push("synthesis");
+        return JSON.stringify({
+          findings: [{
+            id: "X1", title: "Accounts of February 14 conflict", statement: "The affidavit says the teacher was spoken to; the note says the teacher was not reached.",
+            evidenceClass: "A", supporting: [{ documentId: "aff", quote: "I spoke with the teacher" }, { documentId: "note", quote: "teacher not reached by phone" }],
+          }],
+        });
+      },
+      forensic_adversarial_review: () => JSON.stringify({ reviews: [{ findingId: "case:X1", verdict: "UPHELD" }] }),
+    });
+    const r = await runForensicInvestigation({ documents: [AFF, NOTE], generate, models: MODELS, limits: { singlePassMaxChars: 10 }, deadlineAt: Date.now() + 60_000, requestId: "a2" });
+    expect(stages).toEqual(["investigation", "investigation", "synthesis"]);
+    const cross = r.findings.find((f) => f.id === "case:X1")!;
+    expect(new Set(cross.supporting.map((s) => s.documentId))).toEqual(new Set(["aff", "note"]));
+    expect(r.findings.map((f) => f.id)).toEqual(expect.arrayContaining(["aff:F1", "note:F1", "case:X1"]));
+  });
+
+  it("sends the original PDF as a document block when no page image exists", async () => {
+    const doc: CaseDocument = { ...AFF, sourceFile: { mediaType: "application/pdf", data: "JVBERi0=" } };
+    let blocks: any[] = [];
+    const { generate } = scripted({
+      forensic_extraction: () => "{}",
+      forensic_investigation: () => JSON.stringify({ findings: [{ id: "F1", title: "Box", statement: "Box marked.", evidenceClass: "A", dependsOnVisual: true, supporting: [{ documentId: "aff", quote: "I spoke with the teacher" }] }] }),
+      forensic_adversarial_review: () => JSON.stringify({ reviews: [{ findingId: "F1", verdict: "UPHELD" }] }),
+      forensic_visual_verification: (p) => {
+        blocks = p.messages[0].content;
+        return JSON.stringify({ results: [{ findingId: "F1", verdict: "CONFIRMED", observation: "Marked." }] });
+      },
+    });
+    const r = await runForensicInvestigation({ documents: [doc], generate, models: MODELS, deadlineAt: Date.now() + 60_000, requestId: "a3" });
+    expect(blocks.some((b) => b.type === "document" && b.source.media_type === "application/pdf")).toBe(true);
+    expect(r.findings[0].visualVerification).toBe("CONFIRMED");
+  });
+
+  it("gives the reviewer the verbatim statute text for a verified provision a finding cites", async () => {
+    let reviewInput = "";
+    const { generate } = scripted({
+      forensic_extraction: () => "{}",
+      forensic_investigation: () => JSON.stringify({ findings: [{ id: "F1", title: "Adjournment", statement: "s", evidenceClass: "D", supporting: [{ documentId: "aff", quote: "I spoke with the teacher" }], legalIssues: [{ citation: "CYFSA s. 94(1)", nature: "LEGAL_RULE" }] }] }),
+      forensic_adversarial_review: (p) => {
+        reviewInput = String(p.messages[0].content);
+        return JSON.stringify({ reviews: [{ findingId: "F1", verdict: "UPHELD" }] });
+      },
+    });
+    const r = await runForensicInvestigation({ documents: [AFF], generate, models: MODELS, deadlineAt: Date.now() + 60_000, requestId: "a4" });
+    expect(reviewInput).toContain("The court shall not adjourn a hearing for more than 30 days");
+    expect(r.findings[0].legalIssues[0].statuteText).toContain("30 days");
   });
 });

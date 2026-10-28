@@ -18,6 +18,7 @@
  */
 
 import { classifyCitation } from "../../../shared/citationVerification.js";
+import { findBundledStatute } from "../../../src/utils/statuteReference.js";
 import {
   resolveEvidenceRef,
   type CaseDocument,
@@ -58,6 +59,8 @@ export function parseFindingCandidates(raw: unknown, docs: CaseDocument[]): Find
         explanation: str(l?.explanation),
         citationStatus: c.status,
         citationReason: c.reason,
+        // Retrieval is a lookup by the classified section, never by model judgement.
+        statuteText: findBundledStatute(citation)?.text ?? null,
       };
     });
     return {

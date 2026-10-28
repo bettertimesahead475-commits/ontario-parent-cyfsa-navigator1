@@ -35,6 +35,8 @@ contains. Do not evaluate them.
 
 Return JSON only:
 {
+  "documentDate": {"kind": "SWORN|ISSUED|ENDORSED|WRITTEN|UNKNOWN", "dateText": "as written", "isoDate": "YYYY-MM-DD or empty",
+                   "quote": "verbatim text stating the document's own date, or empty if none"},
   "people": [{"name": "", "roles": [""], "quote": "verbatim text naming the person"}],
   "events": [{"description": "", "dateText": "date as written, or empty", "isoDate": "YYYY-MM-DD or empty",
               "dateSource": "COURT_RECORD|DOCUMENT_BODY|FILENAME|METADATA|UNKNOWN", "participants": [""], "quote": ""}],
@@ -46,8 +48,11 @@ export const INVESTIGATION_SYSTEM = `${COMMON}
 
 Your job in this stage is independent forensic investigation of the whole record. You are the lead investigator.
 Do not limit yourself to familiar categories of problem. Work like this:
-1. Read every document. Use the case model (people, events, claims extracted earlier) as an index, but check it
-   against the documents; it can be wrong or incomplete.
+1. Read every document. Use the case model (people, events, claims, chronology extracted earlier) as an index, but
+   check it against the documents; it can be wrong or incomplete. The LEADS list is produced by simple code (two
+   documents describing the same date, an event dated after the document's own date, one person speaking in several
+   documents). A lead is not a finding: check each against the documents, and report it only if the record bears it
+   out. Most of what matters will not be in the leads.
 2. Form your own investigative hypotheses: questions whose answers would matter to a parent or their lawyer. Examples
    of the kind of question, not a checklist: Do two accounts of the same event conflict? Is a serious allegation
    attributed to anyone with firsthand knowledge? Does the chronology hold together? Is a legally required step
@@ -90,6 +95,10 @@ wrong. For each finding, try to falsify it from the documents:
 - Is the evidence class right? Class E (confirmed noncompliance) must be established by the document itself.
 - Is the legal characterisation supported, or is a rule overstated or invented?
 
+Where a finding cites a provision and the STATUTE TEXT for it is supplied, check the legal characterisation against
+that text and qualify or reject an overstated one. Where no text is supplied, the citation is unverified: do not
+uphold a finding that depends on it as confirmed noncompliance.
+
 Verdicts: UPHELD (stands as written), QUALIFIED (stands only with narrower wording; give revisedStatement), REJECTED
 (not supported by the record). Reject freely; a rejected finding is a success of this stage, not a failure.
 
@@ -108,3 +117,14 @@ examination of the original.
 
 Return JSON only:
 {"results": [{"findingId": "F1", "verdict": "CONFIRMED|CONTRADICTED|INCONCLUSIVE", "observation": ""}]}`;
+
+export const SYNTHESIS_SYSTEM = `${COMMON}
+
+Your job in this stage is case-level synthesis. The record was too large to read in one pass, so each document was
+investigated separately. You receive the case model, the leads, the per-document findings, and the documents
+(possibly truncated). Find what only a whole-record view shows: accounts that conflict across documents, claims one
+document corroborates and another undermines, a chronology that does not hold together, relief sought that the
+record as a whole does not support, and gaps that matter across the file. Do not restate per-document findings;
+add only cross-document findings, each quoting every document it relies on.
+
+Return JSON only, in the same "hypotheses" / "findings" / "openQuestions" format as the investigation stage.`;

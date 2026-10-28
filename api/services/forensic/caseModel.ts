@@ -10,6 +10,7 @@
  */
 
 import { locateQuote, isVerbatimQuoteStatus, type QuoteMatchStatus } from "../../../shared/quoteVerification.js";
+import type { ChronologyAnomaly, ChronologyEntry, ConflictLead, DocumentDate } from "./caseAnalysis.js";
 
 export type DocumentKind =
   | "AFFIDAVIT"
@@ -35,6 +36,11 @@ export interface CaseDocument {
   pageImages?: Record<number, { mediaType: "image/png" | "image/jpeg"; data: string }>;
   /** Per-page OCR confidence 0..1 where the extractor reports one. */
   ocrConfidence?: Record<number, number>;
+  /**
+   * The original upload (PDF or image), base64. Sent to the visual stage as a document or image block, so the model
+   * examines the actual pages rather than the extracted text. Never placed in the report.
+   */
+  sourceFile?: { mediaType: "application/pdf" | "image/png" | "image/jpeg"; data: string };
 }
 
 export interface EvidenceRef {
@@ -129,6 +135,12 @@ export interface CaseModel {
   events: CaseEvent[];
   claims: CaseClaim[];
   relations: CaseRelation[];
+  /** Dates each document states for itself (sworn, issued, endorsed, written). */
+  documentDates: DocumentDate[];
+  chronology: ChronologyEntry[];
+  /** Leads for the investigator, produced by deterministic code. Not findings. */
+  chronologyAnomalies: ChronologyAnomaly[];
+  conflictLeads: ConflictLead[];
   openQuestions: string[];
   /** Extraction items dropped because their quotation was not found in the source. */
   droppedUngrounded: number;
@@ -161,6 +173,8 @@ export interface LegalIssue {
   /** From shared/citationVerification: INTERNAL_REFERENCE_MATCH, UNVERIFIED or NONE. */
   citationStatus: string;
   citationReason: string;
+  /** Verbatim bundled statute text for a verified provision, attached by code. Null when none is held. */
+  statuteText: string | null;
 }
 
 export interface Finding {
@@ -194,7 +208,7 @@ export interface Hypothesis {
 }
 
 export interface StageRecord {
-  stage: "EXTRACTION" | "INVESTIGATION" | "ADVERSARIAL_REVIEW" | "VISUAL_VERIFICATION" | "GROUNDING";
+  stage: "EXTRACTION" | "INVESTIGATION" | "SYNTHESIS" | "ADVERSARIAL_REVIEW" | "VISUAL_VERIFICATION" | "GROUNDING";
   status: "COMPLETED" | "FAILED" | "SKIPPED";
   model: string | null;
   calls: number;
