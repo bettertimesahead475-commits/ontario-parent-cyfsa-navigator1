@@ -137,6 +137,27 @@ begin
   if r->>'status' <> 'limit' then raise exception 'check 9e: expected limit for the returned request, got %', r; end if;
 end $$;
 
+-- 10. Privileges: only service_role may execute the functions. The public API roles may not, directly or via PUBLIC.
+do $$
+declare fn text;
+begin
+  foreach fn in array array[
+    'public.free_reserve_scan(text,text,integer,timestamptz,interval)',
+    'public.free_finalize_scan(text,text,timestamptz)',
+    'public.free_release_scan(text,text,text,timestamptz)',
+    'public.free_marker_uid(text,text)',
+    'public.free_release_marker(text,text,timestamptz)',
+    'public.free_reconcile(text,text,timestamptz,interval)'
+  ] loop
+    if has_function_privilege('anon', fn, 'EXECUTE') or has_function_privilege('authenticated', fn, 'EXECUTE') then
+      raise exception 'check 10: % is executable by a public API role', fn;
+    end if;
+    if not has_function_privilege('service_role', fn, 'EXECUTE') then
+      raise exception 'check 10: % is not executable by service_role', fn;
+    end if;
+  end loop;
+end $$;
+
 delete from public.free_usage where uid like 'test-free-scan-account%' or uid like 'free_res_test-free-scan-account%'
   or uid like 'test-free-scan-other%' or uid like 'free_res_test-free-scan-other%'
   or uid like 'test-free-scan-b%' or uid like 'free_res_test-free-scan-b%';

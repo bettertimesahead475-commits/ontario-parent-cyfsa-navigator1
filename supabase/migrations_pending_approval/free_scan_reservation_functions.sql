@@ -208,6 +208,11 @@ grant execute on function public.free_finalize_scan(text, text, timestamptz) to 
 grant execute on function public.free_release_scan(text, text, text, timestamptz) to service_role;
 
 -- The entry points above run as the caller, so service_role also needs the internal helpers they call.
+-- The helpers are revoked from PUBLIC, anon and authenticated too: PostgreSQL grants EXECUTE to PUBLIC by default, and the
+-- API exposes public functions. Without this, a public-key caller could release another account's reservation directly.
+revoke all on function public.free_marker_uid(text, text) from public, anon, authenticated;
+revoke all on function public.free_release_marker(text, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.free_reconcile(text, text, timestamptz, interval) from public, anon, authenticated;
 grant execute on function public.free_marker_uid(text, text) to service_role;
 grant execute on function public.free_release_marker(text, text, timestamptz) to service_role;
 grant execute on function public.free_reconcile(text, text, timestamptz, interval) to service_role;
