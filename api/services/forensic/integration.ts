@@ -16,6 +16,7 @@ import { CANONICAL_DISCLAIMER, type GenerateFn, type GenerateResult } from "../a
 import { normalizeCourtFileNumber } from "../../../shared/courtFileNumber.js";
 import { EVIDENCE_CLASS_LABEL, type CaseDocument, type DocumentKind, type ExtractionMethod, type Finding, type ForensicReport } from "./caseModel.js";
 import { runForensicInvestigation, type ForensicLimits, type ForensicProgress } from "./pipeline.js";
+import { decodeSource, extractPages } from "../pageSources.js";
 
 export const FORENSIC_ENGINE_FLAG = "FORENSIC_ENGINE_ENABLED";
 
@@ -60,6 +61,37 @@ export interface UploadInput {
   fileData?: { base64?: string; mimeType?: string; name?: string; fileName?: string } | null;
   /** Further documents of the same case, already validated by parseAdditionalDocuments. */
   additional?: CaseDocument[];
+  /** Per-page extraction methods for the upload, from pageExtractionMethods. */
+  pageExtraction?: Record<number, ExtractionMethod> | null;
+}
+
+const METHOD_FOR: Record<string, ExtractionMethod> = {
+  "native-pdf-text": "TEXT_LAYER",
+  "utf8-single-source": "TEXT_LAYER",
+  "gemini-page-ocr": "OCR",
+  "gemini-image-ocr": "OCR",
+};
+
+/**
+ * Per-page extraction methods for an uploaded PDF or image, read from the extraction step's cache. The OCR function
+ * passed here refuses to run, so this can never trigger a second (paid) OCR pass: on a cache miss for an OCR page it
+ * returns null and every page is treated as OCR, the conservative label.
+ */
+export async function pageExtractionMethods(
+  fileData: UploadInput["fileData"],
+  extract: typeof extractPages = extractPages
+): Promise<Record<number, ExtractionMethod> | null> {
+  const mime = fileData?.mimeType || "";
+  if (!fileData?.base64 || !(mime === "application/pdf" || mime.startsWith("image/"))) return null;
+  try {
+    const source = decodeSource(fileData.base64, mime);
+    const pages = await extract(source.bytes, source.mime, async () => {
+      throw new Error("OCR is not repeated for provenance.");
+    });
+    return Object.fromEntries(pages.map((p) => [p.pageNumber, METHOD_FOR[p.extractionMethod] ?? "UNKNOWN"]));
+  } catch {
+    return null;
+  }
 }
 
 export const MAX_ADDITIONAL_DOCUMENTS = 9;
@@ -88,7 +120,12 @@ export function buildCaseDocuments(input: UploadInput): CaseDocument[] {
   const name = input.fileData?.name || input.fileData?.fileName || "Uploaded document";
   const extracted = (input.extractedText || "").trim();
   if (extracted) {
-    const method: ExtractionMethod = mime === "application/pdf" || mime.startsWith("image/") ? "OCR" : "TEXT_LAYER";
+    const pageMethods = input.pageExtraction ? Object.values(input.pageExtraction) : [];
+    // A PDF whose pages all came from the text layer is TEXT_LAYER; anything else from a PDF or image is OCR.
+    const method: ExtractionMethod =
+      pageMethods.length > 0 && pageMethods.every((m) => m === "TEXT_LAYER")
+        ? "TEXT_LAYER"
+        : mime === "application/pdf" || mime.startsWith("image/") ? "OCR" : "TEXT_LAYER";
     const raw = String(input.fileData?.base64 || "");
     const data = raw.includes(",") ? raw.split(",")[1] : raw;
     const mediaType = mime === "application/pdf" ? "application/pdf" : mime === "image/png" ? "image/png" : mime === "image/jpeg" ? "image/jpeg" : null;
@@ -98,6 +135,7 @@ export function buildCaseDocuments(input: UploadInput): CaseDocument[] {
       kind: guessDocumentKind(name, extracted),
       text: extracted,
       extractionMethod: method,
+      ...(input.pageExtraction ? { pageExtraction: input.pageExtraction } : {}),
       ...(mediaType && data && data.length <= MAX_SOURCE_FILE_BASE64 ? { sourceFile: { mediaType, data } } : {}),
     });
   }

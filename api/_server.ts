@@ -40,7 +40,7 @@ import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { reserveFreeScan, settleFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
-import { buildCaseDocuments, isForensicEngineEnabled, parseAdditionalDocuments, runForensicEngineForRoute } from "./services/forensic/integration.js";
+import { buildCaseDocuments, isForensicEngineEnabled, pageExtractionMethods, parseAdditionalDocuments, runForensicEngineForRoute } from "./services/forensic/integration.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
@@ -2445,6 +2445,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
               pastedText: textContent || "",
               fileData,
               additional: parseAdditionalDocuments(req.body?.additionalDocuments),
+              pageExtraction: await pageExtractionMethods(fileData),
             }),
             generate: generateContentWithFallback,
             // Claude Opus does the investigation and the adversarial review; the mode's primary model only extracts.

@@ -36,6 +36,8 @@ export interface CaseDocument {
   pageImages?: Record<number, { mediaType: "image/png" | "image/jpeg"; data: string }>;
   /** Per-page OCR confidence 0..1 where the extractor reports one. */
   ocrConfidence?: Record<number, number>;
+  /** Per-page extraction method (a PDF can mix text-layer pages and OCR pages). Overrides extractionMethod per page. */
+  pageExtraction?: Record<number, ExtractionMethod>;
   /**
    * The original upload (PDF or image), base64. Sent to the visual stage as a document or image block, so the model
    * examines the actual pages rather than the extracted text. Never placed in the report.
@@ -85,7 +87,7 @@ export function resolveEvidenceRef(docs: CaseDocument[], documentId: string, quo
     endOffset: loc.endOffset,
     matchStatus: loc.status,
     verified: isVerbatimQuoteStatus(loc.status),
-    extractionMethod: doc.extractionMethod,
+    extractionMethod: (loc.page !== null ? doc.pageExtraction?.[loc.page] : undefined) ?? doc.extractionMethod,
     ocrConfidence: conf,
   };
 }
