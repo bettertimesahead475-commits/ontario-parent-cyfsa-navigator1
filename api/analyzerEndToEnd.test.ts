@@ -1092,6 +1092,25 @@ describe("Forensic Engine on the analyze route (FORENSIC_ENGINE_ENABLED)", () =>
     }
   });
 
+  it("returns the saved engine report on a retry of the same analysis id, without new model calls", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    const id = `req_${Date.now()}_enginertry`;
+    try {
+      const first = await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect(first.status).toBe(200);
+      const modelCalls = mockCreateMessage.mock.calls.length;
+      const second = await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect(second.status).toBe(200);
+      expect(second.body.forensicEngine.schema).toBe("forensic-engine-v1");
+      expect(second.body.redFlags.map((r: any) => r.id)).toEqual(first.body.redFlags.map((r: any) => r.id));
+      expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+      expect(calls.filter((n) => n === "paid_reserve_credit")).toHaveLength(1);
+    } finally {
+      off();
+    }
+  });
+
   it("still refuses Forensic mode to an unpaid user before any model call", async () => {
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-parent-uid", email: "parent@example.com" });
     try {
