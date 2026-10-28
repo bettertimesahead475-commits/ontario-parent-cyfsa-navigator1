@@ -171,3 +171,40 @@ Rollback
 1. Promote the previous production deployment (`dpl_65ascLewK5AowJVifiZxAtpgo4vF`, main `0130a96`) in Vercel. Do this first.
 2. Only after step 1, run `free_scan_reservation_functions.down.sql` if the migration must be removed. Reservation marker rows stay in `free_usage`; they are harmless.
 3. Revert the release branch on `main` with a revert commit, not a force push.
+
+## Final release preparation: `release/candidate-audit-integration` at e2bbc76f
+
+Migration changes since the last entry:
+- **Security fix.** The three internal helpers (`free_marker_uid`, `free_release_marker`, `free_reconcile`) were not revoked
+  from PUBLIC, anon or authenticated. PostgreSQL grants EXECUTE to PUBLIC by default. Revoked; test check 10 asserts that
+  no public API role can execute any of the six functions. Local PostgreSQL: the check fails on the old file and passes on the new one.
+- Migration SQL sha256 is now the value shown below; the earlier hash `3b98bab6…` is superseded.
+
+Staging validation (Supabase project `cyfsa-navigator-staging`, nxfhvebzzobegubefcda; live project not touched):
+- Pre-check: `free_usage` matches the migration's assumptions (uid, email, analyses_used int, timestamps); RLS enabled with
+  no policies; `service_role` has table privileges; no `free_*` functions existed.
+- Migration applied. Result: no error.
+- Privileges after apply: all six functions executable by service_role; not executable by anon or authenticated.
+- Behavioral scenario (reserve, limit, finalize, repeat consumed, second account) run in a block that always rolls back: passed.
+- Leftover rows after the check: 0.
+- Not run on staging: the 40-way concurrency race (verified on local PostgreSQL 16 only) and the rollback file
+  (verified on local PostgreSQL only; not applied to staging).
+
+Migration file sha256:
+- free_scan_reservation_functions.sql: `95cdcb773313036b7aad…` (full hash in `sha256sum`)
+- free_scan_reservation_functions.test.sql: `d4f66dbf058dd00263ac…`
+- free_scan_reservation_functions.down.sql: `e01d92f439bd824d8d47…` (unchanged)
+
+Verification at e2bbc76f: typecheck clean; full Vitest 183 files passed, 3566 tests passed, 0 failed, 433 skipped;
+production build succeeds; Forensic and credit-accounting tests (71) pass: section re-request on max_tokens, malformed and
+invalid section retries, fail-closed without charge, job persistence, replay refused, joined reservation, credit not
+deducted on generation failure, credit kept when the per-type write fails.
+
+Remaining unverified (unchanged): production function duration (repo 300 s, not retrievable); production 422 attribution;
+preview `ALLOWED_ORIGINS` value (presence confirmed for preview only).
+
+Release order (executed only with approval; see the earlier checklist, with these updates):
+1. Apply the migration to production (the same file, sha256 above). Run check 10 read-only by querying grants.
+2. Merge the release candidate to main. Vercel deploys main.
+3. Smoke tests and the 48-hour log watch as listed earlier.
+Rollback: promote the previous deployment first; then run the down file only if the migration must be removed.
