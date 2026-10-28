@@ -285,6 +285,26 @@ describe("analyzer access validation", () => {
     expect(mockCreateMessage).not.toHaveBeenCalled();
   });
 
+  it("a model reply with a raw newline and a trailing comma is repaired on its first attempt, not retried into a 422", async () => {
+    const { sectionResponder: answers } = await import("./analyzerTestFixtures.js");
+    const answer = answers(CORE);
+    const calls: string[] = [];
+    mockCreateMessage.mockImplementation(async (body: any) => {
+      const response = await answer(body);
+      calls.push("call");
+      const text = response.content[0].text as string;
+      // Model-style serialization: a raw newline inside a string value, and a trailing comma before the closing brace.
+      const broken = text.replace(': "', ': "line one\nline two ').replace(/}\s*$/, ",}");
+      return { ...response, content: [{ type: "text", text: broken }] };
+    });
+
+    const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
+    expect(res.status).toBe(200);
+    expect(res.body.documentTitle).toBe("Affidavit of a worker");
+    // One call per Quick Review section (overview, red flags, chronology, guidance), and no retry for any of them.
+    expect(calls).toHaveLength(4);
+  });
+
   it("returns the reserved free scan when the analysis fails, and never when it was delivered", async () => {
     mockCreateMessage.mockRejectedValue(new Error("upstream unavailable"));
     const failed = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
