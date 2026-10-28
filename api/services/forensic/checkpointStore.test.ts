@@ -58,3 +58,25 @@ describe("SupabaseObjectStore", () => {
     await expect(new SupabaseObjectStore(db).putIfAbsent("k", "v")).rejects.toThrow(/write failed/);
   });
 });
+
+describe("engine job retention", () => {
+  it("deletes every object of an expired job, including its documents, and keeps recent jobs", async () => {
+    const { CheckpointStore, InMemoryObjectStore } = await import("./checkpointStore");
+    const { createEngineState } = await import("./pipeline");
+    const objects = new InMemoryObjectStore();
+    const store = new CheckpointStore(objects);
+    const docs = [{ id: "d", title: "t", kind: "OTHER" as const, extractionMethod: "TEXT_LAYER" as const, text: "case text", sourceFile: { mediaType: "application/pdf" as const, data: "JVBERi0=" } }];
+    const meta = (jobId: string, createdAt: number) => ({ jobId, uid: "u", billing: "paid" as const, sessionId: "s", tier: "Pro", reservationId: "r", billingCycle: null, userEmail: null, documentName: null, mode: "full" as const, createdAt });
+    for (const [id, at] of [["old", 0], ["new", 90_000_000]] as const) {
+      const { state, media } = createEngineState({ documents: docs, models: { extractor: "s", investigator: "o", reviewer: "o" }, requestId: id });
+      await store.start(id, meta(id, at), state, media);
+      await store.advance(id, 0, state);
+      await store.acquire(id, "extract:d", "w", 1000, 0);
+      await store.settle(id, { kind: "DELIVERED", at: 0 });
+    }
+    const purged = await store.purgeExpired(100_000_000, 24 * 60 * 60 * 1000);
+    expect(purged).toEqual(["old"]);
+    expect([...objects.objects.keys()].filter((k) => k.startsWith("old/"))).toEqual([]);
+    expect([...objects.objects.keys()].some((k) => k.startsWith("new/media.json"))).toBe(true);
+  });
+});

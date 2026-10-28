@@ -4,6 +4,7 @@
  */
 
 import "./services/pdfPolyfill.js";
+import { timingSafeEqual } from "node:crypto";
 import express, { Request, Response } from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -41,7 +42,7 @@ import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { reserveFreeScan, settleFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
 import { buildCaseDocuments, isForensicEngineEnabled, pageProvenance, parseAdditionalDocuments } from "./services/forensic/integration.js";
-import { advanceEngineJob, engineRunShape, engineStore, isFatal, settleDelivered, settleFailed, startEngineJob } from "./services/forensic/engineJobs.js";
+import { advanceEngineJob, ENGINE_JOB_RETENTION_MS, engineRunShape, engineStore, isFatal, settleDelivered, settleFailed, startEngineJob } from "./services/forensic/engineJobs.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
@@ -2791,6 +2792,26 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // invented names/dates for a real reading of their own document.
       console.error("[document analysis] API error, returning honest failure (no fabricated fallback):", error);
       handleAIError(error, "document analysis", res);
+    }
+  });
+
+  // Cron: deletes Forensic Engine jobs (their checkpoints, documents and original files) after the retention period.
+  // Authorized by CRON_SECRET (Vercel Cron) or ADMIN_SECRET, compared in constant time.
+  app.get("/api/admin/forensic-engine/purge", async (req: Request, res: Response) => {
+    const header = String(req.header("authorization") || "");
+    const allowed = [process.env.CRON_SECRET, process.env.ADMIN_SECRET].filter(Boolean).map((v) => `Bearer ${v}`);
+    const matches = allowed.some((expected) => {
+      const a = Buffer.from(header);
+      const b = Buffer.from(expected);
+      return a.length === b.length && timingSafeEqual(a, b);
+    });
+    if (!matches) return res.status(401).json({ error: "Unauthorized.", code: "UNAUTHORIZED" });
+    try {
+      const purged = await engineStore().purgeExpired(Date.now(), ENGINE_JOB_RETENTION_MS);
+      return res.json({ purged: purged.length });
+    } catch (err) {
+      console.error("[forensic engine] purge failed:", err);
+      return res.status(503).json({ error: "Engine storage unavailable.", code: "STORAGE_UNAVAILABLE" });
     }
   });
 

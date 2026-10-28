@@ -1299,6 +1299,25 @@ describe("Forensic Engine on the analyze route (FORENSIC_ENGINE_ENABLED)", () =>
     }
   });
 
+  it("purges expired engine jobs only for the cron or admin secret", async () => {
+    const id = `req_${Date.now()}_purge01`;
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    mockCreateMessage.mockImplementation(respond());
+    process.env.CRON_SECRET = "test-cron-secret";
+    try {
+      await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect((await request(app).get("/api/admin/forensic-engine/purge")).status).toBe(401);
+      expect((await request(app).get("/api/admin/forensic-engine/purge").set("Authorization", "Bearer wrong-secret-xxx")).status).toBe(401);
+      const ok = await request(app).get("/api/admin/forensic-engine/purge").set("Authorization", "Bearer test-cron-secret");
+      expect(ok.status).toBe(200);
+      expect(ok.body.purged).toBe(0); // a job just started is within the retention period
+      expect([...engineObjects.objects.keys()].some((k) => k.startsWith(`${id}/`))).toBe(true);
+    } finally {
+      delete process.env.CRON_SECRET;
+      off();
+    }
+  });
+
   it("still refuses Forensic mode to an unpaid user before any model call", async () => {
     mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-parent-uid", email: "parent@example.com" });
     try {

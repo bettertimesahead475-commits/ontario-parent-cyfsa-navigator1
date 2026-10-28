@@ -19,8 +19,10 @@ export interface ObjectStore {
   get(key: string): Promise<string | null>;
   /** Creates the object. Returns false, without changing anything, if it already exists. */
   putIfAbsent(key: string, body: string): Promise<boolean>;
-  /** Object names directly under a prefix ending in "/" (names only, not full keys). */
+  /** Object names directly under a prefix ending in "/" (names only, not full keys). "" lists the top level. */
   list(prefix: string): Promise<string[]>;
+  /** Deletes objects. Deleting a missing object is not an error. */
+  remove(keys: string[]): Promise<void>;
 }
 
 export class InMemoryObjectStore implements ObjectStore {
@@ -44,6 +46,9 @@ export class InMemoryObjectStore implements ObjectStore {
     if (this.objects.has(key)) return false;
     this.objects.set(key, body);
     return true;
+  }
+  async remove(keys: string[]) {
+    for (const k of keys) this.objects.delete(k);
   }
   async list(prefix: string) {
     const out = new Set<string>();
@@ -93,6 +98,13 @@ export class SupabaseObjectStore implements ObjectStore {
     const status = Number(error.statusCode ?? error.status);
     if (status === 409 || /already exists|duplicate/i.test(String(error.message))) return false;
     throw new Error(`Engine storage write failed: ${error.message}`);
+  }
+
+  async remove(keys: string[]) {
+    if (keys.length === 0) return;
+    await this.ensureBucket();
+    const { error } = await this.db.storage.from(this.bucket).remove(keys);
+    if (error) throw new Error(`Engine storage delete failed: ${error.message}`);
   }
 
   async list(prefix: string) {
@@ -194,6 +206,36 @@ export class CheckpointStore {
   /** Marks a job settled (delivered and charged, or failed and released). Returns false if it already was. */
   async settle(jobId: string, outcome: { kind: "DELIVERED" | "RELEASED"; at: number }): Promise<boolean> {
     return this.objects.putIfAbsent(this.key(jobId, "settled.json"), JSON.stringify(outcome));
+  }
+
+  /** Every object key of a job (meta, media, settlement, states, leases). */
+  async keys(jobId: string): Promise<string[]> {
+    const out: string[] = [];
+    for (const name of await this.objects.list(`${jobId}/`)) {
+      if (name === "state" || name === "lease") continue;
+      out.push(`${jobId}/${name}`);
+    }
+    for (const name of await this.objects.list(`${jobId}/state/`)) out.push(`${jobId}/state/${name}`);
+    for (const step of await this.objects.list(`${jobId}/lease/`)) {
+      for (const name of await this.objects.list(`${jobId}/lease/${step}/`)) out.push(`${jobId}/lease/${step}/${name}`);
+    }
+    return out;
+  }
+
+  /**
+   * Deletes jobs created more than retentionMs ago, including their documents and original files. A job with no
+   * readable meta is deleted too (it cannot be continued). At most `limit` jobs per call.
+   */
+  async purgeExpired(now: number, retentionMs: number, limit = 50): Promise<string[]> {
+    const purged: string[] = [];
+    for (const jobId of await this.objects.list("")) {
+      if (purged.length >= limit) break;
+      const meta = await this.meta(jobId).catch(() => null);
+      if (meta && now - meta.createdAt < retentionMs) continue;
+      await this.objects.remove(await this.keys(jobId));
+      purged.push(jobId);
+    }
+    return purged;
   }
 
   async settled(jobId: string): Promise<{ kind: "DELIVERED" | "RELEASED"; at: number } | null> {

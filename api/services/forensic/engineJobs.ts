@@ -60,6 +60,8 @@ export const RESUMABLE_LIMITS: Partial<ForensicLimits> = {
   stageTimeoutMs: 200_000,
 };
 export const STEP_MIN_MS = 200_000;
+/** Engine jobs (with their documents) are deleted this long after they start, matching the analysis job retention. */
+export const ENGINE_JOB_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const LEASE_TTL_MS = 260_000;
 
 export async function startEngineJob(params: {

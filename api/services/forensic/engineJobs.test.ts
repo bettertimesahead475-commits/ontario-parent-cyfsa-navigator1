@@ -61,3 +61,11 @@ describe("settling a resumable engine job", () => {
     await expect(settleDelivered(s, meta(), { finalize: async () => {}, reserveAgain: async () => ({ billingCycle: null }) })).rejects.toMatchObject({ code: "RESERVATION_RELEASED" });
   });
 });
+
+describe("engine retention schedule", () => {
+  it("is scheduled in vercel.json", async () => {
+    const { readFileSync } = await import("node:fs");
+    const v = JSON.parse(readFileSync(new URL("../../../vercel.json", import.meta.url), "utf8"));
+    expect(v.crons.map((c: any) => c.path)).toContain("/api/admin/forensic-engine/purge");
+  });
+});
