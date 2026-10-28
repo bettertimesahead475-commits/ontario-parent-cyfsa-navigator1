@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCaseDocuments, guessDocumentKind, isForensicEngineEnabled, pageExtractionMethods, parseAdditionalDocuments, runForensicEngineForRoute, toLegacyReport } from "./integration";
+import { buildCaseDocuments, guessDocumentKind, isForensicEngineEnabled, pageProvenance, parseAdditionalDocuments, runForensicEngineForRoute, toLegacyReport } from "./integration";
 import type { CaseDocument } from "./caseModel";
 import { AnalyzerError } from "../analyzerErrors";
 
@@ -137,8 +137,9 @@ describe("per-page extraction provenance", () => {
         { pageNumber: 2, text: "b", extractionMethod: "gemini-page-ocr", confidence: null, checksum: "" },
       ];
     }) as any;
-    const map = await pageExtractionMethods({ base64: "JVBERi0=", mimeType: "application/pdf" }, fake);
-    expect(map).toEqual({ 1: "TEXT_LAYER", 2: "OCR" });
+    const prov = await pageProvenance({ base64: "JVBERi0=", mimeType: "application/pdf" }, fake);
+    expect(prov?.methods).toEqual({ 1: "TEXT_LAYER", 2: "OCR" });
+    const map = prov!.methods;
     expect(ocrCalls).toBe(1); // the passed OCR function refused
     const [doc] = buildCaseDocuments({ extractedText: "[Page 1]\nalpha text\n[Page 2]\nbeta text", pastedText: "", fileData: { base64: "JVBERi0=", mimeType: "application/pdf" }, pageExtraction: map });
     expect(doc.extractionMethod).toBe("OCR");
@@ -148,12 +149,33 @@ describe("per-page extraction provenance", () => {
   });
 
   it("returns null when provenance cannot be read without OCR, and for non-PDF uploads", async () => {
-    expect(await pageExtractionMethods({ base64: "JVBERi0=", mimeType: "application/pdf" }, (async () => { throw new Error("cache miss"); }) as any)).toBeNull();
-    expect(await pageExtractionMethods({ base64: "eA==", mimeType: "text/plain" })).toBeNull();
+    expect(await pageProvenance({ base64: "JVBERi0=", mimeType: "application/pdf" }, (async () => { throw new Error("cache miss"); }) as any)).toBeNull();
+    expect(await pageProvenance({ base64: "eA==", mimeType: "text/plain" })).toBeNull();
   });
 
   it("labels an all-text-layer PDF as TEXT_LAYER", () => {
     const [doc] = buildCaseDocuments({ extractedText: "x", pastedText: "", fileData: { base64: "JVBERi0=", mimeType: "application/pdf" }, pageExtraction: { 1: "TEXT_LAYER" } });
     expect(doc.extractionMethod).toBe("TEXT_LAYER");
+  });
+});
+
+
+describe("OCR confidence provenance", () => {
+  it("records the OCR model's per-page confidence and lets low confidence raise a finding's uncertainty", async () => {
+    const fake = (async () => [
+      { pageNumber: 1, text: "a", extractionMethod: "native-pdf-text", confidence: null, checksum: "" },
+      { pageNumber: 2, text: "b", extractionMethod: "gemini-page-ocr", confidence: 0.62, checksum: "" },
+    ]) as any;
+    const prov = await pageProvenance({ base64: "JVBERi0=", mimeType: "application/pdf" }, fake);
+    expect(prov?.confidence).toEqual({ 2: 0.62 });
+    const [doc] = buildCaseDocuments({ extractedText: "[Page 1]\nalpha text\n[Page 2]\nbeta text here", pastedText: "", fileData: { base64: "JVBERi0=", mimeType: "application/pdf" }, pageExtraction: prov!.methods, ocrConfidence: prov!.confidence });
+    const { resolveEvidenceRef } = await import("./caseModel");
+    expect(resolveEvidenceRef([doc], "upload", "beta text here").ocrConfidence).toBe(0.62);
+    expect(resolveEvidenceRef([doc], "upload", "alpha text").ocrConfidence).toBeNull();
+    const { parseFindingCandidates, groundFinding } = await import("./grounding");
+    const [f] = parseFindingCandidates([{ id: "F1", title: "t", statement: "s", evidenceClass: "A", uncertainty: "LOW", supporting: [{ documentId: "upload", quote: "beta text here" }] }], [doc]);
+    const g = groundFinding(f);
+    expect(g.uncertainty).toBe("MEDIUM");
+    expect(g.grounding.notes.join(" ")).toMatch(/low OCR confidence/);
   });
 });

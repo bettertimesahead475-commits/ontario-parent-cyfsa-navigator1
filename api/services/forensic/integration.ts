@@ -61,8 +61,10 @@ export interface UploadInput {
   fileData?: { base64?: string; mimeType?: string; name?: string; fileName?: string } | null;
   /** Further documents of the same case, already validated by parseAdditionalDocuments. */
   additional?: CaseDocument[];
-  /** Per-page extraction methods for the upload, from pageExtractionMethods. */
+  /** Per-page extraction methods for the upload, from pageProvenance. */
   pageExtraction?: Record<number, ExtractionMethod> | null;
+  /** Per-page OCR model token confidence for the upload, from pageProvenance. */
+  ocrConfidence?: Record<number, number> | null;
 }
 
 const METHOD_FOR: Record<string, ExtractionMethod> = {
@@ -73,14 +75,15 @@ const METHOD_FOR: Record<string, ExtractionMethod> = {
 };
 
 /**
- * Per-page extraction methods for an uploaded PDF or image, read from the extraction step's cache. The OCR function
+ * Per-page provenance for an uploaded PDF or image, read from the extraction step's cache: how each page's text was
+ * obtained, and for OCR pages the OCR model's token confidence when the provider reported one. The OCR function
  * passed here refuses to run, so this can never trigger a second (paid) OCR pass: on a cache miss for an OCR page it
- * returns null and every page is treated as OCR, the conservative label.
+ * returns null and every page is treated as OCR with unknown confidence, the conservative reading.
  */
-export async function pageExtractionMethods(
+export async function pageProvenance(
   fileData: UploadInput["fileData"],
   extract: typeof extractPages = extractPages
-): Promise<Record<number, ExtractionMethod> | null> {
+): Promise<{ methods: Record<number, ExtractionMethod>; confidence: Record<number, number> } | null> {
   const mime = fileData?.mimeType || "";
   if (!fileData?.base64 || !(mime === "application/pdf" || mime.startsWith("image/"))) return null;
   try {
@@ -88,7 +91,13 @@ export async function pageExtractionMethods(
     const pages = await extract(source.bytes, source.mime, async () => {
       throw new Error("OCR is not repeated for provenance.");
     });
-    return Object.fromEntries(pages.map((p) => [p.pageNumber, METHOD_FOR[p.extractionMethod] ?? "UNKNOWN"]));
+    const methods: Record<number, ExtractionMethod> = {};
+    const confidence: Record<number, number> = {};
+    for (const p of pages) {
+      methods[p.pageNumber] = METHOD_FOR[p.extractionMethod] ?? "UNKNOWN";
+      if (methods[p.pageNumber] === "OCR" && typeof p.confidence === "number") confidence[p.pageNumber] = p.confidence;
+    }
+    return { methods, confidence };
   } catch {
     return null;
   }
@@ -136,6 +145,7 @@ export function buildCaseDocuments(input: UploadInput): CaseDocument[] {
       text: extracted,
       extractionMethod: method,
       ...(input.pageExtraction ? { pageExtraction: input.pageExtraction } : {}),
+      ...(input.ocrConfidence && Object.keys(input.ocrConfidence).length ? { ocrConfidence: input.ocrConfidence } : {}),
       ...(mediaType && data && data.length <= MAX_SOURCE_FILE_BASE64 ? { sourceFile: { mediaType, data } } : {}),
     });
   }

@@ -121,3 +121,15 @@ describe('untrusted evidence contract',()=>{
    expect(ocr).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("OCR model confidence on extracted pages", () => {
+  it("keeps a confidence in [0, 1] reported by the OCR function, and drops anything else", async () => {
+    const { extractPages: extract } = await import("./pageSources");
+    const ok = await extract(Buffer.from([1, 2, 3]), "image/png", async () => ({ text: "Scanned page text", confidence: 0.91 }));
+    expect(ok[0]).toMatchObject({ extractionMethod: "gemini-image-ocr", confidence: 0.91 });
+    const bad = await extract(Buffer.from([4, 5, 6]), "image/png", async () => ({ text: "Scanned page text", confidence: 1.5 }));
+    expect(bad[0].confidence).toBeNull();
+    const plain = await extract(Buffer.from([7, 8, 9]), "image/png", async () => "Scanned page text");
+    expect(plain[0].confidence).toBeNull();
+  });
+});

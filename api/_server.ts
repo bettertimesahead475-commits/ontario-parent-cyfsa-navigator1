@@ -40,7 +40,7 @@ import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { reserveFreeScan, settleFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
-import { buildCaseDocuments, isForensicEngineEnabled, pageExtractionMethods, parseAdditionalDocuments } from "./services/forensic/integration.js";
+import { buildCaseDocuments, isForensicEngineEnabled, pageProvenance, parseAdditionalDocuments } from "./services/forensic/integration.js";
 import { advanceEngineJob, engineRunShape, engineStore, isFatal, settleDelivered, settleFailed, startEngineJob } from "./services/forensic/engineJobs.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
@@ -227,7 +227,7 @@ const isLastModel = modelNames.indexOf(modelName) === modelNames.length - 1;
   throw lastError;
 }
 
-async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): Promise<string> {
+async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): Promise<{ text: string; confidence: number | null }> {
   // Simple validation to ensure base64Data is likely valid base64
   const cleanedBase64 = base64Data.trim();
   if (cleanedBase64.length === 0 || /[^A-Za-z0-9+/=\s]/.test(cleanedBase64)) {
@@ -255,7 +255,9 @@ async function ocrSingleSourceWithGemini(base64Data: string, mimeType: string): 
         }
       ]
     });
-    return response.text || "";
+    // The model's token confidence for this page (exp of its average log-probability), when Gemini reports one.
+    const avg = (response as any)?.candidates?.[0]?.avgLogprobs;
+    return { text: response.text || "", confidence: typeof avg === "number" && Number.isFinite(avg) ? Math.min(1, Math.exp(avg)) : null };
   } catch (error) {
     console.error("extractTextWithGeminiBase64 error:", error);
     throw providerFailure(error, "gemini");
@@ -2469,6 +2471,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       let engineRun: ReturnType<typeof engineRunShape> | null = null;
       if (useForensicEngine) {
         const store = engineStore();
+        const provenance = await pageProvenance(fileData);
         const started = await startEngineJob({
           store,
           meta: {
@@ -2489,7 +2492,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             pastedText: textContent || "",
             fileData,
             additional: parseAdditionalDocuments(req.body?.additionalDocuments),
-            pageExtraction: await pageExtractionMethods(fileData),
+            pageExtraction: provenance?.methods,
+            ocrConfidence: provenance?.confidence,
           }),
           // Claude Opus does the investigation and the adversarial review; the mode's primary model only extracts.
           investigatorModel: verificationModel || ANALYZER_MODELS.FORENSIC,

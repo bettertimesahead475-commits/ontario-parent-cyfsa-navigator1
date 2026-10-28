@@ -30,8 +30,14 @@ export const CLASSIFICATIONS = [
 export const REVIEW_STATES = ['UNREVIEWED','REVIEWED','CONFIRMED','DISPUTED','REQUIRES_SOURCE','NOT_RELEVANT'] as const;
 export const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const invalid = (message: string) => new LifecycleError(400,'INVALID_SOURCE',message);
-export type PageSource = { pageNumber: number; text: string; extractionMethod: string; confidence: null; checksum: string };
-export type OCR = (base64: string, mime: string) => Promise<string>;
+/**
+ * confidence: for an OCR page, the OCR model's token confidence (exp of its average log-probability), when the
+ * provider reports one. It measures how certain the model was of the text it produced, not verified accuracy.
+ * Null for text-layer pages (not applicable) and when the provider reports nothing.
+ */
+export type PageSource = { pageNumber: number; text: string; extractionMethod: string; confidence: number | null; checksum: string };
+export type OCRResult = string | { text: string; confidence: number | null };
+export type OCR = (base64: string, mime: string) => Promise<OCRResult>;
 export const OCR_CONCURRENCY = 4;
 
 function decodePdfString(token: string): string {
@@ -191,6 +197,7 @@ export async function extractPages(bytes: Buffer, mime: string, ocr: OCR): Promi
 
   // Pages requiring OCR are processed with bounded concurrency. Pages already extracted natively skip OCR.
   const texts: string[] = new Array(inputs.length);
+  const confidences: (number | null)[] = new Array(inputs.length).fill(null);
   let next = 0;
   const readPage = async (index: number) => {
     const input = inputs[index];
@@ -201,14 +208,19 @@ export async function extractPages(bytes: Buffer, mime: string, ocr: OCR): Promi
     let text: string;
     if (mime==='text/plain') {
       try {text=new TextDecoder('utf-8',{fatal:true}).decode(input.bytes);} catch {throw invalid('Text must be valid UTF-8.');}
-    } else text=await ocr(Buffer.from(input.bytes).toString('base64'),mime);
+    } else {
+      const out=await ocr(Buffer.from(input.bytes).toString('base64'),mime);
+      text=typeof out==='string'?out:out?.text;
+      const c=typeof out==='string'?null:out?.confidence;
+      confidences[index]=typeof c==='number'&&Number.isFinite(c)&&c>=0&&c<=1?c:null;
+    }
     if (typeof text!=='string'||text.length>100_000) throw invalid('Extracted page exceeds the supported limit.');
     texts[index] = text;
   };
   const worker = async () => { while (next < inputs.length) await readPage(next++); };
   await Promise.all(Array.from({ length: Math.min(OCR_CONCURRENCY, inputs.length) }, worker));
   const pages: PageSource[] = inputs.map((input, index) => ({
-    pageNumber: index + 1, text: texts[index], extractionMethod: input.method, confidence: null, checksum: hash(texts[index]),
+    pageNumber: index + 1, text: texts[index], extractionMethod: input.method, confidence: confidences[index], checksum: hash(texts[index]),
   }));
   if (!pages.some(p=>p.text.trim())) throw new LifecycleError(422,'EMPTY_SOURCE','No readable text was extracted.');
 
