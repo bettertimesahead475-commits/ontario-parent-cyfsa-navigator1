@@ -113,6 +113,8 @@ export interface EngineJobMeta {
   tier: string | null;
   /** The starting request's reservation id: only it may release the credit. */
   reservationId: string | null;
+  /** Billing cycle of the reservation, for the per-type usage counter. */
+  billingCycle: string | null;
   userEmail: string | null;
   documentName: string | null;
   mode: "full";

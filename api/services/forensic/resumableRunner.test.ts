@@ -16,7 +16,7 @@ const DOCS: CaseDocument[] = [
   },
 ];
 const MODELS = { extractor: "claude-sonnet-5", investigator: "claude-opus-5", reviewer: "claude-opus-5" };
-const META: EngineJobMeta = { jobId: "job1", uid: "u", billing: "paid", sessionId: "s", tier: "Pro", reservationId: "r", userEmail: null, documentName: null, mode: "full", createdAt: 0 };
+const META: EngineJobMeta = { jobId: "job1", uid: "u", billing: "paid", sessionId: "s", tier: "Pro", reservationId: "r", billingCycle: null, userEmail: null, documentName: null, mode: "full", createdAt: 0 };
 
 const RESPONSES: Record<string, string> = {
   forensic_extraction: JSON.stringify({ people: [{ name: "Jane Worker", roles: ["worker"], quote: "I, Jane Worker" }] }),

@@ -83,6 +83,8 @@ export interface AnalysisJob {
   sections?: Record<string, any>;
   sectionsTotal?: number;
   message?: string;
+  /** A resumable Forensic Engine job: its progress is saved and it is advanced by POST /api/analyze/job/:jobId/continue. */
+  resumable?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -298,6 +300,22 @@ export function updateAnalysisJobProgress(jobId: string, stage: AnalysisStage, p
 }
 
 /** Stores a validated section on the job and persists it, so a reloaded page can see partial work. */
+/**
+ * Marks a job as a resumable engine job that is still running and saves its progress, loading the record from storage
+ * first when this instance did not create it.
+ */
+export async function markAnalysisJobResumable(
+  jobId: string,
+  progress: { stage: AnalysisStage; percent: number; message: string }
+): Promise<void> {
+  const job = jobStore.get(jobId) ?? (await fetchJobFromStorage(jobId));
+  if (!job || job.status === "completed") return;
+  job.status = "analyzing";
+  job.resumable = true;
+  updateAnalysisJobProgress(jobId, progress.stage, progress.percent, progress.message);
+  await persistJobToStorage(job);
+}
+
 export async function recordAnalysisJobSection(
   jobId: string,
   section: string,
@@ -449,6 +467,18 @@ export class SseStreamEmitter {
   public emitWithheld(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {
     if (this.isClosed) return;
     this.writeError(error);
+  }
+
+  /**
+   * Tells the client that a resumable analysis has saved its progress and must be continued with
+   * POST /api/analyze/job/:jobId/continue. The job is neither failed nor complete.
+   */
+  public emitContinue(info: { message: string; percent: number }): void {
+    if (this.isClosed) return;
+    const payload = { type: "continue", jobId: this.jobId, message: info.message, percent: info.percent, timestamp: Date.now() };
+    this.res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    this.flush();
+    this.close();
   }
 
   private writeError(error: { code: string; message: string; statusCode: number; retryable: boolean }): void {

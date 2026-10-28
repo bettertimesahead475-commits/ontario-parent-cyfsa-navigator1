@@ -40,7 +40,8 @@ import { extractTextFromDocx } from "./services/docxExtractor.js";
 import { LifecycleError } from "./services/lifecycleErrors.js";
 import { getFreeUsage, FREE_ANALYSES_LIMIT, checkPaidUsage, recordPaidUse, getPaidUsageStatus, type CreditStatus } from "./services/usage.js";
 import { reserveFreeScan, settleFreeScan, releaseFreeScan } from "./services/freeScanReservation.js";
-import { buildCaseDocuments, isForensicEngineEnabled, pageExtractionMethods, parseAdditionalDocuments, runForensicEngineForRoute } from "./services/forensic/integration.js";
+import { buildCaseDocuments, isForensicEngineEnabled, pageExtractionMethods, parseAdditionalDocuments } from "./services/forensic/integration.js";
+import { advanceEngineJob, engineRunShape, engineStore, isFatal, settleDelivered, settleFailed, startEngineJob } from "./services/forensic/engineJobs.js";
 import { redactCustomerReport, toCustomerModelMetadata } from "./services/analyzerCustomerMetadata.js";
 import {
   reserveAnalysisCredit,
@@ -82,8 +83,10 @@ import {
   completeAnalysisJobDurable,
   failAnalysisJobDurable,
   recordAnalysisJobSection,
+  markAnalysisJobResumable,
   isValidAnalysisJobId,
   generateAnalysisJobId,
+  type AnalysisStage,
 } from "./services/analyzerStreaming.js";
 import { applyCitationGuards, runSectionedAnalysis, sectionTitle, parseJsonLenient } from "./services/analyzerSections.js";
 import { PROVIDER_ATTEMPTS, SECTION_ATTEMPTS, TRANSIENT_HTTP_STATUSES } from "../shared/analyzerRetryPolicy.js";
@@ -100,6 +103,20 @@ let anthropicClient: Anthropic | null = null;
 /** The billing month a reservation was drawn from, passed to the per-analysis counter (empty when none). */
 function cycleArgs(reservation: { billingCycle: string | null } | null): [string] | [] {
   return reservation?.billingCycle ? [reservation.billingCycle] : [];
+}
+
+/** Maps an engine stage to the analyzer's progress stages. */
+function engineAnalysisStage(stage: string): AnalysisStage {
+  if (stage === "ADVERSARIAL_REVIEW" || stage === "VISUAL_VERIFICATION") return "verifying_findings";
+  if (stage === "GROUNDING") return "preparing_report";
+  return "reviewing_evidence";
+}
+
+/** Tests only: stop each invocation after this many engine steps, to exercise interruption and resumption. */
+function engineTestMaxSteps(): number | undefined {
+  if (!(process.env.NODE_ENV === "test" || process.env.VITEST)) return undefined;
+  const n = Number(process.env.FORENSIC_ENGINE_TEST_MAX_STEPS);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
 function getAnthropicClient(): Anthropic {
@@ -2059,6 +2076,15 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             }
             return res.json(redactCustomerReport(existingJob.report));
           }
+          if (existingJob.status === "analyzing" && existingJob.resumable) {
+            // A resumable engine job is advanced by the continue endpoint, never re-run from the start.
+            return res.status(202).json({
+              status: "continuing",
+              code: "ANALYSIS_CONTINUING",
+              jobId: analysisRequestId,
+              message: "Your forensic analysis is saved and continuing. Keep this page open.",
+            });
+          }
           if (existingJob.status === "analyzing" && Date.now() - existingJob.updatedAt < 6 * 60 * 1000) {
             return res.status(409).json({
               error: "This analysis is still running. We'll show the results as soon as it finishes.",
@@ -2434,36 +2460,79 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // 300 s limit (vercel.json maxDuration) - leaving time to persist and deliver the result.
       const aiDeadlineAt = requestStartedAt + 265_000;
       // Forensic Engine (server flag FORENSIC_ENGINE_ENABLED, off by default): Forensic In-Depth only, after the
-      // entitlement and credit checks above. It returns the same shape as runSectionedAnalysis, so cost, credits,
-      // persistence and settlement below are unchanged. An incomplete investigation or review throws a retryable
-      // error and the existing failure path releases the credit.
+      // entitlement and credit checks above. The job is resumable: its state is checkpointed after every step, and
+      // when this invocation runs out of time the client continues it with POST /api/analyze/job/:jobId/continue.
+      // The credit reserved above stays reserved until the report is delivered (finalized once) or the job fails
+      // (released once). A complete run returns the same shape as runSectionedAnalysis, so cost, credits,
+      // persistence and settlement below are unchanged.
       const useForensicEngine = isForensic && isForensicEngineEnabled();
-      const run = useForensicEngine
-        ? await runForensicEngineForRoute({
-            documents: buildCaseDocuments({
-              extractedText,
-              pastedText: textContent || "",
-              fileData,
-              additional: parseAdditionalDocuments(req.body?.additionalDocuments),
-              pageExtraction: await pageExtractionMethods(fileData),
-            }),
-            generate: generateContentWithFallback,
-            // Claude Opus does the investigation and the adversarial review; the mode's primary model only extracts.
-            investigatorModel: verificationModel || ANALYZER_MODELS.FORENSIC,
-            extractorModel: primaryModel,
-            deadlineAt: aiDeadlineAt,
-            requestId: analysisRequestId,
-            onProgress: (p) => {
-              const stage =
-                p.stage === "ADVERSARIAL_REVIEW" || p.stage === "VISUAL_VERIFICATION"
-                  ? "verifying_findings"
-                  : p.stage === "GROUNDING"
-                    ? "preparing_report"
-                    : "reviewing_evidence";
-              streamEmitter?.emitStage(stage, p.message, 35 + Math.round(p.fraction * 60));
-            },
-          })
-        : await runSectionedAnalysis({
+      let engineRun: ReturnType<typeof engineRunShape> | null = null;
+      if (useForensicEngine) {
+        const store = engineStore();
+        const started = await startEngineJob({
+          store,
+          meta: {
+            jobId: analysisRequestId,
+            uid: identity?.uid ?? uid ?? null,
+            billing: isAdminTesting ? "admin" : "paid",
+            sessionId: paidSessionId,
+            tier: paidTier,
+            reservationId: creditReservation?.reservationId || null,
+            billingCycle: creditReservation?.billingCycle ?? null,
+            userEmail,
+            documentName: req.body?.documentName || req.body?.fileData?.name || null,
+            mode: "full",
+            createdAt: Date.now(),
+          },
+          documents: buildCaseDocuments({
+            extractedText,
+            pastedText: textContent || "",
+            fileData,
+            additional: parseAdditionalDocuments(req.body?.additionalDocuments),
+            pageExtraction: await pageExtractionMethods(fileData),
+          }),
+          // Claude Opus does the investigation and the adversarial review; the mode's primary model only extracts.
+          investigatorModel: verificationModel || ANALYZER_MODELS.FORENSIC,
+          extractorModel: primaryModel,
+        });
+        if (!started && (await store.settled(analysisRequestId))?.kind === "RELEASED") {
+          // This id belongs to an engine job that already failed; it is never run again.
+          throw new AnalyzerError("AI_REQUEST_REJECTED", 409, "This analysis could not be completed earlier. Nothing was charged. Please start a new analysis.", false);
+        }
+        const progress = await advanceEngineJob({
+          store,
+          jobId: analysisRequestId,
+          generate: generateContentWithFallback,
+          deadlineAt: aiDeadlineAt,
+          maxSteps: engineTestMaxSteps(),
+          onProgress: (p) => {
+            const stage = engineAnalysisStage(p.stage);
+            streamEmitter?.emitStage(stage, p.message, 35 + Math.round(p.fraction * 60));
+          },
+        });
+        if (progress.status !== "COMPLETE") {
+          const message = "Your forensic analysis is saved and continuing. Keep this page open.";
+          await markAnalysisJobResumable(analysisRequestId, { stage: "reviewing_evidence", percent: 50, message });
+          if (streamEmitter) {
+            streamEmitter.emitContinue({ message, percent: 50 });
+            return;
+          }
+          return res.status(202).json({ status: "continuing", code: "ANALYSIS_CONTINUING", jobId: analysisRequestId, message });
+        }
+        const engineReport = progress.state.report!;
+        if (isFatal(engineReport)) {
+          // The catch block below releases the reservation; the marker stops any continuation from delivering it.
+          await store.settle(analysisRequestId, { kind: "RELEASED", at: Date.now() });
+          throw new AnalyzerError(
+            "AI_PROVIDER_TEMPORARILY_UNAVAILABLE",
+            503,
+            "The forensic investigation could not be completed and verified. Nothing was charged. Please try again.",
+            true
+          );
+        }
+        engineRun = engineRunShape(engineReport, progress.state.documents);
+      }
+      const run = engineRun ?? await runSectionedAnalysis({
         mode: modelResolution.mode,
         documentText: targetText,
         primaryModel,
@@ -2607,6 +2676,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       if (credits) {
         report.credits = credits;
       }
+      // A resumable engine job is settled here; a later continuation of the same id never charges again.
+      if (useForensicEngine) {
+        await engineStore().settle(analysisRequestId, { kind: "DELIVERED", at: Date.now() });
+      }
 
       // Persist the finished report before responding, so a browser that lost the stream can
       // still recover it after a refresh (the instance may freeze once the response ends).
@@ -2714,6 +2787,130 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // invented names/dates for a real reading of their own document.
       console.error("[document analysis] API error, returning honest failure (no fabricated fallback):", error);
       handleAIError(error, "document analysis", res);
+    }
+  });
+
+  // API: continue a resumable Forensic Engine job. Each call runs as many saved steps as fit in this invocation.
+  // 200 = the report (delivered and charged exactly once); 202 = progress saved, call again; 409 = another call is
+  // running a step of this job; 410 = the job failed and its credit was released. A failure inside a call releases
+  // nothing: the next call resumes from the last saved step, and an abandoned job's reservation lapses on its own.
+  app.post("/api/analyze/job/:jobId/continue", async (req: Request, res: Response) => {
+    const { jobId } = req.params;
+    if (!isValidAnalysisJobId(jobId)) return res.status(404).json({ error: "Analysis job not found.", code: "JOB_NOT_FOUND" });
+    const identity = await verifyFirebaseIdentity(req.header("authorization"));
+    if (!identity) return res.status(401).json({ error: "Please sign in again to continue this analysis.", code: "SIGN_IN_REQUIRED" });
+    const store = engineStore();
+    const startedAt = Date.now();
+    try {
+      const meta = await store.meta(jobId);
+      // Another account's job is reported as not found, so job ids reveal nothing.
+      if (!meta || !meta.uid || meta.uid !== identity.uid) {
+        return res.status(404).json({ error: "Analysis job not found.", code: "JOB_NOT_FOUND" });
+      }
+      const existing = await getAnalysisJobDurable(jobId);
+      if (existing?.status === "completed" && existing.report) return res.json(redactCustomerReport(existing.report));
+      if ((await store.settled(jobId))?.kind === "RELEASED") {
+        return res.status(410).json({ error: "This analysis could not be completed. Nothing was charged. Please start a new analysis.", code: "ANALYSIS_FAILED", retryable: false });
+      }
+      if (meta.billing === "paid") {
+        const parsed = verifySessionToken(req.header("x-ps-session") || "");
+        const session = parsed ? await lookupPaidSession(parsed.jti) : null;
+        if (!session || session.id !== meta.sessionId || !isSessionBoundToIdentity(session, identity)) {
+          return res.status(403).json({ error: "Your paid session has ended. Sign in to your paid session to continue this analysis.", code: "PAID_SESSION_REQUIRED" });
+        }
+      } else if (!isVerifiedSiteOwner(identity, req.header("x-admin-secret"))) {
+        return res.status(403).json({ error: "This analysis can only be continued by the site owner.", code: "FORBIDDEN" });
+      }
+
+      const progress = await advanceEngineJob({
+        store,
+        jobId,
+        generate: generateContentWithFallback,
+        deadlineAt: startedAt + 265_000,
+        maxSteps: engineTestMaxSteps(),
+      });
+      if (progress.status === "MISSING") return res.status(404).json({ error: "Analysis job not found.", code: "JOB_NOT_FOUND" });
+      if (progress.status === "BUSY") {
+        return res.status(409).json({ error: "This analysis is being worked on. Try again in a few seconds.", code: "ANALYSIS_IN_PROGRESS", retryable: true, retryAfterMs: 5000 });
+      }
+      if (progress.status === "PENDING") {
+        const done = progress.state.done.length;
+        const total = progress.state.plan.length;
+        const percent = 35 + Math.round((done / total) * 60);
+        const message = `Forensic analysis saved after ${done} of ${total} steps; continuing.`;
+        await markAnalysisJobResumable(jobId, { stage: "reviewing_evidence", percent, message });
+        return res.status(202).json({ status: "continuing", code: "ANALYSIS_CONTINUING", jobId, percent, message });
+      }
+
+      const engineReport = progress.state.report!;
+      if (isFatal(engineReport)) {
+        await settleFailed(store, meta, () =>
+          releaseAnalysisReservation({ sessionId: meta.sessionId!, requestId: jobId, reservationId: meta.reservationId ?? undefined, reason: "forensic_engine_incomplete" })
+        );
+        const failure = { code: "ANALYSIS_FAILED", message: "The forensic investigation could not be completed and verified. Nothing was charged. Please start a new analysis.", statusCode: 410, retryable: false };
+        await failAnalysisJobDurable(jobId, failure).catch(() => {});
+        return res.status(410).json({ error: failure.message, code: failure.code, retryable: false });
+      }
+
+      const run = engineRunShape(engineReport, progress.state.documents);
+      const resolution = resolveServerAuthoritativeModel({ mode: "full", isPaid: true, tier: (meta.tier ?? "Pro") as Tier, clientRequestedModel: undefined });
+      const report: any = {
+        ...run.report,
+        timing: { mode: "full", durationMs: engineReport.totals.durationMs, totalRequestMs: Date.now() - startedAt, sectionMs: run.sectionTimingsMs },
+        modelMetadata: toCustomerModelMetadata({
+          engineName: resolution.engineDisplayName,
+          mode: "full",
+          modeName: resolution.modeDisplayName,
+          durationMs: engineReport.totals.durationMs,
+        }),
+      };
+      let costUsd = 0;
+      for (const [usedModel, usage] of Object.entries(run.usageByModel)) costUsd += calculateEstimatedCost(usedModel, usage).totalCostUsd;
+      console.log(JSON.stringify({ tag: "[ANALYZER_RUN]", requestId: jobId, mode: "full", engine: "forensic-engine", resumed: true, costUsd: Number(costUsd.toFixed(5)), costIsEstimate: true, outcome: "success" }));
+
+      if (meta.billing === "paid") {
+        const outcome = await settleDelivered(store, meta, {
+          finalize: () =>
+            finalizeAnalysisCredit({
+              sessionId: meta.sessionId!,
+              firebaseUid: identity.uid,
+              requestId: jobId,
+              reservationId: meta.reservationId ?? undefined,
+              tier: meta.tier!,
+              documentName: meta.documentName ?? undefined,
+            }),
+          reserveAgain: async () => {
+            const again = await reserveAnalysisCredit({
+              sessionId: meta.sessionId!,
+              firebaseUid: identity.uid,
+              tier: meta.tier!,
+              requestId: jobId,
+              analysisType: "forensic",
+              documentName: meta.documentName ?? "document",
+            });
+            return { billingCycle: again.billingCycle };
+          },
+        });
+        if (outcome === "CHARGED") {
+          await recordPaidUse(meta.sessionId!, meta.tier!, meta.userEmail, "forensic", jobId, ...cycleArgs({ billingCycle: meta.billingCycle })).catch((usageErr) =>
+            console.error("[forensic engine] Failed to record paid usage (non-fatal):", usageErr)
+          );
+        }
+        const credits = await getPaidUsageStatus(meta.sessionId!, meta.tier as Tier).catch(() => null);
+        if (credits) report.credits = credits;
+      } else {
+        await settleDelivered(store, meta, { finalize: async () => {}, reserveAgain: async () => ({ billingCycle: null }) });
+      }
+
+      await completeAnalysisJobDurable(jobId, report);
+      return res.json(redactCustomerReport(report));
+    } catch (error: any) {
+      if (error instanceof LifecycleError && error.code === "ANALYSIS_LIMIT_REACHED") {
+        return res.status(402).json({ error: "Your analysis allowance was used up before this report could be recorded. It is saved; it will be released once you have an analysis available.", code: error.code });
+      }
+      console.error("[forensic engine] continue failed; the job stays resumable:", error);
+      const formatted = formatAnalyzerErrorResponse(error);
+      return res.status(formatted.statusCode >= 500 ? 503 : formatted.statusCode).json({ error: formatted.error, code: formatted.code, retryable: true });
     }
   });
 
