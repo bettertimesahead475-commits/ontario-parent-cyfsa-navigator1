@@ -122,3 +122,19 @@ describe("Forensic Engine report structure", () => {
     expect(html).toContain("<strong>3. Finding high-d</strong>");
   });
 });
+
+describe("partial adversarial review is disclosed on every finding, on screen and in the PDF", () => {
+  const PARTIAL = {
+    ...RECORD,
+    status: "PARTIAL",
+    findings: [{ ...RECORD.findings[0], review: { verdict: "UPHELD", partialRecord: ["Exhibit B", "Case note"] } }],
+  };
+  it("labels the review as partial", () => {
+    const v = buildEngineRecordView(PARTIAL)!;
+    expect(v.findings[0].reviewedPartially).toBe(true);
+    expect(v.findings[0].review).toBe("Upheld by adversarial review (the review read only part of the record; not read in full: Exhibit B; Case note)");
+    render(<ForensicEngineRecord record={PARTIAL} />);
+    expect(screen.getByText(/not read in full: Exhibit B; Case note/)).toBeTruthy();
+    expect(renderEngineRecordHtml(PARTIAL, (x) => x)).toContain("not read in full: Exhibit B; Case note");
+  });
+});

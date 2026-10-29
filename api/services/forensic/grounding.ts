@@ -17,6 +17,8 @@
  * 9. Duplicates are merged into the strongest finding, which keeps every supporting reference.
  * 10. Class E (confirmed noncompliance) also needs at least one cited provision whose text was checked (an internal
  *     reference match). A breach of a rule whose text nobody checked cannot be confirmed; it is D.
+ * 11. A review that read only part of the record (it was larger than the review's budget) is stated on every finding,
+ *     and cannot confirm noncompliance: E becomes D, because contrary text in the unread part was never checked.
  */
 
 import { classifyCitation } from "../../../shared/citationVerification.js";
@@ -147,6 +149,15 @@ export function groundFinding(input: Finding): Finding {
   if (f.evidenceClass === "E" && !f.legalIssues.some((l) => l.citation && l.citationStatus === "INTERNAL_REFERENCE_MATCH")) {
     f.evidenceClass = "D";
     note("Downgraded from confirmed noncompliance (E) to potential legal issue (D): no cited provision has text that was checked.");
+  }
+  // Rule 11
+  if (f.review.partialRecord && f.review.partialRecord.length > 0) {
+    note(`The adversarial review read only part of the record; it did not read in full: ${f.review.partialRecord.join("; ")}. Contrary text there was not checked.`);
+    if (f.evidenceClass === "E") {
+      f.evidenceClass = "D";
+      note("Downgraded from confirmed noncompliance (E) to potential legal issue (D): the review did not read the whole record.");
+    }
+    f.uncertainty = raise(f.uncertainty, "MEDIUM");
   }
   // Rule 4
   if (f.evidenceClass === "A" && verifiedSupport.length === 0) {

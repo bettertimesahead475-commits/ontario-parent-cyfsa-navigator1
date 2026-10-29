@@ -206,7 +206,13 @@ export interface Finding {
   visualVerification: "CONFIRMED" | "CONTRADICTED" | "INCONCLUSIVE" | "NOT_AVAILABLE" | "NOT_REQUIRED";
   visualNote: string;
   uncertainty: "LOW" | "MEDIUM" | "HIGH";
-  review: { verdict: ReviewVerdict; reasons: string[]; revisedStatement: string | null };
+  review: {
+    verdict: ReviewVerdict;
+    reasons: string[];
+    revisedStatement: string | null;
+    /** Titles of documents the review did not read in full (the record exceeded its budget). Absent: whole record. */
+    partialRecord?: string[];
+  };
   /** Deterministic grounding outcome. MATERIAL findings are reported; the rest go to the appendix with reasons. */
   grounding: { status: "MATERIAL" | "UNSUPPORTED" | "REJECTED_BY_REVIEW" | "DUPLICATE"; notes: string[] };
 }

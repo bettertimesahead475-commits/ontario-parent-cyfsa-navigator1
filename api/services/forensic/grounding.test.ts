@@ -70,6 +70,19 @@ describe("grounding rules", () => {
     expect(groundFinding(upheld).evidenceClass).toBe("E");
   });
 
+  it("rule 11: a review of part of the record is stated on the finding and cannot confirm noncompliance", () => {
+    const f = parse({
+      evidenceClass: "E",
+      supporting: [{ documentId: "end1", quote: "Matter adjourned to November 4, 2026 on consent." }],
+      legalIssues: [{ citation: "CYFSA s. 94(1)", nature: "LEGAL_RULE", explanation: "x" }],
+    });
+    const upheld = applyReview([f], [{ findingId: "F1", verdict: "UPHELD" }], DOCS)[0];
+    expect(groundFinding(upheld).evidenceClass).toBe("E");
+    const partial = groundFinding({ ...upheld, review: { ...upheld.review, partialRecord: ["Exhibit B"] } });
+    expect(partial.evidenceClass).toBe("D");
+    expect(partial.grounding.notes.join(" ")).toMatch(/did not read in full: Exhibit B/);
+  });
+
   it("rule 10: confirmed noncompliance needs a cited provision whose text was checked", () => {
     const quote = [{ documentId: "end1", quote: "Matter adjourned to November 4, 2026 on consent." }];
     const uncited = applyReview([parse({ evidenceClass: "E", supporting: quote })], [{ findingId: "F1", verdict: "UPHELD" }], DOCS)[0];

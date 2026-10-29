@@ -30,6 +30,8 @@ export interface EngineFindingView {
   established: boolean;
   /** Distinct documents whose text supports the finding. */
   documentsSupporting: number;
+  /** The adversarial review read only part of the record for this finding. */
+  reviewedPartially: boolean;
   statement: string;
   classLabel: string;
   review: string;
@@ -94,7 +96,8 @@ export function buildEngineRecordView(record: any): EngineRecordView | null {
     documentsSupporting: new Set(arr(f.supporting).filter((r) => r.verified === true).map((r) => s(r.documentId))).size,
     statement: s(f.statement),
     classLabel: `${CLASS_LABEL[s(f.evidenceClass)] ?? "Unclassified"} (${s(f.evidenceClass) || "?"})`,
-    review: VERDICT_LABEL[s(f.review?.verdict)] ?? "Not reviewed",
+    review: `${VERDICT_LABEL[s(f.review?.verdict)] ?? "Not reviewed"}${arr(f.review?.partialRecord).length ? ` (the review read only part of the record; not read in full: ${arr(f.review.partialRecord).map(s).join("; ")})` : ""}`,
+    reviewedPartially: arr(f.review?.partialRecord).length > 0,
     uncertainty: s(f.uncertainty).toLowerCase() || "unknown",
     sources: arr(f.supporting).map((r) => ({ where: where(r), quote: s(r.quote), verified: r.verified === true })),
     counter: arr(f.contradicting).map((r) => ({ where: where(r), quote: s(r.quote) })),

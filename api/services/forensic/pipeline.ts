@@ -480,6 +480,11 @@ export async function runEngineStep(input: EngineState, step: string, deps: Step
       const raw = parseJsonLenient(res.text);
       if (!raw || !Array.isArray(raw.reviews)) throw new Error("Review returned no reviews array.");
       state.findings = applyReview(state.findings, raw.reviews, docs);
+      if (scope.notFull.length > 0) {
+        // Every finding was reviewed against part of the record: contrary text elsewhere was not checked (rule 11).
+        const partialRecord = scope.notFull.map((id) => docs.find((d) => d.id === id)?.title ?? id);
+        for (const f of state.findings) f.review = { ...f.review, partialRecord };
+      }
       const unreviewed = state.findings.filter((f) => f.review.verdict === "NOT_REVIEWED").length;
       if (unreviewed > 0) state.incompleteness.push(`${unreviewed} finding(s) were not addressed by the adversarial review.`);
       return finish("DONE");
@@ -598,7 +603,15 @@ export async function runEngineStep(input: EngineState, step: string, deps: Step
     );
     state.report = {
       schema: "forensic-engine-v1",
-      status: state.stages.some((s) => s.status === "FAILED") ? "PARTIAL" : "COMPLETE",
+      // Partial whenever part of the record or the method was not covered, not only when a stage failed: a truncated
+      // document, a call budget that ran out, or a review that read part of the record.
+      status:
+        state.stages.some((s) => s.status === "FAILED") ||
+        state.budgetExhausted ||
+        state.documents.some((d) => d.text.length > limits.maxCharsPerDocument) ||
+        state.findings.some((f) => (f.review.partialRecord?.length ?? 0) > 0)
+          ? "PARTIAL"
+          : "COMPLETE",
       incompleteness: state.incompleteness,
       caseModel: cm,
       hypotheses: state.hypotheses,
@@ -685,10 +698,15 @@ const REVIEW_WINDOW_CHARS = 2_500;
  * call), the review reads every document a finding cites, in full where its share of the budget allows and otherwise
  * as the passages around each quotation, and the reduction is stated in the report. It is never silent.
  */
-export function reviewDocuments(docs: CaseDocument[], findings: Finding[], budget: number, maxCharsPerDocument: number): { docs: CaseDocument[]; note: string | null } {
+export function reviewDocuments(
+  docs: CaseDocument[],
+  findings: Finding[],
+  budget: number,
+  maxCharsPerDocument: number
+): { docs: CaseDocument[]; note: string | null; notFull: string[] } {
   const len = (d: CaseDocument) => Math.min(d.text.length, maxCharsPerDocument);
   const total = docs.reduce((n, d) => n + len(d), 0);
-  if (total <= budget) return { docs, note: null };
+  if (total <= budget) return { docs, note: null, notFull: [] };
   const refs = findings.flatMap((f) => [...f.supporting, ...f.contradicting]);
   const citedOnly = docs.filter((d) => refs.some((r) => r.documentId === d.id));
   // Findings that cite nothing (information not recorded) are checked against the whole record, each document cut to
@@ -696,9 +714,11 @@ export function reviewDocuments(docs: CaseDocument[], findings: Finding[], budge
   const cited = citedOnly.length ? citedOnly : docs;
   const share = Math.floor(budget / Math.max(1, cited.length));
   let reduced = 0;
+  const notFull = docs.filter((d) => !cited.includes(d)).map((d) => d.id);
   const out = cited.map((d) => {
     if (len(d) <= share) return d;
     reduced++;
+    notFull.push(d.id);
     const spans = refs
       .filter((r) => r.documentId === d.id && r.startOffset !== null && r.endOffset !== null)
       .map((r) => [Math.max(0, r.startOffset! - REVIEW_WINDOW_CHARS), Math.min(d.text.length, r.endOffset! + REVIEW_WINDOW_CHARS)] as [number, number])
@@ -719,6 +739,7 @@ export function reviewDocuments(docs: CaseDocument[], findings: Finding[], budge
   ].filter(Boolean);
   return {
     docs: out,
+    notFull: docs.filter((d) => notFull.includes(d.id)).map((d) => d.id),
     note: `The record is larger than the adversarial review reads in one pass: ${parts.join(", and ")}. The review could not look for contrary text outside what it read.`,
   };
 }

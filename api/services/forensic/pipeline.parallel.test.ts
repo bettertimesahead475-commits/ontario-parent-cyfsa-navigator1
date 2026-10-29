@@ -154,7 +154,7 @@ describe("parallel batches in resumable runs", () => {
 describe("what the adversarial review reads", () => {
   it("reads the whole record when it fits, and says nothing", async () => {
     const { reviewDocuments } = await import("./pipeline");
-    expect(reviewDocuments(DOCS, [], 1_000_000, 300_000)).toEqual({ docs: DOCS, note: null });
+    expect(reviewDocuments(DOCS, [], 1_000_000, 300_000)).toEqual({ docs: DOCS, note: null, notFull: [] });
   });
 
   it("keeps a large record within its budget, keeps the quoted passages, and says what it did not read", async () => {
@@ -175,6 +175,7 @@ describe("what the adversarial review reads", () => {
     expect(r.docs[1].text).toContain("The hearing was set for September 25.");
     expect(r.note).toMatch(/1 document\(s\) that no finding cites were not re-read/);
     expect(r.note).toMatch(/2 long document\(s\) were reduced to the passages around the quoted text/);
+    expect(r.notFull).toEqual(["a", "b", "c"]);
   });
 
   it("puts the reduction in the report's incompleteness list", async () => {
@@ -195,5 +196,12 @@ describe("what the adversarial review reads", () => {
     const report = await runForensicInvestigation({ documents: docs, generate, models: MODELS, limits: { singlePassMaxChars: 10, reviewMaxChars: 50_000 }, deadlineAt: Date.now() + 60_000, requestId: "r" });
     expect(reviewChars).toBeLessThan(60_000);
     expect(report.incompleteness.join(" ")).toMatch(/larger than the adversarial review reads in one pass/);
+    // Not silently treated as fully reviewed: the record is partial, and the finding says what the review did not read.
+    expect(report.status).toBe("PARTIAL");
+    const f = report.findings[0];
+    expect(f.review.verdict).toBe("UPHELD");
+    expect(f.review.partialRecord).toEqual(["A", "B"]);
+    expect(f.grounding.notes.join(" ")).toMatch(/review read only part of the record; it did not read in full: A; B/);
+    expect(f.uncertainty).not.toBe("LOW");
   });
 });
