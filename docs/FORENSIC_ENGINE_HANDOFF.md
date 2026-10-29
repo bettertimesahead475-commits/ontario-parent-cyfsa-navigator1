@@ -503,3 +503,53 @@ not exist in production, and publishing needs human-approved posts, so it cannot
 4. The cost cap for maximum-size Forensic cases.
 5. The Michelle Clark verified anchors and the deponent-name decision.
 6. Merge approval: #110, then #111.
+
+---
+
+## Production recovery findings, 2026-10-29 (read-only)
+
+### Payments
+
+- **Pending requests.** `PS-FFXXJ` (Pro, $149.00, 2026-10-10 03:27 UTC) and `PS-AUEWJ` (Pro, $149.00, 2026-10-11
+  05:55 UTC). Both have a parent contact on file; neither has been approved.
+- **The scan cannot find them.** It searches `from:(interac.ca OR payments.interac.ca) newer_than:7d`, so even once
+  configured it will never find Interac notifications from October 10-11. These two must be checked by hand.
+- **Mailbox.** E-transfers go to `chris@cyfsanavigator.com`. The domain's MX records point to ImprovMX (mail
+  forwarding), so the notifications land in whatever mailbox ImprovMX forwards to. `GMAIL_REFRESH_TOKEN` must be issued
+  while signed in to that mailbox.
+- **Cross-check not done.** The Gmail connector in this session needs re-authorisation, and it is connected to a
+  different address, so the requests were not cross-referenced against the inbox.
+- **Production variables.** Set: `ADMIN_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SUPABASE_*`,
+  `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`. Missing: `CRON_SECRET`, `GOOGLE_REDIRECT_URI`, `GMAIL_REFRESH_TOKEN`,
+  `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` (and optional `SMTP_PORT`, `SMTP_SECURE`, `SMTP_FROM`, `ADMIN_ALERT_EMAIL`).
+  Whether the existing Google OAuth client has the Gmail API enabled and the callback URI authorised is not verified.
+- **Approval without SMTP still works.** `POST /api/admin/approve-payment` (admin secret) marks the payment approved,
+  creates the code and returns it with `emailSent: false`. The code is shown only in that response. Delivering it is
+  then a manual message to the parent.
+
+### Vercel
+
+- **Production is serving.** `cyfsanavigator.com` returns 200 from deployment `dpl_Em7UfuVacRQ6meNobdKnTYsgH7P2`
+  (main `e2bbc76f`, READY). Functions still run: the cron requests are still arriving.
+- **The block covers new deployments in every project.** The last deployment in each of the three projects connected
+  to this repository is 2026-10-28 11:32:57 UTC. Since then GitHub only receives "Account is blocked" from all three.
+  Whether a promote or rollback of an existing deployment would also be refused is unverified.
+- **Billing.** The team is on the Pro plan. Billed per day (UTC days starting 07:00): Oct 24 US$15.36, Oct 25 US$6.34,
+  Oct 26 US$16.78, Oct 27 US$22.75, Oct 28 US$1.35, Oct 29 US$0.67. Build CPU minutes make up US$14.67, 5.66, 16.10,
+  22.06 and 0.67 of those.
+  - Every push built in all three projects: 36, 9, 20, 30 and 5 deployments per project on Oct 24-28.
+  - The block began right after the heaviest build day.
+  - The exact reason (spend-management limit, failed payment, or an account review) is shown only on the Vercel
+    dashboard, which this session cannot read. vercel.com is also outside this session's network allowlist.
+  - Assumption, unverified: a spend limit or payment problem.
+- **Cost fix.** Draft PR #112 (`chore/vercel-build-guard`, based on main) adds an ignored build step:
+  - The duplicate projects never build.
+  - `main` always builds.
+  - Other branches build only if they are `release/*`, `preview/*` or listed in `VERCEL_PREVIEW_BRANCHES`, and not
+    for documentation-only commits.
+
+### Benchmark dry run (`--case=affidavit-hearsay --engine-only --max-spend-usd=2.50 --dry-run`)
+
+The worst case is US$0.987 over 3 requests: Sonnet 5 extraction (6k max output, US$0.064), Opus 5 investigation (24k,
+US$0.612) and Opus 5 review (12k, US$0.311), in 1 invocation. This session has no `ANTHROPIC_API_KEY`, so the paid
+run must be started where a key is available.
