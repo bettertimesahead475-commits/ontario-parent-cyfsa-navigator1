@@ -2320,7 +2320,7 @@ export default function TemplatesTab() {
                             ...prev,
                             disagreedFacts: [...prev.disagreedFacts, ...newDisagreements]
                           }));
-                          alert(`Success: Automatically populated ${report.redFlags.length} flagged objections into Form 33B reply paragraphs!`);
+                          alert(`Success: Automatically populated ${report.redFlags.length} flagged objections into your educational Form 33B.1 respondent answer preparation!`);
                         } else {
                           alert("No audited document report with red flags was found. Audit a document in the Document Analyzer first.");
                         }

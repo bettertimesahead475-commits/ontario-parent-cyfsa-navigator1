@@ -8,6 +8,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A disposable PostgreSQL for the *.pg.test.ts suites (359 tests that otherwise skip). It lives only for this
+    # job, holds only synthetic data, and the suites refuse any host other than 127.0.0.1/localhost.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: credit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -22,6 +38,9 @@ jobs:
         run: npm run lint
 
       - name: Test
+        env:
+          NAVIGATOR_PG_TEST_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          CREDIT_PG_URL: postgres://postgres:postgres@127.0.0.1:5432/credit_test
         run: npm test
 
       - name: Build
