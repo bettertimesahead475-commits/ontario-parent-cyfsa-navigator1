@@ -1,0 +1,59 @@
+{
+  "id": "multi-doc-contradiction",
+  "category": "MULTI_DOCUMENT",
+  "description": "Case note and later affidavit describe the same visit differently.",
+  "annotation": {
+    "annotatedBy": "Engineering author (Claude Code session). Synthetic, fictional record.",
+    "independentlyReviewed": false,
+    "notes": "Gold issues reflect the author's reading. Must be reviewed by an Ontario child protection lawyer before results are relied on."
+  },
+  "documents": [
+    {
+      "id": "note",
+      "title": "CAS case note, March 5, 2026",
+      "kind": "CAS_RECORD",
+      "extractionMethod": "TEXT_LAYER",
+      "text": "[Page 1]\nCase note — home visit March 5, 2026, 2:15 p.m.\nWorker: T. Brandt.\nChild (age 4) observed playing in living room. Child appeared well-fed and appropriately dressed.\nMother cooperative. No concerns noted during the visit."
+    },
+    {
+      "id": "aff2",
+      "title": "Affidavit of T. Brandt, sworn April 9, 2026",
+      "kind": "AFFIDAVIT",
+      "extractionMethod": "TEXT_LAYER",
+      "text": "[Page 1]\nI, T. Brandt, make oath and say:\n1. I attended the family home on March 5, 2026.\n2. During that visit the child appeared thin and inadequately dressed for the weather.\n3. Based on my observations, I am concerned that the child's basic needs are not being met."
+    }
+  ],
+  "expected": [
+    {
+      "id": "visit-contradiction",
+      "description": "Same worker, same visit: contemporaneous note says well-fed and appropriately dressed; affidavit says thin and inadequately dressed.",
+      "anchors": [
+        "Child appeared well-fed and appropriately dressed.",
+        "the child appeared thin and inadequately dressed for the weather"
+      ],
+      "acceptableClasses": [
+        "A",
+        "C"
+      ],
+      "required": true
+    },
+    {
+      "id": "no-concerns-noted",
+      "description": "Contemporaneous note recorded no concerns.",
+      "anchors": [
+        "No concerns noted during the visit."
+      ],
+      "acceptableClasses": [
+        "A"
+      ],
+      "required": false
+    }
+  ],
+  "forbidden": [
+    {
+      "id": "fabrication",
+      "description": "Concludes the affidavit was fabricated.",
+      "pattern": "\\b(fabricat|falsif|made up)"
+    }
+  ]
+}

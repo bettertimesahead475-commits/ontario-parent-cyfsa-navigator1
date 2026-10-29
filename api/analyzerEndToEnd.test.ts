@@ -13,6 +13,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createProductionLikeDb } from "./testSupport/productionLikeCreditDb.js";
 import request from "supertest";
 import { LifecycleError } from "./services/lifecycleErrors.js";
+import { CheckpointStore, InMemoryObjectStore } from "./services/forensic/checkpointStore.js";
+import { setEngineStoreForTesting } from "./services/forensic/engineJobs.js";
 
 const { mockCreateMessage, mockGenerateContent } = vi.hoisted(() => ({
   mockCreateMessage: vi.fn(),
@@ -950,3 +952,380 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
   });
 });
 
+
+describe("Forensic Engine on the analyze route (FORENSIC_ENGINE_ENABLED)", () => {
+  const DOC =
+    "[Page 1]\nI, Dana Reyes, make oath and say:\nA caller who wished to remain anonymous reported that the children were left alone.\n[Page 2]\nI have not personally observed the children without supervision.";
+  const stageOf = (body: any) => {
+    const sys = String(body.system ?? "");
+    if (sys.includes("Your job in this stage is extraction only")) return "extraction";
+    if (sys.includes("Your job in this stage is adversarial review")) return "review";
+    if (sys.includes("Your job in this stage is independent forensic investigation")) return "investigation";
+    if (sys.includes("Your job in this stage is to check specific findings against page images")) return "visual";
+    return "legacy";
+  };
+  const FINDING = {
+    id: "F1", title: "Allegation rests on an anonymous caller",
+    statement: "The supervision allegation comes from an anonymous caller; the worker did not observe it.",
+    evidenceClass: "A", significance: "HIGH",
+    supporting: [
+      { documentId: "document", quote: "A caller who wished to remain anonymous reported that the children were left alone." },
+      { documentId: "document", quote: "I have not personally observed the children without supervision." },
+    ],
+  };
+  const FABRICATED = { id: "F2", title: "Invented", statement: "x", evidenceClass: "E", supporting: [{ documentId: "document", quote: "The worker admitted the allegation was false." }] };
+  const respond = (overrides: Partial<Record<string, (body: any) => any>> = {}) => async (body: any) => {
+    const st = stageOf(body);
+    if (overrides[st]) return overrides[st]!(body);
+    if (st === "extraction") return claudeJson({ people: [{ name: "Dana Reyes", roles: ["worker"], quote: "I, Dana Reyes" }] }, { input_tokens: 100, output_tokens: 50 });
+    if (st === "investigation") return claudeJson({ hypotheses: [{ id: "H1", question: "Is the allegation firsthand?", outcome: "UNDERMINED" }], findings: [FINDING, FABRICATED], openQuestions: ["Who was the caller?"] }, { input_tokens: 2000, output_tokens: 800 });
+    if (st === "review") return claudeJson({ reviews: [{ findingId: "F1", verdict: "UPHELD", reasons: ["Quotations accurate."] }, { findingId: "F2", verdict: "REJECTED" }] }, { input_tokens: 1500, output_tokens: 300 });
+    return sectionResponder(CORE)(body);
+  };
+  const rpcNames = () => {
+    const names: string[] = [];
+    const original = dbHolder.db.rpc.bind(dbHolder.db);
+    dbHolder.db.rpc = (name: string, args: any) => {
+      names.push(name);
+      return original(name, args);
+    };
+    return names;
+  };
+
+  let engineObjects: InstanceType<typeof InMemoryObjectStore>;
+  beforeEach(() => {
+    process.env.FORENSIC_ENGINE_ENABLED = "true";
+    engineObjects = new InMemoryObjectStore();
+    setEngineStoreForTesting(new CheckpointStore(engineObjects));
+  });
+  const off = () => {
+    delete process.env.FORENSIC_ENGINE_ENABLED;
+    delete process.env.FORENSIC_ENGINE_TEST_MAX_STEPS;
+  };
+  const continueJob = (id: string, headers: Record<string, string> = paid()) => request(app).post(`/api/analyze/job/${id}/continue`).set(headers).send({});
+  const runToEnd = async (id: string) => {
+    let res: any;
+    for (let i = 0; i < 20; i++) {
+      res = await continueJob(id);
+      if (res.status !== 202) return { res, calls: i + 1 };
+    }
+    return { res, calls: 20 };
+  };
+
+  it("runs Opus investigation and review, grounds findings, renders the existing report shape, and finalizes the credit", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    try {
+      const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "full" });
+      expect(res.status).toBe(200);
+      const byStage = (st: string) => mockCreateMessage.mock.calls.filter((c) => stageOf(c[0]) === st).map((c) => c[0]);
+      expect(byStage("extraction")[0].model).toBe("claude-sonnet-5");
+      expect(byStage("investigation")[0].model).toBe("claude-opus-5");
+      expect(byStage("investigation")[0].thinking).toEqual({ type: "adaptive" });
+      expect(byStage("review")[0].model).toBe("claude-opus-5");
+      expect(byStage("legacy")).toHaveLength(0);
+
+      expect(res.body.forensicEngine.schema).toBe("forensic-engine-v1");
+      expect(res.body.redFlags.map((r: any) => r.id)).toEqual(["F1"]);
+      expect(res.body.redFlags[0]).toMatchObject({ quoteVerified: true, severity: "Worth Raising With Counsel" });
+      expect(res.body.redFlags[0].forensicVerification.verdict).toBe("UPHELD");
+      expect(res.body.forensicEngine.appendix.map((f: any) => f.id)).toEqual(["F2"]);
+      expect(res.body.completenessScore).toBeNull();
+      expect(JSON.stringify(res.body)).not.toMatch(/claude-|totalCost|inputTokens|outputTokens|costUsd|costCad/);
+
+      expect(calls).toContain("paid_reserve_credit");
+      expect(calls).toContain("paid_finalize_credit");
+      expect(calls).not.toContain("paid_release_credit");
+    } finally {
+      off();
+    }
+  });
+
+  it("fails with a retryable 503 and releases the credit when the adversarial review cannot complete", async () => {
+    mockCreateMessage.mockImplementation(respond({ review: () => { throw Object.assign(new Error("overloaded"), { status: 529 }); } }));
+    const calls = rpcNames();
+    try {
+      const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "full" });
+      expect(res.status).toBe(503);
+      expect(res.body.retryable).toBe(true);
+      expect(calls).toContain("paid_reserve_credit");
+      expect(calls).toContain("paid_release_credit");
+      expect(calls).not.toContain("paid_finalize_credit");
+    } finally {
+      off();
+    }
+  });
+
+  it("leaves Quick Review on the existing analyzer even when the flag is on", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    try {
+      const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "fast" });
+      expect(res.status).toBe(200);
+      expect(res.body.forensicEngine).toBeUndefined();
+      expect(mockCreateMessage.mock.calls.every((c) => stageOf(c[0]) === "legacy")).toBe(true);
+    } finally {
+      off();
+    }
+  });
+
+  it("uses the existing Forensic analyzer when the flag is off", async () => {
+    off();
+    mockCreateMessage.mockImplementation(respond());
+    const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "full" });
+    expect(res.status).toBe(200);
+    expect(res.body.forensicEngine).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.some((c) => stageOf(c[0]) === "investigation")).toBe(false);
+  });
+
+  it("investigates additional documents of the same case together", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    try {
+      const res = await request(app)
+        .post("/api/analyze")
+        .set(paid())
+        .send({ textContent: DOC, mode: "full", additionalDocuments: [{ title: "Case note", text: "Case note — home visit March 5. Children supervised by father." }] });
+      expect(res.status).toBe(200);
+      const investigation = mockCreateMessage.mock.calls.find((c) => stageOf(c[0]) === "investigation")![0];
+      const content = JSON.stringify(investigation.messages);
+      expect(content).toContain('id=\\"document\\"');
+      expect(content).toContain('id=\\"doc2\\"');
+      expect(res.body.forensicEngine.caseModel.documents.map((d: any) => d.id)).toEqual(["document", "doc2"]);
+    } finally {
+      off();
+    }
+  });
+
+  it("rejects malformed additional documents with 400 and releases the credit", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    try {
+      const res = await request(app).post("/api/analyze").set(paid()).send({ textContent: DOC, mode: "full", additionalDocuments: "not a list" });
+      expect(res.status).toBe(400);
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+      expect(calls).not.toContain("paid_finalize_credit");
+      if (calls.includes("paid_reserve_credit")) expect(calls).toContain("paid_release_credit");
+    } finally {
+      off();
+    }
+  });
+
+  it("returns the saved engine report on a retry of the same analysis id, without new model calls", async () => {
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    const id = `req_${Date.now()}_enginertry`;
+    try {
+      const first = await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect(first.status).toBe(200);
+      const modelCalls = mockCreateMessage.mock.calls.length;
+      const second = await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect(second.status).toBe(200);
+      expect(second.body.forensicEngine.schema).toBe("forensic-engine-v1");
+      expect(second.body.redFlags.map((r: any) => r.id)).toEqual(first.body.redFlags.map((r: any) => r.id));
+      expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+      expect(calls.filter((n) => n === "paid_reserve_credit")).toHaveLength(1);
+    } finally {
+      off();
+    }
+  });
+
+  it("saves progress, tells the client to continue, and finishes across invocations with the credit charged once", async () => {
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    const id = `req_${Date.now()}_resume1`;
+    try {
+      const first = await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect(first.status).toBe(202);
+      expect(first.body).toMatchObject({ code: "ANALYSIS_CONTINUING", jobId: id });
+
+      // A resubmission of the same id continues the job; it never starts or charges a second analysis.
+      const again = await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect(again.status).toBe(202);
+
+      const { res } = await runToEnd(id);
+      expect(res.status).toBe(200);
+      expect(res.body.forensicEngine.schema).toBe("forensic-engine-v1");
+      expect(res.body.redFlags.map((r: any) => r.id)).toEqual(["F1"]);
+      expect(JSON.stringify(res.body)).not.toMatch(/claude-|totalCost|inputTokens|outputTokens|costUsd|costCad/);
+
+      const byStage = (st: string) => mockCreateMessage.mock.calls.filter((c) => stageOf(c[0]) === st).length;
+      expect([byStage("extraction"), byStage("investigation"), byStage("review")]).toEqual([1, 1, 1]);
+      expect(calls.filter((n) => n === "paid_reserve_credit")).toHaveLength(1);
+      expect(calls.filter((n) => n === "paid_finalize_credit")).toHaveLength(1);
+      expect(calls).not.toContain("paid_release_credit");
+
+      // Continuing a delivered job returns the saved report without charging or running anything.
+      const modelCalls = mockCreateMessage.mock.calls.length;
+      const replay = await continueJob(id);
+      expect(replay.status).toBe(200);
+      expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+      expect(calls.filter((n) => n === "paid_finalize_credit")).toHaveLength(1);
+    } finally {
+      off();
+    }
+  });
+
+  it("lets only one of two simultaneous continue calls run a step", async () => {
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    mockCreateMessage.mockImplementation(respond({ investigation: async (body: any) => { await gate; return respond()(body); } }));
+    const id = `req_${Date.now()}_concur1`;
+    try {
+      await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" }); // extract
+      await continueJob(id); // build
+      const a = continueJob(id).then((r) => r); // sent now; takes the investigation lease and waits on the gate
+      await new Promise((r) => setTimeout(r, 50));
+      const b = await continueJob(id);
+      expect(b.status).toBe(409);
+      expect(b.body.code).toBe("ANALYSIS_IN_PROGRESS");
+      release();
+      expect((await a).status).toBe(202);
+      expect(mockCreateMessage.mock.calls.filter((c) => stageOf(c[0]) === "investigation")).toHaveLength(1);
+    } finally {
+      off();
+    }
+  });
+
+  it("releases the credit exactly once when the review keeps failing, and never runs the job again", async () => {
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    mockCreateMessage.mockImplementation(respond({ review: () => { throw Object.assign(new Error("overloaded"), { status: 529 }); } }));
+    const calls = rpcNames();
+    const id = `req_${Date.now()}_fatal01`;
+    try {
+      await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      const { res } = await runToEnd(id);
+      expect(res.status).toBe(410);
+      expect(res.body).toMatchObject({ code: "ANALYSIS_FAILED", retryable: false });
+      expect(calls.filter((n) => n === "paid_release_credit")).toHaveLength(1);
+      expect(calls).not.toContain("paid_finalize_credit");
+      // The review was retried across invocations up to its limit, then recorded as failed.
+      expect(mockCreateMessage.mock.calls.filter((c) => stageOf(c[0]) === "review")).toHaveLength(3);
+
+      expect((await continueJob(id)).status).toBe(410);
+      const restart = await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect(restart.status).toBe(409);
+      expect(restart.body.retryable).toBe(false);
+      expect(calls.filter((n) => n === "paid_finalize_credit")).toHaveLength(0);
+    } finally {
+      off();
+    }
+  });
+
+  it("keeps the job resumable through a storage outage and delivers it once afterwards", async () => {
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    const id = `req_${Date.now()}_outage1`;
+    try {
+      await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      engineObjects.failNextWriteMatching = /\/state\//;
+      const broken = await continueJob(id);
+      expect(broken.status).toBe(503);
+      expect(broken.body.retryable).toBe(true);
+      expect(calls).not.toContain("paid_release_credit");
+      const { res } = await runToEnd(id);
+      expect(res.status).toBe(200);
+      expect(calls.filter((n) => n === "paid_finalize_credit")).toHaveLength(1);
+    } finally {
+      off();
+    }
+  });
+
+  it("refuses to continue another account's job or one without the paid session", async () => {
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    mockCreateMessage.mockImplementation(respond());
+    const id = `req_${Date.now()}_access1`;
+    try {
+      await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      const modelCalls = mockCreateMessage.mock.calls.length;
+      expect((await continueJob(id, free())).status).toBe(404);
+      expect((await continueJob(id, { Authorization: PAID_TOKEN })).status).toBe(403);
+      expect((await continueJob(id, {})).status).toBe(401);
+      expect(mockCreateMessage.mock.calls.length).toBe(modelCalls);
+    } finally {
+      off();
+    }
+  });
+
+  it("charges a lapsed reservation exactly once by reserving again under the same id at delivery", async () => {
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    mockCreateMessage.mockImplementation(respond());
+    const calls = rpcNames();
+    const id = `req_${Date.now()}_lapse01`;
+    try {
+      await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      const meta = JSON.parse((await engineObjects.get(`${id}/meta.json`))!);
+      // The reservation lapses while the job is paused (as reconciliation would release it after 15 minutes).
+      await dbHolder.db.rpc("paid_release_credit", { p_session: meta.sessionId, p_request: id, p_reservation_id: meta.reservationId, p_now: new Date().toISOString() });
+      const { res } = await runToEnd(id);
+      expect(res.status).toBe(200);
+      expect(calls.filter((n) => n === "paid_reserve_credit")).toHaveLength(2);
+      expect(calls.filter((n) => n === "paid_finalize_credit").length).toBeGreaterThanOrEqual(1);
+      const replay = await continueJob(id);
+      expect(replay.status).toBe(200);
+      expect(calls.filter((n) => n === "paid_reserve_credit")).toHaveLength(2);
+    } finally {
+      off();
+    }
+  });
+
+  it("sends a continue event on a streamed request instead of an error", async () => {
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    mockCreateMessage.mockImplementation(respond());
+    const id = `req_${Date.now()}_stream1`;
+    try {
+      const res = await request(app)
+        .post("/api/analyze")
+        .set({ ...paid(), "x-analysis-id": id, Accept: "text/event-stream" })
+        .send({ textContent: DOC, mode: "full", stream: true })
+        .buffer(true)
+        .parse((r, cb) => { let d = ""; r.on("data", (c: any) => (d += c)); r.on("end", () => cb(null, d)); });
+      const events = String(res.body).split("\n\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)));
+      expect(events.at(-1)).toMatchObject({ type: "continue", jobId: id });
+      expect(events.some((e) => e.type === "error")).toBe(false);
+    } finally {
+      off();
+    }
+  });
+
+  it("tells the client whether multi-document Forensic analysis is available", async () => {
+    try {
+      expect((await request(app).get("/api/analyze/capabilities")).body).toEqual({ forensicEngine: true, maxAdditionalDocuments: 9 });
+      off();
+      expect((await request(app).get("/api/analyze/capabilities")).body.forensicEngine).toBe(false);
+    } finally {
+      off();
+    }
+  });
+
+  it("purges expired engine jobs only for the cron or admin secret", async () => {
+    const id = `req_${Date.now()}_purge01`;
+    process.env.FORENSIC_ENGINE_TEST_MAX_STEPS = "1";
+    mockCreateMessage.mockImplementation(respond());
+    process.env.CRON_SECRET = "test-cron-secret";
+    try {
+      await request(app).post("/api/analyze").set({ ...paid(), "x-analysis-id": id }).send({ textContent: DOC, mode: "full" });
+      expect((await request(app).get("/api/admin/forensic-engine/purge")).status).toBe(401);
+      expect((await request(app).get("/api/admin/forensic-engine/purge").set("Authorization", "Bearer wrong-secret-xxx")).status).toBe(401);
+      const ok = await request(app).get("/api/admin/forensic-engine/purge").set("Authorization", "Bearer test-cron-secret");
+      expect(ok.status).toBe(200);
+      expect(ok.body.purged).toBe(0); // a job just started is within the retention period
+      expect([...engineObjects.objects.keys()].some((k) => k.startsWith(`${id}/`))).toBe(true);
+    } finally {
+      delete process.env.CRON_SECRET;
+      off();
+    }
+  });
+
+  it("still refuses Forensic mode to an unpaid user before any model call", async () => {
+    mockFirebaseAdmin.verifyFirebaseToken.mockResolvedValueOnce({ uid: "free-parent-uid", email: "parent@example.com" });
+    try {
+      const res = await request(app).post("/api/analyze").set("Authorization", "Bearer free-parent-token").send({ textContent: DOC, mode: "full" });
+      expect(res.status).toBe(403);
+      expect(mockCreateMessage).not.toHaveBeenCalled();
+    } finally {
+      off();
+    }
+  });
+});

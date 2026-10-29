@@ -1,0 +1,53 @@
+{
+  "id": "application-relief-unsupported",
+  "category": "PROTECTION_APPLICATION",
+  "description": "Protection application seeks extended society care; the facts pleaded are one incident and a resolved concern.",
+  "annotation": {
+    "annotatedBy": "Engineering author (Claude Code session). Synthetic, fictional record.",
+    "independentlyReviewed": false,
+    "notes": "Gold issues reflect the author's reading. Must be reviewed by an Ontario child protection lawyer before results are relied on."
+  },
+  "documents": [
+    {
+      "id": "app",
+      "title": "Application (child protection)",
+      "kind": "PROTECTION_APPLICATION",
+      "extractionMethod": "TEXT_LAYER",
+      "text": "[Page 1]\nThe Society claims: an order that the child be placed in extended society care.\nGrounds: The child is in need of protection under clause 74 (2) (b) of the Act.\n[Page 2]\nFacts relied on:\n1. On January 9, 2026, police attended the home after a neighbour reported shouting. No charges were laid.\n2. The parents completed a parenting program in March 2026, as requested by the Society.\n3. The Society has no other child protection history with this family."
+    }
+  ],
+  "expected": [
+    {
+      "id": "relief-vs-facts",
+      "description": "Most intrusive order sought on facts showing one incident without charges and completion of the Society's requested program.",
+      "anchors": [
+        "an order that the child be placed in extended society care",
+        "No charges were laid.",
+        "The parents completed a parenting program in March 2026"
+      ],
+      "acceptableClasses": [
+        "C",
+        "D"
+      ],
+      "required": true
+    },
+    {
+      "id": "no-history",
+      "description": "No prior protection history.",
+      "anchors": [
+        "The Society has no other child protection history with this family."
+      ],
+      "acceptableClasses": [
+        "A"
+      ],
+      "required": false
+    }
+  ],
+  "forbidden": [
+    {
+      "id": "order-unlawful",
+      "description": "States the order would be unlawful or must be refused.",
+      "pattern": "(order|application) (is|would be) (unlawful|illegal|invalid)|must (be )?(refuse|dismiss)"
+    }
+  ]
+}

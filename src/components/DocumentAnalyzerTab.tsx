@@ -7,7 +7,7 @@ import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
+import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, continueForensicJob, isContinuation, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
 import {
   readSavedAnalysisJobId,
@@ -77,6 +77,10 @@ import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
+import { ForensicEngineRecord } from "./ForensicEngineRecord";
+import { AdditionalDocumentsPicker } from "./AdditionalDocumentsPicker";
+import { buildAdditionalDocuments } from "../utils/caseDocumentsSelection";
+import { buildEngineRecordView, engineStatusSummary, renderEngineRecordHtml, renderEngineStatusHtml } from "../utils/forensicEngineView";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -356,6 +360,17 @@ export default function DocumentAnalyzerTab() {
   // Forensic In-Depth uses Claude Opus (claude-3-opus-20240229). The server authoritatively
   // enforces this assignment so the frontend cannot override engine tier boundaries.
   const [analysisMode, setAnalysisMode] = useState<"fast" | "full">("fast");
+  // Other case documents to compare in a Forensic In-Depth analysis; offered only when the server's engine is on.
+  const [additionalDocIds, setAdditionalDocIds] = useState<string[]>([]);
+  const [forensicEngineOn, setForensicEngineOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    apiFetch("/api/analyze/capabilities")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => { if (live) setForensicEngineOn(Boolean(c?.forensicEngine)); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
   const [claudeModel, setClaudeModel] = useState<string>("claude-3-5-sonnet-20241022");
   const [claudeFocus, setClaudeFocus] = useState<string>("legal-auditor");
 
@@ -714,7 +729,19 @@ export default function DocumentAnalyzerTab() {
             const report = redacting ? redactForExport(file.analysisReport) : file.analysisReport;
             reportText += `>>> ANALYSIS AUDIT REPORT: ${redacting ? "Analysis report" : report.documentTitle || file.name}\n`;
             reportText += `Document Type : ${report.documentType || "N/A"}\n`;
-            reportText += `Completeness / Reliability Score: ${report.completenessScore}/100\n\n`;
+            reportText += `Completeness / Reliability Score: ${typeof report.completenessScore === "number" ? `${report.completenessScore}/100` : "Not scored"}\n\n`;
+            // Forensic Engine status comes from the original record: it identifies no one, and a redacted copy must
+            // still say when an analysis is partial. The details are free text and are removed when redacting.
+            const engineStatus = engineStatusSummary((file.analysisReport as any).forensicEngine);
+            if (engineStatus) {
+              reportText += `Forensic Engine : ${engineStatus.status === "PARTIAL" ? "PARTIAL ANALYSIS" : "Complete"}\n`;
+              if (redacting) {
+                if (engineStatus.status === "PARTIAL") reportText += `  - ${engineStatus.gaps} part(s) of the analysis did not complete (details removed from redacted copy).\n`;
+              } else {
+                for (const gap of buildEngineRecordView((file.analysisReport as any).forensicEngine)?.incompleteness ?? []) reportText += `  - Not done: ${gap}\n`;
+              }
+              reportText += "\n";
+            }
 
             // Red Flags
             reportText += `  * RED FLAGS IDENTIFIED (${report.redFlags?.length || 0}):\n`;
@@ -1858,6 +1885,9 @@ export default function DocumentAnalyzerTab() {
 
     try {
       const payload: any = {};
+      if (analysisMode === "full" && forensicEngineOn && additionalDocIds.length > 0) {
+        payload.additionalDocuments = buildAdditionalDocuments(organizedFiles, additionalDocIds, file.id);
+      }
       let extractedText = file.content;
       const isRawBase64 = file.mimeType !== "text/plain" && 
         (extractedText.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(extractedText.slice(0, 100)));
@@ -1922,9 +1952,20 @@ export default function DocumentAnalyzerTab() {
         attempt: async () => {
           const response = await postAnalysis();
           const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
-          // A JSON reply is a saved report (200) or an error (thrown by safeReadJson with its code and retryable flag).
-          if (!isStream) return safeReadJson(response);
-          return readAnalysisEventStream(response, {
+          // A long forensic analysis saves its progress and asks to be continued; continuing never charges twice.
+          const continueIfNeeded = async (result: any) =>
+            isContinuation(result)
+              ? continueForensicJob(analysisId, {
+                  isCancelled: () => stopWaitingRef.current,
+                  onProgress: (percent, message) => {
+                    setAnalyzerState("ANALYZING");
+                    setStreamingProgress(prev => ({ stage: "reviewing_evidence", percent: Math.max(prev.percent, percent), message }));
+                  },
+                })
+              : result;
+          // A JSON reply is a saved report (200), a continuation (202), or an error (thrown by safeReadJson).
+          if (!isStream) return continueIfNeeded(await safeReadJson(response));
+          return continueIfNeeded(await readAnalysisEventStream(response, {
             onStage: (stage, percent, message) => {
               if (stage === "extracting") setAnalyzerState("EXTRACTING");
               else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
@@ -1939,7 +1980,7 @@ export default function DocumentAnalyzerTab() {
             onError: () => {
               setAnalyzerState("ERROR");
             }
-          });
+          }));
         },
         recover: followServerJob,
         isCancelled: () => stopWaitingRef.current,
@@ -2472,6 +2513,8 @@ export default function DocumentAnalyzerTab() {
         evidenceScore >= 50 ? "#d97706" :
         "#dc2626";
 
+      // The Forensic Engine does not compute this score; a missing score is shown as not scored, never as 0.
+      const hasCompletenessScore = typeof reportForExport.completenessScore === "number";
       const completenessScore = Number(reportForExport.completenessScore) || 0;
       const components = evidenceIndex.components || {};
 
@@ -2566,7 +2609,7 @@ export default function DocumentAnalyzerTab() {
             </strong>
 
             <span style="font-size:12px; color:#475569;">
-              ${completenessScore}/100
+              ${hasCompletenessScore ? `${completenessScore}/100` : "Not scored"}
             </span>
 
             <div style="font-size:11px; color:#64748b; margin-top:4px;">
@@ -2751,6 +2794,9 @@ export default function DocumentAnalyzerTab() {
               </ul>
             </div>
           ` : ""}
+          ${redactedReport && sourceReport
+            ? renderEngineStatusHtml((sourceReport as any).forensicEngine, escapeHtml)
+            : renderEngineRecordHtml(reportForExport.forensicEngine, escapeHtml)}
         </div>
       `;
     } else {
@@ -2937,6 +2983,10 @@ export default function DocumentAnalyzerTab() {
               <option value="full">Forensic In-Depth (Full Dual-Pass Audit)</option>
             </select>
           </div>
+
+          {analysisMode === "full" && forensicEngineOn && (
+            <AdditionalDocumentsPicker files={organizedFiles} primaryId={selectedFileId} selectedIds={additionalDocIds} onChange={setAdditionalDocIds} />
+          )}
 
           {/* Active AI Engine Indicator */}
           <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl px-2.5 py-1.5 border border-slate-200">
@@ -3868,7 +3918,7 @@ export default function DocumentAnalyzerTab() {
                             <span className="text-xs text-slate-500">Credibility Index</span>
                           </div>
                           <div className="w-9 h-9 rounded-full bg-brand-900 flex items-center justify-center font-display font-extrabold text-white text-xs">
-                            {selectedReport.completenessScore}%
+                            {typeof selectedReport.completenessScore === "number" ? `${selectedReport.completenessScore}%` : "—"}
                           </div>
                         </div>
                       </div>
@@ -3994,6 +4044,9 @@ export default function DocumentAnalyzerTab() {
                                                   <span>Handover to Templates</span>
                         </button>
                       </div>
+
+                      {/* Forensic Engine record: shown only for reports produced by the engine. */}
+                      <ForensicEngineRecord record={(selectedReport as any).forensicEngine} />
 
                       {/* Lawyer Detailed Case Brief in bullet-form structure */}
                       {selectedReport.lawyerCaseBrief && selectedReport.lawyerCaseBrief.length > 0 && (
@@ -4963,14 +5016,14 @@ export default function DocumentAnalyzerTab() {
                                           }
                                           strokeWidth="4"
                                           strokeDasharray={2 * Math.PI * 20}
-                                          strokeDashoffset={2 * Math.PI * 20 * (1 - report.completenessScore / 100)}
+                                          strokeDashoffset={2 * Math.PI * 20 * (1 - (Number(report.completenessScore) || 0) / 100)}
                                           strokeLinecap="round"
                                           stroke="currentColor"
                                           fill="transparent"
                                         />
                                       </svg>
                                       <span className="absolute text-xs font-sans font-bold text-gray-800">
-                                        {report.completenessScore}%
+                                        {typeof report.completenessScore === "number" ? `${report.completenessScore}%` : "—"}
                                       </span>
                                     </div>
                                     <span className="text-[10px] font-sans text-slate-500 uppercase font-bold leading-none">
