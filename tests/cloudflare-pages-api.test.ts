@@ -48,11 +48,11 @@ describe('Cloudflare Pages staging API boundary', () => {
         },
         body: 'payload',
       }),
-      env: { STAGING_API_ORIGIN: 'https://backend-staging.example.com/' },
+      env: { STAGING_API_ORIGIN: 'https://cyfsa-navigator-backend-staging.pages.dev/' },
     });
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [target, init] = fetchSpy.mock.calls[0];
-    expect(String(target)).toBe('https://backend-staging.example.com/api/analyze?mode=quick');
+    expect(String(target)).toBe('https://cyfsa-navigator-backend-staging.pages.dev/api/analyze?mode=quick');
     const headers = init.headers as Headers;
     expect(headers.get('authorization')).toBe('Bearer example');
     expect(headers.get('x-ps-session')).toBe('paid-session');
