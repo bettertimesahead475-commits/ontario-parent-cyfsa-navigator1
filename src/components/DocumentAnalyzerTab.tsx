@@ -405,6 +405,7 @@ export default function DocumentAnalyzerTab() {
   const [jobResumeAttempt, setJobResumeAttempt] = useState(0);
   // Report sections the server has validated so far (real progress, from stream or job record).
   const [completedSections, setCompletedSections] = useState<string[]>([]);
+  const [preliminaryBrief, setPreliminaryBrief] = useState<string>("");
   // True while a reloaded page follows an analysis that was started before the reload.
   const [isRecoveringJob, setIsRecoveringJob] = useState<boolean>(false);
   // Synchronous guard against a double click starting two analyses before state re-renders.
@@ -1933,7 +1934,11 @@ export default function DocumentAnalyzerTab() {
               else if (stage === "preparing_report") setAnalyzerState("SAVING");
               setStreamingProgress(prev => ({ stage, percent: Math.max(prev.percent, percent), message }));
             },
-            onSection: (section) => {
+            onSection: (section, data) => {
+              if (section === "preliminaryBrief" && typeof data?.text === "string") {
+                setPreliminaryBrief(data.text);
+                return;
+              }
               setCompletedSections(prev => (prev.includes(section) ? prev : [...prev, section]));
             },
             onError: () => {
@@ -4592,6 +4597,13 @@ export default function DocumentAnalyzerTab() {
                               />
                             </div>
                           </div>
+                          {preliminaryBrief && (
+                            <section className="text-left bg-white border border-amber-300 rounded-lg p-3 max-h-80 overflow-y-auto" aria-label="Preliminary case brief">
+                              <h3 className="font-sans font-bold text-sm text-slate-900 mb-2">Preliminary case brief — not yet verified</h3>
+                              <p className="font-sans text-xs text-amber-800 mb-2">This early analysis may contain errors. Verify findings and citations in the completed report before relying on them.</p>
+                              <div className="font-sans text-xs whitespace-pre-wrap text-slate-800">{preliminaryBrief}</div>
+                            </section>
+                          )}
                           {completedSections.length > 0 && (
                             <ul className="text-left text-[11px] font-sans text-slate-600 space-y-1 bg-white border border-slate-200 rounded-lg p-2.5" aria-label="Completed report sections">
                               {completedSections.map(section => (
