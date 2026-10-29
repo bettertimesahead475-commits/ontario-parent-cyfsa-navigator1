@@ -101,6 +101,25 @@ describe("resumable Forensic Engine runs", () => {
     expect(a.calls.length + b.calls.length).toBe(1);
   });
 
+  it("does not repeat a model step that another worker finished while this worker was between steps", async () => {
+    const { store } = await startJob();
+    const { generate, calls } = provider();
+    const acquire = store.acquire.bind(store);
+    let raced = false;
+    store.acquire = async (jobId, step, owner, ttlMs, now) => {
+      if (step === "investigate" && owner === "worker-a" && !raced) {
+        raced = true;
+        // Worker B picks up the saved state and finishes the investigation before worker A takes its lease.
+        expect((await advance(store, generate, { owner: "worker-b", maxSteps: 1 })).status).toBe("PENDING");
+      }
+      return acquire(jobId, step, owner, ttlMs, now);
+    };
+    const result = await advance(store, generate, { owner: "worker-a" });
+    expect(raced).toBe(true);
+    expect(result.status).toBe("COMPLETE");
+    expect(calls.filter((c) => c === "forensic_investigation")).toHaveLength(1);
+  });
+
   it("takes over a step whose worker died, once the lease has expired", async () => {
     const { store } = await startJob();
     const t0 = 1_000_000;

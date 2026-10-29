@@ -58,8 +58,9 @@ export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult
     const lease = await opts.store.acquire(opts.jobId, step, opts.owner, opts.leaseTtlMs, now());
     if (!lease) return { status: "BUSY", nextStep: step };
     try {
-      // Another worker may have finished this step between our read and the lease.
-      const current = knownLatest ?? (await opts.store.latest(opts.jobId));
+      // Another worker may have finished this step between our read and the lease. Always re-read here, even when the
+      // state we just saved is cached: a concurrent continue can save the next step before we take its lease.
+      const current = await opts.store.latest(opts.jobId);
       if (!current || current.seq !== latest.seq) {
         knownLatest = null;
         continue;

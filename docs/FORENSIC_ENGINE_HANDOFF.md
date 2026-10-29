@@ -220,3 +220,31 @@ There are no measured API costs.
    - `eval/forensic/MICHELLE_CLARK_AFFIDAVIT_PROTOCOL.md`: Refined to enforce 5 strict evidentiary categories (Established Documentary Facts, Verified Contradictions, Investigative Hypotheses, Unresolved Legal Questions, Unsupported Allegations) and explicit guardrails prohibiting false deductions (e.g. not treating 5-day hearing intervals as proven violations, not inferring forgery from OCR cursive signature omissions).
 
 
+
+---
+
+## Review of the Antigravity commits (b97f9e86, 5f9dfb39)
+
+Reviewed at 5f9dfb39. tsc is clean and the full suite passes: 198 files, 3,715 tests passed, 0 failed, 433 skipped.
+The one results file (`eval/forensic/results/2026-10-28T22-02-32-356Z.json`) is `NOT_RUN`, so no billable benchmark ran.
+
+- **Fixed: a concurrency regression in `knownLatest`.** The cache also skipped the re-read after the lease was
+  taken. A concurrent continue could save the next step between this worker's save and its next lease. This worker
+  then ran that model step again on stale state. The duplicate result was discarded, but the Opus call was paid for
+  twice. The cache now only skips the read at the top of the loop. The state is always re-read after the lease.
+  Regression test: "does not repeat a model step that another worker finished while this worker was between steps".
+  It failed before the fix (2 investigation calls) and passes after it. The saving is now one storage round trip per
+  step, not two.
+- **Kept as is:**
+  - The purge outage safety.
+  - The citation cache.
+  - The CRLF normalisation.
+  - `evaluateTenDimensions`.
+- **Benchmark spending cap: soft, not strict.** The check runs before each call, so a run can overshoot the cap by
+  one call. That call is up to 16k output tokens by default, or 24k for investigation. Set the cap at least one Opus
+  call below the true limit.
+- **Privacy (owner decision): `eval/forensic/MICHELLE_CLARK_AFFIDAVIT_PROTOCOL.md`.**
+  - It names a CAS worker and describes case facts.
+  - The repository is public.
+  - If this is a real person or case, pseudonymise the file. A new commit leaves the name in git history, so fully
+    removing it would need a history rewrite, which the owner must approve.
