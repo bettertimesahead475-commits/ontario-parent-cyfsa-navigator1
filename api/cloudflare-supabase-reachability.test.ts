@@ -24,7 +24,7 @@ describe('Cloudflare staging Supabase reachability isolation', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
   it('probes only the staging auth health endpoint without credentials', async () => {
-    const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }));
+    const fetchSpy = vi.fn(async (_url: URL, _options: RequestInit) => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchSpy);
     const r = await onRequestGet({ env: { STAGING_SUPABASE_URL: staging } });
     expect(r.status).toBe(200);
