@@ -16,9 +16,19 @@ import { runSectionedAnalysis, type GenerateFn } from "../api/services/analyzerS
 import { runForensicInvestigation } from "../api/services/forensic/pipeline.js";
 import { evaluateTenDimensions, fromEngineFindings, fromLegacyReport, scoreCase, summarize, type BenchmarkCase, type CaseScore, type ForensicDimensionEvaluation } from "../api/services/forensic/evaluation.js";
 
-const CASES_DIR = join(process.cwd(), "eval/forensic/cases");
-const RESULTS_DIR = join(process.cwd(), "eval/forensic/results");
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}`));
+/**
+ * Real case records (for example the Michelle Clark protocol) are never committed. They live under
+ * eval/forensic/private/, which .gitignore excludes, and their results are written there too: results contain
+ * quotations from the documents.
+ */
+export const PRIVATE_CASES_ROOT = "eval/forensic/private";
+export function benchmarkDirs(privateFlag: boolean, cwd = process.cwd()) {
+  return privateFlag
+    ? { casesDir: join(cwd, PRIVATE_CASES_ROOT, "cases"), resultsDir: join(cwd, PRIVATE_CASES_ROOT, "results") }
+    : { casesDir: join(cwd, "eval/forensic/cases"), resultsDir: join(cwd, "eval/forensic/results") };
+}
+const { casesDir: CASES_DIR, resultsDir: RESULTS_DIR } = benchmarkDirs(Boolean(arg("private")));
 
 function loadCases(): BenchmarkCase[] {
   const single = arg("case")?.split("=")[1];

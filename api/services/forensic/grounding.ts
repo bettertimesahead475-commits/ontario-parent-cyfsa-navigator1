@@ -15,6 +15,8 @@
  * 7. Low OCR confidence on a supporting page raises uncertainty.
  * 8. Citations are classified by shared/citationVerification; nothing here marks a citation verified.
  * 9. Duplicates are merged into the strongest finding, which keeps every supporting reference.
+ * 10. Class E (confirmed noncompliance) also needs at least one cited provision whose text was checked (an internal
+ *     reference match). A breach of a rule whose text nobody checked cannot be confirmed; it is D.
  */
 
 import { classifyCitation } from "../../../shared/citationVerification.js";
@@ -140,6 +142,11 @@ export function groundFinding(input: Finding): Finding {
   if (f.evidenceClass === "E" && (verifiedSupport.length === 0 || f.review.verdict !== "UPHELD")) {
     f.evidenceClass = "D";
     note("Downgraded from confirmed noncompliance (E) to potential legal issue (D): E needs a word-for-word source quotation and an upheld adversarial review.");
+  }
+  // Rule 10
+  if (f.evidenceClass === "E" && !f.legalIssues.some((l) => l.citation && l.citationStatus === "INTERNAL_REFERENCE_MATCH")) {
+    f.evidenceClass = "D";
+    note("Downgraded from confirmed noncompliance (E) to potential legal issue (D): no cited provision has text that was checked.");
   }
   // Rule 4
   if (f.evidenceClass === "A" && verifiedSupport.length === 0) {

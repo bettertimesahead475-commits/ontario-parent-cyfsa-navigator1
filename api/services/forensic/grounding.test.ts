@@ -60,10 +60,28 @@ describe("grounding rules", () => {
   });
 
   it("rule 3: confirmed noncompliance without an upheld review becomes a potential legal issue", () => {
-    const f = parse({ evidenceClass: "E", supporting: [{ documentId: "end1", quote: "Matter adjourned to November 4, 2026 on consent." }] });
+    const f = parse({
+      evidenceClass: "E",
+      supporting: [{ documentId: "end1", quote: "Matter adjourned to November 4, 2026 on consent." }],
+      legalIssues: [{ citation: "CYFSA s. 94(1)", nature: "LEGAL_RULE", explanation: "x" }],
+    });
     expect(groundFinding(f).evidenceClass).toBe("D");
     const upheld = applyReview([f], [{ findingId: "F1", verdict: "UPHELD" }], DOCS)[0];
     expect(groundFinding(upheld).evidenceClass).toBe("E");
+  });
+
+  it("rule 10: confirmed noncompliance needs a cited provision whose text was checked", () => {
+    const quote = [{ documentId: "end1", quote: "Matter adjourned to November 4, 2026 on consent." }];
+    const uncited = applyReview([parse({ evidenceClass: "E", supporting: quote })], [{ findingId: "F1", verdict: "UPHELD" }], DOCS)[0];
+    const g = groundFinding(uncited);
+    expect(g.evidenceClass).toBe("D");
+    expect(g.grounding.notes.join(" ")).toMatch(/no cited provision has text that was checked/);
+    const unchecked = applyReview(
+      [parse({ evidenceClass: "E", supporting: quote, legalIssues: [{ citation: "CYFSA s. 999", nature: "LEGAL_RULE", explanation: "x" }] })],
+      [{ findingId: "F1", verdict: "UPHELD" }],
+      DOCS
+    )[0];
+    expect(groundFinding(unchecked).evidenceClass).toBe("D");
   });
 
   it("rule 4: a confirmed fact needs a word-for-word quotation", () => {

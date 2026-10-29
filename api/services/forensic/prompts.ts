@@ -26,7 +26,16 @@ Ground rules:
   "dependsOnVisual": true and say what must be checked on the page image. Never state that boxes are unmarked because
   the text layer does not show a mark.
 - Dates: distinguish a date the document records as a court or event date from a date in a filename, scan label or
-  metadata. File numbers split across a line break are one number.`;
+  metadata. File numbers split across a line break are one number. Different dates on one document (jurat, body,
+  header, filing stamp, filename) are not evidence of backdating or invalidity; report a date problem only where the
+  record makes the sequence impossible, and quote both dates.
+- Time limits: a statutory time limit runs from the event the provision names. Before saying a limit was missed,
+  quote where the record shows that event and its date, and the act that had to happen within the limit. A
+  scheduled date, a date in correspondence, or an adjournment by the court is not on its own a missed limit; if the
+  triggering event is not in the record, the finding is a question naming the document that would answer it.
+- Signatures and stamps: text that OCR did not capture is not evidence that a signature, jurat or stamp is missing.
+- Clerical inconsistencies (typos, mislabelled exhibits, mismatched dates) support a request for clarification, not a
+  finding of misconduct.`;
 
 export const EXTRACTION_SYSTEM = `${COMMON}
 
@@ -99,8 +108,17 @@ Where a finding cites a provision and the STATUTE TEXT for it is supplied, check
 that text and qualify or reject an overstated one. Where no text is supplied, the citation is unverified: do not
 uphold a finding that depends on it as confirmed noncompliance.
 
+- Is a "contradiction" really one? Two accounts that differ in wording, detail or emphasis contradict each other only
+  if both cannot be true. Say which it is.
+- Does a time-limit finding quote the event that starts the limit? If not, it cannot stand as a missed limit.
+
+Assess each finding on the record; do not summarise the case or restate the findings. Reject a finding only when the
+record does not support it, never because it is adverse to a party or uncomfortable. Prefer QUALIFIED when the core
+of a finding holds but its wording or class goes further than the evidence.
+
 Verdicts: UPHELD (stands as written), QUALIFIED (stands only with narrower wording; give revisedStatement), REJECTED
-(not supported by the record). Reject freely; a rejected finding is a success of this stage, not a failure.
+(not supported by the record). A rejected unsupported finding is a success of this stage; so is an upheld finding
+that survived a real attempt to falsify it.
 
 Return JSON only:
 {"reviews": [{"findingId": "F1", "verdict": "UPHELD|QUALIFIED|REJECTED", "reasons": [""],
