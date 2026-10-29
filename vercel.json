@@ -47,5 +47,6 @@
       "path": "/api/admin/monitoring/run",
       "schedule": "*/10 * * * *"
     }
-  ]
+  ],
+  "ignoreCommand": "node scripts/vercelIgnoreBuild.mjs"
 }
