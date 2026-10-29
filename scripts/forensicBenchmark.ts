@@ -11,7 +11,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildThinkingRequestFields, calculateEstimatedCost, DEFAULT_FORENSIC_MODEL, DEFAULT_QUICK_MODEL } from "../api/services/analyzerModels.js";
+import { buildThinkingRequestFields, calculateEstimatedCost, DEFAULT_FORENSIC_MODEL, DEFAULT_QUICK_MODEL, MODEL_PRICING } from "../api/services/analyzerModels.js";
 import { runSectionedAnalysis, type GenerateFn } from "../api/services/analyzerSections.js";
 import { runForensicInvestigation } from "../api/services/forensic/pipeline.js";
 import { evaluateTenDimensions, fromEngineFindings, fromLegacyReport, scoreCase, summarize, type BenchmarkCase, type CaseScore, type ForensicDimensionEvaluation } from "../api/services/forensic/evaluation.js";
@@ -37,20 +37,98 @@ function parseSpendCap(): number | null {
   return isNaN(parsed) || parsed < 0 ? 0 : parsed;
 }
 
-function makeGenerate(
+export function estimateInputTokens(params: { system?: string; messages: any[] }): number {
+  let charCount = 0;
+  if (params.system) {
+    charCount += typeof params.system === "string" ? params.system.length : JSON.stringify(params.system).length;
+  }
+  if (Array.isArray(params.messages)) {
+    for (const msg of params.messages) {
+      if (typeof msg.content === "string") {
+        charCount += msg.content.length;
+      } else if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (part && typeof part === "object") {
+            if (part.type === "text" && typeof part.text === "string") {
+              charCount += part.text.length;
+            } else {
+              charCount += JSON.stringify(part).length;
+            }
+          }
+        }
+      } else if (msg.content) {
+        charCount += JSON.stringify(msg.content).length;
+      }
+    }
+  }
+  // Conservatively estimate ~3.5 chars per token + 20% safety margin for framing/metadata
+  const rawTokens = Math.ceil(charCount / 3.5);
+  return Math.ceil(rawTokens * 1.2) + 100;
+}
+
+export function estimateWorstCaseRequestCost(
+  model: string,
+  params: { system?: string; messages: any[]; max_tokens?: number }
+): { worstCaseCostUsd: number; estimatedInputTokens: number; maxOutputTokens: number; rates: { inputCostPerMillionUsd: number; outputCostPerMillionUsd: number } } {
+  const pricing = MODEL_PRICING[model as keyof typeof MODEL_PRICING];
+  if (!pricing) {
+    throw new Error(`CRITICAL SPENDING GATE: Model "${model}" has no pricing registered in MODEL_PRICING. Failing closed to prevent unbudgeted API spend.`);
+  }
+
+  const estimatedInputTokens = estimateInputTokens(params);
+  const maxOutputTokens = params.max_tokens ?? 16000;
+
+  const worstCaseCostUsd =
+    (estimatedInputTokens / 1_000_000) * pricing.inputCostPerMillionUsd +
+    (maxOutputTokens / 1_000_000) * pricing.outputCostPerMillionUsd;
+
+  return {
+    worstCaseCostUsd: Number(worstCaseCostUsd.toFixed(5)),
+    estimatedInputTokens,
+    maxOutputTokens,
+    rates: pricing,
+  };
+}
+
+export function calculateTotalCumulativeSpend(
+  usage: Record<string, { input_tokens: number; output_tokens: number }>
+): number {
+  let total = 0;
+  for (const [m, u] of Object.entries(usage)) {
+    if (!MODEL_PRICING[m as keyof typeof MODEL_PRICING]) {
+      throw new Error(`CRITICAL SPENDING GATE: Model "${m}" in usage record has no pricing registered in MODEL_PRICING.`);
+    }
+    total += calculateEstimatedCost(m, u).totalCostUsd;
+  }
+  return Number(total.toFixed(5));
+}
+
+export function makeGenerate(
   client: Anthropic,
   usage: Record<string, { input_tokens: number; output_tokens: number }>,
   stageMetrics: Record<string, { latencyMs: number; inputTokens: number; outputTokens: number; calls: number }>,
   maxSpendUsd: number | null
 ): GenerateFn {
   return async (params, model) => {
-    // Fail-closed spending cap enforcement
-    let currentEstimatedSpend = 0;
-    for (const [m, u] of Object.entries(usage)) {
-      currentEstimatedSpend += calculateEstimatedCost(m, u).totalCostUsd;
-    }
-    if (maxSpendUsd !== null && currentEstimatedSpend >= maxSpendUsd) {
-      throw new Error(`Spending cap exceeded: estimated spend $${currentEstimatedSpend.toFixed(3)} reached cap of $${maxSpendUsd.toFixed(2)}. Aborting run.`);
+    // 1. Fail-closed: Verify pricing is known and calculate current cumulative spend
+    const currentEstimatedSpend = calculateTotalCumulativeSpend(usage);
+
+    // 2. Worst-case pre-call estimation (input tokens + max_tokens cap)
+    const { worstCaseCostUsd, estimatedInputTokens, maxOutputTokens } = estimateWorstCaseRequestCost(model, params);
+
+    // 3. Strict Pre-call Budget Check
+    if (maxSpendUsd !== null) {
+      if (currentEstimatedSpend >= maxSpendUsd) {
+        throw new Error(
+          `Spending cap reached: cumulative spend $${currentEstimatedSpend.toFixed(3)} reached cap of $${maxSpendUsd.toFixed(2)}. Aborting before call to ${model}.`
+        );
+      }
+
+      if (currentEstimatedSpend + worstCaseCostUsd > maxSpendUsd) {
+        throw new Error(
+          `Pre-call spending cap violation prevented: cumulative spend is $${currentEstimatedSpend.toFixed(3)}, and next call worst-case cost is $${worstCaseCostUsd.toFixed(3)} (~${estimatedInputTokens} input tokens, max ${maxOutputTokens} output tokens on ${model}). Total potential spend $${(currentEstimatedSpend + worstCaseCostUsd).toFixed(3)} would exceed cap of $${maxSpendUsd.toFixed(2)}. Aborting call.`
+        );
+      }
     }
 
     const started = Date.now();
@@ -67,10 +145,19 @@ function makeGenerate(
     );
     const msg = await stream.finalMessage();
     const text = msg.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+    
+    if (!msg.usage || typeof msg.usage.input_tokens !== "number" || typeof msg.usage.output_tokens !== "number") {
+      throw new Error(`AI Provider response missing required usage token counts for model ${model}. Cannot verify spending.`);
+    }
+
     const u = { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens };
     const durationMs = Date.now() - started;
 
-    usage[model] = { input_tokens: (usage[model]?.input_tokens ?? 0) + u.input_tokens, output_tokens: (usage[model]?.output_tokens ?? 0) + u.output_tokens };
+    // 4. Reconcile provider-reported usage
+    usage[model] = {
+      input_tokens: (usage[model]?.input_tokens ?? 0) + u.input_tokens,
+      output_tokens: (usage[model]?.output_tokens ?? 0) + u.output_tokens,
+    };
     const sm = (stageMetrics[stage] ??= { latencyMs: 0, inputTokens: 0, outputTokens: 0, calls: 0 });
     sm.latencyMs += durationMs;
     sm.inputTokens += u.input_tokens;
@@ -246,7 +333,14 @@ async function main() {
   console.log(`Results saved to ${out}`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+import { fileURLToPath } from "node:url";
+
+const isMainModule = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+
+if (isMainModule) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+

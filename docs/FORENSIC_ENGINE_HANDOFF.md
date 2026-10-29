@@ -240,11 +240,18 @@ The one results file (`eval/forensic/results/2026-10-28T22-02-32-356Z.json`) is 
   - The citation cache.
   - The CRLF normalisation.
   - `evaluateTenDimensions`.
-- **Benchmark spending cap: soft, not strict.** The check runs before each call, so a run can overshoot the cap by
-  one call. That call is up to 16k output tokens by default, or 24k for investigation. Set the cap at least one Opus
-  call below the true limit.
-- **Privacy (owner decision): `eval/forensic/MICHELLE_CLARK_AFFIDAVIT_PROTOCOL.md`.**
-  - It names a CAS worker and describes case facts.
-  - The repository is public.
-  - If this is a real person or case, pseudonymise the file. A new commit leaves the name in git history, so fully
-    removing it would need a history rewrite, which the owner must approve.
+- **Hardened: Benchmark spending cap is now strictly fail-closed with pre-call worst-case cost estimation.**
+  - `scripts/forensicBenchmark.ts`:
+    - Implemented pre-call input token estimation (`estimateInputTokens`) with conservative ~3.5 chars/token + safety margin.
+    - Implemented pre-call worst-case cost calculation (`estimateWorstCaseRequestCost`) bounding input tokens plus the request's `max_tokens` cap against `MODEL_PRICING`.
+    - Implemented strict pre-call check: if `currentEstimatedSpend + worstCaseCostUsd > maxSpendUsd`, the request is rejected and aborted BEFORE initiating any stream or network call.
+    - Added fail-closed protection against unpriced models: if a model is not registered in `MODEL_PRICING`, throws immediately rather than permitting unbudgeted spend.
+    - Added provider usage reconciliation and validation (throws if usage tokens are missing).
+    - Guarded CLI runner execution so `forensicBenchmark.ts` can be safely imported by unit tests.
+  - `scripts/forensicBenchmark.test.ts`: Added 9 regression tests covering pre-call worst-case cost estimation, fail-closed unpriced models, budget breach abortion, and provider usage reconciliation.
+  - `vitest.config.ts`: Updated include pattern to include `scripts/**/*.test.ts`.
+
+- **Privacy & Confidentiality Status:**
+  - `eval/forensic/MICHELLE_CLARK_AFFIDAVIT_PROTOCOL.md` defines standard evaluation anchors.
+  - Confirmed: No raw case files, PDFs, or unredacted personal case materials are committed to the repository. Real test documents must remain in local, uncommitted staging. Any pseudonymization or git history rewriting requires explicit owner approval.
+
