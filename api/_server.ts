@@ -2440,7 +2440,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
             analysisRequestId,
             aiDeadlineAt
           ).then((preview) => {
-            if (preview) streamEmitter.emitSection("preliminaryBrief", {
+            if (preview) streamEmitter?.emitSection("preliminaryBrief", {
               text: preview.text,
               status: "PRELIMINARY_UNVERIFIED",
               durationMs: preview.durationMs,
