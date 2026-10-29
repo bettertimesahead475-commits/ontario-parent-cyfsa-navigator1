@@ -23,6 +23,23 @@ describe('Cloudflare staging Supabase reachability isolation', () => {
     expect(r.status).toBe(503);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+  it.each([401, 403])('classifies HTTP %i as reachable but requiring credentials, not database-verified', async status => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status })));
+    const r = await onRequestGet({ env: { STAGING_SUPABASE_URL: staging } });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({
+      reachable: true,
+      code: 'STAGING_AUTH_CREDENTIALS_REQUIRED',
+      databaseVerified: false,
+      upstreamStatus: status,
+    });
+  });
+  it('does not classify HTTP 404 as a healthy or reachable auth service', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    const r = await onRequestGet({ env: { STAGING_SUPABASE_URL: staging } });
+    expect(r.status).toBe(503);
+    expect((await r.json()).databaseVerified).toBe(false);
+  });
   it('probes only the staging auth health endpoint without credentials', async () => {
     const fetchSpy = vi.fn(async (_url: URL, _options: RequestInit) => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchSpy);
