@@ -32,12 +32,18 @@ export const onRequestGet = async ({ env }: { env: Env }): Promise<Response> => 
       signal: AbortSignal.timeout(5000),
       headers: { Accept: 'application/json' },
     });
+    const requiresCredentials = response.status === 401 || response.status === 403;
+    const reachable = response.ok || requiresCredentials;
     return Response.json({
-      reachable: response.ok,
-      code: response.ok ? 'STAGING_AUTH_SERVICE_REACHABLE' : 'STAGING_AUTH_SERVICE_UNAVAILABLE',
+      reachable,
+      code: response.ok
+        ? 'STAGING_AUTH_HEALTH_RESPONDED'
+        : requiresCredentials
+          ? 'STAGING_AUTH_CREDENTIALS_REQUIRED'
+          : 'STAGING_AUTH_SERVICE_UNAVAILABLE',
       databaseVerified: false,
       upstreamStatus: response.status,
-    }, { status: response.ok ? 200 : 503, headers });
+    }, { status: reachable ? 200 : 503, headers });
   } catch {
     return Response.json({ reachable: false, code: 'STAGING_AUTH_SERVICE_UNREACHABLE', databaseVerified: false }, { status: 503, headers });
   }
