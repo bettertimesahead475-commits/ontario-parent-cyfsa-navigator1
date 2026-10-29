@@ -1,6 +1,7 @@
 /**
  * Read-only Firebase ID-token verification on Cloudflare Pages.
  * No Admin SDK, service account key, database calls, or credit consumption.
+ * Deployment refresh after configuring FIREBASE_PROJECT_ID in Cloudflare staging.
  */
 interface Env { FIREBASE_PROJECT_ID?: string }
 type Context = { request: Request; env: Env };
