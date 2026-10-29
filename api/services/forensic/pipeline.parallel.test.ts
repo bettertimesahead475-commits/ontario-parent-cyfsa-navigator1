@@ -198,6 +198,7 @@ describe("what the adversarial review reads", () => {
     expect(report.incompleteness.join(" ")).toMatch(/larger than the adversarial review reads in one pass/);
     // Not silently treated as fully reviewed: the record is partial, and the finding says what the review did not read.
     expect(report.status).toBe("PARTIAL");
+    expect(report.incompleteness.join(" ")).toMatch(/case-level synthesis read the first 4000 characters of 2 long document\(s\)/);
     const f = report.findings[0];
     expect(f.review.verdict).toBe("UPHELD");
     expect(f.review.partialRecord).toEqual(["A", "B"]);

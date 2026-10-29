@@ -423,6 +423,10 @@ export async function runEngineStep(input: EngineState, step: string, deps: Step
     }
     try {
       const perDocChars = Math.max(4_000, Math.floor(limits.singlePassMaxChars / docs.length));
+      const cut = docs.filter((d) => d.text.length > perDocChars).length;
+      const cutNote = `The case-level synthesis read the first ${perDocChars} characters of ${cut} long document(s); each document was investigated in full on its own, but conflicts between documents that appear only later in them may be missed.`;
+      // A retried step must not repeat the note.
+      if (cut > 0 && !state.incompleteness.includes(cutNote)) state.incompleteness.push(cutNote);
       const iso = isolateDocuments(docs, perDocChars);
       const summary = state.findings.map((f) => ({ id: f.id, title: f.title, statement: f.statement, class: f.evidenceClass, quotes: f.supporting.map((s) => ({ documentId: s.documentId, page: s.page, quote: s.quote })) }));
       const res = await call(
