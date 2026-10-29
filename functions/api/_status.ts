@@ -5,6 +5,7 @@
  */
 interface Env {
   STAGING_API_ORIGIN?: string;
+  STAGING_SUPABASE_URL?: string;
 }
 
 export const onRequestGet = async ({ env }: { env: Env }): Promise<Response> => {
@@ -14,6 +15,7 @@ export const onRequestGet = async ({ env }: { env: Env }): Promise<Response> => 
       runtime: 'cloudflare-pages-functions',
       apiMode: env.STAGING_API_ORIGIN ? 'upstream-configured' : 'not-configured',
       analyzerReady: false,
+      stagingSupabaseConfigured: Boolean(env.STAGING_SUPABASE_URL),
     },
     {
       status: 200,
