@@ -1838,6 +1838,7 @@ export default function DocumentAnalyzerTab() {
     stopWaitingRef.current = false;
     setIsSingleAnalyzing(true);
     setCompletedSections([]);
+    setPreliminaryBrief("");
     setSingleAnalysisErrorCode(null);
     setSingleAnalysisError("");
     setSelectedReport(null);
