@@ -392,3 +392,114 @@ With an owner-approved cap (US$2.50 proposed), run one controlled live smoke cas
 This measures real Opus step durations, which decide whether the 200 s step budget and the 265 s invocation are
 right. The spend cap is an estimate from token prices and `max_tokens`. It is not a billing ceiling: input is
 estimated from characters, and a failed call is assumed to cost its worst case.
+
+---
+
+## Engineering pass 2, 2026-10-29 (commits edd718d3 to 14b0db15)
+
+Validation at 14b0db15: `tsc` clean; full Vitest 201 files, 3,757 passed, 0 failed, 433 skipped; `npm run build`
+exit 0. No paid API call was made.
+
+### Production automation: payment checking does not run (verified, read-only)
+
+**Root cause: three configuration gaps, any one of which stops it.**
+1. **`CRON_SECRET` is not set in any Vercel environment.** Checked by name; no values read.
+   - Vercel attaches `Authorization: Bearer <CRON_SECRET>` to cron calls only when that variable exists.
+   - The deployed route answers 401 to an unauthenticated GET (checked against cyfsanavigator.com).
+   - Vercel does call it: requests to `/api/admin/check-payments` appear in production logs at 09:04, 10:58 and
+     12:58 UTC. They are rejected before any code that logs.
+2. **`GMAIL_REFRESH_TOKEN` and `GOOGLE_REDIRECT_URI` are not set.** Even when authenticated, `scanForPayments()`
+   fails with 503 in `getGmailClient()`/`getOAuthClient()`. Without the redirect URI, the one-time
+   `/api/admin/gmail-auth-url` flow that creates the refresh token also fails.
+3. **`SMTP_HOST`/`SMTP_USER`/`SMTP_PASS` are not set.** `sendAdminAlert()` returns false, so the owner is never
+   emailed about a match or a stale payment.
+
+**Evidence in the production database:**
+- `gmail_processed_messages` has 0 rows ever.
+- `payments` has 2 rows, both `pending`, submitted 2026-10-10 03:27 and 2026-10-11 05:55 UTC. None was approved.
+- `stale_payment_alerts` is empty. A run would have recorded alerts for both after 48 h, if SMTP worked.
+
+**Two requests have waited about 18 days: check the inbox for them now.**
+
+**Access cannot be granted by an email.**
+- The Gmail agent only records `matched_pending_manual_approval`.
+- The only grant path is `POST /api/admin/approve-payment`. It requires `x-admin-secret` and an amount at least the
+  expected one, and claims the payment atomically (`status = 'pending'` scoped UPDATE).
+- Minor: `approve-payment` and `check-payments` compare the secret with `!==`, not in constant time.
+
+**Smallest safe correction (owner approval required; production credentials):**
+1. Add `CRON_SECRET` (a random 32+ byte value, Sensitive) to Production.
+2. Add `GOOGLE_REDIRECT_URI` (must match the OAuth client's authorised redirect).
+3. Redeploy production, so the variables take effect.
+4. Run the `/api/admin/gmail-auth-url` flow once and store `GMAIL_REFRESH_TOKEN`.
+5. Add the SMTP variables and redeploy.
+
+Turning on `CRON_SECRET` also authenticates the monitoring cron and the marketing scheduler. The marketing tables do
+not exist in production, and publishing needs human-approved posts, so it cannot post externally.
+
+### Forensic engine defects fixed
+
+- **The partial adversarial review was silent per finding (edd718d3).**
+  - When the record exceeded `reviewMaxChars`, only the report-wide gap list said so. Each finding still read
+    "Upheld by adversarial review", and an E finding could stand.
+  - Now `review.partialRecord` names the documents not read in full, and the screen and PDF label every such finding.
+  - Grounding rule 11: on a partial review, E becomes D and uncertainty rises.
+- **Report status said "Complete" with reduced coverage (edd718d3).** It is now PARTIAL when a document was truncated,
+  the call budget ran out, or the review was partial. It used to be PARTIAL only on a failed stage.
+- **Synthesis truncation was not disclosed (ce4de93b).** The case-level synthesis reads each document cut to
+  `singlePassMaxChars / documents`; the report now says so. The note is not repeated on retry.
+- **The benchmark did not measure production (14b0db15).**
+  - The engine ran with library defaults (32k investigation output, no resumable runner).
+  - Thinking was requested on every call, including Sonnet extraction and the whole baseline.
+  - The baseline ran Opus/Opus with a 15-minute deadline.
+  - Both systems now run with the route's limits, models, thinking settings and 265 s invocations; the engine goes
+    through `startEngineJob`/`advanceEngineJob`.
+
+### Performance (simulated clock; 30/150/120 s provider latency, 265 s invocations) — 808637a1
+
+- **Steps with no model call get a fresh window no longer.** `stepNeedsModel()` stops the runner from giving a
+  no-model step (a visual check with nothing to check, a review or synthesis with nothing to do) a fresh 200 s
+  window.
+- **`media.json` is downloaded only when needed.** It holds the original PDF, up to about 20 MB as base64, and is now
+  downloaded only for a visual step that has work.
+
+| One-document case | Before | After |
+|---|---|---|
+| Invocations, no page check needed | 3 | 2 |
+| `media.json` downloads, no page check | 3 | 0 |
+| `media.json` downloads, with a page check | 3 | 1 |
+
+### Benchmark readiness (`affidavit-hearsay`)
+
+- **Case contents.** One synthetic affidavit (727 characters). It has 2 required findings and 1 optional, and 2
+  forbidden patterns (bad faith or lying; neglect stated as established). Every anchor is word for word in the
+  document (tested). Annotated by the engineering author only (`independentlyReviewed: false`).
+- **Dry run.** `npx tsx scripts/forensicBenchmark.ts --case=affidavit-hearsay --engine-only --dry-run` makes no API
+  call. It prices the engine at most **US$0.99**: Sonnet extraction 6k, Opus investigation 24k, Opus review 12k output
+  tokens. All 7 cases come to US$6.97.
+- **Retries and the US$2.50 cap.** A transient failure retries a step up to 3 times. Each attempt is reserved
+  against the ledger first, and a failed attempt stays charged at its worst case. The cap therefore stops the run
+  before a fourth expensive call; it does not let one through.
+- **Limits of the cap.** It is an estimate from list prices: input is estimated from characters, and output is
+  bounded by `max_tokens`. It is not a billing ceiling.
+
+### Release checks covered by tests
+
+- **No duplicate charges:**
+  - `engineJobs.test.ts` (settle once, re-reserve under the same id);
+  - route tests in `analyzerEndToEnd.test.ts`;
+  - `paid_finalize_credit` is idempotent under an advisory lock.
+- **No lost checkpoints:** `resumableRunner.test.ts` (storage outage, stale worker, lease takeover, concurrent
+  continue).
+- **No missing documents:** the 10-document case is investigated in full (`engineJobs.test.ts`).
+- **No unsupported legal conclusions as verified:** grounding rules 3, 10 and 11, plus the citation status labels.
+- **Quick Review, authentication and payment access:** the full suite (unchanged code paths) passes.
+
+### Remaining blockers (owner)
+
+1. The production cron and payment configuration above, and the 2 pending payments.
+2. Approve the US$2.50 live smoke run, which is expected to cost at most US$0.99.
+3. The Vercel account block.
+4. The cost cap for maximum-size Forensic cases.
+5. The Michelle Clark verified anchors and the deponent-name decision.
+6. Merge approval: #110, then #111.
