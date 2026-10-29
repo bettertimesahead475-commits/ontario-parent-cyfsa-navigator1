@@ -37,3 +37,41 @@ export function buildDirectBriefPrompt(input: DirectBriefInput): string {
     "Prioritize a useful complete first brief over exhaustive formatting. Never manufacture citations.",
   ].filter(Boolean).join("\n\n");
 }
+
+/**
+ * Opt-in experimental preview. Never truncate input: fall back to the
+ * established pipeline if the source exceeds the direct-pass budget.
+ * The result is a preliminary brief, not a verified final report.
+ */
+export async function generateDirectBrief(
+  input: DirectBriefInput,
+  generate: (params: {
+    system: string;
+    messages: any[];
+    max_tokens: number;
+    timeoutMs: number;
+    retries: number;
+    requestId: string;
+    stage: string;
+    mode: "fast" | "full";
+  }, model: string) => Promise<{ text: string; usage?: { input_tokens: number; output_tokens: number } | null; durationMs: number }>,
+  model: string,
+  requestId: string,
+  deadlineAt: number
+): Promise<{ text: string; usage?: { input_tokens: number; output_tokens: number } | null; durationMs: number } | null> {
+  if (input.documentText.length > 75_000 || !input.documentText.trim()) return null;
+  const remaining = deadlineAt - Date.now();
+  if (remaining < 20_000) return null;
+  const result = await generate({
+    system: DIRECT_BRIEF_SYSTEM,
+    messages: [{ role: "user", content: [{ type: "text", text: buildDirectBriefPrompt(input) }] }],
+    max_tokens: 3500,
+    timeoutMs: Math.min(75_000, remaining - 5_000),
+    retries: 1,
+    requestId,
+    stage: "direct_preliminary_brief",
+    mode: "fast",
+  }, model);
+  if (!result.text.trim()) throw new Error("Empty preliminary case brief");
+  return result;
+}
