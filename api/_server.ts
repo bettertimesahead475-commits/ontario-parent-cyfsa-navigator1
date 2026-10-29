@@ -85,6 +85,7 @@ import {
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
 import { applyCitationGuards, runSectionedAnalysis, sectionTitle, parseJsonLenient } from "./services/analyzerSections.js";
+import { generateDirectBrief } from "./services/directCaseBrief.js";
 import { PROVIDER_ATTEMPTS, SECTION_ATTEMPTS, TRANSIENT_HTTP_STATUSES } from "../shared/analyzerRetryPolicy.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
@@ -2429,6 +2430,25 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // Every AI call is clamped to this deadline so retries can never run past the function's
       // 300 s limit (vercel.json maxDuration) - leaving time to persist and deliver the result.
       const aiDeadlineAt = requestStartedAt + 265_000;
+      // Experimental first-pass preview, gated off by default. The verified legacy
+      // report remains authoritative, including its billing and persistence path.
+      const preliminaryBriefPromise = process.env.DIRECT_BRIEF_PREVIEW_ENABLED === "true" && streamEmitter
+        ? generateDirectBrief(
+            { documentText: targetText, sourceName: "Uploaded case document" },
+            generateContentWithFallback,
+            primaryModel,
+            analysisRequestId,
+            aiDeadlineAt
+          ).then((preview) => {
+            if (preview) streamEmitter.emitSection("preliminaryBrief", {
+              text: preview.text,
+              status: "PRELIMINARY_UNVERIFIED",
+              durationMs: preview.durationMs,
+            });
+          }).catch((error) => {
+            logAnalyzerDiagnostic("direct preliminary brief", error);
+          })
+        : Promise.resolve();
       const run = await runSectionedAnalysis({
         mode: modelResolution.mode,
         documentText: targetText,
@@ -2461,6 +2481,9 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         },
       });
 
+      // Settle the preview request before closing the stream; failures never
+      // invalidate the verified report or consume a separate user credit.
+      await preliminaryBriefPromise;
       streamEmitter?.emitStage("preparing_report", "Validating quotations and assembling the report...", 96);
 
       const durationMs = Date.now() - startTime;
