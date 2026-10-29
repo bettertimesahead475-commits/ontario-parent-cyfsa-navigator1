@@ -24,7 +24,10 @@ export const onRequest = async ({ request, env }: Context): Promise<Response> =>
   let origin: URL;
   try {
     origin = new URL(originValue);
-    if (origin.protocol !== 'https:' || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== '/') {
+    // Do not permit proxying to arbitrary origins, especially the live Vercel API.
+    // The staging API origin must be explicitly approved in code and separately configured.
+    const allowed = 'cyfsa-navigator-backend-staging.pages.dev';
+    if (origin.protocol !== 'https:' || origin.hostname !== allowed || origin.port || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== '/') {
       throw new Error('Invalid staging backend origin');
     }
   } catch {
