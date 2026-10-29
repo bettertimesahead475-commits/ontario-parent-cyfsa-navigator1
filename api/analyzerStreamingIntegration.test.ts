@@ -179,6 +179,7 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
   });
     vi.clearAllMocks();
     mockCreateMessage.mockReset();
+    delete process.env.DIRECT_BRIEF_PREVIEW_ENABLED;
     process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
     process.env.SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "test-key";
@@ -321,6 +322,43 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     const redFlag = completeEvent.report.redFlags[0];
     expect(redFlag.quoteVerified).toBe(true);
     expect(redFlag.quoteVerification).toBe("EXACT");
+  });
+
+  it("opt-in direct preview streams an explicitly unverified brief without replacing the final report", async () => {
+    process.env.DIRECT_BRIEF_PREVIEW_ENABLED = "true";
+    const standardResponder = sectionResponder(STREAM_REPORT);
+    mockCreateMessage.mockImplementation(async (body: any) => {
+      const prompt = JSON.stringify(body.messages || []);
+      if (prompt.includes("Draft a concise preliminary case brief in Markdown")) {
+        return {
+          id: "msg_preview",
+          type: "message",
+          role: "assistant",
+          model: body.model,
+          content: [{ type: "text", text: "Case Overview\\nPreliminary document findings." }],
+          usage: { input_tokens: 120, output_tokens: 35 },
+          stop_reason: "end_turn",
+        };
+      }
+      return standardResponder(body);
+    });
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast", stream: true });
+
+    expect(res.status).toBe(200);
+    const events = res.text.split("\\n\\n")
+      .filter((line: string) => line.startsWith("data: "))
+      .map((line: string) => JSON.parse(line.slice(6)));
+    const preview = events.find((e: any) => e.type === "section" && e.section === "preliminaryBrief");
+    expect(preview?.data?.status).toBe("PRELIMINARY_UNVERIFIED");
+    expect(preview?.data?.text).toContain("Preliminary document findings");
+    const complete = events.find((e: any) => e.type === "complete");
+    expect(complete?.report?.documentTitle).toBe("Society Protection Application");
+    expect(complete?.report?.preliminaryBrief).toBeUndefined();
+    expect(mockCreateMessage.mock.calls.length).toBeGreaterThan(4);
   });
 
   it("POST /api/analyze verifies quotes and detects unverified phrases", async () => {
