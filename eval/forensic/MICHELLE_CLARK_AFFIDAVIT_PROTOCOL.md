@@ -13,7 +13,7 @@ the Michelle Clark record:
 | "I have not personally observed the children without supervision." / "The home was clean and there was food in the refrigerator." | Same synthetic case | Removed |
 | An Exhibit A email showing a medical explanation for an absence | No source; invented | Removed |
 | Attendance checkmarks `[X]` / `[ ]` on an endorsement | No source; invented | Removed |
-| CYFSA s. 74(2) threshold, attributed to pages 7-8 | Page location and content unverified | Kept as a question (section 4) |
+| CYFSA s. 74(2) threshold, attributed to pages 7-8 | Page location and content unverified | Kept as a scoring rule (section 5, rule 5) |
 
 The former page outline (nine pages, the content of pages 1-9) and the exhibit page counts were also unsourced, and
 have been removed. Scoring the engine against those anchors would have rewarded findings that are not in the record.

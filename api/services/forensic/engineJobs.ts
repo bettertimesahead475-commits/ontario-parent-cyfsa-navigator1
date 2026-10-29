@@ -97,11 +97,17 @@ export async function advanceEngineJob(params: {
   maxSteps?: number;
   minModelStepMs?: number;
 }): Promise<AdvanceResult> {
-  const latest = await params.store.latest(params.jobId);
+  const started = Date.now();
+  const { store, counts } = params.store.counted();
+  const latest = await store.latest(params.jobId);
   const investigator = latest?.state.models.investigator;
-  const generate: GenerateFn = (p, model) => params.generate({ ...p, enableThinking: model === investigator && p.stage !== "forensic_extraction" }, model);
-  return advanceEngine({
-    store: params.store,
+  let modelCalls = 0;
+  const generate: GenerateFn = (p, model) => {
+    modelCalls++;
+    return params.generate({ ...p, enableThinking: model === investigator && p.stage !== "forensic_extraction" }, model);
+  };
+  const result = await advanceEngine({
+    store,
     jobId: params.jobId,
     owner: `${params.jobId}:${randomUUID()}`,
     deps: { generate, deadlineAt: params.deadlineAt, now: params.now, onProgress: params.onProgress, corpus: engineCorpus() },
@@ -109,6 +115,23 @@ export async function advanceEngineJob(params: {
     leaseTtlMs: LEASE_TTL_MS,
     maxSteps: params.maxSteps,
   });
+  const state = result.status === "COMPLETE" || result.status === "PENDING" ? result.state : null;
+  // One line per invocation: what a live run's speed and cost are measured from. No document content.
+  console.log(
+    JSON.stringify({
+      tag: "[FORENSIC_ENGINE_ADVANCE]",
+      jobId: params.jobId,
+      status: result.status,
+      nextStep: result.status === "PENDING" || result.status === "BUSY" ? result.nextStep : null,
+      stepsDone: state ? `${state.done.length}/${state.plan.length}` : null,
+      modelCalls,
+      retriedAttempts: state ? Object.values(state.attempts).reduce((n, a) => n + a, 0) : null,
+      storage: counts,
+      invocationMs: Date.now() - started,
+      jobElapsedMs: state ? Date.now() - state.startedAt : null,
+    })
+  );
+  return result;
 }
 
 /** The investigation, synthesis or review did not complete: no report is delivered and the credit is released. */

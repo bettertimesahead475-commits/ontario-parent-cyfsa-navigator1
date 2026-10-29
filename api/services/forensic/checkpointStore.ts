@@ -72,6 +72,35 @@ export class InMemoryObjectStore implements ObjectStore {
   }
 }
 
+export interface StorageOpCounts {
+  reads: number;
+  writes: number;
+  lists: number;
+  removes: number;
+}
+
+/** Counts storage operations, for the per-invocation log line. Behaviour is the inner store's. */
+export class CountingObjectStore implements ObjectStore {
+  readonly counts: StorageOpCounts = { reads: 0, writes: 0, lists: 0, removes: 0 };
+  constructor(private readonly inner: ObjectStore) {}
+  get(key: string) {
+    this.counts.reads++;
+    return this.inner.get(key);
+  }
+  putIfAbsent(key: string, body: string) {
+    this.counts.writes++;
+    return this.inner.putIfAbsent(key, body);
+  }
+  list(prefix: string) {
+    this.counts.lists++;
+    return this.inner.list(prefix);
+  }
+  remove(keys: string[]) {
+    this.counts.removes++;
+    return this.inner.remove(keys);
+  }
+}
+
 export const ENGINE_BUCKET = "forensic_engine_jobs";
 
 /** Supabase Storage implementation. The bucket is private; objects are deleted by retention policy, not here. */
@@ -158,6 +187,12 @@ const stepKey = (step: string) => step.replace(/[^A-Za-z0-9_-]/g, "~");
 
 export class CheckpointStore {
   constructor(private readonly objects: ObjectStore) {}
+
+  /** The same store, with its storage operations counted. */
+  counted(): { store: CheckpointStore; counts: StorageOpCounts } {
+    const counting = new CountingObjectStore(this.objects);
+    return { store: new CheckpointStore(counting), counts: counting.counts };
+  }
 
   private key(jobId: string, ...parts: string[]) {
     return [jobId, ...parts].join("/");
