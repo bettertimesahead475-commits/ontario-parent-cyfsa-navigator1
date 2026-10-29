@@ -206,3 +206,55 @@ describe("resumable Forensic Engine runs", () => {
     expect((await advanceEngine({ store, jobId: "nope", owner: "x", deps: { generate: provider().generate, deadlineAt: far() }, minModelStepMs: 1, leaseTtlMs: 1 })).status).toBe("MISSING");
   });
 });
+
+describe("invocations a customer waits through (simulated clock)", () => {
+  // Assumed provider latency, seconds: Sonnet extraction 30, Opus investigation 150, Opus review 120.
+  const LATENCY: Record<string, number> = { forensic_extraction: 30_000, forensic_investigation: 150_000, forensic_adversarial_review: 120_000 };
+  async function run(dependsOnVisual: boolean) {
+    const objects = new InMemoryObjectStore();
+    let mediaReads = 0;
+    const get = objects.get.bind(objects);
+    objects.get = async (k: string) => {
+      if (k.endsWith("/media.json")) mediaReads++;
+      return get(k);
+    };
+    const store = new CheckpointStore(objects);
+    const { state, media } = createEngineState({ documents: DOCS, models: MODELS, requestId: "job1", now: 0 });
+    await store.start("job1", META, state, media);
+    let clock = 0;
+    const generate: GenerateFn = async (params, model) => {
+      const stage = String(params.stage);
+      clock += LATENCY[stage] ?? 10_000;
+      const text =
+        stage === "forensic_investigation"
+          ? JSON.stringify({ findings: [{ id: "F1", title: "Hearsay", statement: "Allegation is hearsay.", evidenceClass: "A", dependsOnVisual, supporting: [{ documentId: "aff", quote: "I did not attend the home." }] }] })
+          : stage === "forensic_adversarial_review"
+            ? JSON.stringify({ reviews: [{ findingId: "F1", verdict: "UPHELD" }] })
+            : stage === "forensic_visual_verification"
+              ? JSON.stringify({ results: [{ findingId: "F1", verdict: "CONFIRMED", observation: "x" }] })
+              : "{}";
+      return { text, model, durationMs: 1, usage: { input_tokens: 1, output_tokens: 1 } };
+    };
+    let invocations = 0;
+    let result;
+    do {
+      invocations++;
+      const start = clock;
+      result = await advanceEngine({ store, jobId: "job1", owner: `w${invocations}`, deps: { generate, deadlineAt: start + 265_000, now: () => clock }, minModelStepMs: 200_000, leaseTtlMs: 260_000 });
+      clock += 1_000; // the client's pause before it continues
+    } while (result.status === "PENDING" && invocations < 10);
+    return { status: result.status, invocations, mediaReads };
+  }
+
+  it("finishes a one-document case in two invocations and never downloads the original file when no page check is needed", async () => {
+    // Before: three invocations, because the visual step (no model call here) waited for a fresh 200 s window,
+    // and every invocation downloaded media.json.
+    expect(await run(false)).toEqual({ status: "COMPLETE", invocations: 2, mediaReads: 0 });
+  });
+
+  it("still gives the visual stage the original file when a finding depends on the page", async () => {
+    const r = await run(true);
+    expect(r.status).toBe("COMPLETE");
+    expect(r.mediaReads).toBe(1);
+  });
+});

@@ -232,6 +232,23 @@ export function nextStep(state: EngineState): string | null {
   return state.plan.find((s) => !state.done.includes(s)) ?? null;
 }
 
+/**
+ * Whether running this step now can make a model call. The runner gives a step that cannot the time it needs (none),
+ * instead of deferring it to the next invocation. Approximate is safe: a call started without enough time left stops
+ * with DeadlineReached and the step is retried later, not counted as failed.
+ */
+export function stepNeedsModel(state: EngineState, step: string): boolean {
+  const [kind] = step.split(":");
+  if (kind === "build" || kind === "ground") return false;
+  if (kind === "visual") return state.findings.some((f) => f.dependsOnVisual && f.review.verdict !== "REJECTED");
+  if (kind === "review") return state.findings.length > 0;
+  if (kind === "synthesize") return state.investigatedDocuments > 0;
+  return !state.budgetExhausted;
+}
+
+/** Only the visual step reads the original files and page images. */
+export const stepUsesMedia = (step: string) => step === "visual";
+
 const withMedia = (docs: CaseDocument[], media: EngineMedia = {}): CaseDocument[] => docs.map((d) => ({ ...d, ...media[d.id] }));
 
 function stageRecord(state: EngineState, stage: StageRecord["stage"], model: string | null): StageRecord {

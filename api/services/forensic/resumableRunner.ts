@@ -17,7 +17,7 @@
  *   whole batch, as it would repeat a single step.
  */
 
-import { nextStep, parallelSteps, runEngineSteps, type EngineState, type StepDeps } from "./pipeline.js";
+import { nextStep, parallelSteps, runEngineSteps, stepNeedsModel, stepUsesMedia, type EngineMedia, type EngineState, type StepDeps } from "./pipeline.js";
 import type { CheckpointStore, Lease } from "./checkpointStore.js";
 
 export type AdvanceResult =
@@ -25,9 +25,6 @@ export type AdvanceResult =
   | { status: "PENDING"; state: EngineState; nextStep: string }
   | { status: "BUSY"; nextStep: string }
   | { status: "MISSING" };
-
-/** Steps that make no model call and finish in milliseconds. */
-const DETERMINISTIC_STEPS = new Set(["build", "ground"]);
 
 export interface AdvanceOptions {
   store: CheckpointStore;
@@ -45,7 +42,10 @@ export interface AdvanceOptions {
 
 export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult> {
   const now = opts.deps.now ?? Date.now;
-  const media = await opts.store.media(opts.jobId);
+  // The original files can be large (a PDF up to ~20 MB as base64); read them only for a step that uses them.
+  let media: EngineMedia | null = null;
+  const mediaFor = async (state: EngineState, steps: string[]): Promise<EngineMedia> =>
+    steps.some((s) => stepUsesMedia(s) && stepNeedsModel(state, s)) ? (media ??= await opts.store.media(opts.jobId)) : {};
   let batches = 0;
   let knownLatest: { seq: number; state: EngineState } | null = null;
   for (;;) {
@@ -54,7 +54,7 @@ export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult
     const step = nextStep(latest.state);
     if (!step) return { status: "COMPLETE", state: latest.state };
     const timeLeft = opts.deps.deadlineAt - now();
-    const needsModel = !DETERMINISTIC_STEPS.has(step);
+    const needsModel = stepNeedsModel(latest.state, step);
     if ((opts.maxSteps !== undefined && batches >= opts.maxSteps) || (needsModel && timeLeft < opts.minModelStepMs)) {
       return { status: "PENDING", state: latest.state, nextStep: step };
     }
@@ -78,7 +78,7 @@ export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult
         continue;
       }
       const before = Object.fromEntries(steps.map((s) => [s, current.state.attempts[s] ?? 0]));
-      const { state, outcomes } = await runEngineSteps(current.state, steps, { ...opts.deps, media, resumable: true });
+      const { state, outcomes } = await runEngineSteps(current.state, steps, { ...opts.deps, media: await mediaFor(current.state, steps), resumable: true });
       batches++;
       const saved = await opts.store.advance(opts.jobId, current.seq, state);
       if (!saved) {
