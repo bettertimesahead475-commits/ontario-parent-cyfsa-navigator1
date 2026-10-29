@@ -2432,7 +2432,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       const aiDeadlineAt = requestStartedAt + 265_000;
       // Experimental first-pass preview, gated off by default. The verified legacy
       // report remains authoritative, including its billing and persistence path.
-      const preliminaryBriefPromise = process.env.DIRECT_BRIEF_PREVIEW_ENABLED === "true" && streamEmitter
+      const preliminaryBriefPromise = process.env.DIRECT_BRIEF_PREVIEW_ENABLED === "true" && !isForensic && streamEmitter
         ? generateDirectBrief(
             { documentText: targetText, sourceName: "Uploaded case document" },
             generateContentWithFallback,
