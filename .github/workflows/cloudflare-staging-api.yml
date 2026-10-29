@@ -23,4 +23,4 @@ jobs:
       - name: Typecheck
         run: npm run lint
       - name: Staging API tests
-        run: npx vitest run tests/cloudflare-pages-api.test.ts api/cloudflare-auth-check.test.ts api/cloudflare-supabase-reachability.test.ts api/cloudflare-entitlement-readiness.test.ts
+        run: npx vitest run tests/cloudflare-pages-api.test.ts api/cloudflare-auth-check.test.ts api/cloudflare-supabase-reachability.test.ts api/cloudflare-entitlement-readiness.test.ts api/cloudflare-entitlement-policy.test.ts
