@@ -2446,7 +2446,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
               durationMs: preview.durationMs,
             });
           }).catch((error) => {
-            logAnalyzerDiagnostic("direct preliminary brief", error);
+            logAiDiagnostic("direct preliminary brief", error);
           })
         : Promise.resolve();
       const run = await runSectionedAnalysis({
