@@ -349,7 +349,7 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
       .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast", stream: true });
 
     expect(res.status).toBe(200);
-    const events = res.text.split("\\n\\n")
+    const events = res.text.split("\n\n")
       .filter((line: string) => line.startsWith("data: "))
       .map((line: string) => JSON.parse(line.slice(6)));
     const preview = events.find((e: any) => e.type === "section" && e.section === "preliminaryBrief");
