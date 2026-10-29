@@ -25,6 +25,7 @@ describe('Cloudflare entitlement policy (pure, no database or credit mutations)'
       { ...valid, revokedAt: new Date().toISOString() },
       { ...valid, expiresAt: '2020-01-01T00:00:00Z' },
       { ...valid, expiresAt: 'invalid' },
+      { ...valid, remainingCredits: null },
       { ...valid, remainingCredits: 0 },
       { ...valid, remainingCredits: -1 },
     ]) expect(decide({ ...base, session }).allowed).toBe(false);
