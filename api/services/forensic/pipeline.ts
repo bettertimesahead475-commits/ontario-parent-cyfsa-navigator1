@@ -60,6 +60,8 @@ export interface ForensicLimits {
   maxCharsPerDocument: number;
   /** Above this many characters in total, documents are investigated one at a time and then synthesized. */
   singlePassMaxChars: number;
+  /** Most characters of document text the adversarial review reads in its one call (see reviewDocuments). */
+  reviewMaxChars: number;
   maxCalls: number;
   extractionMaxTokens: number;
   investigationMaxTokens: number;
@@ -72,6 +74,7 @@ export interface ForensicLimits {
 export const DEFAULT_LIMITS: ForensicLimits = {
   maxCharsPerDocument: 300_000,
   singlePassMaxChars: 200_000,
+  reviewMaxChars: 400_000,
   maxCalls: 24,
   extractionMaxTokens: 8_000,
   investigationMaxTokens: 32_000,
@@ -449,7 +452,9 @@ export async function runEngineStep(input: EngineState, step: string, deps: Step
       return finish("DONE");
     }
     try {
-      const iso = isolateDocuments(docs, limits.maxCharsPerDocument);
+      const scope = reviewDocuments(docs, state.findings, limits.reviewMaxChars ?? DEFAULT_LIMITS.reviewMaxChars, limits.maxCharsPerDocument);
+      if (scope.note && !state.incompleteness.includes(scope.note)) state.incompleteness.push(scope.note);
+      const iso = isolateDocuments(scope.docs, limits.maxCharsPerDocument);
       const proposed = state.findings.map((f) => ({
         findingId: f.id,
         title: f.title,
@@ -665,6 +670,57 @@ function ingestExtraction(state: EngineState, docs: CaseDocument[], doc: CaseDoc
       sources: [ref],
     });
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// What the adversarial review reads
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Characters of context kept on each side of a quoted passage when a document is reduced for the review. */
+const REVIEW_WINDOW_CHARS = 2_500;
+
+/**
+ * The documents the adversarial review reads. Normally the whole record. When the record is larger than the review's
+ * budget (a large multi-document case: up to 10 documents of 300,000 characters would be about 750,000 tokens in one
+ * call), the review reads every document a finding cites, in full where its share of the budget allows and otherwise
+ * as the passages around each quotation, and the reduction is stated in the report. It is never silent.
+ */
+export function reviewDocuments(docs: CaseDocument[], findings: Finding[], budget: number, maxCharsPerDocument: number): { docs: CaseDocument[]; note: string | null } {
+  const len = (d: CaseDocument) => Math.min(d.text.length, maxCharsPerDocument);
+  const total = docs.reduce((n, d) => n + len(d), 0);
+  if (total <= budget) return { docs, note: null };
+  const refs = findings.flatMap((f) => [...f.supporting, ...f.contradicting]);
+  const citedOnly = docs.filter((d) => refs.some((r) => r.documentId === d.id));
+  // Findings that cite nothing (information not recorded) are checked against the whole record, each document cut to
+  // an equal share.
+  const cited = citedOnly.length ? citedOnly : docs;
+  const share = Math.floor(budget / Math.max(1, cited.length));
+  let reduced = 0;
+  const out = cited.map((d) => {
+    if (len(d) <= share) return d;
+    reduced++;
+    const spans = refs
+      .filter((r) => r.documentId === d.id && r.startOffset !== null && r.endOffset !== null)
+      .map((r) => [Math.max(0, r.startOffset! - REVIEW_WINDOW_CHARS), Math.min(d.text.length, r.endOffset! + REVIEW_WINDOW_CHARS)] as [number, number])
+      .sort((a, b) => a[0] - b[0]);
+    const merged: Array<[number, number]> = [];
+    for (const sp of spans) {
+      const last = merged[merged.length - 1];
+      if (last && sp[0] <= last[1]) last[1] = Math.max(last[1], sp[1]);
+      else merged.push([...sp]);
+    }
+    const text = merged.map(([a, b]) => `[Excerpt, characters ${a}-${b}]\n${d.text.slice(a, b)}`).join("\n[...]\n").slice(0, share);
+    return { ...d, text: text || d.text.slice(0, share) };
+  });
+  const omitted = docs.length - cited.length;
+  const parts = [
+    omitted > 0 ? `${omitted} document(s) that no finding cites were not re-read` : "",
+    reduced > 0 ? `${reduced} long document(s) were reduced to the passages around the quoted text` : "",
+  ].filter(Boolean);
+  return {
+    docs: out,
+    note: `The record is larger than the adversarial review reads in one pass: ${parts.join(", and ")}. The review could not look for contrary text outside what it read.`,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

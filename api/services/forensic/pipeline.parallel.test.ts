@@ -150,3 +150,50 @@ describe("parallel batches in resumable runs", () => {
     expect((await advance(store, p.generate, { maxSteps: 1 })).status).toBe("BUSY");
   });
 });
+
+describe("what the adversarial review reads", () => {
+  it("reads the whole record when it fits, and says nothing", async () => {
+    const { reviewDocuments } = await import("./pipeline");
+    expect(reviewDocuments(DOCS, [], 1_000_000, 300_000)).toEqual({ docs: DOCS, note: null });
+  });
+
+  it("keeps a large record within its budget, keeps the quoted passages, and says what it did not read", async () => {
+    const { reviewDocuments } = await import("./pipeline");
+    const { resolveEvidenceRef } = await import("./caseModel");
+    const filler = "Unrelated background paragraph. ".repeat(5_000);
+    const big = (id: string, quote: string): CaseDocument => ({ id, title: id, kind: "AFFIDAVIT", extractionMethod: "TEXT_LAYER", text: `${filler}${quote}${filler}` });
+    const docs = [big("a", "The parent called on September 11."), big("b", "The hearing was set for September 25."), big("c", "Nothing cited here.")];
+    const ref = (doc: string, quote: string) => resolveEvidenceRef(docs, doc, quote);
+    const findings: any[] = [
+      { supporting: [ref("a", "The parent called on September 11.")], contradicting: [ref("b", "The hearing was set for September 25.")] },
+    ];
+    const budget = 60_000;
+    const r = reviewDocuments(docs, findings, budget, 300_000);
+    expect(r.docs.map((d) => d.id)).toEqual(["a", "b"]);
+    expect(r.docs.reduce((n, d) => n + d.text.length, 0)).toBeLessThanOrEqual(budget);
+    expect(r.docs[0].text).toContain("The parent called on September 11.");
+    expect(r.docs[1].text).toContain("The hearing was set for September 25.");
+    expect(r.note).toMatch(/1 document\(s\) that no finding cites were not re-read/);
+    expect(r.note).toMatch(/2 long document\(s\) were reduced to the passages around the quoted text/);
+  });
+
+  it("puts the reduction in the report's incompleteness list", async () => {
+    const filler = "Background. ".repeat(20_000);
+    const docs: CaseDocument[] = [
+      { id: "a", title: "A", kind: "AFFIDAVIT", extractionMethod: "TEXT_LAYER", text: `${filler}The worker did not attend.${filler}` },
+      { id: "b", title: "B", kind: "CAS_RECORD", extractionMethod: "TEXT_LAYER", text: filler },
+    ];
+    let reviewChars = 0;
+    const generate: GenerateFn = async (params, model) => {
+      const stage = String(params.stage);
+      if (stage === "forensic_adversarial_review") reviewChars = String(params.messages[0].content).length;
+      const text = stage.startsWith("forensic_investigation")
+        ? JSON.stringify({ findings: [{ id: "F1", title: "Did not attend", statement: "The worker did not attend.", evidenceClass: "A", supporting: [{ documentId: "a", quote: "The worker did not attend." }] }] })
+        : stage === "forensic_adversarial_review" ? JSON.stringify({ reviews: [{ findingId: "a:F1", verdict: "UPHELD" }] }) : "{}";
+      return { text, model, durationMs: 1, usage: { input_tokens: 1, output_tokens: 1 } };
+    };
+    const report = await runForensicInvestigation({ documents: docs, generate, models: MODELS, limits: { singlePassMaxChars: 10, reviewMaxChars: 50_000 }, deadlineAt: Date.now() + 60_000, requestId: "r" });
+    expect(reviewChars).toBeLessThan(60_000);
+    expect(report.incompleteness.join(" ")).toMatch(/larger than the adversarial review reads in one pass/);
+  });
+});
