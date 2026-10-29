@@ -26,7 +26,7 @@ export function evaluateQuickReviewAccess(evidence: EntitlementEvidence): Access
   const session = evidence.session;
   if (session?.ownerUid === evidence.firebaseUid && !session.revokedAt &&
       (!session.expiresAt || (Number.isFinite(Date.parse(session.expiresAt)) && Date.parse(session.expiresAt) > Date.now())) &&
-      (session.remainingCredits === null || (Number.isSafeInteger(session.remainingCredits) && session.remainingCredits > 0))) {
+      (Number.isSafeInteger(session.remainingCredits) && session.remainingCredits !== null && session.remainingCredits > 0)) {
     return { allowed: true, source: 'paid' };
   }
   const free = evidence.free;
