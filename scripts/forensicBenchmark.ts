@@ -11,9 +11,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildThinkingRequestFields, calculateEstimatedCost, DEFAULT_FORENSIC_MODEL, DEFAULT_QUICK_MODEL, MODEL_PRICING } from "../api/services/analyzerModels.js";
+import { buildThinkingRequestFields, calculateEstimatedCost, MODEL_PRICING, resolveServerAuthoritativeModel } from "../api/services/analyzerModels.js";
 import { runSectionedAnalysis, type GenerateFn } from "../api/services/analyzerSections.js";
-import { runForensicInvestigation } from "../api/services/forensic/pipeline.js";
+import type { CaseDocument, ForensicReport } from "../api/services/forensic/caseModel.js";
+import { CheckpointStore, InMemoryObjectStore } from "../api/services/forensic/checkpointStore.js";
+import { advanceEngineJob, startEngineJob } from "../api/services/forensic/engineJobs.js";
 import { evaluateTenDimensions, fromEngineFindings, fromLegacyReport, scoreCase, summarize, type BenchmarkCase, type CaseScore, type ForensicDimensionEvaluation } from "../api/services/forensic/evaluation.js";
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}`));
@@ -197,7 +199,8 @@ export function makeGenerate(
           system: params.system,
           messages: params.messages,
           max_tokens: maxOutputTokens,
-          ...(buildThinkingRequestFields(model, true) as any),
+          // As production (generateContentWithFallback): thinking only where the caller asks for it.
+          ...(buildThinkingRequestFields(model, Boolean((params as { enableThinking?: boolean }).enableThinking)) as any),
         },
         { timeout: params.timeoutMs, maxRetries: 0 }
       );
@@ -231,6 +234,62 @@ export function makeGenerate(
   };
 }
 
+/** The route's model choice for paid Forensic In-Depth, so both systems run as customers get them. */
+export function productionModels() {
+  const r = resolveServerAuthoritativeModel({ mode: "full", isPaid: true, tier: "Pro" as any, clientRequestedModel: undefined });
+  return { primary: r.primaryModel, verification: r.verificationModel ?? r.primaryModel };
+}
+/** The route's per-invocation AI deadline. */
+export const INVOCATION_MS = 265_000;
+
+/**
+ * Runs the engine exactly as the route does: a job in a checkpoint store (in memory here), advanced one invocation
+ * at a time with the route's limits, deadlines, model choice and thinking settings, until it completes.
+ */
+export async function runEngineAsProduction(documents: CaseDocument[], generate: GenerateFn, jobId: string): Promise<{ report: ForensicReport; invocations: number }> {
+  const store = new CheckpointStore(new InMemoryObjectStore());
+  const models = productionModels();
+  await startEngineJob({
+    store,
+    meta: { jobId, uid: null, billing: "admin", sessionId: null, tier: null, reservationId: null, billingCycle: null, userEmail: null, documentName: null, mode: "full", createdAt: Date.now() },
+    documents,
+    investigatorModel: models.verification,
+    extractorModel: models.primary,
+  });
+  for (let invocations = 1; invocations <= 20; invocations++) {
+    const r = await advanceEngineJob({ store, jobId, generate: generate as any, deadlineAt: Date.now() + INVOCATION_MS });
+    if (r.status === "COMPLETE") return { report: r.state.report!, invocations };
+    if (r.status === "MISSING") throw new Error("Engine job state missing.");
+  }
+  throw new Error("Engine did not complete within 20 invocations.");
+}
+
+/**
+ * --dry-run: runs every case through the production path with a scripted provider that makes no network call, and
+ * prices each request at its worst case (estimated input plus max_tokens). The script makes every stage run (a
+ * finding that depends on the page, so the visual check runs too). This is the most a live run of these cases can
+ * cost before retries, at list prices; it is an estimate, not a bill.
+ */
+export function makeDryRunGenerate(rows: Array<{ stage: string; model: string; worstCaseUsd: number; maxOutputTokens: number; estimatedInputTokens: number }>): GenerateFn {
+  return async (params, model) => {
+    const stage = String(params.stage);
+    const { worstCaseCostUsd, estimatedInputTokens, maxOutputTokens } = estimateWorstCaseRequestCost(model, params);
+    rows.push({ stage, model, worstCaseUsd: worstCaseCostUsd, maxOutputTokens, estimatedInputTokens });
+    const content = String(params.messages?.[0]?.content ?? "");
+    const doc = /id="([^"]+)"/.exec(content)?.[1] ?? "";
+    const firstLine = (/>>\n(?:\[Page \d+\]\n)?([^\n]+)/.exec(content)?.[1] ?? "").trim();
+    const text =
+      stage === "forensic_investigation" || stage === "forensic_synthesis"
+        ? JSON.stringify({ findings: [{ id: "F1", title: "Dry run", statement: "Dry run.", evidenceClass: "A", dependsOnVisual: true, supporting: [{ documentId: doc, quote: firstLine }] }] })
+        : stage === "forensic_adversarial_review"
+          ? JSON.stringify({ reviews: [{ findingId: "F1", verdict: "UPHELD" }] })
+          : stage === "forensic_visual_verification"
+            ? JSON.stringify({ results: [{ findingId: "F1", verdict: "INCONCLUSIVE", observation: "dry run" }] })
+            : "{}";
+    return { text, model, durationMs: 0, usage: { input_tokens: 0, output_tokens: 0 } };
+  };
+}
+
 async function main() {
   mkdirSync(RESULTS_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -241,6 +300,22 @@ async function main() {
   if (cases.length === 0) {
     console.error("No matching cases found.");
     process.exit(1);
+  }
+
+  if (arg("dry-run")) {
+    const rows: Parameters<typeof makeDryRunGenerate>[0] = [];
+    const generate = makeDryRunGenerate(rows);
+    const perCase: Record<string, number> = {};
+    for (const c of cases) {
+      const before = rows.length;
+      const { invocations } = await runEngineAsProduction(c.documents, generate, `dry-${c.id}`);
+      perCase[c.id] = Number(rows.slice(before).reduce((n, x) => n + x.worstCaseUsd, 0).toFixed(4));
+      console.log(`${c.id}: worst case $${perCase[c.id].toFixed(3)} over ${rows.length - before} calls, ${invocations} invocation(s)`);
+    }
+    const total = Number(Object.values(perCase).reduce((a, b) => a + b, 0).toFixed(4));
+    writeFileSync(out, JSON.stringify({ status: "DRY_RUN", system: "engine", note: "Worst case per request (estimated input + max_tokens) at list prices, every stage exercised, no retries. Not a bill.", totalWorstCaseUsd: total, perCase, requests: rows }, null, 2));
+    console.log(`Engine worst case for ${cases.length} case(s): $${total.toFixed(3)}. Wrote ${out}`);
+    return;
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -267,6 +342,7 @@ async function main() {
       usage: Record<string, { input_tokens: number; output_tokens: number }>;
       stageMetrics: Record<string, { latencyMs: number; inputTokens: number; outputTokens: number; calls: number }>;
       latencyMs: number[];
+      invocations: number[];
       errors: string[];
       outputs: any[];
     }
@@ -282,6 +358,7 @@ async function main() {
       usage,
       stageMetrics,
       latencyMs: [] as number[],
+      invocations: [] as number[],
       errors: [] as string[],
       outputs: [] as any[],
     });
@@ -290,13 +367,8 @@ async function main() {
       const t0 = Date.now();
       try {
         if (system === "engine") {
-          const report = await runForensicInvestigation({
-            documents: c.documents,
-            generate,
-            models: { extractor: DEFAULT_QUICK_MODEL, investigator: DEFAULT_FORENSIC_MODEL, reviewer: DEFAULT_FORENSIC_MODEL },
-            deadlineAt: Date.now() + 15 * 60_000,
-            requestId: `bench-${c.id}`,
-          });
+          const { report, invocations } = await runEngineAsProduction(c.documents, generate, `bench-${c.id}`);
+          r.invocations.push(invocations);
           const scored = fromEngineFindings(report.findings);
           r.scores.push(scoreCase(c, scored, report.injectionWarnings.length));
           const caseDurationMs = Date.now() - t0;
@@ -321,10 +393,10 @@ async function main() {
           const run = await runSectionedAnalysis({
             mode: "full",
             documentText: text,
-            primaryModel: DEFAULT_FORENSIC_MODEL,
-            verificationModel: DEFAULT_FORENSIC_MODEL,
+            primaryModel: productionModels().primary,
+            verificationModel: productionModels().verification,
             generate,
-            deadlineAt: Date.now() + 15 * 60_000,
+            deadlineAt: Date.now() + INVOCATION_MS,
             requestId: `bench-legacy-${c.id}`,
           });
           const scored = fromLegacyReport(run.report, c.documents);
@@ -368,6 +440,7 @@ async function main() {
           },
           stageMetrics: r.stageMetrics,
           latencyMs: r.latencyMs,
+          invocations: r.invocations,
           errors: r.errors,
           scores: r.scores,
           usage: r.usage,

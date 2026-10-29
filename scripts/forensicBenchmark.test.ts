@@ -285,3 +285,48 @@ describe("forensicBenchmark spend ledger", () => {
     expect((createBenchmarkClient() as any).maxRetries).toBe(0);
   });
 });
+
+describe("forensicBenchmark runs the engine as production does", () => {
+  it("requests thinking only where production does: the investigator's stages, not extraction", async () => {
+    const { runEngineAsProduction, productionModels } = await import("./forensicBenchmark.js");
+    const bodies: any[] = [];
+    const client = {
+      messages: {
+        stream: (body: any) => {
+          bodies.push(body);
+          const stage = JSON.stringify(body.messages).includes("adversarial") ? "review" : "";
+          return {
+            finalMessage: async () => ({
+              content: [{ type: "text", text: stage === "review" ? '{"reviews":[]}' : '{"findings":[]}' }],
+              usage: { input_tokens: 10, output_tokens: 10 },
+            }),
+          };
+        },
+      },
+    } as any;
+    const generate = makeGenerate(client, {}, {}, 10, new SpendLedger(10));
+    const docs = [{ id: "d", title: "Affidavit", kind: "AFFIDAVIT" as const, extractionMethod: "TEXT_LAYER" as const, text: "[Page 1]\nI did not attend." }];
+    const { invocations } = await runEngineAsProduction(docs, generate, "t1");
+    expect(invocations).toBe(1);
+    const { primary, verification } = productionModels();
+    const extraction = bodies.find((b) => b.model === primary)!;
+    const investigation = bodies.find((b) => b.model === verification)!;
+    expect(extraction.thinking?.type ?? "disabled").not.toBe("adaptive");
+    expect(investigation.thinking?.type).toBe("adaptive");
+    // Production limits: investigation output is capped at the resumable route's 24k, not the library default 32k.
+    expect(investigation.max_tokens).toBe(24_000);
+  });
+
+  it("prices a dry run at each request's worst case without any network call", async () => {
+    const { runEngineAsProduction, makeDryRunGenerate } = await import("./forensicBenchmark.js");
+    const rows: any[] = [];
+    const docs = [{ id: "d", title: "Affidavit", kind: "AFFIDAVIT" as const, extractionMethod: "TEXT_LAYER" as const, text: "[Page 1]\nI did not attend the home." }];
+    const { report } = await runEngineAsProduction(docs, makeDryRunGenerate(rows), "dry");
+    expect(rows.map((r) => r.stage)).toEqual(["forensic_extraction", "forensic_investigation", "forensic_adversarial_review"]);
+    // Opus investigation 24k and review 12k output at $25/M, Sonnet extraction 6k at $10/M, plus a little input.
+    const total = rows.reduce((n, r) => n + r.worstCaseUsd, 0);
+    expect(total).toBeGreaterThan(0.96);
+    expect(total).toBeLessThan(1.0);
+    expect(report.findings.length).toBe(1);
+  });
+});
