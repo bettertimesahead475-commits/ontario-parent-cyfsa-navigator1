@@ -165,3 +165,41 @@ There are no measured API costs.
 - Mark benchmark cases or corpus versions as verified unless a person has verified them.
 - Change Quick Review, authentication, payments, pricing, existing model routing, or the production Vercel project
   `cyfsanavigator` (prj_wbNOXbsCWbj7vyu7JjxlXwt4WQpR).
+
+---
+
+## Google Antigravity Autonomous Validation & Hardening Session
+
+### Baseline Verification (Phase 1)
+- `npm ci`: Clean install, dependencies verified.
+- `npx tsc --noEmit`: Clean (zero errors).
+- `npx vitest run`: 197 files passed, 3,681 passed tests, 0 failures, 467 skipped.
+- `npm run build`: Production build cleanly generates Vite bundle and `dist/server.cjs`.
+
+### Hardening & Fixes Applied (Phase 2 & 3)
+1. **Windows CRLF Line-Ending Normalization**:
+   - `api/services/forensic/bundledLegalSources.test.ts`: Normalized text before SHA-256 calculation so git's `core.autocrlf` on Windows environments does not falsify statutory text hash verification.
+2. **Checkpoint Store Retention Outage Safety**:
+   - `api/services/forensic/checkpointStore.ts`: Fixed critical vulnerability where a transient storage read error during `purgeExpired` would treat an active job as unreadable and delete customer files. Now skips unconfirmed jobs on storage read errors and validates `latest.state.startedAt` before any deletion.
+   - `api/services/forensic/checkpointStore.test.ts`: Added read outage and missing meta regression tests.
+
+### Evaluation & Protocol Hardening (Phase 4)
+1. **10-Dimension Comparison Framework**:
+   - Implemented `evaluateTenDimensions` and `ForensicDimensionEvaluation` in `api/services/forensic/evaluation.ts` covering:
+     1) Material findings discovered
+     2) Material findings missed
+     3) Unsupported allegations
+     4) Source attribution accuracy
+     5) Legal citation accuracy
+     6) Chronology accuracy
+     7) Visual evidence interpretation
+     8) Duplicate findings
+     9) Adversarial review effectiveness
+     10) Cost and latency
+   - Verified via unit test suite in `api/services/forensic/evaluation.test.ts`.
+2. **Michelle Clark Affidavit Real-World Protocol**:
+   - Created `eval/forensic/MICHELLE_CLARK_AFFIDAVIT_PROTOCOL.md` specifying ground truth anchors, multi-document test structure (9-page affidavit + 2 email exhibits + visual marks), and strict confidentiality protection (no unredacted PII committed to repo).
+
+### Deployment Hardening & Preview Checklist (Phase 5)
+- Created `docs/PREVIEW_TESTING_CHECKLIST.md` detailing owner authorization gates, Vercel cron plan prerequisites (Pro account required for 4 scheduled crons in `vercel.json`), pre-flight checks, and end-to-end testing protocol.
+

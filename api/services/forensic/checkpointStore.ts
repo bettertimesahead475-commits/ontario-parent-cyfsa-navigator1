@@ -31,7 +31,19 @@ export class InMemoryObjectStore implements ObjectStore {
   failWrites = 0;
   /** Test hook: fail the next write whose key matches, then clear. */
   failNextWriteMatching: RegExp | null = null;
+  /** Test hook: fail the next N reads, as a storage outage would. */
+  failReads = 0;
+  /** Test hook: fail the next read whose key matches, then clear. */
+  failNextReadMatching: RegExp | null = null;
   async get(key: string) {
+    if (this.failReads > 0) {
+      this.failReads--;
+      throw new Error("simulated storage read outage");
+    }
+    if (this.failNextReadMatching?.test(key)) {
+      this.failNextReadMatching = null;
+      throw new Error("simulated storage read outage");
+    }
     return this.objects.get(key) ?? null;
   }
   async putIfAbsent(key: string, body: string) {
@@ -223,15 +235,33 @@ export class CheckpointStore {
   }
 
   /**
-   * Deletes jobs created more than retentionMs ago, including their documents and original files. A job with no
-   * readable meta is deleted too (it cannot be continued). At most `limit` jobs per call.
+   * Deletes jobs created more than retentionMs ago, including their documents and original files. A job whose meta
+   * and state are confirmed absent or expired is deleted. A job whose records cannot be read due to a storage error
+   * is never purged. At most `limit` jobs per call.
    */
   async purgeExpired(now: number, retentionMs: number, limit = 50): Promise<string[]> {
     const purged: string[] = [];
     for (const jobId of await this.objects.list("")) {
       if (purged.length >= limit) break;
-      const meta = await this.meta(jobId).catch(() => null);
-      if (meta && now - meta.createdAt < retentionMs) continue;
+      let meta: EngineJobMeta | null = null;
+      try {
+        meta = await this.meta(jobId);
+      } catch {
+        // Storage read error: do NOT delete an unconfirmed job during an outage.
+        continue;
+      }
+      if (meta) {
+        if (now - meta.createdAt < retentionMs) continue;
+      } else {
+        // If meta.json was not found (null), check latest state for recent activity before purging
+        try {
+          const latest = await this.latest(jobId);
+          if (latest && now - latest.state.startedAt < retentionMs) continue;
+        } catch {
+          // If reading state also failed with an error, do NOT delete during storage error
+          continue;
+        }
+      }
       await this.objects.remove(await this.keys(jobId));
       purged.push(jobId);
     }

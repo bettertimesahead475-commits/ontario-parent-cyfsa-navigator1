@@ -79,4 +79,36 @@ describe("engine job retention", () => {
     expect([...objects.objects.keys()].filter((k) => k.startsWith("old/"))).toEqual([]);
     expect([...objects.objects.keys()].some((k) => k.startsWith("new/media.json"))).toBe(true);
   });
+
+  it("never deletes a job when reading its meta encounters a storage error", async () => {
+    const { CheckpointStore, InMemoryObjectStore } = await import("./checkpointStore");
+    const { createEngineState } = await import("./pipeline");
+    const objects = new InMemoryObjectStore();
+    const store = new CheckpointStore(objects);
+    const docs = [{ id: "d", title: "t", kind: "OTHER" as const, extractionMethod: "TEXT_LAYER" as const, text: "case text" }];
+    const meta = { jobId: "active-job", uid: "u", billing: "paid" as const, sessionId: "s", tier: "Pro", reservationId: "r", billingCycle: null, userEmail: null, documentName: null, mode: "full" as const, createdAt: 99_000_000 };
+    const { state, media } = createEngineState({ documents: docs, models: { extractor: "s", investigator: "o", reviewer: "o" }, requestId: "active-job" });
+    await store.start("active-job", meta, state, media);
+
+    // Simulate transient storage outage on meta.json read
+    objects.failNextReadMatching = /meta\.json$/;
+    const purged = await store.purgeExpired(100_000_000, 24 * 60 * 60 * 1000);
+    expect(purged).toEqual([]);
+    expect(await store.meta("active-job")).not.toBeNull();
+  });
+
+  it("keeps a job with missing meta if its state was created recently", async () => {
+    const { CheckpointStore, InMemoryObjectStore } = await import("./checkpointStore");
+    const { createEngineState } = await import("./pipeline");
+    const objects = new InMemoryObjectStore();
+    const store = new CheckpointStore(objects);
+    const docs = [{ id: "d", title: "t", kind: "OTHER" as const, extractionMethod: "TEXT_LAYER" as const, text: "case text" }];
+    const { state, media } = createEngineState({ documents: docs, models: { extractor: "s", investigator: "o", reviewer: "o" }, requestId: "partial-job", now: 95_000_000 });
+    // Write state 0 directly without meta.json
+    await objects.putIfAbsent("partial-job/state/000000.json", JSON.stringify(state));
+
+    const purged = await store.purgeExpired(100_000_000, 24 * 60 * 60 * 1000);
+    expect(purged).toEqual([]);
+    expect((await store.latest("partial-job"))?.state.requestId).toBe("partial-job");
+  });
 });

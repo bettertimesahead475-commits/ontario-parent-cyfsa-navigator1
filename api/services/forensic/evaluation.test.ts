@@ -66,4 +66,51 @@ describe("scoring", () => {
     expect(legacy[0].quotes[0]).toEqual({ documentId: "end", quote: "The mother did not attend.", verified: true });
     expect(scoreCase(c, legacy, null).requiredFound).toBe(1);
   });
+
+  it("evaluates all 10 forensic dimensions comprehensively", async () => {
+    const { evaluateTenDimensions } = await import("./evaluation");
+    const pred: ScoredFinding[] = [
+      f("p1", "The mother did not attend.", "Mother was absent"),
+      f("p2", "The mother did not attend.", "Mother was absent"), // duplicate
+      { id: "p3", title: "Unverified claim", statement: "Unfounded allegation", evidenceClass: "A", quotes: [{ documentId: "end", quote: "fake quote", verified: false }], citations: [] },
+    ];
+    const rawReport = {
+      caseModel: {
+        chronology: [{ eventId: "e1", description: "Court hearing" }],
+        chronologyAnomalies: ["Hearing occurred before filing"],
+      },
+      findings: [{ id: "p1", visualNote: "Checked attendance box [ ] Mother" }],
+      stages: [{ stage: "VISUAL", status: "COMPLETED" }],
+    };
+    const appendix = [{ id: "app1", title: "Rejected hypothesis" } as any];
+
+    const result = evaluateTenDimensions({
+      benchmarkCase: c,
+      scoredFindings: pred,
+      rawReport,
+      appendixFindings: appendix,
+      costUsd: 0.15,
+      latencyMs: 12500,
+      tokenUsage: { input_tokens: 3000, output_tokens: 500 },
+    });
+
+    expect(result.materialFindingsDiscovered.requiredFound).toBe(1);
+    expect(result.materialFindingsMissed.count).toBe(1);
+    expect(result.materialFindingsMissed.missedIssueIds).toEqual(["adjournment-length"]);
+    expect(result.unsupportedAllegations.count).toBe(1);
+    expect(result.unsupportedAllegations.findingIds).toEqual(["p3"]);
+    expect(result.sourceAttributionAccuracy.quotesTotal).toBe(3);
+    expect(result.sourceAttributionAccuracy.quotesVerified).toBe(2);
+    expect(result.chronologyAccuracy.anomaliesReported).toBe(1);
+    expect(result.chronologyAccuracy.chronologyEventsCount).toBe(1);
+    expect(result.visualEvidenceInterpretation.findingsWithVisualCheck).toBe(1);
+    expect(result.visualEvidenceInterpretation.notes).toContain("p1: Checked attendance box [ ] Mother");
+    expect(result.duplicateFindings.duplicatePairsCount).toBe(1);
+    expect(result.duplicateFindings.duplicateFindingIds).toContain("p1");
+    expect(result.duplicateFindings.duplicateFindingIds).toContain("p2");
+    expect(result.adversarialReviewEffectiveness.rejectedCount).toBe(1);
+    expect(result.adversarialReviewEffectiveness.upheldCount).toBe(3);
+    expect(result.costAndLatency.totalCostUsd).toBe(0.15);
+    expect(result.costAndLatency.totalLatencyMs).toBe(12500);
+  });
 });

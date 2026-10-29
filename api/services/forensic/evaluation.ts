@@ -212,3 +212,186 @@ export function summarize(cases: BenchmarkCase[], scores: CaseScore[]): Benchmar
     injectionDetection: inj.length ? `${inj.filter((s) => s.injectionFlagged).length}/${inj.length}` : "n/a",
   };
 }
+
+/**
+ * 10-dimension evaluation framework for real-world document intelligence evaluation.
+ * Evaluates forensic investigation and baseline systems across:
+ * 1. Material findings discovered
+ * 2. Material findings missed
+ * 3. Unsupported allegations
+ * 4. Source attribution accuracy
+ * 5. Legal citation accuracy
+ * 6. Chronology accuracy
+ * 7. Visual evidence interpretation
+ * 8. Duplicate findings
+ * 9. Adversarial review effectiveness
+ * 10. Cost and latency
+ */
+export interface ForensicDimensionEvaluation {
+  materialFindingsDiscovered: {
+    requiredFound: number;
+    requiredTotal: number;
+    optionalFound: number;
+    recall: number | null;
+  };
+  materialFindingsMissed: {
+    count: number;
+    missedIssueIds: string[];
+  };
+  unsupportedAllegations: {
+    count: number;
+    findingIds: string[];
+  };
+  sourceAttributionAccuracy: {
+    quotesTotal: number;
+    quotesVerified: number;
+    verificationRate: number | null;
+  };
+  legalCitationAccuracy: {
+    citationsTotal: number;
+    verifiedOrInternal: number;
+    unverifiedOrNeedsResearch: number;
+    accuracyRate: number | null;
+  };
+  chronologyAccuracy: {
+    anomaliesReported: number;
+    chronologyEventsCount: number;
+  };
+  visualEvidenceInterpretation: {
+    visualStagesCount: number;
+    findingsWithVisualCheck: number;
+    notes: string[];
+  };
+  duplicateFindings: {
+    duplicatePairsCount: number;
+    duplicateFindingIds: string[];
+  };
+  adversarialReviewEffectiveness: {
+    upheldCount: number;
+    rejectedCount: number;
+    totalReviewed: number;
+    rejectionRate: number | null;
+  };
+  costAndLatency: {
+    totalCostUsd: number;
+    totalLatencyMs: number;
+    inputTokens: number;
+    outputTokens: number;
+  };
+}
+
+export function evaluateTenDimensions(params: {
+  benchmarkCase: BenchmarkCase;
+  scoredFindings: ScoredFinding[];
+  rawReport?: any;
+  appendixFindings?: Finding[];
+  costUsd?: number;
+  latencyMs?: number;
+  tokenUsage?: { input_tokens: number; output_tokens: number };
+}): ForensicDimensionEvaluation {
+  const { benchmarkCase, scoredFindings, rawReport, appendixFindings = [], costUsd = 0, latencyMs = 0, tokenUsage } = params;
+  const score = scoreCase(benchmarkCase, scoredFindings, null);
+
+  const reqTotal = benchmarkCase.expected.filter((e) => e.required).length;
+  const recall = reqTotal > 0 ? score.requiredFound / reqTotal : null;
+
+  const unsupported = scoredFindings.filter((f) => f.quotes.length === 0 || !f.quotes.some((q) => q.verified));
+  const unsupportedIds = unsupported.map((f) => f.id);
+
+  const quotesTotal = score.quotesTotal;
+  const quotesVerified = score.quotesVerified;
+  const verificationRate = quotesTotal > 0 ? quotesVerified / quotesTotal : null;
+
+  const citationsTotal = score.citationsTotal;
+  const unverified = score.citationsUnverified;
+  const verifiedCitations = citationsTotal - unverified;
+  const citationRate = citationsTotal > 0 ? verifiedCitations / citationsTotal : null;
+
+  const chronologyEvents = rawReport?.caseModel?.chronology?.length ?? rawReport?.chronology?.length ?? 0;
+  const anomaliesReported = rawReport?.caseModel?.chronologyAnomalies?.length ?? 0;
+
+  const visualNotes: string[] = [];
+  let findingsWithVisual = 0;
+  if (Array.isArray(rawReport?.findings)) {
+    for (const f of rawReport.findings) {
+      if (f.visualNote) {
+        visualNotes.push(`${f.id}: ${f.visualNote}`);
+        findingsWithVisual++;
+      }
+    }
+  }
+
+  const duplicateIds = new Set<string>();
+  let duplicatePairs = 0;
+  for (let i = 0; i < scoredFindings.length; i++) {
+    for (let j = i + 1; j < scoredFindings.length; j++) {
+      const f1 = scoredFindings[i];
+      const f2 = scoredFindings[j];
+      const sharedQuotes = f1.quotes.some((q1) => f2.quotes.some((q2) => q1.quote && q2.quote && norm(q1.quote) === norm(q2.quote)));
+      const sameStatement = norm(f1.statement) === norm(f2.statement);
+      if (sharedQuotes || sameStatement) {
+        duplicatePairs++;
+        duplicateIds.add(f1.id);
+        duplicateIds.add(f2.id);
+      }
+    }
+  }
+
+  const rejectedCount = appendixFindings.length;
+  const upheldCount = scoredFindings.length;
+  const totalReviewed = upheldCount + rejectedCount;
+  const rejectionRate = totalReviewed > 0 ? rejectedCount / totalReviewed : null;
+
+  return {
+    materialFindingsDiscovered: {
+      requiredFound: score.requiredFound,
+      requiredTotal: reqTotal,
+      optionalFound: score.optionalFound,
+      recall,
+    },
+    materialFindingsMissed: {
+      count: score.missed.length,
+      missedIssueIds: score.missed,
+    },
+    unsupportedAllegations: {
+      count: unsupportedIds.length,
+      findingIds: unsupportedIds,
+    },
+    sourceAttributionAccuracy: {
+      quotesTotal,
+      quotesVerified,
+      verificationRate,
+    },
+    legalCitationAccuracy: {
+      citationsTotal,
+      verifiedOrInternal: verifiedCitations,
+      unverifiedOrNeedsResearch: unverified,
+      accuracyRate: citationRate,
+    },
+    chronologyAccuracy: {
+      anomaliesReported,
+      chronologyEventsCount: chronologyEvents,
+    },
+    visualEvidenceInterpretation: {
+      visualStagesCount: rawReport?.stages?.filter((s: any) => s.stage === "VISUAL")?.length ?? 0,
+      findingsWithVisualCheck: findingsWithVisual,
+      notes: visualNotes,
+    },
+    duplicateFindings: {
+      duplicatePairsCount: duplicatePairs,
+      duplicateFindingIds: Array.from(duplicateIds),
+    },
+    adversarialReviewEffectiveness: {
+      upheldCount,
+      rejectedCount,
+      totalReviewed,
+      rejectionRate,
+    },
+    costAndLatency: {
+      totalCostUsd: costUsd,
+      totalLatencyMs: latencyMs,
+      inputTokens: tokenUsage?.input_tokens ?? 0,
+      outputTokens: tokenUsage?.output_tokens ?? 0,
+    },
+  };
+}
