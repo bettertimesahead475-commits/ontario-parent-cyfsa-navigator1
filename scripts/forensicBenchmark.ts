@@ -103,62 +103,115 @@ export function calculateTotalCumulativeSpend(
   return Number(total.toFixed(5));
 }
 
+/**
+ * One spending ledger for the whole run (every system and case). Before a call, its worst case is reserved; after a
+ * call, the reservation is replaced by the provider-reported usage. A call that fails after dispatch (timeout,
+ * dropped stream, provider error) may still be billed, and its usage is unknown, so its worst case stays charged.
+ * Reservations are taken synchronously, so concurrent calls cannot all pass the check against the same balance.
+ */
+export class SpendLedger {
+  private readonly usages = new Set<Record<string, { input_tokens: number; output_tokens: number }>>();
+  reservedUsd = 0;
+  /** Worst-case cost of calls that failed after dispatch; their real usage was never reported. */
+  unreconciledUsd = 0;
+  failedCalls = 0;
+  constructor(readonly maxSpendUsd: number | null) {}
+  track(usage: Record<string, { input_tokens: number; output_tokens: number }>): this {
+    this.usages.add(usage);
+    return this;
+  }
+  /** Reconciled spend plus the worst case of failed calls. Excludes in-flight reservations. */
+  spentUsd(): number {
+    let total = this.unreconciledUsd;
+    for (const u of this.usages) total += calculateTotalCumulativeSpend(u);
+    return Number(total.toFixed(5));
+  }
+  reserve(worstCaseUsd: number, describe: () => string): void {
+    if (this.maxSpendUsd === null) {
+      this.reservedUsd += worstCaseUsd;
+      return;
+    }
+    const spent = this.spentUsd();
+    if (spent >= this.maxSpendUsd) {
+      throw new Error(`Spending cap reached: cumulative spend $${spent.toFixed(3)} reached cap of $${this.maxSpendUsd.toFixed(2)}. ${describe()}`);
+    }
+    const potential = spent + this.reservedUsd + worstCaseUsd;
+    if (potential > this.maxSpendUsd) {
+      throw new Error(
+        `Pre-call spending cap violation prevented: cumulative spend is $${spent.toFixed(3)}, in-flight reservations $${this.reservedUsd.toFixed(3)}, and the next call's worst case is $${worstCaseUsd.toFixed(3)}. Total potential spend $${potential.toFixed(3)} would exceed cap of $${this.maxSpendUsd.toFixed(2)}. ${describe()}`
+      );
+    }
+    this.reservedUsd += worstCaseUsd;
+  }
+  settle(worstCaseUsd: number): void {
+    this.reservedUsd = Math.max(0, this.reservedUsd - worstCaseUsd);
+  }
+  chargeFailed(worstCaseUsd: number): void {
+    this.settle(worstCaseUsd);
+    this.unreconciledUsd += worstCaseUsd;
+    this.failedCalls++;
+  }
+}
+
+/**
+ * The benchmark client must not retry on its own: the SDK's default retries (408/409/429/5xx, connection errors and
+ * timeouts) would send billable attempts the ledger never sees. The engine and the legacy analyzer retry through
+ * generate, so every attempt is checked.
+ */
+export function createBenchmarkClient(): Anthropic {
+  return new Anthropic({ maxRetries: 0 });
+}
+
 export function makeGenerate(
   client: Anthropic,
   usage: Record<string, { input_tokens: number; output_tokens: number }>,
-  stageMetrics: Record<string, { latencyMs: number; inputTokens: number; outputTokens: number; calls: number }>,
-  maxSpendUsd: number | null
+  stageMetrics: Record<string, { latencyMs: number; inputTokens: number; outputTokens: number; calls: number; failedCalls?: number }>,
+  maxSpendUsd: number | null,
+  ledger: SpendLedger = new SpendLedger(maxSpendUsd)
 ): GenerateFn {
+  ledger.track(usage);
   return async (params, model) => {
-    // 1. Fail-closed: Verify pricing is known and calculate current cumulative spend
-    const currentEstimatedSpend = calculateTotalCumulativeSpend(usage);
-
-    // 2. Worst-case pre-call estimation (input tokens + max_tokens cap)
+    // Fail closed: the model must be priced, and the worst case (input estimate + max_tokens, which includes
+    // thinking) must fit in what is left of the cap, counting calls still in flight.
     const { worstCaseCostUsd, estimatedInputTokens, maxOutputTokens } = estimateWorstCaseRequestCost(model, params);
+    ledger.reserve(worstCaseCostUsd, () => `Aborting before call to ${model} (~${estimatedInputTokens} input tokens, max ${maxOutputTokens} output tokens).`);
 
-    // 3. Strict Pre-call Budget Check
-    if (maxSpendUsd !== null) {
-      if (currentEstimatedSpend >= maxSpendUsd) {
-        throw new Error(
-          `Spending cap reached: cumulative spend $${currentEstimatedSpend.toFixed(3)} reached cap of $${maxSpendUsd.toFixed(2)}. Aborting before call to ${model}.`
-        );
-      }
-
-      if (currentEstimatedSpend + worstCaseCostUsd > maxSpendUsd) {
-        throw new Error(
-          `Pre-call spending cap violation prevented: cumulative spend is $${currentEstimatedSpend.toFixed(3)}, and next call worst-case cost is $${worstCaseCostUsd.toFixed(3)} (~${estimatedInputTokens} input tokens, max ${maxOutputTokens} output tokens on ${model}). Total potential spend $${(currentEstimatedSpend + worstCaseCostUsd).toFixed(3)} would exceed cap of $${maxSpendUsd.toFixed(2)}. Aborting call.`
-        );
-      }
-    }
-
-    const started = Date.now();
     const stage = String(params.stage || "unknown");
-    const stream = client.messages.stream(
-      {
-        model,
-        system: params.system,
-        messages: params.messages,
-        max_tokens: params.max_tokens ?? 16000,
-        ...(buildThinkingRequestFields(model, true) as any),
-      },
-      { timeout: params.timeoutMs }
-    );
-    const msg = await stream.finalMessage();
-    const text = msg.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
-    
-    if (!msg.usage || typeof msg.usage.input_tokens !== "number" || typeof msg.usage.output_tokens !== "number") {
+    const sm = (stageMetrics[stage] ??= { latencyMs: 0, inputTokens: 0, outputTokens: 0, calls: 0 });
+    let msg: any;
+    const started = Date.now();
+    try {
+      const stream = client.messages.stream(
+        {
+          model,
+          system: params.system,
+          messages: params.messages,
+          max_tokens: maxOutputTokens,
+          ...(buildThinkingRequestFields(model, true) as any),
+        },
+        { timeout: params.timeoutMs, maxRetries: 0 }
+      );
+      msg = await stream.finalMessage();
+    } catch (err) {
+      ledger.chargeFailed(worstCaseCostUsd);
+      sm.failedCalls = (sm.failedCalls ?? 0) + 1;
+      throw err;
+    }
+    if (!msg?.usage || typeof msg.usage.input_tokens !== "number" || typeof msg.usage.output_tokens !== "number") {
+      ledger.chargeFailed(worstCaseCostUsd);
+      sm.failedCalls = (sm.failedCalls ?? 0) + 1;
       throw new Error(`AI Provider response missing required usage token counts for model ${model}. Cannot verify spending.`);
     }
-
+    const text = msg.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
     const u = { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens };
     const durationMs = Date.now() - started;
 
-    // 4. Reconcile provider-reported usage
+    // Reconcile: replace the reservation with the provider-reported usage.
     usage[model] = {
       input_tokens: (usage[model]?.input_tokens ?? 0) + u.input_tokens,
       output_tokens: (usage[model]?.output_tokens ?? 0) + u.output_tokens,
     };
-    const sm = (stageMetrics[stage] ??= { latencyMs: 0, inputTokens: 0, outputTokens: 0, calls: 0 });
+    ledger.settle(worstCaseCostUsd);
     sm.latencyMs += durationMs;
     sm.inputTokens += u.input_tokens;
     sm.outputTokens += u.output_tokens;
@@ -192,7 +245,9 @@ async function main() {
     process.exit(2);
   }
 
-  const client = new Anthropic();
+  const client = createBenchmarkClient();
+  // One ledger for every system and case: the cap is for the whole run, not per system.
+  const ledger = new SpendLedger(maxSpendUsd);
   const systems = arg("baseline-only") ? ["baseline"] : arg("engine-only") ? ["engine"] : ["engine", "baseline"];
   const results: Record<
     string,
@@ -210,7 +265,7 @@ async function main() {
   for (const system of systems) {
     const usage: Record<string, { input_tokens: number; output_tokens: number }> = {};
     const stageMetrics: Record<string, { latencyMs: number; inputTokens: number; outputTokens: number; calls: number }> = {};
-    const generate = makeGenerate(client, usage, stageMetrics, maxSpendUsd);
+    const generate = makeGenerate(client, usage, stageMetrics, maxSpendUsd, ledger);
     const r = (results[system] = {
       scores: [] as CaseScore[],
       dimensionalEvaluations: [] as ForensicDimensionEvaluation[],
@@ -319,6 +374,12 @@ async function main() {
         status: "RUN",
         ranAt: new Date().toISOString(),
         spendCapUsd: maxSpendUsd,
+        spendLedger: {
+          estimatedSpendUsd: ledger.spentUsd(),
+          unreconciledFailedCallUsd: Number(ledger.unreconciledUsd.toFixed(5)),
+          failedCalls: ledger.failedCalls,
+          note: "Estimated from token prices. Failed calls are counted at their worst case because their usage is unknown. Not an invoice.",
+        },
         annotation: "Author-annotated synthetic cases; not independently reviewed by counsel.",
         systems: report,
       },

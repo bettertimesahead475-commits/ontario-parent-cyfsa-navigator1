@@ -4,6 +4,8 @@ import {
   estimateInputTokens,
   estimateWorstCaseRequestCost,
   makeGenerate,
+  SpendLedger,
+  createBenchmarkClient,
 } from "./forensicBenchmark.js";
 
 describe("forensicBenchmark spending safety", () => {
@@ -209,5 +211,77 @@ describe("forensicBenchmark spending safety", () => {
         "claude-opus-5"
       )
     ).rejects.toThrowError(/AI Provider response missing required usage token counts/);
+  });
+});
+
+describe("forensicBenchmark spend ledger", () => {
+  const okClient = (usage = { input_tokens: 1000, output_tokens: 1000 }, onStream?: (opts: any) => void) =>
+    ({
+      messages: {
+        stream: (_body: any, opts: any) => {
+          onStream?.(opts);
+          return { finalMessage: async () => ({ content: [{ type: "text", text: "{}" }], usage, stop_reason: "end_turn" }) };
+        },
+      },
+    }) as any;
+  const call = (generate: any, maxTokens = 16000) => generate({ stage: "s", messages: [{ role: "user", content: "x" }], max_tokens: maxTokens }, "claude-opus-5");
+
+  it("applies one cap across systems that share a ledger", async () => {
+    // Each Opus call reserves ~$0.40 worst case and settles at $0.03.
+    const ledger = new SpendLedger(0.5);
+    const engine = makeGenerate(okClient({ input_tokens: 1000, output_tokens: 1000 }), {}, {}, 0.5, ledger);
+    const baseline = makeGenerate(okClient({ input_tokens: 1000, output_tokens: 1000 }), {}, {}, 0.5, ledger);
+    for (let i = 0; i < 3; i++) await call(engine);
+    // $0.09 spent by the engine; the baseline's next $0.40 worst case would take the run to $0.49: allowed once.
+    await call(baseline);
+    // $0.12 spent; another $0.40 worst case exceeds $0.50.
+    await expect(call(baseline)).rejects.toThrow(/Pre-call spending cap violation prevented/);
+    expect(ledger.spentUsd()).toBeCloseTo(0.12, 5);
+  });
+
+  it("counts the worst case of a call that fails after dispatch, because it may have been billed", async () => {
+    const ledger = new SpendLedger(1.0);
+    const failing = { messages: { stream: () => ({ finalMessage: async () => { throw new Error("stream dropped"); } }) } } as any;
+    const metrics: Record<string, any> = {};
+    const generate = makeGenerate(failing, {}, metrics, 1.0, ledger);
+    await expect(call(generate)).rejects.toThrow(/stream dropped/);
+    expect(ledger.failedCalls).toBe(1);
+    expect(ledger.unreconciledUsd).toBeGreaterThan(0.4);
+    expect(ledger.reservedUsd).toBe(0);
+    expect(metrics.s.failedCalls).toBe(1);
+    // Two failed worst cases ($0.80+) leave no room for a third.
+    await expect(call(generate)).rejects.toThrow(/stream dropped/);
+    await expect(call(generate)).rejects.toThrow(/Pre-call spending cap violation prevented/);
+  });
+
+  it("reserves in-flight calls so concurrent calls cannot all pass against the same balance", async () => {
+    const ledger = new SpendLedger(1.0);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let dispatched = 0;
+    const slow = {
+      messages: {
+        stream: () => {
+          dispatched++;
+          return { finalMessage: async () => { await gate; return { content: [], usage: { input_tokens: 10, output_tokens: 10 } }; } };
+        },
+      },
+    } as any;
+    const generate = makeGenerate(slow, {}, {}, 1.0, ledger);
+    const pending = Promise.allSettled([call(generate), call(generate), call(generate)]);
+    await new Promise((r) => setTimeout(r, 0));
+    // Only two $0.40 worst cases fit under $1.00 at once; the third is refused before dispatch.
+    expect(dispatched).toBe(2);
+    release();
+    const results = await pending;
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+  }, 10_000);
+
+  it("disables SDK retries so every billable attempt goes through the ledger", async () => {
+    let seen: any;
+    const generate = makeGenerate(okClient(undefined, (opts) => (seen = opts)), {}, {}, 10, new SpendLedger(10));
+    await call(generate, 1000);
+    expect(seen.maxRetries).toBe(0);
+    expect((createBenchmarkClient() as any).maxRetries).toBe(0);
   });
 });
