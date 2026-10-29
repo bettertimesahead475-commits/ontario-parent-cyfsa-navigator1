@@ -203,3 +203,20 @@ There are no measured API costs.
 ### Deployment Hardening & Preview Checklist (Phase 5)
 - Created `docs/PREVIEW_TESTING_CHECKLIST.md` detailing owner authorization gates, Vercel cron plan prerequisites (Pro account required for 4 scheduled crons in `vercel.json`), pre-flight checks, and end-to-end testing protocol.
 
+### Performance Profiling & Optimization (Part II)
+1. **Checkpoint Store Read Optimization**:
+   - `api/services/forensic/resumableRunner.ts`: Added local `knownLatest` state caching across loop iterations in `advanceEngine`. Eliminates 2 redundant Supabase Storage network roundtrips (`list` + `get`) per step within an active invocation.
+2. **Legal Citation Lookup Caching**:
+   - `api/services/forensic/pipeline.ts`: Added in-memory `citationCache` in the `ground` step so repeated citations across findings (e.g. CYFSA s. 74(2), s. 87, s. 94) in the same matter are looked up exactly once.
+
+### Controlled Benchmark & Protocol Hardening (Part III & IV)
+1. **Benchmark Runner Budget & Smoke Test Hardening**:
+   - `scripts/forensicBenchmark.ts`:
+     - Added `--case=<id>` single-case smoke testing flag.
+     - Added fail-closed spending cap `--max-spend-usd=<amount>`. Without explicit cap, refuses to execute billable calls.
+     - Tracks stage-level latency, input/output token consumption, and outputs the full 10-dimension evaluation metrics.
+     - Clearly labels costs as estimated token-rate calculations rather than actual invoice charges.
+2. **Michelle Clark Protocol Evidentiary Rigour**:
+   - `eval/forensic/MICHELLE_CLARK_AFFIDAVIT_PROTOCOL.md`: Refined to enforce 5 strict evidentiary categories (Established Documentary Facts, Verified Contradictions, Investigative Hypotheses, Unresolved Legal Questions, Unsupported Allegations) and explicit guardrails prohibiting false deductions (e.g. not treating 5-day hearing intervals as proven violations, not inferring forgery from OCR cursive signature omissions).
+
+

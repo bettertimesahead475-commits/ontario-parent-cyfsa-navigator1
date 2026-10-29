@@ -558,11 +558,17 @@ export async function runEngineStep(input: EngineState, step: string, deps: Step
     // Legal corpus: each single-section CYFSA citation is looked up for the case date (deterministic lookup).
     const caseDate = caseDateFor(cm);
     const sources = deps.corpus ?? corpusSources();
+    const citationCache = new Map<string, any>();
     for (const f of state.findings) {
       for (const l of f.legalIssues) {
         if (!l.citation) continue;
         try {
-          const found = await lookupCitation(l.citation, caseDate, sources);
+          const cacheKey = `${l.citation}:${caseDate.kind === "EXACT" ? caseDate.date : "UNKNOWN"}`;
+          let found = citationCache.get(cacheKey);
+          if (found === undefined) {
+            found = await lookupCitation(l.citation, caseDate, sources);
+            citationCache.set(cacheKey, found);
+          }
           l.corpus = found ? { ...found, caseDate: caseDate.kind === "UNKNOWN" ? null : caseDate.date } : null;
           if (found?.outcome === "BEFORE_EARLIEST_VERSION") {
             f.grounding.notes.push(`${l.citation}: the case date ${caseDate.kind === "UNKNOWN" ? "" : caseDate.date + " "}is before the consolidation held (from ${found.effectiveFrom}); the version in force then was not checked.`);

@@ -43,8 +43,9 @@ export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult
   const now = opts.deps.now ?? Date.now;
   const media = await opts.store.media(opts.jobId);
   let steps = 0;
+  let knownLatest: { seq: number; state: EngineState } | null = null;
   for (;;) {
-    const latest = await opts.store.latest(opts.jobId);
+    const latest = knownLatest ?? (await opts.store.latest(opts.jobId));
     if (!latest) return { status: "MISSING" };
     const step = nextStep(latest.state);
     if (!step) return { status: "COMPLETE", state: latest.state };
@@ -58,13 +59,20 @@ export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult
     if (!lease) return { status: "BUSY", nextStep: step };
     try {
       // Another worker may have finished this step between our read and the lease.
-      const current = await opts.store.latest(opts.jobId);
-      if (!current || current.seq !== latest.seq) continue;
+      const current = knownLatest ?? (await opts.store.latest(opts.jobId));
+      if (!current || current.seq !== latest.seq) {
+        knownLatest = null;
+        continue;
+      }
       const before = current.state.attempts[step] ?? 0;
       const { state, outcome } = await runEngineStep(current.state, step, { ...opts.deps, media, resumable: true });
       steps++;
       const saved = await opts.store.advance(opts.jobId, current.seq, state);
-      if (!saved) continue; // a newer state exists; ours is discarded
+      if (!saved) {
+        knownLatest = null;
+        continue; // a newer state exists; ours is discarded
+      }
+      knownLatest = { seq: current.seq + 1, state };
       if (outcome === "RETRY_LATER" && (state.attempts[step] ?? 0) === before) {
         // Interrupted by the deadline, not failed: hand over to the next invocation.
         return { status: "PENDING", state, nextStep: step };

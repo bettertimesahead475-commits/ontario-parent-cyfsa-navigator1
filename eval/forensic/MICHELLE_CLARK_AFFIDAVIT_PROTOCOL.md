@@ -56,31 +56,70 @@ Case: michelle-clark-affidavit
     └── 2 pages: Correspondence confirming counsel involvement and disclosure requests
 ```
 
+### Rigorous Evidentiary Taxonomy
+
+To prevent subjective or ungrounded model inflation, the protocol strictly segregates issues into five distinct evidentiary categories:
+
+1. **Established Documentary Facts**: Facts directly sworn, stamped, or admitted in the record with unambiguous source quotes (e.g. date of first CAS involvement, worker's professional title, attendance records).
+2. **Verified Contradictions**: Two or more mutually irreconcilable statements within the affidavit or between the affidavit and exhibits (e.g. worker deposes that parent gave no reason for absence, but Exhibit A shows contemporaneous email from parent giving medical explanation).
+3. **Investigative Hypotheses**: Inferences regarding potential unreliability, bias, or procedural gaps that require counsel inquiry but are *not* conclusively proven by the face of the document.
+4. **Unresolved Legal Questions**: Statutory thresholds (e.g. CYFSA s. 74(2) "child in need of protection") or procedural timelines (e.g. 5-day temporary care hearing) that must be assessed by counsel and court, not declared as automatic violations by an AI.
+5. **Unsupported Allegations**: Assertions in the source document made on information and belief without identifying the source, or third-party hearsay without corroboration.
+
+---
+
+### Critical Guardrails & Prohibited Scoring Deductions
+
+The evaluation scorer MUST penalize hallucinations and over-reaching claims as severely as missed material evidence:
+
+1. **Five-Day Hearing Issue (CYFSA s. 90)**:
+   - *Rule*: Do NOT automatically classify a hearing date beyond 5 days as a proven statutory violation. Without the initial court record or endorsement showing whether the delay was on consent, court congestion, or emergency adjournment, this is an **Unresolved Legal Question / Investigative Lead**, NOT a proven violation.
+   - *Forbidden*: Concluding as fact that the Society or Court committed an unlawful detention without examining the adjournment endorsements.
+
+2. **Different Dates on Documents**:
+   - *Rule*: Do NOT treat different dates across affidavit paragraphs, exhibits, and filing stamps as proof that the affidavit is "fraudulent" or "invalid". Affidavits routinely depose to historical events over multi-month periods. Only actual chronological impossibilities (e.g. deponent swearing they attended an event that occurred after the jurat date) constitute verified anomalies.
+
+3. **Signature & Jurat OCR Omissions**:
+   - *Rule*: Do NOT infer a "missing signature" or "forged affidavit" merely because OCR failed to capture a handwritten cursive signature on the jurat. Where visual verification is inconclusive or OCR output omits a signature line, the finding must be classified as **Inconclusive / Requires Physical Inspection**, not a definitive failure to swear.
+
+4. **Home Conditions & Risk Characterizations**:
+   - *Rule*: Do NOT invent contradictions concerning home conditions. Distinguish between *admitted physical facts* (e.g. food in fridge, clean home) and *worker's subjective assessment* of risk. Report the tension as a foundation issue (Class C/D), not as perjury.
+
+5. **Penalizing Unsupported Claims**:
+   - The benchmark framework (`evaluateTenDimensions`) explicitly counts `unsupportedAllegations` and penalizes any finding where source quotes cannot be verified by cryptographic offset against the text layer.
+
+---
+
 ### Key Material Issues (Gold Anchors)
 
-1. **Anonymous / Double Hearsay**:
-   - *Anchor*: Allegations regarding home conditions derived from undisclosed third-party caller without first-hand verification by worker.
-   - *Classification*: Class A (Admissibility / Hearsay) or Class C (Lack of Foundation).
+1. **Anonymous / Hearsay Foundation Issue**:
+   - *Category*: Unsupported Allegations / Evidence Admissibility (Class A / Class C)
+   - *Anchor*: "a community member who wished to remain anonymous"
+   - *Expected Proposition*: The central supervision concern relies on an unidentified caller whose reliability cannot be evaluated from the four corners of the affidavit.
    - *Requirement*: Required.
 
-2. **First-hand Contradiction with Risk Claim**:
-   - *Anchor*: Worker's own home inspection notes (Page 5) documenting clean conditions, adequate food, and stable children, contradicting the sworn summary asserting immediate risk.
-   - *Classification*: Class A (Direct Contradiction).
+2. **Worker First-Hand Observation vs Risk Deposition**:
+   - *Category*: Verified Contradiction / Tension (Class A / Class C)
+   - *Anchor*: "I have not personally observed the children without supervision." / "The home was clean and there was food in the refrigerator."
+   - *Expected Proposition*: The worker's direct observations during the home visit contradict or fail to substantiate the anonymous caller's summary of immediate risk.
    - *Requirement*: Required.
 
-3. **Timeline Inconsistency Between Exhibit A and Affidavit**:
-   - *Anchor*: Email timestamp in Exhibit A shows parent gave advance notice of absence, contradicting affidavit assertion of "unexplained failure to appear".
-   - *Classification*: Class A / Class B.
+3. **Exhibit A Email Timestamp vs Unexplained Absence Deposition**:
+   - *Category*: Verified Contradiction across Documents (Class A)
+   - *Anchor*: Exhibit A timestamp showing written notice from parent prior to scheduled visit.
+   - *Expected Proposition*: Exhibit A proves the worker received advance notice, directly rebutting the sworn assertion that the parent failed to attend without notice or explanation.
    - *Requirement*: Required.
 
-4. **Visual Evidence (Checkbox Marks & Signatures)**:
-   - *Anchor*: Form attendance boxes and signature verification on jurat.
-   - *Classification*: Class A / Visual.
+4. **Visual Attendance & Jurat Markings**:
+   - *Category*: Established Documentary Facts / Visual Check (Class A)
+   - *Anchor*: Attendance checkmarks (`[X]` vs `[ ]`) and commissioner jurat block.
+   - *Expected Proposition*: Objective verification of which parties and counsel were marked present on the endorsement/form.
    - *Requirement*: Required.
 
-5. **Statutory Threshold Substantiation**:
-   - *Anchor*: Analysis of whether facts deposed satisfy the strict threshold of CYFSA s. 74(2) without conflating poverty or housing strain with child protection risk.
-   - *Classification*: Class B / Class D.
+5. **Statutory Threshold Substantiation (CYFSA s. 74(2))**:
+   - *Category*: Unresolved Legal Question / Judicial Test (Class D)
+   - *Anchor*: Deposition alleging protection grounds under s. 74(2).
+   - *Expected Proposition*: Identifies that the factual foundation for protection must satisfy the s. 74(2) threshold and distinguishes housing instability from protection risk without asserting a definitive legal ruling.
    - *Requirement*: Required.
 
 ---
