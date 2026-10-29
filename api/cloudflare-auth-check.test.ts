@@ -46,4 +46,49 @@ describe('Cloudflare native Firebase token verification', () => {
     expect(response.status).toBe(401);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+  it('accepts a correctly signed Firebase JWT and rejects a tampered signature', async () => {
+    const pair = await crypto.subtle.generateKey(
+      { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+      true,
+      ['sign', 'verify'],
+    );
+    const publicJwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      keys: [{ ...publicJwk, kid: 'test-key', alg: 'RS256', use: 'sig' }],
+    })));
+    const now = Math.floor(Date.now() / 1000);
+    const header = segment({ alg: 'RS256', kid: 'test-key' });
+    const payload = segment({
+      aud: 'test-project',
+      iss: 'https://securetoken.google.com/test-project',
+      sub: 'test-user',
+      iat: now - 30,
+      auth_time: now - 60,
+      exp: now + 3600,
+    });
+    const input = header + '.' + payload;
+    const signature = Buffer.from(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', pair.privateKey, new TextEncoder().encode(input))).toString('base64url');
+    const good = await invoke('Bearer ' + input + '.' + signature, 'test-project');
+    expect(good.status).toBe(200);
+    expect(await good.json()).toMatchObject({ authenticated: true, uid: 'test-user' });
+    const modifiedSignature = (signature[0] === 'A' ? 'B' : 'A') + signature.slice(1);
+    const bad = await invoke('Bearer ' + input + '.' + modifiedSignature, 'test-project');
+    expect(bad.status).toBe(401);
+    expect((await bad.json()).authenticated).toBe(false);
+  });
+
+  it('rejects expired tokens before fetching keys', async () => {
+    const spy = vi.fn();
+    vi.stubGlobal('fetch', spy);
+    const now = Math.floor(Date.now() / 1000);
+    const token = [
+      segment({ alg: 'RS256', kid: 'test-key' }),
+      segment({ aud: 'test-project', iss: 'https://securetoken.google.com/test-project', sub: 'user', iat: now - 7200, auth_time: now - 7200, exp: now - 1 }),
+      'c2ln',
+    ].join('.');
+    const response = await invoke('Bearer ' + token, 'test-project');
+    expect(response.status).toBe(401);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
 });
