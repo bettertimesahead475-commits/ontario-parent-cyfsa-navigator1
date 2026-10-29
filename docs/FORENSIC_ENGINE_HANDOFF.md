@@ -255,3 +255,140 @@ The one results file (`eval/forensic/results/2026-10-28T22-02-32-356Z.json`) is 
   - `eval/forensic/MICHELLE_CLARK_AFFIDAVIT_PROTOCOL.md` defines standard evaluation anchors.
   - Confirmed: No raw case files, PDFs, or unredacted personal case materials are committed to the repository. Real test documents must remain in local, uncommitted staging. Any pseudonymization or git history rewriting requires explicit owner approval.
 
+
+---
+
+## Engineering pass, 2026-10-29 (commits c5e35311 to 61f84ac3)
+
+Validation at 61f84ac3:
+- `npx tsc --noEmit`: clean.
+- Full Vitest: 201 files, 3,751 passed, 0 failed, 433 skipped, 79-90 s.
+- `npm run build`: exit 0.
+- No paid API call was made. Every measurement below is from mocked providers.
+
+### Defects corrected
+
+1. **Benchmark cap could be exceeded (c5e35311).**
+   - The ledger was per system (engine and baseline each had their own), so a default run could spend 2× the cap.
+   - Calls that failed after dispatch (timeout, dropped stream) were never counted, although they can be billed.
+   - Concurrent calls all checked against the same balance.
+   - The SDK's own retries (default 2, including timeouts) sent attempts the guard never saw.
+   - Now: one `SpendLedger` per run. The worst case is reserved before dispatch, and a failed call keeps its worst case
+     charged. The client and each request use `maxRetries: 0`. The output file records `spendLedger`.
+   - Four regression tests fail against the previous guard and pass now.
+2. **Michelle Clark protocol anchors were not from the record (4b8f70fb).**
+   - Anchors 1-2 were copied from the synthetic `affidavit-hearsay` case (deponent "Dana Reyes"). The Exhibit A medical
+     explanation and the attendance checkmarks were invented. The five-day rule was attributed to s. 90; it is s. 88,
+     triggered by a child being brought to a place of safety.
+   - The protocol is rewritten: no verified facts, and the owner's date points (September 11, 17, 19, 25, 29/30) are
+     unverified questions.
+   - Real records go under the gitignored `eval/forensic/private/` (`--private`).
+3. **Large cases failed after paying for their calls (d0146903).**
+   - `RESUMABLE_LIMITS.maxCalls` was 16. A 10-document multi-pass case (the route accepts 1 + 9) investigated 6
+     documents and then failed review for lack of budget. That is fatal, and the credit was released after about 16
+     paid calls.
+   - The cap is now derived from the largest plan plus retry headroom (30).
+   - Test: all 10 documents are investigated (it failed with 16: 6 of 10).
+4. **The review could not fit a large record (a0d7598d).**
+   - The review sent every document in full in one Opus call, up to about 3M characters.
+   - Above `reviewMaxChars` (400,000), the review reads every cited document, in full where its share allows, otherwise
+     the ±2,500-character passages around each quotation. The report's incompleteness list says what it did not
+     re-read.
+
+### Forensic quality
+
+- **Grounding rule 10.** Class E (confirmed noncompliance) also needs a cited provision whose text was checked (an
+  internal reference match); otherwise it is D.
+- **Prompts, all stages.**
+  - A time limit runs from the event the provision names; a scheduled date, correspondence or a court adjournment is
+    not on its own a missed limit.
+  - Different dates on one document are not evidence of backdating.
+  - An OCR gap is not a missing signature.
+  - Clerical errors support a request for clarification, not a finding of misconduct.
+- **Review prompt.**
+  - It separates contradictions (both cannot be true) from wording differences.
+  - It rejects only for lack of support, never because a finding is adverse to a party, and prefers QUALIFIED.
+  - It does not summarise the case.
+- `prompts.test.ts` pins these. Their effect on live output is **unmeasured** until a live benchmark runs.
+
+### Performance (mocked; simulated provider latency, 1 ms = 1 s)
+
+Per-document extraction, and per-document investigation in multi-pass runs, now run in batches of up to 4 parallel
+calls (d0146903):
+- The batch is replayed in plan order, so the saved state equals a one-at-a-time run (tested on 6 documents).
+- Each step runs under its own lease, with one checkpoint per batch.
+
+| Documents | Wall time before → after | Storage ops before → after | Model calls |
+|---|---|---|---|
+| 1 | 308 → 310 ms | 42 → 42 | 3 → 3 |
+| 6 | 1,368 → 646 ms | 108 → 84 | 14 → 14 |
+| 10 | 2,093 → 826 ms | 156 → 114 | 22 → 22 |
+
+Assumed latencies:
+- Sonnet extraction 30 s.
+- Opus investigation 150 s, synthesis 150 s, review 120 s.
+
+"Before" is 6ff682ca, run on the same in-memory store harness.
+
+**Real Opus step durations are still unmeasured.** A single-document case (the common case) has no parallel work, and
+its critical path is unchanged: extraction, investigation, review.
+
+`[FORENSIC_ENGINE_ADVANCE]` is now logged once per invocation (61f84ac3). It records:
+- status and steps done;
+- model calls and retried attempts;
+- storage reads, writes and lists;
+- invocation time and job elapsed time.
+
+It contains no document content.
+
+### Report (a68bb0df)
+
+The screen and the PDF use one order, which is tested to match:
+1. Status and gaps.
+2. A deterministic summary.
+3. Findings established by the record (A, E).
+4. Leads and questions for counsel (B, C, D). Each group is ranked by significance, then class, then uncertainty.
+5. The quoted chronology, with the source of each date.
+6. Document dates.
+7. Each cited authority once, with the findings that rely on it.
+8. Missing evidence to request in disclosure.
+9. Next steps.
+
+### Checked and not changed
+
+- **Double settlement.** `paid_finalize_credit` is idempotent per (session, request) and serialized by an advisory
+  lock. `recordPaidUse` is idempotent by job id. Two concurrent continues on a finished job charge once.
+- **Test-runner worker timeout.** Not reproduced. The slowest file is `DocumentAnalyzerTab.completion.test.tsx`
+  (13 s) and the slowest test 6.2 s. `maxWorkers: 2` is already set.
+
+### Release blockers found (read-only checks; nothing changed)
+
+- **`CRON_SECRET` is not set** in any Vercel environment of `cyfsanavigator` (names listed; no values read). All cron
+  routes, including `/api/admin/check-payments` and the new purge route, accept only `Bearer $CRON_SECRET` or the
+  admin secret, so Vercel cron calls are unauthenticated and get 401.
+  - Production logs show 24 `check-payments` log lines in 24 h, where a run every 2 minutes would give ~720. This
+    needs the owner to check cron status in the Vercel dashboard; the cause is unconfirmed.
+- **The `forensic_engine_jobs` bucket does not exist yet.** Only `analysis_jobs` (private) exists; the code creates
+  it private on first use. Creating it ahead, with a file size limit, is optional.
+- The paid credit functions (`paid_*`) are in production, executable only by `service_role`. Their SQL file still
+  sits in `supabase/migrations_pending_approval/`.
+- Vercel previews still fail with "Account is blocked".
+- **Cost exposure per credit is unbounded by pricing review.** The worst case for a maximum case (10 × 300k
+  characters, multi-pass) is roughly US$15-20 in token cost from `max_tokens` and input sizes. A typical 1-3 document
+  case is a small fraction of that. This is an estimate, not measured; the owner should decide whether to cap
+  document count or size for Forensic credits.
+
+### Michelle Clark benchmark: state
+
+It **cannot measure recall** until a person enters verified anchors from the original documents into
+`eval/forensic/private/cases/`. It can measure fact-independent behaviour now: grounding, refusal to overstate, cost
+and latency.
+
+### Next action
+
+With an owner-approved cap (US$2.50 proposed), run one controlled live smoke case:
+`npx tsx scripts/forensicBenchmark.ts --case=affidavit-hearsay --engine-only --max-spend-usd=2.50`.
+
+This measures real Opus step durations, which decide whether the 200 s step budget and the 265 s invocation are
+right. The spend cap is an estimate from token prices and `max_tokens`. It is not a billing ceiling: input is
+estimated from characters, and a failed call is assumed to cost its worst case.
