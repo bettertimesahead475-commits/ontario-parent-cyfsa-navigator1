@@ -4,6 +4,7 @@
  * Deliberately checks the Supabase Auth health endpoint, NOT database access.
  * Never sends API keys, Firebase tokens, cookies, or user data.
  * A successful result is NOT evidence that Postgres/RLS/credits work.
+ * Redeploy after configuring STAGING_SUPABASE_URL in Pages environment.
  */
 interface Env {
   STAGING_SUPABASE_URL?: string;
