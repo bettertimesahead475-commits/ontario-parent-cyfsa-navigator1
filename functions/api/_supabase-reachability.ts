@@ -36,6 +36,7 @@ export const onRequestGet = async ({ env }: { env: Env }): Promise<Response> => 
       reachable: response.ok,
       code: response.ok ? 'STAGING_AUTH_SERVICE_REACHABLE' : 'STAGING_AUTH_SERVICE_UNAVAILABLE',
       databaseVerified: false,
+      upstreamStatus: response.status,
     }, { status: response.ok ? 200 : 503, headers });
   } catch {
     return Response.json({ reachable: false, code: 'STAGING_AUTH_SERVICE_UNREACHABLE', databaseVerified: false }, { status: 503, headers });
