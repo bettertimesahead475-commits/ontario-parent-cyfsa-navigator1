@@ -25,8 +25,16 @@ export default function CloudflareAuthDiagnostic() {
       });
       const body = await response.json() as { authenticated?: boolean; code?: string };
       setResult(response.status + ' — ' + (body.authenticated ? 'Firebase signature verified successfully' : (body.code || 'Authentication rejected')));
-    } catch {
-      setResult('Sign-in or authentication check failed. Confirm Firebase authorized domains and try again.');
+    } catch (error: unknown) {
+      const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : 'unknown-error';
+      const safeCode = /^auth\/[a-z-]+$/.test(code) ? code : 'unknown-error';
+      setResult(safeCode === 'auth/unauthorized-domain'
+        ? 'Firebase rejected this hostname (auth/unauthorized-domain). Add cyfsa-navigator-git-staging.pages.dev to Firebase Authentication → Settings → Authorized domains.'
+        : safeCode === 'auth/popup-blocked'
+          ? 'Google popup blocked (auth/popup-blocked). Allow popups for this staging hostname and retry.'
+          : safeCode === 'auth/popup-closed-by-user'
+            ? 'Google sign-in popup was closed before completion.'
+            : 'Authentication failed: ' + safeCode + '. No token was displayed or stored.');
     } finally {
       setBusy(false);
     }
