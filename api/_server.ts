@@ -2481,9 +2481,10 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
         },
       });
 
-      // Settle the preview request before closing the stream; failures never
-      // invalidate the verified report or consume a separate user credit.
-      await preliminaryBriefPromise;
+      // The preliminary preview is non-authoritative. Never hold the verified
+      // report or its billing/persistence path hostage to a slow preview.
+      // The preview's own bounded request handles its eventual completion.
+      void preliminaryBriefPromise;
       streamEmitter?.emitStage("preparing_report", "Validating quotations and assembling the report...", 96);
 
       const durationMs = Date.now() - startTime;
