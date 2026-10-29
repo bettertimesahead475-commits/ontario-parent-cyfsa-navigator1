@@ -22,7 +22,7 @@ function signatureBytes(segment: string): Uint8Array {
 
 export const onRequestGet = async ({ request, env }: Context): Promise<Response> => {
   if (!env.FIREBASE_PROJECT_ID) return json('AUTH_NOT_CONFIGURED', 503);
-  const match = /^Bearer ([A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') || '');
+  const match = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') || '');
   if (!match) return json('AUTH_REQUIRED', 401);
 
   try {
