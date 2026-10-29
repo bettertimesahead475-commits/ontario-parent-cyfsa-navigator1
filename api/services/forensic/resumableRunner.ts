@@ -11,10 +11,14 @@
  *   PENDING and the next invocation runs it. An interrupted step is not a failed attempt.
  * - A transient failure is saved as an attempt and retried (MAX_STEP_ATTEMPTS); then it is recorded as a failure,
  *   exactly as a single-invocation run records it.
+ * - Independent per-document steps (extraction, and investigation in multi-pass runs) run as one batch with their
+ *   model calls in parallel, each under its own lease, and are saved as one checkpoint. The saved state is the one
+ *   running them one at a time would produce (pipeline.parallel.test.ts). A crash before that checkpoint repeats the
+ *   whole batch, as it would repeat a single step.
  */
 
-import { nextStep, runEngineStep, type EngineState, type StepDeps } from "./pipeline.js";
-import type { CheckpointStore } from "./checkpointStore.js";
+import { nextStep, parallelSteps, runEngineSteps, type EngineState, type StepDeps } from "./pipeline.js";
+import type { CheckpointStore, Lease } from "./checkpointStore.js";
 
 export type AdvanceResult =
   | { status: "COMPLETE"; state: EngineState }
@@ -42,7 +46,7 @@ export interface AdvanceOptions {
 export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult> {
   const now = opts.deps.now ?? Date.now;
   const media = await opts.store.media(opts.jobId);
-  let steps = 0;
+  let batches = 0;
   let knownLatest: { seq: number; state: EngineState } | null = null;
   for (;;) {
     const latest = knownLatest ?? (await opts.store.latest(opts.jobId));
@@ -51,12 +55,20 @@ export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult
     if (!step) return { status: "COMPLETE", state: latest.state };
     const timeLeft = opts.deps.deadlineAt - now();
     const needsModel = !DETERMINISTIC_STEPS.has(step);
-    if ((opts.maxSteps !== undefined && steps >= opts.maxSteps) || (needsModel && timeLeft < opts.minModelStepMs)) {
+    if ((opts.maxSteps !== undefined && batches >= opts.maxSteps) || (needsModel && timeLeft < opts.minModelStepMs)) {
       return { status: "PENDING", state: latest.state, nextStep: step };
     }
 
-    const lease = await opts.store.acquire(opts.jobId, step, opts.owner, opts.leaseTtlMs, now());
-    if (!lease) return { status: "BUSY", nextStep: step };
+    // Independent per-document steps run together, each under its own lease, and are saved as one checkpoint.
+    const batch = parallelSteps(latest.state);
+    const leases: Lease[] = [];
+    for (const s of batch) {
+      const lease = await opts.store.acquire(opts.jobId, s, opts.owner, opts.leaseTtlMs, now());
+      if (!lease) break;
+      leases.push(lease);
+    }
+    if (leases.length === 0) return { status: "BUSY", nextStep: step };
+    const steps = batch.slice(0, leases.length);
     try {
       // Another worker may have finished this step between our read and the lease. Always re-read here, even when the
       // state we just saved is cached: a concurrent continue can save the next step before we take its lease.
@@ -65,21 +77,22 @@ export async function advanceEngine(opts: AdvanceOptions): Promise<AdvanceResult
         knownLatest = null;
         continue;
       }
-      const before = current.state.attempts[step] ?? 0;
-      const { state, outcome } = await runEngineStep(current.state, step, { ...opts.deps, media, resumable: true });
-      steps++;
+      const before = Object.fromEntries(steps.map((s) => [s, current.state.attempts[s] ?? 0]));
+      const { state, outcomes } = await runEngineSteps(current.state, steps, { ...opts.deps, media, resumable: true });
+      batches++;
       const saved = await opts.store.advance(opts.jobId, current.seq, state);
       if (!saved) {
         knownLatest = null;
         continue; // a newer state exists; ours is discarded
       }
       knownLatest = { seq: current.seq + 1, state };
-      if (outcome === "RETRY_LATER" && (state.attempts[step] ?? 0) === before) {
+      const interrupted = steps.find((s) => outcomes[s] === "RETRY_LATER" && (state.attempts[s] ?? 0) === before[s]);
+      if (interrupted) {
         // Interrupted by the deadline, not failed: hand over to the next invocation.
-        return { status: "PENDING", state, nextStep: step };
+        return { status: "PENDING", state, nextStep: interrupted };
       }
     } finally {
-      await opts.store.release(opts.jobId, lease).catch(() => {});
+      for (const lease of leases) await opts.store.release(opts.jobId, lease).catch(() => {});
     }
   }
 }

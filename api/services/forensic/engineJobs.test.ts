@@ -69,3 +69,42 @@ describe("engine retention schedule", () => {
     expect(v.crons.map((c: any) => c.path)).toContain("/api/admin/forensic-engine/purge");
   });
 });
+
+describe("the resumable call budget covers the largest case the route accepts", () => {
+  it("investigates all ten documents of a maximum-size multi-pass case and delivers the report", async () => {
+    const { advanceEngineJob, isFatal, startEngineJob, MAX_PLAN_MODEL_STEPS, RESUMABLE_LIMITS } = await import("./engineJobs");
+    const { MAX_ADDITIONAL_DOCUMENTS } = await import("./integration");
+    const n = 1 + MAX_ADDITIONAL_DOCUMENTS;
+    const names = ["Ash", "Bay", "Cy", "Dee", "Eli", "Fox", "Gil", "Hal", "Ivy", "Jo"];
+    const documents = names.slice(0, n).map((name, i) => ({
+      id: `d${i}`, title: `Record ${name}`, kind: "CAS_RECORD" as const, extractionMethod: "TEXT_LAYER" as const,
+      // Over singlePassMaxChars in total, so each document is investigated separately and then synthesized.
+      text: `[Page 1]\n${name} reported the visit was cancelled.\n` + "Background. ".repeat(2_000),
+    }));
+    const s = store();
+    const calls: Record<string, number> = {};
+    const generate = async (p: any, model: string) => {
+      const stage = String(p.stage);
+      calls[stage] = (calls[stage] ?? 0) + 1;
+      const doc = /id="(d\d+)"/.exec(String(p.messages[0].content))?.[1];
+      const name = doc ? names[Number(doc.slice(1))] : "";
+      const text =
+        stage === "forensic_investigation"
+          ? JSON.stringify({ findings: [{ id: "F1", title: `${name} cancellation`, statement: `${name} says the ${name} visit was cancelled.`, evidenceClass: "A", supporting: [{ documentId: doc, quote: `${name} reported the visit was cancelled.` }] }] })
+          : stage === "forensic_adversarial_review"
+            ? JSON.stringify({ reviews: [] })
+            : JSON.stringify({ findings: [] });
+      return { text, model, durationMs: 1, usage: { input_tokens: 1, output_tokens: 1 } };
+    };
+    expect(await startEngineJob({ store: s, meta: { ...meta(), jobId: "big" }, documents, investigatorModel: "claude-opus-5", extractorModel: "claude-sonnet-5" })).toBe(true);
+    const r = await advanceEngineJob({ store: s, jobId: "big", generate, deadlineAt: Date.now() + 600_000, minModelStepMs: 1 });
+    expect(r.status).toBe("COMPLETE");
+    const report = (r as any).state.report;
+    expect(calls.forensic_investigation).toBe(n);
+    expect(calls.forensic_synthesis).toBe(1);
+    expect(calls.forensic_adversarial_review).toBe(1);
+    expect(isFatal(report)).toBe(false);
+    expect(report.incompleteness.join(" ")).not.toMatch(/budget/i);
+    expect(RESUMABLE_LIMITS.maxCalls).toBeGreaterThan(MAX_PLAN_MODEL_STEPS);
+  });
+});

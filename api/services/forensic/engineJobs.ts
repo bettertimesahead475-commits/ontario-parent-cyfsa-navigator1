@@ -17,7 +17,7 @@ import { getSupabase } from "../access.js";
 import type { GenerateFn } from "../analyzerSections.js";
 import type { CaseDocument, ForensicReport } from "./caseModel.js";
 import { CheckpointStore, SupabaseObjectStore, type EngineJobMeta } from "./checkpointStore.js";
-import { toLegacyReport, type ThinkingGenerateFn } from "./integration.js";
+import { MAX_ADDITIONAL_DOCUMENTS, toLegacyReport, type ThinkingGenerateFn } from "./integration.js";
 import { createEngineState, type ForensicLimits, type ForensicProgress } from "./pipeline.js";
 import { advanceEngine, type AdvanceResult } from "./resumableRunner.js";
 import { corpusSources } from "./legalCorpusAdapter.js";
@@ -50,8 +50,14 @@ export function engineStore(): CheckpointStore {
  * Per-step caps for resumable runs. Each model step can have an invocation to itself, so the caps are larger than the
  * single-invocation ROUTE_LIMITS. A model step starts only with at least STEP_MIN_MS left in the invocation.
  */
+/** Model steps in the largest plan the route accepts: per-document extraction and investigation, synthesis, review, visual. */
+export const MAX_PLAN_MODEL_STEPS = 2 * (1 + MAX_ADDITIONAL_DOCUMENTS) + 3;
+/** Calls beyond the plan, for transient failures retried across invocations. */
+export const RETRY_CALL_HEADROOM = 7;
 export const RESUMABLE_LIMITS: Partial<ForensicLimits> = {
-  maxCalls: 16,
+  // The cap must cover the largest plan. At 16, a 10-document case used every call on extraction and part of the
+  // investigation, then failed the review for lack of budget: the job was released after the calls were paid for.
+  maxCalls: MAX_PLAN_MODEL_STEPS + RETRY_CALL_HEADROOM,
   extractionMaxTokens: 6_000,
   investigationMaxTokens: 24_000,
   synthesisMaxTokens: 16_000,

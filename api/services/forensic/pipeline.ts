@@ -668,6 +668,85 @@ function ingestExtraction(state: EngineState, docs: CaseDocument[], doc: CaseDoc
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Independent steps in parallel
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Model calls a batch of independent steps may have in flight at once. */
+export const MAX_PARALLEL_STEPS = 4;
+const PARALLEL_KINDS = new Set(["extract", "investigate"]);
+
+/**
+ * The next step and the pending steps after it that do not depend on each other: per-document extraction, and
+ * per-document investigation in multi-pass runs. Each makes one model call, so the batch is capped by the calls left.
+ */
+export function parallelSteps(state: EngineState, max = MAX_PARALLEL_STEPS): string[] {
+  const first = nextStep(state);
+  if (!first) return [];
+  const [kind, docId] = first.split(":");
+  if (!PARALLEL_KINDS.has(kind) || !docId) return [first];
+  const cap = Math.max(1, Math.min(max, state.limits.maxCalls - state.calls));
+  const out: string[] = [];
+  for (const s of state.plan.slice(state.plan.indexOf(first))) {
+    if (state.done.includes(s)) continue;
+    const [k, d] = s.split(":");
+    if (k !== kind || !d || out.length >= cap) break;
+    out.push(s);
+  }
+  return out;
+}
+
+/**
+ * Runs independent steps with their model calls in parallel, and returns exactly the state that running them one
+ * after another would: every step first runs against the same input with its call recorded, then the steps are
+ * replayed in plan order against the evolving state, each receiving its recorded result (or error) instead of a new
+ * call. The replay uses the time the batch started, so the deadline check matches the one the call passed.
+ */
+export async function runEngineSteps(input: EngineState, steps: string[], deps: StepDeps): Promise<{ state: EngineState; outcomes: Record<string, StepOutcome> }> {
+  if (steps.length === 1) {
+    const r = await runEngineStep(input, steps[0], deps);
+    return { state: r.state, outcomes: { [steps[0]]: r.outcome } };
+  }
+  const startedAt = (deps.now ?? Date.now)();
+  const recorded = new Map<string, { ok: true; res: GenerateResult } | { ok: false; err: unknown }>();
+  await Promise.allSettled(
+    steps.map((step) =>
+      runEngineStep(input, step, {
+        ...deps,
+        onProgress: undefined,
+        generate: async (p, model) => {
+          try {
+            const res = await deps.generate(p, model);
+            recorded.set(step, { ok: true, res });
+            return res;
+          } catch (err) {
+            recorded.set(step, { ok: false, err });
+            throw err;
+          }
+        },
+      })
+    )
+  );
+  let state = input;
+  const outcomes: Record<string, StepOutcome> = {};
+  for (const step of steps) {
+    const r = await runEngineStep(state, step, {
+      ...deps,
+      now: () => startedAt,
+      generate: async (p, model) => {
+        const rec = recorded.get(step);
+        if (!rec) return deps.generate(p, model);
+        recorded.delete(step);
+        if (rec.ok === true) return rec.res;
+        throw rec.err;
+      },
+    });
+    state = r.state;
+    outcomes[step] = r.outcome;
+  }
+  return { state, outcomes };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Whole run in one invocation
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -687,8 +766,8 @@ export async function runForensicInvestigation(opts: ForensicRunOptions): Promis
   const created = createEngineState({ documents: opts.documents, models: opts.models, limits: opts.limits, requestId: opts.requestId, now: (opts.now ?? Date.now)() });
   let state = created.state;
   const deps: StepDeps = { generate: opts.generate, deadlineAt: opts.deadlineAt, media: created.media, now: opts.now, onProgress: opts.onProgress, resumable: false };
-  for (let step = nextStep(state); step; step = nextStep(state)) {
-    ({ state } = await runEngineStep(state, step, deps));
+  for (let steps = parallelSteps(state); steps.length > 0; steps = parallelSteps(state)) {
+    ({ state } = await runEngineSteps(state, steps, deps));
   }
   return state.report!;
 }
