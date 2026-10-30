@@ -7,7 +7,7 @@ export type StagingRpcEnv = { STAGING_SUPABASE_URL?: string; STAGING_SUPABASE_SE
 
 export function createStagingCreditRpc(env: StagingRpcEnv, fetcher: typeof fetch = fetch) {
   return async (name: string, args: Record<string, unknown>): Promise<{ status: string; reservation_id?: string | null }> => {
-    if (!['paid_reserve_credit', 'paid_finalize_credit', 'paid_release_credit'].includes(name)) {
+    if (!['paid_reserve_credit', 'paid_finalize_credit', 'paid_release_credit', 'free_reserve_scan', 'free_finalize_scan', 'free_release_scan'].includes(name)) {
       throw new Error('Unsupported credit RPC');
     }
     if (!env.STAGING_SUPABASE_URL || !env.STAGING_SUPABASE_SERVICE_ROLE_KEY) throw new Error('Staging RPC not configured');
