@@ -37,6 +37,7 @@ export async function reserveVerifiedPaidCredit(
   // The production accounting implementation owns monthly scope anchoring,
   // unlimited quick-review semantics, and exact RPC arguments. Until parity
   // is verified, deny reservations rather than invent a billing rule.
+  if (tier.monthly && analysisType === 'forensic') return { status: 'denied' };
   try {
     const result = await rpc('paid_reserve_credit', {
     p_session: session.sessionId,
