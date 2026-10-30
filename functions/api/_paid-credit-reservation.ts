@@ -1,3 +1,4 @@
+import { monthlyCreditScope } from './_monthly-credit-scope';
 /**
  * Server-only paid-credit reservation boundary for Cloudflare staging.
  * The verified session must come from _supabase-paid-session, not a client body.
@@ -37,12 +38,16 @@ export async function reserveVerifiedPaidCredit(
   // The production accounting implementation owns monthly scope anchoring,
   // unlimited quick-review semantics, and exact RPC arguments. Until parity
   // is verified, deny reservations rather than invent a billing rule.
-  if (tier.monthly && analysisType === 'forensic') return { status: 'denied' };
+  let scope = tier.monthly ? 'none' : 'total';
+  if (tier.monthly && analysisType === 'forensic') {
+    try { scope = monthlyCreditScope(session.issuedAt || '', now); }
+    catch { return { status: 'denied' }; }
+  }
   try {
     const result = await rpc('paid_reserve_credit', {
     p_session: session.sessionId,
     p_request: requestId,
-    p_scope: tier.monthly ? 'none' : 'total',
+    p_scope: scope,
     p_granted: tier.limit,
     p_now: now.toISOString(),
     p_ttl: '15 minutes',
