@@ -12,6 +12,7 @@ const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosnif
 export const onRequestPost = async ({ request, env }: { request: Request; env: Env }): Promise<Response> => {
   const identity = await verifyFirebaseRequest(request, env);
   if (identity.status !== 'verified') return Response.json({ authorized: false, code: 'AUTH_REQUIRED' }, { status: identity.status === 'unavailable' ? 503 : 401, headers });
+  if (request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() !== 'application/json') return Response.json({ authorized: false, code: 'INVALID_CONTENT_TYPE' }, { status: 415, headers });
   let body: unknown;
   try { body = await request.json(); } catch { return Response.json({ authorized: false, code: 'INVALID_REQUEST' }, { status: 400, headers }); }
   if (!body || typeof body !== 'object' || typeof (body as { sessionId?: unknown }).sessionId !== 'string') {
