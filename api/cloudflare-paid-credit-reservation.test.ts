@@ -18,6 +18,13 @@ describe('Cloudflare staging paid reservation boundary', () => {
     expect((await reserveVerifiedPaidCredit(session, 'admin' as 'quick', 'request_12345678', rpc)).status).toBe('denied');
     expect(rpc).not.toHaveBeenCalled();
   });
+  it('rejects malformed timestamps before any credit mutation', async () => {
+    const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'r1' }));
+    expect((await reserveVerifiedPaidCredit({ ...session, issuedAt: 'invalid' }, 'quick', 'request_12345678', rpc)).status).toBe('denied');
+    expect((await reserveVerifiedPaidCredit({ ...session, expiresAt: 'invalid' }, 'quick', 'request_12345678', rpc)).status).toBe('denied');
+    expect((await reserveVerifiedPaidCredit({ ...session, issuedAt: '2030-01-01T00:00:00Z' }, 'quick', 'request_12345678', rpc)).status).toBe('denied');
+    expect(rpc).not.toHaveBeenCalled();
+  });
   it('rejects forged tiers and forensic on basic', async () => {
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'reservation-1' }));
     expect((await reserveVerifiedPaidCredit({ ...session, tier: 'Unknown' }, 'quick', 'request_12345678', rpc)).status).toBe('denied');
