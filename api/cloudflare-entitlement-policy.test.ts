@@ -18,10 +18,11 @@ describe('Cloudflare entitlement policy (pure, no database or credit mutations)'
     }
   });
   it('rejects revoked, expired, depleted and foreign paid sessions', () => {
-    const valid = { ownerUid: 'verified-user', tier: 'quick' as const, revokedAt: null, expiresAt: null, remainingCredits: 2 };
+    const valid = { ownerUid: 'verified-user', tier: 'Basic' as const, revokedAt: null, expiresAt: null, remainingCredits: 2 };
     expect(decide({ ...base, session: valid })).toEqual({ allowed: true, source: 'paid' });
     for (const session of [
       { ...valid, ownerUid: 'other' },
+      { ...valid, tier: 'unrecognized-tier' },
       { ...valid, revokedAt: new Date().toISOString() },
       { ...valid, expiresAt: '2020-01-01T00:00:00Z' },
       { ...valid, expiresAt: 'invalid' },
@@ -33,7 +34,7 @@ describe('Cloudflare entitlement policy (pure, no database or credit mutations)'
   it('allows verified free entitlement when paid session is revoked', () => {
     expect(decide({
       ...base,
-      session: { ownerUid: 'verified-user', tier: 'quick', revokedAt: '2026-01-01', expiresAt: null, remainingCredits: 3 },
+      session: { ownerUid: 'verified-user', tier: 'Basic', revokedAt: '2026-01-01', expiresAt: null, remainingCredits: 3 },
       free: { ownerUid: 'verified-user', used: 1, limit: 3 },
     })).toEqual({ allowed: true, source: 'free' });
   });
