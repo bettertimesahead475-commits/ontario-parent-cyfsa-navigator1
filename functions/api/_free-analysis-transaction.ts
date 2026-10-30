@@ -18,8 +18,8 @@ export async function runVerifiedFreeAnalysis<T>(
   let result: T;
   try { result = await analyze(); }
   catch {
-    await releaseFreeScan(uid, requestId, reservation.reservation_id, rpc);
-    return { status: 'failed' };
+    const released = await releaseFreeScan(uid, requestId, reservation.reservation_id, rpc);
+    return { status: released.status === 'released' ? 'failed' : 'unavailable' };
   }
   const finalized = await finalizeFreeScan(uid, requestId, rpc);
   if (finalized.status !== 'consumed') return { status: 'unavailable' };
