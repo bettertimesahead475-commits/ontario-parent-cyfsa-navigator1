@@ -17,7 +17,7 @@ const signedIn = () => verify.mockResolvedValue({ status: "verified", uid: "u1",
 
 /** SHA-256 of every image XObject's raw bytes on each page, in page order. */
 async function imageHashesPerPage(bytes: Uint8Array): Promise<string[][]> {
-  const doc = await PDFDocument.load(bytes);
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
   return doc.getPages().map((p) => {
     const xobjects = p.node.Resources()?.lookup(PDFName.of("XObject")) as any;
     if (!xobjects) return [];
@@ -225,5 +225,172 @@ describe("document extraction: refusals and provider errors", () => {
     expect(resolveGeminiModel({ GEMINI_AUDIO_MODEL: "gemini-3.6-flash" }, "audio")).toBe("gemini-3.6-flash");
     expect(() => resolveGeminiModel({ GEMINI_OCR_MODEL: "../../etc" }, "ocr")).toThrow();
     expect(classifyGeminiStatus(400, '{"error":{"message":"models/x is not found for API version v1beta, or is not supported for generateContent"}}')).toBe("MODEL_UNAVAILABLE");
+  });
+});
+
+describe("PDF extraction recovery and resilience (Issue #116)", () => {
+  afterEach(() => verify.mockReset());
+
+  it("supports PDFs with permissions encryption (empty password) for OCR splitting", async () => {
+    signedIn();
+    // 09-encrypted.pdf has an /Encrypt dictionary.
+    // Simulating the user scenario in Issue #116 where unpdf can access the document,
+    // but pdf-lib would fail without ignoreEncryption: true.
+    const original = fs.readFileSync(path.join(FIX, "09-encrypted.pdf"));
+
+    // Provide mock proxy that returns 3 pages with sparse text (triggering OCR)
+    const mockGetProxy = vi.fn().mockResolvedValue({
+      numPages: 3,
+      getPage: async () => ({
+        getTextContent: async () => ({ items: [] }), // sparse/scanned -> needs OCR
+        cleanup: () => {},
+      }),
+      destroy: async () => {},
+    });
+
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "Extracted encrypted content" }] }, finishReason: "STOP" }],
+          usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20 },
+        }),
+        { status: 200 }
+      )
+    );
+
+    const r = await extractDocument(
+      { base64: original.toString("base64"), mimeType: "application/pdf", fileName: "affidavit_encrypted.pdf" },
+      ENV,
+      { fetcher: fetcher as any, getDocumentProxy: mockGetProxy as any }
+    );
+
+    // Because ignoreEncryption: true is set, pdf-lib successfully loads and splits the encrypted PDF!
+    expect(r.pageCount).toBe(3);
+    expect(r.pages.map((p) => [p.pageNumber, p.extractionMethod, p.status])).toEqual([
+      [1, "OCR", "ok"],
+      [2, "OCR", "ok"],
+      [3, "OCR", "ok"],
+    ]);
+    expect(r.pages[0].text).toBe("Extracted encrypted content");
+  });
+
+  it("falls back to OCR via pdf-lib when unpdf text-layer fails to open", async () => {
+    signedIn();
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const original = fs.readFileSync(path.join(FIX, "04-scanned-3-pages.pdf"));
+    const g = await pageAwareGemini(original);
+
+    // Pass custom getDocumentProxy via deps to simulate unpdf failure on unusual xref/font structure
+    const mockGetProxy = vi.fn().mockRejectedValueOnce(new Error("Unusual xref stream structure"));
+
+    const r = await extractDocument(
+      { base64: original.toString("base64"), mimeType: "application/pdf", fileName: "affidavit.pdf" },
+      ENV,
+      { fetcher: g.fetcher as any, getDocumentProxy: mockGetProxy as any }
+    );
+
+    expect(mockGetProxy).toHaveBeenCalled();
+    expect(r.pageCount).toBe(3);
+    expect(r.pages.map((p) => [p.pageNumber, p.extractionMethod, p.status])).toEqual([
+      [1, "OCR", "ok"],
+      [2, "OCR", "ok"],
+      [3, "OCR", "ok"],
+    ]);
+    expect(r.extractedText).toContain("[Page 1]");
+    expect(r.extractedText).toContain("[Page 2]");
+    expect(r.extractedText).toContain("[Page 3]");
+
+    // Verify sanitized diagnostic stage was logged
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"stage":"PDF_TEXT_LAYER_OPEN_FAILED"')
+    );
+
+    consoleSpy.mockRestore();
+  });
+
+  it("handles a per-page text layer extraction failure by routing only that page to OCR", async () => {
+    signedIn();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const original = fs.readFileSync(path.join(FIX, "03-digital-3-pages.pdf"));
+
+    const { getDocumentProxy: realGetProxy } = await import("unpdf");
+    const mockGetProxy = async (...args: any[]) => {
+      const proxy: any = await realGetProxy(...(args as [any]));
+      const realGetPage = proxy.getPage.bind(proxy);
+      proxy.getPage = async (pageNum: number) => {
+        const page = await realGetPage(pageNum);
+        if (pageNum === 2) {
+          page.getTextContent = async () => {
+            throw new Error("Corrupt font descriptor dictionary in stream");
+          };
+        }
+        return page;
+      };
+      return proxy;
+    };
+
+    const fetcher = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: "RECOVERED OCR TEXT FOR PAGE 2" }] }, finishReason: "STOP" }],
+          usageMetadata: { promptTokenCount: 150, candidatesTokenCount: 20 },
+        }),
+        { status: 200 }
+      )
+    );
+
+    const r = await extractDocument(
+      { base64: original.toString("base64"), mimeType: "application/pdf", fileName: "affidavit.pdf" },
+      ENV,
+      { fetcher: fetcher as any, getDocumentProxy: mockGetProxy as any }
+    );
+
+    expect(r.pageCount).toBe(3);
+    expect(r.pages[0].extractionMethod).toBe("TEXT_LAYER");
+    expect(r.pages[0].text).toContain("Page one");
+    expect(r.pages[1].extractionMethod).toBe("OCR");
+    expect(r.pages[1].text).toBe("RECOVERED OCR TEXT FOR PAGE 2");
+    expect(r.pages[2].extractionMethod).toBe("TEXT_LAYER");
+    expect(r.pages[2].text).toContain("Sworn before me on March 10, 2026");
+
+    // Verify sanitized warning logged for page 2
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"stage":"PDF_PAGE_TEXT_LAYER_FAILED"')
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("falls back gracefully to text layer when page splitting fails for scanned pages without throwing PDF_MALFORMED", async () => {
+    signedIn();
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const mixed = fs.readFileSync(path.join(FIX, "05-mixed-text-and-scan.pdf"));
+
+    // Mock PDFDocument.load to fail when attempting to load the document for OCR splitting
+    const pdfLibModule = await import("pdf-lib");
+    const loadSpy = vi.spyOn(pdfLibModule.PDFDocument, "load").mockRejectedValue(new Error("PDFDocument cannot parse object table"));
+
+    const r = await extractDocument(
+      { base64: mixed.toString("base64"), mimeType: "application/pdf", fileName: "mixed_affidavit.pdf" },
+      ENV,
+      { fetcher: vi.fn() as any }
+    );
+
+    expect(r.pageCount).toBe(3);
+    // Page 1 and 3 are digital text layers; Page 2 was scanned and could not be split
+    expect(r.pages[0].text).toContain("AFFIDAVIT OF JORDAN EXAMPLE");
+    expect(r.pages[0].status).toBe("ok");
+    expect(r.pages[1].status).toBe("not_processed");
+    expect(r.pages[2].text).toContain("Page three");
+    expect(r.pages[2].status).toBe("ok");
+    expect(r.incomplete.some((msg) => msg.includes("using available text layer"))).toBe(true);
+
+    // Verify diagnostic stage code was logged
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"stage":"PDF_PAGE_SPLIT_FAILED"')
+    );
+
+    loadSpy.mockRestore();
+    consoleSpy.mockRestore();
   });
 });

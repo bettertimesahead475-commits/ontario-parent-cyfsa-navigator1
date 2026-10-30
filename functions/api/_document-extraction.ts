@@ -261,16 +261,21 @@ function extractDocx(bytes: Uint8Array): string {
 
 // --- PDF --------------------------------------------------------------------------------------------------------------
 
-async function readPdfTextLayer(bytes: Uint8Array): Promise<string[]> {
+async function readPdfTextLayer(bytes: Uint8Array, proxyGetter = getDocumentProxy): Promise<string[]> {
   let pdf: any;
   try {
     // unpdf/pdf.js may transfer the buffer; give it a copy so the bytes stay usable for page splitting.
-    pdf = await getDocumentProxy(new Uint8Array(bytes), { isEvalSupported: false, useSystemFonts: false } as any);
+    pdf = await proxyGetter(new Uint8Array(bytes), { isEvalSupported: false, useSystemFonts: false } as any);
   } catch (err: any) {
     if (err?.name === 'PasswordException' || /password/i.test(String(err?.message))) {
       throw new ExtractionError(422, 'PDF_ENCRYPTED', 'This PDF is password-protected. Remove the password and upload it again.');
     }
-    throw new ExtractionError(422, 'PDF_MALFORMED', 'This PDF appears to be damaged and could not be read.');
+    console.error(JSON.stringify({
+      tag: '[EXTRACT_DIAGNOSTIC]',
+      stage: 'PDF_TEXT_LAYER_OPEN_FAILED',
+      error: String(err?.message || err),
+    }));
+    return [];
   }
   try {
     if (pdf.numPages > MAX_PDF_PAGES) {
@@ -278,16 +283,31 @@ async function readPdfTextLayer(bytes: Uint8Array): Promise<string[]> {
     }
     const pages: string[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      let text = '';
-      for (const item of content.items as any[]) {
-        if (typeof item?.str !== 'string') continue;
-        text += item.str;
-        if (item.hasEOL) text += '\n';
+      let pageText = '';
+      try {
+        const page = await pdf.getPage(i);
+        try {
+          const content = await page.getTextContent();
+          let text = '';
+          for (const item of (content.items as any[])) {
+            if (typeof item?.str !== 'string') continue;
+            text += item.str;
+            if (item.hasEOL) text += '\n';
+          }
+          pageText = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+        } finally {
+          page.cleanup?.();
+        }
+      } catch (pageErr: any) {
+        console.warn(JSON.stringify({
+          tag: '[EXTRACT_DIAGNOSTIC]',
+          stage: 'PDF_PAGE_TEXT_LAYER_FAILED',
+          page: i,
+          error: String(pageErr?.message || pageErr),
+        }));
+        pageText = '';
       }
-      pages.push(text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim());
-      page.cleanup?.();
+      pages.push(pageText);
     }
     return pages;
   } finally {
@@ -322,7 +342,7 @@ async function ocr(env: GeminiEnv, mimeType: string, data: Uint8Array, fetcher?:
 export async function extractDocument(
   input: { base64: string; mimeType?: string; fileName?: string },
   env: GeminiEnv,
-  deps: { fetcher?: typeof fetch } = {}
+  deps: { fetcher?: typeof fetch; getDocumentProxy?: typeof getDocumentProxy } = {}
 ): Promise<ExtractionResult> {
   const bytes = decodeBase64(input.base64);
   if (bytes.length > MAX_FILE_BYTES) throw new ExtractionError(413, 'FILE_TOO_LARGE', 'File is too large. The limit is 20 MB.');
@@ -381,28 +401,94 @@ export async function extractDocument(
     pageCount = 1;
     pages = [await page(1, r.text, 'OCR', r.text ? 'ok' : 'empty')];
   } else {
-    const layer = await readPdfTextLayer(bytes);
+    let layer = await readPdfTextLayer(bytes, deps.getDocumentProxy);
+    let source: PDFDocument | null = null;
+
+    if (layer.length === 0) {
+      // unpdf could not open the text layer (PDF_TEXT_LAYER_OPEN_FAILED).
+      // Attempt fallback to pdf-lib to check if the PDF can be loaded and split for OCR.
+      try {
+        source = await PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true });
+        const count = source.getPageCount();
+        if (count > MAX_PDF_PAGES) {
+          throw new ExtractionError(413, 'TOO_MANY_PAGES', `This PDF has ${count} pages. The limit is ${MAX_PDF_PAGES}.`);
+        }
+        layer = new Array(count).fill('');
+      } catch (pdfLibErr: any) {
+        if (pdfLibErr instanceof ExtractionError) throw pdfLibErr;
+        console.error(JSON.stringify({
+          tag: '[EXTRACT_DIAGNOSTIC]',
+          stage: 'PDF_PAGE_SPLIT_FAILED',
+          error: String(pdfLibErr?.message || pdfLibErr),
+        }));
+        throw new ExtractionError(422, 'PDF_MALFORMED', 'This PDF appears to be damaged and could not be read.');
+      }
+    }
+
     pageCount = layer.length;
     const needOcr = layer.map((t, i) => (letters(t) < MIN_TEXT_LAYER_CHARS ? i : -1)).filter((i) => i >= 0);
     const ocrNow = needOcr.slice(0, MAX_OCR_PAGES);
     const skipped = new Set(needOcr.slice(MAX_OCR_PAGES));
     const ocrText = new Map<number, string>();
+
     if (ocrNow.length) {
-      let source: PDFDocument;
-      try {
-        source = await PDFDocument.load(bytes, { updateMetadata: false });
-      } catch {
-        throw new ExtractionError(422, 'PDF_MALFORMED', 'This PDF appears to be damaged and could not be read.');
+      if (!source) {
+        try {
+          source = await PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true });
+        } catch (splitErr: any) {
+          console.error(JSON.stringify({
+            tag: '[EXTRACT_DIAGNOSTIC]',
+            stage: 'PDF_PAGE_SPLIT_FAILED',
+            error: String(splitErr?.message || splitErr),
+          }));
+        }
       }
-      for (let i = 0; i < ocrNow.length; i += OCR_CONCURRENCY) {
-        const batch = ocrNow.slice(i, i + OCR_CONCURRENCY);
-        const results = await Promise.all(batch.map(async (idx) => ocr(env, 'application/pdf', await singlePagePdf(source, idx), deps.fetcher)));
-        results.forEach((r, j) => {
-          track(r);
-          ocrText.set(batch[j], r.text);
-        });
+
+      if (source) {
+        for (let i = 0; i < ocrNow.length; i += OCR_CONCURRENCY) {
+          const batch = ocrNow.slice(i, i + OCR_CONCURRENCY);
+          const results = await Promise.all(
+            batch.map(async (idx) => {
+              let singleBytes: Uint8Array;
+              try {
+                singleBytes = await singlePagePdf(source!, idx);
+              } catch (splitErr: any) {
+                console.error(JSON.stringify({
+                  tag: '[EXTRACT_DIAGNOSTIC]',
+                  stage: 'PDF_PAGE_SPLIT_FAILED',
+                  page: idx + 1,
+                  error: String(splitErr?.message || splitErr),
+                }));
+                return null;
+              }
+              try {
+                return await ocr(env, 'application/pdf', singleBytes, deps.fetcher);
+              } catch (ocrErr: any) {
+                if (ocrErr instanceof GeminiError) {
+                  throw ocrErr;
+                }
+                console.error(JSON.stringify({
+                  tag: '[EXTRACT_DIAGNOSTIC]',
+                  stage: 'PDF_PAGE_OCR_FAILED',
+                  page: idx + 1,
+                  error: String(ocrErr?.message || ocrErr),
+                }));
+                return null;
+              }
+            })
+          );
+          results.forEach((r, j) => {
+            if (r) {
+              track(r);
+              ocrText.set(batch[j], r.text);
+            }
+          });
+        }
+      } else {
+        incomplete.push('Scanned page OCR could not be performed due to PDF page structure; using available text layer.');
       }
     }
+
     pages = await Promise.all(
       layer.map(async (t, i) => {
         if (skipped.has(i)) return page(i + 1, t, 'OCR', 'not_processed');
@@ -410,6 +496,9 @@ export async function extractDocument(
           // Keep any text-layer fragment the page had alongside its OCR, without duplicating it.
           const o = ocrText.get(i)!;
           return page(i + 1, o || t, 'OCR', o || t ? 'ok' : 'empty');
+        }
+        if (needOcr.includes(i) && !t) {
+          return page(i + 1, '', 'OCR', source ? 'empty' : 'not_processed');
         }
         return page(i + 1, t, 'TEXT_LAYER', t ? 'ok' : 'empty');
       })
