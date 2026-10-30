@@ -8,10 +8,10 @@ describe('Cloudflare staging paid reservation boundary', () => {
     expect((await reserveVerifiedPaidCredit(session, 'quick', 'request_12345678', rpc)).status).toBe('reserved');
     expect(rpc).toHaveBeenCalledWith('paid_reserve_credit', expect.objectContaining({ p_scope: 'total', p_granted: 5 }));
   });
-  it('denies monthly forensic until cycle-scoped reservations are implemented', async () => {
+  it('reserves monthly forensic using the session billing cycle', async () => {
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'reservation-1' }));
-    expect((await reserveVerifiedPaidCredit({ ...session, tier: 'Pro' }, 'forensic', 'request_12345678', rpc)).status).toBe('denied');
-    expect(rpc).not.toHaveBeenCalled();
+    expect((await reserveVerifiedPaidCredit({ ...session, tier: 'Pro' }, 'forensic', 'request_12345678', rpc, new Date('2026-03-15T00:00:00Z'))).status).toBe('reserved');
+    expect(rpc).toHaveBeenCalledWith('paid_reserve_credit', expect.objectContaining({ p_scope: 'period:2026-03-01', p_granted: 5 }));
   });
   it('rejects forged tiers and forensic on basic', async () => {
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'reservation-1' }));
