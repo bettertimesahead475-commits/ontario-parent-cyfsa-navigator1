@@ -8,7 +8,7 @@ export type EntitlementEvidence = {
   ownerUid: string;
   session?: {
     ownerUid: string;
-    tier: 'quick' | 'full';
+    tier: string;
     revokedAt: string | null;
     expiresAt: string | null;
     remainingCredits: number | null;
@@ -24,7 +24,14 @@ export function evaluateQuickReviewAccess(evidence: EntitlementEvidence): Access
     return { allowed: false, reason: 'IDENTITY_MISMATCH' };
   }
   const session = evidence.session;
-  if (session?.ownerUid === evidence.firebaseUid && !session.revokedAt &&
+  // A session's tier must be sourced from the verified database row, never from the request.
+  // Unknown tiers fail closed; 'unlimited' monthly quick access is not established by this
+  // read-only predicate and must be enforced by the authoritative reservation service.
+  const paidTier = session?.tier;
+  const supportedPaidTier = paidTier === 'Basic' || paidTier === 'AnalyzerBasic' ||
+    paidTier === 'Premium' || paidTier === 'AnalyzerPremium' || paidTier === 'Pro' ||
+    paidTier === 'Community5' || paidTier === 'Community10' || paidTier === 'Community25';
+  if (supportedPaidTier && session?.ownerUid === evidence.firebaseUid && !session.revokedAt &&
       (!session.expiresAt || (Number.isFinite(Date.parse(session.expiresAt)) && Date.parse(session.expiresAt) > Date.now())) &&
       (Number.isSafeInteger(session.remainingCredits) && session.remainingCredits !== null && session.remainingCredits > 0)) {
     return { allowed: true, source: 'paid' };
