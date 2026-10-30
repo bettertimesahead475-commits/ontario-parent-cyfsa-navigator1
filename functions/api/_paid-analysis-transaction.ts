@@ -1,3 +1,4 @@
+import { verifyFirebaseRequest } from './_auth-check';
 import { readVerifiedPaidSession, type SupabaseStagingConfig } from './_supabase-paid-session';
 import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reservation';
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
@@ -35,4 +36,19 @@ export async function runVerifiedPaidAnalysis<T>(
   const finalized = await finalizePaidReservation(sessionId, requestId, rpc);
   if (finalized.status !== 'consumed') return { status: 'unavailable' };
   return { status: 'delivered', result };
+}
+
+/** Authenticated wrapper; never accepts a UID from JSON. */
+export async function runAuthenticatedPaidAnalysis<T>(
+  request: Request,
+  env: SupabaseStagingConfig & { FIREBASE_PROJECT_ID?: string },
+  sessionId: string,
+  requestId: string,
+  analysisType: AnalysisType,
+  rpc: CreditRpc,
+  analyze: () => Promise<T>,
+): Promise<Result<T>> {
+  const identity = await verifyFirebaseRequest(request, env);
+  if (identity.status !== 'verified') return { status: identity.status };
+  return runVerifiedPaidAnalysis(env, identity.uid, sessionId, requestId, analysisType, rpc, analyze);
 }
