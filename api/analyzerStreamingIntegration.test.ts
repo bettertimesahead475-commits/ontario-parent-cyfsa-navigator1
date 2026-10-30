@@ -361,6 +361,102 @@ describe("Analyzer Streaming & Job Recovery Integration", () => {
     expect(mockCreateMessage.mock.calls.length).toBeGreaterThan(4);
   });
 
+  it("direct-first analysis is the primary path: executes single model call, streams validated sections, and completes report", async () => {
+    mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast", stream: true });
+
+    expect(res.status).toBe(200);
+    // Crucial: exactly 1 model request instead of 4 or 5
+    expect(mockCreateMessage.mock.calls.length).toBe(1);
+
+    const events = res.text
+      .split("\n\n")
+      .filter((line: string) => line.startsWith("data: "))
+      .map((line: string) => JSON.parse(line.slice(6)));
+
+    const complete = events.find((e: any) => e.type === "complete");
+    expect(complete?.report?.documentTitle).toBe("Society Protection Application");
+    expect(complete?.report?.evidenceStrengthIndex?.score).toBe(50);
+    const redFlag = complete?.report?.redFlags[0];
+    expect(redFlag?.quoteVerification).toBe("EXACT");
+  });
+
+  it("falls back to sectioned analysis when document exceeds 75,000 characters without truncation", async () => {
+    mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
+
+    const hugeDoc = "The mother appeared agitated during the visit. " + "X".repeat(76_000);
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({ textContent: hugeDoc, mode: "fast", stream: true });
+
+    expect(res.status).toBe(200);
+    // Sectioned pipeline was called for the 4 sections
+    expect(mockCreateMessage.mock.calls.length).toBe(4);
+
+    const events = res.text
+      .split("\n\n")
+      .filter((line: string) => line.startsWith("data: "))
+      .map((line: string) => JSON.parse(line.slice(6)));
+
+    const complete = events.find((e: any) => e.type === "complete");
+    expect(complete?.report?.documentTitle).toBe("Society Protection Application");
+  });
+
+  it("falls back to sectioned analysis when direct analysis response fails validation", async () => {
+    let call = 0;
+    mockCreateMessage.mockImplementation(async (body: any) => {
+      call++;
+      const prompt = JSON.stringify(body.messages || []);
+      if (prompt.includes("Produce the complete educational CYFSA evidence audit")) {
+        // Return malformed JSON to trigger fallback
+        return {
+          content: [{ type: "text", text: "Invalid JSON not matching schema" }],
+          stop_reason: "end_turn",
+          usage: { input_tokens: 100, output_tokens: 20 },
+        };
+      }
+      return sectionResponder(STREAM_REPORT)(body);
+    });
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast", stream: true });
+
+    expect(res.status).toBe(200);
+    // 1 direct call failed + 4 fallback section calls = 5 calls
+    expect(call).toBe(5);
+
+    const events = res.text
+      .split("\n\n")
+      .filter((line: string) => line.startsWith("data: "))
+      .map((line: string) => JSON.parse(line.slice(6)));
+
+    const complete = events.find((e: any) => e.type === "complete");
+    expect(complete?.report?.documentTitle).toBe("Society Protection Application");
+  });
+
+  it("falls back to sectioned analysis when DIRECT_ANALYZER_DISABLED is true", async () => {
+    process.env.DIRECT_ANALYZER_DISABLED = "true";
+    mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
+
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({ textContent: "The mother appeared agitated during the visit.", mode: "fast", stream: true });
+
+    expect(res.status).toBe(200);
+    // Bypassed direct analysis: 4 section calls
+    expect(mockCreateMessage.mock.calls.length).toBe(4);
+    delete process.env.DIRECT_ANALYZER_DISABLED;
+  });
+
   it("POST /api/analyze verifies quotes and detects unverified phrases", async () => {
     mockCreateMessage.mockImplementation(sectionResponder(STREAM_REPORT));
 

@@ -84,8 +84,10 @@ import {
   isValidAnalysisJobId,
   generateAnalysisJobId,
 } from "./services/analyzerStreaming.js";
-import { applyCitationGuards, runSectionedAnalysis, sectionTitle, parseJsonLenient } from "./services/analyzerSections.js";
+import { applyCitationGuards, runSectionedAnalysis, sectionTitle, parseJsonLenient, SectionRunResult } from "./services/analyzerSections.js";
 import { generateDirectBrief } from "./services/directCaseBrief.js";
+import { runDirectAnalysis, isEligibleForDirectAnalysis, DIRECT_ANALYSIS_MAX_CHARS } from "./services/directAnalyzer.js";
+import { logAnalyzerDiagnostic } from "./services/analyzerErrors.js";
 import { PROVIDER_ATTEMPTS, SECTION_ATTEMPTS, TRANSIENT_HTTP_STATUSES } from "../shared/analyzerRetryPolicy.js";
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
@@ -2430,61 +2432,103 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       // Every AI call is clamped to this deadline so retries can never run past the function's
       // 300 s limit (vercel.json maxDuration) - leaving time to persist and deliver the result.
       const aiDeadlineAt = requestStartedAt + 265_000;
-      // Experimental first-pass preview, gated off by default. The verified legacy
-      // report remains authoritative, including its billing and persistence path.
-      const preliminaryBriefPromise = process.env.DIRECT_BRIEF_PREVIEW_ENABLED === "true" && !isForensic && streamEmitter
-        ? generateDirectBrief(
-            { documentText: targetText, sourceName: "Uploaded case document" },
-            generateContentWithFallback,
-            primaryModel,
-            analysisRequestId,
-            aiDeadlineAt
-          ).then((preview) => {
-            if (preview) streamEmitter?.emitSection("preliminaryBrief", {
-              text: preview.text,
-              status: "PRELIMINARY_UNVERIFIED",
-              durationMs: preview.durationMs,
-            });
-          }).catch((error) => {
-            console.warn("[DIRECT_BRIEF_PREVIEW] Preliminary brief unavailable; verified analysis continues.", error instanceof Error ? error.name : "unknown");
-          })
-        : Promise.resolve();
-      const run = await runSectionedAnalysis({
-        mode: modelResolution.mode,
-        documentText: targetText,
-        primaryModel,
-        verificationModel,
-        generate: generateContentWithFallback,
-        deadlineAt: aiDeadlineAt,
-        requestId: analysisRequestId,
-        onSectionComplete: async (key, value, completed, total) => {
-          const span = isForensic ? 50 : 60; // the verification pass owns the last part in Forensic
-          const percent = 35 + Math.round((completed / total) * span);
-          const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
-          await recordAnalysisJobSection(analysisRequestId, key, value, {
-            stage: "reviewing_evidence",
-            percent,
-            message,
-            total,
-          }).catch(() => {});
-          if (streamEmitter) {
-            streamEmitter.emitSection(key, value);
-            streamEmitter.emitStage(completed === total ? "preparing_report" : "reviewing_evidence", message, percent);
-          }
-        },
-        onVerificationStart: () => {
-          streamEmitter?.emitStage(
-            "verifying_findings",
-            "Independent Claude Opus verification of high-impact findings...",
-            88
-          );
-        },
-      });
+      // Direct-first analysis is the primary path for eligible Quick Review documents.
+      // Oversized documents (> 75,000 chars), full Forensic In-Depth mode, and validation or provider
+      // failures fall back cleanly to the established sectioned pipeline.
+      let run: SectionRunResult | null = null;
+      const directAnalysisEligible =
+        !isForensic &&
+        process.env.DIRECT_ANALYZER_DISABLED !== "true" &&
+        process.env.DIRECT_BRIEF_PREVIEW_ENABLED !== "true" &&
+        isEligibleForDirectAnalysis(targetText, aiDeadlineAt);
 
-      // The preliminary preview is non-authoritative. Never hold the verified
-      // report or its billing/persistence path hostage to a slow preview.
-      // The preview's own bounded request handles its eventual completion.
-      void preliminaryBriefPromise;
+      if (directAnalysisEligible) {
+        try {
+          streamEmitter?.emitStage("reviewing_evidence", "Conducting direct evidence audit and analysis...", 40);
+          run = await runDirectAnalysis({
+            mode: "fast",
+            documentText: targetText,
+            primaryModel,
+            generate: generateContentWithFallback,
+            deadlineAt: aiDeadlineAt,
+            requestId: analysisRequestId,
+            onSectionComplete: async (key, value, completed, total) => {
+              const percent = 35 + Math.round((completed / total) * 60);
+              const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
+              await recordAnalysisJobSection(analysisRequestId, key, value, {
+                stage: "reviewing_evidence",
+                percent,
+                message,
+                total,
+              }).catch(() => {});
+              if (streamEmitter) {
+                streamEmitter.emitSection(key, value);
+                streamEmitter.emitStage(completed === total ? "preparing_report" : "reviewing_evidence", message, percent);
+              }
+            },
+          });
+        } catch (err: any) {
+          if (err instanceof AnalyzerError && !err.retryable) throw err;
+          logAnalyzerDiagnostic("direct-first analysis failed, falling back to sectioned pipeline", err);
+          run = null;
+        }
+      }
+
+      // If direct analysis was ineligible, disabled, or fell back, execute the established sectioned analysis.
+      if (!run) {
+        const preliminaryBriefPromise = process.env.DIRECT_BRIEF_PREVIEW_ENABLED === "true" && !isForensic && streamEmitter
+          ? generateDirectBrief(
+              { documentText: targetText, sourceName: "Uploaded case document" },
+              generateContentWithFallback,
+              primaryModel,
+              analysisRequestId,
+              aiDeadlineAt
+            ).then((preview) => {
+              if (preview) streamEmitter?.emitSection("preliminaryBrief", {
+                text: preview.text,
+                status: "PRELIMINARY_UNVERIFIED",
+                durationMs: preview.durationMs,
+              });
+            }).catch((error) => {
+              console.warn("[DIRECT_BRIEF_PREVIEW] Preliminary brief unavailable; verified analysis continues.", error instanceof Error ? error.name : "unknown");
+            })
+          : Promise.resolve();
+
+        run = await runSectionedAnalysis({
+          mode: modelResolution.mode,
+          documentText: targetText,
+          primaryModel,
+          verificationModel,
+          generate: generateContentWithFallback,
+          deadlineAt: aiDeadlineAt,
+          requestId: analysisRequestId,
+          onSectionComplete: async (key, value, completed, total) => {
+            const span = isForensic ? 50 : 60; // the verification pass owns the last part in Forensic
+            const percent = 35 + Math.round((completed / total) * span);
+            const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
+            await recordAnalysisJobSection(analysisRequestId, key, value, {
+              stage: "reviewing_evidence",
+              percent,
+              message,
+              total,
+            }).catch(() => {});
+            if (streamEmitter) {
+              streamEmitter.emitSection(key, value);
+              streamEmitter.emitStage(completed === total ? "preparing_report" : "reviewing_evidence", message, percent);
+            }
+          },
+          onVerificationStart: () => {
+            streamEmitter?.emitStage(
+              "verifying_findings",
+              "Independent Claude Opus verification of high-impact findings...",
+              88
+            );
+          },
+        });
+
+        // The preliminary preview is non-authoritative; never hold the verified report hostage.
+        void preliminaryBriefPromise;
+      }
       streamEmitter?.emitStage("preparing_report", "Validating quotations and assembling the report...", 96);
 
       const durationMs = Date.now() - startTime;
@@ -2492,7 +2536,8 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
       let outputTokens = 0;
       let totalCostUsd = 0;
       let totalCostCad = 0;
-      for (const [usedModel, usage] of Object.entries(run.usageByModel)) {
+      for (const [usedModel, rawUsage] of Object.entries(run?.usageByModel || {})) {
+        const usage = rawUsage as { input_tokens: number; output_tokens: number };
         inputTokens += usage.input_tokens;
         outputTokens += usage.output_tokens;
         const c = calculateEstimatedCost(usedModel, usage);
