@@ -85,7 +85,15 @@ export async function handleAnalyzeRequest(
     );
   }
 
-  const documentText = typeof body?.documentText === 'string' ? body.documentText.trim() : '';
+  let rawText = body?.documentText ?? body?.textContent ?? body?.text ?? '';
+  if (!rawText && body?.fileData?.base64 && (body?.fileData?.mimeType === 'text/plain' || !body?.fileData?.mimeType)) {
+    try {
+      let b64 = String(body.fileData.base64);
+      if (b64.includes(',')) b64 = b64.split(',')[1];
+      rawText = atob(b64);
+    } catch {}
+  }
+  const documentText = typeof rawText === 'string' ? rawText.trim() : '';
   if (!documentText) {
     return Response.json(
       { error: 'Missing or empty documentText.', code: 'INVALID_REQUEST' },
