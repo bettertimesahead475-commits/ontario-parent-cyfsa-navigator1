@@ -9,7 +9,8 @@ import type { VerifiedSession } from './_paid-session-validation';
 export type CreditReservation = { status: string; reservation_id?: string | null };
 export type CreditRpc = (name: string, args: Record<string, unknown>) => Promise<CreditReservation>;
 
-const LIMITS: Record<string, { limit: number; monthly: boolean; forensic: boolean }> = {
+/** Paid allowances as reservation enforces them; the usage display reads the same table. */
+export const LIMITS: Record<string, { limit: number; monthly: boolean; forensic: boolean }> = {
   Basic: { limit: 3, monthly: false, forensic: false },
   AnalyzerBasic: { limit: 3, monthly: false, forensic: false },
   Premium: { limit: 5, monthly: false, forensic: true },

@@ -5,6 +5,7 @@
  * Allows client recovery and reconnection to in-flight or completed jobs.
  */
 import { verifyFirebaseRequest } from '../../_auth-check';
+import { jobObjectUrl, secretEquals } from '../../_analysis-jobs';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -40,7 +41,7 @@ export const onRequestGet = async ({
   let callerUid: string | null = null;
   let isAdmin = false;
   const adminSecretHeader = request?.headers.get('x-admin-secret');
-  if (adminSecretHeader && env?.ADMIN_SECRET && adminSecretHeader === env.ADMIN_SECRET) {
+  if (adminSecretHeader && env?.ADMIN_SECRET && secretEquals(adminSecretHeader, env.ADMIN_SECRET)) {
     isAdmin = true;
   } else if (request && env?.FIREBASE_PROJECT_ID) {
     const authResult = await verifyFirebaseRequest(request, env);
@@ -54,8 +55,7 @@ export const onRequestGet = async ({
   const supabaseKey = env?.STAGING_SUPABASE_SERVICE_ROLE_KEY || env?.STAGING_SUPABASE_READ_KEY;
   if (supabaseUrl && supabaseKey) {
     try {
-      const storageUrl = new URL(`/storage/v1/object/authenticated/analysis-jobs/${jobId}.json`, supabaseUrl);
-      const res = await fetch(storageUrl.toString(), {
+      const res = await fetch(jobObjectUrl(supabaseUrl, jobId, 'read'), {
         headers: {
           apikey: supabaseKey,
           Authorization: `Bearer ${supabaseKey}`,

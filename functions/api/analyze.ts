@@ -17,6 +17,7 @@ import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reserv
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
+import { saveCompletedJob } from './_analysis-jobs';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
 import { runDirectAnalysis, isEligibleForDirectAnalysis } from '../../api/services/directAnalyzer';
@@ -331,40 +332,14 @@ export async function handleAnalyzeRequest(
           throw new AnalyzerError('ANALYSIS_PERSISTENCE_FAILED', 503, 'Credit finalization failed. Result cannot be delivered.', false);
         }
 
-        // Persist completed job to Supabase Storage if configured for durable recovery
-        if (env.STAGING_SUPABASE_URL && (env.STAGING_SUPABASE_SERVICE_ROLE_KEY || env.STAGING_SUPABASE_READ_KEY)) {
-          try {
-            const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY || env.STAGING_SUPABASE_READ_KEY;
-            const storageUrl = new URL(`/storage/v1/object/analysis-jobs/${requestId}.json`, env.STAGING_SUPABASE_URL);
-            await (deps.fetcher || fetch)(storageUrl.toString(), {
-              method: 'POST',
-              headers: {
-                apikey: key!,
-                Authorization: `Bearer ${key}`,
-                'Content-Type': 'application/json',
-                'x-upsert': 'true',
-              },
-              body: JSON.stringify({
-                jobId: requestId,
-                status: 'completed',
-                uid,
-                currentStage: 'complete',
-                percent: 100,
-                report,
-                updatedAt: Date.now(),
-              }),
-              signal: AbortSignal.timeout(3000),
-            });
-          } catch {
-            // Non-critical background storage write failure
-          }
-        }
+        // Persist the completed job so a refresh can recover it (see ./_analysis-jobs.ts).
+        await saveCompletedJob(env, { jobId: requestId, uid, report }, deps.fetcher || fetch);
 
         await sendEvent('complete', report);
       } catch (err: any) {
         await release();
         const code = err instanceof AnalyzerError ? err.code : 'ANALYSIS_FAILED';
-        const message = err instanceof AnalyzerError ? err.userMessage : (err?.message || 'Analysis processing failed.');
+        const message = err instanceof AnalyzerError ? err.userMessage : 'The analysis could not be completed. Nothing was charged. Please try again.';
         const retryable = err instanceof AnalyzerError ? err.retryable : true;
         await sendEvent('error', { error: message, code, retryable });
       } finally {
@@ -396,40 +371,14 @@ export async function handleAnalyzeRequest(
         { status: 503, headers: DEFAULT_HEADERS }
       );
     }
-    // Persist completed job to Supabase Storage if configured for durable recovery
-    if (env.STAGING_SUPABASE_URL && (env.STAGING_SUPABASE_SERVICE_ROLE_KEY || env.STAGING_SUPABASE_READ_KEY)) {
-      try {
-        const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY || env.STAGING_SUPABASE_READ_KEY;
-        const storageUrl = new URL(`/storage/v1/object/analysis-jobs/${requestId}.json`, env.STAGING_SUPABASE_URL);
-        await (deps.fetcher || fetch)(storageUrl.toString(), {
-          method: 'POST',
-          headers: {
-            apikey: key!,
-            Authorization: `Bearer ${key}`,
-            'Content-Type': 'application/json',
-            'x-upsert': 'true',
-          },
-          body: JSON.stringify({
-            jobId: requestId,
-            status: 'completed',
-            uid,
-            currentStage: 'complete',
-            percent: 100,
-            report,
-            updatedAt: Date.now(),
-          }),
-          signal: AbortSignal.timeout(3000),
-        });
-      } catch {
-        // Non-critical background storage write failure
-      }
-    }
+    // Persist the completed job so a refresh can recover it (see ./_analysis-jobs.ts).
+    await saveCompletedJob(env, { jobId: requestId, uid, report }, deps.fetcher || fetch);
     return Response.json(report, { status: 200, headers: DEFAULT_HEADERS });
   } catch (err: any) {
     await release();
     const status = err instanceof AnalyzerError ? err.statusCode : 500;
     const code = err instanceof AnalyzerError ? err.code : 'ANALYSIS_FAILED';
-    const message = err instanceof AnalyzerError ? err.userMessage : (err?.message || 'Analysis processing failed.');
+    const message = err instanceof AnalyzerError ? err.userMessage : 'The analysis could not be completed. Nothing was charged. Please try again.';
     return Response.json(
       { error: message, code, retryable: err instanceof AnalyzerError ? err.retryable : true },
       { status, headers: DEFAULT_HEADERS }

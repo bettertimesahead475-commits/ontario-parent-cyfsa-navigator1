@@ -67,7 +67,8 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":{"message":"API key not valid. project 123456"}}', { status: 400 })));
     const req = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' }) });
     const res = await onRequestPost({ request: req, env: validEnv });
-    expect(res.status).toBe(502);
+    // An invalid key is a service problem (503), not the user's file.
+    expect(res.status).toBe(503);
     expect(await res.text()).not.toMatch(/API key|123456/);
   });
 

@@ -2,9 +2,10 @@
  * Cloudflare Pages Functions - Audio Transcription API.
  *
  * POST /api/transcribe
- * Transcribes parent audio recording/memo using Gemini API REST with pure web standards.
+ * Transcribes parent audio recording/memo with Gemini (model: GEMINI_AUDIO_MODEL, see ./_gemini.ts).
  */
 import { verifyFirebaseRequest } from './_auth-check';
+import { GEMINI_ERROR_RESPONSE, GeminiError, generateGemini, resolveGeminiModel, type GeminiEnv } from './_gemini';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -16,7 +17,7 @@ const ALLOWED_AUDIO_TYPES = new Set([
   'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/flac',
 ]);
 
-interface Env {
+interface Env extends GeminiEnv {
   FIREBASE_PROJECT_ID?: string;
   GEMINI_API_KEY?: string;
 }
@@ -89,12 +90,13 @@ export const onRequestPost = async ({
 
   const targetMime = requestedMime;
 
+  let transcribedText = '';
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
-    const geminiRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const model = resolveGeminiModel(env, 'audio');
+    const result = await generateGemini(
+      env,
+      model,
+      {
         contents: [
           {
             role: 'user',
@@ -102,34 +104,31 @@ export const onRequestPost = async ({
               {
                 text: 'Transcribe this audio recording exactly as spoken. Attribute lines to speakers only where you can genuinely tell voices apart (e.g. "Speaker 1:", "Speaker 2:") - do not guess names or roles unless someone states their own name or role aloud. Mark unclear or inaudible sections as [inaudible]. Do not add commentary, legal formatting, headers, certifications, or analysis - output the transcription text only, nothing else.',
               },
-              {
-                inlineData: {
-                  mimeType: targetMime,
-                  data: cleanedBase64,
-                },
-              },
+              { inlineData: { mimeType: targetMime, data: cleanedBase64 } },
             ],
           },
         ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 8192,
-        },
-      }),
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!geminiRes.ok) {
-      // The provider's error body is not returned: it can carry request and account detail.
+        generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+      },
+      { timeoutMs: 60_000 }
+    );
+    transcribedText = result.text.trim();
+  } catch (err) {
+    if (err instanceof GeminiError) {
+      const r = GEMINI_ERROR_RESPONSE[err.kind];
+      // The provider's error body is never returned: it can carry request and account detail.
       return Response.json(
-        { error: 'Audio transcription service returned an error. Please try again.', code: 'AI_PROVIDER_ERROR' },
-        { status: 502, headers: DEFAULT_HEADERS }
+        { error: r.error.replace('Document text recognition', 'Audio transcription'), code: r.code.replace(/^OCR_/, 'TRANSCRIPTION_'), retryable: r.retryable },
+        { status: r.status, headers: DEFAULT_HEADERS }
       );
     }
+    return Response.json(
+      { error: 'Audio transcription failed. Please check the audio file and try again.', code: 'TRANSCRIPTION_FAILED' },
+      { status: 500, headers: DEFAULT_HEADERS }
+    );
+  }
 
-    const result = (await geminiRes.json()) as any;
-    const transcribedText = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-
+  {
     if (!transcribedText) {
       return Response.json(
         { error: 'The transcription came back empty - the recording may be silent, too short, or in an unsupported format.', code: 'EMPTY_TRANSCRIPT' },
@@ -150,11 +149,6 @@ export const onRequestPost = async ({
         text: transcribedText,
       },
       { status: 200, headers: DEFAULT_HEADERS }
-    );
-  } catch (err: any) {
-    return Response.json(
-      { error: 'Audio transcription failed. Please check the audio file and try again.', code: 'TRANSCRIPTION_FAILED' },
-      { status: 500, headers: DEFAULT_HEADERS }
     );
   }
 };

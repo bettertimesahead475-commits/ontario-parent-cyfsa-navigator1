@@ -1,5 +1,8 @@
 import type { CreditRpc } from './_paid-credit-reservation';
 
+/** Free Quick Reviews per signed-in account. Reservation and the usage display both read this. */
+export const FREE_SCAN_LIMIT = 3;
+
 export async function reserveFreeScan(
   verifiedFirebaseUid: string, requestId: string, rpc: CreditRpc,
 ): Promise<{ status: string; reservation_id?: string | null }> {
@@ -7,7 +10,7 @@ export async function reserveFreeScan(
       !/^[A-Za-z0-9_-]{8,128}$/.test(requestId)) return { status: 'denied' };
   try {
     const result = await rpc('free_reserve_scan', {
-      p_uid: verifiedFirebaseUid, p_request: requestId, p_limit: 3,
+      p_uid: verifiedFirebaseUid, p_request: requestId, p_limit: FREE_SCAN_LIMIT,
       p_now: new Date().toISOString(), p_ttl: '15 minutes',
     });
     if (!['reserved', 'joined', 'consumed', 'limit'].includes(result.status)) return { status: 'unavailable' };
