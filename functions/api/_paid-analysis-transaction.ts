@@ -20,6 +20,7 @@ export async function runVerifiedPaidAnalysis<T>(
   rpc: CreditRpc,
   analyze: () => Promise<T>,
 ): Promise<Result<T>> {
+  if (!verifiedFirebaseUid || !['quick', 'forensic'].includes(analysisType) || !/^[A-Za-z0-9_-]{8,128}$/.test(requestId)) return { status: 'denied' };
   const lookup = await readVerifiedPaidSession(env, verifiedFirebaseUid, sessionId);
   if (lookup.status !== 'verified') return { status: lookup.status };
   const reservation = await reserveVerifiedPaidCredit(lookup.session, analysisType, requestId, rpc);
