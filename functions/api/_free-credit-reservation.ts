@@ -11,7 +11,7 @@ export async function reserveFreeScan(
       p_now: new Date().toISOString(), p_ttl: '15 minutes',
     });
     if (!['reserved', 'joined', 'consumed', 'limit'].includes(result.status)) return { status: 'unavailable' };
-    if (result.status === 'reserved' && !result.reservation_id) return { status: 'unavailable' };
+    if (result.status === 'reserved' && (typeof result.reservation_id !== 'string' || !result.reservation_id)) return { status: 'unavailable' };
     return result;
   } catch { return { status: 'unavailable' }; }
 }
