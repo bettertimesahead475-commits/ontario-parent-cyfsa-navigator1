@@ -331,6 +331,35 @@ export async function handleAnalyzeRequest(
           throw new AnalyzerError('ANALYSIS_PERSISTENCE_FAILED', 503, 'Credit finalization failed. Result cannot be delivered.', false);
         }
 
+        // Persist completed job to Supabase Storage if configured for durable recovery
+        if (env.STAGING_SUPABASE_URL && (env.STAGING_SUPABASE_SERVICE_ROLE_KEY || env.STAGING_SUPABASE_READ_KEY)) {
+          try {
+            const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY || env.STAGING_SUPABASE_READ_KEY;
+            const storageUrl = new URL(`/storage/v1/object/analysis-jobs/${requestId}.json`, env.STAGING_SUPABASE_URL);
+            await (deps.fetcher || fetch)(storageUrl.toString(), {
+              method: 'POST',
+              headers: {
+                apikey: key!,
+                Authorization: `Bearer ${key}`,
+                'Content-Type': 'application/json',
+                'x-upsert': 'true',
+              },
+              body: JSON.stringify({
+                jobId: requestId,
+                status: 'completed',
+                uid,
+                currentStage: 'complete',
+                percent: 100,
+                report,
+                updatedAt: Date.now(),
+              }),
+              signal: AbortSignal.timeout(3000),
+            });
+          } catch {
+            // Non-critical background storage write failure
+          }
+        }
+
         await sendEvent('complete', report);
       } catch (err: any) {
         await release();
@@ -366,6 +395,34 @@ export async function handleAnalyzeRequest(
         { error: 'Credit finalization failed.', code: 'CREDIT_FINALIZATION_FAILED' },
         { status: 503, headers: DEFAULT_HEADERS }
       );
+    }
+    // Persist completed job to Supabase Storage if configured for durable recovery
+    if (env.STAGING_SUPABASE_URL && (env.STAGING_SUPABASE_SERVICE_ROLE_KEY || env.STAGING_SUPABASE_READ_KEY)) {
+      try {
+        const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY || env.STAGING_SUPABASE_READ_KEY;
+        const storageUrl = new URL(`/storage/v1/object/analysis-jobs/${requestId}.json`, env.STAGING_SUPABASE_URL);
+        await (deps.fetcher || fetch)(storageUrl.toString(), {
+          method: 'POST',
+          headers: {
+            apikey: key!,
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            'x-upsert': 'true',
+          },
+          body: JSON.stringify({
+            jobId: requestId,
+            status: 'completed',
+            uid,
+            currentStage: 'complete',
+            percent: 100,
+            report,
+            updatedAt: Date.now(),
+          }),
+          signal: AbortSignal.timeout(3000),
+        });
+      } catch {
+        // Non-critical background storage write failure
+      }
     }
     return Response.json(report, { status: 200, headers: DEFAULT_HEADERS });
   } catch (err: any) {

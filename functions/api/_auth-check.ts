@@ -20,11 +20,29 @@ function signatureBytes(segment: string): Uint8Array {
   return Uint8Array.from(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')), c => c.charCodeAt(0));
 }
 
-export async function verifyFirebaseRequest(request: Request, env: Env): Promise<{ status: 'verified'; uid: string } | { status: 'denied' | 'unavailable' }> {
+export async function verifyFirebaseRequest(
+  request: Request,
+  env: Env,
+): Promise<
+  | { status: 'verified'; uid: string; email: string | null; emailVerified: boolean }
+  | { status: 'denied' | 'unavailable' }
+> {
   const response = await onRequestGet({ request, env });
   if (!response.ok) return { status: response.status === 503 ? 'unavailable' : 'denied' };
-  const body = await response.json() as { authenticated?: boolean; uid?: string };
-  return body.authenticated && typeof body.uid === 'string' ? { status: 'verified', uid: body.uid } : { status: 'denied' };
+  const body = (await response.json()) as {
+    authenticated?: boolean;
+    uid?: string;
+    email?: string | null;
+    emailVerified?: boolean;
+  };
+  return body.authenticated && typeof body.uid === 'string'
+    ? {
+        status: 'verified',
+        uid: body.uid,
+        email: typeof body.email === 'string' ? body.email : null,
+        emailVerified: Boolean(body.emailVerified),
+      }
+    : { status: 'denied' };
 }
 
 export const onRequestGet = async ({ request, env }: Context): Promise<Response> => {
@@ -59,7 +77,13 @@ export const onRequestGet = async ({ request, env }: Context): Promise<Response>
     );
     if (!valid) return json('INVALID_FIREBASE_TOKEN', 401);
     return Response.json(
-      { authenticated: true, uid: claims.sub, provider: 'firebase' },
+      {
+        authenticated: true,
+        uid: claims.sub,
+        email: typeof claims.email === 'string' ? claims.email : null,
+        emailVerified: Boolean(claims.email_verified),
+        provider: 'firebase',
+      },
       { headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } },
     );
   } catch {
