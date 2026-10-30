@@ -1,0 +1,136 @@
+/**
+ * Cloudflare Worker / Pages Functions Anthropic AI Model Execution Adapter.
+ *
+ * Calls Claude Messages API using web standard fetch, supporting approved model routing,
+ * timeout controls via AbortSignal, transient error retries, and token usage accounting.
+ */
+
+import { AnalyzerError } from '../../api/services/analyzerErrors';
+import { requireApprovedModel, resolveAnthropicWireModel } from '../../api/services/analyzerModels';
+import type { GenerateFn, GenerateResult } from '../../api/services/analyzerSections';
+
+export interface ModelAdapterEnv {
+  ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_API_URL?: string;
+}
+
+export function createCloudflareGenerateFn(
+  env: ModelAdapterEnv,
+  fetcher: typeof fetch = fetch
+): GenerateFn {
+  return async (options, model): Promise<GenerateResult> => {
+    const apiKey = env.ANTHROPIC_API_KEY;
+    if (!apiKey || !apiKey.trim()) {
+      throw new AnalyzerError(
+        'AI_PROVIDER_CONFIGURATION_ERROR',
+        500,
+        'ANTHROPIC_API_KEY is not configured on Cloudflare runtime.',
+        false
+      );
+    }
+
+    const approvedModel = requireApprovedModel(model);
+    const wireModel = resolveAnthropicWireModel(approvedModel);
+    const baseUrl = env.ANTHROPIC_API_URL || 'https://api.anthropic.com/v1/messages';
+
+    const maxRetries = options.retries ?? 1;
+    let attempt = 0;
+    let lastError: Error | null = null;
+
+    while (attempt <= maxRetries) {
+      attempt++;
+      try {
+        const timeoutMs = options.timeoutMs > 0 ? options.timeoutMs : 60_000;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        const requestBody = {
+          model: wireModel,
+          max_tokens: options.max_tokens || 4000,
+          system: options.system,
+          messages: options.messages.map((m) => ({
+            role: m.role,
+            content: m.content.map((c) => (typeof c === 'string' ? c : c.text)).join('\n'),
+          })),
+          temperature: 0,
+        };
+
+        const startTime = Date.now();
+        const response = await fetcher(baseUrl, {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+            accept: 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timer);
+
+        if (!response.ok) {
+          const status = response.status;
+          let errorText = '';
+          try {
+            errorText = await response.text();
+          } catch {
+            errorText = 'Could not read error body';
+          }
+
+          if (status === 429) {
+            throw new AnalyzerError('AI_RATE_LIMITED', 429, 'Rate limit exceeded with AI provider.', true);
+          }
+          if (status >= 500 && status < 600) {
+            throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, `AI service unavailable (${status}): ${errorText}`, true);
+          }
+          if (status === 400) {
+            throw new AnalyzerError('AI_REQUEST_REJECTED', 400, `AI request rejected: ${errorText}`, false);
+          }
+          throw new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', status, `AI request failed with status ${status}: ${errorText}`, false);
+        }
+
+        const data = (await response.json()) as {
+          content?: Array<{ type: string; text?: string }>;
+          usage?: { input_tokens?: number; output_tokens?: number };
+          stop_reason?: string | null;
+        };
+
+        const text = data.content?.filter((c) => c.type === 'text').map((c) => c.text).join('') || '';
+        const usage = {
+          input_tokens: data.usage?.input_tokens ?? 0,
+          output_tokens: data.usage?.output_tokens ?? 0,
+        };
+
+        return {
+          text,
+          usage,
+          model: wireModel,
+          durationMs: Date.now() - startTime,
+          stopReason: data.stop_reason ?? undefined,
+        };
+      } catch (err: any) {
+        lastError = err;
+        if (err instanceof AnalyzerError && !err.retryable) {
+          throw err;
+        }
+        if (attempt <= maxRetries) {
+          // Brief exponential backoff before retry
+          await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt), 3000)));
+          continue;
+        }
+      }
+    }
+
+    if (lastError instanceof AnalyzerError) {
+      throw lastError;
+    }
+    throw new AnalyzerError(
+      'AI_PROVIDER_TEMPORARILY_UNAVAILABLE',
+      503,
+      `AI generation failed after ${attempt} attempts: ${lastError?.message || 'Unknown error'}`,
+      true
+    );
+  };
+}
