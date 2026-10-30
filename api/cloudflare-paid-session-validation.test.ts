@@ -15,5 +15,8 @@ describe('paid session validation', () => {
   it('rejects expired and unknown tiers', () => {
     expect(check({ ...base, expires_at: '2020-01-01' })).toBeNull();
     expect(check({ ...base, tier: 'Unknown' })).toBeNull();
+    expect(check({ ...base, revoked_at: '2026-10-28T00:00:00Z' })).toBeNull();
+    expect(check({ ...base, issued_at: '2026-11-01T00:00:00Z' })).toBeNull();
+    expect(check({ ...base, expires_at: 'not-a-date' })).toBeNull();
   });
 });
