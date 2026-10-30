@@ -20,6 +20,13 @@ function signatureBytes(segment: string): Uint8Array {
   return Uint8Array.from(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')), c => c.charCodeAt(0));
 }
 
+export async function verifyFirebaseRequest(request: Request, env: Env): Promise<{ status: 'verified'; uid: string } | { status: 'denied' | 'unavailable' }> {
+  const response = await onRequestGet({ request, env });
+  if (!response.ok) return { status: response.status === 503 ? 'unavailable' : 'denied' };
+  const body = await response.json() as { authenticated?: boolean; uid?: string };
+  return body.authenticated && typeof body.uid === 'string' ? { status: 'verified', uid: body.uid } : { status: 'denied' };
+}
+
 export const onRequestGet = async ({ request, env }: Context): Promise<Response> => {
   if (!env.FIREBASE_PROJECT_ID) return json('AUTH_NOT_CONFIGURED', 503);
   const match = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') || '');
