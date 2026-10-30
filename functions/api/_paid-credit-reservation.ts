@@ -37,7 +37,8 @@ export async function reserveVerifiedPaidCredit(
   // The production accounting implementation owns monthly scope anchoring,
   // unlimited quick-review semantics, and exact RPC arguments. Until parity
   // is verified, deny reservations rather than invent a billing rule.
-  return rpc('paid_reserve_credit', {
+  try {
+    const result = await rpc('paid_reserve_credit', {
     p_session: session.sessionId,
     p_request: requestId,
     p_scope: tier.monthly ? 'none' : 'total',
@@ -45,5 +46,11 @@ export async function reserveVerifiedPaidCredit(
     p_now: now.toISOString(),
     p_ttl: '15 minutes',
     p_claim_window: '60 seconds',
-  });
+    });
+    if (!['reserved', 'joined', 'consumed', 'in_progress', 'limit'].includes(result.status)) return { status: 'unavailable' };
+    if (result.status === 'reserved' && !result.reservation_id) return { status: 'unavailable' };
+    return result;
+  } catch {
+    return { status: 'unavailable' };
+  }
 }
