@@ -12,6 +12,9 @@ const DEFAULT_HEADERS = {
 };
 
 const MAX_TRANSCRIBE_AUDIO_CHARS = 10 * 1024 * 1024; // ~7.5MB audio base64
+const ALLOWED_AUDIO_TYPES = new Set([
+  'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/flac',
+]);
 
 interface Env {
   FIREBASE_PROJECT_ID?: string;
@@ -25,6 +28,22 @@ export const onRequestPost = async ({
   request: Request;
   env: Env;
 }): Promise<Response> => {
+  // Sign-in first, and always: without a configured Firebase project the route refuses (fail closed), so the
+  // provider key can never be spent by an anonymous caller.
+  if (!env.FIREBASE_PROJECT_ID) {
+    return Response.json(
+      { error: 'Audio transcription is not configured on this server.', code: 'AUTH_NOT_CONFIGURED' },
+      { status: 503, headers: DEFAULT_HEADERS }
+    );
+  }
+  const authResult = await verifyFirebaseRequest(request, env);
+  if (authResult.status !== 'verified') {
+    return Response.json(
+      { error: 'Sign in to transcribe audio recordings.', code: 'SIGN_IN_REQUIRED' },
+      { status: authResult.status === 'unavailable' ? 503 : 401, headers: DEFAULT_HEADERS }
+    );
+  }
+
   let body: any;
   try {
     body = await request.json();
@@ -48,15 +67,12 @@ export const onRequestPost = async ({
     );
   }
 
-  // Authentication check: verify Firebase token if project configured
-  if (env.FIREBASE_PROJECT_ID) {
-    const authResult = await verifyFirebaseRequest(request, env);
-    if (authResult.status !== 'verified') {
-      return Response.json(
-        { error: 'Sign in to transcribe audio recordings.', code: 'SIGN_IN_REQUIRED' },
-        { status: 401, headers: DEFAULT_HEADERS }
-      );
-    }
+  const requestedMime = typeof mimeType === 'string' && mimeType ? mimeType.split(';')[0].trim().toLowerCase() : 'audio/webm';
+  if (!ALLOWED_AUDIO_TYPES.has(requestedMime)) {
+    return Response.json(
+      { error: 'Unsupported audio format. Use MP3, WAV, M4A, OGG, FLAC, AAC or WebM.', code: 'UNSUPPORTED_AUDIO_TYPE' },
+      { status: 415, headers: DEFAULT_HEADERS }
+    );
   }
 
   if (!env.GEMINI_API_KEY) {
@@ -71,7 +87,7 @@ export const onRequestPost = async ({
     cleanedBase64 = cleanedBase64.split(',')[1];
   }
 
-  const targetMime = mimeType || 'audio/webm';
+  const targetMime = requestedMime;
 
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
@@ -104,9 +120,9 @@ export const onRequestPost = async ({
     });
 
     if (!geminiRes.ok) {
-      const errBody = await geminiRes.text();
+      // The provider's error body is not returned: it can carry request and account detail.
       return Response.json(
-        { error: 'Audio transcription service returned an error.', details: errBody, code: 'AI_PROVIDER_ERROR' },
+        { error: 'Audio transcription service returned an error. Please try again.', code: 'AI_PROVIDER_ERROR' },
         { status: 502, headers: DEFAULT_HEADERS }
       );
     }

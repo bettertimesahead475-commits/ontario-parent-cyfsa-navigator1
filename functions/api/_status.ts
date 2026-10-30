@@ -26,6 +26,16 @@ const DEFAULT_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
 };
 
+/** Compares without stopping at the first differing character, so response time does not reveal the secret. */
+function constantTimeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const x = enc.encode(a);
+  const y = enc.encode(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return diff === 0;
+}
+
 function formatStatus(val?: string): 'configured' | 'missing' {
   if (!val || !val.trim()) return 'missing';
   return 'configured';
@@ -62,7 +72,7 @@ export const onRequestGet = async ({
   const configuredAdminSecret = env.ADMIN_SECRET?.trim();
   const isAdmin =
     Boolean(configuredAdminSecret) &&
-    (adminSecretHeader === configuredAdminSecret || bearerToken === configuredAdminSecret);
+    (constantTimeEqual(adminSecretHeader, configuredAdminSecret!) || constantTimeEqual(bearerToken, configuredAdminSecret!));
 
   // Authorized Admin Diagnostic Response
   if (isAdmin) {

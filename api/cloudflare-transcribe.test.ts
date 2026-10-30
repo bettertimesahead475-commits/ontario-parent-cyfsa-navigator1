@@ -14,6 +14,7 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
   };
 
   it('rejects missing audio data', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'u1', email: null, emailVerified: false });
     const req = new Request('http://localhost/api/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -26,6 +27,7 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
   });
 
   it('rejects oversized audio payloads', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'u1', email: null, emailVerified: false });
     const hugeAudio = 'A'.repeat(11 * 1024 * 1024);
     const req = new Request('http://localhost/api/transcribe', {
       method: 'POST',
@@ -36,6 +38,37 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
     expect(res.status).toBe(413);
     const json = await res.json();
     expect(json.code).toBe('PAYLOAD_TOO_LARGE');
+  });
+
+  it('requires sign-in before reading the audio, and never calls Gemini for an anonymous caller', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'denied' });
+    const req = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' }) });
+    const res = await onRequestPost({ request: req, env: validEnv });
+    expect(res.status).toBe(401);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when Firebase is not configured, instead of skipping sign-in', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const req = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' }) });
+    const res = await onRequestPost({ request: req, env: { GEMINI_API_KEY: 'k' } });
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('AUTH_NOT_CONFIGURED');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses non-audio types and hides provider error bodies', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'u1', email: null, emailVerified: false });
+    const bad = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'JVBERi0=', mimeType: 'application/pdf' }) });
+    expect((await onRequestPost({ request: bad, env: validEnv })).status).toBe(415);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":{"message":"API key not valid. project 123456"}}', { status: 400 })));
+    const req = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' }) });
+    const res = await onRequestPost({ request: req, env: validEnv });
+    expect(res.status).toBe(502);
+    expect(await res.text()).not.toMatch(/API key|123456/);
   });
 
   it('fails closed when Gemini API key is missing', async () => {

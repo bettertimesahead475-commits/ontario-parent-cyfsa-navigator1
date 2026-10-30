@@ -95,3 +95,25 @@ describe('Cloudflare Staging Health & Readiness Endpoint (/api/_status)', () => 
     });
   });
 });
+
+describe('GET /api/status route', () => {
+  it('is a real Pages route that serves the status handler', async () => {
+    const route = await import('../functions/api/status');
+    const helper = await import('../functions/api/_status');
+    expect(route.onRequestGet).toBe(helper.onRequestGet);
+  });
+
+  it('gives the binding matrix only to the admin secret, and never secret values', async () => {
+    const { onRequestGet } = await import('../functions/api/_status');
+    const env = { ADMIN_SECRET: 'admin-secret-value', ANTHROPIC_API_KEY: 'sk-real-key', FIREBASE_PROJECT_ID: 'p' } as any;
+    const pub = await onRequestGet({ request: new Request('https://s/api/status'), env });
+    const pubText = await pub.text();
+    expect(pubText).not.toMatch(/diagnostics|sk-real-key|admin-secret-value/);
+    const wrong = await onRequestGet({ request: new Request('https://s/api/status', { headers: { 'x-admin-secret': 'admin-secret-valuX' } }), env });
+    expect(await wrong.text()).not.toMatch(/diagnostics/);
+    const admin = await onRequestGet({ request: new Request('https://s/api/status', { headers: { 'x-admin-secret': 'admin-secret-value' } }), env });
+    const adminText = await admin.text();
+    expect(adminText).toMatch(/"anthropicApi":"configured"/);
+    expect(adminText).not.toMatch(/sk-real-key|admin-secret-value/);
+  });
+});

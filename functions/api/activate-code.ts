@@ -153,21 +153,17 @@ export const onRequestPost = async ({
       );
     }
 
-    if (rpcData.status === 'invalid') {
-      return Response.json({ error: rpcData.error || 'Invalid email or code.' }, { status: 401, headers: DEFAULT_HEADERS });
-    }
-    if (rpcData.status === 'expired') {
-      return Response.json({ error: rpcData.error || 'This code has expired. Contact support for a new one.' }, { status: 401, headers: DEFAULT_HEADERS });
-    }
-    if (rpcData.status === 'consumed') {
-      return Response.json({ error: rpcData.error || 'This code was already redeemed.' }, { status: 409, headers: DEFAULT_HEADERS });
-    }
-    if (rpcData.status === 'denied') {
-      return Response.json({ error: rpcData.error || 'Access denied.' }, { status: 400, headers: DEFAULT_HEADERS });
-    }
-
+    // Fixed customer messages per outcome. The RPC's own fields are never shown, so no database detail can leak.
+    const OUTCOMES: Record<string, { status: number; error: string }> = {
+      invalid: { status: 401, error: 'Invalid email or code.' },
+      expired: { status: 401, error: 'This code has expired. Contact support for a new one.' },
+      consumed: { status: 409, error: 'This code was already redeemed.' },
+      denied: { status: 400, error: 'This code cannot be activated on this account. Contact support.' },
+    };
+    const outcome = OUTCOMES[String(rpcData.status)];
+    if (outcome) return Response.json({ error: outcome.error }, { status: outcome.status, headers: DEFAULT_HEADERS });
     return Response.json(
-      { error: rpcData.error || 'Activation could not be completed.' },
+      { error: 'Activation could not be completed. Please try again.', code: 'ACTIVATION_FAILED' },
       { status: 500, headers: DEFAULT_HEADERS }
     );
   } catch (err: any) {
