@@ -31,6 +31,7 @@ export async function reserveVerifiedPaidCredit(
   if (!tier || !session.sessionId || !session.ownerUid ||
       !/^[0-9a-f-]{36}$/i.test(session.sessionId) ||
       !/^[A-Za-z0-9_-]{8,128}$/.test(requestId) ||
+      (analysisType !== 'quick' && analysisType !== 'forensic') ||
       (analysisType === 'forensic' && !tier.forensic) ||
       (session.expiresAt && Date.parse(session.expiresAt) <= now.getTime())) {
     return { status: 'denied' };
