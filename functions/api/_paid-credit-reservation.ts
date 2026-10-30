@@ -37,5 +37,13 @@ export async function reserveVerifiedPaidCredit(
   // The production accounting implementation owns monthly scope anchoring,
   // unlimited quick-review semantics, and exact RPC arguments. Until parity
   // is verified, deny reservations rather than invent a billing rule.
-  return { status: 'migration_pending' }; // guarded until server-side reservation wiring is verified
+  return rpc('paid_reserve_credit', {
+    p_session: session.sessionId,
+    p_request: requestId,
+    p_scope: tier.monthly ? 'none' : 'total',
+    p_granted: tier.limit,
+    p_now: now.toISOString(),
+    p_ttl: '15 minutes',
+    p_claim_window: '60 seconds',
+  });
 }
