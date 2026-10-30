@@ -49,8 +49,10 @@ function dbFailure(label: string, error: { message?: string } | null | undefined
 }
 
 
-export type { AnalyzerTier, CaseAccessTier, Tier } from "./tierTypes.js";
-export {
+import {
+  type AnalyzerTier,
+  type CaseAccessTier,
+  type Tier,
   TIER_PRICES,
   ALL_TIER_PRICES,
   isAnalyzerTier,
@@ -59,6 +61,17 @@ export {
   hasAnalyzerAccess,
   hasForensicInDepthAccess,
 } from "./tierTypes.js";
+
+export type { AnalyzerTier, CaseAccessTier, Tier };
+export {
+  TIER_PRICES,
+  ALL_TIER_PRICES,
+  isAnalyzerTier,
+  isCaseAccessTier,
+  hasCaseAccess,
+  hasAnalyzerAccess,
+  hasForensicInDepthAccess,
+};
 
 export const PAYMENT_EMAIL = process.env.PAYMENT_EMAIL || "chris@cyfsanavigator.com";
 
