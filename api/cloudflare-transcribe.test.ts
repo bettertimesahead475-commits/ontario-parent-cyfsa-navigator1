@@ -1,0 +1,102 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { onRequestPost } from '../functions/api/transcribe';
+import * as authCheck from '../functions/api/_auth-check';
+
+describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-audio)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const validEnv = {
+    FIREBASE_PROJECT_ID: 'test-firebase-proj',
+    GEMINI_API_KEY: 'test-gemini-key',
+  };
+
+  it('rejects missing audio data', async () => {
+    const req = new Request('http://localhost/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const res = await onRequestPost({ request: req, env: validEnv });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.code).toBe('INVALID_AUDIO');
+  });
+
+  it('rejects oversized audio payloads', async () => {
+    const hugeAudio = 'A'.repeat(11 * 1024 * 1024);
+    const req = new Request('http://localhost/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioData: hugeAudio }),
+    });
+    const res = await onRequestPost({ request: req, env: validEnv });
+    expect(res.status).toBe(413);
+    const json = await res.json();
+    expect(json.code).toBe('PAYLOAD_TOO_LARGE');
+  });
+
+  it('fails closed when Gemini API key is missing', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({
+      status: 'verified',
+      uid: 'user_123',
+      email: 'user@example.com',
+      emailVerified: true,
+    });
+
+    const req = new Request('http://localhost/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioData: 'SGVsbG8gd29ybGQ=' }),
+    });
+    const res = await onRequestPost({ request: req, env: { FIREBASE_PROJECT_ID: 'test-proj' } });
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.code).toBe('TRANSCRIPTION_SERVICE_UNAVAILABLE');
+  });
+
+  it('transcribes valid audio using Gemini REST endpoint', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({
+      status: 'verified',
+      uid: 'user_123',
+      email: 'user@example.com',
+      emailVerified: true,
+    });
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return Response.json({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { text: 'Worker: I am visiting the home today. Parent: Yes, welcome.' },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      return new Response(null, { status: 404 });
+    }));
+
+    const req = new Request('http://localhost/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audioData: 'data:audio/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwEAAAAAA',
+        mimeType: 'audio/webm',
+        fileName: 'case-meeting.webm',
+      }),
+    });
+    const res = await onRequestPost({ request: req, env: validEnv });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.fileName).toBe('Transcript - case-meeting.pdf');
+    expect(json.text).toContain('Worker: I am visiting the home today');
+    expect(json.transcribedText).toContain('AI-GENERATED TRANSCRIPTION AID');
+  });
+});

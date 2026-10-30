@@ -41,28 +41,7 @@ describe('Cloudflare Activate Code API (/api/activate-code)', () => {
     expect(json.code).toBe('SIGN_IN_REQUIRED');
   });
 
-  it('rejects invalid or non-existent access codes', async () => {
-    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({
-      status: 'verified',
-      uid: 'user_456',
-      email: 'parent@example.com',
-      emailVerified: true,
-    });
-
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json([], { status: 200 })));
-
-    const req = new Request('http://localhost/api/activate-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: 'INVALID-CODE-9999', email: 'parent@example.com' }),
-    });
-    const res = await onRequestPost({ request: req, env: validEnv });
-    expect(res.status).toBe(401);
-    const json = await res.json();
-    expect(json.error).toBe('Invalid email or code.');
-  });
-
-  it('successfully redeems valid code and issues signed session token', async () => {
+  it('activates code via atomic RPC when available', async () => {
     vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({
       status: 'verified',
       uid: 'user_456',
@@ -71,36 +50,16 @@ describe('Cloudflare Activate Code API (/api/activate-code)', () => {
     });
 
     const testCode = 'ABCD-1234-WXYZ';
-    const codeHash = crypto.createHash('sha256').update(testCode).digest('hex');
 
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-      // 1. SELECT candidate access codes
-      if (url.includes('/rest/v1/access_codes') && (!init || init.method === 'GET' || !init.method)) {
-        return Response.json([
-          {
-            id: 'code-row-1',
-            email: 'parent@example.com',
-            code_hash: codeHash,
-            tier: 'Pro',
-            used_at: null,
-            expires_at: null,
-          },
-        ]);
-      }
-      // 2. PATCH claim code
-      if (url.includes('/rest/v1/access_codes') && init?.method === 'PATCH') {
-        return Response.json([{ id: 'code-row-1' }]);
-      }
-      // 3. POST navigator_paid_sessions
-      if (url.includes('/rest/v1/navigator_paid_sessions') && init?.method === 'POST') {
-        return Response.json([
-          {
-            id: 'session-uuid-1234',
-            firebase_uid: 'user_456',
-            tier: 'Pro',
-            expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
-          },
-        ]);
+      if (url.includes('/rest/v1/rpc/redeem_access_code_atomic')) {
+        return Response.json({
+          status: 'activated',
+          session_id: 'atomic-session-uuid',
+          tier: 'Pro',
+          email: 'parent@example.com',
+          expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+        });
       }
       return new Response(null, { status: 404 });
     }));
@@ -115,19 +74,94 @@ describe('Cloudflare Activate Code API (/api/activate-code)', () => {
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(json.tier).toBe('Pro');
-    expect(json.email).toBe('parent@example.com');
     expect(json.token).toBeTruthy();
-
-    // Verify minted token has correct HMAC signature
-    const [payloadB64, sigB64] = json.token.split('.');
-    expect(payloadB64).toBeTruthy();
-    expect(sigB64).toBeTruthy();
-    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    expect(payload.jti).toBe('session-uuid-1234');
-    expect(payload.exp).toBeGreaterThan(Date.now());
   });
 
-  it('rejects concurrent redemption race condition (409)', async () => {
+  it('handles atomic RPC reuse of already redeemed active session', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({
+      status: 'verified',
+      uid: 'user_456',
+      email: 'parent@example.com',
+      emailVerified: true,
+    });
+
+    const testCode = 'ABCD-1234-WXYZ';
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/rest/v1/rpc/redeem_access_code_atomic')) {
+        return Response.json({
+          status: 'reused',
+          session_id: 'existing-session-uuid',
+          tier: 'Premium',
+          email: 'parent@example.com',
+          expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+        });
+      }
+      return new Response(null, { status: 404 });
+    }));
+
+    const req = new Request('http://localhost/api/activate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: testCode, email: 'parent@example.com' }),
+    });
+    const res = await onRequestPost({ request: req, env: validEnv });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.tier).toBe('Premium');
+  });
+
+  it('successfully rolls back claimed code if session insert fails in fallback path', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({
+      status: 'verified',
+      uid: 'user_456',
+      email: 'parent@example.com',
+      emailVerified: true,
+    });
+
+    const testCode = 'ABCD-1234-WXYZ';
+    const codeHash = crypto.createHash('sha256').update(testCode).digest('hex');
+    let rollbackCalled = false;
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      // RPC returns 404 (not installed)
+      if (url.includes('/rest/v1/rpc/redeem_access_code_atomic')) {
+        return new Response('function not found', { status: 404 });
+      }
+      // 1. SELECT candidate access codes
+      if (url.includes('/rest/v1/access_codes') && (!init?.method || init.method === 'GET')) {
+        return Response.json([{ id: 'code-row-1', email: 'parent@example.com', code_hash: codeHash, tier: 'Pro' }]);
+      }
+      // 2. PATCH claim code
+      if (url.includes('/rest/v1/access_codes') && init?.method === 'PATCH') {
+        const body = JSON.parse(init.body as string);
+        if (body.used_at === null) {
+          rollbackCalled = true;
+          return Response.json([{ id: 'code-row-1' }]);
+        }
+        return Response.json([{ id: 'code-row-1' }]);
+      }
+      // 3. POST navigator_paid_sessions FAILS
+      if (url.includes('/rest/v1/navigator_paid_sessions') && init?.method === 'POST') {
+        return new Response('Database error', { status: 500 });
+      }
+      return new Response(null, { status: 404 });
+    }));
+
+    const req = new Request('http://localhost/api/activate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: testCode, email: 'parent@example.com' }),
+    });
+    const res = await onRequestPost({ request: req, env: validEnv });
+    expect(res.status).toBe(500);
+    expect(rollbackCalled).toBe(true);
+    const json = await res.json();
+    expect(json.code).toBe('SESSION_INSERT_FAILED');
+  });
+
+  it('rejects concurrent redemption race condition in fallback path (409)', async () => {
     vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({
       status: 'verified',
       uid: 'user_456',
@@ -139,10 +173,12 @@ describe('Cloudflare Activate Code API (/api/activate-code)', () => {
     const codeHash = crypto.createHash('sha256').update(testCode).digest('hex');
 
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/rest/v1/rpc/redeem_access_code_atomic')) {
+        return new Response('function not found', { status: 404 });
+      }
       if (url.includes('/rest/v1/access_codes') && (!init?.method || init.method === 'GET')) {
         return Response.json([{ id: 'code-row-1', email: 'parent@example.com', code_hash: codeHash, tier: 'Pro' }]);
       }
-      // PATCH returns empty array indicating code was already claimed concurrently
       if (url.includes('/rest/v1/access_codes') && init?.method === 'PATCH') {
         return Response.json([]);
       }

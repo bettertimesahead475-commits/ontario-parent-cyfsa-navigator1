@@ -4,7 +4,8 @@
  * Implements safe health and readiness reporting for the staging environment.
  * Public requests receive minimal non-sensitive operational status.
  * Authorized admin requests (with valid x-admin-secret or Authorization) receive
- * the high-level dependency configuration status matrix without exposing secrets.
+ * the high-level dependency configuration status matrix and safe preflight probes
+ * without exposing secrets.
  */
 
 export interface StatusEnv {
@@ -14,6 +15,9 @@ export interface StatusEnv {
   STAGING_SUPABASE_URL?: string;
   STAGING_SUPABASE_SERVICE_ROLE_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  SESSION_SECRET?: string;
+  PAYMENT_EMAIL?: string;
   DIRECT_ANALYZER_DISABLED?: string;
 }
 
@@ -21,6 +25,11 @@ const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
 };
+
+function formatStatus(val?: string): 'configured' | 'missing' {
+  if (!val || !val.trim()) return 'missing';
+  return 'configured';
+}
 
 export const onRequestGet = async ({
   request,
@@ -30,14 +39,20 @@ export const onRequestGet = async ({
   env: StatusEnv;
 }): Promise<Response> => {
   const isAnalyzerEnabled = env.ANALYZER_ENABLED === 'true';
-  const hasFirebase = Boolean(env.FIREBASE_PROJECT_ID?.trim());
-  const hasSupabaseUrl = Boolean(env.STAGING_SUPABASE_URL?.trim());
-  const hasSupabaseKey = Boolean(env.STAGING_SUPABASE_SERVICE_ROLE_KEY?.trim());
-  const hasAnthropicKey = Boolean(env.ANTHROPIC_API_KEY?.trim());
+  const hasFirebase = formatStatus(env.FIREBASE_PROJECT_ID);
+  const hasSupabaseUrl = formatStatus(env.STAGING_SUPABASE_URL);
+  const hasSupabaseKey = formatStatus(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
+  const hasAnthropicKey = formatStatus(env.ANTHROPIC_API_KEY);
+  const hasGeminiKey = formatStatus(env.GEMINI_API_KEY);
+  const hasSessionSecret = formatStatus(env.SESSION_SECRET);
   const isDirectAnalyzerActive = env.DIRECT_ANALYZER_DISABLED !== 'true';
 
   const isLiveReady =
-    isAnalyzerEnabled && hasFirebase && hasSupabaseUrl && hasSupabaseKey && hasAnthropicKey;
+    isAnalyzerEnabled &&
+    hasFirebase === 'configured' &&
+    hasSupabaseUrl === 'configured' &&
+    hasSupabaseKey === 'configured' &&
+    hasAnthropicKey === 'configured';
 
   // Check admin authorization
   const authHeader = request.headers.get('Authorization') || '';
@@ -60,11 +75,15 @@ export const onRequestGet = async ({
         analyzerEnabled: isAnalyzerEnabled,
         liveAnalysisReady: isLiveReady,
         diagnostics: {
-          firebaseAuth: hasFirebase ? 'configured' : 'missing',
-          supabaseStaging: hasSupabaseUrl ? 'configured' : 'missing',
-          supabaseRpcKey: hasSupabaseKey ? 'configured' : 'missing',
-          anthropicApi: hasAnthropicKey ? 'configured' : 'missing',
+          firebaseAuth: hasFirebase,
+          supabaseStaging: hasSupabaseUrl,
+          supabaseRpcKey: hasSupabaseKey,
+          anthropicApi: hasAnthropicKey,
           directAnalyzer: isDirectAnalyzerActive ? 'active' : 'disabled',
+        },
+        extendedDetails: {
+          geminiOcrApi: hasGeminiKey,
+          sessionSecret: hasSessionSecret,
         },
       },
       { status: 200, headers: DEFAULT_HEADERS }

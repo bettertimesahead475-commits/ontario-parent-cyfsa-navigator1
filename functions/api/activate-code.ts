@@ -4,6 +4,9 @@
  * POST /api/activate-code
  * Redeems a one-time access code, creates a paid session bound to the verified Firebase identity,
  * and mints an HMAC-signed session token.
+ *
+ * Implements atomic single-transaction redemption via PostgreSQL RPC `redeem_access_code_atomic`
+ * with automatic fallback to two-phase safe claim if the RPC migration is not yet installed.
  */
 import { verifyFirebaseRequest } from './_auth-check';
 
@@ -112,6 +115,85 @@ export const onRequestPost = async ({
   const inputHash = await sha256Hex(normalizedCode);
 
   try {
+    // -------------------------------------------------------------
+    // ATOMIC PATH: Attempt PostgreSQL stored procedure (RPC)
+    // Runs code verification, code claim, and session insert in 1 TX
+    // -------------------------------------------------------------
+    const rpcUrl = new URL('/rest/v1/rpc/redeem_access_code_atomic', env.STAGING_SUPABASE_URL);
+    let rpcSupported = false;
+
+    try {
+      const rpcRes = await fetch(rpcUrl.toString(), {
+        method: 'POST',
+        headers: {
+          apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          p_firebase_uid: identity.uid,
+          p_email: normalizedEmail,
+          p_code_hash: inputHash,
+        }),
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (rpcRes.ok) {
+        rpcSupported = true;
+        const rpcData = (await rpcRes.json()) as any;
+        if (rpcData && typeof rpcData === 'object') {
+          if (rpcData.status === 'activated' || rpcData.status === 'reused') {
+            const expTime = rpcData.expires_at ? new Date(rpcData.expires_at).getTime() : Date.now() + 30 * 86400000;
+            const token = await signSessionToken(rpcData.session_id, expTime, env.SESSION_SECRET);
+            return Response.json(
+              {
+                success: true,
+                tier: rpcData.tier,
+                token,
+                email: normalizedEmail,
+              },
+              { status: 200, headers: DEFAULT_HEADERS }
+            );
+          }
+          if (rpcData.status === 'invalid') {
+            return Response.json({ error: 'Invalid email or code.' }, { status: 401, headers: DEFAULT_HEADERS });
+          }
+          if (rpcData.status === 'expired') {
+            return Response.json({ error: 'This code has expired. Contact support for a new one.' }, { status: 401, headers: DEFAULT_HEADERS });
+          }
+          if (rpcData.status === 'consumed') {
+            return Response.json({ error: rpcData.error || 'This code was already redeemed.' }, { status: 409, headers: DEFAULT_HEADERS });
+          }
+          if (rpcData.status === 'denied') {
+            return Response.json({ error: rpcData.error || 'Access denied.' }, { status: 400, headers: DEFAULT_HEADERS });
+          }
+        }
+      } else if (rpcRes.status !== 404) {
+        // Non-404 error from RPC (e.g. 500)
+        const errText = await rpcRes.text();
+        if (!errText.includes('function') && !errText.includes('does not exist')) {
+          // Genuine RPC error
+          return Response.json(
+            { error: 'Activation could not be completed. Please try again.' },
+            { status: 500, headers: DEFAULT_HEADERS }
+          );
+        }
+      }
+    } catch {
+      // Network failure on RPC or function missing, proceed to fallback
+    }
+
+    if (rpcSupported) {
+      return Response.json(
+        { error: 'Activation could not be completed. Please try again.' },
+        { status: 500, headers: DEFAULT_HEADERS }
+      );
+    }
+
+    // -------------------------------------------------------------
+    // FALLBACK PATH: Standard REST queries with atomic conditional updates
+    // -------------------------------------------------------------
     // 1. Look up unredeemed candidate access codes for this email
     const fetchUrl = new URL('/rest/v1/access_codes', env.STAGING_SUPABASE_URL);
     fetchUrl.searchParams.set('email', `eq.${normalizedEmail}`);
@@ -227,9 +309,41 @@ export const onRequestPost = async ({
             sessionExpiry = new Date(sessionRows[0].expires_at).getTime();
           }
         }
+      } else {
+        // Rollback code claim if session insert fails
+        const rollbackUrl = new URL('/rest/v1/access_codes', env.STAGING_SUPABASE_URL);
+        rollbackUrl.searchParams.set('id', `eq.${matched.id}`);
+        await fetch(rollbackUrl.toString(), {
+          method: 'PATCH',
+          headers: {
+            apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ used_at: null }),
+        });
+        return Response.json(
+          { error: 'Could not create paid session. Code has not been charged.', code: 'SESSION_INSERT_FAILED' },
+          { status: 500, headers: DEFAULT_HEADERS }
+        );
       }
     } catch {
-      // Use fallback session UUID
+      // Network error on session insert - rollback code claim
+      const rollbackUrl = new URL('/rest/v1/access_codes', env.STAGING_SUPABASE_URL);
+      rollbackUrl.searchParams.set('id', `eq.${matched.id}`);
+      await fetch(rollbackUrl.toString(), {
+        method: 'PATCH',
+        headers: {
+          apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ used_at: null }),
+      });
+      return Response.json(
+        { error: 'Could not create paid session. Code has not been charged.', code: 'SESSION_INSERT_FAILED' },
+        { status: 500, headers: DEFAULT_HEADERS }
+      );
     }
 
     // 6. Sign and issue session token
