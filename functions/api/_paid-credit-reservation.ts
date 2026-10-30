@@ -33,7 +33,10 @@ export async function reserveVerifiedPaidCredit(
       !/^[A-Za-z0-9_-]{8,128}$/.test(requestId) ||
       (analysisType !== 'quick' && analysisType !== 'forensic') ||
       (analysisType === 'forensic' && !tier.forensic) ||
-      (session.expiresAt && Date.parse(session.expiresAt) <= now.getTime())) {
+      !Number.isFinite(now.getTime()) ||
+      !Number.isFinite(Date.parse(session.issuedAt)) ||
+      Date.parse(session.issuedAt) > now.getTime() ||
+      (session.expiresAt && (!Number.isFinite(Date.parse(session.expiresAt)) || Date.parse(session.expiresAt) <= now.getTime()))) {
     return { status: 'denied' };
   }
   // The production accounting implementation owns monthly scope anchoring,
