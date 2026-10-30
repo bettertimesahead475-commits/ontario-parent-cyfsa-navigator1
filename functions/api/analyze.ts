@@ -181,10 +181,23 @@ export async function handleAnalyzeRequest(
       );
     }
     if (reservation.status !== 'reserved' || !reservation.reservation_id) {
-      return Response.json(
-        { error: 'Free scan reservation unavailable.', code: 'RESERVATION_UNAVAILABLE' },
-        { status: 503, headers: DEFAULT_HEADERS }
-      );
+      const sanitizedError: Record<string, any> = {
+        error: 'Free scan reservation unavailable.',
+        code: 'RESERVATION_UNAVAILABLE',
+        status: reservation.status,
+      };
+      if (reservation.httpStatus) sanitizedError.httpStatus = reservation.httpStatus;
+      if (reservation.pgCode) sanitizedError.pgCode = reservation.pgCode;
+      if (reservation.pgMessage) sanitizedError.pgMessage = reservation.pgMessage;
+      if (reservation.pgDetails) sanitizedError.pgDetails = reservation.pgDetails;
+      if (reservation.pgHint) sanitizedError.pgHint = reservation.pgHint;
+
+      console.error('[FREE_SCAN_RESERVATION_UNAVAILABLE]', JSON.stringify(sanitizedError));
+
+      return Response.json(sanitizedError, {
+        status: reservation.status === 'denied' ? 403 : 503,
+        headers: DEFAULT_HEADERS,
+      });
     }
     reservationId = reservation.reservation_id;
   }

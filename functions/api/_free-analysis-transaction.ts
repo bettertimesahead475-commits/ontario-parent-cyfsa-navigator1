@@ -9,7 +9,7 @@ type Result<T> = { status: 'delivered'; result: T } | { status: 'denied' | 'unav
 export async function runVerifiedFreeAnalysis<T>(
   uid: string, requestId: string, rpc: CreditRpc, analyze: () => Promise<T>,
 ): Promise<Result<T>> {
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) || !/^[A-Za-z0-9_-]{8,128}$/.test(requestId))
+  if (!uid || !/^[A-Za-z0-9_.:|@-]{1,128}$/.test(uid) || !requestId || !/^[A-Za-z0-9_-]{8,128}$/.test(requestId))
     return { status: 'denied' };
   const reservation = await reserveFreeScan(uid, requestId, rpc);
   if (reservation.status === 'limit') return { status: 'limit' };

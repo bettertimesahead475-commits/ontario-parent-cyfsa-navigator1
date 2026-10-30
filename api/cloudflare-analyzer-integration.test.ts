@@ -270,6 +270,50 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(releasedCalled).toBe(true);
   });
 
+  it('returns sanitized 503 RESERVATION_UNAVAILABLE with pgCode when free reservation RPC fails', async () => {
+    const uid = 'user_rpc_err_101';
+    const requestId = 'req_rpc_err_01';
+
+    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid });
+
+    const mockRpc = vi.fn(async (name: string) => {
+      if (name === 'free_reserve_scan') {
+        const err: any = new Error('Function not found in schema cache');
+        err.httpStatus = 404;
+        err.pgCode = 'PGRST202';
+        err.pgMessage = 'Could not find the function public.free_reserve_scan in the schema cache';
+        throw err;
+      }
+      return { status: 'noop' };
+    });
+
+    const request = new Request('https://staging.example/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer mock_token',
+        'X-Analysis-Id': requestId,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        documentText: SAMPLE_DOC,
+        mode: 'fast',
+        stream: false,
+      }),
+    });
+
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc as any });
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      code: 'RESERVATION_UNAVAILABLE',
+      error: 'Free scan reservation unavailable.',
+      status: 'unavailable',
+      httpStatus: 404,
+      pgCode: 'PGRST202',
+    });
+  });
+
   it('streams progress and sections via Server-Sent Events', async () => {
     const uid = 'user_stream_789';
     const requestId = 'req_stream_test_03';
