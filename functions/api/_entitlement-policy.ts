@@ -9,6 +9,7 @@ export type EntitlementEvidence = {
   session?: {
     ownerUid: string;
     tier: string;
+    verifiedFromDatabase: boolean;
     revokedAt: string | null;
     expiresAt: string | null;
     remainingCredits: number | null;
@@ -31,7 +32,7 @@ export function evaluateQuickReviewAccess(evidence: EntitlementEvidence): Access
   const supportedPaidTier = paidTier === 'Basic' || paidTier === 'AnalyzerBasic' ||
     paidTier === 'Premium' || paidTier === 'AnalyzerPremium' || paidTier === 'Pro' ||
     paidTier === 'Community5' || paidTier === 'Community10' || paidTier === 'Community25';
-  if (supportedPaidTier && session?.ownerUid === evidence.firebaseUid && !session.revokedAt &&
+  if (supportedPaidTier && session?.verifiedFromDatabase === true && session?.ownerUid === evidence.firebaseUid && !session.revokedAt &&
       (!session.expiresAt || (Number.isFinite(Date.parse(session.expiresAt)) && Date.parse(session.expiresAt) > Date.now())) &&
       (Number.isSafeInteger(session.remainingCredits) && session.remainingCredits !== null && session.remainingCredits > 0)) {
     return { allowed: true, source: 'paid' };
