@@ -266,204 +266,36 @@ export async function handleAnalyzeRequest(
     let run: SectionRunResult | null = null;
 
     if (!isForensic) {
-      // Quick Review: Strictly bounded single-pass operation.
-      // Falls back NEVER to sectioned analysis: multi-call sectioned pipelines exceed worker budgets
-      // and stall customers. Truncated output, malformed JSON, and validation failures report explicit errors.
+      // Quick Review: generate independently bounded, validated sections from the outset.
+      // Do not spend the shared deadline on an oversized direct JSON response first.
       if (documentText.length > DIRECT_ANALYSIS_MAX_CHARS) {
         throw new AnalyzerError(
           'AI_REQUEST_REJECTED',
           400,
-          `This document exceeds the 75,000 character limit for Quick Review. Please select Forensic In-Depth mode for comprehensive analysis of larger records. Nothing was charged.`,
+          'This document exceeds the 75,000 character Quick Review limit. Select Forensic In-Depth for larger records. Nothing was charged.',
           false
         );
       }
-
-      if (env.DIRECT_ANALYZER_DISABLED === 'true') {
-        throw new AnalyzerError(
-          'AI_PROVIDER_CONFIGURATION_ERROR',
-          500,
-          'Quick Review direct analyzer is temporarily disabled by configuration. Nothing was charged.',
-          false
-        );
+      if (aiDeadlineAt - Date.now() < 10_000) {
+        throw new AnalyzerError('ANALYSIS_TIMED_OUT', 408, 'Not enough time remains to start Quick Review. Nothing was charged.', true);
       }
-
-      if (!isEligibleForDirectAnalysis(documentText, aiDeadlineAt)) {
-        throw new AnalyzerError(
-          'ANALYSIS_TIMED_OUT',
-          408,
-          'Analysis could not be started within the available time budget. Nothing was charged.',
-          true
-        );
-      }
-
-      let directFailureReason: "oversized" | "timeout" | "max_tokens" | "malformed_json" | "validation_failed" | undefined;
-      let directFailureDetails: string | undefined;
-      let directPartialData: DirectFailurePartialData | undefined;
-      const directStartedAt = Date.now();
-
-      try {
-        await onProgress?.('reviewing_evidence', 40, 'Conducting direct evidence audit and analysis...');
-        run = await runDirectAnalysis({
-          mode: 'fast',
-          documentText,
-          primaryModel,
-          generate,
-          deadlineAt: aiDeadlineAt,
-          requestId,
-          onSectionComplete: async (key, value, completed, total) => {
-            const percent = 35 + Math.round((completed / total) * 60);
-            const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
-            await onSection?.(key, value);
-            await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent, message);
-          },
-          onFailureReason: (reason, details, partialData) => {
-            directFailureReason = reason;
-            directFailureDetails = details;
-            directPartialData = partialData;
-          },
-        });
-        if (run) {
-          console.info('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'success' }));
-        }
-      } catch (err: any) {
-        console.warn('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'failed' }));
-        logAnalyzerDiagnostic('direct-first analysis failed', err);
-        throw err;
-      }
-
-      if (!run) {
-        console.warn('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'rejected', reason: directFailureReason }));
-
-        // Intelligent Truncation & Partial Section Recovery:
-        // When direct analysis truncates or partially parses, salvage any already complete,
-        // strictly validated sections. If at least one section is salvageable and remaining
-        // time budget is sufficient (>= 10,000ms), fetch only the missing sections concurrently.
-        const remainingTimeMs = aiDeadlineAt - Date.now();
-        if (
-          remainingTimeMs >= 10_000 &&
-          (directFailureReason === 'max_tokens' ||
-           directFailureReason === 'malformed_json' ||
-           directFailureReason === 'validation_failed')
-        ) {
-          const rawText = directPartialData?.text || '';
-          const salvaged = salvagePartialDirectSections(rawText, 'fast');
-
-          if (salvaged.completedKeys.length > 0) {
-            console.info('[analyzer_truncation_recovery]', JSON.stringify({
-              requestId,
-              reason: directFailureReason,
-              completedKeys: salvaged.completedKeys,
-              missingKeys: salvaged.missingKeys,
-              remainingTimeMs,
-            }));
-
-            // Emit verified events for salvaged sections so user sees progression
-            for (let i = 0; i < salvaged.completedKeys.length; i++) {
-              const key = salvaged.completedKeys[i];
-              const value = { [key]: salvaged.salvagedReport[key] };
-              await onSection?.(key, value);
-              const percent = 35 + Math.round(((i + 1) / 4) * 60);
-              await onProgress?.('reviewing_evidence', percent, `Validated section: ${sectionTitle(key)}.`);
-            }
-
-            if (salvaged.missingKeys.length === 0) {
-              // Complete report salvaged directly from repaired JSON!
-              run = {
-                report: salvaged.salvagedReport,
-                durationMs: Date.now() - directStartedAt,
-                usageByModel: {
-                  [primaryModel]: {
-                    inputTokens: directPartialData?.usage?.input_tokens || 0,
-                    outputTokens: directPartialData?.usage?.output_tokens || 0,
-                  },
-                },
-                sectionTimingsMs: { direct_salvaged: Date.now() - directStartedAt },
-                attempts: { direct: 1 },
-              };
-            } else {
-              // Concurrently run only the missing sections
-              try {
-                await onProgress?.(
-                  'reviewing_evidence',
-                  35 + Math.round((salvaged.completedKeys.length / 4) * 60),
-                  `Recovering remaining section(s): ${salvaged.missingKeys.map(k => sectionTitle(k)).join(', ')}...`
-                );
-
-                const sectionedResult = await runSectionedAnalysis({
-                  mode: 'fast',
-                  documentText,
-                  primaryModel,
-                  generate,
-                  deadlineAt: aiDeadlineAt,
-                  requestId,
-                  targetSections: salvaged.missingKeys,
-                  initialSections: salvaged.salvagedReport,
-                  onSectionComplete: async (key, value, completed, total) => {
-                    const percent = 35 + Math.round((completed / total) * 60);
-                    const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
-                    await onSection?.(key, value);
-                    await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent, message);
-                  },
-                });
-
-                run = sectionedResult;
-                console.info('[analyzer_truncation_recovery]', JSON.stringify({
-                  requestId,
-                  outcome: 'recovery_success',
-                  totalElapsedMs: Date.now() - directStartedAt,
-                }));
-              } catch (recoveryErr: any) {
-                console.warn('[analyzer_truncation_recovery]', JSON.stringify({
-                  requestId,
-                  outcome: 'recovery_failed',
-                  error: recoveryErr?.message,
-                }));
-              }
-            }
-          }
-        }
-
-        if (!run) {
-          if (directFailureReason === 'max_tokens') {
-            throw new AnalyzerError(
-              'AI_RESPONSE_INVALID',
-              422,
-              'The AI analysis model output was truncated before completion. Nothing was charged. Please try again.',
-              true
-            );
-          }
-          if (directFailureReason === 'malformed_json') {
-            throw new AnalyzerError(
-              'AI_RESPONSE_INVALID',
-              422,
-              'The AI analysis model generated an invalid response structure. Nothing was charged. Please try again.',
-              true
-            );
-          }
-          if (directFailureReason === 'validation_failed') {
-            throw new AnalyzerError(
-              'AI_RESPONSE_INVALID',
-              422,
-              `The AI analysis model output did not satisfy legal schema requirements (${directFailureDetails || 'schema error'}). Nothing was charged. Please try again.`,
-              true
-            );
-          }
-          if (directFailureReason === 'timeout') {
-            throw new AnalyzerError(
-              'ANALYSIS_TIMED_OUT',
-              408,
-              'Analysis could not be completed within the available time budget. Nothing was charged.',
-              true
-            );
-          }
-          throw new AnalyzerError(
-            'AI_RESPONSE_INVALID',
-            422,
-            'Quick Review could not be completed in a single pass. Nothing was charged. Please try again or select Forensic In-Depth mode.',
-            true
-          );
-        }
-      }
+      const sectionedStartedAt = Date.now();
+      await onProgress?.('reviewing_evidence', 35, 'Analyzing four independent evidence sections...');
+      run = await runSectionedAnalysis({
+        mode: 'fast',
+        documentText,
+        primaryModel,
+        generate,
+        deadlineAt: aiDeadlineAt,
+        requestId,
+        onSectionComplete: async (key, value, completed, total) => {
+          const percent = 35 + Math.round((completed / total) * 60);
+          await onSection?.(key, value);
+          await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent,
+            `Validated ${completed} of ${total} evidence sections: ${sectionTitle(key)}.`);
+        },
+      });
+      console.info('[analyzer_latency]', JSON.stringify({ path: 'quick_sectioned', elapsedMs: Date.now() - sectionedStartedAt, outcome: 'success' }));
     } else {
       // Forensic In-Depth mode: multi-pass sectioned pipeline with Opus verification
       const sectionedStartedAt = Date.now();
