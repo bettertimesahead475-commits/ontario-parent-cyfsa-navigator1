@@ -61,7 +61,7 @@ export type GenerateFn = (
   model: string
 ) => Promise<GenerateResult>;
 
-type Validation = { ok: true; value: Record<string, any> } | { ok: false; problems: string[] };
+export type Validation = { ok: true; value: Record<string, any> } | { ok: false; problems: string[] };
 
 interface SectionSpec {
   key: SectionKey;
@@ -154,7 +154,7 @@ function normalizeIsMet(v: unknown): string {
 // Section specifications
 // ---------------------------------------------------------------------------
 
-function validateOverview(raw: any): Validation {
+export function validateOverview(raw: any): Validation {
   const problems: string[] = [];
   const fileSummary = str(raw?.fileSummary);
   if (fileSummary.length < 40) problems.push("fileSummary is missing or too short");
@@ -202,7 +202,7 @@ function validateOverview(raw: any): Validation {
   };
 }
 
-function validateRedFlags(raw: any, mode: "fast" | "full"): Validation {
+export function validateRedFlags(raw: any, mode: "fast" | "full"): Validation {
   if (!Array.isArray(raw?.redFlags)) return { ok: false, problems: ["redFlags must be an array"] };
   const max = mode === "fast" ? 6 : 10;
   const flags = raw.redFlags
@@ -236,7 +236,7 @@ function validateRedFlags(raw: any, mode: "fast" | "full"): Validation {
   return { ok: true, value: { redFlags: flags } };
 }
 
-function validateChronology(raw: any, mode: "fast" | "full"): Validation {
+export function validateChronology(raw: any, mode: "fast" | "full"): Validation {
   if (!Array.isArray(raw?.chronology)) return { ok: false, problems: ["chronology must be an array"] };
   const chronology = raw.chronology
     .filter((e: any) => e && typeof e === "object" && str(e.event))
@@ -260,7 +260,7 @@ function validateChronology(raw: any, mode: "fast" | "full"): Validation {
   return { ok: true, value: { chronology, contradictions } };
 }
 
-function validateGuidance(raw: any): Validation {
+export function validateGuidance(raw: any): Validation {
   const value = {
     whatToVerify: strList(raw?.whatToVerify, 6),
     whatToAskALawyer: strList(raw?.whatToAskALawyer, 6),
@@ -308,7 +308,7 @@ function validateTimeline(raw: any): Validation {
   return { ok: true, value: { proceduralTimelineViolations: items, charterAndHumanRightsIssues: charter } };
 }
 
-const CHRONOLOGY_SCHEMA = `"chronology": [
+export const CHRONOLOGY_SCHEMA = `"chronology": [
   {
     "date": "Date exactly as written in the document (e.g. 'March 3, 2026'), or 'Undated' with the nearest sequence marker",
     "event": "One sentence describing what the document says happened. Attribute it (e.g. 'Worker states...') rather than presenting it as established fact.",
@@ -641,6 +641,8 @@ export interface SectionRunOptions {
   onSectionComplete?: (key: SectionKey, value: Record<string, any>, completed: number, total: number) => Promise<void> | void;
   onVerificationStart?: () => void;
   now?: () => number;
+  targetSections?: SectionKey[];
+  initialSections?: Record<string, any>;
 }
 
 export interface SectionRunResult {
@@ -661,7 +663,7 @@ function addUsage(acc: SectionRunResult["usageByModel"], model: string, usage?: 
   acc[model] = cur;
 }
 
-async function runOneSection(
+export async function runOneSection(
   key: SectionKey,
   opts: SectionRunOptions,
   usage: SectionRunResult["usageByModel"]
@@ -734,14 +736,16 @@ async function runOneSection(
 }
 
 export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<SectionRunResult> {
-  const keys = opts.mode === "full" ? FORENSIC_SECTIONS : QUICK_SECTIONS;
+  const defaultKeys = opts.mode === "full" ? FORENSIC_SECTIONS : QUICK_SECTIONS;
+  const keys = opts.targetSections && opts.targetSections.length > 0 ? opts.targetSections : defaultKeys;
   const usageByModel: SectionRunResult["usageByModel"] = {};
   const sectionTimingsMs: Record<string, number> = {};
   const attempts: Record<string, number> = {};
   const now = opts.now || Date.now;
   const started = now();
-  let completed = 0;
-  const report: Record<string, any> = {};
+  const report: Record<string, any> = { ...(opts.initialSections || {}) };
+  let completed = Object.keys(opts.initialSections || {}).length;
+  const totalCount = keys.length + completed;
 
   // allSettled-style: wait for every section so a failure never leaves requests running unobserved.
   const outcomes = await Promise.all(
@@ -752,7 +756,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
         attempts[key] = n;
         Object.assign(report, value);
         completed++;
-        await opts.onSectionComplete?.(key, value, completed, keys.length);
+        await opts.onSectionComplete?.(key, value, completed, totalCount);
         return null;
       } catch (err) {
         return err;

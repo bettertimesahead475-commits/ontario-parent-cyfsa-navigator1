@@ -9,7 +9,7 @@
  * Silent downgrades from Opus to Sonnet are strictly forbidden.
  */
 
-import { Tier, hasForensicInDepthAccess } from "./access.js";
+import { Tier, hasForensicInDepthAccess } from "./tierTypes.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 import { AnalyzerError } from "./analyzerErrors.js";
 
