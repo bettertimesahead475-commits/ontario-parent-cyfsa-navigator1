@@ -43,6 +43,18 @@ export function createCloudflareGenerateFn(
         const timeoutMs = options.timeoutMs > 0 ? options.timeoutMs : 60_000;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
+        // The deadline covers the whole call: headers, body and JSON parse. It also does not depend on fetch honouring
+        // the abort signal. Before this, the timer was cleared once headers arrived, so a body that never finished left the
+        // analysis waiting forever, with the browser stuck at its last progress value and no error ever sent.
+        const deadline = new Promise<never>((_, reject) => {
+          controller.signal.addEventListener(
+            'abort',
+            () => reject(new Error(`provider deadline of ${timeoutMs} ms exceeded`)),
+            { once: true }
+          );
+        });
+        deadline.catch(() => undefined); // the rejection is consumed by bounded() below, never left unhandled
+        const bounded = <T>(p: Promise<T>): Promise<T> => Promise.race([p, deadline]);
 
         const requestBody = {
           model: wireModel,
@@ -55,28 +67,32 @@ export function createCloudflareGenerateFn(
         };
 
         const startTime = Date.now();
-        const response = await fetcher(baseUrl, {
-          method: 'POST',
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-            accept: 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timer);
+        let response: Response;
+        let rawBody: string;
+        try {
+          response = await bounded(fetcher(baseUrl, {
+            method: 'POST',
+            headers: {
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json',
+              accept: 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+          }));
+          // An error body is only used for server-side logging, so an unreadable one must not change the status mapping.
+          rawBody = await bounded(response.text()).catch((e: unknown) => {
+            if (response.ok) throw e;
+            return 'Could not read error body';
+          });
+        } finally {
+          clearTimeout(timer);
+        }
 
         if (!response.ok) {
           const status = response.status;
-          let errorText = '';
-          try {
-            errorText = await response.text();
-          } catch {
-            errorText = 'Could not read error body';
-          }
+          const errorText = rawBody;
 
           // The provider's body goes to the server log only (redacted). Customers get fixed messages, because
           // AnalyzerError.userMessage is what the browser receives.
@@ -93,7 +109,7 @@ export function createCloudflareGenerateFn(
           throw new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is not available right now because of a configuration problem on our side. Nothing was charged.', false);
         }
 
-        const data = (await response.json()) as {
+        const data = JSON.parse(rawBody) as {
           content?: Array<{ type: string; text?: string }>;
           usage?: { input_tokens?: number; output_tokens?: number };
           stop_reason?: string | null;

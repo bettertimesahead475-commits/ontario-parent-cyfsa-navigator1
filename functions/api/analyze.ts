@@ -63,6 +63,20 @@ function clampBudget(raw: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n >= 10_000 && n <= 300_000 ? n : fallback;
 }
 
+/** Time allowed past the latency budget before the pipeline is stopped regardless of what it is waiting on. */
+const HARD_DEADLINE_GRACE_MS = 5_000;
+/** How often the stream confirms the worker is alive. */
+const HEARTBEAT_INTERVAL_MS = 15_000;
+
+/** Rejects with makeError() if work does not settle within ms. The work is abandoned, not cancelled, so its late result is ignored. */
+export function withHardDeadline<T>(work: Promise<T>, ms: number, makeError: () => Error): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(makeError()), ms);
+  });
+  return Promise.race([work, expired]).finally(() => clearTimeout(timer));
+}
+
 export async function handleAnalyzeRequest(
   request: Request,
   env: AnalyzerEnv,
@@ -360,39 +374,68 @@ export async function handleAnalyzeRequest(
       }
     };
 
+    const streamStartedAt = Date.now();
+    const stageLog = (stage: string, extra: Record<string, unknown> = {}) => {
+      console.info('[analyzer_stage]', JSON.stringify({ requestId, mode, path: isForensic ? 'forensic' : 'quick', stage, elapsedMs: Date.now() - streamStartedAt, ...extra }));
+    };
+
+    // Liveness signal. A browser that stops receiving these knows the worker is gone, not just slow. Heartbeats carry
+    // no progress value, so the displayed percentage still moves only on real stage events.
+    const heartbeat = setInterval(() => {
+      void sendEvent('heartbeat', { requestId, elapsedMs: Date.now() - streamStartedAt });
+    }, HEARTBEAT_INTERVAL_MS);
+
     // Run execution in background stream writer
     const analysisTask = (async () => {
+      stageLog('started');
       try {
-        await sendEvent('stage', { stage: 'verifying_access', percent: 30, message: 'Verifying account authorization & entitlements...' });
+        await sendEvent('stage', { requestId, stage: 'verifying_access', percent: 30, message: 'Verifying account authorization & entitlements...' });
 
-        const report = await executeAnalysis(
-          async (stage, percent, message) => {
-            await sendEvent('stage', { stage, percent, message });
-          },
-          async (key, value) => {
-            await sendEvent('section', { section: key, ...value });
-          }
+        // Hard ceiling over the whole pipeline. The provider call has its own timeout, but the pipeline must end even if a
+        // step ignores its timeout. Without this ceiling the browser stays at its last percentage with no error and no result.
+        const report = await withHardDeadline(
+          executeAnalysis(
+            async (stage, percent, message) => {
+              stageLog('progress', { progressStage: stage, percent });
+              await sendEvent('stage', { requestId, stage, percent, message });
+            },
+            async (key, value) => {
+              await sendEvent('section', { requestId, section: key, ...value });
+            }
+          ),
+          analysisBudgetMs + HARD_DEADLINE_GRACE_MS,
+          () => new AnalyzerError('ANALYSIS_TIMED_OUT', 504, 'The analysis did not finish in time. Nothing was charged. Please try again.', true)
         );
+        stageLog('analysis_done');
 
         // Atomic finalization before delivering complete report
         const finalized = await finalize();
         if (!finalized) {
           throw new AnalyzerError('ANALYSIS_PERSISTENCE_FAILED', 503, 'Credit finalization failed. Result cannot be delivered.', false);
         }
+        stageLog('finalized');
 
         // Persist the completed job so a refresh can recover it (see ./_analysis-jobs.ts).
         await saveCompletedJob(env, { jobId: requestId, uid, report }, deps.fetcher || fetch);
+        stageLog('persisted');
 
+        // The report itself is sent unchanged, so the saved and streamed shapes stay identical.
         await sendEvent('complete', report);
+        stageLog('complete');
       } catch (err: any) {
-        await release();
         const code = err instanceof AnalyzerError ? err.code : 'ANALYSIS_FAILED';
         const message = err instanceof AnalyzerError ? err.userMessage : 'The analysis could not be completed. Nothing was charged. Please try again.';
         const retryable = err instanceof AnalyzerError ? err.retryable : true;
-        // The failure reason is saved, so a refreshed page shows it instead of a missing or stuck job.
-        await saveJobState(env, { jobId: requestId, uid, status: 'failed', error: { code, message, retryable } }, deps.fetcher || fetch);
-        await sendEvent('error', { error: message, code, retryable });
+        stageLog('failed', { code, retryable, errorName: err?.name ?? 'unknown' });
+        // Each step is guarded so the error event is always sent, even if releasing the credit or saving the job fails.
+        try { await release(); } catch (e) { console.error('[ANALYZER_RELEASE_FAILED]', e); }
+        try {
+          // The failure reason is saved, so a refreshed page shows it instead of a missing or stuck job.
+          await saveJobState(env, { jobId: requestId, uid, status: 'failed', error: { code, message, retryable } }, deps.fetcher || fetch);
+        } catch (e) { console.error('[ANALYSIS_JOB_SAVE_FAILED]', e instanceof Error ? e.name : 'error'); }
+        await sendEvent('error', { requestId, error: message, code, retryable });
       } finally {
+        clearInterval(heartbeat);
         try {
           await writer.close();
         } catch {}
