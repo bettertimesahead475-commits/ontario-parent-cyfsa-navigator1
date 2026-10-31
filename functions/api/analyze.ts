@@ -20,6 +20,7 @@ import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { saveCompletedJob, saveJobState } from './_analysis-jobs';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
+import { DEFAULT_QUICK_MODEL, DEFAULT_FORENSIC_MODEL } from '../../api/services/analyzerModels';
 import { runDirectAnalysis, isEligibleForDirectAnalysis, DIRECT_ANALYSIS_MAX_CHARS } from '../../api/services/directAnalyzer';
 import {
   runSectionedAnalysis,
@@ -232,9 +233,9 @@ export async function handleAnalyzeRequest(
 
   // Model selection
   const primaryModel = isForensic
-    ? (env.ANTHROPIC_FORENSIC_MODEL || 'claude-opus-5')
-    : (env.ANTHROPIC_QUICK_MODEL || 'claude-sonnet-5');
-  const verificationModel = env.ANTHROPIC_FORENSIC_MODEL || 'claude-opus-5';
+    ? (env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL)
+    : (env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL);
+  const verificationModel = env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL;
   const generate = deps.generate || createCloudflareGenerateFn(env, authFetcher);
 
   // Product latency budgets. Leave a small margin for report guards,

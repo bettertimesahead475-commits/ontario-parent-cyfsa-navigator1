@@ -33,19 +33,24 @@ export function createCloudflareGenerateFn(
     const wireModel = resolveAnthropicWireModel(approvedModel);
     const baseUrl = env.ANTHROPIC_API_URL || 'https://api.anthropic.com/v1/messages';
 
-    const maxRetries = options.retries ?? 1;
+    const maxRetries = options.retries ?? 0;
     let attempt = 0;
     let lastError: Error | null = null;
+    const overallStart = Date.now();
+    const overallBudget = options.timeoutMs > 0 ? options.timeoutMs : 60_000;
 
     while (attempt <= maxRetries) {
       attempt++;
+      const timeSpent = Date.now() - overallStart;
+      const remainingTime = overallBudget - timeSpent;
+      if (attempt > 1 && remainingTime <= 0) {
+        break;
+      }
+      const timeoutMs = Math.min(overallBudget, remainingTime);
+
       try {
-        const timeoutMs = options.timeoutMs > 0 ? options.timeoutMs : 60_000;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
-        // The deadline covers the whole call: headers, body and JSON parse. It also does not depend on fetch honouring
-        // the abort signal. Before this, the timer was cleared once headers arrived, so a body that never finished left the
-        // analysis waiting forever, with the browser stuck at its last progress value and no error ever sent.
         const deadline = new Promise<never>((_, reject) => {
           controller.signal.addEventListener(
             'abort',
@@ -53,11 +58,11 @@ export function createCloudflareGenerateFn(
             { once: true }
           );
         });
-        deadline.catch(() => undefined); // the rejection is consumed by bounded() below, never left unhandled
+        deadline.catch(() => undefined);
         const bounded = <T>(p: Promise<T>): Promise<T> => Promise.race([p, deadline]);
 
         const thinkingFields = buildThinkingRequestFields(wireModel, Boolean(options.enableThinking), options.thinkingBudget);
-        const requestBody = {
+        const requestBody: Record<string, unknown> = {
           model: wireModel,
           max_tokens: options.max_tokens || 8192,
           system: options.system,
@@ -70,7 +75,7 @@ export function createCloudflareGenerateFn(
 
         const startTime = Date.now();
         let response: Response;
-        let rawBody: string;
+        let rawBody = '';
         try {
           response = await bounded(fetcher(baseUrl, {
             method: 'POST',
@@ -78,16 +83,19 @@ export function createCloudflareGenerateFn(
               'x-api-key': apiKey,
               'anthropic-version': '2023-06-01',
               'content-type': 'application/json',
-              accept: 'application/json',
+              accept: 'application/json, text/event-stream',
             },
             body: JSON.stringify(requestBody),
             signal: controller.signal,
           }));
-          // An error body is only used for server-side logging, so an unreadable one must not change the status mapping.
-          rawBody = await bounded(response.text()).catch((e: unknown) => {
-            if (response.ok) throw e;
-            return 'Could not read error body';
-          });
+
+          const contentType = response.headers.get('content-type') || '';
+          if (!response.ok || !contentType.includes('text/event-stream')) {
+            rawBody = await bounded(response.text()).catch((e: unknown) => {
+              if (response.ok) throw e;
+              return 'Could not read error body';
+            });
+          }
         } finally {
           clearTimeout(timer);
         }
@@ -96,8 +104,6 @@ export function createCloudflareGenerateFn(
           const status = response.status;
           const errorText = rawBody;
 
-          // The provider's body goes to the server log only (redacted). Customers get fixed messages, because
-          // AnalyzerError.userMessage is what the browser receives.
           logAnalyzerDiagnostic(`provider HTTP ${status}`, new Error(errorText));
           if (status === 429) {
             throw new AnalyzerError('AI_RATE_LIMITED', 429, 'The AI service is busy right now. Please wait a moment and try again. Nothing was charged.', true);
@@ -111,24 +117,66 @@ export function createCloudflareGenerateFn(
           throw new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is not available right now because of a configuration problem on our side. Nothing was charged.', false);
         }
 
-        const data = JSON.parse(rawBody) as {
-          content?: Array<{ type: string; text?: string }>;
-          usage?: { input_tokens?: number; output_tokens?: number };
-          stop_reason?: string | null;
-        };
+        let text = '';
+        let stopReason: string | undefined;
+        let inputTokens = 0;
+        let outputTokens = 0;
 
-        const text = data.content?.filter((c) => c.type === 'text').map((c) => c.text).join('') || '';
-        const usage = {
-          input_tokens: data.usage?.input_tokens ?? 0,
-          output_tokens: data.usage?.output_tokens ?? 0,
-        };
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('text/event-stream') && response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let streamBuf = '';
+
+          while (true) {
+            const { done, value } = await bounded(reader.read());
+            if (done) break;
+            streamBuf += decoder.decode(value, { stream: true });
+            const events = streamBuf.split('\n\n');
+            streamBuf = events.pop() || '';
+
+            for (const rawEvent of events) {
+              const lines = rawEvent.split('\n');
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('data:')) {
+                  const dataStr = trimmed.slice(5).trim();
+                  if (!dataStr || dataStr === '[DONE]') continue;
+                  try {
+                    const evt = JSON.parse(dataStr);
+                    if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+                      text += evt.delta.text || '';
+                    } else if (evt.type === 'message_start' && evt.message?.usage) {
+                      inputTokens = evt.message.usage.input_tokens || 0;
+                    } else if (evt.type === 'message_delta') {
+                      if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason;
+                      if (evt.usage?.output_tokens) outputTokens = evt.usage.output_tokens;
+                    }
+                  } catch {
+                    // Ignore chunk parse error
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          const data = JSON.parse(rawBody) as {
+            content?: Array<{ type: string; text?: string }>;
+            usage?: { input_tokens?: number; output_tokens?: number };
+            stop_reason?: string | null;
+          };
+          text = data.content?.filter((c) => c.type === 'text').map((c) => c.text).join('') || '';
+          inputTokens = data.usage?.input_tokens ?? 0;
+          outputTokens = data.usage?.output_tokens ?? 0;
+          stopReason = data.stop_reason ?? undefined;
+        }
 
         return {
           text,
-          usage,
+          usage: { input_tokens: inputTokens, output_tokens: outputTokens },
           model: wireModel,
           durationMs: Date.now() - startTime,
-          stopReason: data.stop_reason ?? undefined,
+          stopReason,
         };
       } catch (err: any) {
         lastError = err;
@@ -136,7 +184,6 @@ export function createCloudflareGenerateFn(
           throw err;
         }
         if (attempt <= maxRetries) {
-          // Brief exponential backoff before retry
           await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt), 3000)));
           continue;
         }
@@ -146,8 +193,6 @@ export function createCloudflareGenerateFn(
     if (lastError instanceof AnalyzerError) {
       throw lastError;
     }
-    // Transport failures (timeouts, dropped connections) carry no customer-safe detail, so the message is fixed and the
-    // cause goes to the server log only.
     logAnalyzerDiagnostic(`provider transport after ${attempt} attempt(s)`, lastError ?? new Error('unknown'));
     throw new AnalyzerError(
       'AI_PROVIDER_TEMPORARILY_UNAVAILABLE',

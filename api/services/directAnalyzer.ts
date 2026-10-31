@@ -27,7 +27,7 @@ import {
 
 export const DIRECT_ANALYSIS_MAX_CHARS = 75_000;
 export const DIRECT_ANALYSIS_MIN_TIME_MS = 8_000;
-export const DIRECT_ANALYSIS_MAX_TOKENS = 8_192;
+export const DIRECT_ANALYSIS_MAX_TOKENS = 4_096;
 
 export interface DirectAnalysisOptions {
   mode: "fast";
