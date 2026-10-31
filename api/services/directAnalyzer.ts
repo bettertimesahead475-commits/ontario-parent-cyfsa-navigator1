@@ -26,7 +26,7 @@ import {
 } from "./analyzerSections.js";
 
 export const DIRECT_ANALYSIS_MAX_CHARS = 75_000;
-export const DIRECT_ANALYSIS_MIN_TIME_MS = 25_000;
+export const DIRECT_ANALYSIS_MIN_TIME_MS = 8_000;
 export const DIRECT_ANALYSIS_MAX_TOKENS = 5_000;
 
 export interface DirectAnalysisOptions {
@@ -42,7 +42,7 @@ export interface DirectAnalysisOptions {
 
 /**
  * Checks whether a document and execution context are eligible for direct-first analysis.
- * Eligible: Quick Review documents <= 75,000 characters with at least 25s remaining budget.
+ * Eligible: Quick Review documents <= 75,000 characters with at least 8s remaining budget.
  * Ineligible: Oversized documents (> 75k chars) or documents under tight deadlines.
  */
 export function isEligibleForDirectAnalysis(documentText: string, deadlineAt: number, now = Date.now): boolean {
