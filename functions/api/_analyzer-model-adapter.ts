@@ -49,9 +49,10 @@ export function createCloudflareGenerateFn(
       const timeoutMs = Math.max(1000, Math.min(overallBudget, remainingTime));
       const attemptStart = Date.now();
 
+      let activeTimer: ReturnType<typeof setTimeout> | undefined;
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        activeTimer = setTimeout(() => controller.abort(), timeoutMs);
         const deadline = new Promise<never>((_, reject) => {
           controller.signal.addEventListener(
             'abort',
@@ -66,6 +67,7 @@ export function createCloudflareGenerateFn(
         const requestBody: Record<string, unknown> = {
           model: wireModel,
           max_tokens: options.max_tokens || 8192,
+          stream: true,
           system: options.system,
           messages: options.messages.map((m) => ({
             role: m.role,
@@ -97,8 +99,6 @@ export function createCloudflareGenerateFn(
               return 'Could not read error body';
             });
           }
-        } finally {
-          clearTimeout(timer);
         }
 
         if (!response.ok) {
@@ -128,11 +128,13 @@ export function createCloudflareGenerateFn(
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let streamBuf = '';
+          let receivedMessageStop = false;
 
+          try {
           while (true) {
             const { done, value } = await bounded(reader.read());
             if (done) break;
-            streamBuf += decoder.decode(value, { stream: true });
+            streamBuf += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
             const events = streamBuf.split('\n\n');
             streamBuf = events.pop() || '';
 
@@ -149,16 +151,28 @@ export function createCloudflareGenerateFn(
                       text += evt.delta.text || '';
                     } else if (evt.type === 'message_start' && evt.message?.usage) {
                       inputTokens = evt.message.usage.input_tokens || 0;
+                    } else if (evt.type === 'error') {
+                      throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI provider interrupted the analysis. Nothing was charged.', true);
+                    } else if (evt.type === 'message_stop') {
+                      receivedMessageStop = true;
                     } else if (evt.type === 'message_delta') {
                       if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason;
                       if (evt.usage?.output_tokens) outputTokens = evt.usage.output_tokens;
                     }
-                  } catch {
-                    // Ignore chunk parse error
+                  } catch (parseError) {
+                    if (parseError instanceof AnalyzerError) throw parseError;
+                    throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an invalid streaming event. Nothing was charged.', false);
                   }
                 }
               }
             }
+          }
+          if (!receivedMessageStop || !text.trim()) {
+            throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', false);
+          }
+          } finally {
+            if (!receivedMessageStop) await reader.cancel().catch(() => undefined);
+            reader.releaseLock();
           }
         } else {
           const data = JSON.parse(rawBody) as {
@@ -207,6 +221,8 @@ export function createCloudflareGenerateFn(
           await new Promise((r) => setTimeout(r, backoffMs));
           continue;
         }
+      } finally {
+        if (activeTimer !== undefined) clearTimeout(activeTimer);
       }
     }
 
