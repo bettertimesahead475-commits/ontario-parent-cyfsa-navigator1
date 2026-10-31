@@ -46,7 +46,8 @@ export function createCloudflareGenerateFn(
       if (attempt > 1 && remainingTime <= 0) {
         break;
       }
-      const timeoutMs = Math.min(overallBudget, remainingTime);
+      const timeoutMs = Math.max(1000, Math.min(overallBudget, remainingTime));
+      const attemptStart = Date.now();
 
       try {
         const controller = new AbortController();
@@ -183,8 +184,27 @@ export function createCloudflareGenerateFn(
         if (err instanceof AnalyzerError && !err.retryable) {
           throw err;
         }
+
+        // Historical protection from commit b3b08e5c: suppress retries if an attempt already took a lengthy timeout (>=30s)
+        const isTimeout =
+          err?.name === 'TimeoutError' ||
+          err?.name === 'AbortError' ||
+          String(err?.message || '').toLowerCase().includes('timed out') ||
+          String(err?.message || '').toLowerCase().includes('deadline') ||
+          String(err?.message || '').toLowerCase().includes('timeout');
+        const wasLongTimeout = isTimeout && (Date.now() - attemptStart >= 30_000);
+        if (wasLongTimeout) {
+          logAnalyzerDiagnostic(`suppressing retry after lengthy provider timeout (${Date.now() - attemptStart} ms)`, err);
+          break;
+        }
+
         if (attempt <= maxRetries) {
-          await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt), 3000)));
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt), 3000);
+          const remainingAfter = overallBudget - (Date.now() - overallStart);
+          if (remainingAfter <= backoffMs) {
+            break;
+          }
+          await new Promise((r) => setTimeout(r, backoffMs));
           continue;
         }
       }
