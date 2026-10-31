@@ -215,7 +215,10 @@ export async function handleAnalyzeRequest(
   const verificationModel = env.ANTHROPIC_FORENSIC_MODEL || 'claude-opus-5';
   const generate = deps.generate || createCloudflareGenerateFn(env, authFetcher);
 
-  const aiDeadlineAt = Date.now() + 265_000;
+  // Product latency budgets. Leave a small margin for report guards,
+  // credit finalization and persistence; a deadline is not a completion guarantee.
+  const analysisBudgetMs = isForensic ? 60_000 : 15_000;
+  const aiDeadlineAt = Date.now() + analysisBudgetMs - 2_000;
 
   // Execute Analysis Pipeline
   const executeAnalysis = async (
