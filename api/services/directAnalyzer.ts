@@ -29,6 +29,13 @@ export const DIRECT_ANALYSIS_MAX_CHARS = 75_000;
 export const DIRECT_ANALYSIS_MIN_TIME_MS = 8_000;
 export const DIRECT_ANALYSIS_MAX_TOKENS = 4_096;
 
+export interface DirectFailurePartialData {
+  text?: string;
+  usage?: GenerateResult["usage"];
+  stopReason?: string;
+  durationMs?: number;
+}
+
 export interface DirectAnalysisOptions {
   mode: "fast";
   documentText: string;
@@ -38,7 +45,11 @@ export interface DirectAnalysisOptions {
   requestId: string;
   onSectionComplete?: (key: SectionKey, value: Record<string, any>, completed: number, total: number) => Promise<void> | void;
   now?: () => number;
-  onFailureReason?: (reason: "oversized" | "timeout" | "max_tokens" | "malformed_json" | "validation_failed", details?: string) => void;
+  onFailureReason?: (
+    reason: "oversized" | "timeout" | "max_tokens" | "malformed_json" | "validation_failed",
+    details?: string,
+    partialData?: DirectFailurePartialData
+  ) => void;
 }
 
 /**
@@ -178,14 +189,24 @@ export async function runDirectAnalysis(opts: DirectAnalysisOptions): Promise<Se
 
   if (result.stopReason === "max_tokens") {
     logAnalyzerDiagnostic("direct-first analysis", new Error("Hit max_tokens limit"));
-    opts.onFailureReason?.("max_tokens", "Model output hit max_tokens limit");
+    opts.onFailureReason?.("max_tokens", "Model output hit max_tokens limit", {
+      text: result.text,
+      usage: result.usage,
+      stopReason: result.stopReason,
+      durationMs: result.durationMs,
+    });
     return null;
   }
 
   const parsed = parseJsonObject(result.text);
   if (!parsed || typeof parsed !== "object") {
     logAnalyzerDiagnostic("direct-first analysis", new Error("Did not return a valid JSON object"));
-    opts.onFailureReason?.("malformed_json", "Model response could not be parsed as valid JSON");
+    opts.onFailureReason?.("malformed_json", "Model response could not be parsed as valid JSON", {
+      text: result.text,
+      usage: result.usage,
+      stopReason: result.stopReason,
+      durationMs: result.durationMs,
+    });
     return null;
   }
 
@@ -193,28 +214,48 @@ export async function runDirectAnalysis(opts: DirectAnalysisOptions): Promise<Se
   const vOverview = validateOverview(parsed);
   if (vOverview.ok === false) {
     logAnalyzerDiagnostic("direct-first overview validation", new Error(vOverview.problems.join("; ")));
-    opts.onFailureReason?.("validation_failed", `Overview: ${vOverview.problems.join("; ")}`);
+    opts.onFailureReason?.("validation_failed", `Overview: ${vOverview.problems.join("; ")}`, {
+      text: result.text,
+      usage: result.usage,
+      stopReason: result.stopReason,
+      durationMs: result.durationMs,
+    });
     return null;
   }
 
   const vRedFlags = validateRedFlags(parsed, "fast");
   if (vRedFlags.ok === false) {
     logAnalyzerDiagnostic("direct-first redFlags validation", new Error(vRedFlags.problems.join("; ")));
-    opts.onFailureReason?.("validation_failed", `RedFlags: ${vRedFlags.problems.join("; ")}`);
+    opts.onFailureReason?.("validation_failed", `RedFlags: ${vRedFlags.problems.join("; ")}`, {
+      text: result.text,
+      usage: result.usage,
+      stopReason: result.stopReason,
+      durationMs: result.durationMs,
+    });
     return null;
   }
 
   const vChronology = validateChronology(parsed, "fast");
   if (vChronology.ok === false) {
     logAnalyzerDiagnostic("direct-first chronology validation", new Error(vChronology.problems.join("; ")));
-    opts.onFailureReason?.("validation_failed", `Chronology: ${vChronology.problems.join("; ")}`);
+    opts.onFailureReason?.("validation_failed", `Chronology: ${vChronology.problems.join("; ")}`, {
+      text: result.text,
+      usage: result.usage,
+      stopReason: result.stopReason,
+      durationMs: result.durationMs,
+    });
     return null;
   }
 
   const vGuidance = validateGuidance(parsed);
   if (vGuidance.ok === false) {
     logAnalyzerDiagnostic("direct-first guidance validation", new Error(vGuidance.problems.join("; ")));
-    opts.onFailureReason?.("validation_failed", `Guidance: ${vGuidance.problems.join("; ")}`);
+    opts.onFailureReason?.("validation_failed", `Guidance: ${vGuidance.problems.join("; ")}`, {
+      text: result.text,
+      usage: result.usage,
+      stopReason: result.stopReason,
+      durationMs: result.durationMs,
+    });
     return null;
   }
 
@@ -248,4 +289,122 @@ export async function runDirectAnalysis(opts: DirectAnalysisOptions): Promise<Se
     sectionTimingsMs,
     attempts: { direct: 1 },
   };
+}
+
+export interface SalvagedDirectSections {
+  salvagedReport: Record<string, any>;
+  completedKeys: SectionKey[];
+  missingKeys: SectionKey[];
+}
+
+/**
+ * Attempts to repair and parse a truncated JSON string by completing unclosed string literals
+ * and matching unbalanced brackets/braces from an open-bracket stack.
+ */
+export function repairTruncatedJsonObject(text: string): Record<string, any> | null {
+  if (!text) return null;
+  let t = text.trim();
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/i);
+  if (fenced) t = fenced[1].trim();
+  const start = t.indexOf("{");
+  if (start < 0) return null;
+  t = t.slice(start);
+
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      stack.push("}");
+    } else if (ch === "[") {
+      stack.push("]");
+    } else if (ch === "}" || ch === "]") {
+      if (stack.length > 0 && stack[stack.length - 1] === ch) {
+        stack.pop();
+      }
+    }
+  }
+
+  let repaired = t;
+  if (inString) repaired += '"';
+
+  // Strip trailing incomplete property fragments e.g. , "key": or trailing commas
+  repaired = repaired
+    .replace(/,\s*"[^"]*"\s*:\s*$/, "")
+    .replace(/,\s*"[^"]*$/, "")
+    .replace(/:\s*"[^"]*$/, ': ""')
+    .replace(/,\s*$/, "");
+
+  while (stack.length > 0) {
+    repaired += stack.pop();
+  }
+
+  return parseJsonObject(repaired);
+}
+
+/**
+ * Inspects raw model output from a truncated or partially valid direct-first analysis pass,
+ * validating each section candidate independently against the established strict legal validators.
+ * Returns only genuine, validated sections in salvagedReport, and lists remaining missingKeys.
+ */
+export function salvagePartialDirectSections(
+  rawText: string,
+  mode: "fast" | "full" = "fast"
+): SalvagedDirectSections {
+  const salvagedReport: Record<string, any> = {};
+  const completedKeys: SectionKey[] = [];
+  const allKeys: SectionKey[] =
+    mode === "full"
+      ? ["overview", "redFlags", "chronology", "guidance", "thresholds", "timeline"]
+      : ["overview", "redFlags", "chronology", "guidance"];
+
+  if (!rawText || !rawText.trim()) {
+    return { salvagedReport, completedKeys, missingKeys: allKeys };
+  }
+
+  const parsed = parseJsonObject(rawText) || repairTruncatedJsonObject(rawText);
+  if (!parsed || typeof parsed !== "object") {
+    return { salvagedReport, completedKeys, missingKeys: allKeys };
+  }
+
+  const vOverview = validateOverview(parsed);
+  if (vOverview.ok === true) {
+    Object.assign(salvagedReport, vOverview.value);
+    completedKeys.push("overview");
+  }
+
+  const vRedFlags = validateRedFlags(parsed, mode);
+  if (vRedFlags.ok === true && vRedFlags.value.redFlags && vRedFlags.value.redFlags.length > 0) {
+    Object.assign(salvagedReport, vRedFlags.value);
+    completedKeys.push("redFlags");
+  }
+
+  const vChronology = validateChronology(parsed, mode);
+  if (
+    vChronology.ok === true &&
+    vChronology.value.chronology &&
+    vChronology.value.chronology.length > 0
+  ) {
+    Object.assign(salvagedReport, vChronology.value);
+    completedKeys.push("chronology");
+  }
+
+  const vGuidance = validateGuidance(parsed);
+  if (vGuidance.ok === true) {
+    Object.assign(salvagedReport, vGuidance.value);
+    completedKeys.push("guidance");
+  }
+
+  const missingKeys = allKeys.filter((k) => !completedKeys.includes(k));
+  return { salvagedReport, completedKeys, missingKeys };
 }

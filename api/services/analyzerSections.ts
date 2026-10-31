@@ -641,6 +641,8 @@ export interface SectionRunOptions {
   onSectionComplete?: (key: SectionKey, value: Record<string, any>, completed: number, total: number) => Promise<void> | void;
   onVerificationStart?: () => void;
   now?: () => number;
+  targetSections?: SectionKey[];
+  initialSections?: Record<string, any>;
 }
 
 export interface SectionRunResult {
@@ -661,7 +663,7 @@ function addUsage(acc: SectionRunResult["usageByModel"], model: string, usage?: 
   acc[model] = cur;
 }
 
-async function runOneSection(
+export async function runOneSection(
   key: SectionKey,
   opts: SectionRunOptions,
   usage: SectionRunResult["usageByModel"]
@@ -734,14 +736,16 @@ async function runOneSection(
 }
 
 export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<SectionRunResult> {
-  const keys = opts.mode === "full" ? FORENSIC_SECTIONS : QUICK_SECTIONS;
+  const defaultKeys = opts.mode === "full" ? FORENSIC_SECTIONS : QUICK_SECTIONS;
+  const keys = opts.targetSections && opts.targetSections.length > 0 ? opts.targetSections : defaultKeys;
   const usageByModel: SectionRunResult["usageByModel"] = {};
   const sectionTimingsMs: Record<string, number> = {};
   const attempts: Record<string, number> = {};
   const now = opts.now || Date.now;
   const started = now();
-  let completed = 0;
-  const report: Record<string, any> = {};
+  const report: Record<string, any> = { ...(opts.initialSections || {}) };
+  let completed = Object.keys(opts.initialSections || {}).length;
+  const totalCount = keys.length + completed;
 
   // allSettled-style: wait for every section so a failure never leaves requests running unobserved.
   const outcomes = await Promise.all(
@@ -752,7 +756,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
         attempts[key] = n;
         Object.assign(report, value);
         completed++;
-        await opts.onSectionComplete?.(key, value, completed, keys.length);
+        await opts.onSectionComplete?.(key, value, completed, totalCount);
         return null;
       } catch (err) {
         return err;

@@ -21,7 +21,13 @@ import { saveCompletedJob, saveJobState } from './_analysis-jobs';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
 import { DEFAULT_QUICK_MODEL, DEFAULT_FORENSIC_MODEL } from '../../api/services/analyzerModels';
-import { runDirectAnalysis, isEligibleForDirectAnalysis, DIRECT_ANALYSIS_MAX_CHARS } from '../../api/services/directAnalyzer';
+import {
+  runDirectAnalysis,
+  isEligibleForDirectAnalysis,
+  salvagePartialDirectSections,
+  DIRECT_ANALYSIS_MAX_CHARS,
+  type DirectFailurePartialData,
+} from '../../api/services/directAnalyzer';
 import {
   runSectionedAnalysis,
   sectionTitle,
@@ -292,6 +298,7 @@ export async function handleAnalyzeRequest(
 
       let directFailureReason: "oversized" | "timeout" | "max_tokens" | "malformed_json" | "validation_failed" | undefined;
       let directFailureDetails: string | undefined;
+      let directPartialData: DirectFailurePartialData | undefined;
       const directStartedAt = Date.now();
 
       try {
@@ -309,9 +316,10 @@ export async function handleAnalyzeRequest(
             await onSection?.(key, value);
             await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent, message);
           },
-          onFailureReason: (reason, details) => {
+          onFailureReason: (reason, details, partialData) => {
             directFailureReason = reason;
             directFailureDetails = details;
+            directPartialData = partialData;
           },
         });
         if (run) {
@@ -325,44 +333,136 @@ export async function handleAnalyzeRequest(
 
       if (!run) {
         console.warn('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'rejected', reason: directFailureReason }));
-        if (directFailureReason === 'max_tokens') {
+
+        // Intelligent Truncation & Partial Section Recovery:
+        // When direct analysis truncates or partially parses, salvage any already complete,
+        // strictly validated sections. If at least one section is salvageable and remaining
+        // time budget is sufficient (>= 10,000ms), fetch only the missing sections concurrently.
+        const remainingTimeMs = aiDeadlineAt - Date.now();
+        if (
+          remainingTimeMs >= 10_000 &&
+          (directFailureReason === 'max_tokens' ||
+           directFailureReason === 'malformed_json' ||
+           directFailureReason === 'validation_failed')
+        ) {
+          const rawText = directPartialData?.text || '';
+          const salvaged = salvagePartialDirectSections(rawText, 'fast');
+
+          if (salvaged.completedKeys.length > 0) {
+            console.info('[analyzer_truncation_recovery]', JSON.stringify({
+              requestId,
+              reason: directFailureReason,
+              completedKeys: salvaged.completedKeys,
+              missingKeys: salvaged.missingKeys,
+              remainingTimeMs,
+            }));
+
+            // Emit verified events for salvaged sections so user sees progression
+            for (let i = 0; i < salvaged.completedKeys.length; i++) {
+              const key = salvaged.completedKeys[i];
+              const value = { [key]: salvaged.salvagedReport[key] };
+              await onSection?.(key, value);
+              const percent = 35 + Math.round(((i + 1) / 4) * 60);
+              await onProgress?.('reviewing_evidence', percent, `Validated section: ${sectionTitle(key)}.`);
+            }
+
+            if (salvaged.missingKeys.length === 0) {
+              // Complete report salvaged directly from repaired JSON!
+              run = {
+                report: salvaged.salvagedReport,
+                durationMs: Date.now() - directStartedAt,
+                usageByModel: {
+                  [primaryModel]: {
+                    inputTokens: directPartialData?.usage?.input_tokens || 0,
+                    outputTokens: directPartialData?.usage?.output_tokens || 0,
+                  },
+                },
+                sectionTimingsMs: { direct_salvaged: Date.now() - directStartedAt },
+                attempts: { direct: 1 },
+              };
+            } else {
+              // Concurrently run only the missing sections
+              try {
+                await onProgress?.(
+                  'reviewing_evidence',
+                  35 + Math.round((salvaged.completedKeys.length / 4) * 60),
+                  `Recovering remaining section(s): ${salvaged.missingKeys.map(k => sectionTitle(k)).join(', ')}...`
+                );
+
+                const sectionedResult = await runSectionedAnalysis({
+                  mode: 'fast',
+                  documentText,
+                  primaryModel,
+                  generate,
+                  deadlineAt: aiDeadlineAt,
+                  requestId,
+                  targetSections: salvaged.missingKeys,
+                  initialSections: salvaged.salvagedReport,
+                  onSectionComplete: async (key, value, completed, total) => {
+                    const percent = 35 + Math.round((completed / total) * 60);
+                    const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
+                    await onSection?.(key, value);
+                    await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent, message);
+                  },
+                });
+
+                run = sectionedResult;
+                console.info('[analyzer_truncation_recovery]', JSON.stringify({
+                  requestId,
+                  outcome: 'recovery_success',
+                  totalElapsedMs: Date.now() - directStartedAt,
+                }));
+              } catch (recoveryErr: any) {
+                console.warn('[analyzer_truncation_recovery]', JSON.stringify({
+                  requestId,
+                  outcome: 'recovery_failed',
+                  error: recoveryErr?.message,
+                }));
+              }
+            }
+          }
+        }
+
+        if (!run) {
+          if (directFailureReason === 'max_tokens') {
+            throw new AnalyzerError(
+              'AI_RESPONSE_INVALID',
+              422,
+              'The AI analysis model output was truncated before completion. Nothing was charged. Please try again.',
+              true
+            );
+          }
+          if (directFailureReason === 'malformed_json') {
+            throw new AnalyzerError(
+              'AI_RESPONSE_INVALID',
+              422,
+              'The AI analysis model generated an invalid response structure. Nothing was charged. Please try again.',
+              true
+            );
+          }
+          if (directFailureReason === 'validation_failed') {
+            throw new AnalyzerError(
+              'AI_RESPONSE_INVALID',
+              422,
+              `The AI analysis model output did not satisfy legal schema requirements (${directFailureDetails || 'schema error'}). Nothing was charged. Please try again.`,
+              true
+            );
+          }
+          if (directFailureReason === 'timeout') {
+            throw new AnalyzerError(
+              'ANALYSIS_TIMED_OUT',
+              408,
+              'Analysis could not be completed within the available time budget. Nothing was charged.',
+              true
+            );
+          }
           throw new AnalyzerError(
             'AI_RESPONSE_INVALID',
             422,
-            'The AI analysis model output was truncated before completion. Nothing was charged. Please try again.',
+            'Quick Review could not be completed in a single pass. Nothing was charged. Please try again or select Forensic In-Depth mode.',
             true
           );
         }
-        if (directFailureReason === 'malformed_json') {
-          throw new AnalyzerError(
-            'AI_RESPONSE_INVALID',
-            422,
-            'The AI analysis model generated an invalid response structure. Nothing was charged. Please try again.',
-            true
-          );
-        }
-        if (directFailureReason === 'validation_failed') {
-          throw new AnalyzerError(
-            'AI_RESPONSE_INVALID',
-            422,
-            `The AI analysis model output did not satisfy legal schema requirements (${directFailureDetails || 'schema error'}). Nothing was charged. Please try again.`,
-            true
-          );
-        }
-        if (directFailureReason === 'timeout') {
-          throw new AnalyzerError(
-            'ANALYSIS_TIMED_OUT',
-            408,
-            'Analysis could not be completed within the available time budget. Nothing was charged.',
-            true
-          );
-        }
-        throw new AnalyzerError(
-          'AI_RESPONSE_INVALID',
-          422,
-          'Quick Review could not be completed in a single pass. Nothing was charged. Please try again or select Forensic In-Depth mode.',
-          true
-        );
       }
     } else {
       // Forensic In-Depth mode: multi-pass sectioned pipeline with Opus verification
