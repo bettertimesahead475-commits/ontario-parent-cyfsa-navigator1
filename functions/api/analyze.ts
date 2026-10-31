@@ -249,9 +249,12 @@ export async function handleAnalyzeRequest(
         console.info('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'success' }));
       } catch (err: any) {
         console.warn('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'fallback' }));
-        if (err instanceof AnalyzerError && !err.retryable) throw err;
-        logAnalyzerDiagnostic('direct-first analysis failed, falling back to sectioned pipeline', err);
-        run = null;
+        // Provider failures must never trigger a second, multi-call analysis.
+        // They may already have consumed billable tokens, and retrying here
+        // compounds latency and cost. Only a validated direct response that
+        // returns null may proceed to the sectioned fallback.
+        logAnalyzerDiagnostic('direct-first analysis failed', err);
+        throw err;
       }
     }
 
