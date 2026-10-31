@@ -52,7 +52,6 @@ export function createCloudflareGenerateFn(
             role: m.role,
             content: m.content.map((c) => (typeof c === 'string' ? c : c.text)).join('\n'),
           })),
-          temperature: 0,
         };
 
         const startTime = Date.now();
