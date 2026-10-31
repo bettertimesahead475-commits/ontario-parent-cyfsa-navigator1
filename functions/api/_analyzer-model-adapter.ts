@@ -131,7 +131,7 @@ export function createCloudflareGenerateFn(
           let receivedMessageStop = false;
 
           try {
-          while (true) {
+          while (!receivedMessageStop) {
             const { done, value } = await bounded(reader.read());
             if (done) break;
             streamBuf += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
@@ -171,7 +171,9 @@ export function createCloudflareGenerateFn(
             throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', false);
           }
           } finally {
-            if (!receivedMessageStop) await reader.cancel().catch(() => undefined);
+            // Anthropic message_stop is the protocol terminator; do not wait for the
+            // HTTP connection to close after a complete message.
+            await reader.cancel().catch(() => undefined);
             reader.releaseLock();
           }
         } else {
