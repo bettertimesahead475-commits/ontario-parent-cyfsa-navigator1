@@ -124,13 +124,18 @@ export async function handleAnalyzeRequest(
     );
   }
   const uid = identity.uid;
+  // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
+  // No client-supplied role, email or session can grant this entitlement.
+  const isOwner = identity.emailVerified && identity.email?.toLowerCase() === 'mr.pelkie@gmail.com';
 
   // Set up RPC transport
   const rpc = deps.rpc || createStagingCreditRpc(env, authFetcher);
 
   // Reserve credits according to user tier
   let reservationId: string | null = null;
-  if (sessionId) {
+  if (isOwner) {
+    // Owner requests have no paid/free credit reservation; normal authentication and AI limits still apply.
+  } else if (sessionId) {
     const sessionRead = await readVerifiedPaidSession(env, uid, sessionId, authFetcher);
     if (sessionRead.status !== 'verified') {
       return Response.json(
@@ -288,6 +293,7 @@ export async function handleAnalyzeRequest(
 
   // Helper to finalize credits
   const finalize = async (): Promise<boolean> => {
+    if (isOwner) return true;
     if (sessionId) {
       const res = await finalizePaidReservation(sessionId, requestId, rpc);
       return res.status === 'consumed';
@@ -299,7 +305,7 @@ export async function handleAnalyzeRequest(
 
   // Helper to release credits on error
   const release = async (): Promise<void> => {
-    if (!reservationId) return;
+    if (isOwner || !reservationId) return;
     try {
       if (sessionId) {
         await releasePaidReservation(sessionId, requestId, reservationId, rpc);
