@@ -24,4 +24,14 @@ describe("Cloudflare Anthropic adapter: provider errors", () => {
     await run.catch(() => {});
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+
+  it("a timed-out or dropped provider connection ends as a retryable error with a fixed message", async () => {
+    const fetcher = vi.fn(async () => { throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" }); });
+    const gen = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: "sk-ant-test-key" }, fetcher as any);
+    const err: any = await gen({ system: "s", messages: [{ role: "user", content: [{ type: "text", text: "x" }] }], max_tokens: 100, timeoutMs: 5000, retries: 0, requestId: "r", stage: "x", mode: "fast" } as any, "claude-sonnet-5").catch((e) => e);
+    expect(err.code).toBe("AI_PROVIDER_TEMPORARILY_UNAVAILABLE");
+    expect(err.retryable).toBe(true);
+    expect(err.userMessage).toMatch(/did not respond in time/);
+    expect(err.userMessage).not.toMatch(/aborted|timeout/i);
+  });
 });

@@ -128,10 +128,13 @@ export function createCloudflareGenerateFn(
     if (lastError instanceof AnalyzerError) {
       throw lastError;
     }
+    // Transport failures (timeouts, dropped connections) carry no customer-safe detail, so the message is fixed and the
+    // cause goes to the server log only.
+    logAnalyzerDiagnostic(`provider transport after ${attempt} attempt(s)`, lastError ?? new Error('unknown'));
     throw new AnalyzerError(
       'AI_PROVIDER_TEMPORARILY_UNAVAILABLE',
       503,
-      `AI generation failed after ${attempt} attempts: ${lastError?.message || 'Unknown error'}`,
+      'The AI analysis engine did not respond in time. Please try again shortly. Nothing was charged.',
       true
     );
   };
