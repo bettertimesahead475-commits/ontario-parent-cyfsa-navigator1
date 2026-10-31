@@ -79,7 +79,7 @@ export function createCloudflareGenerateFn(
         const startTime = Date.now();
         let response: Response;
         let rawBody = '';
-        try {
+        {
           response = await bounded(fetcher(baseUrl, {
             method: 'POST',
             headers: {
