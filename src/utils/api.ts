@@ -113,9 +113,9 @@ export async function readAnalysisEventStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let finalReport: any = null;
-  // The server sends a heartbeat every 5 s, so 45 s of silence means the connection is gone.
+  // Cloudflare can be silent during long model calls; avoid false 45-second disconnects.
   // The overall cap sits above the server's 300 s function limit.
-  const inactivityTimeoutMs = options?.inactivityTimeoutMs ?? 45000;
+  const inactivityTimeoutMs = options?.inactivityTimeoutMs ?? 280000;
   const maxDurationMs = options?.maxDurationMs ?? 330000;
   const startOverall = Date.now();
 
