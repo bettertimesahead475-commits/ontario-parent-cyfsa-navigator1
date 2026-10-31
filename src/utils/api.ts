@@ -285,14 +285,9 @@ export async function pollAnalysisJob(
     }
     if (res.status === 404) {
       // The record may not be written yet right after the request starts; then it truly does not exist.
-      if (++notFoundCount >= 6) {
-        throw new ApiResponseError(
-          "This analysis never started on the server (for example, the request was refused). Nothing was charged. Please start it again.",
-          404,
-          "JOB_NOT_FOUND",
-          false
-        );
-      }
+      notFoundCount++;
+      // A 404/pending result is normal while Cloudflare has not yet saved
+      // the completed job. Never infer failure or start a new analysis here.
       await sleep(intervalMs);
       continue;
     }
@@ -309,14 +304,9 @@ export async function pollAnalysisJob(
       };
     }
     if (job?.status === "pending") {
-      if (++notFoundCount >= 6) {
-        throw new ApiResponseError(
-          "This analysis never started on the server (for example, the request was refused). Nothing was charged. Please start it again.",
-          404,
-          "JOB_NOT_FOUND",
-          false
-        );
-      }
+      notFoundCount++;
+      // A 404/pending result is normal while Cloudflare has not yet saved
+      // the completed job. Never infer failure or start a new analysis here.
     } else if (job) {
       options.onProgress?.(job);
     }
