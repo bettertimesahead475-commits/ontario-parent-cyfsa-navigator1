@@ -4555,12 +4555,21 @@ export default function DocumentAnalyzerTab() {
                         </div>
                       )}
 
+                      {/* Findings are summarized above; this panel supplies the supporting legal assessment and next actions. */}
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-1">
+                        <h5 className="font-display font-bold text-sm text-slate-900">Findings &amp; Legal Assessment</h5>
+                        <p className="text-xs text-slate-600">The quick flags above identify potential concerns. The following checks explain the relevant protection thresholds, evidence to verify, missing support, and questions for counsel. These are preliminary document observations, not court findings.</p>
+                      </div>
+
                       {/* Immediate Removal Checks */}
                       <div className="space-y-3 pt-2 border-t border-gray-100">
                         <h5 className="font-display font-medium text-xs uppercase tracking-wider text-slate-700">
                           Immediate Life-Safety Protection Thresholds
                         </h5>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {selectedReport.thresholdAnalysis.length === 0 && (
+                            <p className="col-span-full text-xs text-slate-600 rounded-lg border border-slate-200 bg-slate-50 p-3">{selectedReport.modelMetadata?.mode === "full" ? "No threshold assessments were returned. This does not establish that protection grounds are absent; review the source document and seek legal advice." : "Detailed statutory threshold assessment is not generated in Quick Review. Run Forensic In-Depth for this assessment."}</p>
+                          )}
                           {selectedReport.thresholdAnalysis.map((thresh, idx) => (
                             <div key={idx} className="p-3 bg-white border border-gray-100 rounded-lg space-y-1.5">
                               <div className="flex justify-between items-center text-[10px] font-sans text-slate-600 font-semibold uppercase">
@@ -4602,6 +4611,7 @@ export default function DocumentAnalyzerTab() {
                         <div className="space-y-2">
                           <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">1. Verify Checks</h6>
                           <ul className="space-y-1.5">
+                            {selectedReport.whatToVerify.length === 0 && <li className="text-xs text-slate-500">No verification checks supplied in this report; this is not a finding that none exist.</li>}
                             {selectedReport.whatToVerify.map((item, i) => (
                               <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
                                 <span className="text-brand-600 font-bold shrink-0 mt-0.5">☐</span>
@@ -4615,6 +4625,7 @@ export default function DocumentAnalyzerTab() {
                         <div className="space-y-2">
                           <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">2. Elements Missing</h6>
                           <ul className="space-y-1.5">
+                            {selectedReport.whatIsMissing.length === 0 && <li className="text-xs text-slate-500">No missing evidence supplied in this report; this is not a finding that none exist.</li>}
                             {selectedReport.whatIsMissing.map((item, i) => (
                               <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
                                 <span className="text-rose-500 font-bold shrink-0 mt-0.5">⚠</span>
@@ -4628,6 +4639,7 @@ export default function DocumentAnalyzerTab() {
                         <div className="space-y-2">
                           <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">3. Ask Attorney</h6>
                           <ul className="space-y-1.5">
+                            {selectedReport.whatToAskALawyer.length === 0 && <li className="text-xs text-slate-500">No questions for counsel supplied in this report; this is not a finding that none exist.</li>}
                             {selectedReport.whatToAskALawyer.map((item, i) => (
                               <li key={i} className="text-xs text-brand-900 bg-brand-50/40 p-2.5 rounded-lg border border-brand-100 leading-relaxed flex items-start gap-1.5">
                                 <strong className="shrink-0 mt-0.5">Q:</strong>
