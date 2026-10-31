@@ -228,6 +228,7 @@ export async function handleAnalyzeRequest(
       isEligibleForDirectAnalysis(documentText, aiDeadlineAt);
 
     if (directEligible) {
+      const directStartedAt = Date.now();
       try {
         await onProgress?.('reviewing_evidence', 40, 'Conducting direct evidence audit and analysis...');
         run = await runDirectAnalysis({
@@ -244,7 +245,9 @@ export async function handleAnalyzeRequest(
             await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent, message);
           },
         });
+        console.info('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'success' }));
       } catch (err: any) {
+        console.warn('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'fallback' }));
         if (err instanceof AnalyzerError && !err.retryable) throw err;
         logAnalyzerDiagnostic('direct-first analysis failed, falling back to sectioned pipeline', err);
         run = null;
@@ -252,6 +255,7 @@ export async function handleAnalyzeRequest(
     }
 
     if (!run) {
+      const sectionedStartedAt = Date.now();
       await onProgress?.('reviewing_evidence', 35, 'Analyzing document across evidence sections...');
       run = await runSectionedAnalysis({
         mode,
@@ -272,6 +276,7 @@ export async function handleAnalyzeRequest(
           void onProgress?.('verifying_findings', 88, 'Independent Claude Opus verification of high-impact findings...');
         },
       });
+      console.info('[analyzer_latency]', JSON.stringify({ path: 'sectioned', elapsedMs: Date.now() - sectionedStartedAt, outcome: 'success' }));
     }
 
     await onProgress?.('preparing_report', 96, 'Validating quotations and assembling the report...');
