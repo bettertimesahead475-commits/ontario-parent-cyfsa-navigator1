@@ -138,4 +138,70 @@ describe('Cloudflare Anthropic Model Adapter', () => {
 
     expect(mockFetcher).toHaveBeenCalledTimes(1);
   });
+  it('injects thinking: disabled and defaults max_tokens to 8192 for fast structured analysis', async () => {
+    let capturedBody: any = null;
+    const mockFetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: '{"status":"ok"}' }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+          stop_reason: 'end_turn',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    await generate(
+      {
+        system: 'sys prompt',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'evidence test' }] }],
+        max_tokens: 0,
+        timeoutMs: 5000,
+        requestId: 'req_model_config_test',
+        stage: 'direct_full_analysis',
+        mode: 'fast',
+      },
+      'claude-sonnet-5'
+    );
+
+    expect(capturedBody.model).toBe('claude-sonnet-5');
+    expect(capturedBody.max_tokens).toBe(8192);
+    expect(capturedBody.thinking).toEqual({ type: 'disabled' });
+  });
+
+  it('configures low effort on models rejecting disabled thinking', async () => {
+    let capturedBody: any = null;
+    const mockFetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: '{"status":"ok"}' }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+          stop_reason: 'end_turn',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    await generate(
+      {
+        system: 'sys prompt',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'evidence test' }] }],
+        max_tokens: 4096,
+        timeoutMs: 5000,
+        requestId: 'req_model_rejecting_test',
+        stage: 'direct_full_analysis',
+        mode: 'fast',
+      },
+      'claude-sonnet-5-5'
+    );
+
+    expect(capturedBody.model).toBe('claude-sonnet-5-5');
+    expect(capturedBody.max_tokens).toBe(4096);
+    expect(capturedBody.thinking).toBeUndefined();
+    expect(capturedBody.output_config).toEqual({ effort: 'low' });
+  });
 });

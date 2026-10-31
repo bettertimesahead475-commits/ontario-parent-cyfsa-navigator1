@@ -27,7 +27,7 @@ import {
 
 export const DIRECT_ANALYSIS_MAX_CHARS = 75_000;
 export const DIRECT_ANALYSIS_MIN_TIME_MS = 8_000;
-export const DIRECT_ANALYSIS_MAX_TOKENS = 5_000;
+export const DIRECT_ANALYSIS_MAX_TOKENS = 8_192;
 
 export interface DirectAnalysisOptions {
   mode: "fast";
@@ -38,6 +38,7 @@ export interface DirectAnalysisOptions {
   requestId: string;
   onSectionComplete?: (key: SectionKey, value: Record<string, any>, completed: number, total: number) => Promise<void> | void;
   now?: () => number;
+  onFailureReason?: (reason: "oversized" | "timeout" | "max_tokens" | "malformed_json" | "validation_failed", details?: string) => void;
 }
 
 /**
@@ -125,6 +126,13 @@ export async function runDirectAnalysis(opts: DirectAnalysisOptions): Promise<Se
   const started = now();
 
   if (!isEligibleForDirectAnalysis(opts.documentText, opts.deadlineAt, now)) {
+    if (typeof opts.documentText !== "string" || !opts.documentText.trim()) {
+      opts.onFailureReason?.("oversized", "Document text is empty");
+    } else if (opts.documentText.length > DIRECT_ANALYSIS_MAX_CHARS) {
+      opts.onFailureReason?.("oversized", `Document length ${opts.documentText.length} exceeds limit ${DIRECT_ANALYSIS_MAX_CHARS}`);
+    } else {
+      opts.onFailureReason?.("timeout", `Remaining time below minimum ${DIRECT_ANALYSIS_MIN_TIME_MS}ms`);
+    }
     return null;
   }
 
@@ -170,12 +178,14 @@ export async function runDirectAnalysis(opts: DirectAnalysisOptions): Promise<Se
 
   if (result.stopReason === "max_tokens") {
     logAnalyzerDiagnostic("direct-first analysis", new Error("Hit max_tokens limit"));
+    opts.onFailureReason?.("max_tokens", "Model output hit max_tokens limit");
     return null;
   }
 
   const parsed = parseJsonObject(result.text);
   if (!parsed || typeof parsed !== "object") {
     logAnalyzerDiagnostic("direct-first analysis", new Error("Did not return a valid JSON object"));
+    opts.onFailureReason?.("malformed_json", "Model response could not be parsed as valid JSON");
     return null;
   }
 
@@ -183,24 +193,28 @@ export async function runDirectAnalysis(opts: DirectAnalysisOptions): Promise<Se
   const vOverview = validateOverview(parsed);
   if (vOverview.ok === false) {
     logAnalyzerDiagnostic("direct-first overview validation", new Error(vOverview.problems.join("; ")));
+    opts.onFailureReason?.("validation_failed", `Overview: ${vOverview.problems.join("; ")}`);
     return null;
   }
 
   const vRedFlags = validateRedFlags(parsed, "fast");
   if (vRedFlags.ok === false) {
     logAnalyzerDiagnostic("direct-first redFlags validation", new Error(vRedFlags.problems.join("; ")));
+    opts.onFailureReason?.("validation_failed", `RedFlags: ${vRedFlags.problems.join("; ")}`);
     return null;
   }
 
   const vChronology = validateChronology(parsed, "fast");
   if (vChronology.ok === false) {
     logAnalyzerDiagnostic("direct-first chronology validation", new Error(vChronology.problems.join("; ")));
+    opts.onFailureReason?.("validation_failed", `Chronology: ${vChronology.problems.join("; ")}`);
     return null;
   }
 
   const vGuidance = validateGuidance(parsed);
   if (vGuidance.ok === false) {
     logAnalyzerDiagnostic("direct-first guidance validation", new Error(vGuidance.problems.join("; ")));
+    opts.onFailureReason?.("validation_failed", `Guidance: ${vGuidance.problems.join("; ")}`);
     return null;
   }
 

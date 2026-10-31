@@ -6,7 +6,7 @@
  */
 
 import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyzerErrors';
-import { requireApprovedModel, resolveAnthropicWireModel } from '../../api/services/analyzerModels';
+import { requireApprovedModel, resolveAnthropicWireModel, buildThinkingRequestFields } from '../../api/services/analyzerModels';
 import type { GenerateFn, GenerateResult } from '../../api/services/analyzerSections';
 
 export interface ModelAdapterEnv {
@@ -56,14 +56,16 @@ export function createCloudflareGenerateFn(
         deadline.catch(() => undefined); // the rejection is consumed by bounded() below, never left unhandled
         const bounded = <T>(p: Promise<T>): Promise<T> => Promise.race([p, deadline]);
 
+        const thinkingFields = buildThinkingRequestFields(wireModel, Boolean(options.enableThinking), options.thinkingBudget);
         const requestBody = {
           model: wireModel,
-          max_tokens: options.max_tokens || 4000,
+          max_tokens: options.max_tokens || 8192,
           system: options.system,
           messages: options.messages.map((m) => ({
             role: m.role,
             content: m.content.map((c) => (typeof c === 'string' ? c : c.text)).join('\n'),
           })),
+          ...thinkingFields,
         };
 
         const startTime = Date.now();

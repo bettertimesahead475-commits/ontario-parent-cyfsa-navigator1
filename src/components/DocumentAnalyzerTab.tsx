@@ -409,10 +409,14 @@ export default function DocumentAnalyzerTab() {
   const [preliminaryBrief, setPreliminaryBrief] = useState<string>("");
   // True while a reloaded page follows an analysis that was started before the reload.
   const [isRecoveringJob, setIsRecoveringJob] = useState<boolean>(false);
+  const [lastActivityAt, setLastActivityAt] = useState<number>(Date.now());
+  const [isProcessingStalled, setIsProcessingStalled] = useState<boolean>(false);
   // Synchronous guard against a double click starting two analyses before state re-renders.
   const analysisInFlightRef = useRef(false);
   const stopWaitingRef = useRef(false);
   const applyJobProgress = React.useCallback((job: AnalysisJobSnapshot) => {
+    setLastActivityAt(Date.now());
+    setIsProcessingStalled(false);
     setCompletedSections(Object.keys(job.sections || {}));
     setStreamingProgress(prev => ({
       stage: job.currentStage || prev.stage || "reviewing_evidence",
@@ -420,6 +424,22 @@ export default function DocumentAnalyzerTab() {
       message: job.message || prev.message || "Analyzing your document...",
     }));
   }, []);
+
+  // Stalled processing detection: monitors liveness during long analysis runs
+  useEffect(() => {
+    if (!isSingleAnalyzing && !isRecoveringJob) {
+      setIsProcessingStalled(false);
+      return;
+    }
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivityAt > 35_000) {
+        setIsProcessingStalled(true);
+      } else {
+        setIsProcessingStalled(false);
+      }
+    }, 5_000);
+    return () => clearInterval(timer);
+  }, [isSingleAnalyzing, isRecoveringJob, lastActivityAt]);
 
   // Countdown timer for rate-limit cooldown
   useEffect(() => {
@@ -1935,6 +1955,8 @@ export default function DocumentAnalyzerTab() {
           if (!isStream) return safeReadJson(response);
           return readAnalysisEventStream(response, {
             onStage: (stage, percent, message) => {
+              setLastActivityAt(Date.now());
+              setIsProcessingStalled(false);
               if (stage === "extracting") setAnalyzerState("EXTRACTING");
               else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
               else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues" || stage === "building_chronology") setAnalyzerState("ANALYZING");
@@ -1943,11 +1965,17 @@ export default function DocumentAnalyzerTab() {
               setStreamingProgress(prev => ({ stage, percent: Math.max(prev.percent, percent), message }));
             },
             onSection: (section, data) => {
+              setLastActivityAt(Date.now());
+              setIsProcessingStalled(false);
               if (section === "preliminaryBrief" && typeof data?.text === "string") {
                 setPreliminaryBrief(data.text);
                 return;
               }
               setCompletedSections(prev => (prev.includes(section) ? prev : [...prev, section]));
+            },
+            onHeartbeat: () => {
+              setLastActivityAt(Date.now());
+              setIsProcessingStalled(false);
             },
             onError: () => {
               setAnalyzerState("ERROR");
@@ -3480,9 +3508,13 @@ export default function DocumentAnalyzerTab() {
                     {/* Automatic Pipeline Stage Indicator & Retry button */}
                     <div className="flex items-center gap-2 shrink-0">
                       {(activeSelectedFile.analysisStatus === "analyzing" || isSingleAnalyzing || isRecoveringJob) && (
-                        <span className="px-3 py-1.5 bg-brand-50 text-brand-800 border border-brand-200 rounded-lg text-xs font-sans font-bold flex items-center gap-1.5">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
-                          <span>{streamingProgress.message || "Analyzing key issues & evidence strength..."}</span>
+                        <span className={`px-3 py-1.5 rounded-lg text-xs font-sans font-bold flex items-center gap-1.5 border ${
+                          isProcessingStalled
+                            ? "bg-amber-50 text-amber-800 border-amber-300"
+                            : "bg-brand-50 text-brand-800 border-brand-200"
+                        }`}>
+                          <Loader2 className={`w-3.5 h-3.5 animate-spin ${isProcessingStalled ? "text-amber-600" : "text-brand-600"}`} />
+                          <span>{isProcessingStalled ? "Waiting on server response..." : (streamingProgress.message || "Analyzing key issues & evidence strength...")}</span>
                         </span>
                       )}
 
@@ -4618,9 +4650,12 @@ export default function DocumentAnalyzerTab() {
                             <Scale className="w-6 h-6 text-brand-600 absolute inset-0 m-auto animate-pulse" />
                           </div>
                           <div className="space-y-2">
-                            <div className="flex justify-between text-xs font-sans font-semibold text-slate-700">
-                              <span>{streamingProgress.message || "Auditing document against statutory thresholds..."}</span>
-                              <span className="text-brand-600">{`${streamingProgress.percent || 30}%`}</span>
+                            <div className="flex justify-between items-center text-xs font-sans font-semibold text-slate-700">
+                              <span className="flex items-center gap-1.5">
+                                <span className={`inline-block w-2 h-2 rounded-full ${isProcessingStalled ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
+                                <span>{isProcessingStalled ? "Processing taking longer than expected. Monitoring server connection..." : (streamingProgress.message || "Auditing document against statutory thresholds...")}</span>
+                              </span>
+                              <span className={isProcessingStalled ? "text-amber-600 font-medium" : "text-brand-600"}>{`${streamingProgress.percent || 30}%`}</span>
                             </div>
                             <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                               <div

@@ -497,4 +497,112 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const json = await response.json();
     expect(json.code).toBe('CREDIT_LIMIT_REACHED');
   });
+  it('fails bounded Quick Review with explicit 422 and releases credit when model output is truncated', async () => {
+    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_free_trunc' });
+    const releasedCalls: string[] = [];
+    const mockRpc = vi.fn(async (name: string) => {
+      if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_trunc' };
+      if (name === 'free_release_scan') {
+        releasedCalls.push(name);
+        return { status: 'released' };
+      }
+      return { status: 'noop' };
+    });
+
+    const mockGenerate = vi.fn().mockResolvedValue({
+      text: '{"documentTitle": "Truncated Document...',
+      stopReason: 'max_tokens',
+      model: 'claude-sonnet-5',
+      durationMs: 4000,
+      usage: { input_tokens: 500, output_tokens: 8192 },
+    });
+
+    const request = new Request('https://staging.example/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer mock_token',
+      },
+      body: JSON.stringify({
+        documentText: SAMPLE_DOC,
+        mode: 'fast',
+      }),
+    });
+
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate });
+    expect(response.status).toBe(422);
+    const json = await response.json();
+    expect(json.code).toBe('AI_RESPONSE_INVALID');
+    expect(json.error).toContain('truncated before completion');
+    expect(mockGenerate).toHaveBeenCalledTimes(1); // Never ran second multi-call sectioned fallback!
+    expect(releasedCalls).toContain('free_release_scan');
+  });
+
+  it('rejects oversized documents for Quick Review with explicit 400 AI_REQUEST_REJECTED without calling provider', async () => {
+    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_free_oversized' });
+    const mockRpc = vi.fn(async (name: string) => {
+      if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_oversized' };
+      if (name === 'free_release_scan') return { status: 'released' };
+      return { status: 'noop' };
+    });
+    const mockGenerate = vi.fn();
+
+    const oversizedText = 'A'.repeat(75_001);
+    const request = new Request('https://staging.example/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer mock_token',
+      },
+      body: JSON.stringify({
+        documentText: oversizedText,
+        mode: 'fast',
+      }),
+    });
+
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate });
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json.code).toBe('AI_REQUEST_REJECTED');
+    expect(json.error).toContain('exceeds the 75,000 character limit for Quick Review');
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockRpc).toHaveBeenCalledWith('free_release_scan', expect.anything());
+  });
+
+  it('fails bounded Quick Review with explicit 422 when model produces malformed JSON', async () => {
+    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_free_malformed' });
+    const mockRpc = vi.fn(async (name: string) => {
+      if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_malformed' };
+      if (name === 'free_release_scan') return { status: 'released' };
+      return { status: 'noop' };
+    });
+
+    const mockGenerate = vi.fn().mockResolvedValue({
+      text: 'I am unable to provide a structured response for this document.',
+      stopReason: 'end_turn',
+      model: 'claude-sonnet-5',
+      durationMs: 2000,
+      usage: { input_tokens: 300, output_tokens: 50 },
+    });
+
+    const request = new Request('https://staging.example/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer mock_token',
+      },
+      body: JSON.stringify({
+        documentText: SAMPLE_DOC,
+        mode: 'fast',
+      }),
+    });
+
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate });
+    expect(response.status).toBe(422);
+    const json = await response.json();
+    expect(json.code).toBe('AI_RESPONSE_INVALID');
+    expect(json.error).toContain('invalid response structure');
+    expect(mockGenerate).toHaveBeenCalledTimes(1); // No sectioned fallback
+    expect(mockRpc).toHaveBeenCalledWith('free_release_scan', expect.anything());
+  });
 });

@@ -20,7 +20,7 @@ import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { saveCompletedJob, saveJobState } from './_analysis-jobs';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
-import { runDirectAnalysis, isEligibleForDirectAnalysis } from '../../api/services/directAnalyzer';
+import { runDirectAnalysis, isEligibleForDirectAnalysis, DIRECT_ANALYSIS_MAX_CHARS } from '../../api/services/directAnalyzer';
 import {
   runSectionedAnalysis,
   sectionTitle,
@@ -257,13 +257,42 @@ export async function handleAnalyzeRequest(
     onSection?: (key: SectionKey, value: Record<string, any>) => Promise<void> | void
   ): Promise<Record<string, any>> => {
     let run: SectionRunResult | null = null;
-    const directEligible =
-      !isForensic &&
-      env.DIRECT_ANALYZER_DISABLED !== 'true' &&
-      isEligibleForDirectAnalysis(documentText, aiDeadlineAt);
 
-    if (directEligible) {
+    if (!isForensic) {
+      // Quick Review: Strictly bounded single-pass operation.
+      // Falls back NEVER to sectioned analysis: multi-call sectioned pipelines exceed worker budgets
+      // and stall customers. Truncated output, malformed JSON, and validation failures report explicit errors.
+      if (documentText.length > DIRECT_ANALYSIS_MAX_CHARS) {
+        throw new AnalyzerError(
+          'AI_REQUEST_REJECTED',
+          400,
+          `This document exceeds the 75,000 character limit for Quick Review. Please select Forensic In-Depth mode for comprehensive analysis of larger records. Nothing was charged.`,
+          false
+        );
+      }
+
+      if (env.DIRECT_ANALYZER_DISABLED === 'true') {
+        throw new AnalyzerError(
+          'AI_PROVIDER_CONFIGURATION_ERROR',
+          500,
+          'Quick Review direct analyzer is temporarily disabled by configuration. Nothing was charged.',
+          false
+        );
+      }
+
+      if (!isEligibleForDirectAnalysis(documentText, aiDeadlineAt)) {
+        throw new AnalyzerError(
+          'ANALYSIS_TIMED_OUT',
+          408,
+          'Analysis could not be started within the available time budget. Nothing was charged.',
+          true
+        );
+      }
+
+      let directFailureReason: "oversized" | "timeout" | "max_tokens" | "malformed_json" | "validation_failed" | undefined;
+      let directFailureDetails: string | undefined;
       const directStartedAt = Date.now();
+
       try {
         await onProgress?.('reviewing_evidence', 40, 'Conducting direct evidence audit and analysis...');
         run = await runDirectAnalysis({
@@ -279,20 +308,63 @@ export async function handleAnalyzeRequest(
             await onSection?.(key, value);
             await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent, message);
           },
+          onFailureReason: (reason, details) => {
+            directFailureReason = reason;
+            directFailureDetails = details;
+          },
         });
-        console.info('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'success' }));
+        if (run) {
+          console.info('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'success' }));
+        }
       } catch (err: any) {
-        console.warn('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'fallback' }));
-        // Provider failures must never trigger a second, multi-call analysis.
-        // They may already have consumed billable tokens, and retrying here
-        // compounds latency and cost. Only a validated direct response that
-        // returns null may proceed to the sectioned fallback.
+        console.warn('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'failed' }));
         logAnalyzerDiagnostic('direct-first analysis failed', err);
         throw err;
       }
-    }
 
-    if (!run) {
+      if (!run) {
+        console.warn('[analyzer_latency]', JSON.stringify({ path: 'direct', elapsedMs: Date.now() - directStartedAt, outcome: 'rejected', reason: directFailureReason }));
+        if (directFailureReason === 'max_tokens') {
+          throw new AnalyzerError(
+            'AI_RESPONSE_INVALID',
+            422,
+            'The AI analysis model output was truncated before completion. Nothing was charged. Please try again.',
+            true
+          );
+        }
+        if (directFailureReason === 'malformed_json') {
+          throw new AnalyzerError(
+            'AI_RESPONSE_INVALID',
+            422,
+            'The AI analysis model generated an invalid response structure. Nothing was charged. Please try again.',
+            true
+          );
+        }
+        if (directFailureReason === 'validation_failed') {
+          throw new AnalyzerError(
+            'AI_RESPONSE_INVALID',
+            422,
+            `The AI analysis model output did not satisfy legal schema requirements (${directFailureDetails || 'schema error'}). Nothing was charged. Please try again.`,
+            true
+          );
+        }
+        if (directFailureReason === 'timeout') {
+          throw new AnalyzerError(
+            'ANALYSIS_TIMED_OUT',
+            408,
+            'Analysis could not be completed within the available time budget. Nothing was charged.',
+            true
+          );
+        }
+        throw new AnalyzerError(
+          'AI_RESPONSE_INVALID',
+          422,
+          'Quick Review could not be completed in a single pass. Nothing was charged. Please try again or select Forensic In-Depth mode.',
+          true
+        );
+      }
+    } else {
+      // Forensic In-Depth mode: multi-pass sectioned pipeline with Opus verification
       const sectionedStartedAt = Date.now();
       await onProgress?.('reviewing_evidence', 35, 'Analyzing document across evidence sections...');
       run = await runSectionedAnalysis({
@@ -304,7 +376,7 @@ export async function handleAnalyzeRequest(
         deadlineAt: aiDeadlineAt,
         requestId,
         onSectionComplete: async (key, value, completed, total) => {
-          const span = isForensic ? 50 : 60;
+          const span = 50;
           const percent = 35 + Math.round((completed / total) * span);
           const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
           await onSection?.(key, value);

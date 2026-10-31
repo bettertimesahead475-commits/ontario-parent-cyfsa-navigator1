@@ -87,6 +87,7 @@ export async function safeReadJson(response: Response): Promise<any> {
 export interface AnalysisStreamCallbacks {
   onStage?: (stage: string, percent: number, message: string) => void;
   onSection?: (section: string, data: any) => void;
+  onHeartbeat?: (data: { requestId?: string; elapsedMs?: number }) => void;
   onComplete?: (report: any, credits?: any) => void;
   onError?: (error: { code: string; message: string; statusCode: number; retryable: boolean }) => void;
 }
@@ -168,6 +169,8 @@ export async function readAnalysisEventStream(
       } else if (type === "section") {
         const section = payload.section;
         callbacks?.onSection?.(section, payload.data ?? payload);
+      } else if (type === "heartbeat") {
+        callbacks?.onHeartbeat?.(payload);
       } else if (type === "complete") {
         finalReport = payload.report ?? payload;
         callbacks?.onComplete?.(finalReport, payload.credits);
