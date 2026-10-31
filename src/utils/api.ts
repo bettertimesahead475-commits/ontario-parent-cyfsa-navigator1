@@ -212,7 +212,7 @@ function streamInterrupted(): ApiResponseError {
 
 export interface AnalysisJobSnapshot {
   jobId: string;
-  status: "pending" | "analyzing" | "completed" | "failed";
+  status: "pending" | "analyzing" | "completed" | "failed" | "timed_out";
   currentStage?: string;
   percent?: number;
   message?: string;
@@ -297,7 +297,8 @@ export async function pollAnalysisJob(
     }
     const job = (await res.json().catch(() => null)) as AnalysisJobSnapshot | null;
     if (job?.status === "completed" && job.report) return { status: "completed", report: job.report };
-    if (job?.status === "failed") {
+    if (job?.status === "failed" || job?.status === "timed_out") {
+      // A stopped analysis is reported with its reason, and the caller decides whether to start it again.
       return {
         status: "failed",
         error: job.error || { code: "INTERNAL_ANALYSIS_ERROR", message: "The analysis could not be completed.", statusCode: 500, retryable: true },

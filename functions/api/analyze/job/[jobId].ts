@@ -5,7 +5,7 @@
  * Allows client recovery and reconnection to in-flight or completed jobs.
  */
 import { verifyFirebaseRequest } from '../../_auth-check';
-import { jobObjectUrl, secretEquals } from '../../_analysis-jobs';
+import { effectiveJob, jobObjectUrl, secretEquals } from '../../_analysis-jobs';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -80,7 +80,7 @@ export const onRequestGet = async ({
               );
             }
           }
-          return Response.json(job, { status: 200, headers: DEFAULT_HEADERS });
+          return Response.json(effectiveJob(job, Date.now()), { status: 200, headers: DEFAULT_HEADERS });
         }
       }
     } catch {

@@ -634,6 +634,23 @@ export default function DocumentAnalyzerTab() {
     return parsedProg?.activeTab || "organizer";
   });
 
+  /**
+   * Clears the analysis on screen and any stale progress so a new analysis starts clean. Documents, saved reports and
+   * the server's job records are not touched. A running server job is not cancelled: this page only stops following it,
+   * and reopening the page recovers its result.
+   */
+  const startNewAnalysis = () => {
+    stopWaitingRef.current = true;
+    setIsSingleAnalyzing(false);
+    setIsBulkAnalyzing(false);
+    setAnalyzerState("IDLE");
+    setStreamingProgress({ stage: "", percent: 0, message: "" });
+    setSingleAnalysisError("");
+    setSingleAnalysisErrorCode("");
+    setSelectedReport(null);
+    setSaveStatus(null);
+  };
+
   // Save progress explicitly or display auto-save triggers safely
   const saveProgress = () => {
     try {
@@ -2977,6 +2994,28 @@ export default function DocumentAnalyzerTab() {
             >
               <Download className="w-3 h-3 text-brand-600" />
               Export Summary Log
+            </button>
+
+            <button
+              type="button"
+              id="start-new-analysis-btn"
+              onClick={() => {
+                const running = isSingleAnalyzing || isBulkAnalyzing;
+                if (running) {
+                  setConfirmModal({
+                    message: "Stop waiting on the current analysis?",
+                    description: "The server keeps working on it. Reopen this page later to see the result. Your documents and saved reports are kept.",
+                    onConfirm: () => startNewAnalysis(),
+                  });
+                } else {
+                  startNewAnalysis();
+                }
+              }}
+              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs whitespace-nowrap"
+              title="Clears the report on screen and any stale progress. Documents, saved reports and running server jobs are not deleted."
+            >
+              <Sparkles className="w-3 h-3 text-brand-600" />
+              Start New Analysis
             </button>
 
             <button

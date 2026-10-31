@@ -17,7 +17,7 @@ import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reserv
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
-import { saveCompletedJob } from './_analysis-jobs';
+import { saveCompletedJob, saveJobState } from './_analysis-jobs';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
 import { runDirectAnalysis, isEligibleForDirectAnalysis } from '../../api/services/directAnalyzer';
@@ -41,6 +41,8 @@ export interface AnalyzerEnv {
   ANTHROPIC_API_URL?: string;
   ANTHROPIC_QUICK_MODEL?: string;
   ANTHROPIC_FORENSIC_MODEL?: string;
+  QUICK_ANALYSIS_BUDGET_MS?: string;
+  FORENSIC_ANALYSIS_BUDGET_MS?: string;
   DIRECT_ANALYZER_DISABLED?: string;
 }
 
@@ -53,6 +55,12 @@ export interface AnalyzeDependencies {
   rpc?: CreditRpc;
   generate?: GenerateFn;
   fetcher?: typeof fetch;
+}
+
+/** A budget from configuration, bounded so a typo cannot disable the limit or remove it entirely. */
+function clampBudget(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 10_000 && n <= 300_000 ? n : fallback;
 }
 
 export async function handleAnalyzeRequest(
@@ -217,8 +225,17 @@ export async function handleAnalyzeRequest(
 
   // Product latency budgets. Leave a small margin for report guards,
   // credit finalization and persistence; a deadline is not a completion guarantee.
-  const analysisBudgetMs = isForensic ? 60_000 : 15_000;
+  // The budgets are configurable because the right value is a measurement, not a guess: a 15-second window left the
+  // direct call about 8 seconds, which a multi-thousand-token report cannot finish, so every real Quick Review aborted
+  // and released its credit. The defaults below are the smallest values where a complete call can finish; the product
+  // targets (15 s Quick, 60 s Forensic) are reported as not met until staging measurements say otherwise.
+  const analysisBudgetMs = isForensic
+    ? clampBudget(env.FORENSIC_ANALYSIS_BUDGET_MS, 120_000)
+    : clampBudget(env.QUICK_ANALYSIS_BUDGET_MS, 60_000);
   const aiDeadlineAt = Date.now() + analysisBudgetMs - 2_000;
+
+  // The job exists from this point on, so a refreshed or reconnected browser sees it as running (not missing).
+  await saveJobState(env, { jobId: requestId, uid, status: 'running', percent: 35, message: 'Analysis started.' }, deps.fetcher || fetch);
 
   // Execute Analysis Pipeline
   const executeAnalysis = async (
@@ -372,6 +389,8 @@ export async function handleAnalyzeRequest(
         const code = err instanceof AnalyzerError ? err.code : 'ANALYSIS_FAILED';
         const message = err instanceof AnalyzerError ? err.userMessage : 'The analysis could not be completed. Nothing was charged. Please try again.';
         const retryable = err instanceof AnalyzerError ? err.retryable : true;
+        // The failure reason is saved, so a refreshed page shows it instead of a missing or stuck job.
+        await saveJobState(env, { jobId: requestId, uid, status: 'failed', error: { code, message, retryable } }, deps.fetcher || fetch);
         await sendEvent('error', { error: message, code, retryable });
       } finally {
         try {
@@ -413,8 +432,10 @@ export async function handleAnalyzeRequest(
     const status = err instanceof AnalyzerError ? err.statusCode : 500;
     const code = err instanceof AnalyzerError ? err.code : 'ANALYSIS_FAILED';
     const message = err instanceof AnalyzerError ? err.userMessage : 'The analysis could not be completed. Nothing was charged. Please try again.';
+    const retryable = err instanceof AnalyzerError ? err.retryable : true;
+    await saveJobState(env, { jobId: requestId, uid, status: 'failed', error: { code, message, retryable } }, deps.fetcher || fetch);
     return Response.json(
-      { error: message, code, retryable: err instanceof AnalyzerError ? err.retryable : true },
+      { error: message, code, retryable },
       { status, headers: DEFAULT_HEADERS }
     );
   }

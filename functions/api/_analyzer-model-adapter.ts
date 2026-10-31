@@ -5,7 +5,7 @@
  * timeout controls via AbortSignal, transient error retries, and token usage accounting.
  */
 
-import { AnalyzerError } from '../../api/services/analyzerErrors';
+import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyzerErrors';
 import { requireApprovedModel, resolveAnthropicWireModel } from '../../api/services/analyzerModels';
 import type { GenerateFn, GenerateResult } from '../../api/services/analyzerSections';
 
@@ -78,16 +78,19 @@ export function createCloudflareGenerateFn(
             errorText = 'Could not read error body';
           }
 
+          // The provider's body goes to the server log only (redacted). Customers get fixed messages, because
+          // AnalyzerError.userMessage is what the browser receives.
+          logAnalyzerDiagnostic(`provider HTTP ${status}`, new Error(errorText));
           if (status === 429) {
-            throw new AnalyzerError('AI_RATE_LIMITED', 429, 'Rate limit exceeded with AI provider.', true);
+            throw new AnalyzerError('AI_RATE_LIMITED', 429, 'The AI service is busy right now. Please wait a moment and try again. Nothing was charged.', true);
           }
           if (status >= 500 && status < 600) {
-            throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, `AI service unavailable (${status}): ${errorText}`, true);
+            throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI analysis engine is temporarily unavailable. Please try again shortly. Nothing was charged.', true);
           }
           if (status === 400) {
-            throw new AnalyzerError('AI_REQUEST_REJECTED', 400, `AI request rejected: ${errorText}`, false);
+            throw new AnalyzerError('AI_REQUEST_REJECTED', 400, 'The AI service could not process this request. Nothing was charged. Please try again or contact support.', false);
           }
-          throw new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', status, `AI request failed with status ${status}: ${errorText}`, false);
+          throw new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is not available right now because of a configuration problem on our side. Nothing was charged.', false);
         }
 
         const data = (await response.json()) as {

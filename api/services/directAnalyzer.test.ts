@@ -265,21 +265,25 @@ describe("runDirectAnalysis", () => {
     expect(result).toBeNull();
   });
 
-  it("falls back (returns null) on retryable provider error", async () => {
+  it("surfaces a retryable provider error once, without a second analysis", async () => {
+    // A failed provider call may already have consumed billable tokens. The error reaches the caller, which decides
+    // any retry; nothing here starts another analysis (see the comment in runDirectAnalysis).
     const mockGenerate = vi.fn().mockRejectedValue(
       new AnalyzerError("AI_PROVIDER_TEMPORARILY_UNAVAILABLE", 503, "Service busy", true)
     );
 
-    const result = await runDirectAnalysis({
-      mode: "fast",
-      documentText: sampleDoc,
-      primaryModel: "claude-sonnet-5",
-      generate: mockGenerate,
-      deadlineAt: Date.now() + 90_000,
-      requestId: "req_transient_err",
-    });
+    await expect(
+      runDirectAnalysis({
+        mode: "fast",
+        documentText: sampleDoc,
+        primaryModel: "claude-sonnet-5",
+        generate: mockGenerate,
+        deadlineAt: Date.now() + 90_000,
+        requestId: "req_transient_err",
+      })
+    ).rejects.toMatchObject({ code: "AI_PROVIDER_TEMPORARILY_UNAVAILABLE", retryable: true });
 
-    expect(result).toBeNull();
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
   });
 
   it("re-throws non-retryable provider error (e.g. invalid credentials)", async () => {
