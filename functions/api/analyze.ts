@@ -251,7 +251,7 @@ export async function handleAnalyzeRequest(
   // and released its credit. The defaults below are the smallest values where a complete call can finish; the product
   // targets (15 s Quick, 60 s Forensic) are reported as not met until staging measurements say otherwise.
   const analysisBudgetMs = isForensic
-    ? clampBudget(env.FORENSIC_ANALYSIS_BUDGET_MS, 120_000)
+    ? clampBudget(env.FORENSIC_ANALYSIS_BUDGET_MS, 180_000)
     : clampBudget(env.QUICK_ANALYSIS_BUDGET_MS, 60_000);
   const aiDeadlineAt = Date.now() + analysisBudgetMs - 2_000;
 
