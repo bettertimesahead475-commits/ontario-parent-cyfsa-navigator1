@@ -66,6 +66,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: Us
     );
   }
 
+  // Owner access is determined solely from the verified Firebase token.
+  if (identity.emailVerified && identity.email?.toLowerCase() === 'mr.pelkie@gmail.com') {
+    return Response.json({ type: 'owner', tier: 'Owner/Admin', signedIn: true, unlimited: true, allowsForensic: true, countsAvailable: true, limit: null, remaining: null, creditsLimit: null, creditsRemaining: null, quickReviewsLimit: null, quickReviewsRemaining: null, forensicAnalysesLimit: null, forensicAnalysesRemaining: null }, { status: 200, headers: DEFAULT_HEADERS });
+  }
+
   const url = new URL(request.url);
   const sessionId = request.headers.get('x-ps-session') || url.searchParams.get('sessionId');
 
