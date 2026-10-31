@@ -58,7 +58,8 @@ export interface AnalyzeDependencies {
 export async function handleAnalyzeRequest(
   request: Request,
   env: AnalyzerEnv,
-  deps: AnalyzeDependencies = {}
+  deps: AnalyzeDependencies = {},
+  waitUntil?: (promise: Promise<unknown>) => void
 ): Promise<Response> {
   // Fail-closed guard: Staging analyzer disabled unless explicitly authorized
   if (env.ANALYZER_ENABLED !== 'true') {
@@ -337,7 +338,7 @@ export async function handleAnalyzeRequest(
     };
 
     // Run execution in background stream writer
-    (async () => {
+    const analysisTask = (async () => {
       try {
         await sendEvent('stage', { stage: 'verifying_access', percent: 30, message: 'Verifying account authorization & entitlements...' });
 
@@ -372,6 +373,9 @@ export async function handleAnalyzeRequest(
         } catch {}
       }
     })();
+    // Keep the long-running AI operation alive after the Pages handler returns.
+    // Otherwise the runtime may terminate the detached async task mid-analysis.
+    waitUntil?.(analysisTask);
 
     return new Response(readable, {
       status: 200,
@@ -410,12 +414,12 @@ export async function handleAnalyzeRequest(
   }
 }
 
-export const onRequestPost = async (context?: { request: Request; env: AnalyzerEnv }): Promise<Response> => {
+export const onRequestPost = async (context?: { request: Request; env: AnalyzerEnv; waitUntil?: (promise: Promise<unknown>) => void }): Promise<Response> => {
   if (!context || !context.env || context.env.ANALYZER_ENABLED !== 'true') {
     return Response.json(
       { code: 'STAGING_ANALYZER_NOT_READY', analyzerReady: false },
       { status: 503, headers: DEFAULT_HEADERS }
     );
   }
-  return handleAnalyzeRequest(context.request, context.env);
+  return handleAnalyzeRequest(context.request, context.env, {}, context.waitUntil?.bind(context));
 };
