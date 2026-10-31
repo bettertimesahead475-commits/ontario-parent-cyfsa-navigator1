@@ -204,4 +204,35 @@ describe('Cloudflare Anthropic Model Adapter', () => {
     expect(capturedBody.thinking).toBeUndefined();
     expect(capturedBody.output_config).toEqual({ effort: 'low' });
   });
+
+  it('sends stream: true in Anthropic request body', async () => {
+    let capturedBody: any = null;
+    const mockFetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: '{"status":"ok"}' }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+          stop_reason: 'end_turn',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    await generate(
+      {
+        system: 'sys prompt',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'evidence test' }] }],
+        max_tokens: 4096,
+        timeoutMs: 5000,
+        requestId: 'req_stream_flag_test',
+        stage: 'direct_full_analysis',
+        mode: 'fast',
+      },
+      'claude-sonnet-5'
+    );
+
+    expect(capturedBody.stream).toBe(true);
+  });
 });

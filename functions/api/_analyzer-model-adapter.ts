@@ -167,7 +167,7 @@ export function createCloudflareGenerateFn(
               }
             }
           }
-          if (!receivedMessageStop || !text.trim()) {
+          if ((!receivedMessageStop && !stopReason) || !text.trim()) {
             throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', false);
           }
           } finally {
