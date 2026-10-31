@@ -153,8 +153,17 @@ export async function runDirectAnalysis(opts: DirectAnalysisOptions): Promise<Se
     if (err instanceof AnalyzerError && !err.retryable) {
       throw err;
     }
+    // A failed provider request may already have consumed tokens. Do not
+    // silently launch an entirely new multi-call sectioned analysis.
+    // Surface the provider error so the user controls any paid retry.
     logAnalyzerDiagnostic("direct-first generation call", err);
-    return null;
+    if (err instanceof AnalyzerError) throw err;
+    throw new AnalyzerError(
+      "AI_PROVIDER_TEMPORARILY_UNAVAILABLE",
+      503,
+      "The AI provider did not complete the analysis. No automatic second analysis was started.",
+      true
+    );
   }
 
   addUsage(usageByModel, opts.primaryModel, result.usage);
