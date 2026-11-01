@@ -20,10 +20,13 @@ export async function handleDeepScanRequest(
     // Let handleAnalyzeRequest report invalid JSON
   }
 
-  // Force forensic in-depth mode
+  const rawRequestId = request.headers.get('X-Analysis-Id') || body?.analysisId || '';
+
+  // Force forensic in-depth mode and preserve analysisId
   const forensicBody = {
     ...body,
     mode: 'full',
+    analysisId: rawRequestId || body?.analysisId,
   };
 
   const forensicRequest = new Request(request.url, {

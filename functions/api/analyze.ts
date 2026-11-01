@@ -90,6 +90,7 @@ export async function handleAnalyzeRequest(
   deps: AnalyzeDependencies = {},
   waitUntil?: (promise: Promise<unknown>) => void
 ): Promise<Response> {
+  const pipelineStartedAt = Date.now();
   // Fail-closed guard: Staging analyzer disabled unless explicitly authorized
   if (env.ANALYZER_ENABLED !== 'true') {
     return Response.json(
@@ -326,6 +327,12 @@ export async function handleAnalyzeRequest(
 
     const report: Record<string, any> = {
       ...run.report,
+      modelMetadata: {
+        engineName: isForensic ? 'Claude Opus & Sonnet' : 'Claude Sonnet',
+        mode,
+        modeName: isForensic ? 'Forensic In-Depth Scan' : 'Quick Document Review',
+        durationMs: Date.now() - pipelineStartedAt,
+      },
       _metadata: {
         requestId,
         analysisMode: mode,

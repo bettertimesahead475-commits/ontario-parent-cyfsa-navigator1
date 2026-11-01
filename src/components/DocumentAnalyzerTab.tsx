@@ -546,6 +546,11 @@ export default function DocumentAnalyzerTab() {
   const [isDeepScanning, setIsDeepScanning] = useState<boolean>(false);
   const [deepScanFileId, setDeepScanFileId] = useState<string | null>(null);
   const [deepScanError, setDeepScanError] = useState<string | null>(null);
+  const [deepScanProgress, setDeepScanProgress] = useState<{ stage: string; percent: number; message: string }>({
+    stage: "started",
+    percent: 35,
+    message: "Initializing Forensic In-Depth scan...",
+  });
   const [deepScanReports, setDeepScanReports] = useState<{ [fileId: string]: any }>(() => {
     try {
       const saved = localStorage.getItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS");
@@ -554,6 +559,27 @@ export default function DocumentAnalyzerTab() {
       return {};
     }
   });
+
+  // Helper to reliably detect whether any report is a Forensic In-Depth report
+  const isReportForensic = (rep: any): boolean => {
+    if (!rep || typeof rep !== "object") return false;
+    return rep.modelMetadata?.mode === "full" ||
+      rep._metadata?.analysisMode === "full" ||
+      Boolean(rep.forensicVerification) ||
+      (Array.isArray(rep.thresholdAnalysis) && rep.thresholdAnalysis.length > 0);
+  };
+
+  const selectFileAndAlignMode = React.useCallback((fileId: string, fileReport?: any) => {
+    setSelectedFileId(fileId);
+    setSelectedReport(fileReport || null);
+    const hasDeep = Boolean(deepScanReports[fileId] || isReportForensic(fileReport));
+    const hasQuick = Boolean(quickReviewSnapshots[fileId] || (fileReport && !isReportForensic(fileReport)));
+    if (hasDeep && !hasQuick) {
+      setActiveReportMode("deep");
+    } else if (hasQuick && !hasDeep) {
+      setActiveReportMode("quick");
+    }
+  }, [deepScanReports, quickReviewSnapshots, setSelectedReport]);
 
   // Preserve the original Quick Review before Deep Scan augments the active report.
   const [quickReviewSnapshots, setQuickReviewSnapshots] = useState<{ [fileId: string]: any }>(() => {
@@ -580,6 +606,11 @@ export default function DocumentAnalyzerTab() {
     setIsDeepScanning(true);
     setDeepScanFileId(file.id);
     setDeepScanError(null);
+    setDeepScanProgress({
+      stage: "started",
+      percent: 35,
+      message: "Starting Forensic In-Depth statutory scan...",
+    });
 
     try {
       // One id per Deep Scan click, reused by every retry, so the server answers a retry with the saved report or the
@@ -589,19 +620,33 @@ export default function DocumentAnalyzerTab() {
         attempt: async () => {
           const response = await apiFetch("/api/deep-scan", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-Analysis-Id": scanId },
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "text/event-stream, application/json",
+              "X-Analysis-Id": scanId,
+            },
             body: JSON.stringify({
               documentText: file.content,
               documentName: file.name,
               category: file.category,
               model: claudeModel,
+              mode: "full",
+              stream: true,
+              analysisId: scanId,
               // Gives the deep scan the first-pass report already run for this file, so it can
               // dig into what that pass missed instead of re-finding the same red flags.
               priorAnalysis: file.analysisReport || null
             })
           });
-          // A non-2xx response throws an ApiResponseError that the shared policy classifies.
-          return safeReadJson(response);
+          const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
+          if (!isStream) return safeReadJson(response);
+          return readAnalysisEventStream(response, {
+            onStage: (stage, percent, message) => {
+              setDeepScanProgress({ stage, percent, message });
+            },
+            onHeartbeat: () => {},
+            onError: () => {},
+          });
         },
         recover: () => recoverAnalysisReport(scanId),
       });
@@ -2974,10 +3019,10 @@ export default function DocumentAnalyzerTab() {
   );
 
   const currentQuickReport = activeSelectedFile
-    ? (quickReviewSnapshots[activeSelectedFile.id] || (activeSelectedFile.analysisReport?.modelMetadata?.mode !== "full" ? activeSelectedFile.analysisReport : null))
+    ? (quickReviewSnapshots[activeSelectedFile.id] || (!isReportForensic(activeSelectedFile.analysisReport) ? activeSelectedFile.analysisReport : null))
     : null;
   const currentDeepReport = activeSelectedFile
-    ? (deepScanReports[activeSelectedFile.id] || (activeSelectedFile.analysisReport?.modelMetadata?.mode === "full" ? activeSelectedFile.analysisReport : null))
+    ? (deepScanReports[activeSelectedFile.id] || (isReportForensic(activeSelectedFile.analysisReport) ? activeSelectedFile.analysisReport : null))
     : null;
 
   const displayedReport = (activeReportMode === "deep" && currentDeepReport)
@@ -3284,8 +3329,7 @@ export default function DocumentAnalyzerTab() {
                               id={`file-item-${item.id}`}
                               key={item.id}
                               onClick={() => {
-                                setSelectedFileId(item.id);
-                                setSelectedReport(item.analysisReport || null);
+                                selectFileAndAlignMode(item.id, item.analysisReport);
                                 // Capture original document text for redaction
                                 if (item.content && typeof item.content === 'string') {
                                   // If it's base64 (PDF/image), decode first if possible; otherwise use as-is
@@ -3901,31 +3945,35 @@ export default function DocumentAnalyzerTab() {
                         <div className="bg-slate-900/60 border border-brand-500/20 rounded-xl p-4 space-y-3 animate-pulse">
                           <div className="flex items-center gap-2 text-xs text-brand-300 font-sans font-bold">
                             <Loader2 className="w-4 h-4 text-brand-400 animate-spin animate-infinite" />
-                            <span>Tracing omissions, evaluating CYFSA thresholds, and constructing defense retorts...</span>
+                            <span>{deepScanProgress.message || "Tracing omissions, evaluating CYFSA thresholds, and constructing defense retorts..."}</span>
                           </div>
                           <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-brand-500 h-full w-[65%] rounded-full" />
+                            <div className="bg-brand-500 h-full rounded-full transition-all duration-300" style={{ width: `${Math.max(20, Math.min(100, deepScanProgress.percent))}%` }} />
                           </div>
                         </div>
                       )}
 
                       {/* Deep Scan Error State */}
                       {deepScanError && !isDeepScanning && !deepScanReports[activeSelectedFile.id] && (
-                        (deepScanError.includes("Purchase additional analyses to continue") || deepScanError.includes("ANALYSIS_LIMIT_REACHED")) ? (
+                        (deepScanError.includes("Purchase additional analyses to continue") || 
+                         deepScanError.includes("ANALYSIS_LIMIT_REACHED") ||
+                         deepScanError.includes("UPGRADE_REQUIRED") ||
+                         deepScanError.includes("requires a paid plan") ||
+                         deepScanError.includes("paid plan")) ? (
                           <div role="alert" className="bg-amber-950/70 border border-amber-400/40 rounded-xl p-4 text-xs text-amber-100 space-y-2" id="deep-scan-limit-reached-banner">
                             <div className="flex items-center gap-2 font-bold text-amber-300 text-sm">
                               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                              <span>Package Analysis Limit Reached</span>
+                              <span>Forensic In-Depth Scan Requires a Paid Plan</span>
                             </div>
                             <p className="leading-relaxed">
-                              You&apos;ve used all analyses included in your package. Purchase additional analyses to continue.
+                              Forensic In-Depth analysis provides comprehensive 6-section statutory assessment and independent verification. Upgrade your plan to continue.
                             </p>
                             <div className="pt-1">
                               <button
                                 onClick={() => setLocation("/pricing")}
                                 className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg transition text-xs flex items-center gap-1.5 cursor-pointer"
                               >
-                                <span>Purchase Additional Analyses</span>
+                                <span>View Plans &amp; Pricing</span>
                                 <ArrowRight className="w-3.5 h-3.5" />
                               </button>
                             </div>
@@ -4024,11 +4072,11 @@ export default function DocumentAnalyzerTab() {
                             </span>
                             {/* Mode Indicator Badge */}
                             <span className={`px-2 py-0.5 rounded text-[10px] font-sans font-bold uppercase tracking-wide border ${
-                              displayedReport.modelMetadata?.mode === "full"
+                              isReportForensic(displayedReport)
                                 ? "bg-purple-100 text-purple-900 border-purple-200"
                                 : "bg-blue-100 text-blue-900 border-blue-200"
                             }`}>
-                              {displayedReport.modelMetadata?.mode === "full" ? "Forensic In-Depth Scan" : "Quick Document Review"}
+                              {isReportForensic(displayedReport) ? "Forensic In-Depth Scan" : "Quick Document Review"}
                             </span>
                           </div>
                           <h4 className="font-display font-bold text-[#0f172a] text-lg mt-1 truncate">
@@ -4643,10 +4691,10 @@ export default function DocumentAnalyzerTab() {
                             {(!displayedReport.thresholdAnalysis || displayedReport.thresholdAnalysis.length === 0) ? (
                               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 space-y-1">
                                 <p className="font-bold text-slate-800">
-                                  {displayedReport.modelMetadata?.mode === "full" ? "No statutory thresholds flagged" : "Not analyzed in Quick Review"}
+                                  {isReportForensic(displayedReport) ? "No statutory thresholds flagged" : "Not analyzed in Quick Review"}
                                 </p>
                                 <p>
-                                  {displayedReport.modelMetadata?.mode === "full"
+                                  {isReportForensic(displayedReport)
                                     ? "No immediate life-safety protection threshold violations identified in this document. Confirm with counsel."
                                     : "Detailed statutory protection threshold assessment is generated in Forensic In-Depth mode. Click 'Run Deep Scan' above to assess against Ontario statutory removal thresholds."}
                                 </p>
@@ -5230,8 +5278,7 @@ export default function DocumentAnalyzerTab() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setSelectedFileId(file.id);
-                                    setSelectedReport(file.analysisReport || null);
+                                    selectFileAndAlignMode(file.id, file.analysisReport);
                                     // Capture original document text for redaction
                                     if (file.content && typeof file.content === 'string') {
                                       try {
