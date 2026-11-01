@@ -48,6 +48,7 @@ export interface AnalyzerEnv {
   ANTHROPIC_API_URL?: string;
   ANTHROPIC_QUICK_MODEL?: string;
   ANTHROPIC_FORENSIC_MODEL?: string;
+  ANTHROPIC_FORENSIC_PRIMARY_MODEL?: string;
   QUICK_ANALYSIS_BUDGET_MS?: string;
   FORENSIC_ANALYSIS_BUDGET_MS?: string;
   DIRECT_ANALYZER_DISABLED?: string;
@@ -238,9 +239,12 @@ export async function handleAnalyzeRequest(
     reservationId = reservation.reservation_id;
   }
 
-  // Model selection
-  const primaryModel = isForensic
-    ? (env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL)
+  // Model selection:
+  // In Forensic In-Depth mode, Sonnet generates all 6 sections rapidly in parallel,
+  // followed by independent Claude Opus verification of high-impact findings
+  // (strictly adhering to resolveServerAuthoritativeModel in api/services/analyzerModels.ts).
+  const primaryModel = (isForensic && env.ANTHROPIC_FORENSIC_PRIMARY_MODEL)
+    ? env.ANTHROPIC_FORENSIC_PRIMARY_MODEL
     : (env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL);
   const verificationModel = env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL;
   const generate = deps.generate || createCloudflareGenerateFn(env, authFetcher);

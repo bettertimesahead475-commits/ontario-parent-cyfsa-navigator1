@@ -560,21 +560,28 @@ export default function DocumentAnalyzerTab() {
     }
   });
 
-  // Helper to reliably detect whether any report is a Forensic In-Depth report
-  const isReportForensic = (rep: any): boolean => {
-    if (!rep || typeof rep !== "object") return false;
-    return rep.modelMetadata?.mode === "full" ||
-      rep._metadata?.analysisMode === "full" ||
-      Boolean(rep.forensicVerification) ||
-      (Array.isArray(rep.thresholdAnalysis) && rep.thresholdAnalysis.length > 0);
-  };
-
-
   // Preserve the original Quick Review before Deep Scan augments the active report.
   const [quickReviewSnapshots, setQuickReviewSnapshots] = useState<{ [fileId: string]: any }>(() => {
     try { return JSON.parse(localStorage.getItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS") || "{}"); }
     catch { return {}; }
   });
+
+  // Professional 5-Tab Report Workspace state & independent report mode selection
+  const [reportWorkspaceTab, setReportWorkspaceTab] = useState<"brief" | "chronology" | "evidence" | "thresholds" | "findings">("brief");
+  const [activeReportMode, setActiveReportMode] = useState<"quick" | "deep">("quick");
+
+  // Helper to reliably detect whether any report is a Forensic In-Depth report
+  const isReportForensic = (rep: any): boolean => {
+    if (!rep || typeof rep !== "object") return false;
+    return rep.modelMetadata?.mode === "full" ||
+      rep._metadata?.analysisMode === "full" ||
+      rep.mode === "full" ||
+      Boolean(rep.forensicVerification) ||
+      (Array.isArray(rep.proceduralTimelineViolations) && rep.proceduralTimelineViolations.length > 0) ||
+      Boolean(rep.omissions);
+  };
+
+
 
   const selectFileAndAlignMode = React.useCallback((fileId: string, fileReport?: any) => {
     setSelectedFileId(fileId);
@@ -587,11 +594,6 @@ export default function DocumentAnalyzerTab() {
       setActiveReportMode("quick");
     }
   }, [deepScanReports, quickReviewSnapshots, setSelectedReport]);
-
-
-  // Professional 5-Tab Report Workspace state & independent report mode selection
-  const [reportWorkspaceTab, setReportWorkspaceTab] = useState<"brief" | "chronology" | "evidence" | "thresholds" | "findings">("brief");
-  const [activeReportMode, setActiveReportMode] = useState<"quick" | "deep">("quick");
 
   const triggerDeepScan = async (file: OrganizedFile) => {
     if (!file.content || !file.content.trim()) {
@@ -4146,6 +4148,12 @@ export default function DocumentAnalyzerTab() {
                         </div>
                       </div>
 
+                      {COURT_PREP_UI_ENABLED && (
+                        <CourtPrepWorkspace report={selectedReport} documentTitle={selectedReport.documentTitle || "Analysis report"} redact={redactionEnabled} />
+                      )}
+                      <ParentReportSection report={selectedReport} enabled={PARENT_REPORT_UI_ENABLED} />
+                      {PARENT_QA_UI_ENABLED && <EducationalQa report={selectedReport} />}
+
                       {/* Export & Redaction Toolbar */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -4164,7 +4172,7 @@ export default function DocumentAnalyzerTab() {
                               className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-900 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-purple-200 cursor-pointer transition-all"
                             >
                               <Download className="w-3.5 h-3.5 text-purple-600" />
-                              <span>Export Deep Scan PDF</span>
+                              <span>Export Forensic Scan PDF</span>
                             </button>
                           )}
                         </div>
@@ -4381,6 +4389,29 @@ export default function DocumentAnalyzerTab() {
                                 >
                                   <Save className="w-3.5 h-3.5 text-emerald-400" />
                                   <span>Archive Brief</span>
+                                </button>
+
+                                <button
+                                  disabled={redactionEnabled}
+                                  onClick={() => {
+                                    if (redactionEnabled) return;
+                                    const stateToSave = {
+                                      organizedFiles,
+                                      selectedFileId,
+                                      activeFolder,
+                                      ragChatMessages,
+                                      selectedReport,
+                                      activeTab,
+                                      savedBriefs
+                                    };
+                                    localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
+                                    alert("Your case brief was saved on this device for the Templates and Chat tools.");
+                                  }}
+                                  className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 transition-colors border border-brand-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title={redactionEnabled ? "Turn off redaction to save the full case on this device" : "Save the case brief on this device for the Templates and Chat tools"}
+                                >
+                                  <Scale className="w-3.5 h-3.5 text-white" />
+                                  <span>Save Brief on This Device</span>
                                 </button>
                               </div>
                             </div>

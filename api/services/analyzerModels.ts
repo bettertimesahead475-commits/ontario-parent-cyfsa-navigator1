@@ -102,6 +102,9 @@ export function buildThinkingRequestFields(
   if (MODELS_REJECTING_DISABLED_THINKING.has(model)) {
     return { output_config: { effort: "low" } };
   }
+  if (model.startsWith("claude-3-") || !CURRENT_GENERATION_MODEL.test(model)) {
+    return {};
+  }
   return { thinking: { type: "disabled" } };
 }
 
