@@ -569,6 +569,13 @@ export default function DocumentAnalyzerTab() {
       (Array.isArray(rep.thresholdAnalysis) && rep.thresholdAnalysis.length > 0);
   };
 
+
+  // Preserve the original Quick Review before Deep Scan augments the active report.
+  const [quickReviewSnapshots, setQuickReviewSnapshots] = useState<{ [fileId: string]: any }>(() => {
+    try { return JSON.parse(localStorage.getItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS") || "{}"); }
+    catch { return {}; }
+  });
+
   const selectFileAndAlignMode = React.useCallback((fileId: string, fileReport?: any) => {
     setSelectedFileId(fileId);
     setSelectedReport(fileReport || null);
@@ -581,11 +588,6 @@ export default function DocumentAnalyzerTab() {
     }
   }, [deepScanReports, quickReviewSnapshots, setSelectedReport]);
 
-  // Preserve the original Quick Review before Deep Scan augments the active report.
-  const [quickReviewSnapshots, setQuickReviewSnapshots] = useState<{ [fileId: string]: any }>(() => {
-    try { return JSON.parse(localStorage.getItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS") || "{}"); }
-    catch { return {}; }
-  });
 
   // Professional 5-Tab Report Workspace state & independent report mode selection
   const [reportWorkspaceTab, setReportWorkspaceTab] = useState<"brief" | "chronology" | "evidence" | "thresholds" | "findings">("brief");
