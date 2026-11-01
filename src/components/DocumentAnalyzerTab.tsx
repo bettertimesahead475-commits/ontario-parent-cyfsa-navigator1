@@ -553,12 +553,11 @@ export default function DocumentAnalyzerTab() {
       const scanId = newAnalysisJobId();
       const data = await runAnalysisWithRetry({
         attempt: async () => {
-          const response = await apiFetch("/api/analyze", {
+          const response = await apiFetch("/api/deep-scan", {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-Analysis-Id": scanId },
             body: JSON.stringify({
               documentText: file.content,
-              mode: "full",
               documentName: file.name,
               category: file.category,
               model: claudeModel,
