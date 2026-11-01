@@ -76,6 +76,7 @@ import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
+import { renderForensicReportHtml } from "../utils/forensicPdfRenderer";
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
 
@@ -2604,14 +2605,14 @@ export default function DocumentAnalyzerTab() {
         </div>
       `;
     } else if (activeTab === "organizer" && reportMode === "deep" && deepReport) {
-      title = `Forensic Deep Scan - ${displayFileName || "Document"}`;
-      const renderValue = (value: unknown): string => {
-        if (value === null || value === undefined) return "Not provided in this report";
-        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return escapeHtml(String(value));
-        if (Array.isArray(value)) return value.map((item, index) => `<div class="finding"><strong>${index + 1}.</strong> ${renderValue(item)}</div>`).join("");
-        return Object.entries(value as Record<string, unknown>).map(([key, entry]) => `<div class="finding"><strong>${escapeHtml(key.replace(/([A-Z])/g, " $1"))}:</strong> ${renderValue(entry)}</div>`).join("");
-      };
-      bodyContent = `<header class="header-container"><span class="platform-label">CYFSA Navigator • Forensic Deep Scan</span><h1 class="title-main">${escapeHtml(title)}</h1><p>Separate forensic findings. This report is not the original Quick Review.</p></header>${Object.entries(deepReport).filter(([key]) => !["timestamp", "documentText"].includes(key)).map(([key, value]) => `<section class="section-card"><h2 class="section-title">${escapeHtml(key.replace(/([A-Z])/g, " $1"))}</h2>${renderValue(value)}</section>`).join("")}`;
+      const fullHtml = renderForensicReportHtml(deepReport, {
+        fileName: displayFileName,
+        redactionEnabled,
+        audienceMode: "full"
+      });
+      printWindow.document.write(fullHtml);
+      printWindow.document.close();
+      return;
     } else if (activeTab === "organizer" && reportForExport) {
       title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || displayFileName || "Report")}`;
       const evidenceIndex = reportForExport.evidenceStrengthIndex || {

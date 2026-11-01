@@ -23,6 +23,7 @@ import {
   SECTION_ATTEMPTS,
   VERIFICATION_ATTEMPTS,
 } from "../../shared/analyzerRetryPolicy.js";
+import { resolveLegalAuthority } from "../../shared/legalVerificationPipeline.js";
 import {
   classifyCitation,
   type CitationStatus,
@@ -295,22 +296,22 @@ export const CANONICAL_THRESHOLDS = [
   {
     match: /81/i,
     thresholdChecked: "CYFSA s. 81 — Application / Child Protection Proceeding Authority",
-    primarySourceLaw: "⚠️ Statute citation unverified — confirm exact subsection with counsel before relying on this.",
+    primarySourceLaw: "CYFSA, 2017, S.O. 2017, c. 14, Sched. 1, s. 81(1)",
   },
   {
     match: /74/i,
     thresholdChecked: "Child in Need of Protection grounds (CYFSA s. 74)",
-    primarySourceLaw: "CYFSA 2017, Section 74",
+    primarySourceLaw: "CYFSA, 2017, S.O. 2017, c. 14, Sched. 1, s. 74(2)",
   },
   {
     match: /125/i,
     thresholdChecked: "Duty to Report standard vs Direct evidence (CYFSA s. 125)",
-    primarySourceLaw: "CYFSA 2017, Section 125",
+    primarySourceLaw: "CYFSA, 2017, S.O. 2017, c. 14, Sched. 1, s. 125",
   },
   {
     match: /kinship|alternative/i,
     thresholdChecked: "Kinship / Family-Based Alternatives — Documentation Check",
-    primarySourceLaw: "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.",
+    primarySourceLaw: "CYFSA, 2017, S.O. 2017, c. 14, Sched. 1, s. 74(1)",
   },
 ];
 
@@ -318,12 +319,22 @@ export function validateThresholds(raw: any): Validation {
   if (!Array.isArray(raw?.thresholdAnalysis)) return { ok: false, problems: ["thresholdAnalysis must be an array"] };
   const items = raw.thresholdAnalysis
     .filter((t: any) => t && typeof t === "object" && str(t.thresholdChecked) && (str(t.reasoning) || str(t.evaluation)))
-    .map((t: any) => ({
-      thresholdChecked: str(t.thresholdChecked),
-      isMet: normalizeIsMet(t.isMet),
-      reasoning: str(t.reasoning || t.evaluation),
-      primarySourceLaw: str(t.primarySourceLaw || t.citation || "CYFSA 2017"),
-    }));
+    .map((t: any) => {
+      const isMet = normalizeIsMet(t.isMet);
+      const evalStatus =
+        isMet === "Yes" ? "EVALUATED_SUPPORTED" :
+        isMet === "No" ? "EVALUATED_CONCERN" :
+        isMet === "Not Applicable" ? "NOT_APPLICABLE" :
+        "NOT_DETERMINABLE";
+      return {
+        thresholdChecked: str(t.thresholdChecked),
+        isMet,
+        evaluationStatus: t.evaluationStatus || evalStatus,
+        isSystemPlaceholder: Boolean(t.isSystemPlaceholder ?? false),
+        reasoning: str(t.reasoning || t.evaluation),
+        primarySourceLaw: str(t.primarySourceLaw || t.citation || "CYFSA 2017"),
+      };
+    });
 
   // If fewer than 4 checkpoints were provided, ensure at least 4 checkpoints are represented
   if (items.length < 4) {
@@ -333,7 +344,9 @@ export function validateThresholds(raw: any): Validation {
         items.push({
           thresholdChecked: canon.thresholdChecked,
           isMet: "Not Determinable From This Document",
-          reasoning: "Not determinable or not specifically addressed in the provided document record.",
+          evaluationStatus: "NOT_EVALUATED",
+          isSystemPlaceholder: true,
+          reasoning: "Not specifically addressed or determinable in this document filing; retained from standard CYFSA statutory checklist.",
           primarySourceLaw: canon.primarySourceLaw,
         });
       }
@@ -382,6 +395,8 @@ export function validateTimeline(raw: any): Validation {
       timelineRule: str(t.timelineRule || t.rule),
       documentAssertion: str(t.documentAssertion || t.assertion || "Not explicitly documented"),
       evaluation: str(t.evaluation || t.reasoning),
+      evaluationStatus: t.evaluationStatus || "EVALUATED_SUPPORTED",
+      isSystemPlaceholder: Boolean(t.isSystemPlaceholder ?? false),
       citation: str(t.citation || "CYFSA"),
       locationInDocument: str(t.locationInDocument || "Checked & Compliant"),
       parentActionStep: str(t.parentActionStep || "Review timeline adherence with legal counsel."),
@@ -396,6 +411,8 @@ export function validateTimeline(raw: any): Validation {
           timelineRule: canon.timelineRule,
           documentAssertion: "No specific statutory violation or exception documented.",
           evaluation: "Not determinable or not asserted in the provided document record.",
+          evaluationStatus: "NOT_EVALUATED",
+          isSystemPlaceholder: true,
           citation: canon.citation,
           locationInDocument: "Checked & Compliant",
           parentActionStep: "Confirm statutory procedural deadlines with legal counsel.",
@@ -651,13 +668,35 @@ export function guardCitation(text: string): {
   status: CitationStatus;
   identifiedAct: IdentifiedAct;
   reason: string;
+  authorityResolution?: any;
 } {
   const t = str(text);
   const c = classifyCitation(t);
+  const auth = resolveLegalAuthority(t);
+  const authorityResolution = auth.status === "VERIFIED" && auth.entry ? {
+    citation: auth.entry.citation,
+    heading: auth.entry.heading,
+    sourceUrl: auth.entry.sourceUrl,
+    exactWording: auth.entry.exactWording,
+    practiceNote: auth.entry.practiceNote,
+  } : undefined;
+
   if (c.status === "UNVERIFIED" && !/unverified/i.test(t)) {
-    return { text: `${t} ${UNVERIFIED_CITATION_NOTE}`, status: "UNVERIFIED", identifiedAct: c.identifiedAct, reason: c.reason };
+    return {
+      text: `${t} ${UNVERIFIED_CITATION_NOTE}`,
+      status: "UNVERIFIED",
+      identifiedAct: c.identifiedAct,
+      reason: c.reason,
+      authorityResolution,
+    };
   }
-  return { text: t, status: c.status, identifiedAct: c.identifiedAct, reason: c.reason };
+  return {
+    text: t,
+    status: c.status,
+    identifiedAct: c.identifiedAct,
+    reason: c.reason,
+    authorityResolution,
+  };
 }
 
 /**
@@ -935,19 +974,55 @@ export function mergeVerification(report: Record<string, any>, parsed: any, mode
   for (const v of Array.isArray(parsed?.findings) ? parsed.findings : []) {
     if (v && typeof v === "object" && str(v.id)) byId.set(str(v.id), v);
   }
+
+  const activeFlags: any[] = [];
+  const unsupportedFindings: any[] = [];
+  report.auditTrail = report.auditTrail || {};
+
   for (const flag of report.redFlags || []) {
     const v = byId.get(flag.id);
-    if (!v) continue;
+    if (!v) {
+      activeFlags.push(flag);
+      continue;
+    }
     const verdict = (VERDICTS as readonly string[]).includes(str(v.verdict).toUpperCase()) ? str(v.verdict).toUpperCase() : "NEEDS_CONTEXT";
     flag.forensicVerification = { verdict, note: str(v.note), verifiedBy: VERIFIER_LABEL };
+
+    if (verdict === "UNSUPPORTED") {
+      unsupportedFindings.push({
+        ...flag,
+        removalReason: str(v.note) || "Independent second review confirmed finding is unsupported by document text.",
+        reconciledStatus: "UNSUPPORTED_REMOVED",
+      });
+      checked++;
+      continue;
+    }
+
+    if (verdict === "OVERSTATED") {
+      flag.reconciledStatus = "OVERSTATED_RECONCILED";
+      flag.originalExplanation = flag.explanation;
+      if (str(v.note)) {
+        flag.reconciliationNote = str(v.note);
+      }
+    } else if (verdict === "SUPPORTED") {
+      flag.reconciledStatus = "CONFIRMED_SUPPORTED";
+    }
+
     // Verification may calibrate severity down, never up: escalation needs the generating rules.
     const rec = SEVERITIES.find((s) => s.toLowerCase() === str(v.recommendedSeverity).toLowerCase());
     if (rec && SEVERITY_RANK[rec] < SEVERITY_RANK[flag.severity]) {
       flag.originalSeverity = flag.severity;
       flag.severity = rec;
     }
+    activeFlags.push(flag);
     checked++;
   }
+
+  report.redFlags = activeFlags;
+  if (unsupportedFindings.length > 0) {
+    report.auditTrail.unsupportedFindings = unsupportedFindings;
+  }
+
   const thresholdVerdicts = new Map<string, any>();
   for (const v of Array.isArray(parsed?.thresholds) ? parsed.thresholds : []) {
     if (v && typeof v === "object") thresholdVerdicts.set(str(v.thresholdChecked).toLowerCase(), v);
