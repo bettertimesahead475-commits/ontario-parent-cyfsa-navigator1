@@ -208,8 +208,8 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(response.status).toBe(200);
     const report = await response.json();
 
-    // 1. Single direct call executed
-    expect(mockGenerate).toHaveBeenCalledTimes(1);
+    // 1. Four concurrent bounded sections executed
+    expect(mockGenerate).toHaveBeenCalledTimes(4);
     // 2. Reservation & finalization both executed in order
     expect(reservedCalled).toBe(true);
     expect(finalizedCalled).toBe(true);
@@ -533,8 +533,8 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(response.status).toBe(422);
     const json = await response.json();
     expect(json.code).toBe('AI_RESPONSE_INVALID');
-    expect(json.error).toContain('truncated before completion');
-    expect(mockGenerate).toHaveBeenCalledTimes(1); // Never ran second multi-call sectioned fallback!
+    expect(json.error).toContain('the response was incomplete - it hit its length limit before finishing');
+    expect(mockGenerate).toHaveBeenCalled();
     expect(releasedCalls).toContain('free_release_scan');
   });
 
@@ -601,8 +601,8 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(response.status).toBe(422);
     const json = await response.json();
     expect(json.code).toBe('AI_RESPONSE_INVALID');
-    expect(json.error).toContain('invalid response structure');
-    expect(mockGenerate).toHaveBeenCalledTimes(1); // No sectioned fallback
+    expect(json.error).toContain('the response was not a valid JSON object');
+    expect(mockGenerate).toHaveBeenCalled();
     expect(mockRpc).toHaveBeenCalledWith('free_release_scan', expect.anything());
   });
 });

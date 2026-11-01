@@ -99,6 +99,77 @@ describe('Truncation Recovery & JSON Repair Unit Logic', () => {
   });
 });
 
+const VALID_COMPLETE_REPORT_JSON = JSON.stringify({
+  documentTitle: 'Affidavit of Child Protection Worker',
+  documentType: 'Affidavit',
+  metadata: {
+    fileNumber: 'FC-26-00123',
+    applicantName: "Children's Aid Society",
+    respondentName: 'Jane Clarke',
+  },
+  disclaimer: 'Informational only.',
+  completenessScore: 85,
+  completenessScoreMethod: 'Standard scoring',
+  evidenceStrengthIndex: {
+    score: 60,
+    scale: '0-100',
+    label: 'Evidence Strength Index',
+    method: 'Calculated from documented evidence.',
+    components: {
+      firsthandKnowledge: { score: 15, max: 20, explanation: 'Worker personal observations' },
+      sourceReliability: { score: 10, max: 15, explanation: 'Identified sources' },
+      corroboration: { score: 10, max: 15, explanation: 'Partial corroboration' },
+      documentarySupport: { score: 10, max: 15, explanation: 'Intake notes' },
+      internalConsistency: { score: 5, max: 10, explanation: 'Internally consistent' },
+      contradictoryEvidenceHandling: { score: 5, max: 10, explanation: 'Parent statements noted' },
+      legalAuthorityVerification: { score: 3, max: 10, explanation: 'CYFSA cited' },
+      proceduralDocumentation: { score: 2, max: 5, explanation: 'Affidavit sworn' },
+    },
+    calculation: 'Sum of components',
+    limitations: 'Heuristic evaluation only.',
+  },
+  fileSummary:
+    'This document is an affidavit filed by CAS alleging lack of cooperation and parental intoxication based on an anonymous report. The key evidence is worker attendance notes. The primary weakness is lack of corroboration for the anonymous tip. The parent should seek disclosure of intake logs and 911 calls.',
+  redFlags: [
+    {
+      id: 'rf1',
+      severity: 'Worth Raising With Counsel',
+      category: 'Hearsay',
+      evidenceClassification: 'HEARSAY',
+      phraseDetected: 'An anonymous neighbour reported seeing the parent intoxicated on the front porch.',
+      explanation:
+        'The worker relies upon an anonymous secondhand telephone allegation without independent toxicological or medical corroboration. Under CYFSA s. 74 standards, unverified tips possess minimal probative weight.',
+      verifyRequirement: 'Request disclosure of intake screening notes and caller details.',
+      legalReference: 'CYFSA s. 74',
+      locationInDocument: 'Paragraph 2',
+      parentActionStep: 'Consult legal counsel regarding excluding uncorroborated hearsay.',
+    },
+  ],
+  chronology: [
+    {
+      date: 'October 12, 2026',
+      event: 'Society received an anonymous referral alleging parent intoxication.',
+      locationInDocument: 'Paragraph 1',
+      evidenceClassification: 'HEARSAY',
+    },
+  ],
+  contradictions: [
+    {
+      description: 'Worker reported refusal to discuss, but phone record indicates conversation occurred.',
+      locations: ['Paragraph 3', 'CAS Intake Note'],
+      significance: 'Materially bears upon worker assessment of parental cooperation.',
+    },
+  ],
+  whatToVerify: ['Request complete intake audio recording from October 12, 2026.'],
+  whatToAskALawyer: [
+    'Question: Can the anonymous hearsay report be excluded? | What the uploaded record shows: The worker concedes the caller was unverified | Still unknown: Whether caller identity was confirmed | Source: Paragraph 2.',
+  ],
+  whatIsMissing: ['Contemporaneous toxicological assessment or officer notes.'],
+  lawyerCaseBrief: [
+    'ISSUE: Uncorroborated anonymous hearsay — DOCUMENT EVIDENCE: Paragraph 2 allegation — SIGNIFICANCE: Insufficient grounds under CYFSA s. 74 without corroboration — LIMITATION: CAS may investigate — VERIFY: Request caller log disclosure.',
+  ],
+});
+
 describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
   const env: any = {
     ANALYZER_ENABLED: 'true',
@@ -128,57 +199,29 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
       return { status: 'noop' };
     });
 
-    // Mock generate: Call 1 (direct) hits max_tokens with partial JSON
-    // Subsequent calls (recovery for chronology & guidance) succeed with valid section payloads
-    const mockGenerate = vi.fn()
-      .mockResolvedValueOnce({
-        text: VALID_OVERVIEW_AND_REDFLAGS_TRUNCATED,
-        stopReason: 'max_tokens',
-        model: 'claude-sonnet-5',
-        durationMs: 4000,
-        usage: { input_tokens: 600, output_tokens: 4096 },
-      })
-      .mockResolvedValueOnce({
-        // Section call for chronology
-        text: JSON.stringify({
-          chronology: [
-            {
-              date: 'October 12, 2026',
-              event: 'Society received an anonymous referral alleging parent intoxication.',
-              locationInDocument: 'Paragraph 1',
-              evidenceClassification: 'HEARSAY',
-            },
-          ],
-          contradictions: [
-            {
-              description: 'Worker reported refusal to discuss, but phone record indicates conversation occurred.',
-              locations: ['Paragraph 3', 'CAS Intake Note'],
-              significance: 'Materially bears upon worker assessment of parental cooperation.',
-            },
-          ],
-        }),
+    let overviewAttempts = 0;
+    const mockGenerate = vi.fn(async (params: any) => {
+      const stage = params?.stage || '';
+      if (stage.includes('overview')) {
+        overviewAttempts++;
+        if (overviewAttempts === 1) {
+          return {
+            text: '{"documentTitle": "Affidavit of Child...',
+            stopReason: 'max_tokens',
+            model: 'claude-sonnet-5',
+            durationMs: 2000,
+            usage: { input_tokens: 600, output_tokens: 4096 },
+          };
+        }
+      }
+      return {
+        text: VALID_COMPLETE_REPORT_JSON,
         stopReason: 'end_turn',
         model: 'claude-sonnet-5',
-        durationMs: 2000,
-        usage: { input_tokens: 700, output_tokens: 400 },
-      })
-      .mockResolvedValueOnce({
-        // Section call for guidance
-        text: JSON.stringify({
-          whatToVerify: ['Request complete intake audio recording from October 12, 2026.'],
-          whatToAskALawyer: [
-            'Question: Can the anonymous hearsay report be excluded? | What the uploaded record shows: The worker concedes the caller was unverified | Still unknown: Whether caller identity was confirmed | Source: Paragraph 2.',
-          ],
-          whatIsMissing: ['Contemporaneous toxicological assessment or officer notes.'],
-          lawyerCaseBrief: [
-            'ISSUE: Uncorroborated anonymous hearsay — DOCUMENT EVIDENCE: Paragraph 2 allegation — SIGNIFICANCE: Insufficient grounds under CYFSA s. 74 without corroboration — LIMITATION: CAS may investigate — VERIFY: Request caller log disclosure.',
-          ],
-        }),
-        stopReason: 'end_turn',
-        model: 'claude-sonnet-5',
-        durationMs: 2000,
-        usage: { input_tokens: 700, output_tokens: 400 },
-      });
+        durationMs: 1500,
+        usage: { input_tokens: 650, output_tokens: 400 },
+      };
+    });
 
     const request = new Request('https://staging.example/api/analyze', {
       method: 'POST',
@@ -192,7 +235,7 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
       }),
     });
 
-    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate });
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate as any });
     expect(response.status).toBe(200);
     const json = await response.json() as any;
 
@@ -208,7 +251,7 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
     // Credit was finalized, never released!
     expect(finalizedCalls).toContain('free_finalize_scan');
     expect(releasedCalls).toHaveLength(0);
-    // Direct call + 2 missing sections recovered
-    expect(mockGenerate).toHaveBeenCalledTimes(3);
+    // Overview retried once after truncation + 3 other sections = 5 calls
+    expect(mockGenerate).toHaveBeenCalledTimes(5);
   });
 });

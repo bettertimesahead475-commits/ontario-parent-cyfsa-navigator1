@@ -73,7 +73,7 @@ function clampBudget(raw: string | undefined, fallback: number): number {
 /** Time allowed past the latency budget before the pipeline is stopped regardless of what it is waiting on. */
 const HARD_DEADLINE_GRACE_MS = 5_000;
 /** How often the stream confirms the worker is alive. */
-const HEARTBEAT_INTERVAL_MS = 15_000;
+const HEARTBEAT_INTERVAL_MS = 5_000;
 
 /** Rejects with makeError() if work does not settle within ms. The work is abandoned, not cancelled, so its late result is ignored. */
 export function withHardDeadline<T>(work: Promise<T>, ms: number, makeError: () => Error): Promise<T> {
@@ -252,7 +252,7 @@ export async function handleAnalyzeRequest(
   // targets (15 s Quick, 60 s Forensic) are reported as not met until staging measurements say otherwise.
   const analysisBudgetMs = isForensic
     ? clampBudget(env.FORENSIC_ANALYSIS_BUDGET_MS, 180_000)
-    : clampBudget(env.QUICK_ANALYSIS_BUDGET_MS, 60_000);
+    : clampBudget(env.QUICK_ANALYSIS_BUDGET_MS, 100_000);
   const aiDeadlineAt = Date.now() + analysisBudgetMs - 2_000;
 
   // The job exists from this point on, so a refreshed or reconnected browser sees it as running (not missing).
@@ -272,7 +272,7 @@ export async function handleAnalyzeRequest(
         throw new AnalyzerError(
           'AI_REQUEST_REJECTED',
           400,
-          'This document exceeds the 75,000 character Quick Review limit. Select Forensic In-Depth for larger records. Nothing was charged.',
+          `This document exceeds the 75,000 character limit for Quick Review. Please select Forensic In-Depth mode for comprehensive analysis of larger records. Nothing was charged.`,
           false
         );
       }
