@@ -10,22 +10,12 @@
 import { useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, signInMinimal } from "../utils/firebase";
-import { Shield, Loader2, Sparkles } from "lucide-react";
+import { Shield, Loader2 } from "lucide-react";
 
 export default function RequireAuth({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null | undefined>(undefined); // undefined = still checking
-  const [stagingBypass, setStagingBypass] = useState<boolean>(() => {
-    try {
-      return typeof window !== "undefined" && window.sessionStorage.getItem("opa_staging_bypass") === "1";
-    } catch {
-      return false;
-    }
-  });
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const isStaging = typeof window !== "undefined" && 
-    (window.location.hostname.includes("pages.dev") || window.location.hostname === "localhost");
 
   useEffect(() => {
     // Safety timeout: Never stay stuck on undefined if IndexedDB or network hangs
@@ -61,28 +51,18 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
     } catch (e: any) {
       const code = e?.code || "";
       if (code === "auth/popup-blocked") {
-        setError("Google popup was blocked by your browser. Please allow popups or use Staging Reviewer session.");
+        setError("Google popup was blocked by your browser. Please allow popups and try again.");
       } else if (code === "auth/unauthorized-domain") {
-        setError("Firebase unauthorized domain. Use Staging Reviewer session below.");
+        setError("This domain is not yet authorized in Firebase Console (auth/unauthorized-domain).");
+      } else if (code === "auth/popup-closed-by-user") {
+        setError("Google sign-in popup was closed before completion.");
       } else {
-        setError("Sign-in didn't go through. Please try again or use Staging Reviewer session.");
+        setError("Sign-in did not complete. Please try again.");
       }
     } finally {
       setSigningIn(false);
     }
   };
-
-  const handleStagingReviewerBypass = () => {
-    try {
-      window.sessionStorage.setItem("opa_staging_bypass", "1");
-    } catch {}
-    setStagingBypass(true);
-  };
-
-  // If in staging preview mode, render protected children directly
-  if (stagingBypass) {
-    return <>{children}</>;
-  }
 
   if (user === undefined) {
     return (
@@ -116,17 +96,6 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
           >
             {signingIn ? "Connecting Google..." : "Sign in with Google"}
           </button>
-
-          {isStaging && (
-            <button
-              onClick={handleStagingReviewerBypass}
-              type="button"
-              className="w-full sm:w-auto px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
-            >
-              <Sparkles className="w-4 h-4 text-slate-950" />
-              <span>Staging Preview Session</span>
-            </button>
-          )}
         </div>
 
         {error && <p className="text-xs text-red-600 mt-4 max-w-sm bg-red-50 p-2.5 rounded-lg border border-red-200">{error}</p>}
