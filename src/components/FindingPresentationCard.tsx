@@ -107,7 +107,7 @@ export const FindingPresentationCard: React.FC<FindingPresentationCardProps> = (
                 className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
                   matched ? "bg-sky-100 text-sky-800" : none ? "bg-slate-100 text-slate-700" : "bg-rose-100 text-rose-800"
                 }`}
-                title={flag.citationReason || "Confirm this citation with counsel"}
+                title={flag.citationReason || "Review this citation against official sources or with legal counsel"}
               >
                 {matched ? "Internal reference match" : none ? "No statute cited" : "Citation unverified"}
               </span>
@@ -498,14 +498,6 @@ export const FindingPresentationCard: React.FC<FindingPresentationCardProps> = (
                     <strong>Form {sf.formNumber}:</strong> {sf.title}
                   </span>
                 ))}
-              </div>
-
-              {/* Mandatory Safeguard Notice */}
-              <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl flex items-start gap-2 text-[11px] text-amber-950">
-                <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                <p className="leading-normal font-medium">
-                  {uses.courtForms.safeguardNotice}
-                </p>
               </div>
             </div>
           </div>

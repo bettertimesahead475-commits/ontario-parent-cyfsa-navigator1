@@ -69,7 +69,9 @@ describe("FindingPresentationCard component", () => {
     expect(screen.getByText(/3. Targeted Disclosure Demands/i)).toBeDefined();
     expect(screen.getByText(/Official Ontario Court Forms Education Connection/i)).toBeDefined();
     expect(screen.getAllByText(/Form 14A/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Educational guidance only/i)).toBeDefined();
+    expect(screen.getByText(/How to use this finding when preparing your court documents/i)).toBeDefined();
+    // Confirms Requirement 5: No repetitive disclaimers appear on individual finding cards
+    expect(screen.queryByText(/Educational guidance only/i)).toBeNull();
   });
 
   it("calls openLegislativeReference when clicking statute reference button", () => {

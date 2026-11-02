@@ -154,9 +154,9 @@ export function getAuthoritativeJurisprudence(flag: any): { caseName: string; ci
 
   // Default for unsupported claims
   return {
-    caseName: "Re B. (1988)",
-    citation: "64 O.R. (2d) 263 (Ont. C.A.)",
-    legalPrinciple: "The Society bears the legal burden of proof on a balance of probabilities, and bald assertions in protection pleadings lacking documentary substantiation cannot support coercive state orders."
+    caseName: "F.H. v. McDougall",
+    citation: "2008 SCC 53, [2008] 3 S.C.R. 41",
+    legalPrinciple: "The Society bears the burden of proof on a balance of probabilities, which requires clear, convincing, and cogent evidence rather than speculation, suspicion, or unsubstantiated conclusions."
   };
 }
 
@@ -213,7 +213,7 @@ export function buildEducationalAnalysis(flag: any): EducationalAnalysis {
     whatEvidenceEstablishes = `The document asserts facts intended to support a statutory protection finding, but the supporting evidence must be evaluated against statutory criteria.`;
     whatLawRequires = `CYFSA s. 74(2) requires cogent proof that the child has suffered harm or that a substantial risk of future harm exists that the parent has failed to protect against.`;
     whyFindingMatters = `Unless the specific elements of the statutory clause are proven by admissible, probative evidence, the court cannot find the child in need of protection or make dispositional orders.`;
-    missingEvidenceToResolve = `Clinical assessments, police reports, or direct observational evidence establishing actual or probable harm. Review with counsel whether the factual threshold is legally met.`;
+    missingEvidenceToResolve = `Clinical assessments, police reports, or direct observational evidence establishing actual or probable harm. Assess whether the documented facts satisfy the strict statutory criteria of s. 74(2), or discuss with legal counsel or duty counsel.`;
   } else {
     directFindingStatement = `The document states an adverse factual assertion without identifying direct evidentiary substantiation.`;
     whatEvidenceEstablishes = `The passage records the worker's narrative opinion or conclusion without referencing eyewitness statements or supporting exhibits.`;
@@ -228,9 +228,9 @@ export function buildEducationalAnalysis(flag: any): EducationalAnalysis {
   }
 
   const parentExaminationGuidance = [
-    `Rights Awareness: You have the right under CYFSA Part V and Family Law Rules to challenge unproven allegations and to request full disclosure of all underlying CAS records.`,
+    `Rights Awareness: You have the statutory right under CYFSA Part V and Family Law Rules to represent yourself, challenge unproven allegations, and request full disclosure of all underlying CAS records.`,
     `Evidence Review: Compare this specific passage against your own records, text messages, calendars, and witness accounts from that date.`,
-    `Questions for Counsel: Ask your lawyer: (1) Does this statement meet the admissibility requirements of FLR 14(18)? (2) Can we request the worker's contemporaneous notes on this issue? (3) Should we address this in our Form 33B.1 Answer or Form 14A Affidavit?`
+    `Questions to Consider (or Discuss with Counsel if Retained): (1) Does this statement meet the firsthand personal knowledge requirements of Family Law Rule 14(18)? (2) What primary records exist to test or contradict this assertion? (3) Should this be addressed in your Form 33B.1 Answer or in a Form 14A Responding Affidavit?`
   ];
 
   if (flag?.parentActionStep && typeof flag.parentActionStep === "string" && flag.parentActionStep.length > 10) {
@@ -335,18 +335,18 @@ export function buildCourtFormsGuidance(flag: any): CourtFormConnection {
     primaryFormTitle = "Affidavit (General)";
     officialRulesCitation = "O. Reg. 114/99, Rule 14, Form 14A";
     applicableSectionOrField = "Paragraph-by-Paragraph Factual Deposition in Response to Society's Motion / Application";
-    educationalDraftingGuidance = `How to use this finding when preparing with counsel:
+    educationalDraftingGuidance = `How to use this finding when preparing your court documents (self-represented or with counsel):
 1. In your Form 14A Responding Affidavit, locate the corresponding paragraph where CAS asserts "${quote}" (${locator}).
 2. State your firsthand, personal knowledge of what actually occurred on that date, avoiding secondhand hearsay.
 3. Attach verified supporting exhibits (e.g., text messages, doctor's notes, attendance slips, sign-in logs) as Exhibit "A", "B", etc., to affirmatively refute the uncorroborated hearsay.
-4. Form 14A must be sworn or affirmed before a commissioner for taking affidavits in Ontario before filing.`;
+4. Form 14A must be sworn or affirmed before a commissioner for taking affidavits in Ontario (available for free at Ontario family court counters) before filing.`;
   } else if (nature === "Documented Evidentiary Contradiction") {
     primaryFormNumber = "33C";
     primaryFormTitle = "Statement of Agreed Facts (Child Protection)";
     officialRulesCitation = "O. Reg. 114/99, Rule 33, Form 33C";
     applicableSectionOrField = "Section 2: Facts in Dispute & Separate Agreed Timeline Items";
-    educationalDraftingGuidance = `How to use this finding when preparing with counsel:
-1. In Form 33C discussions between counsel, isolate verified undisputed dates from the contradictory claim "${quote}".
+    educationalDraftingGuidance = `How to use this finding when preparing your court documents (self-represented or with counsel):
+1. In Form 33C discussions with the Society or during a case conference, isolate verified undisputed dates from the contradictory claim "${quote}".
 2. Use this contradiction to demonstrate to the court why the Society's version cannot be adopted as an agreed fact.
 3. In your Form 33B.1 Answer, explicitly plead the true factual chronology with reference to corroborating records.`;
   } else if (nature === "Procedural Noncompliance Concern") {
@@ -354,20 +354,20 @@ export function buildCourtFormsGuidance(flag: any): CourtFormConnection {
     primaryFormTitle = "Motion Form";
     officialRulesCitation = "O. Reg. 114/99, Rule 14, Form 14B";
     applicableSectionOrField = "Order Requested: Expedited Hearing / Mandatory Disclosure under CYFSA";
-    educationalDraftingGuidance = `How to use this finding when preparing with counsel:
-1. Counsel can prepare a Form 14B Motion seeking an order for immediate disclosure of all unredacted worker notes and third-party records concerning "${quote}".
-2. Identify the specific statutory timeline breach and the procedural remedy requested from the court.
-3. Confirm with duty counsel or your family-law lawyer whether a Form 14B motion or 14A affidavit is appropriate at your current court stage.`;
+    educationalDraftingGuidance = `How to use this finding when preparing your court documents (self-represented or with counsel):
+1. Prepare a Form 14B Motion seeking an order for immediate disclosure of all unredacted worker notes and third-party records concerning "${quote}".
+2. Identify the specific statutory timeline breach and the procedural remedy requested from the court under the Family Law Rules.
+3. Legal counsel is optional; self-represented parents can file Form 14B motions directly with the court office or consult duty counsel for procedural guidance.`;
   } else {
     // Statutory Threshold
     primaryFormNumber = "33B.1";
     primaryFormTitle = "Answer and Plan of Care (parties other than Children's Aid Society)";
     officialRulesCitation = "O. Reg. 114/99, Rule 33, Form 33B.1";
     applicableSectionOrField = "Part 2 (Response to Protection Claim) & Part 3 (Parent's Proposed Plan of Care)";
-    educationalDraftingGuidance = `How to use this finding when preparing with counsel:
+    educationalDraftingGuidance = `How to use this finding when preparing your court documents (self-represented or with counsel):
 1. In Form 33B.1 Part 2, directly address the Society's allegation regarding s. 74(2) grounds referenced at ${locator}.
 2. Explain the facts showing that the child is safe, thriving, and not in need of state protection.
-3. In Part 3, construct a comprehensive parental plan of care detailing family support, community resources, daycare/school routines, and medical care providers.`;
+3. In Part 3, construct a comprehensive parental plan of care detailing family support, community resources, daycare/school routines, and medical care providers. Form 33B.1 must be served on all parties and filed within the timelines prescribed by Rule 33(4).`;
   }
 
   const secondaryForms = [
@@ -391,7 +391,7 @@ export function buildCourtFormsGuidance(flag: any): CourtFormConnection {
     educationalDraftingGuidance,
     secondaryForms,
     officialIndexUrl: "https://ontariocourtforms.on.ca/en/family-law-rules-forms/",
-    safeguardNotice: "Educational guidance only. CYFSA Navigator does not autofill, complete, sign, or submit court forms. All court forms must be prepared accurately, reviewed with qualified legal counsel, and sworn before a commissioner for taking affidavits."
+    safeguardNotice: "Educational guidance only. CYFSA Navigator does not autofill, complete, sign, or submit court forms. Self-represented parents have the legal right to draft and file their own court materials without a lawyer; legal representation is optional. However, specific legal formalities are mandatory: affidavits (such as Form 14A and Form 35.1A) must be sworn or affirmed before a commissioner for taking affidavits (available for free at Ontario family court counters), and all materials must adhere to Family Law Rules service and filing deadlines."
   };
 }
 

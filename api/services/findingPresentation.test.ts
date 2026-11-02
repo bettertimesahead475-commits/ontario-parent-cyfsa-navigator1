@@ -82,7 +82,8 @@ describe("findingPresentation engine", () => {
     it("provides parent examination and rights guidance", () => {
       const edu = buildEducationalAnalysis(sampleHearsayFlag);
       expect(edu.parentExaminationGuidance.length).toBeGreaterThan(0);
-      expect(edu.parentExaminationGuidance.some(g => g.includes("Questions for Counsel"))).toBe(true);
+      expect(edu.parentExaminationGuidance.some(g => g.includes("Questions to Consider"))).toBe(true);
+      expect(edu.parentExaminationGuidance.some(g => g.includes("represent yourself"))).toBe(true);
     });
   });
 
@@ -131,10 +132,13 @@ describe("findingPresentation engine", () => {
       expect(forms.primaryFormTitle).toContain("Motion");
     });
 
-    it("includes prominent mandatory safeguard against autofilling or filing", () => {
+    it("includes prominent mandatory safeguard explaining self-representation rights and mandatory formalities", () => {
       const forms = buildCourtFormsGuidance(sampleHearsayFlag);
       expect(forms.safeguardNotice).toContain("Educational guidance only");
       expect(forms.safeguardNotice).toContain("does not autofill, complete, sign, or submit");
+      expect(forms.safeguardNotice).toContain("Self-represented parents have the legal right to draft and file their own court materials");
+      expect(forms.safeguardNotice).toContain("legal representation is optional");
+      expect(forms.safeguardNotice).toContain("commissioner for taking affidavits");
     });
   });
 

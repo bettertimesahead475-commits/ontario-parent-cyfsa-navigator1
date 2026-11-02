@@ -4700,6 +4700,14 @@ export default function DocumentAnalyzerTab() {
                             onToggle={() => setOpenReportSections(prev => ({ ...prev, redFlags: !prev.redFlags }))}
                           >
                             <div className="space-y-4">
+                              {/* Platform-Level Explanation: Parents Rights & Court Formalities */}
+                              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5 text-xs text-slate-700">
+                                <Info className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+                                <div className="leading-relaxed">
+                                  <strong className="text-slate-900 font-bold">Platform Educational Guidance:</strong> CYFSA Navigator analyzes document evidence and connects findings to official Ontario court forms for educational purposes. Parents have the legal right to represent themselves without a lawyer; legal representation is optional. However, specific court formalities are legally mandatory: affidavits (Forms 14A and 35.1A) must be sworn or affirmed before an authorized commissioner (available free of charge at Ontario family court counters), and all materials must adhere to strict Family Law Rules filing and service timelines.
+                                </div>
+                              </div>
+
                               {(displayedReport.redFlags || []).map((flag: any, idx: number) => {
                                 const flagId = flag.id || `rf-${idx + 1}`;
                                 const isFlagActive = narration.isSegmentActive(`rf-${flagId}`);
