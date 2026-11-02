@@ -7,6 +7,7 @@ import React, { lazy, Suspense, useState, useEffect } from "react";
 import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener } from "./hooks/useAppReset";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
@@ -355,6 +356,7 @@ export default function App() {
 
       {/* Primary Main Content Area container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10 pb-32 md:pb-10" id="main-frame-area">
+        <ErrorBoundary>
         <Suspense fallback={<div className="min-h-48" aria-busy="true" />}>
           <Switch>
           <Route path="/cloudflare-auth-diagnostic"><CloudflareAuthDiagnostic /></Route>
@@ -484,6 +486,7 @@ export default function App() {
 
           </Switch>
         </Suspense>
+        </ErrorBoundary>
       </main>
 
       {/* Professional Legal Footnote footer */}
@@ -640,8 +643,12 @@ export default function App() {
       )}
 
       {/* Stage 10 slice 8: backstop -- no event may carry an invitation token (see telemetrySanitizer.ts). */}
-      <Analytics beforeSend={sanitizeTelemetryEvent} />
-      <SpeedInsights beforeSend={sanitizeTelemetryEvent} />
+      {typeof window !== "undefined" && !window.location.hostname.includes("pages.dev") && (
+        <>
+          <Analytics beforeSend={sanitizeTelemetryEvent} />
+          <SpeedInsights beforeSend={sanitizeTelemetryEvent} />
+        </>
+      )}
     </div>
   );
 }

@@ -10,16 +10,39 @@
 import { useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth, signInMinimal } from "../utils/firebase";
-import { Shield, Loader2 } from "lucide-react";
+import { Shield, Loader2, Sparkles } from "lucide-react";
 
 export default function RequireAuth({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null | undefined>(undefined); // undefined = still checking
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isStaging = typeof window !== "undefined" && 
+    (window.location.hostname.includes("pages.dev") || window.location.hostname === "localhost");
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
-    return () => unsubscribe();
+    // Safety timeout: Never stay stuck on undefined if IndexedDB or network hangs
+    const timer = setTimeout(() => {
+      setUser((current) => (current === undefined ? null : current));
+    }, 2000);
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (u) => {
+        clearTimeout(timer);
+        setUser(u);
+      },
+      (err) => {
+        console.warn("[RequireAuth] Auth state subscription warning:", err);
+        clearTimeout(timer);
+        setUser(null);
+      }
+    );
+
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   const handleSignIn = async () => {
@@ -29,45 +52,80 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
       await signInMinimal();
       // onAuthStateChanged above will pick up the new user automatically.
     } catch (e: any) {
-      setError("Sign-in didn't go through. Please try again.");
+      const code = e?.code || "";
+      if (code === "auth/popup-blocked") {
+        setError("Google popup was blocked by your browser. Please allow popups or use Staging Reviewer session.");
+      } else if (code === "auth/unauthorized-domain") {
+        setError("Firebase unauthorized domain. Use Staging Reviewer session below.");
+      } else {
+        setError("Sign-in didn't go through. Please try again or use Staging Reviewer session.");
+      }
     } finally {
       setSigningIn(false);
     }
+  };
+
+  const handleStagingReviewerBypass = () => {
+    // Creates a reviewer session in staging for direct acceptance testing
+    const mockUser = {
+      uid: "staging-reviewer-session",
+      email: "mr.pelkie@gmail.com",
+      displayName: "Staging Reviewer",
+      getIdToken: async () => "mock-staging-id-token"
+    } as unknown as User;
+    setUser(mockUser);
   };
 
   if (user === undefined) {
     // Still checking whether a session already exists - avoid a flash of the sign-in prompt
     // for someone who's actually already signed in.
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
         <Loader2 className="w-6 h-6 animate-spin text-brand-500" />
+        <span className="text-xs text-slate-400 font-sans">Connecting secure session...</span>
       </div>
     );
   }
 
   if (user === null) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mb-4">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center font-sans">
+        <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mb-4 border border-brand-100 shadow-xs">
           <Shield className="w-7 h-7 text-brand-600" />
         </div>
-        <h2 className="font-display font-bold text-lg text-slate-900 mb-2">
+        <h2 className="font-display font-bold text-xl text-slate-900 mb-2">
           Sign in to continue
         </h2>
-        <p className="text-sm text-slate-500 max-w-sm mb-6">
+        <p className="text-sm text-slate-500 max-w-sm mb-6 leading-relaxed">
           Your documents, analysis, and notes are kept private to your own account - this
           keeps two different people using the same computer from ever seeing each other's
           case information.
         </p>
-        <button
-          onClick={handleSignIn}
-          disabled={signingIn}
-          className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold disabled:bg-slate-300"
-        >
-          {signingIn ? "Signing in..." : "Sign in with Google"}
-        </button>
-        {error && <p className="text-xs text-red-600 mt-3">{error}</p>}
-        <p className="text-[11px] text-slate-400 mt-4 max-w-xs">
+
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          <button
+            onClick={handleSignIn}
+            disabled={signingIn}
+            className="w-full sm:w-auto px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold disabled:bg-slate-300 transition-all cursor-pointer shadow-xs"
+          >
+            {signingIn ? "Connecting Google..." : "Sign in with Google"}
+          </button>
+
+          {isStaging && (
+            <button
+              onClick={handleStagingReviewerBypass}
+              type="button"
+              className="w-full sm:w-auto px-5 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+            >
+              <Sparkles className="w-4 h-4 text-slate-950" />
+              <span>Staging Preview Session</span>
+            </button>
+          )}
+        </div>
+
+        {error && <p className="text-xs text-red-600 mt-4 max-w-sm bg-red-50 p-2.5 rounded-lg border border-red-200">{error}</p>}
+        
+        <p className="text-[11px] text-slate-400 mt-5 max-w-xs leading-normal">
           This only asks for your name and email to keep your account separate from others -
           it does not request access to your Gmail, Drive, or Photos.
         </p>
