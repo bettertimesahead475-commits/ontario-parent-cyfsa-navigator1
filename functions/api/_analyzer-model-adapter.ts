@@ -63,7 +63,7 @@ export function createCloudflareGenerateFn(
         deadline.catch(() => undefined);
         const bounded = <T>(p: Promise<T>): Promise<T> => Promise.race([p, deadline]);
 
-        const thinkingFields = buildThinkingRequestFields(wireModel, Boolean(options.enableThinking), options.thinkingBudget);
+        const thinkingFields = buildThinkingRequestFields(wireModel, Boolean((options as any).enableThinking), (options as any).thinkingBudget);
         const requestBody: Record<string, unknown> = {
           model: wireModel,
           max_tokens: options.max_tokens || 8192,

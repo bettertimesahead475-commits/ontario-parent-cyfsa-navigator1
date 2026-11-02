@@ -58,6 +58,8 @@ export type GenerateFn = (
     requestId?: string;
     stage?: string;
     mode?: "fast" | "full";
+    enableThinking?: boolean;
+    thinkingBudget?: number;
   },
   model: string
 ) => Promise<GenerateResult>;
