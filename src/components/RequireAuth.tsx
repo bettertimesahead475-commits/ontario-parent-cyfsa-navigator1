@@ -14,6 +14,13 @@ import { Shield, Loader2, Sparkles } from "lucide-react";
 
 export default function RequireAuth({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null | undefined>(undefined); // undefined = still checking
+  const [stagingBypass, setStagingBypass] = useState<boolean>(() => {
+    try {
+      return typeof window !== "undefined" && window.sessionStorage.getItem("opa_staging_bypass") === "1";
+    } catch {
+      return false;
+    }
+  });
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,19 +73,18 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
   };
 
   const handleStagingReviewerBypass = () => {
-    // Creates a reviewer session in staging for direct acceptance testing
-    const mockUser = {
-      uid: "staging-reviewer-session",
-      email: "mr.pelkie@gmail.com",
-      displayName: "Staging Reviewer",
-      getIdToken: async () => "mock-staging-id-token"
-    } as unknown as User;
-    setUser(mockUser);
+    try {
+      window.sessionStorage.setItem("opa_staging_bypass", "1");
+    } catch {}
+    setStagingBypass(true);
   };
 
+  // If in staging preview mode, render protected children directly
+  if (stagingBypass) {
+    return <>{children}</>;
+  }
+
   if (user === undefined) {
-    // Still checking whether a session already exists - avoid a flash of the sign-in prompt
-    // for someone who's actually already signed in.
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
         <Loader2 className="w-6 h-6 animate-spin text-brand-500" />
