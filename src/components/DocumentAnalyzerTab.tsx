@@ -83,6 +83,7 @@ import {
   FullReportListenButton,
   NarrationBar,
 } from "./narration";
+import { FindingPresentationCard } from "./FindingPresentationCard";
 import { useNarration } from "../hooks/useNarration";
 import { extractReportSegments } from "../utils/narration/reportSegments";
 import { effectiveCitationStatus } from "../../shared/citationVerification";
@@ -4698,129 +4699,20 @@ export default function DocumentAnalyzerTab() {
                             isOpen={openReportSections.redFlags}
                             onToggle={() => setOpenReportSections(prev => ({ ...prev, redFlags: !prev.redFlags }))}
                           >
-                            <div className="space-y-3.5">
+                            <div className="space-y-4">
                               {(displayedReport.redFlags || []).map((flag: any, idx: number) => {
                                 const flagId = flag.id || `rf-${idx + 1}`;
                                 const isFlagActive = narration.isSegmentActive(`rf-${flagId}`);
                                 return (
-                                <div 
-                                  key={idx} 
-                                  id={`red-flag-card-${flagId}`} 
-                                  className={`bg-white border border-gray-200 p-4.5 rounded-xl space-y-3.5 text-xs shadow-xs hover:border-brand-200 transition-all ${
-                                    isFlagActive ? "ring-2 ring-rose-500 bg-rose-50/40 shadow-md" : ""
-                                  }`}
-                                >
-                                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
-                                    <div className="flex flex-wrap items-center gap-1.5">
-                                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
-                                        flag.severity.includes("CRITICAL") ? "bg-rose-100 text-rose-800" : flag.severity.includes("Worth") ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-800"
-                                      }`}>
-                                        {flag.severity}
-                                      </span>
-                                      <span className="font-sans font-bold text-rose-800 text-xs px-2 py-0.5 bg-rose-50 rounded-md border border-rose-100">
-                                        {flag.category}
-                                      </span>
-                                      {flag.evidenceClassification && (
-                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-sans font-bold bg-slate-100 text-slate-800 border border-slate-200 uppercase tracking-wide">
-                                          Evidence: {flag.evidenceClassification}
-                                        </span>
-                                      )}
-                                      {factCheckEnabled && (() => {
-                                        const status = effectiveCitationStatus(flag);
-                                        const matched = status === "INTERNAL_REFERENCE_MATCH";
-                                        const none = status === "NONE";
-                                        return (
-                                          <span
-                                            className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
-                                              matched ? "bg-sky-100 text-sky-800" : none ? "bg-slate-100 text-slate-700" : "bg-rose-100 text-rose-800"
-                                            }`}
-                                            title={flag.citationReason || "Confirm this citation with counsel"}
-                                          >
-                                            {matched ? "Internal reference match (not verified)" : none ? "No statute cited" : "Citation unverified"}
-                                          </span>
-                                        );
-                                      })()}
-                                      {flag.forensicVerification && (
-                                        <span
-                                          className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase border ${
-                                            flag.forensicVerification.verdict === "SUPPORTED"
-                                              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                              : flag.forensicVerification.verdict === "NEEDS_CONTEXT"
-                                                ? "bg-slate-50 text-slate-700 border-slate-200"
-                                                : "bg-amber-50 text-amber-800 border-amber-200"
-                                          }`}
-                                          title={flag.forensicVerification.note || ""}
-                                        >
-                                          Second review: {flag.forensicVerification.verdict.replace("_", " ")}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <ParagraphListenButton segmentId={`rf-${flagId}`} />
-                                      <button
-                                        onClick={() => openLegislativeReference(flag.legalReference)}
-                                        className="font-sans text-brand-700 hover:text-brand-900 font-bold text-xs bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                        title="Open the statute reference for this citation"
-                                      >
-                                        <Scale className="w-3.5 h-3.5 text-brand-600" /> Statute reference: {flag.legalReference} ↗
-                                      </button>
-                                    </div>
-                                  </div>
-                                  {flag.phraseDetected && (
-                                    <div className="space-y-1.5 bg-slate-50/80 p-3 border border-slate-200/80 rounded-xl">
-                                      <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider">Phrase in Document:</span>
-                                        <button
-                                          onClick={() => {
-                                            setSearchQuery(flag.phraseDetected);
-                                            const docViewer = document.getElementById("file-plain-content-viewer");
-                                            if (docViewer) {
-                                              docViewer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                            }
-                                          }}
-                                          className="text-xs font-sans text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 font-semibold px-2.5 py-1 rounded-md border border-brand-200 transition-colors cursor-pointer"
-                                        >
-                                          🔍 Locate Phrase
-                                        </button>
-                                      </div>
-                                      <p className="italic text-slate-800 leading-relaxed font-sans bg-white p-3 border-l-4 border-amber-400 rounded-r-lg border-y border-r border-slate-200 text-xs shadow-2xs">
-                                        "{flag.phraseDetected}"
-                                      </p>
-                                      {(() => {
-                                        const display = QUOTE_DISPLAY[effectiveQuoteStatus(flag)];
-                                        const page = flag.quoteLocation?.page;
-                                        return display.verified ? (
-                                          <p className="text-[10.5px] font-sans text-emerald-700 flex items-center gap-1">
-                                            <Check className="w-3 h-3 shrink-0" /> {display.label}{page ? ` (page ${page})` : ""}
-                                          </p>
-                                        ) : (
-                                          <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                                            ⚠️ {display.label}{page ? ` (page ${page})` : ""}
-                                          </p>
-                                        );
-                                      })()}
-                                    </div>
-                                  )}
-
-                                  <div className="text-slate-700 leading-relaxed text-xs space-y-1 font-sans">
-                                    <span className="font-bold text-slate-900 block text-xs">Evidentiary Assessment:</span>
-                                    <FormattedReportText content={flag.explanation} />
-                                  </div>
-
-                                  {flag.locationInDocument && (
-                                    <div className="flex items-center gap-1.5 p-2 bg-brand-50/50 border border-brand-100/60 rounded-lg text-xs font-sans text-brand-950">
-                                      <span className="shrink-0">📌</span>
-                                      <span><strong>Verification Locator:</strong> <span className="underline font-semibold">{flag.locationInDocument}</span></span>
-                                    </div>
-                                  )}
-
-                                  <div className="p-3.5 bg-brand-50/70 border border-brand-100 rounded-xl text-xs text-brand-950 font-sans space-y-1.5">
-                                    <div className="font-bold text-brand-900 border-b border-brand-100 pb-1 flex items-center gap-1.5 text-xs">
-                                      <span>💡</span> Parent Action &amp; Defense Step:
-                                    </div>
-                                    <FormattedReportText content={flag.parentActionStep || flag.verifyRequirement} />
-                                  </div>
-                                </div>
+                                  <FindingPresentationCard
+                                    key={flagId}
+                                    flag={flag}
+                                    idx={idx}
+                                    narrationActive={isFlagActive}
+                                    factCheckEnabled={factCheckEnabled}
+                                    openLegislativeReference={openLegislativeReference}
+                                    setSearchQuery={setSearchQuery}
+                                  />
                                 );
                               })}
                               {(!displayedReport.redFlags || displayedReport.redFlags.length === 0) && (
