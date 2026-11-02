@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from "react";
+import React, { ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 interface Props {
@@ -10,8 +10,14 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
+const ComponentClass = (React as any).Component as new (props: Props) => {
+  props: Props;
+  state: State;
+  setState(state: Partial<State> | ((prevState: State) => Partial<State>)): void;
+};
+
+export class ErrorBoundary extends ComponentClass {
+  state: State = {
     hasError: false,
     error: null,
   };
@@ -20,7 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public componentDidCatch(error: Error, errorInfo: any) {
     console.error("[CYFSA Navigator] Uncaught runtime error:", error, errorInfo);
   }
 
@@ -40,7 +46,7 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.reload();
   };
 
-  public render() {
+  public render(): ReactNode {
     if (this.state.hasError) {
       return (
         <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center font-sans">
