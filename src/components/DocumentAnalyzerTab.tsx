@@ -77,6 +77,14 @@ import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 import { renderForensicReportHtml } from "../utils/forensicPdfRenderer";
+import {
+  ParagraphListenButton,
+  SectionListenButton,
+  FullReportListenButton,
+  NarrationBar,
+} from "./narration";
+import { useNarration } from "../hooks/useNarration";
+import { extractReportSegments } from "../utils/narration/reportSegments";
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
 
@@ -293,6 +301,14 @@ export default function DocumentAnalyzerTab() {
   const [customUploadError, setCustomUploadError] = useState<string>("");
   const [bulkProgress, setBulkProgress] = useState<string>("");
   const [isBulkAnalyzing, setIsBulkAnalyzing] = useState<boolean>(false);
+
+  // Report Text-to-Speech Narration
+  const narration = useNarration();
+
+  // Stop playback if document selection changes
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("opa-doc-analyzer-file-changed"));
+  }, [selectedFileId]);
 
   // Case Chat Pipeline State
   const [ragChatMessages, setRAGChatMessages] = useState<RAGChatMessage[]>(() => {
@@ -4069,7 +4085,12 @@ export default function DocumentAnalyzerTab() {
                     <div className="bg-white rounded-2xl border border-[#e2e8f0] p-5 md:p-6 space-y-6 shadow-xs animate-fadeIn text-left">
                       
                       {/* Top Header Row: Document Title, Credibility Score, Mode Switcher */}
-                      <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-gray-100 gap-4">
+                      <div 
+                        id="report-overview-card"
+                        className={`flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-gray-100 gap-4 transition-all rounded-xl p-2 ${
+                          narration.isSegmentActive("header-title") ? "ring-2 ring-brand-500 bg-brand-50/50" : ""
+                        }`}
+                      >
                         <div className="space-y-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-[10px] font-sans font-bold uppercase text-brand-600 flex items-center gap-1 leading-none">
@@ -4084,9 +4105,12 @@ export default function DocumentAnalyzerTab() {
                               {isReportForensic(displayedReport) ? "Forensic In-Depth Scan" : "Quick Document Review"}
                             </span>
                           </div>
-                          <h4 className="font-display font-bold text-[#0f172a] text-lg mt-1 truncate">
-                            {displayedReport.documentTitle}
-                          </h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <h4 className="font-display font-bold text-[#0f172a] text-lg truncate">
+                              {displayedReport.documentTitle}
+                            </h4>
+                            <ParagraphListenButton segmentId="header-title" iconOnly />
+                          </div>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 shrink-0">
@@ -4155,6 +4179,26 @@ export default function DocumentAnalyzerTab() {
                       <ParentReportSection report={selectedReport} enabled={PARENT_REPORT_UI_ENABLED} />
                       {PARENT_QA_UI_ENABLED && <EducationalQa report={selectedReport} />}
 
+                      {/* Executive File Summary Block */}
+                      {displayedReport.fileSummary && (
+                        <div 
+                          id="report-file-summary-block" 
+                          className={`p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs text-slate-800 transition-all ${
+                            narration.isSegmentActive("summary-main") ? "ring-2 ring-brand-500 bg-amber-50/60 shadow-sm" : ""
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-sans font-bold text-[11px] uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-brand-600" /> Executive Case Summary
+                            </span>
+                            <ParagraphListenButton segmentId="summary-main" />
+                          </div>
+                          <p className="leading-relaxed text-slate-700 font-sans italic">
+                            {displayedReport.fileSummary}
+                          </p>
+                        </div>
+                      )}
+
                       {/* Export & Redaction Toolbar */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -4166,6 +4210,7 @@ export default function DocumentAnalyzerTab() {
                             <Download className="w-3.5 h-3.5 text-slate-600" />
                             <span>Export Report PDF</span>
                           </button>
+                          <FullReportListenButton report={displayedReport} />
                           {currentDeepReport && (
                             <button
                               type="button"
@@ -4280,33 +4325,50 @@ export default function DocumentAnalyzerTab() {
                           {displayedReport.lawyerCaseBrief && displayedReport.lawyerCaseBrief.length > 0 ? (
                             <div className="bg-slate-900 text-white rounded-2xl p-5 md:p-6 space-y-4 shadow-md border border-slate-800 relative overflow-hidden" id="lawyer-detailed-case-brief">
                               <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/10 rounded-full blur-2xl pointer-events-none" />
-                              <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-                                <Briefcase className="w-5 h-5 text-brand-400" />
-                                <div>
-                                  <h5 className="font-display font-bold text-sm tracking-wide text-white uppercase">
-                                    Lawyer Detailed Case Brief
-                                  </h5>
-                                  <p className="text-[10px] text-brand-300 font-sans">
-                                    Bullet Form Structure • Ready for Intake Sharing
-                                  </p>
+                              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <Briefcase className="w-5 h-5 text-brand-400" />
+                                  <div>
+                                    <h5 className="font-display font-bold text-sm tracking-wide text-white uppercase">
+                                      Lawyer Detailed Case Brief
+                                    </h5>
+                                    <p className="text-[10px] text-brand-300 font-sans">
+                                      Bullet Form Structure • Ready for Intake Sharing
+                                    </p>
+                                  </div>
                                 </div>
+                                <SectionListenButton sectionId="guidance" report={displayedReport} label="Listen to Brief" />
                               </div>
                               
                               <div className="space-y-3.5 pt-1">
                                 {displayedReport.lawyerCaseBrief.map((bullet: string, idx: number) => {
                                   const parts = bullet.split("**");
+                                  const isBulletActive = narration.isSegmentActive(`brief-bullet-${idx}`);
                                   return (
-                                    <div key={idx} className="flex items-start gap-3 text-slate-300 leading-relaxed text-xs">
-                                      <span className="text-brand-400 font-bold shrink-0 mt-0.5 select-none">▪</span>
-                                      <p className="text-slate-300">
-                                        {parts.map((part: string, index: number) => 
-                                          index % 2 === 1 ? (
-                                            <strong key={index} className="text-white font-semibold">{part}</strong>
-                                          ) : (
-                                            part
-                                          )
-                                        )}
-                                      </p>
+                                    <div 
+                                      key={idx} 
+                                      id={`lawyer-brief-bullet-${idx}`} 
+                                      className={`flex items-start justify-between gap-3 text-slate-300 leading-relaxed text-xs p-1.5 rounded-lg transition-all ${
+                                        isBulletActive ? "ring-2 ring-brand-400 bg-brand-500/20 text-white" : ""
+                                      }`}
+                                    >
+                                      <div className="flex items-start gap-3 flex-1">
+                                        <span className="text-brand-400 font-bold shrink-0 mt-0.5 select-none">▪</span>
+                                        <p className="text-slate-300">
+                                          {parts.map((part: string, index: number) => 
+                                            index % 2 === 1 ? (
+                                              <strong key={index} className="text-white font-semibold">{part}</strong>
+                                            ) : (
+                                              part
+                                            )
+                                          )}
+                                        </p>
+                                      </div>
+                                      <ParagraphListenButton 
+                                        segmentId={`brief-bullet-${idx}`} 
+                                        iconOnly 
+                                        className="shrink-0 text-slate-400 hover:text-white mt-0.5" 
+                                      />
                                     </div>
                                   );
                                 })}
@@ -4452,7 +4514,10 @@ export default function DocumentAnalyzerTab() {
                             <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 text-xs font-sans" id="report-chronology">
                               {(displayedReport.chronology?.length ?? 0) > 0 && (
                                 <div className="space-y-2">
-                                  <h4 className="font-display font-bold text-slate-900 text-sm">Chronology (as stated in the document)</h4>
+                                  <div className="flex items-center justify-between gap-2 pb-1">
+                                    <h4 className="font-display font-bold text-slate-900 text-sm">Chronology (as stated in the document)</h4>
+                                    <SectionListenButton sectionId="chronology" report={displayedReport} label="Listen to Chronology" />
+                                  </div>
                                   <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
                                       <thead>
@@ -4461,17 +4526,30 @@ export default function DocumentAnalyzerTab() {
                                           <th className="py-1.5 pr-3 font-bold">Event</th>
                                           <th className="py-1.5 pr-3 font-bold">Evidence</th>
                                           <th className="py-1.5 font-bold">Source</th>
+                                          <th className="py-1.5 font-bold w-8 text-right">Listen</th>
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {displayedReport.chronology!.map((entry: any, i: number) => (
-                                          <tr key={i} className="border-b border-slate-100 align-top">
-                                            <td className="py-1.5 pr-3 whitespace-nowrap font-semibold text-slate-800">{entry.date}</td>
-                                            <td className="py-1.5 pr-3 text-slate-700">{entry.event}</td>
-                                            <td className="py-1.5 pr-3 text-[10px] font-bold text-slate-600">{entry.evidenceClassification}</td>
-                                            <td className="py-1.5 text-slate-500">{entry.locationInDocument}</td>
-                                          </tr>
-                                        ))}
+                                        {displayedReport.chronology!.map((entry: any, i: number) => {
+                                          const isRowActive = narration.isSegmentActive(`chrono-${i}`);
+                                          return (
+                                            <tr 
+                                              key={i} 
+                                              id={`chronology-row-${i}`} 
+                                              className={`border-b border-slate-100 align-top transition-colors ${
+                                                isRowActive ? "bg-brand-50/80 ring-2 ring-brand-500 rounded font-medium" : ""
+                                              }`}
+                                            >
+                                              <td className="py-1.5 pr-3 whitespace-nowrap font-semibold text-slate-800">{entry.date}</td>
+                                              <td className="py-1.5 pr-3 text-slate-700">{entry.event}</td>
+                                              <td className="py-1.5 pr-3 text-[10px] font-bold text-slate-600">{entry.evidenceClassification}</td>
+                                              <td className="py-1.5 text-slate-500">{entry.locationInDocument}</td>
+                                              <td className="py-1.5 text-right">
+                                                <ParagraphListenButton segmentId={`chrono-${i}`} iconOnly />
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
                                       </tbody>
                                     </table>
                                   </div>
@@ -4481,13 +4559,25 @@ export default function DocumentAnalyzerTab() {
                                 <div className="space-y-2 pt-2 border-t border-slate-100">
                                   <h4 className="font-display font-bold text-slate-900 text-sm">Internal Contradictions</h4>
                                   <ul className="space-y-2">
-                                    {displayedReport.contradictions!.map((c: any, i: number) => (
-                                      <li key={i} className="bg-amber-50/60 border border-amber-200 rounded-lg p-2.5 space-y-1">
-                                        <p className="text-slate-800">{c.description}</p>
-                                        {c.locations && c.locations.length > 0 && <p className="text-[10.5px] text-slate-500">Where: {c.locations.join("; ")}</p>}
-                                        {c.significance && <p className="text-[10.5px] text-slate-600">{c.significance}</p>}
-                                      </li>
-                                    ))}
+                                    {displayedReport.contradictions!.map((c: any, i: number) => {
+                                      const isContraActive = narration.isSegmentActive(`contra-${i}`);
+                                      return (
+                                        <li 
+                                          key={i} 
+                                          id={`contradiction-item-${i}`} 
+                                          className={`bg-amber-50/60 border border-amber-200 rounded-lg p-2.5 space-y-1 transition-all ${
+                                            isContraActive ? "ring-2 ring-amber-500 bg-amber-100/80" : ""
+                                          }`}
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <p className="text-slate-800 flex-1">{c.description}</p>
+                                            <ParagraphListenButton segmentId={`contra-${i}`} iconOnly className="shrink-0" />
+                                          </div>
+                                          {c.locations && c.locations.length > 0 && <p className="text-[10.5px] text-slate-500">Where: {c.locations.join("; ")}</p>}
+                                          {c.significance && <p className="text-[10.5px] text-slate-600">{c.significance}</p>}
+                                        </li>
+                                      );
+                                    })}
                                   </ul>
                                 </div>
                               )}
@@ -4501,25 +4591,41 @@ export default function DocumentAnalyzerTab() {
                           {/* Statutory Timeline & Procedural Violations */}
                           {displayedReport.proceduralTimelineViolations && displayedReport.proceduralTimelineViolations.length > 0 && (
                             <div className="space-y-3 pt-2">
-                              <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
-                                <Clock className="w-4 h-4 text-amber-600" /> Statutory Timeline & Procedural Defects ({displayedReport.proceduralTimelineViolations.length})
-                              </h5>
+                              <div className="flex items-center justify-between gap-2">
+                                <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
+                                  <Clock className="w-4 h-4 text-amber-600" /> Statutory Timeline & Procedural Defects ({displayedReport.proceduralTimelineViolations.length})
+                                </h5>
+                                <SectionListenButton sectionId="timelines" report={displayedReport} label="Listen to Timelines" />
+                              </div>
                               <div className="space-y-3.5">
-                                {displayedReport.proceduralTimelineViolations.map((violation: any, idx: number) => (
-                                  <div key={idx} className="bg-white border border-amber-200/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-colors">
-                                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-100">
-                                      <span className="px-2 py-0.5 rounded text-[9px] font-sans font-semibold tracking-wider bg-amber-100 text-amber-800 uppercase">
-                                        TIMELINE RULE
-                                      </span>
-                                      <span className="font-sans font-semibold text-amber-900 text-[11px]">{violation.timelineRule}</span>
-                                      <button
-                                        onClick={() => openLegislativeReference(violation.citation)}
-                                        className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                        title="Open the statute reference for this citation"
-                                      >
-                                        <Scale className="w-3 h-3 text-amber-600" /> Statute reference: {violation.citation} ↗
-                                      </button>
-                                    </div>
+                                {displayedReport.proceduralTimelineViolations.map((violation: any, idx: number) => {
+                                  const isTlActive = narration.isSegmentActive(`timeline-${idx}`);
+                                  return (
+                                    <div 
+                                      key={idx} 
+                                      id={`timeline-card-${idx}`} 
+                                      className={`bg-white border border-amber-200/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-all ${
+                                        isTlActive ? "ring-2 ring-amber-500 bg-amber-50/40 shadow-md" : ""
+                                      }`}
+                                    >
+                                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-100">
+                                        <div className="flex items-center gap-2">
+                                          <span className="px-2 py-0.5 rounded text-[9px] font-sans font-semibold tracking-wider bg-amber-100 text-amber-800 uppercase">
+                                            TIMELINE RULE
+                                          </span>
+                                          <span className="font-sans font-semibold text-amber-900 text-[11px]">{violation.timelineRule}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <ParagraphListenButton segmentId={`timeline-${idx}`} />
+                                          <button
+                                            onClick={() => openLegislativeReference(violation.citation)}
+                                            className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                            title="Open the statute reference for this citation"
+                                          >
+                                            <Scale className="w-3 h-3 text-amber-600" /> Statute reference: {violation.citation} ↗
+                                          </button>
+                                        </div>
+                                      </div>
                                     
                                     {violation.documentAssertion && (
                                       <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
@@ -4564,7 +4670,8 @@ export default function DocumentAnalyzerTab() {
                                       </div>
                                     </div>
                                   </div>
-                                ))}
+                                );
+                              })}
                               </div>
                             </div>
                           )}
@@ -4581,6 +4688,7 @@ export default function DocumentAnalyzerTab() {
                               <div className="flex items-center justify-between w-full">
                                 <span>Evidence Objections & Hearsay ({displayedReport.redFlags?.length || 0})</span>
                                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                   <SectionListenButton sectionId="redFlags" report={displayedReport} label="Listen to Findings" />
                                    <input type="checkbox" checked={factCheckEnabled} onChange={() => setFactCheckEnabled(!factCheckEnabled)} />
                                    <span className="text-[9px]">Fact-Check</span>
                                 </div>
@@ -4591,8 +4699,17 @@ export default function DocumentAnalyzerTab() {
                             onToggle={() => setOpenReportSections(prev => ({ ...prev, redFlags: !prev.redFlags }))}
                           >
                             <div className="space-y-3.5">
-                              {(displayedReport.redFlags || []).map((flag: any, idx: number) => (
-                                <div key={idx} className="bg-white border border-gray-200 p-4.5 rounded-xl space-y-3.5 text-xs shadow-xs hover:border-brand-200 transition-colors">
+                              {(displayedReport.redFlags || []).map((flag: any, idx: number) => {
+                                const flagId = flag.id || `rf-${idx + 1}`;
+                                const isFlagActive = narration.isSegmentActive(`rf-${flagId}`);
+                                return (
+                                <div 
+                                  key={idx} 
+                                  id={`red-flag-card-${flagId}`} 
+                                  className={`bg-white border border-gray-200 p-4.5 rounded-xl space-y-3.5 text-xs shadow-xs hover:border-brand-200 transition-all ${
+                                    isFlagActive ? "ring-2 ring-rose-500 bg-rose-50/40 shadow-md" : ""
+                                  }`}
+                                >
                                   <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
                                     <div className="flex flex-wrap items-center gap-1.5">
                                       <span className={`px-2.5 py-1 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
@@ -4638,13 +4755,16 @@ export default function DocumentAnalyzerTab() {
                                         </span>
                                       )}
                                     </div>
-                                    <button
-                                      onClick={() => openLegislativeReference(flag.legalReference)}
-                                      className="font-sans text-brand-700 hover:text-brand-900 font-bold text-xs bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                      title="Open the statute reference for this citation"
-                                    >
-                                      <Scale className="w-3.5 h-3.5 text-brand-600" /> Statute reference: {flag.legalReference} ↗
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                      <ParagraphListenButton segmentId={`rf-${flagId}`} />
+                                      <button
+                                        onClick={() => openLegislativeReference(flag.legalReference)}
+                                        className="font-sans text-brand-700 hover:text-brand-900 font-bold text-xs bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                        title="Open the statute reference for this citation"
+                                      >
+                                        <Scale className="w-3.5 h-3.5 text-brand-600" /> Statute reference: {flag.legalReference} ↗
+                                      </button>
+                                    </div>
                                   </div>
                                   {flag.phraseDetected && (
                                     <div className="space-y-1.5 bg-slate-50/80 p-3 border border-slate-200/80 rounded-xl">
@@ -4701,7 +4821,8 @@ export default function DocumentAnalyzerTab() {
                                     <FormattedReportText content={flag.parentActionStep || flag.verifyRequirement} />
                                   </div>
                                 </div>
-                              ))}
+                                );
+                              })}
                               {(!displayedReport.redFlags || displayedReport.redFlags.length === 0) && (
                                 <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-100 font-medium flex items-center gap-2">
                                   <Check className="w-4 h-4" /> No severe hearsay or timeline objections flagged.
@@ -4719,9 +4840,14 @@ export default function DocumentAnalyzerTab() {
                         <div className="space-y-5 animate-fadeIn">
                           {/* Immediate Life-Safety Protection Thresholds */}
                           <div className="space-y-3">
-                            <h5 className="font-display font-medium text-xs uppercase tracking-wider text-slate-700">
-                              Immediate Life-Safety Protection Thresholds
-                            </h5>
+                            <div className="flex items-center justify-between gap-2">
+                              <h5 className="font-display font-medium text-xs uppercase tracking-wider text-slate-700">
+                                Immediate Life-Safety Protection Thresholds
+                              </h5>
+                              {displayedReport.thresholdAnalysis && displayedReport.thresholdAnalysis.length > 0 && (
+                                <SectionListenButton sectionId="thresholds" report={displayedReport} label="Listen to Thresholds" />
+                              )}
+                            </div>
                             {(!displayedReport.thresholdAnalysis || displayedReport.thresholdAnalysis.length === 0) ? (
                               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 space-y-1">
                                 <p className="font-bold text-slate-800">
@@ -4735,20 +4861,32 @@ export default function DocumentAnalyzerTab() {
                               </div>
                             ) : (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {displayedReport.thresholdAnalysis.map((thresh: any, idx: number) => (
-                                  <div key={idx} className="p-3 bg-white border border-gray-100 rounded-lg space-y-1.5">
+                                {displayedReport.thresholdAnalysis.map((thresh: any, idx: number) => {
+                                  const isThActive = narration.isSegmentActive(`threshold-${idx}`);
+                                  return (
+                                  <div 
+                                    key={idx} 
+                                    id={`threshold-card-${idx}`} 
+                                    className={`p-3 bg-white border border-gray-100 rounded-lg space-y-1.5 transition-all ${
+                                      isThActive ? "ring-2 ring-brand-500 bg-brand-50/50 shadow-sm" : ""
+                                    }`}
+                                  >
                                     <div className="flex justify-between items-center text-[10px] font-sans text-slate-600 font-semibold uppercase">
                                       <span>{thresh.thresholdChecked}</span>
-                                      <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
-                                        Analyzer read: {thresh.isMet}
-                                      </span>
+                                      <div className="flex items-center gap-1.5">
+                                        <ParagraphListenButton segmentId={`threshold-${idx}`} iconOnly />
+                                        <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
+                                          Analyzer read: {thresh.isMet}
+                                        </span>
+                                      </div>
                                     </div>
                                     <div className="text-xs text-slate-700 leading-relaxed">
                                       <FormattedReportText text={thresh.reasoning} />
                                     </div>
                                     <span className="text-[10px] text-brand-700 font-sans block font-semibold mt-1">Law: {thresh.primarySourceLaw}</span>
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -4756,18 +4894,33 @@ export default function DocumentAnalyzerTab() {
                           {/* Charter & Human Rights Issues */}
                           {displayedReport.charterAndHumanRightsIssues && displayedReport.charterAndHumanRightsIssues.length > 0 && (
                             <div className="space-y-3 pt-2 border-t border-gray-100">
-                              <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
-                                <ShieldAlert className="w-4 h-4 text-purple-600" /> Charter & Human Rights Issues ({displayedReport.charterAndHumanRightsIssues.length})
-                              </h5>
+                              <div className="flex items-center justify-between gap-2">
+                                <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
+                                  <ShieldAlert className="w-4 h-4 text-purple-600" /> Charter & Human Rights Issues ({displayedReport.charterAndHumanRightsIssues.length})
+                                </h5>
+                                <SectionListenButton sectionId="charter" report={displayedReport} label="Listen to Charter Issues" />
+                              </div>
                               <div className="space-y-2">
-                                {displayedReport.charterAndHumanRightsIssues.map((issue: string, idx: number) => (
-                                  <div key={idx} className="p-3 bg-purple-50/50 border border-purple-200/70 rounded-xl text-xs text-purple-950 flex items-start gap-2.5">
-                                    <span className="text-purple-600 font-bold shrink-0 mt-0.5">⚖️</span>
-                                    <div className="text-slate-800 leading-relaxed flex-1">
-                                      <FormattedReportText text={issue} />
+                                {displayedReport.charterAndHumanRightsIssues.map((issue: string, idx: number) => {
+                                  const isChActive = narration.isSegmentActive(`charter-${idx}`);
+                                  return (
+                                  <div 
+                                    key={idx} 
+                                    id={`charter-card-${idx}`} 
+                                    className={`p-3 bg-purple-50/50 border border-purple-200/70 rounded-xl text-xs text-purple-950 flex items-start justify-between gap-2.5 transition-all ${
+                                      isChActive ? "ring-2 ring-purple-500 bg-purple-100/70 shadow-sm" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-2.5 flex-1">
+                                      <span className="text-purple-600 font-bold shrink-0 mt-0.5">⚖️</span>
+                                      <div className="text-slate-800 leading-relaxed flex-1">
+                                        <FormattedReportText text={issue} />
+                                      </div>
                                     </div>
+                                    <ParagraphListenButton segmentId={`charter-${idx}`} iconOnly className="shrink-0" />
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -4825,7 +4978,10 @@ export default function DocumentAnalyzerTab() {
                         <div className="space-y-5 animate-fadeIn">
                           {/* Section Header Explanation */}
                           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-1">
-                            <h5 className="font-display font-bold text-sm text-slate-900">Findings &amp; Legal Assessment</h5>
+                            <div className="flex items-center justify-between gap-2">
+                              <h5 className="font-display font-bold text-sm text-slate-900">Findings &amp; Legal Assessment</h5>
+                              <SectionListenButton sectionId="guidance" report={displayedReport} label="Listen to Action Plan" />
+                            </div>
                             <p className="text-xs text-slate-600">The quick flags identify potential concerns. The following checks explain the relevant protection thresholds, evidence to verify, missing support, and questions for counsel. These are preliminary document observations, not court findings.</p>
                           </div>
 
@@ -4839,14 +4995,26 @@ export default function DocumentAnalyzerTab() {
                                 {(!displayedReport.whatToVerify || displayedReport.whatToVerify.length === 0) && (
                                   <li className="text-xs text-slate-500">No verification checks supplied in this report; this is not a finding that none exist.</li>
                                 )}
-                                {(displayedReport.whatToVerify || []).map((item: string, i: number) => (
-                                  <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
-                                    <span className="text-brand-600 font-bold shrink-0 mt-0.5">☐</span>
-                                    <div className="flex-1">
-                                      <FormattedReportText text={item} />
+                                {(displayedReport.whatToVerify || []).map((item: string, i: number) => {
+                                  const isVerifyActive = narration.isSegmentActive(`verify-${i}`);
+                                  return (
+                                  <li 
+                                    key={i} 
+                                    id={`verify-item-${i}`} 
+                                    className={`text-xs text-slate-700 leading-relaxed flex items-start justify-between gap-1.5 p-1 rounded transition-all ${
+                                      isVerifyActive ? "ring-2 ring-brand-500 bg-brand-50/70" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-1.5 flex-1">
+                                      <span className="text-brand-600 font-bold shrink-0 mt-0.5">☐</span>
+                                      <div className="flex-1">
+                                        <FormattedReportText text={item} />
+                                      </div>
                                     </div>
+                                    <ParagraphListenButton segmentId={`verify-${i}`} iconOnly className="shrink-0" />
                                   </li>
-                                ))}
+                                  );
+                                })}
                               </ul>
                             </div>
 
@@ -4858,14 +5026,26 @@ export default function DocumentAnalyzerTab() {
                                 {(!displayedReport.whatIsMissing || displayedReport.whatIsMissing.length === 0) && (
                                   <li className="text-xs text-slate-500">No missing evidence supplied in this report; this is not a finding that none exist.</li>
                                 )}
-                                {(displayedReport.whatIsMissing || []).map((item: string, i: number) => (
-                                  <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
-                                    <span className="text-rose-500 font-bold shrink-0 mt-0.5">⚠</span>
-                                    <div className="flex-1">
-                                      <FormattedReportText text={item} />
+                                {(displayedReport.whatIsMissing || []).map((item: string, i: number) => {
+                                  const isMissingActive = narration.isSegmentActive(`missing-${i}`);
+                                  return (
+                                  <li 
+                                    key={i} 
+                                    id={`missing-item-${i}`} 
+                                    className={`text-xs text-slate-700 leading-relaxed flex items-start justify-between gap-1.5 p-1 rounded transition-all ${
+                                      isMissingActive ? "ring-2 ring-rose-500 bg-rose-50/70" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-1.5 flex-1">
+                                      <span className="text-rose-500 font-bold shrink-0 mt-0.5">⚠</span>
+                                      <div className="flex-1">
+                                        <FormattedReportText text={item} />
+                                      </div>
                                     </div>
+                                    <ParagraphListenButton segmentId={`missing-${i}`} iconOnly className="shrink-0" />
                                   </li>
-                                ))}
+                                  );
+                                })}
                               </ul>
                             </div>
 
@@ -4877,14 +5057,26 @@ export default function DocumentAnalyzerTab() {
                                 {(!displayedReport.whatToAskALawyer || displayedReport.whatToAskALawyer.length === 0) && (
                                   <li className="text-xs text-slate-500">No questions for counsel supplied in this report; this is not a finding that none exist.</li>
                                 )}
-                                {(displayedReport.whatToAskALawyer || []).map((item: string, i: number) => (
-                                  <li key={i} className="text-xs text-brand-900 bg-brand-50/40 p-2.5 rounded-lg border border-brand-100 leading-relaxed flex items-start gap-1.5">
-                                    <strong className="shrink-0 mt-0.5">Q:</strong>
-                                    <div className="flex-1">
-                                      <FormattedReportText text={item} />
+                                {(displayedReport.whatToAskALawyer || []).map((item: string, i: number) => {
+                                  const isAskActive = narration.isSegmentActive(`ask-${i}`);
+                                  return (
+                                  <li 
+                                    key={i} 
+                                    id={`ask-item-${i}`} 
+                                    className={`text-xs text-brand-900 bg-brand-50/40 p-2.5 rounded-lg border border-brand-100 leading-relaxed flex items-start justify-between gap-1.5 transition-all ${
+                                      isAskActive ? "ring-2 ring-brand-500 bg-brand-100/70" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-1.5 flex-1">
+                                      <strong className="shrink-0 mt-0.5">Q:</strong>
+                                      <div className="flex-1">
+                                        <FormattedReportText text={item} />
+                                      </div>
                                     </div>
+                                    <ParagraphListenButton segmentId={`ask-${i}`} iconOnly className="shrink-0" />
                                   </li>
-                                ))}
+                                  );
+                                })}
                               </ul>
                             </div>
                           </div>
@@ -5709,6 +5901,9 @@ export default function DocumentAnalyzerTab() {
           </div>
         </div>
       )}
+
+      {/* Accessible Text-to-Speech Narration Player Bar (renders when active) */}
+      <NarrationBar />
 
     </div>
   );
