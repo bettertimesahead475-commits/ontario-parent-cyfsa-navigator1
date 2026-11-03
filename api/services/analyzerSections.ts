@@ -308,12 +308,12 @@ export const CANONICAL_THRESHOLDS = [
   {
     match: /125/i,
     thresholdChecked: "Duty to Report standard vs Direct evidence (CYFSA s. 125)",
-    primarySourceLaw: "CYFSA, 2017, S.O. 2017, c. 14, Sched. 1, s. 125",
+    primarySourceLaw: "CYFSA, 2017, S.O. 2017, c. 14, Sched. 1, s. 125(1)",
   },
   {
     match: /kinship|alternative/i,
     thresholdChecked: "Kinship / Family-Based Alternatives — Documentation Check",
-    primarySourceLaw: "CYFSA, 2017, S.O. 2017, c. 14, Sched. 1, s. 74(1)",
+    primarySourceLaw: "CYFSA, 2017, S.O. 2017, c. 14, Sched. 1, s. 101(3)",
   },
 ];
 
@@ -365,14 +365,14 @@ export const CANONICAL_TIMELINES = [
     citation: "CYFSA, S.O. 2017, c. 14, s. 94(1)",
   },
   {
-    match: /hearing|apprehension|warrant/i,
-    timelineRule: "Court hearing timeline following apprehension without warrant",
-    citation: "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.",
+    match: /hearing|apprehension|warrant|88/i,
+    timelineRule: "Court hearing timeline following apprehension without warrant (CYFSA s. 88)",
+    citation: "CYFSA, S.O. 2017, c. 14, s. 88",
   },
   {
-    match: /ombudsman|care rights|bill 188|bill 33/i,
-    timelineRule: "Child Ombudsman Access & Continuous Care Rights",
-    citation: "Bill 188, Supporting Children's Futures Act, 2024 (S.O. 2024, c. 17)",
+    match: /ombudsman|care rights|bill 188|bill 33|9\.1/i,
+    timelineRule: "Child Ombudsman Access & Continuous Care Rights (CYFSA s. 9.1)",
+    citation: "CYFSA, S.O. 2017, c. 14, s. 9.1",
   },
   {
     match: /300-day|parentage|presumption/i,
@@ -665,23 +665,41 @@ const CORROBORATION_LABELS = new Set(["CORROBORATED", "DOCUMENTARY", "DIRECT"]);
  * Returns the text (with the unverified note appended when the citation is not an internal-reference match), the status,
  * the identified Act, and the reason. The original text is kept; nothing is removed.
  */
-export function guardCitation(text: string): {
+export function guardCitation(
+  text: string,
+  options?: { caseDate?: string; proposition?: string }
+): {
   text: string;
   status: CitationStatus;
   identifiedAct: IdentifiedAct;
   reason: string;
+  authorityId?: string;
   authorityResolution?: any;
 } {
   const t = str(text);
   const c = classifyCitation(t);
-  const auth = resolveLegalAuthority(t);
+  const auth = resolveLegalAuthority(t, options);
   const authorityResolution = auth.status === "VERIFIED" && auth.entry ? {
+    id: auth.entry.id,
+    category: auth.entry.category,
     citation: auth.entry.citation,
     heading: auth.entry.heading,
     sourceUrl: auth.entry.sourceUrl,
     exactWording: auth.entry.exactWording,
     practiceNote: auth.entry.practiceNote,
+    verificationSourceType: auth.entry.verificationSourceType,
   } : undefined;
+
+  if (auth.status === "INAPPLICABLE") {
+    return {
+      text: /unverified/i.test(t) ? t : `${t} ${UNVERIFIED_CITATION_NOTE}`,
+      status: "UNVERIFIED",
+      identifiedAct: c.identifiedAct,
+      reason: auth.warningText || c.reason,
+      authorityId: auth.entry?.id,
+      authorityResolution: undefined,
+    };
+  }
 
   if (c.status === "UNVERIFIED" && !/unverified/i.test(t)) {
     return {
@@ -689,6 +707,7 @@ export function guardCitation(text: string): {
       status: "UNVERIFIED",
       identifiedAct: c.identifiedAct,
       reason: c.reason,
+      authorityId: auth.entry?.id,
       authorityResolution,
     };
   }
@@ -697,6 +716,7 @@ export function guardCitation(text: string): {
     status: c.status,
     identifiedAct: c.identifiedAct,
     reason: c.reason,
+    authorityId: auth.entry?.id,
     authorityResolution,
   };
 }
@@ -730,11 +750,12 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
       flag.classificationCaveat = `The analyzer labelled this point ${flag.evidenceClassification}, but the passage behind that label was not located. It is not shown as corroborated.`;
     }
 
-    const g = guardCitation(flag.legalReference);
+    const g = guardCitation(flag.legalReference, { proposition: flag.explanation });
     flag.legalReference = g.text;
     flag.citationStatus = g.status;
     flag.citationReason = g.reason;
     flag.identifiedAct = g.identifiedAct;
+    if (g.authorityId) flag.authorityId = g.authorityId;
   }
   applyCitationGuards(report);
   return report;
@@ -747,10 +768,11 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
 export function applyCitationGuards(report: Record<string, any>): Record<string, any> {
   for (const t of Array.isArray(report.thresholdAnalysis) ? report.thresholdAnalysis : []) {
     if (!t || typeof t !== "object") continue;
-    const g = guardCitation(t.primarySourceLaw);
+    const g = guardCitation(t.primarySourceLaw, { proposition: `${t.thresholdChecked || ""} ${t.reasoning || ""}` });
     t.primarySourceLaw = g.text;
     t.citationStatus = g.status;
     t.citationReason = g.reason;
+    if (g.authorityId) t.authorityId = g.authorityId;
   }
   for (const item of Array.isArray(report.proceduralTimelineViolations) ? report.proceduralTimelineViolations : []) {
     if (!item || typeof item !== "object") continue;
@@ -758,10 +780,11 @@ export function applyCitationGuards(report: Record<string, any>): Record<string,
     if (/94\(5\)/.test(`${item.evaluation} ${item.citation}`) && /5-day|five-day|five day/i.test(item.evaluation)) {
       item.citation = UNVERIFIED_CITATION_NOTE;
     }
-    const g = guardCitation(item.citation);
+    const g = guardCitation(item.citation, { proposition: `${item.timelineRule || ""} ${item.evaluation || ""}` });
     item.citation = g.text;
     item.citationStatus = g.status;
     item.citationReason = g.reason;
+    if (g.authorityId) item.authorityId = g.authorityId;
   }
   report.citationVerification = {
     method:

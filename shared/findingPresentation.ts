@@ -18,6 +18,8 @@
  * - Both modes use identical verified facts, quotes, citations, and legal conclusions.
  */
 
+import { resolveLegalAuthority } from "./legalVerificationPipeline.js";
+
 export type FindingNature = 
   | "Evidentiary Deficiency (Secondhand Hearsay Allegation)"
   | "Documented Evidentiary Contradiction"
@@ -32,11 +34,14 @@ export interface EducationalAnalysis {
   documentQuote: string;
   documentLocator: string;
   applicableLegislation: string;
+  applicableAuthorityId?: string;
   proceduralRule: string;
+  proceduralRuleAuthorityId?: string;
   verifiedCaseLaw: {
     caseName: string;
     citation: string;
     legalPrinciple: string;
+    verificationNote?: string;
   };
   whatEvidenceEstablishes: string;
   whatLawRequires: string;
@@ -116,15 +121,23 @@ export function determineFindingNature(flag: any): FindingNature {
  * Formulates verified Ontario child-protection jurisprudence principles
  * corresponding to the finding category and evidence classification.
  */
-export function getAuthoritativeJurisprudence(flag: any): { caseName: string; citation: string; legalPrinciple: string } {
+export function getAuthoritativeJurisprudence(flag: any): {
+  caseName: string;
+  citation: string;
+  legalPrinciple: string;
+  verificationNote: string;
+} {
   const nature = determineFindingNature(flag);
   const evid = String(flag?.evidenceClassification || "").toUpperCase();
+  const verificationNote =
+    "Judicial decision principle summary for educational reference; full case judgment text is not bundled in the local statutory corpus.";
 
   if (nature === "Evidentiary Deficiency (Secondhand Hearsay Allegation)" || evid === "HEARSAY") {
     return {
       caseName: "Children's Aid Society of the Niagara Region v. P. (D.)",
       citation: "(2003), 36 R.F.L. (5th) 265 (Ont. S.C.J.)",
-      legalPrinciple: "Hearsay evidence in child protection affidavits requires clear identification of information and belief sources under Family Law Rules 14(18)-(19), and multi-layered, uncorroborated secondhand allegations carry minimal weight on contentious issues."
+      legalPrinciple: "Hearsay evidence in child protection affidavits requires clear identification of information and belief sources under Family Law Rules 14(18)-(19), and multi-layered, uncorroborated secondhand allegations carry minimal weight on contentious issues.",
+      verificationNote,
     };
   }
 
@@ -132,7 +145,8 @@ export function getAuthoritativeJurisprudence(flag: any): { caseName: string; ci
     return {
       caseName: "Children's Aid Society of Ottawa v. C. (S.)",
       citation: "2009 ONCA 514, 69 R.F.L. (6th) 1",
-      legalPrinciple: "Contradictory and internally inconsistent Society records must be scrutinized critically, and factual conflicts cannot be resolved summarily against parents without testing through cross-examination and primary records."
+      legalPrinciple: "Contradictory and internally inconsistent Society records must be scrutinized critically, and factual conflicts cannot be resolved summarily against parents without testing through cross-examination and primary records.",
+      verificationNote,
     };
   }
 
@@ -140,7 +154,8 @@ export function getAuthoritativeJurisprudence(flag: any): { caseName: string; ci
     return {
       caseName: "Catholic Children's Aid Society of Metropolitan Toronto v. M. (C.)",
       citation: "[1994] 2 S.C.R. 165",
-      legalPrinciple: "State intervention in family autonomy requires strict adherence to statutory timelines and procedural fairness under child protection legislation to avoid prejudice to the child-parent relationship."
+      legalPrinciple: "State intervention in family autonomy requires strict adherence to statutory timelines and procedural fairness under child protection legislation to avoid prejudice to the child-parent relationship.",
+      verificationNote,
     };
   }
 
@@ -148,7 +163,8 @@ export function getAuthoritativeJurisprudence(flag: any): { caseName: string; ci
     return {
       caseName: "Children's Aid Society of Algoma v. P. (P.)",
       citation: "2005 ONCJ 424, 21 R.F.L. (6th) 171",
-      legalPrinciple: "Protection grounds under CYFSA s. 74(2) require cogent, objective evidence demonstrating a specific risk of harm; subjective anxiety or uncorroborated allegations do not satisfy the statutory threshold."
+      legalPrinciple: "Protection grounds under CYFSA s. 74(2) require cogent, objective evidence demonstrating a specific risk of harm; subjective anxiety or uncorroborated allegations do not satisfy the statutory threshold.",
+      verificationNote,
     };
   }
 
@@ -156,7 +172,8 @@ export function getAuthoritativeJurisprudence(flag: any): { caseName: string; ci
   return {
     caseName: "F.H. v. McDougall",
     citation: "2008 SCC 53, [2008] 3 S.C.R. 41",
-    legalPrinciple: "The Society bears the burden of proof on a balance of probabilities, which requires clear, convincing, and cogent evidence rather than speculation, suspicion, or unsubstantiated conclusions."
+    legalPrinciple: "The Society bears the burden of proof on a balance of probabilities, which requires clear, convincing, and cogent evidence rather than speculation, suspicion, or unsubstantiated conclusions.",
+    verificationNote,
   };
 }
 
@@ -173,13 +190,17 @@ export function buildEducationalAnalysis(flag: any): EducationalAnalysis {
     : (page ? `Document Page ${page}` : "Reference location in uploaded document");
 
   const legalRef = String(flag?.legalReference || "").trim();
+  const resolvedStatute = resolveLegalAuthority(legalRef);
+  const applicableAuthorityId = flag?.authorityId || resolvedStatute.entry?.id;
   const legislation = legalRef.includes("CYFSA") 
     ? legalRef 
     : (legalRef ? `CYFSA & ${legalRef}` : "Child, Youth and Family Services Act, 2017 (CYFSA)");
 
-  const proceduralRule = flag?.evidenceClassification === "HEARSAY" || flag?.category?.toLowerCase().includes("hearsay")
+  const isHearsay = flag?.evidenceClassification === "HEARSAY" || flag?.category?.toLowerCase().includes("hearsay");
+  const proceduralRule = isHearsay
     ? "Ontario Family Law Rules (O. Reg. 114/99), Rule 14(18) and 14(19) (Evidence on Motions & Information/Belief requirements)"
     : "Ontario Family Law Rules (O. Reg. 114/99), Rule 1(7) and Rule 14(18) (Fairness & Firsthand Affidavits)";
+  const proceduralRuleAuthorityId = "FLR:14(18)";
 
   const caseLaw = getAuthoritativeJurisprudence(flag);
 
@@ -243,7 +264,9 @@ export function buildEducationalAnalysis(flag: any): EducationalAnalysis {
     documentQuote: quote,
     documentLocator: locator,
     applicableLegislation: legislation,
+    applicableAuthorityId,
     proceduralRule,
+    proceduralRuleAuthorityId,
     verifiedCaseLaw: caseLaw,
     whatEvidenceEstablishes,
     whatLawRequires,

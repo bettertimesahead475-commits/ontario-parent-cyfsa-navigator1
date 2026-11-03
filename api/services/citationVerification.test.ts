@@ -7,13 +7,29 @@ import {
   citedSections,
   classifyCitation,
   effectiveCitationStatus,
+  identifyAuthorityCategory,
   identifyInstruments,
   INTERNAL_CYFSA_SECTION_KEYS,
+  isVerifiedCyfsaSection,
+  resolveBundledCyfsaKey,
 } from "../../shared/citationVerification";
 
-describe("internal reference list", () => {
-  it("is exactly the sections in the bundled internal reference text", () => {
+describe("internal reference list and authority category separation", () => {
+  it("is strictly the CYFSA sections in the bundled internal reference text", () => {
     expect([...INTERNAL_CYFSA_SECTION_KEYS].sort()).toEqual(Object.keys(BUNDLED_STATUTE_ENTRIES).sort());
+    expect(INTERNAL_CYFSA_SECTION_KEYS).not.toContain("14(18)" as any);
+    expect(INTERNAL_CYFSA_SECTION_KEYS).not.toContain("7" as any);
+  });
+
+  it("separates CYFSA, Bill C-92, Family Law Rules, Charter, CLRA, Regulation, and Case Law categories", () => {
+    expect(identifyAuthorityCategory("CYFSA, s. 74(2)")).toBe("CYFSA");
+    expect(identifyAuthorityCategory("An Act respecting First Nations, Inuit and Métis children, youth and families, s. 16")).toBe("BILL_C92");
+    expect(identifyAuthorityCategory("Family Law Rules, r. 14(18)")).toBe("FAMILY_LAW_RULES");
+    expect(identifyAuthorityCategory("Canadian Charter of Rights and Freedoms, s. 7")).toBe("CHARTER");
+    expect(identifyAuthorityCategory("O. Reg. 156/18, s. 4")).toBe("REGULATION");
+    expect(identifyAuthorityCategory("Children's Law Reform Act, s. 24")).toBe("CHILDRENS_LAW_REFORM_ACT");
+    expect(identifyAuthorityCategory("Family Law Act, s. 88")).toBe("OTHER");
+    expect(identifyAuthorityCategory("F.H. v. McDougall, 2008 SCC 53")).toBe("CASE_LAW");
   });
 });
 
@@ -38,7 +54,7 @@ describe("identifying the Act", () => {
 });
 
 describe("classifyCitation: the citation must identify the correct statute", () => {
-  it("CYFSA, s. 88 matches the internal reference text, and is not described as verified", () => {
+  it("CYFSA, s. 88 matches the internal reference text, and is not described as verified against live e-Laws", () => {
     const c = classifyCitation("CYFSA, s. 88");
     expect(c.status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(c.identifiedAct).toBe("CYFSA");
@@ -46,6 +62,20 @@ describe("classifyCitation: the citation must identify the correct statute", () 
     expect(c.officialVerification).toBe("NOT_CHECKED");
     expect(c.reason).toMatch(/Not checked against official e-Laws/);
     expect(c.reason).toMatch(/not a finding that the section applies/);
+  });
+
+  it("matches valid CYFSA subsections, decimal sections, clauses, and numbered paragraphs", () => {
+    expect(classifyCitation("CYFSA s. 74(2)(a)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 74(2)(d.1)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 9.1").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 121(2.1)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 101(1), para. 1").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 1(2), para. 2").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 94(6)(c)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 101(7)(c)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 109(2)(d)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 125(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(classifyCitation("CYFSA s. 312(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
   });
 
   it("Family Law Act, s. 88 is never read as the CYFSA's section 88", () => {
@@ -88,7 +118,7 @@ describe("classifyCitation: section numbers without an identified Act", () => {
     expect(classifyCitation("the Act, s. 88").status).toBe("UNVERIFIED");
   });
 
-  it("a Family Law Rules citation is unverified, because the rules are not in the internal reference", () => {
+  it("a Family Law Rules citation is not a CYFSA internal-reference match", () => {
     expect(classifyCitation("Family Law Rules, 14(19)").status).toBe("UNVERIFIED");
   });
 });
@@ -109,7 +139,7 @@ describe("classifyCitation: multiple statutes in one citation", () => {
   });
 });
 
-describe("classifyCitation: incorrect or unsupported section numbers", () => {
+describe("classifyCitation: incorrect, repealed, or unsupported section numbers", () => {
   it("a CYFSA section not on the internal list is unverified, and says why", () => {
     const c = classifyCitation("CYFSA s. 999");
     expect(c.status).toBe("UNVERIFIED");
@@ -118,12 +148,18 @@ describe("classifyCitation: incorrect or unsupported section numbers", () => {
     expect(c.reason).toMatch(/does not show whether the section exists or applies/);
   });
 
-  it("s.94(5) is unverified: it is not on the internal list, and the list is not an official source", () => {
+  it("s.94(5) is unverified: it is not on the internal list", () => {
     expect(classifyCitation("CYFSA s. 94(5)").status).toBe("UNVERIFIED");
   });
 
-  it("s.125(1) is unverified", () => {
-    expect(classifyCitation("CYFSA s. 125(1)").status).toBe("UNVERIFIED");
+  it("rejects fabricated subsections, nonexistent clauses, and repealed paragraphs", () => {
+    expect(classifyCitation("CYFSA s. 88(2)").status).toBe("UNVERIFIED");
+    expect(classifyCitation("CYFSA s. 102(9)").status).toBe("UNVERIFIED");
+    expect(classifyCitation("CYFSA s. 74(2)(z)").status).toBe("UNVERIFIED");
+    expect(classifyCitation("CYFSA s. 3, para. 6").status).toBe("UNVERIFIED");
+    expect(classifyCitation("CYFSA s. 292(1)").status).toBe("UNVERIFIED");
+    expect(isVerifiedCyfsaSection("74(2)(z)")).toBe(false);
+    expect(resolveBundledCyfsaKey("74(2)(a)")).toBe("74(2)");
   });
 
   it("a CYFSA citation naming no section is unverified", () => {
@@ -145,8 +181,12 @@ describe("classifyCitation: empty and already-marked citations", () => {
     expect(classifyCitation("CYFSA s. 88 ⚠️ Statute citation unverified — confirm exact section with counsel").status).toBe("UNVERIFIED");
   });
 
-  it("citedSections reads subsection lists after a section keyword only", () => {
+  it("citedSections reads subsection lists, decimal sections, clauses, and paragraphs after a section keyword", () => {
     expect(citedSections("ss. 94(1) and (2)")).toEqual(["94(1)", "94(2)"]);
+    expect(citedSections("s. 74(2)(d.1)")).toEqual(["74(2)(d.1)"]);
+    expect(citedSections("s. 101(1), para. 1")).toEqual(["101(1), para. 1"]);
+    expect(citedSections("s. 9.1")).toEqual(["9.1"]);
+    expect(citedSections("s. 121(2.1)")).toEqual(["121(2.1)"]);
     expect(citedSections("S.O. 2017, c. 14")).toEqual([]);
   });
 });

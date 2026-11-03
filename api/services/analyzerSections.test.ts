@@ -227,15 +227,16 @@ describe("deterministic guards", () => {
     expect([...INTERNAL_CYFSA_SECTION_KEYS].sort()).toEqual(Object.keys(BUNDLED_STATUTE_ENTRIES).sort());
   });
 
-  it("marks citations outside the internal reference as unverified", () => {
+  it("marks citations outside the internal reference or with contradicted propositions as unverified", () => {
     expect(guardCitation("CYFSA 2017, Section 74").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 74(2)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(guardCitation("CYFSA s. 74(2)(a)").status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA, S.O. 2017, c. 14, s. 94(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
     const s81 = guardCitation("CYFSA s. 81(7)");
     expect(s81.status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA s. 94(5)").status).toBe("UNVERIFIED");
-    expect(guardCitation("CYFSA s. 125(1)").status).toBe("UNVERIFIED");
-    expect(guardCitation("CYFSA ss. 74(2) and 125(1)").status).toBe("UNVERIFIED");
+    expect(guardCitation("CYFSA s. 125(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(guardCitation("CYFSA ss. 74(2) and 125(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA s. 74(2), 94(5)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA ss. 74(2) and 94(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA ss. 94(1) and (5)").status).toBe("UNVERIFIED");
@@ -247,6 +248,11 @@ describe("deterministic guards", () => {
     expect(guardCitation("CYFSA s. 74(2)-(4)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 74(2) and subs. 94(5)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA subsection 94(5)").status).toBe("UNVERIFIED");
+    expect(
+      guardCitation("CYFSA s. 94(6)(c)", {
+        proposition: "CAS has a universal duty to fund and pay for all private therapy and services.",
+      }).status
+    ).toBe("UNVERIFIED");
     expect(s81.text).not.toContain(UNVERIFIED_CITATION_NOTE);
     expect(guardCitation("CLRA s. 8(1)").status).toBe("UNVERIFIED");
     expect(guardCitation(UNVERIFIED_CITATION_NOTE).text).toBe(UNVERIFIED_CITATION_NOTE); // not doubled
