@@ -14,6 +14,7 @@ import { FREE_SCAN_LIMIT } from './_free-credit-reservation';
 import { monthlyCreditScope } from './_monthly-credit-scope';
 import { LIMITS } from './_paid-credit-reservation';
 import { readVerifiedPaidSession } from './_supabase-paid-session';
+import { extractSessionId } from './analyze';
 
 export interface UsageEnv {
   FIREBASE_PROJECT_ID?: string;
@@ -72,9 +73,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: Us
   }
 
   const url = new URL(request.url);
-  const sessionId = request.headers.get('x-ps-session') || url.searchParams.get('sessionId');
+  const rawSession = request.headers.get('x-ps-session') || url.searchParams.get('sessionId');
+  const sessionId = extractSessionId(rawSession);
 
-  if (sessionId && /^[0-9a-f-]{36}$/i.test(sessionId)) {
+  if (sessionId) {
     const sessionRead = await readVerifiedPaidSession(env, identity.uid, sessionId);
     if (sessionRead.status === 'verified') {
       const s = sessionRead.session;

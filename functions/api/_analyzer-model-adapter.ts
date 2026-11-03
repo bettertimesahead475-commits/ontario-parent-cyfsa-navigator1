@@ -161,14 +161,14 @@ export function createCloudflareGenerateFn(
                     }
                   } catch (parseError) {
                     if (parseError instanceof AnalyzerError) throw parseError;
-                    throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an invalid streaming event. Nothing was charged.', false);
+                    throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an invalid streaming event. Nothing was charged.', true);
                   }
                 }
               }
             }
           }
           if ((!receivedMessageStop && !stopReason) || !text.trim()) {
-            throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', false);
+            throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', true);
           }
           } finally {
             // Anthropic message_stop is the protocol terminator; do not wait for the

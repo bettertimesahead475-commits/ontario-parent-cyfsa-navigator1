@@ -143,9 +143,27 @@ function str(v: unknown, fallback = ""): string {
   return fallback;
 }
 
+export function toStrList(v: unknown, max: number, altKeys?: unknown[]): string[] {
+  if (Array.isArray(v)) {
+    const res = v.map((x) => str(x)).filter(Boolean).slice(0, max);
+    if (res.length > 0) return res;
+  }
+  if (typeof v === 'string' && v.trim()) {
+    const lines = v.split(/\r?\n|[•\-]\s+|\d+\.\s+/).map((s) => s.trim()).filter(Boolean);
+    if (lines.length > 0) return lines.slice(0, max);
+    return [v.trim()];
+  }
+  if (altKeys && altKeys.length > 0) {
+    for (const alt of altKeys) {
+      const res = toStrList(alt, max);
+      if (res.length > 0) return res;
+    }
+  }
+  return [];
+}
+
 function strList(v: unknown, max: number): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.map((x) => str(x)).filter(Boolean).slice(0, max);
+  return toStrList(v, max);
 }
 
 function clampInt(v: unknown, min: number, max: number): number {
@@ -182,14 +200,16 @@ export function validateOverview(raw: any): Validation {
   const fileSummary = str(raw?.fileSummary);
   if (fileSummary.length < 40) problems.push("fileSummary is missing or too short");
   const md = raw?.metadata && typeof raw.metadata === "object" ? raw.metadata : {};
-  const esiRaw = raw?.evidenceStrengthIndex && typeof raw.evidenceStrengthIndex === "object" ? raw.evidenceStrengthIndex : null;
-  if (!esiRaw || typeof esiRaw.components !== "object") problems.push("evidenceStrengthIndex.components is missing");
+  const esiRaw = raw?.evidenceStrengthIndex && typeof raw.evidenceStrengthIndex === "object" ? raw.evidenceStrengthIndex : {};
   if (problems.length) return { ok: false, problems };
 
+  const compSource = (esiRaw && typeof esiRaw.components === 'object' && esiRaw.components !== null)
+    ? esiRaw.components
+    : (esiRaw || {});
   const components: Record<string, { score: number; max: number; explanation: string }> = {};
   let sum = 0;
   for (const [name, max] of Object.entries(ESI_COMPONENT_MAX)) {
-    const c = esiRaw.components?.[name] || {};
+    const c = compSource?.[name] || {};
     const score = clampInt(c.score, 0, max);
     sum += score;
     components[name] = { score, max, explanation: str(c.explanation) };
@@ -285,10 +305,10 @@ export function validateChronology(raw: any, mode: "fast" | "full"): Validation 
 
 export function validateGuidance(raw: any): Validation {
   const value = {
-    whatToVerify: strList(raw?.whatToVerify, 6),
-    whatToAskALawyer: strList(raw?.whatToAskALawyer, 6),
-    whatIsMissing: strList(raw?.whatIsMissing, 6),
-    lawyerCaseBrief: strList(raw?.lawyerCaseBrief, 6),
+    whatToVerify: toStrList(raw?.whatToVerify, 6, [raw?.verificationSteps, raw?.verify]),
+    whatToAskALawyer: toStrList(raw?.whatToAskALawyer, 6, [raw?.questionsForCounsel, raw?.questionsForLawyer, raw?.askALawyer]),
+    whatIsMissing: toStrList(raw?.whatIsMissing, 6, [raw?.missingEvidence, raw?.missingInformation, raw?.missingDocuments]),
+    lawyerCaseBrief: toStrList(raw?.lawyerCaseBrief, 6, [raw?.caseBrief, raw?.brief, raw?.summaryForCounsel]),
   };
   const empty = Object.entries(value).filter(([, v]) => v.length === 0).map(([k]) => k);
   if (empty.length) return { ok: false, problems: empty.map((k) => `${k} is empty`) };
@@ -319,9 +339,15 @@ export const CANONICAL_THRESHOLDS = [
 ];
 
 export function validateThresholds(raw: any): Validation {
-  if (!Array.isArray(raw?.thresholdAnalysis)) return { ok: false, problems: ["thresholdAnalysis must be an array"] };
-  const items = raw.thresholdAnalysis
-    .filter((t: any) => t && typeof t === "object" && str(t.thresholdChecked) && (str(t.reasoning) || str(t.evaluation)))
+  const rawList = Array.isArray(raw?.thresholdAnalysis)
+    ? raw.thresholdAnalysis
+    : Array.isArray(raw?.thresholds)
+    ? raw.thresholds
+    : Array.isArray(raw?.statutoryThresholds)
+    ? raw.statutoryThresholds
+    : [];
+  const items = rawList
+    .filter((t: any) => t && typeof t === "object" && (str(t.thresholdChecked) || str(t.name) || str(t.threshold)) && (str(t.reasoning) || str(t.evaluation) || str(t.notes)))
     .map((t: any) => {
       const isMet = normalizeIsMet(t.isMet);
       const evalStatus =
@@ -330,11 +356,11 @@ export function validateThresholds(raw: any): Validation {
         isMet === "Not Applicable" ? "NOT_APPLICABLE" :
         "NOT_DETERMINABLE";
       return {
-        thresholdChecked: str(t.thresholdChecked),
+        thresholdChecked: str(t.thresholdChecked || t.name || t.threshold),
         isMet,
         evaluationStatus: t.evaluationStatus || evalStatus,
         isSystemPlaceholder: Boolean(t.isSystemPlaceholder ?? false),
-        reasoning: str(t.reasoning || t.evaluation),
+        reasoning: str(t.reasoning || t.evaluation || t.notes),
         primarySourceLaw: str(t.primarySourceLaw || t.citation || "CYFSA 2017"),
       };
     });
@@ -389,15 +415,21 @@ export const CANONICAL_CHARTER = [
 ];
 
 export function validateTimeline(raw: any): Validation {
-  if (!Array.isArray(raw?.proceduralTimelineViolations)) {
-    return { ok: false, problems: ["proceduralTimelineViolations must be an array"] };
-  }
-  const items = raw.proceduralTimelineViolations
-    .filter((t: any) => t && typeof t === "object" && (str(t.timelineRule) || str(t.rule)) && (str(t.evaluation) || str(t.reasoning)))
+  const rawTimeline = Array.isArray(raw?.proceduralTimelineViolations)
+    ? raw.proceduralTimelineViolations
+    : Array.isArray(raw?.timeline)
+    ? raw.timeline
+    : Array.isArray(raw?.timelineViolations)
+    ? raw.timelineViolations
+    : Array.isArray(raw?.proceduralViolations)
+    ? raw.proceduralViolations
+    : [];
+  const items = rawTimeline
+    .filter((t: any) => t && typeof t === "object" && (str(t.timelineRule) || str(t.rule) || str(t.name)) && (str(t.evaluation) || str(t.reasoning) || str(t.notes)))
     .map((t: any) => ({
-      timelineRule: str(t.timelineRule || t.rule),
+      timelineRule: str(t.timelineRule || t.rule || t.name),
       documentAssertion: str(t.documentAssertion || t.assertion || "Not explicitly documented"),
-      evaluation: str(t.evaluation || t.reasoning),
+      evaluation: str(t.evaluation || t.reasoning || t.notes),
       evaluationStatus: t.evaluationStatus || "EVALUATED_SUPPORTED",
       isSystemPlaceholder: Boolean(t.isSystemPlaceholder ?? false),
       citation: str(t.citation || "CYFSA"),
@@ -424,7 +456,8 @@ export function validateTimeline(raw: any): Validation {
     }
   }
 
-  const charter = strList(raw?.charterAndHumanRightsIssues, 6);
+  const charterRaw = raw?.charterAndHumanRightsIssues ?? raw?.charterIssues ?? raw?.humanRightsIssues;
+  const charter = toStrList(charterRaw, 6);
   for (let i = charter.length; i < 3; i++) {
     charter.push(CANONICAL_CHARTER[i] || "No additional charter issues determinable from this record.");
   }
@@ -486,7 +519,7 @@ const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
     stage: "building_chronology",
     fields: [],
     extraSchema: CHRONOLOGY_SCHEMA,
-    maxTokens: { fast: 3500, full: 8000 },
+    maxTokens: { fast: 3500, full: 5000 },
     limits: (mode) =>
       `chronology: at most ${mode === "fast" ? 15 : 25} entries in date order, each one sentence. contradictions: at most 8; return [] if there are none.`,
     validate: (raw, mode) => validateChronology(raw, mode),
@@ -496,7 +529,7 @@ const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
     title: "Preparation guidance and questions for counsel",
     stage: "preparing_report",
     fields: ["whatToVerify", "whatToAskALawyer", "whatIsMissing", "lawyerCaseBrief"],
-    maxTokens: { fast: 3500, full: 8000 },
+    maxTokens: { fast: 3500, full: 4000 },
     limits: () => "Each list: 3-5 items. Each item: at most 3 sentences.",
     validate: (raw) => validateGuidance(raw),
   },
@@ -505,7 +538,7 @@ const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
     title: "CYFSA statutory thresholds",
     stage: "identifying_legal_issues",
     fields: ["thresholdAnalysis"],
-    maxTokens: { fast: 4000, full: 8000 },
+    maxTokens: { fast: 4000, full: 4500 },
     limits: () => "Exactly the 4 checkpoints listed, in that order. Each reasoning: 3-5 sentences.",
     validate: (raw) => validateThresholds(raw),
   },
@@ -514,7 +547,7 @@ const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
     title: "Procedural timelines and Charter issues",
     stage: "identifying_legal_issues",
     fields: ["proceduralTimelineViolations", "charterAndHumanRightsIssues"],
-    maxTokens: { fast: 5000, full: 8000 },
+    maxTokens: { fast: 5000, full: 5000 },
     limits: () =>
       "proceduralTimelineViolations: exactly the 4 checkpoints listed, each evaluation 2-3 sentences. charterAndHumanRightsIssues: exactly 3 items, each 2-3 sentences.",
     validate: (raw) => validateTimeline(raw),
@@ -928,9 +961,15 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   let completed = Object.keys(opts.initialSections || {}).length;
   const totalCount = keys.length + completed;
 
-  // allSettled-style: wait for every section so a failure never leaves requests running unobserved.
-  const outcomes = await Promise.all(
-    keys.map(async (key) => {
+  // Run with bounded concurrency (max 3 concurrent section calls) to prevent token rate-limit
+  // bursts, socket drops, and latency spikes across Claude stream connections.
+  const concurrency = Math.min(3, keys.length);
+  const queue = [...keys];
+  const outcomes: any[] = [];
+  const workers = Array.from({ length: concurrency }, async () => {
+    while (queue.length > 0) {
+      const key = queue.shift();
+      if (!key) break;
       try {
         const { value, attempts: n } = await runOneSection(key, opts, usageByModel);
         sectionTimingsMs[key] = now() - started;
@@ -938,13 +977,13 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
         Object.assign(report, value);
         completed++;
         await opts.onSectionComplete?.(key, value, completed, totalCount);
-        return null;
       } catch (err) {
-        return err;
+        outcomes.push(err);
       }
-    })
-  );
-  const failure = outcomes.find((o) => o !== null);
+    }
+  });
+  await Promise.all(workers);
+  const failure = outcomes.find((o) => o != null);
   if (failure) throw failure;
 
   applyReportGuards(report, opts.documentText);

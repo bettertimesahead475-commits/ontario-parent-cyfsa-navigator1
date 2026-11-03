@@ -37,6 +37,30 @@ import {
   type GenerateFn,
 } from '../../api/services/analyzerSections';
 import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyzerErrors';
+import { buildComplianceMatrixFromReport } from '../../shared/complianceMatrixEngine';
+
+/**
+ * Extracts a valid 36-char UUID session ID from either a raw UUID string,
+ * a query param, an X-PS-Session header, or an HMAC-signed session token (payload.signature).
+ */
+export function extractSessionId(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (/^[0-9a-f-]{36}$/i.test(trimmed)) return trimmed;
+  if (trimmed.includes('.')) {
+    try {
+      const part = trimmed.split('.')[0];
+      const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+      const decoded = atob(padded);
+      const parsed = JSON.parse(decoded);
+      if (typeof parsed?.jti === 'string' && /^[0-9a-f-]{36}$/i.test(parsed.jti)) {
+        return parsed.jti;
+      }
+    } catch {}
+  }
+  return null;
+}
 
 export interface AnalyzerEnv {
   ANALYZER_ENABLED?: string; // 'true' enables execution; otherwise fails closed with 503
@@ -134,9 +158,21 @@ export async function handleAnalyzeRequest(
     );
   }
 
+  if (
+    documentText.startsWith('JVBER') ||
+    documentText.startsWith('UEsDB') ||
+    /^data:application\/(pdf|vnd|octet-stream)/i.test(documentText)
+  ) {
+    return Response.json(
+      { error: 'Document contains unextracted binary or base64 data. Please run text extraction first.', code: 'DOCUMENT_UNEXTRACTED' },
+      { status: 400, headers: DEFAULT_HEADERS }
+    );
+  }
+
   const mode: 'fast' | 'full' = body?.mode === 'full' ? 'full' : 'fast';
   const isForensic = mode === 'full';
-  const sessionId = typeof body?.sessionId === 'string' && /^[0-9a-f-]{36}$/i.test(body.sessionId) ? body.sessionId : null;
+  const rawSession = body?.sessionId || request.headers.get('x-ps-session') || request.headers.get('x-session-id');
+  const sessionId = extractSessionId(rawSession);
   const rawRequestId = request.headers.get('X-Analysis-Id') || body?.analysisId || '';
   const requestId = /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId)
     ? rawRequestId
@@ -345,6 +381,35 @@ export async function handleAnalyzeRequest(
         analyzedAt: new Date().toISOString(),
       },
     };
+
+    try {
+      report.complianceMatrix = buildComplianceMatrixFromReport(
+        {
+          documentType: report.documentType,
+          executiveSummary: report.fileSummary,
+          statutoryFindings: (report.redFlags || []).map((rf: any) => ({
+            title: rf.category,
+            statute: rf.legalReference,
+            description: rf.explanation,
+            severity: rf.severity,
+            evidenceQuotes: rf.phraseDetected ? [rf.phraseDetected] : [],
+            pageNumber: rf.locationInDocument ? parseInt(rf.locationInDocument.match(/\d+/)?.[0] || '1', 10) : 1,
+            paragraphReference: rf.locationInDocument,
+          })),
+          contradictions: (report.contradictions || []).map((c: any) => ({
+            claim: c.statementA || c.description,
+            counterEvidence: c.statementB || c.counterEvidence,
+            significance: c.explanation || c.significance,
+          })),
+        },
+        documentText,
+        {
+          documentTitle: report.documentTitle || 'Uploaded Record',
+        }
+      );
+    } catch (matrixErr) {
+      console.warn('[compliance_matrix] Non-fatal evaluation error:', matrixErr);
+    }
 
     applyReportGuards(report, documentText);
     return report;

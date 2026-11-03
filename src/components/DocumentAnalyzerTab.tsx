@@ -85,6 +85,7 @@ import {
 } from "./narration";
 import { FindingPresentationCard } from "./FindingPresentationCard";
 import { AgencyComplianceMatrixView } from "./AgencyComplianceMatrixView";
+import { buildComplianceMatrixFromReport } from "../../shared/complianceMatrixEngine";
 import { useNarration } from "../hooks/useNarration";
 import { extractReportSegments } from "../utils/narration/reportSegments";
 import type { NarrationSegment } from "../utils/narration/types";
@@ -630,6 +631,47 @@ export default function DocumentAnalyzerTab() {
     setIsDeepScanning(true);
     setDeepScanFileId(file.id);
     setDeepScanError(null);
+
+    let documentTextToScan = file.content;
+    const isRawBase64 = file.mimeType !== "text/plain" &&
+      (documentTextToScan.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(documentTextToScan.slice(0, 100)));
+
+    if (isRawBase64) {
+      setDeepScanProgress({
+        stage: "extracting",
+        percent: 20,
+        message: "Extracting document text & verifying structure...",
+      });
+      try {
+        const extractResponse = await apiFetch("/api/extract-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileData: {
+              base64: file.content,
+              mimeType: file.mimeType,
+              fileName: file.name,
+            },
+          }),
+        });
+        const extractResult = await safeReadJson(extractResponse);
+        if (!extractResponse.ok) {
+          throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
+        }
+        if (!extractResult.extractedText) {
+          throw new Error("No readable text could be extracted from this document.");
+        }
+        documentTextToScan = extractResult.extractedText;
+        setOrganizedFiles(prev => prev.map(f => f.id === file.id
+          ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+      } catch (err: any) {
+        setIsDeepScanning(false);
+        setDeepScanFileId(null);
+        setDeepScanError(err.message || "Failed to extract text from document.");
+        return;
+      }
+    }
+
     setDeepScanProgress({
       stage: "started",
       percent: 35,
@@ -640,6 +682,7 @@ export default function DocumentAnalyzerTab() {
       // One id per Deep Scan click, reused by every retry, so the server answers a retry with the saved report or the
       // running job rather than running (and charging for) the scan again.
       const scanId = newAnalysisJobId();
+      const storedSessionToken = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token") || undefined;
       const data = await runAnalysisWithRetry({
         attempt: async () => {
           const response = await apiFetch("/api/deep-scan", {
@@ -650,13 +693,14 @@ export default function DocumentAnalyzerTab() {
               "X-Analysis-Id": scanId,
             },
             body: JSON.stringify({
-              documentText: file.content,
+              documentText: documentTextToScan,
               documentName: file.name,
               category: file.category,
               model: claudeModel,
               mode: "full",
               stream: true,
               analysisId: scanId,
+              sessionId: storedSessionToken,
               // Gives the deep scan the first-pass report already run for this file, so it can
               // dig into what that pass missed instead of re-finding the same red flags.
               priorAnalysis: file.analysisReport || null
@@ -675,6 +719,31 @@ export default function DocumentAnalyzerTab() {
         recover: () => recoverAnalysisReport(scanId),
       });
       const report = { ...data, timestamp: new Date().toLocaleDateString() };
+      if (!report.complianceMatrix) {
+        try {
+          report.complianceMatrix = buildComplianceMatrixFromReport(
+            {
+              documentType: report.documentType,
+              executiveSummary: report.fileSummary,
+              statutoryFindings: (report.redFlags || []).map((rf: any) => ({
+                title: rf.category,
+                statute: rf.legalReference,
+                description: rf.explanation,
+                severity: rf.severity,
+                evidenceQuotes: rf.phraseDetected ? [rf.phraseDetected] : [],
+              })),
+              contradictions: (report.contradictions || []).map((c: any) => ({
+                claim: c.statementA || c.description,
+                counterEvidence: c.statementB || c.counterEvidence,
+                significance: c.explanation || c.significance,
+              })),
+            },
+            documentTextToScan
+          );
+        } catch (e) {
+          console.warn("Unable to generate client fallback compliance matrix", e);
+        }
+      }
 
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
@@ -2039,6 +2108,7 @@ export default function DocumentAnalyzerTab() {
       let report: any = null;
       setAnalyzerState("AUTHENTICATING");
       setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
+      const storedSessionToken = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token") || undefined;
       const postAnalysis = () => apiFetch("/api/analyze", {
         method: "POST",
         headers: {
@@ -2052,6 +2122,7 @@ export default function DocumentAnalyzerTab() {
           model: claudeModel,
           stream: true,
           analysisId,
+          sessionId: storedSessionToken,
         })
       });
       report = await runAnalysisWithRetry({
@@ -2095,6 +2166,32 @@ export default function DocumentAnalyzerTab() {
           setStreamingProgress(prev => ({ ...prev, message: `${wait.reason} Trying again in ${Math.round(wait.waitMs / 1000)} seconds.` }));
         },
       });
+
+      if (!report.complianceMatrix) {
+        try {
+          report.complianceMatrix = buildComplianceMatrixFromReport(
+            {
+              documentType: report.documentType,
+              executiveSummary: report.fileSummary,
+              statutoryFindings: (report.redFlags || []).map((rf: any) => ({
+                title: rf.category,
+                statute: rf.legalReference,
+                description: rf.explanation,
+                severity: rf.severity,
+                evidenceQuotes: rf.phraseDetected ? [rf.phraseDetected] : [],
+              })),
+              contradictions: (report.contradictions || []).map((c: any) => ({
+                claim: c.statementA || c.description,
+                counterEvidence: c.statementB || c.counterEvidence,
+                significance: c.explanation || c.significance,
+              })),
+            },
+            payload.textContent || file.content || ""
+          );
+        } catch (e) {
+          console.warn("Unable to generate client fallback compliance matrix", e);
+        }
+      }
 
       setSelectedReport(report);
       setAnalyzerState("COMPLETE");
