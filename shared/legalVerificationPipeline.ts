@@ -32,6 +32,9 @@ export type AuthorityInstrument =
   | "CHILDRENS_LAW_REFORM_ACT"
   | "CHARTER"
   | "REGULATION"
+  | "CAS_STANDARD"
+  | "PROFESSIONAL_STANDARD"
+  | "OVERSIGHT_PATHWAY"
   | "CASE_LAW"
   | "OTHER";
 
@@ -45,6 +48,8 @@ export type VerificationSourceType =
   | "BUNDLED_CONSOLIDATION_VERBATIM"
   | "CONSTITUTIONAL_TEXT"
   | "REGULATION_REFERENCE_SUMMARY"
+  | "MINISTRY_STANDARD_SUMMARY"
+  | "PROFESSIONAL_REGULATORY_STANDARD"
   | "JUDICIAL_DECISION_SUMMARY";
 
 export type TemporalVerificationStatus =
@@ -962,6 +967,618 @@ const CORE_AUTHORITIES: VerifiedAuthorityEntry[] = [
     legalTestSummary: "Establishes an individual's Part X right of access to a record of personal information in a service provider's custody or control, subject to enumerated exceptions and severability under s. 312(2).",
     practiceNote: "Section 312(1) (not s. 292, which governs disclosure without consent) is the statutory right of access to personal information records under Part X."
   },
+  {
+    authorityId: "CYFSA:14",
+    citation: "CYFSA, s. 14",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "14",
+    heading: "Parental consent, etc. — Rights retained by parent of child in care",
+    exactWording: "14 Subject to subsection 94 (7) and sections 110 and 111 (custody during adjournment, interim and extended society care), the parent of a child in care retains any right that the parent may have, (a) to direct the child’s or young person’s education and upbringing, in accordance with the child’s or young person’s creed, community identity and cultural identity; and (b) to consent to treatment on behalf of an incapable child or young person, if the parent is the child’s or young person’s substitute decision-maker in accordance with section 20 of the Health Care Consent Act, 1996.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK19",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Preserves a parent's rights to direct the child's education and upbringing (in accordance with creed, community identity, and cultural identity) and to consent to treatment under the HCCA 1996 when a child is in care, subject to s. 94(7) and ss. 110–111.",
+    practiceNote: "Applies particularly when a child is in care under a voluntary Temporary Care Agreement (s. 75) unless treatment consent authority was transferred under s. 75(9)."
+  },
+  {
+    authorityId: "CYFSA:15(2)",
+    citation: "CYFSA, s. 15(2)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "15(2)",
+    heading: "Children, young persons and parents to be heard and represented",
+    exactWording: "(2) Service providers shall ensure that children and young persons and their parents have an opportunity to be heard and represented when decisions affecting their interests are made and to be heard when they have concerns about the services they are receiving.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK21",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Mandates that service providers ensure children, young persons, and their parents have an opportunity to be heard and represented when decisions affecting their interests are made, and to be heard regarding concerns about services received (subject to the s. 15(3) good-cause exception).",
+    practiceNote: "Failure by a society to comply with s. 15(2) is an enumerated ground for direct review by the Child and Family Services Review Board (CFSRB) under CYFSA s. 120(4), para. 4 (unless the matter is before or decided by the court per s. 120(8))."
+  },
+  {
+    authorityId: "CYFSA:15(4)",
+    citation: "CYFSA, s. 15(4)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "15(4)",
+    heading: "Criteria and safeguards re decisions",
+    exactWording: "(4) Service providers shall ensure that decisions affecting the interests and rights of children and young persons and their parents are made according to clear, consistent criteria and are subject to appropriate procedural safeguards.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK21",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires service providers to ensure decisions affecting the interests and rights of children, young persons, and their parents are made according to clear, consistent criteria and procedural safeguards.",
+    practiceNote: "Supports scrutiny of arbitrary or undocumented service and access decisions."
+  },
+  {
+    authorityId: "CYFSA:35(2)",
+    citation: "CYFSA, s. 35(2)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "35(2)",
+    heading: "Society duty to provide prescribed standard of services",
+    exactWording: "(2) A society shall, (a) provide the prescribed standard of services in its performance of its functions; and (b) follow the prescribed procedures and practices.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK46",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Statutorily obligates every children's aid society to provide the prescribed standard of services and follow prescribed procedures and practices.",
+    practiceNote: "Links statutory CAS functions under s. 35(1) to the prescribed standards and practices under O. Reg. 156/18 and the Ontario Child Protection Standards (2016)."
+  },
+  {
+    authorityId: "CYFSA:73",
+    citation: "CYFSA, s. 73",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "73",
+    heading: "Consultation in specified cases — First Nations, Inuk or Métis child",
+    exactWording: "73 A society, person or entity that proposes to provide a prescribed service to a First Nations, Inuk or Métis child or young person, or to exercise a prescribed power under this Act in relation to such a child or young person, shall consult with a representative chosen by each of the child’s or young person’s bands and First Nations, Inuit or Métis communities in accordance with the regulations.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK90",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Mandates consultation with a representative chosen by each of a First Nations, Inuk, or Métis child's bands and communities when proposing to provide a prescribed service or exercise a prescribed power.",
+    practiceNote: "Operates alongside CYFSA s. 72 and federal Bill C-92, s. 12(1)."
+  },
+  {
+    authorityId: "CYFSA:75(1)",
+    citation: "CYFSA, s. 75(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "75(1)",
+    heading: "Temporary care agreement",
+    exactWording: "75 (1) A person who is temporarily unable to care adequately for a child in the person’s custody, and the society having jurisdiction where the person resides, may make a written agreement for the society’s care and custody of the child.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK93",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Authorizes a voluntary written Temporary Care Agreement between a custodial parent temporarily unable to care adequately for a child and the society.",
+    practiceNote: "Must comply with the validity requirements for consent/agreements in CYFSA s. 21(2) (capacity, reasonably informed of nature, consequences, and alternatives, voluntary without coercion, and reasonable opportunity for independent advice)."
+  },
+  {
+    authorityId: "CYFSA:75(4)",
+    citation: "CYFSA, s. 75(4)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "75(4)",
+    heading: "Duty of society before making temporary care agreement",
+    exactWording: "(4) A society shall not make a temporary care agreement unless the society, (a) has determined that an appropriate residential placement that is likely to benefit the child is available; and (b) is satisfied that no course of action less disruptive to the child, such as care in the child’s own home, is able to adequately protect the child.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK93",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Prohibits a society from making a Temporary Care Agreement unless it has determined an appropriate beneficial placement is available and is satisfied that no less disruptive course of action (such as in-home care) can adequately protect the child.",
+    practiceNote: "Under s. 75(10), para. 3, the agreement must also contain a statement that the parent has discussed alternatives to residential placement with the society."
+  },
+  {
+    authorityId: "CYFSA:75(5)",
+    citation: "CYFSA, s. 75(5)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "75(5)",
+    heading: "Term of temporary care agreement limited",
+    exactWording: "(5) No temporary care agreement shall be made for a term exceeding six months, but the parties to a temporary care agreement may, with a Director’s written approval, agree to extend it for a further period or periods if the total term of the agreement, as extended, does not exceed 12 months.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK93",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Caps an initial Temporary Care Agreement at 6 months and any extension (which requires a Director's written approval) at a total term of 12 months.",
+    practiceNote: "Check whether any extension beyond 6 months has a documented written approval from a Director."
+  },
+  {
+    authorityId: "CYFSA:75(6)",
+    citation: "CYFSA, s. 75(6)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "75(6)",
+    heading: "Cumulative time limit — Temporary care agreement",
+    exactWording: "(6) No temporary care agreement shall be made or extended so as to result in a child being in a society’s care and custody, for a period exceeding, (a) 12 months, if the child is younger than 6 on the day the agreement is entered into or extended; or (b) 24 months, if the child is 6 or older on the day the agreement is entered into or extended.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK93",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Prohibits making or extending a Temporary Care Agreement if it would result in cumulative society care exceeding 12 months (child under 6) or 24 months (child 6 or older).",
+    practiceNote: "Time under a Temporary Care Agreement also counts toward the cumulative interim care limit in CYFSA s. 122(1)–(2)."
+  },
+  {
+    authorityId: "CYFSA:76(3)",
+    citation: "CYFSA, s. 76(3)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "76(3)",
+    heading: "Society response to notice of termination of temporary care agreement",
+    exactWording: "(3) Where notice of a wish to terminate a temporary care agreement is given by or to a society under subsection (1), the society shall as soon as possible, and in any event before the agreement terminates under subsection (2), (a) cause the child to be returned to the person who made the agreement, or to a person who has obtained an order for the child’s custody since the agreement was made; (b) where the society is of the opinion that the child would be in need of protection if returned to the person referred to in clause (a), bring the child before the court under this Part to determine whether the child would be in need of protection in that case; or (c) where the child is 16 or 17 and the criteria set out in clauses 77 (1) (a), (b), (c) and (d) are met, make a written agreement with the child under subsection 77 (1).",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK94",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires a society receiving written notice of termination of a Temporary Care Agreement to either return the child or bring the matter before the court before the agreement terminates (5 days after receipt, or up to 21 days if specified in the agreement per s. 76(2)).",
+    practiceNote: "A society cannot retain a child after a s. 76(1) termination notice expires without bringing the matter before the court."
+  },
+  {
+    authorityId: "CYFSA:79(1)",
+    citation: "CYFSA, s. 79(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "79(1)",
+    heading: "Statutory parties to a child protection proceeding",
+    exactWording: "79 (1) The following are parties to a proceeding under this Part: 1. The applicant. 2. The society having jurisdiction in the matter. 3. The child’s parent. 4. In the case of a First Nations, Inuk or Métis child, the persons described in paragraphs 1, 2 and 3 and a representative chosen by each of the child’s bands and First Nations, Inuit or Métis communities.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK100",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Designates the applicant, the society, the child's parent, and (for a First Nations, Inuk, or Métis child) a representative chosen by each of the child's bands and communities as statutory parties to a Part V proceeding.",
+    practiceNote: "Check that all statutory parties under s. 79(1) (and any person who cared for the child continuously during the 6 months before the hearing under s. 79(3), or a child 12+ under s. 79(4)) received proper notice."
+  },
+  {
+    authorityId: "CYFSA:80",
+    citation: "CYFSA, s. 80",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "80",
+    heading: "Duty to pursue customary care",
+    exactWording: "80 A society shall make all reasonable efforts to pursue a plan for customary care for a First Nations, Inuk or Métis child if the child, (a) is in need of protection; (b) cannot remain in or be returned to the care and custody of the person who had charge of the child immediately before intervention under this Part or, where there is an order for the child’s custody that is enforceable in Ontario, of the person entitled to custody under the order; and (c) is a member of or identifies with a band, or is a member of or identifies with a First Nations, Inuit or Métis community.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK101",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires a society to make all reasonable efforts to pursue a plan for customary care for a First Nations, Inuk, or Métis child in need of protection who cannot remain with or return to the person who had charge.",
+    practiceNote: "Examine whether the Society documented concrete efforts to consult the child's band or community regarding a customary care plan under s. 80 and subsidy availability under s. 71."
+  },
+  {
+    authorityId: "CYFSA:93(1)",
+    citation: "CYFSA, s. 93(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "93(1)",
+    heading: "Evidence — Past conduct and prior proceedings",
+    exactWording: "93 (1) Despite anything in the Evidence Act, at a hearing under this Part, the court may admit as evidence, (a) evidence of past conduct of a person towards any child, if that conduct is relevant to that person’s ability to care for a child; or (b) any oral or written statement or report that the court considers relevant to the proceeding, including a transcript, exhibit or finding in an earlier civil or criminal proceeding.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK116",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Permits admission of past parenting conduct if relevant to the person's ability to care for a child, as well as relevant statements, reports, transcripts, or findings from earlier proceedings.",
+    practiceNote: "Past history that has no nexus to current parenting ability or current protection risk should be challenged as irrelevant under s. 93(1)(a)."
+  },
+  {
+    authorityId: "CYFSA:94(10)",
+    citation: "CYFSA, s. 94(10)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "94(10)",
+    heading: "Evidence on temporary care and custody hearing — Credible and trustworthy",
+    exactWording: "(10) For the purpose of this section, the court may admit and act on evidence that the court considers credible and trustworthy in the circumstances.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK117",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Establishes that at a temporary care and custody hearing under s. 94, the court may admit and act on evidence it considers 'credible and trustworthy in the circumstances'.",
+    practiceNote: "Anonymous, unattributed, or multi-level hearsay on contested material issues can be challenged as failing the 'credible and trustworthy' threshold under s. 94(10) and Family Law Rules r. 14(18)–(19)."
+  },
+  {
+    authorityId: "CYFSA:98(1)",
+    citation: "CYFSA, s. 98(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "98(1)",
+    heading: "Order for assessment",
+    exactWording: "98 (1) In the course of a proceeding under this Part, the court may order that one or more of the following persons undergo an assessment within a specified time by a person appointed in accordance with subsections (2) and (3): 1. The child. 2. A parent of the child. 3. Any other person, other than a foster parent, who is putting forward or would participate in a plan for the care and custody of or access to the child.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK121",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Authorizes the court to order a clinical/parenting assessment of the child, a parent, or a proposed caregiver by a qualified assessor.",
+    practiceNote: "A society cannot unilaterally compel a parent to undergo a s. 98 clinical assessment without a court order or informed consent."
+  },
+  {
+    authorityId: "CYFSA:105(1)",
+    citation: "CYFSA, s. 105(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "105(1)",
+    heading: "Access: where child removed from person in charge",
+    exactWording: "105 (1) Where an order is made under paragraph 1 or 2 of subsection 101 (1) removing a child from the person who had charge of the child immediately before intervention under this Part, the court shall make an order for access by the person unless the court is satisfied that continued contact with the person would not be in the child’s best interests.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK128",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Creates a mandatory presumption in favour of an access order for the person from whom the child was removed under a supervision or interim society care order, unless the court is satisfied continued contact would not be in the child's best interests.",
+    practiceNote: "Contrast s. 105(1) (presumption FOR access in interim/supervision care) with s. 105(5) (presumption AGAINST access in extended society care unless beneficial/meaningful and non-impairing)."
+  },
+  {
+    authorityId: "CYFSA:105(5)",
+    citation: "CYFSA, s. 105(5)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "105(5)",
+    heading: "Access to child in extended society care — Two-part test",
+    exactWording: "(5) A court shall not make or vary an access order under section 104 with respect to a child who is in extended society care under an order made under paragraph 3 of subsection 101 (1) or clause 116 (1) (c) unless the court is satisfied that, (a) the relationship between the person and the child is beneficial and meaningful to the child; and (b) the ordered access will not impair the child’s future opportunities for adoption.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK128",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Prohibits making or varying an access order for a child in extended society care unless satisfied that (a) the relationship is beneficial and meaningful to the child, and (b) ordered access will not impair future adoption opportunities.",
+    practiceNote: "Ensure evidence of positive, consistent visits and emotional bond is documented in the record to satisfy s. 105(5)(a)."
+  },
+  {
+    authorityId: "CYFSA:113(1)",
+    citation: "CYFSA, s. 113(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "113(1)",
+    heading: "Status review application by parent, child, or caregiver",
+    exactWording: "113 (1) Where a child is the subject of an order for society supervision or interim society care under subsection 101 (1) or an order for custody under subsection 102 (1), any of the following may apply to the court for a review of the child’s status: 1. A parent of the child. 2. The child, if the child is 12 or older. 3. A person with whom the child has been placed under an order for society supervision. 4. A person to whom custody of the child has been granted under an order for custody. 5. In the case of a First Nations, Inuk or Métis child, a person described in paragraph 1, 2, 3 or 4 or a representative chosen by each of the child’s bands and First Nations, Inuit or Métis communities.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK139",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Allows a parent, child 12+, caregiver, or FNIM representative to apply for a status review of a s. 101(1) supervision/interim care order or s. 102(1) custody order (subject to the 6-month limit in s. 113(3) absent leave).",
+    practiceNote: "If a parent has completed key service-plan goals and reduced risk, a status review under s. 113(1) is the statutory mechanism to seek return of the child or less restrictive terms."
+  },
+  {
+    authorityId: "CYFSA:113(2)",
+    citation: "CYFSA, s. 113(2)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "113(2)",
+    heading: "Society mandatory status review application",
+    exactWording: "(2) The society having care, custody or supervision of a child, (a) may apply to the court at any time for a review of the child’s status; (b) shall apply to the court for a review of the child’s status before the order expires, unless the expiry is by reason of section 123 (expiry at 18 or marriage); and (c) shall apply to the court for a review of the child’s status within five days after removing the child, if the society has removed the child from the care of a person with whom the child was placed under an order for society supervision or from the custody of a person who had custody of the child under an order for custody.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK139",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires the society to apply for a status review before a supervision or interim care order expires (s. 113(2)(b)) and within 5 days after removing a child from a person's care under a s. 101(1) supervision or s. 102(1) custody order (s. 113(2)(c)).",
+    practiceNote: "Verify whether the society brought its status review application before order expiry or within 5 days of removing a child under a supervision order."
+  },
+  {
+    authorityId: "CYFSA:114",
+    citation: "CYFSA, s. 114",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "114",
+    heading: "Court powers on status review under s. 113",
+    exactWording: "114 Where an application for review of a child’s status is made under section 113, the court may, in the child’s best interests, (a) vary or terminate the original order made under subsection 101 (1) or 102 (1), including a term or condition or a provision for access that is part of the order; (b) order that the original order terminate on a specified future date; (c) make a further order or orders under section 101; or (d) make an order under section 102.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK140",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Empowers the court on a s. 113 status review to vary or terminate the original order, set a termination date, or make a further order under s. 101 or s. 102 in the child's best interests.",
+    practiceNote: "Under s. 100, the court must obtain and consider an updated written Plan of Care before making an order under s. 114."
+  },
+  {
+    authorityId: "CYFSA:116(1)",
+    citation: "CYFSA, s. 116(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "116(1)",
+    heading: "Court order on status review under s. 115",
+    exactWording: "116 (1) When an application is made under section 115, the court may, in the child’s best interests, (a) make an order for society supervision of the child for a specified period of at least three and not more than 12 months; (b) make an order granting custody of the child to one or more persons, other than a foster parent of the child, with the consent of the person or persons; or (c) make an order that the child be placed in extended society care until the order expires under section 123 (expiry at 18 or marriage).",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK142",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Sets out the court's dispositive powers on a s. 115 status review: supervision order (3–12 months), custody order, or extended society care.",
+    practiceNote: "Read together with s. 116(4) regarding supervision terms and conditions."
+  },
+  {
+    authorityId: "CYFSA:116(4)",
+    citation: "CYFSA, s. 116(4)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "116(4)",
+    heading: "Terms and conditions of status review supervision order — Non-funding rule",
+    exactWording: "(4) If the court makes an order for society supervision under clause (1) (a), the court may impose, (a) reasonable terms and conditions relating to the child’s care and supervision; (b) reasonable terms and conditions on, (i) the child’s parent, (ii) the person who will have care and custody of the child under the order, (iii) the child, and (iv) any other person, other than a foster parent, who is putting forward or would participate in a plan for the care and custody of or access to the child; and (c) reasonable terms and conditions on the society that will supervise the placement, but shall not require the society to provide financial assistance or to purchase any goods or services.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK142",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Permits reasonable supervision terms on a s. 116(1)(a) supervision order, while clause (c) expressly prohibits requiring the society to provide financial assistance or purchase any goods or services.",
+    practiceNote: "Together with s. 94(6)(c) and s. 101(7)(c), establishes that a court cannot compel a society via supervision terms to fund or purchase goods or services."
+  },
+  {
+    authorityId: "CYFSA:119(1)",
+    citation: "CYFSA, s. 119(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "119(1)",
+    heading: "Complaint to society",
+    exactWording: "119 (1) A person may make a complaint to a society relating to a service sought or received by that person from the society in accordance with the regulations.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK145",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Provides the statutory right for a person who sought or received a service from a society to make a formal internal complaint in accordance with the regulations (O. Reg. 155/18).",
+    practiceNote: "Subject to the mandatory court-issue exclusion in s. 119(11)."
+  },
+  {
+    authorityId: "CYFSA:119(2)",
+    citation: "CYFSA, s. 119(2)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "119(2)",
+    heading: "Society duty to follow complaint review procedure",
+    exactWording: "(2) Where a society receives a complaint under subsection (1), it shall deal with the complaint in accordance with the complaint review procedure established by regulation, subject to subsection 120 (2).",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK145",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires a society receiving a s. 119(1) complaint to process it in accordance with the regulatory complaint review procedure (Internal Complaint Review Panel under O. Reg. 155/18).",
+    practiceNote: "If the society refuses to proceed or misses the regulatory timeframe, the complainant may apply to the CFSRB under s. 120(4), paras. 1–3."
+  },
+  {
+    authorityId: "CYFSA:119(11)",
+    citation: "CYFSA, s. 119(11)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "119(11)",
+    heading: "No society complaint review if matter within purview of court",
+    exactWording: "(11) A society shall not conduct a review of a complaint under this section if the subject of the complaint, (a) is an issue that has been decided by the court or is before the court; or (b) is subject to another decision-making process under this Act or the Labour Relations Act, 1995.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK145",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Prohibits a society from reviewing a complaint under s. 119 if the subject of the complaint has been decided by the court or is before the court.",
+    practiceNote: "Critical jurisdictional boundary: internal CAS complaints cannot review or overturn matters before the court or decided by a court order."
+  },
+  {
+    authorityId: "CYFSA:120(1)",
+    citation: "CYFSA, s. 120(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "120(1)",
+    heading: "Complaint to Child and Family Services Review Board (CFSRB)",
+    exactWording: "120 (1) If a complaint in respect of a service sought or received from a society relates to a matter described in subsection (4), the person who sought or received the service may, (a) decide not to make the complaint to the society under section 119 and make the complaint directly to the Board under this section; or (b) where the person first makes the complaint to the society under section 119, submit the complaint to the Board before the society’s complaint review procedure is completed.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK146",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Permits a person who sought or received a society service to file a complaint regarding a s. 120(4) matter directly with the CFSRB without exhausting the society's internal review.",
+    practiceNote: "Applies only to the procedural and right-to-be-heard grounds enumerated in s. 120(4), and is barred if the issue is before or decided by the court (s. 120(8))."
+  },
+  {
+    authorityId: "CYFSA:120(4)",
+    citation: "CYFSA, s. 120(4)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "120(4)",
+    heading: "Matters for CFSRB review",
+    exactWording: "(4) The following matters may be reviewed by the Board under this section: 1. Allegations that the society has refused to proceed with a complaint made by the complainant under subsection 119 (1) as required under subsection 119 (2). 2. Allegations that the society has failed to respond to the complainant’s complaint within the timeframe required by regulation. 3. Allegations that the society has failed to comply with the complaint review procedure or with any other procedural requirements under this Act relating to the review of complaints. 4. Allegations that the society has failed to comply with subsection 15 (2). 5. Allegations that the society has failed to provide the complainant with reasons for a decision that affects the complainant’s interests. 6. Such other matters as may be prescribed.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK146",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Defines the specific jurisdiction of the CFSRB on service complaints: refusal to proceed, missed regulatory complaint deadlines, procedural non-compliance, failure to provide an opportunity to be heard under s. 15(2), and failure to provide reasons for a decision affecting the complainant's interests.",
+    practiceNote: "Under s. 120(7), the CFSRB can order the society to proceed with a complaint, respond within a specified period, comply with s. 15(2), or provide written reasons, but cannot overturn a court order."
+  },
+  {
+    authorityId: "CYFSA:120(8)",
+    citation: "CYFSA, s. 120(8)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "120(8)",
+    heading: "No CFSRB review if matter within purview of court",
+    exactWording: "(8) The Board shall not conduct a review of a complaint under this section if the subject of the complaint, (a) is an issue that has been decided by the court or is before the court; or (b) is subject to another decision-making process under this Act or the Labour Relations Act, 1995.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK146",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Expressly prohibits the CFSRB from reviewing any complaint whose subject is an issue that has been decided by the court or is before the court.",
+    practiceNote: "Never suggest that the CFSRB can review or overturn a court order or adjudicate protection issues pending before the court."
+  },
+  {
+    authorityId: "CYFSA:122(1)",
+    citation: "CYFSA, s. 122(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "122(1)",
+    heading: "Cumulative time limit for interim society care (12 / 24 months)",
+    exactWording: "122 (1) Subject to subsections (4) and (5), the court shall not make an order for interim society care under paragraph 2 of subsection 101 (1) that results in a child being in the care and custody of a society for a period exceeding, (a) 12 months, if the child is younger than 6 on the day the court makes the order; or (b) 24 months, if the child is 6 or older on the day the court makes the order.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK149",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Establishes the mandatory cumulative time-in-care ceiling for interim society care: 12 months for children under 6, and 24 months for children 6 or older (counting time in temporary care agreements under s. 75(1) and temporary care orders under s. 94(2)(d), per s. 122(2)), subject to a discretionary 6-month extension under s. 122(5).",
+    practiceNote: "Critical reunification clock: delays in offering parent assistance or completing service plans directly erode the parent's finite 12/24-month window under s. 122(1)."
+  },
+  {
+    authorityId: "CYFSA:122(5)",
+    citation: "CYFSA, s. 122(5)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "122(5)",
+    heading: "Six-month extension of cumulative time-in-care limit",
+    exactWording: "(5) Subject to paragraphs 2 and 4 of subsection 101 (1), the court may by order extend the period permitted under subsection (1) by a period not to exceed six months if it is in the child’s best interests to do so.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK149",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Authorizes the court to extend the cumulative 12-month or 24-month interim care limit in s. 122(1) by up to 6 months where it is in the child's best interests.",
+    practiceNote: "Relevant where a parent is making demonstrable progress on service-plan goals or where agency delay impeded timely service access."
+  },
+  {
+    authorityId: "CYFSA:126(1)",
+    citation: "CYFSA, s. 126(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "126(1)",
+    heading: "Society duty to assess and verify child protection report",
+    exactWording: "126 (1) A society that receives a report under section 125 that a child, including a child in the society’s care or supervision, is or may be in need of protection shall as soon as possible carry out an assessment as prescribed and verify the reported information, or ensure that the information is assessed and verified by another society.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK153",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Mandates that a society receiving a s. 125 report carry out a prescribed assessment as soon as possible and verify the reported information.",
+    practiceNote: "Connects statutory investigation duty to Ontario Child Protection Standards (2016) Standards 1–6."
+  },
+  {
+    authorityId: "CYFSA:306(1)",
+    citation: "CYFSA, s. 306(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "306(1)",
+    heading: "Part X duty to ensure accuracy of personal information",
+    exactWording: "306 (1) A service provider that uses personal information for the purpose of providing a service shall take reasonable steps to ensure that the information is as accurate, complete and up-to-date as is necessary for the purposes for which it uses the information.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK355",
+    consolidationPeriod: "In force January 1, 2020 to Present (Part X)",
+    effectiveFrom: "2020-01-01",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires a service provider using personal information to provide a service to take reasonable steps to ensure the information is accurate, complete, and up-to-date.",
+    practiceNote: "Supports record-accuracy challenges and Part X correction requests under s. 315(2)."
+  },
+  {
+    authorityId: "CYFSA:314(3)",
+    citation: "CYFSA, s. 314(3)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "314(3)",
+    heading: "Part X 30-day response limit for personal information access requests",
+    exactWording: "(3) As soon as possible, but no later than 30 days after receiving the request, the service provider shall, by written notice to the individual, give the response required by subsection (1) or extend the deadline for responding by not more than 90 days if, (a) responding to the request within 30 days would unreasonably interfere with the operations of the service provider because the information consists of numerous pieces of information or locating the information would necessitate a lengthy search; or (b) the time required to undertake an assessment under subsection 312 (1) necessary to respond to the request within 30 days after receiving it would make it not reasonably practical to respond within that time.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK363",
+    consolidationPeriod: "In force January 1, 2020 to Present (Part X)",
+    effectiveFrom: "2020-01-01",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires a service provider to respond in writing to a s. 313 personal information access request within 30 days (or give written notice of an extension of up to 90 days).",
+    practiceNote: "Failure to respond within the required time is a deemed refusal under s. 314(7), entitling the requester to complain to the IPC under s. 316."
+  },
+  {
+    authorityId: "CYFSA:315(2)",
+    citation: "CYFSA, s. 315(2)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "315(2)",
+    heading: "Part X right to request correction of personal information record",
+    exactWording: "(2) If a service provider has granted an individual access to a record of personal information and if the individual believes that the record is inaccurate or incomplete, the individual may request in writing that the service provider correct the record. 2017, c. 14, Sched. 1, s. 315 (2).",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK364",
+    consolidationPeriod: "In force January 1, 2020 to Present (Part X)",
+    effectiveFrom: "2020-01-01",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Entitles an individual who has been granted access to their personal information record under Part X to request in writing that inaccurate or incomplete information be corrected.",
+    practiceNote: "Under s. 315(10)(b), a service provider is not required to correct a good-faith professional opinion or observation, but under s. 315(12) the individual has the statutory right to require a Statement of Disagreement to be attached to the record."
+  },
+  {
+    authorityId: "CYFSA:316(1)",
+    citation: "CYFSA, s. 316(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "316(1)",
+    heading: "Part X complaint to Information and Privacy Commissioner (IPC)",
+    exactWording: "316 (1) A person who has reasonable grounds to believe that another person has contravened or is about to contravene a provision of this Part or the regulations made for the purposes of this Part may make a complaint to the Commissioner.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK365",
+    consolidationPeriod: "In force January 1, 2020 to Present (Part X)",
+    effectiveFrom: "2020-01-01",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Authorizes complaints to the Information and Privacy Commissioner of Ontario (IPC) regarding contraventions of Part X (within 1 year under s. 316(2), or within 6 months of an access or correction refusal under s. 316(3)).",
+    practiceNote: "The IPC can order access or correction of personal information records under s. 321(1), but cannot adjudicate child protection custody or access orders."
+  },
+  {
+    authorityId: "CYFSA:333(1)",
+    citation: "CYFSA, s. 333(1)",
+    instrument: "CYFSA",
+    statuteTitle: CYFSA_TITLE,
+    sectionKey: "333(1)",
+    heading: "Child and Family Services Review Board (CFSRB)",
+    exactWording: "333 (1) The Child and Family Services Review Board is continued under the name Child and Family Services Review Board in English and Commission de révision des services à l’enfance et à la famille in French.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/17c14#BK383",
+    consolidationPeriod: CYFSA_PERIOD,
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "BUNDLED_CONSOLIDATION_VERBATIM",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Continues the Child and Family Services Review Board (CFSRB) with statutory review jurisdiction under sections 66, 119, 120, 192, and 265.",
+    practiceNote: "The CFSRB is an administrative tribunal with strictly defined statutory jurisdiction; it cannot overturn Family Court orders."
+  },
 
   // ---------------------------------------------------------------------------
   // FEDERAL STATUTE: Bill C-92 (S.C. 2019, c. 24) — Verbatim in legal-reference/Bill_C92_full_text.txt
@@ -1194,6 +1811,259 @@ const CORE_AUTHORITIES: VerifiedAuthorityEntry[] = [
     verifiedDate: "2026-11-03",
     legalTestSummary: "Authorizes an individual whose Charter rights or freedoms (such as s. 7 security of the person or s. 15 equality) have been infringed or denied by state action to apply to a court of competent jurisdiction for an appropriate and just remedy.",
     practiceNote: "Section 24(1) is a remedial provision, not an independent substantive right; it requires proving an infringement of a substantive Charter guarantee (such as s. 7 or s. 15) before a court with statutory jurisdiction over the parties, subject matter, and remedy sought."
+  },
+
+  // ---------------------------------------------------------------------------
+  // ONTARIO CHILD PROTECTION STANDARDS (2016) — Ministry operational standards
+  // Distinct category (CAS_STANDARD), never placed in INTERNAL_CYFSA_SECTION_KEYS.
+  // Explicitly distinguishes mandatory Standard text from Practice Notes.
+  // ---------------------------------------------------------------------------
+  {
+    authorityId: "OCPS:ALL_PHASES",
+    citation: "Ontario Child Protection Standards (2016), Standards for All Phases of Child Protection Service Delivery",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "ALL_PHASES",
+    heading: "Standards for All Phases — Family-Centred Service, Cultural & Religious Considerations, Contemporaneous Case Notes, and Supervision",
+    exactWording: "Standards for All Phases of Child Protection Service Delivery (effective February 1, 2016; originally issued under the former Child and Family Services Act, R.S.O. 1990, c. C.11 and continued as operative ministry standards under CYFSA s. 35(2) and O. Reg. 156/18): (A) Child and Family Engagement and Participation; (B) Service to First Nations, Inuit and Métis Children and Families; (C) Anti-Oppressive Practice, Diversity and Inclusion; (D) French Language Services; (E) Alternative Dispute Resolution; (F) Differential Response; (G) Documentation and Contemporaneous Case Notes (requiring objective, factual, contemporaneous recording of date/time, method of contact, participants, significant discussions, observations, worker identity, date of note creation, supervisory consultations, and non-obliterating addenda); (H) Supervisory Consultation and Approval.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present (issued under former CFSA; operative under CYFSA s. 35(2) / O. Reg. 156/18)",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Establishes mandatory operational standards across all phases of child protection service delivery, including family engagement, contemporaneous case-note documentation, and supervisory consultation.",
+    practiceNote: "Always distinguish text labeled 'Standard' (mandatory agency operational requirement) from 'Practice Notes' (professional guidance without the same mandatory force). Note that the 2016 Standards contain historical references to the former CFSA; current statutory authority derives from CYFSA s. 35(2) and O. Reg. 156/18."
+  },
+  {
+    authorityId: "OCPS:STD_1",
+    citation: "Ontario Child Protection Standards (2016), Standard 1 (Receipt of Report or Referral)",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "STD_1",
+    heading: "Standard 1 — Receipt of Report or Referral and Eligibility Spectrum Screening",
+    exactWording: "Standard 1 (Receipt of Report or Referral): The society shall receive and screen all reports and referrals concerning children who may be in need of protection using the Ontario Child Welfare Eligibility Spectrum, check prior agency/provincial child welfare history within 24 hours, determine response time (12 hours for immediate/extremely severe or 7 days for moderately severe), and obtain supervisory approval for the screening disposition.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires Eligibility Spectrum screening, 24-hour child welfare history check, assignment of response priority (12 hours or 7 days), and supervisory approval of screening disposition.",
+    practiceNote: "Separate the mandatory Standard requirements from Practice Notes on intake interviewing."
+  },
+  {
+    authorityId: "OCPS:STD_2",
+    citation: "Ontario Child Protection Standards (2016), Standard 2 (Planning and Conducting a Child Protection Investigation)",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "STD_2",
+    heading: "Standard 2 — Planning and Conducting a Child Protection Investigation",
+    exactWording: "Standard 2 (Planning and Conducting a Child Protection Investigation): The child protection worker shall develop an investigation plan in consultation with a supervisor (including whether a customized or traditional investigative response applies, Joint Police-CAS Protocol considerations, and FNIM band/community notice/consultation), conduct face-to-face interviews with the victim child, siblings, parents/caregivers, and collaterals, observe the home environment where relevant, and document supervisory approval for any departure from required response times.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Mandates pre-investigation planning, face-to-face child and caregiver interviews, collateral verification, and supervisory consultation/approval for departures from response timeframes.",
+    practiceNote: "Check whether the investigative record documents interviews with both parents and relevant neutral collaterals, or whether a one-sided account was accepted without verification."
+  },
+  {
+    authorityId: "OCPS:STD_3",
+    citation: "Ontario Child Protection Standards (2016), Standard 3 (Assessing Safety)",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "STD_3",
+    heading: "Standard 3 — Assessing Immediate Child Safety and Safety Plans",
+    exactWording: "Standard 3 (Assessing Safety): The worker shall conduct an initial Safety Assessment at the first face-to-face contact with the child and family. Where immediate safety threats are identified, the worker shall develop a least-intrusive Safety Plan in collaboration with the family and extended network where safe to do so, assess the feasibility and reliability of safety-plan participants, and obtain immediate supervisory approval of the Safety Assessment and Safety Plan.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires a formal Safety Assessment at first face-to-face contact, collaborative consideration of in-home or kinship safety-plan interventions before removal where safe, and immediate supervisory approval.",
+    practiceNote: "Examine whether an in-home or family-network safety plan was evaluated and documented under Standard 3 before removal."
+  },
+  {
+    authorityId: "OCPS:STD_4",
+    citation: "Ontario Child Protection Standards (2016), Standard 4 (Assessing Risk of Future Harm)",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "STD_4",
+    heading: "Standard 4 — Actuarial Risk Assessment prior to Investigation Conclusion",
+    exactWording: "Standard 4 (Assessing Risk): Prior to concluding a child protection investigation or transferring a case to ongoing services, the worker shall complete the prescribed Risk Assessment tool evaluating future risk of maltreatment, clinical factors, and family strengths/protective capacities, and obtain supervisory review and approval.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires completion and supervisory approval of the standardized Risk Assessment tool before concluding an investigation or transferring to ongoing service.",
+    practiceNote: "Distinguish immediate safety threats (Standard 3) from actuarial/clinical risk of future harm (Standard 4)."
+  },
+  {
+    authorityId: "OCPS:STD_5",
+    citation: "Ontario Child Protection Standards (2016), Standard 5 (Concluding a Child Protection Investigation)",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "STD_5",
+    heading: "Standard 5 — Verification Decision and Concluding Investigation (45-Day Standard)",
+    exactWording: "Standard 5 (Concluding a Child Protection Investigation): The worker shall reach a verification decision (verified, not verified, or inconclusive) based on a balance of probabilities (credible and probable evidence), determine the investigation disposition, complete investigation documentation within 45 days of referral (unless a supervisor approves a documented extension), obtain supervisory approval, and notify the parents and age-appropriate child of the outcome and reasons.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires an evidence-based verification decision, completion within 45 days (absent supervisor-approved extension), supervisory sign-off, and notice of outcome and reasons to the family.",
+    practiceNote: "A verification decision by CAS is an internal administrative determination under Standard 5, NOT a judicial finding under CYFSA s. 74(2)."
+  },
+  {
+    authorityId: "OCPS:STD_6",
+    citation: "Ontario Child Protection Standards (2016), Standard 6 (Transferring a Case)",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "STD_6",
+    heading: "Standard 6 — Case Transfer to Ongoing Services or Another Society",
+    exactWording: "Standard 6 (Transferring a Case): When a case is transferred from investigation to ongoing services (or between workers/societies), a transfer conference/meeting involving the transferring worker, receiving worker, supervisor(s), and the family (where appropriate) shall occur, and transfer documentation shall be completed and approved by the supervisor.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Governs structured handoff, family involvement in transfer conferencing, and supervisory approval when transferring a file into ongoing child protection services.",
+    practiceNote: "The date of investigation completion or case transfer under Standards 5–6 triggers the 30-day deadline for the initial Ongoing Service Plan under Standard 7."
+  },
+  {
+    authorityId: "OCPS:STD_7",
+    citation: "Ontario Child Protection Standards (2016), Standard 7 (Ongoing Service Case Management)",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "STD_7",
+    heading: "Standard 7 — Ongoing Service Case Management, 30-Day Service Plan, Monitoring, and Reunification Review",
+    exactWording: "Standard 7 (Ongoing Service Case Management): Within 30 days of completion of the investigation or case transfer to ongoing services, the worker shall complete a Family and Child Strengths and Needs Assessment and develop an initial written Service Plan in collaboration with the parents, child (as age-appropriate), extended family/community, and FNIM representatives where applicable. The Service Plan must specify clear protection outcomes, specific activities, responsible persons (parent, worker, community provider), completion timeframes, and concrete service referrals. The worker shall conduct at least monthly face-to-face contact with the child and parents (including home visits), coordinate and monitor service accessibility and progress, conduct formal reassessments and Service Plan reviews at least every 6 months (or upon a significant change in circumstances), evaluate reunification readiness and concurrent planning where the child is out of home, and obtain supervisory review and approval.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Mandates an initial written Service Plan and Strengths-and-Needs Assessment within 30 days of investigation completion or case transfer (NOT measured from removal date alone), parent participation, clear goals/responsibilities/timeframes, active referral coordination, monthly home/face-to-face contact, 6-month formal case reviews, reunification assessment, and supervisory sign-off.",
+    practiceNote: "If the investigation completion date or case transfer date is not documented in the uploaded record, the 30-day Standard 7 service-plan deadline is DEADLINE_NOT_DETERMINABLE and must never be fabricated from the apprehension date alone."
+  },
+  {
+    authorityId: "OCPS:STD_8",
+    citation: "Ontario Child Protection Standards (2016), Standard 8 (Ending Child Protection Services)",
+    instrument: "CAS_STANDARD",
+    statuteTitle: "Ontario Child Protection Standards (2016) (Ministry of Children, Community and Social Services)",
+    sectionKey: "STD_8",
+    heading: "Standard 8 — Ending Child Protection Services and Case Closure",
+    exactWording: "Standard 8 (Ending Child Protection Services): Before closing an ongoing child protection case, the worker shall conduct a final safety and risk evaluation, review service-plan outcomes with the family, link the family to ongoing community supports where desired, notify the family in writing of case closure, and obtain supervisory approval.",
+    sourceUrl: "https://www.ontario.ca/page/ontario-child-protection-standards-2016",
+    consolidationPeriod: "Effective February 1, 2016 to Present",
+    effectiveFrom: "2016-02-01",
+    effectiveTo: null,
+    verificationSourceType: "MINISTRY_STANDARD_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires a final safety/risk review, transition to community supports, family notification, and supervisory approval prior to ending ongoing child protection services.",
+    practiceNote: "Compare documented exit criteria in the Society's Plan of Care (CYFSA s. 100(b)) against the Standard 8 closure criteria."
+  },
+
+  // ---------------------------------------------------------------------------
+  // OCSWSSW PROFESSIONAL STANDARDS — Social Work and Social Service Work Act, 1998
+  // Distinct category (PROFESSIONAL_STANDARD), applicable ONLY where registration is verified.
+  // ---------------------------------------------------------------------------
+  {
+    authorityId: "OCSWSSW:REGISTRATION",
+    citation: "Social Work and Social Service Work Act, 1998, S.O. 1998, c. 31, ss. 46–47 & OCSWSSW Code of Ethics",
+    instrument: "PROFESSIONAL_STANDARD",
+    statuteTitle: "Social Work and Social Service Work Act, 1998, S.O. 1998, c. 31",
+    sectionKey: "REGISTRATION",
+    heading: "OCSWSSW Registration Scope and Restricted Titles (RSW / RSSW)",
+    exactWording: "Under the Social Work and Social Service Work Act, 1998, S.O. 1998, c. 31, ss. 46–47, only individuals registered with the Ontario College of Social Workers and Social Service Workers (OCSWSSW) may use the title 'social worker', 'registered social worker' (RSW), 'social service worker', or 'registered social service worker' (RSSW) or hold themselves out as such. OCSWSSW professional discipline and standards apply to registered members of the College.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/98s31",
+    consolidationPeriod: "In Force (S.O. 1998, c. 31)",
+    effectiveFrom: "2000-08-15",
+    effectiveTo: null,
+    verificationSourceType: "PROFESSIONAL_REGULATORY_STANDARD",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Establishes that OCSWSSW regulatory jurisdiction, Code of Ethics, and Standards of Practice apply to registered members (RSW / RSSW) or individuals unlawfully holding themselves out as registered social workers / social service workers.",
+    practiceNote: "Do NOT assume every CAS child protection worker is a registered social worker (RSW) or registered social service worker (RSSW); always verify registration on the public OCSWSSW Online Register first."
+  },
+  {
+    authorityId: "OCSWSSW:PRIN_IV_RECORDS",
+    citation: "OCSWSSW Code of Ethics and Standards of Practice, Principle IV (The Social Work and Social Service Work Record)",
+    instrument: "PROFESSIONAL_STANDARD",
+    statuteTitle: "OCSWSSW Code of Ethics and Standards of Practice (Second Edition)",
+    sectionKey: "PRIN_IV_RECORDS",
+    heading: "Principle IV — Professional Record-Keeping, Contemporaneous Recording, and Late Entries",
+    exactWording: "OCSWSSW Standards of Practice, Principle IV (The Social Work and Social Service Work Record): College members must maintain clear, accurate, objective, and contemporaneous records of professional interventions, distinguish direct observations from third-party reports or professional opinions, identify the author and date of each entry, and never obliterate or backdate existing entries (any subsequent correction or addendum must be dated and signed as a late addition while preserving the original entry).",
+    sourceUrl: "https://www.ocswssw.org/professional-practice/code-of-ethics-and-standards-of-practice/",
+    consolidationPeriod: "In Force (OCSWSSW Standards of Practice)",
+    effectiveFrom: "2008-09-01",
+    effectiveTo: null,
+    verificationSourceType: "PROFESSIONAL_REGULATORY_STANDARD",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Requires OCSWSSW registrants (RSW/RSSW) to keep objective, contemporaneous records, separate fact from opinion, record entry dates, and make corrections only via dated addenda without altering original records.",
+    practiceNote: "Applies where the worker or supervisor is a registered member of the OCSWSSW; operates alongside Ontario Child Protection Standards (2016) Standard G (Contemporaneous Case Notes)."
+  },
+
+  // ---------------------------------------------------------------------------
+  // OVERSIGHT & REGULATIONS — Ombudsman Act & O. Reg. 155/18 / O. Reg. 156/18
+  // ---------------------------------------------------------------------------
+  {
+    authorityId: "OVERSIGHT:OMBUDSMAN",
+    citation: "Ombudsman Act, R.S.O. 1990, c. O.6, ss. 14(1.1), 14.0.1 (Children and Youth Unit)",
+    instrument: "OVERSIGHT_PATHWAY",
+    statuteTitle: "Ombudsman Act, R.S.O. 1990, c. O.6",
+    sectionKey: "OMBUDSMAN",
+    heading: "Ontario Ombudsman Oversight of Children's Aid Societies",
+    exactWording: "Under the Ombudsman Act, R.S.O. 1990, c. O.6, ss. 14(1.1) and 14.0.1 (effective May 1, 2019, transferring investigative functions of the former Provincial Advocate for Children and Youth, and reinforced by CYFSA ss. 9.1 and 15.1), the Ontario Ombudsman has jurisdiction to investigate administrative conduct of children's aid societies and residential licensees regarding services sought or provided to children, young persons, and families.",
+    sourceUrl: "https://www.ontario.ca/laws/statute/90o06",
+    consolidationPeriod: "CAS oversight in force May 1, 2019 to Present (S.O. 2018, c. 17, Sched. 28)",
+    effectiveFrom: "2019-05-01",
+    effectiveTo: null,
+    verificationSourceType: "REGULATION_REFERENCE_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Authorizes the Ontario Ombudsman to investigate administrative fairness, procedural failures, and systemic conduct of children's aid societies and residential licensees.",
+    practiceNote: "The Ombudsman investigates administrative conduct and makes recommendations; the Ombudsman cannot act as legal counsel, adjudicate child protection proceedings, or overturn a court order."
+  },
+  {
+    authorityId: "O_REG_155_18:COMPLAINTS",
+    citation: "O. Reg. 155/18 (General Matters under the Authority of the LGIC), Complaints and Reviews",
+    instrument: "REGULATION",
+    statuteTitle: "O. Reg. 155/18 under the Child, Youth and Family Services Act, 2017",
+    sectionKey: "155/18",
+    heading: "Regulatory Timelines for CAS Internal Complaint Review Panel (ICRP) and CFSRB Reviews",
+    exactWording: "Under O. Reg. 155/18 (made under the CYFSA, effective April 30, 2018), when a society receives a written complaint under CYFSA s. 119(1), it must determine eligibility and notify the complainant in writing within 7 days, convene an Internal Complaint Review Panel (ICRP) meeting within 14 days of confirming eligibility where sent to the panel, and issue a written summary of results within 14 days after the meeting.",
+    sourceUrl: "https://www.ontario.ca/laws/regulation/180155",
+    consolidationPeriod: "In force April 30, 2018 to Present (O. Reg. 155/18)",
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "REGULATION_REFERENCE_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Prescribes the mandatory 7-day eligibility notice, 14-day ICRP hearing window, and 14-day post-meeting written decision timeline for internal CAS complaints under CYFSA s. 119.",
+    practiceNote: "If the society misses these regulatory timeframes, the complainant may apply directly to the CFSRB under CYFSA s. 120(4), para. 2."
+  },
+  {
+    authorityId: "O_REG_156_18:STANDARDS",
+    citation: "O. Reg. 156/18 (General Matters under the Authority of the Minister), Child Protection Standards",
+    instrument: "REGULATION",
+    statuteTitle: "O. Reg. 156/18 under the Child, Youth and Family Services Act, 2017",
+    sectionKey: "156/18",
+    heading: "Prescribed Child Protection Standards and Eligibility Spectrum",
+    exactWording: "Under O. Reg. 156/18 (made under the CYFSA, effective April 30, 2018), every children's aid society is required to use the Ontario Child Welfare Eligibility Spectrum and comply with the Ontario Child Protection Standards (2016) in performing its functions under CYFSA s. 35.",
+    sourceUrl: "https://www.ontario.ca/laws/regulation/180156",
+    consolidationPeriod: "In force April 30, 2018 to Present (O. Reg. 156/18)",
+    effectiveFrom: "2018-04-30",
+    effectiveTo: null,
+    verificationSourceType: "REGULATION_REFERENCE_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Prescribes the Ontario Child Protection Standards (2016) and the Ontario Child Welfare Eligibility Spectrum as mandatory regulatory standards for children's aid societies under CYFSA s. 35(2).",
+    practiceNote: "Provides the regulatory bridge making the 2016 Standards legally binding on societies under CYFSA s. 35(2)."
   },
 ];
 
@@ -1600,6 +2470,80 @@ export function evaluatePropositionSupport(
     };
   }
 
+  // Milestone 2 adversarial proposition guards:
+  // 1. CFSRB, Internal CAS Complaints (s. 119 / s. 120), or Ombudsman cannot overturn a court order or review issues decided by or before the court
+  if (
+    /\b(?:CFSRB|Child\s+and\s+Family\s+Services\s+Review\s+Board|Internal\s+Complaint\s+Review\s+Panel|ICRP|Ombudsman|(?:s|section)\.?\s*(?:119|120))\b[^.;]*?\b(?:can|may|shall|has\s+(?:the\s+)?(?:authority|jurisdiction|power)\s+to)\s+(?:overturn|vacate|set\s+aside|reverse|override|vary)\s+(?:a\s+|the\s+)?(?:court\s+order|judge['’]?s\s+order|custody\s+order|supervision\s+order|temporary\s+care\s+order)/i.test(
+      prop
+    ) ||
+    /\b(?:CFSRB|Child\s+and\s+Family\s+Services\s+Review\s+Board|society\s+complaint\s+review)\b[^.;]*?\b(?:can|may|shall)\s+review\s+(?:an\s+issue|matters?)\s+(?:that\s+has\s+been\s+)?(?:decided\s+by\s+the\s+court|currently\s+before\s+the\s+court)/i.test(
+      prop
+    )
+  ) {
+    return {
+      support: "CONTRADICTED_BY_STATUTE",
+      reason:
+        "Contradicted by statute: CYFSA s. 119(11)(a) and s. 120(8)(a) expressly prohibit a society or the Child and Family Services Review Board (CFSRB) from reviewing a complaint if the subject is an issue that has been decided by the court or is before the court. Neither the CFSRB nor the Ontario Ombudsman can overturn a court order.",
+    };
+  }
+
+  // 2. Broad statutory purposes in s. 1(2) misrepresented as creating an unconditional entitlement to every requested service or prohibiting emergency apprehension whenever an untried service exists
+  if (/^(?:CYFSA:)?1\(2\)/i.test(sectionOrAuthorityKey)) {
+    if (
+      /\b(?:unconditional\s+(?:statutory\s+)?entitlement\s+to\s+every\s+requested\s+service|prohibits?\s+(?:emergency\s+)?apprehension\s+whenever\s+(?:any|an)\s+untried\s+(?:support\s+)?service\s+exists|guarantees?\s+every\s+service\s+requested\s+by\s+a\s+parent)\b/i.test(
+        prop
+      )
+    ) {
+      return {
+        support: "IRRELEVANT_OR_MISAPPLIED",
+        reason:
+          "CYFSA s. 1(2) sets out additional statutory purposes that apply 'so long as they are consistent with the best interests, protection and well-being of children' (s. 1(1)). It does not create an unconditional entitlement to every requested service or bar emergency intervention where a child cannot be adequately protected.",
+      };
+    }
+  }
+
+  // 3. OCPS Practice Notes misrepresented as binding statutory law, or Standard 7 30-day service plan deadline miscalculated from removal date alone
+  if (/^OCPS:/i.test(sectionOrAuthorityKey)) {
+    if (
+      /\b(?:practice\s+notes?\s+(?:have|carry|possess)\s+the\s+same\s+(?:binding\s+)?legal\s+force\s+as\s+(?:a\s+mandatory\s+standard|statute|statutory\s+law)|every\s+practice\s+note\s+is\s+a\s+mandatory\s+statutory\s+requirement)\b/i.test(
+        prop
+      )
+    ) {
+      return {
+        support: "IRRELEVANT_OR_MISAPPLIED",
+        reason:
+          "Under the Ontario Child Protection Standards (2016), mandatory agency obligations are set out in the text labeled 'Standard', whereas 'Practice Notes' provide explanatory clinical guidance and do not carry the same mandatory legal force.",
+      };
+    }
+    if (
+      sectionOrAuthorityKey === "OCPS:STD_7" &&
+      /\b(?:30-day|thirty-day)\s+(?:initial\s+)?service[- ]plan\s+deadline\s+(?:runs|starts|is\s+calculated|is\s+measured)\s+(?:solely\s+)?from\s+(?:the\s+)?(?:date\s+of\s+)?(?:removal|apprehension)\s+alone\b/i.test(
+        prop
+      )
+    ) {
+      return {
+        support: "IRRELEVANT_OR_MISAPPLIED",
+        reason:
+          "Under Ontario Child Protection Standards (2016) Standard 7, the 30-day initial service-plan deadline runs from completion of the investigation or case transfer to ongoing services, NOT from the child's removal/apprehension date alone (whereas CYFSA s. 13(1) governs the residential placement Plan of Care within 30 days of admission).",
+      };
+    }
+  }
+
+  // 4. OCSWSSW registration assumptions or fabricated universal CAS worker oath / automatic perjury claims
+  if (/^OCSWSSW:/i.test(sectionOrAuthorityKey)) {
+    if (
+      /\b(?:every\s+CAS\s+(?:worker|employee)\s+is\s+(?:automatically\s+)?a\s+registered\s+social\s+worker|all\s+child\s+protection\s+workers\s+are\s+automatically\s+members\s+of\s+OCSWSSW|universal\s+statutory\s+CAS\s+worker\s+oath\s+of\s+office)\b/i.test(
+        prop
+      )
+    ) {
+      return {
+        support: "IRRELEVANT_OR_MISAPPLIED",
+        reason:
+          "OCSWSSW regulatory jurisdiction under the Social Work and Social Service Work Act, 1998 applies only to registered members (RSW / RSSW) or persons unlawfully holding themselves out as such. Not every CAS employee is a registered social worker, and there is no universal statutory CAS worker oath of office.",
+      };
+    }
+  }
+
   // Non-CYFSA authority proposition checks (FLR & Charter)
   if (/^(?:FLR:)?1\(8\)$/i.test(sectionOrAuthorityKey)) {
     if (
@@ -1967,6 +2911,81 @@ export function resolveLegalAuthority(
         if (entry) {
           return finalizeResolution(entry, registryKey);
         }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Category 5: CAS_STANDARD (Ontario Child Protection Standards 2016)
+  // ---------------------------------------------------------------------------
+  if (category === "CAS_STANDARD") {
+    // Reject fabricated standard numbers such as Standard 9, Standard 15, Standard 99
+    if (/\bStandard\s+(?:[9]|\d{2,})\b/i.test(text)) {
+      // Fall through to UNVERIFIED
+    } else {
+      const stdMatch = text.match(/\b(?:Standard|STD_?)\s*([1-8])\b/i);
+      if (stdMatch) {
+        const key = `OCPS:STD_${stdMatch[1]}`;
+        const entry = VERIFIED_AUTHORITIES_REGISTRY[key];
+        if (entry) {
+          return finalizeResolution(entry, key);
+        }
+      }
+      if (
+        /\b(?:All\s+Phases|Contemporaneous\s+Case\s+Notes|Standard\s+[A-H]|Supervisory\s+Consultation)\b/i.test(
+          text
+        )
+      ) {
+        const entry = VERIFIED_AUTHORITIES_REGISTRY["OCPS:ALL_PHASES"];
+        if (entry) {
+          return finalizeResolution(entry, "OCPS:ALL_PHASES");
+        }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Category 6: PROFESSIONAL_STANDARD (OCSWSSW / Social Work and Social Service Work Act, 1998)
+  // ---------------------------------------------------------------------------
+  if (category === "PROFESSIONAL_STANDARD") {
+    if (/\b(?:Principle\s+IV|Record[- ]?Keeping|Social\s+Work\s+Record)\b/i.test(text)) {
+      const entry = VERIFIED_AUTHORITIES_REGISTRY["OCSWSSW:PRIN_IV_RECORDS"];
+      if (entry) {
+        return finalizeResolution(entry, "OCSWSSW:PRIN_IV_RECORDS");
+      }
+    }
+    const entry = VERIFIED_AUTHORITIES_REGISTRY["OCSWSSW:REGISTRATION"];
+    if (entry) {
+      return finalizeResolution(entry, "OCSWSSW:REGISTRATION");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Category 7: OVERSIGHT_PATHWAY (Ombudsman Act)
+  // ---------------------------------------------------------------------------
+  if (category === "OVERSIGHT_PATHWAY") {
+    if (/\bOmbudsman\b/i.test(text)) {
+      const entry = VERIFIED_AUTHORITIES_REGISTRY["OVERSIGHT:OMBUDSMAN"];
+      if (entry) {
+        return finalizeResolution(entry, "OVERSIGHT:OMBUDSMAN");
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Category 8: REGULATION (O. Reg. 155/18 and O. Reg. 156/18)
+  // ---------------------------------------------------------------------------
+  if (category === "REGULATION") {
+    if (/\b155\/18\b/.test(text) && !/\bs\.\s*\d+/i.test(text)) {
+      const entry = VERIFIED_AUTHORITIES_REGISTRY["O_REG_155_18:COMPLAINTS"];
+      if (entry) {
+        return finalizeResolution(entry, "O_REG_155_18:COMPLAINTS");
+      }
+    }
+    if (/\b156\/18\b/.test(text) && !/\bs\.\s*\d+/i.test(text)) {
+      const entry = VERIFIED_AUTHORITIES_REGISTRY["O_REG_156_18:STANDARDS"];
+      if (entry) {
+        return finalizeResolution(entry, "O_REG_156_18:STANDARDS");
       }
     }
   }
