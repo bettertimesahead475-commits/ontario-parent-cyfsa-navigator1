@@ -9,7 +9,7 @@
  * - Dual presentation modes: Educational Legal Analysis vs Courtroom-Style Evidence Matrix
  * - Category filter tabs (All, Law & Procedure, CAS Accountability, Parent Assistance, Reunification, Evidence & Contradictions)
  * - Strict neutrality compliance status badges with evidence quotes and citations
- * - Parent Assistance 15-Question Analysis summary card
+ * - Parent Assistance 15-Question Analysis multi-assessment card
  * - Missing records and non-prejudgment legal disclaimers
  */
 
@@ -31,12 +31,16 @@ import {
   Layers,
   Sparkles,
   ExternalLink,
+  Shield,
+  FolderOpen,
 } from "lucide-react";
 import type {
   ComplianceMatrixReport,
   ComplianceMatrixItem,
   AgencyComplianceStatus,
   ComplianceMatrixCategory,
+  ParentAssistance15QuestionAnalysis,
+  ParentAssistanceStatus,
 } from "../../shared/complianceMatrixEngine";
 
 interface AgencyComplianceMatrixViewProps {
@@ -114,6 +118,45 @@ const CATEGORY_LABELS: Record<ComplianceMatrixCategory, string> = {
   EVIDENCE_AND_CONTRADICTIONS: "Evidence & Contradictions",
 };
 
+const PARENT_STATUS_LABELS: Record<ParentAssistanceStatus, { label: string; bg: string; text: string }> = {
+  NEED_IDENTIFIED: { label: "Need Identified", bg: "bg-blue-100", text: "text-blue-800" },
+  SERVICE_CONSIDERED: { label: "Service Considered", bg: "bg-indigo-100", text: "text-indigo-800" },
+  SERVICE_OFFERED: { label: "Service Offered", bg: "bg-emerald-100", text: "text-emerald-800" },
+  REFERRAL_MADE: { label: "Referral Made", bg: "bg-teal-100", text: "text-teal-800" },
+  SERVICE_ACCESSIBLE: { label: "Accessible", bg: "bg-emerald-100", text: "text-emerald-800" },
+  SERVICE_INACCESSIBLE: { label: "Barriers Documented", bg: "bg-rose-100", text: "text-rose-800" },
+  SERVICE_ACCEPTED: { label: "Accepted by Parent", bg: "bg-emerald-100", text: "text-emerald-800" },
+  SERVICE_DECLINED: { label: "Declined", bg: "bg-amber-100", text: "text-amber-800" },
+  SERVICE_COMPLETED: { label: "Completed", bg: "bg-emerald-100", text: "text-emerald-800" },
+  FOLLOW_UP_DOCUMENTED: { label: "Follow-Up Documented", bg: "bg-sky-100", text: "text-sky-800" },
+  NO_OFFER_DOCUMENTED: { label: "Not Offered in Records", bg: "bg-slate-200", text: "text-slate-700" },
+  UNKNOWN: { label: "Status Unknown", bg: "bg-slate-200", text: "text-slate-700" },
+};
+
+interface QuestionConfig {
+  num: number;
+  label: string;
+  key: keyof ParentAssistance15QuestionAnalysis["questions"];
+}
+
+const FIFTEEN_QUESTIONS_CONFIG: QuestionConfig[] = [
+  { num: 1, label: "Child Protection Concern", key: "q1_concernIdentifiedByCas" },
+  { num: 2, label: "Underlying / Root Problem", key: "q2_rootProblemBehindConcern" },
+  { num: 3, label: "Service to Reduce Risk", key: "q3_serviceCouldReduceRisk" },
+  { num: 4, label: "Discussed with Parent", key: "q4_serviceDiscussedWithParent" },
+  { num: 5, label: "Referral / Service Offered", key: "q5_referralOrServiceOffered" },
+  { num: 6, label: "Timing (Prior to Removal)", key: "q6_whenWasItOffered" },
+  { num: 7, label: "Follow-Up Responsibility", key: "q7_whoWasResponsibleForFollowUp" },
+  { num: 8, label: "Realistic Accessibility", key: "q8_wasServiceAccessible" },
+  { num: 9, label: "Parent Participation / Attempt", key: "q9_didParentParticipateOrAttempt" },
+  { num: 10, label: "Documented Barriers", key: "q10_barriersPreventingParticipation" },
+  { num: 11, label: "Plan Adjustment upon Barriers", key: "q11_didCasAdjustPlanWhenBarriersAppeared" },
+  { num: 12, label: "Kinship & Community Alternatives", key: "q12_wereKinshipOrCommunitySupportsExplored" },
+  { num: 13, label: "Reunification & Risk Impact", key: "q13_howDidAssistanceAffectRiskAndReunification" },
+  { num: 14, label: "Documentary Proof in Records", key: "q14_whatEvidenceSupportsEachAnswer" },
+  { num: 15, label: "Missing Records to Verify", key: "q15_whatRecordsAreMissing" },
+];
+
 export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProps> = ({
   matrix,
   openLegislativeReference,
@@ -122,6 +165,7 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
   const [activeMode, setActiveMode] = useState<"educational" | "courtroom">("educational");
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [showParentAssistanceCard, setShowParentAssistanceCard] = useState<boolean>(true);
+  const [activeAssessmentIndex, setActiveAssessmentIndex] = useState<number>(0);
 
   if (!matrix || !matrix.items || matrix.items.length === 0) {
     return (
@@ -154,6 +198,25 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
     exemptOrAlternative: matrix.items.filter((i) => i.assessment.complianceStatus === "EXCEPTION_MAY_APPLY").length,
     insufficientEvidence: matrix.items.filter((i) => i.assessment.complianceStatus === "INSUFFICIENT_EVIDENCE").length,
   };
+
+  // Safe resolution of Parent Assistance assessments array with backwards compatibility
+  const assessments: ParentAssistance15QuestionAnalysis[] = useMemo(() => {
+    if (Array.isArray(matrix.parentAssistanceAnalyses) && matrix.parentAssistanceAnalyses.length > 0) {
+      return matrix.parentAssistanceAnalyses;
+    }
+    if (matrix.parentAssistanceAnalysis) {
+      return [matrix.parentAssistanceAnalysis];
+    }
+    return [];
+  }, [matrix.parentAssistanceAnalyses, matrix.parentAssistanceAnalysis]);
+
+  const currentAssessment = assessments[activeAssessmentIndex] || assessments[0] || null;
+
+  // Active disclaimer with fallback
+  const activeDisclaimer =
+    matrix.neutralityAndMethodologyDisclaimer ||
+    matrix.missingRecordsWarning ||
+    "Absence of a documented action in uploaded records does not prove the agency breached its duty. Other internal files, unfiled disclosures, or supervisory notes may exist.";
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -204,8 +267,7 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
           <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div>
             <strong className="text-amber-300 font-semibold">Non-Prejudgment Standard: </strong>
-            {matrix.missingRecordsWarning ||
-              "Absence of a documented action in uploaded records does not prove the agency breached its duty. Other internal files, unfiled disclosures, or supervisory notes may exist."}
+            {activeDisclaimer}
           </div>
         </div>
 
@@ -230,97 +292,182 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
         </div>
       </div>
 
-      {/* Parent Assistance 15-Question Analysis Card */}
-      {matrix.parentAssistanceAnalysis && (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div
-            className="p-4 bg-gradient-to-r from-slate-50 to-amber-50/40 border-b border-slate-200 flex items-center justify-between cursor-pointer select-none"
-            onClick={() => setShowParentAssistanceCard(!showParentAssistanceCard)}
-          >
-            <div className="flex items-center gap-2.5">
-              <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">
-                  Parent Assistance, Family Preservation & Reunification Assessment
-                </h4>
-                <p className="text-[11px] text-slate-600">
-                  Analysis of reasonable efforts, accessible assistance, less disruptive alternatives, and Standard 7 service plans
-                </p>
-              </div>
+      {/* Parent Assistance, Family Preservation & Reunification 15-Question Analysis Card */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div
+          className="p-4 bg-gradient-to-r from-slate-50 to-amber-50/40 border-b border-slate-200 flex items-center justify-between cursor-pointer select-none"
+          onClick={() => setShowParentAssistanceCard(!showParentAssistanceCard)}
+        >
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">
+                Parent Assistance, Family Preservation & Reunification Assessment ({assessments.length} Domains Evaluated)
+              </h4>
+              <p className="text-[11px] text-slate-600">
+                15-Question evidentiary inquiry into reasonable efforts, accessible assistance, less disruptive alternatives, and Standard 7 service plans
+              </p>
             </div>
-            {showParentAssistanceCard ? (
-              <ChevronDown className="w-4 h-4 text-slate-500" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-slate-500" />
-            )}
           </div>
-
-          {showParentAssistanceCard && (
-            <div className="p-4 space-y-4 text-xs">
-              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-amber-900 leading-relaxed">
-                <strong className="font-semibold">Summary Assessment: </strong>
-                {matrix.parentAssistanceAnalysis.summaryAssessment}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                {[
-                  { q: "Was assistance offered to parent?", val: matrix.parentAssistanceAnalysis.assistanceOffered },
-                  { q: "Was assistance realistically accessible?", val: matrix.parentAssistanceAnalysis.assistanceAccessible },
-                  { q: "Were less disruptive alternatives considered?", val: matrix.parentAssistanceAnalysis.lessDisruptiveAlternativesConsidered },
-                  { q: "Were reunification goals clearly identified?", val: matrix.parentAssistanceAnalysis.reunificationGoalsIdentified },
-                  { q: "Was an initial service plan developed?", val: matrix.parentAssistanceAnalysis.servicePlanDeveloped },
-                  { q: "Was service plan completed within 30 days (Standard 7)?", val: matrix.parentAssistanceAnalysis.servicePlanWithin30Days },
-                  { q: "Was reunification review conducted at regular intervals?", val: matrix.parentAssistanceAnalysis.reunificationReviewConducted },
-                  { q: "Was required supervisory approval documented?", val: matrix.parentAssistanceAnalysis.supervisoryApprovalDocumented },
-                  { q: "Was kinship placement exploration conducted (Bill C-92 s. 16)?", val: matrix.parentAssistanceAnalysis.kinshipAssessmentConducted },
-                  { q: "Was substance / mental health support facilitated?", val: matrix.parentAssistanceAnalysis.substanceOrMentalHealthSupportOffered },
-                  { q: "Were housing / poverty factors addressed non-punitively?", val: matrix.parentAssistanceAnalysis.housingOrFinancialAssistanceConsidered },
-                  { q: "Was customary care / band notice provided (CYFSA s. 72 / Bill C-92)?", val: matrix.parentAssistanceAnalysis.culturalContinuitySupported },
-                  { q: "Was band or First Nations community consulted?", val: matrix.parentAssistanceAnalysis.bandOrCommunityConsulted },
-                  { q: "Was parent access schedule facilitated (CYFSA s. 105)?", val: matrix.parentAssistanceAnalysis.accessScheduleFacilitated },
-                  { q: "Was parent informed of rights and complaint pathways?", val: matrix.parentAssistanceAnalysis.parentInformedOfRightsAndComplaints },
-                ].map((item, idx) => {
-                  const isYes = item.val === true;
-                  const isNo = item.val === false;
-                  return (
-                    <div
-                      key={idx}
-                      className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between gap-2"
-                    >
-                      <span className="text-slate-700 font-medium text-[11px]">{item.q}</span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 ${
-                          isYes
-                            ? "bg-emerald-100 text-emerald-800"
-                            : isNo
-                            ? "bg-rose-100 text-rose-800"
-                            : "bg-slate-200 text-slate-700"
-                        }`}
-                      >
-                        {isYes ? "Documented" : isNo ? "Not in Records" : "Unclear"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {matrix.parentAssistanceAnalysis.missingAssistanceRecords.length > 0 && (
-                <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 text-[11px] text-slate-700 space-y-1">
-                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-slate-500" />
-                    Recommended Records to Request:
-                  </div>
-                  <ul className="list-disc pl-5 space-y-0.5">
-                    {matrix.parentAssistanceAnalysis.missingAssistanceRecords.map((rec, i) => (
-                      <li key={i}>{rec}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+          {showParentAssistanceCard ? (
+            <ChevronDown className="w-4 h-4 text-slate-500" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-slate-500" />
           )}
         </div>
-      )}
+
+        {showParentAssistanceCard && (
+          <div className="p-4 space-y-4 text-xs">
+            {assessments.length === 0 ? (
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-slate-600 text-center space-y-1">
+                <FolderOpen className="w-6 h-6 text-slate-400 mx-auto" />
+                <p className="font-semibold text-slate-800">No Specific Parent Assistance Needs Flagged in Uploaded Records</p>
+                <p className="text-[11px] text-slate-500">
+                  Where assistance was requested, offered, or denied in non-uploaded case conferences or field notes, request full Society disclosure.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Multi-Assessment Domain Tabs */}
+                {assessments.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-100">
+                    {assessments.map((ass, idx) => (
+                      <button
+                        key={ass.needId || idx}
+                        type="button"
+                        onClick={() => setActiveAssessmentIndex(idx)}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                          activeAssessmentIndex === idx
+                            ? "bg-amber-600 text-white shadow-sm"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        {idx + 1}. {ass.identifiedNeedTitle || `Assessment ${idx + 1}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Selected Assessment Content */}
+                {currentAssessment && (
+                  <div className="space-y-4">
+                    {/* Assessment Header Info */}
+                    <div className="p-3 bg-amber-50/50 border border-amber-200/80 rounded-xl space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-bold text-slate-900 text-xs">
+                          {currentAssessment.identifiedNeedTitle}
+                        </div>
+                        <span className="px-2 py-0.5 bg-slate-200/80 text-slate-700 rounded text-[10px] font-medium">
+                          {currentAssessment.legalForceClassification === "LEGALLY_REQUIRED"
+                            ? "Statutory Legal Duty"
+                            : "Standards-Based Duty"}
+                        </span>
+                      </div>
+
+                      {/* Coexisting Status Pills */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">Status:</span>
+                        {(currentAssessment.coexistingStatuses || []).map((st, sIdx) => {
+                          const conf = PARENT_STATUS_LABELS[st] || { label: st, bg: "bg-slate-100", text: "text-slate-700" };
+                          return (
+                            <span
+                              key={sIdx}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${conf.bg} ${conf.text}`}
+                            >
+                              {conf.label}
+                            </span>
+                          );
+                        })}
+                      </div>
+
+                      {/* Statutory Non-Funding Rule Banner */}
+                      {currentAssessment.statutoryNonFundingRuleTriggered && (
+                        <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 text-[11px] leading-relaxed flex items-start gap-2">
+                          <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="font-semibold">CYFSA Non-Funding Protection Triggered (ss. 94(6)(c), 101(7)(c), 116(4)(c)): </strong>
+                            {currentAssessment.statutoryNonFundingExplanation ||
+                              "The court and agency cannot condition custody or return on the parent paying for services the agency or Ministry is mandated to facilitate or fund. Socioeconomic hardship and inability to afford private services cannot be treated as parental unfitness."}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Documented Evidence Excerpt */}
+                    {currentAssessment.exactExcerpt && (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                        <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-slate-400" />
+                          Documented Excerpt & Location ({currentAssessment.pageAndParagraphAttribution || "Record Excerpt"}):
+                        </div>
+                        <p className="text-[11px] text-slate-700 italic leading-relaxed">
+                          "{currentAssessment.exactExcerpt}"
+                        </p>
+                      </div>
+                    )}
+
+                    {/* The 15 Parent Assistance & Preservation Questions */}
+                    <div className="space-y-2">
+                      <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-amber-600" />
+                        15-Point Evidentiary Inquiry:
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {FIFTEEN_QUESTIONS_CONFIG.map((cfg) => {
+                          const ansText = currentAssessment.questions?.[cfg.key] || "Not documented in uploaded record.";
+                          const isNotDoc = /not\s+documented|no\s+record|absent/i.test(ansText);
+                          const isDoc = /documented|confirmed|referred|attended/i.test(ansText) && !isNotDoc;
+
+                          return (
+                            <div
+                              key={cfg.num}
+                              className="p-2.5 bg-slate-50/80 border border-slate-200/90 rounded-xl space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-1.5">
+                                <span className="font-bold text-slate-900 text-[11px]">
+                                  Q{cfg.num}. {cfg.label}
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0 ${
+                                    isDoc
+                                      ? "bg-emerald-100 text-emerald-800"
+                                      : isNotDoc
+                                      ? "bg-slate-200 text-slate-700"
+                                      : "bg-blue-100 text-blue-800"
+                                  }`}
+                                >
+                                  {isDoc ? "Documented" : isNotDoc ? "Not in Records" : "Evaluated"}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-700 leading-relaxed">
+                                {ansText}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Missing Records to Verify */}
+                    {currentAssessment.questions?.q15_whatRecordsAreMissing && (
+                      <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 text-[11px] text-slate-700 space-y-1">
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-slate-500" />
+                          Recommended Specific Records to Request:
+                        </div>
+                        <p className="leading-relaxed">
+                          {currentAssessment.questions.q15_whatRecordsAreMissing}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Category Filter Pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">

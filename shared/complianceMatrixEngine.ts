@@ -272,8 +272,12 @@ export interface ComplianceMatrixReport {
   };
   items: ComplianceMatrixItem[];
   parentAssistanceAnalyses: ParentAssistance15QuestionAnalysis[];
+  /** Backwards compatibility alias for singular consumer access */
+  parentAssistanceAnalysis?: ParentAssistance15QuestionAnalysis;
   summaryCounts: ComplianceMatrixSummaryCounts;
   neutralityAndMethodologyDisclaimer: string;
+  /** Backwards-compatible alias for consumers reading missingRecordsWarning */
+  missingRecordsWarning?: string;
 }
 
 export interface BuildComplianceMatrixOptions {
@@ -1402,8 +1406,11 @@ export function buildComplianceMatrixFromReport(
     },
     items,
     parentAssistanceAnalyses,
+    parentAssistanceAnalysis: parentAssistanceAnalyses[0],
     summaryCounts,
     neutralityAndMethodologyDisclaimer:
+      "NEUTRAL LEGAL INTELLIGENCE NOTICE: This Agency Compliance & Evidence Matrix compares verified Ontario statutory and operational authorities against the uploaded document excerpts. It does not presume either that CAS complied or that CAS committed wrongdoing. Where records are absent from an upload, the item is classified as NOT_DOCUMENTED_IN_UPLOADED_RECORDS or INSUFFICIENT_EVIDENCE rather than a confirmed breach. Review all findings with qualified Ontario child protection legal counsel.",
+    missingRecordsWarning:
       "NEUTRAL LEGAL INTELLIGENCE NOTICE: This Agency Compliance & Evidence Matrix compares verified Ontario statutory and operational authorities against the uploaded document excerpts. It does not presume either that CAS complied or that CAS committed wrongdoing. Where records are absent from an upload, the item is classified as NOT_DOCUMENTED_IN_UPLOADED_RECORDS or INSUFFICIENT_EVIDENCE rather than a confirmed breach. Review all findings with qualified Ontario child protection legal counsel.",
   };
 }

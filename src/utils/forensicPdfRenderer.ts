@@ -776,7 +776,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
       <section class="section-block">
         <h2 class="section-heading">11. Agency Compliance & Evidence Matrix</h2>
         <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; margin-bottom:12px; font-size:9px; color:#334155;">
-          <strong>Non-Prejudgment Standard:</strong> ${escapeHtml(report.complianceMatrix.missingRecordsWarning || "Absence of a documented action in uploaded records does not prove the agency breached its duty. Other internal files, unfiled disclosures, or supervisory notes may exist.")}
+          <strong>Non-Prejudgment Standard:</strong> ${escapeHtml(report.complianceMatrix.neutralityAndMethodologyDisclaimer || report.complianceMatrix.missingRecordsWarning || "Absence of a documented action in uploaded records does not prove the agency breached its duty. Other internal files, unfiled disclosures, or supervisory notes may exist.")}
         </div>
         <table class="data-table">
           <thead>
