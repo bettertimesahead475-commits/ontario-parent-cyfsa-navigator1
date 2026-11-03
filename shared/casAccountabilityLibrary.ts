@@ -824,6 +824,54 @@ export const REQUIRED_CASE_NOTE_ELEMENTS: readonly CaseNoteExpectationSpec[] = [
   }
 ];
 
+export interface CaseNoteCompletenessEvaluation {
+  presentElements: string[];
+  missingElements: string[];
+  distinctionNote: string;
+}
+
+export function evaluateCaseNoteCompleteness(input: {
+  hasContactDateAndTime?: boolean;
+  hasMethodOfContact?: boolean;
+  hasParticipantsIdentified?: boolean;
+  hasSignificantDiscussionsRecorded?: boolean;
+  hasDirectObservationsSeparatedFromOpinion?: boolean;
+  hasWorkerIdentityAndRole?: boolean;
+  hasDateOfNoteCreation?: boolean;
+  hasSupervisoryDiscussionsRecorded?: boolean;
+  hasLateEntryOrAmendmentAttribution?: boolean;
+}): CaseNoteCompletenessEvaluation {
+  const present: string[] = [];
+  const missing: string[] = [];
+
+  const checks: [boolean | undefined, string][] = [
+    [input.hasContactDateAndTime, "CONTACT_DATE_AND_TIME"],
+    [input.hasMethodOfContact, "METHOD_OF_CONTACT"],
+    [input.hasParticipantsIdentified, "PARTICIPANTS"],
+    [input.hasSignificantDiscussionsRecorded, "SIGNIFICANT_DISCUSSIONS"],
+    [input.hasDirectObservationsSeparatedFromOpinion, "OBSERVATIONS"],
+    [input.hasWorkerIdentityAndRole, "WORKER_IDENTITY"],
+    [input.hasDateOfNoteCreation, "DATE_OF_NOTE_CREATION"],
+    [input.hasSupervisoryDiscussionsRecorded, "SUPERVISORY_DISCUSSIONS"],
+    [input.hasLateEntryOrAmendmentAttribution, "SUBSEQUENT_CORRECTIONS_OR_ADDITIONS"],
+  ];
+
+  for (const [flag, code] of checks) {
+    if (flag) {
+      present.push(code);
+    } else {
+      missing.push(code);
+    }
+  }
+
+  return {
+    presentElements: present,
+    missingElements: missing,
+    distinctionNote:
+      "CRITICAL DISTINCTION: Missing documentation in uploaded records establishes that the element is NOT DOCUMENTED in the available record — it is NOT proof that the underlying event or standard did not occur.",
+  };
+}
+
 export const A4_CASE_NOTES_AND_RECORDKEEPING_RULES: readonly CasAccountabilityRule[] = [
   {
     ruleId: "CAS_RECORDS:CONTEMPORANEOUS_CASE_NOTES_STANDARD_G",
@@ -959,8 +1007,16 @@ export const A6_OATHS_AND_SWORN_EVIDENCE_RULES: readonly CasAccountabilityRule[]
 // A7. ACCOUNTABILITY AND COMPLAINT PATHWAYS
 // ============================================================================
 
+export type OversightPathwayId =
+  | "OVERSIGHT:CAS_INTERNAL_COMPLAINT_119"
+  | "OVERSIGHT:CFSRB_SERVICE_COMPLAINT_120"
+  | "OVERSIGHT:ONTARIO_OMBUDSMAN_CHILDREN_AND_YOUTH"
+  | "OVERSIGHT:OCSWSSW_PROFESSIONAL_REGULATORY_COMPLAINT"
+  | "OVERSIGHT:IPC_PART_X_PRIVACY_AND_RECORDS_316"
+  | "OVERSIGHT:COURT_PROCEDURAL_AND_EVIDENTIARY_REMEDIES";
+
 export interface OversightPathwaySpec {
-  pathwayId: string;
+  pathwayId: OversightPathwayId;
   name: string;
   authorityId: string;
   governingStatuteOrRegulation: string;

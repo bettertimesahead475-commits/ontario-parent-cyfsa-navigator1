@@ -771,6 +771,53 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
         </table>
       </section>
 
+      <!-- 11. AGENCY COMPLIANCE & EVIDENCE MATRIX -->
+      ${report.complianceMatrix && report.complianceMatrix.items?.length > 0 ? `
+      <section class="section-block">
+        <h2 class="section-heading">11. Agency Compliance & Evidence Matrix</h2>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; margin-bottom:12px; font-size:9px; color:#334155;">
+          <strong>Non-Prejudgment Standard:</strong> ${escapeHtml(report.complianceMatrix.missingRecordsWarning || "Absence of a documented action in uploaded records does not prove the agency breached its duty. Other internal files, unfiled disclosures, or supervisory notes may exist.")}
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:20%;">Mandate / Citation</th>
+              <th style="width:16%;">Compliance Status</th>
+              <th style="width:34%;">Documented Action / Excerpts</th>
+              <th style="width:30%;">Courtroom Evidentiary Framing</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${report.complianceMatrix.items.map((item: any) => `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(item.authority?.legalCitation || "")}</strong><br/>
+                  <span style="font-size:8.5px; color:#475569;">${escapeHtml(item.obligation?.mandateSummary || "")}</span>
+                </td>
+                <td>
+                  <span style="display:inline-block; padding:2px 6px; border-radius:4px; font-size:8.5px; font-weight:700; ${
+                    item.assessment?.status === "COMPLIANT" ? "background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0;" :
+                    item.assessment?.status === "NON_COMPLIANT_POTENTIAL" ? "background:#fff1f2; color:#9f1239; border:1px solid #fecdd3;" :
+                    item.assessment?.status === "PARTIALLY_COMPLIANT" ? "background:#fffbeb; color:#92400e; border:1px solid #fde68a;" :
+                    "background:#f1f5f9; color:#334155; border:1px solid #cbd5e1;"
+                  }">
+                    ${escapeHtml(item.assessment?.status?.replace(/_/g, " ") || "")}
+                  </span>
+                </td>
+                <td style="font-size:8.5px;">
+                  ${escapeHtml(item.evidence?.documentedActionInRecord || "Not documented in record.")}
+                  ${item.evidence?.recordExcerpts?.length ? `<div style="font-style:italic; color:#64748b; margin-top:4px;">\"${escapeHtml(item.evidence.recordExcerpts[0])}\"</div>` : ""}
+                </td>
+                <td style="font-size:8.5px; color:#1e293b;">
+                  ${escapeHtml(item.presentation?.courtroomMode?.evidentiaryFraming || "")}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </section>
+      ` : ""}
+
       <!-- 12. METHODOLOGY & AUDIT TRAIL -->
       <footer style="margin-top:30px; padding-top:14px; border-top:1px solid #cbd5e1; font-size:8.5px; color:#64748b; line-height:1.4;">
         <p><strong>Audit Methodology:</strong> Multi-pass forensic document review utilizing Claude Sonnet for primary extraction and Claude Opus for adversarial secondary verification. Quotations are verified for verbatim matches against uploaded plaintext. Citations are verified against Ontario e-Laws consolidations.</p>

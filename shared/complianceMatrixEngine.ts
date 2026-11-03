@@ -36,9 +36,14 @@ import {
 } from "./parentAssistanceLibrary";
 import {
   evaluatePropositionSupport,
-  resolveLegalAuthority,
-  type LegalVerificationStatus,
+  VERIFIED_AUTHORITIES_REGISTRY,
 } from "./legalVerificationPipeline";
+
+export type MatrixSourceVerificationStatus =
+  | "VERIFIED"
+  | "HISTORICAL_VERSION_RISK"
+  | "UNVERIFIED"
+  | "IRRELEVANT_OR_UNSUPPORTED";
 
 // ============================================================================
 // C1–C4 TYPE DEFINITIONS
@@ -164,7 +169,7 @@ export interface ComplianceMatrixAssessmentField {
   reasoning: string;
   missingInformation: string[];
   exceptionsConsidered: string[];
-  sourceVerificationStatus: LegalVerificationStatus;
+  sourceVerificationStatus: MatrixSourceVerificationStatus;
   confidenceOrUncertainty: string;
   suggestedFollowUpQuestions: string[];
   potentialOversightPathway: {
@@ -385,27 +390,29 @@ function buildOversightPathwaySummary(pathwayId: OversightPathwayId) {
   if (!found) return null;
   return {
     pathwayId: found.pathwayId,
-    pathwayName: found.pathwayName,
-    statutoryAuthority: `${found.legalSource} (${found.exactSection})`,
-    jurisdictionNote: found.exclusionsAndMattersBeforeCourtRule,
-    cannotOverturnCourtOrder: found.cannotOverturnCourtOrder,
+    pathwayName: found.name,
+    statutoryAuthority: found.governingStatuteOrRegulation,
+    jurisdictionNote: found.mandatoryExclusions.join("; "),
+    cannotOverturnCourtOrder: !found.canOverturnCourtOrder,
   };
 }
 
 function verifyMatrixAuthority(
   authorityId: string,
   propositionText: string,
-): LegalVerificationStatus {
-  const resolved = resolveLegalAuthority(authorityId, null);
-  if (!resolved) {
+): MatrixSourceVerificationStatus {
+  const entry = VERIFIED_AUTHORITIES_REGISTRY[authorityId];
+  if (!entry) {
     return "UNVERIFIED";
   }
-  const support = evaluatePropositionSupport({
-    authority: resolved,
-    propositionText,
-    documentDate: null,
-  });
-  return support.status;
+  const propCheck = evaluatePropositionSupport(entry.sectionKey || authorityId, propositionText);
+  if (
+    propCheck.support === "IRRELEVANT_OR_MISAPPLIED" ||
+    propCheck.support === "CONTRADICTED_BY_STATUTE"
+  ) {
+    return "IRRELEVANT_OR_UNSUPPORTED";
+  }
+  return "VERIFIED";
 }
 
 // ============================================================================
@@ -681,7 +688,7 @@ export function buildComplianceMatrixFromReport(
         legalSource: "Child, Youth and Family Services Act, 2017, S.O. 2017, c. 14, Sched. 1",
         exactSectionOrStandard: "s. 101(2), s. 101(3), s. 94(4), s. 100(a)–(c)",
         effectiveDate: "2018-04-30",
-        legalForce: "MANDATORY_STATUTORY",
+        legalForce: "STATUTORY_MANDATORY",
         applicabilityConditions:
           "Applies to every dispositional protection hearing under CYFSA s. 101 and interim care analysis under s. 94(4).",
         exceptions:
@@ -736,7 +743,7 @@ export function buildComplianceMatrixFromReport(
           "What specific non-residential services or in-home supports were offered to the parent prior to or instead of removal under CYFSA s. 101(2)–(3)?",
           "What concrete supervision terms under CYFSA s. 94(5) or s. 101(6) were considered, and what documented evidence showed they would be inadequate?",
         ],
-        potentialOversightPathway: buildOversightPathwaySummary("PATHWAY-COURT-PROCEDURAL-REMEDIES"),
+        potentialOversightPathway: buildOversightPathwaySummary("OVERSIGHT:COURT_PROCEDURAL_AND_EVIDENTIARY_REMEDIES"),
       },
       presentation: {
         educationalMode: {
@@ -808,7 +815,7 @@ export function buildComplianceMatrixFromReport(
         exactSectionOrStandard:
           "OCPS (2016) Standards Applying Across All Phases of Service Delivery; Standards 1–8; O. Reg. 156/18, s. 1",
         effectiveDate: "2016-01-01",
-        legalForce: "MANDATORY_STANDARD",
+        legalForce: "MINISTRY_STANDARD_MANDATORY",
         applicabilityConditions:
           "Applies across all child protection investigations and ongoing service cases conducted by an Ontario Children's Aid Society.",
         exceptions:
@@ -867,7 +874,7 @@ export function buildComplianceMatrixFromReport(
           "Were the Safety Assessment, Risk Assessment, and Service Plan reviewed and approved by a supervisor within the OCPS (2016) timeframes?",
           "What are the electronic note-creation dates compared to the contact dates for the key observations relied upon?",
         ],
-        potentialOversightPathway: buildOversightPathwaySummary("PATHWAY-INTERNAL-CAS-COMPLAINT"),
+        potentialOversightPathway: buildOversightPathwaySummary("OVERSIGHT:CAS_INTERNAL_COMPLAINT_119"),
       },
       presentation: {
         educationalMode: {
@@ -947,7 +954,7 @@ export function buildComplianceMatrixFromReport(
         exactSectionOrStandard:
           "CYFSA ss. 35(1)(b), 94(6)(c), 100(a), 101(2), 101(7)(c), 116(4)(c); OCPS Standard 7",
         effectiveDate: "2018-04-30",
-        legalForce: "MANDATORY_STATUTORY",
+        legalForce: "STATUTORY_MANDATORY",
         applicabilityConditions:
           "Applies whenever CAS identifies parenting, mental health, trauma, domestic violence, substance use, or housing needs as relevant to child protection risk or supervision conditions.",
         exceptions:
@@ -1007,7 +1014,7 @@ export function buildComplianceMatrixFromReport(
           "Which publicly funded or community-accessible programs were referred to address the identified protection concerns?",
           "If a recommended program had a waitlist or private fee, what accessible interim alternative was incorporated into the Service Plan?",
         ],
-        potentialOversightPathway: buildOversightPathwaySummary("PATHWAY-CFSRB-SECTION-120"),
+        potentialOversightPathway: buildOversightPathwaySummary("OVERSIGHT:CFSRB_SERVICE_COMPLAINT_120"),
       },
       presentation: {
         educationalMode: {
@@ -1077,7 +1084,7 @@ export function buildComplianceMatrixFromReport(
         exactSectionOrStandard:
           "OCPS (2016) Standard 7 (18 Ongoing Case Management Elements); CYFSA ss. 100(b)(i), 104(1), 113(1), 122(1), 122(5)",
         effectiveDate: "2016-01-01",
-        legalForce: "MANDATORY_STANDARD",
+        legalForce: "MINISTRY_STANDARD_MANDATORY",
         applicabilityConditions:
           "Applies to all ongoing child protection cases and all cases where a child is in temporary care with a reunification or permanency plan.",
         exceptions:
@@ -1139,7 +1146,7 @@ export function buildComplianceMatrixFromReport(
           "Were the parents invited to participate in developing the Service Plan and provided with a copy under OCPS Standard 7?",
           "What specific, measurable behavioural changes are required for the return of the child under CYFSA s. 100(b)(i)?",
         ],
-        potentialOversightPathway: buildOversightPathwaySummary("PATHWAY-INTERNAL-CAS-COMPLAINT"),
+        potentialOversightPathway: buildOversightPathwaySummary("OVERSIGHT:CAS_INTERNAL_COMPLAINT_119"),
       },
       presentation: {
         educationalMode: {
@@ -1202,7 +1209,7 @@ export function buildComplianceMatrixFromReport(
         ? "REQUIRES_LEGAL_REVIEW"
         : "INSUFFICIENT_EVIDENCE";
 
-    const authorityId = "FLR:RULE_14";
+    const authorityId = "FLR:14(18)";
     const verificationStatus = verifyMatrixAuthority(
       authorityId,
       "Under Family Law Rules r. 14(18) and r. 14(19), an affidavit shall contain only facts within the personal knowledge of the person signing it unless the source of the information and the fact of belief are specified.",
@@ -1219,7 +1226,7 @@ export function buildComplianceMatrixFromReport(
           "Family Law Rules, O. Reg. 114/99, r. 14(18)–(19); Social Work and Social Service Work Act, 1998, S.O. 1998, c. 31, ss. 46–47",
         exactSectionOrStandard: "O. Reg. 114/99, r. 14(18)–(19); SWSSWA 1998, ss. 46–47",
         effectiveDate: "1999-09-15",
-        legalForce: "MANDATORY_STATUTORY",
+        legalForce: "COURT_PROCEDURAL_RULE",
         applicabilityConditions:
           "FLR r. 14(18)–(19) applies to all affidavits filed on motions in child protection proceedings. OCSWSSW standards apply where the worker is a registered member of the College or uses restricted titles ('social worker', 'registered social worker', 'social service worker').",
         exceptions:
@@ -1273,7 +1280,7 @@ export function buildComplianceMatrixFromReport(
           "For each disputed or second-hand assertion, who is the exact named source of the information and what is the date of the underlying primary note?",
           "Is the worker who authored the record registered with the OCSWSSW on the Public Register?",
         ],
-        potentialOversightPathway: buildOversightPathwaySummary("PATHWAY-COURT-PROCEDURAL-REMEDIES"),
+        potentialOversightPathway: buildOversightPathwaySummary("OVERSIGHT:COURT_PROCEDURAL_AND_EVIDENTIARY_REMEDIES"),
       },
       presentation: {
         educationalMode: {

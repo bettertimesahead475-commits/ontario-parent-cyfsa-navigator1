@@ -159,7 +159,7 @@ export const B1_FAMILY_PRESERVATION_RULES: readonly ParentAssistanceRule[] = [
     ruleId: "B1-CYFSA-94-4-INTERIM-CARE-LEAST-DISRUPTIVE",
     domain: "B1_FAMILY_PRESERVATION",
     authorityId: "CYFSA:94(2)",
-    secondaryAuthorityIds: ["CYFSA:94(4)", "CYFSA:94(5)"],
+    secondaryAuthorityIds: ["CYFSA:94(4)"],
     legalSource: "Child, Youth and Family Services Act, 2017, S.O. 2017, c. 14, Sched. 1",
     exactSectionOrStandard: "s. 94(2), s. 94(4), s. 94(5)",
     effectiveDate: "2018-04-30",
@@ -212,32 +212,32 @@ export const B1_FAMILY_PRESERVATION_RULES: readonly ParentAssistanceRule[] = [
       "Distinguish between the court's mandatory inquiry under s. 101(2)–(3) and whether a specific service was available in the community.",
   },
   {
-    ruleId: "B1-BILL-C92-16A-PREVENTIVE-CARE-PRIORITY",
+    ruleId: "B1-BILL-C92-14-PREVENTIVE-CARE-PRIORITY",
     domain: "B1_FAMILY_PRESERVATION",
-    authorityId: "BILL_C92:16",
-    secondaryAuthorityIds: ["BILL_C92:9", "BILL_C92:10", "BILL_C92:14"],
+    authorityId: "BILL_C92:14(1)",
+    secondaryAuthorityIds: ["BILL_C92:10(1)", "BILL_C92:15", "BILL_C92:16(1)"],
     legalSource: "An Act respecting First Nations, Inuit and Métis children, youth and families, S.C. 2019, c. 24",
-    exactSectionOrStandard: "s. 14(1), s. 16(2.1)",
+    exactSectionOrStandard: "s. 14(1), s. 15, s. 16(1)",
     effectiveDate: "2020-01-01",
     legalForce: "LEGALLY_REQUIRED",
-    title: "Federal Priority for Preventive Care and Prenatal Services for Indigenous Children",
+    title: "Federal Priority for Preventive Care and Protection from Socio-Economic Apprehension for Indigenous Children",
     requiredOrExpectedAction:
-      "In providing child and family services in relation to an Indigenous child, the provision of preventive care to support the child's family must be given priority over other services, and a child must not be apprehended solely on the basis of socio-economic conditions; before placing an Indigenous child, demonstrate whether family unity can be preserved through reasonable reassessment and support.",
+      "In providing child and family services in relation to an Indigenous child, the provision of preventive care to support the child's family must be given priority over other services (s. 14(1)); a child must not be apprehended solely on the basis of socio-economic conditions, including poverty, lack of adequate housing or infrastructure, or parent health (s. 15); and out-of-home placement must prioritize parents, extended family, and the child's Indigenous community (s. 16(1)).",
     triggeringCircumstances:
       "Any child protection service delivery involving a First Nations, Inuit, or Métis child.",
     applicabilityConditions:
       "Applies as paramount federal law whenever the child is an Indigenous child within the meaning of S.C. 2019, c. 24.",
     exceptionsAndStatutoryLimits:
-      "Consistent with the best interests of the Indigenous child (s. 9(1), s. 10).",
+      "Consistent with the best interests of the Indigenous child under Bill C-92 ss. 9(1) and 10(1).",
     accessibilityFactorsToEvaluate: [
       "Whether culturally appropriate preventive services through an Indigenous service provider or band/community were offered first",
-      "Whether notice under Bill C-92 s. 12 was provided to the parent, care provider, and Indigenous governing body",
+      "Whether notice under Bill C-92 s. 12(1) was provided to the parent, care provider, and Indigenous governing body",
     ],
     evidenceEstablishingCompliance: [
-      "Documentation of preventive care priority, cultural continuity planning, and s. 12 notice to the Indigenous governing body",
+      "Documentation of preventive care priority, cultural continuity planning, and s. 12(1) notice to the Indigenous governing body",
     ],
     overstatementGuard:
-      "Only apply Bill C-92 s. 14/16 when the record indicates or raises the question that the child is First Nations, Inuit, or Métis.",
+      "Only apply Bill C-92 provisions when the record indicates or raises the question that the child is First Nations, Inuit, or Métis.",
   },
 ] as const;
 
@@ -407,7 +407,7 @@ export const B5_KINSHIP_AND_FAMILY_NETWORKS_RULES: readonly ParentAssistanceRule
     ruleId: "B5-CYFSA-KINSHIP-PRIORITY-AND-ASSESSMENT",
     domain: "B5_KINSHIP_AND_FAMILY_NETWORKS",
     authorityId: "CYFSA:101(4)",
-    secondaryAuthorityIds: ["CYFSA:74(4)", "CYFSA:94(2)", "CYFSA:101(5)", "CYFSA:109(2)", "BILL_C92:16"],
+    secondaryAuthorityIds: ["CYFSA:94(2)", "CYFSA:101(5)", "CYFSA:109(2)", "BILL_C92:16(1)"],
     legalSource:
       "Child, Youth and Family Services Act, 2017, ss. 74(4), 94(2)(c), 101(4)–(5), 109(2)(d); O. Reg. 156/18 Part II (Kinship Service Standards); Bill C-92 s. 16",
     exactSectionOrStandard: "CYFSA ss. 74(4), 94(2)(c), 101(4), 101(5), 109(2)(d); Bill C-92 s. 16(1)–(2)",
@@ -442,7 +442,7 @@ export const B6_PARENT_CHILD_CONTACT_RULES: readonly ParentAssistanceRule[] = [
     ruleId: "B6-CYFSA-104-105-ACCESS-AND-MEANINGFUL-CONTACT",
     domain: "B6_PARENT_CHILD_CONTACT",
     authorityId: "CYFSA:104(1)",
-    secondaryAuthorityIds: ["CYFSA:105(1)", "CYFSA:105(5)", "CYFSA:100", "CYFSA:10(1)"],
+    secondaryAuthorityIds: ["CYFSA:105(1)", "CYFSA:105(5)", "CYFSA:100"],
     legalSource: "Child, Youth and Family Services Act, 2017, S.O. 2017, c. 14, Sched. 1",
     exactSectionOrStandard: "ss. 10(1)(a), 100(d)(ii), 104(1), 105(1), 105(5)",
     effectiveDate: "2018-04-30",
@@ -479,18 +479,18 @@ export const B7_REUNIFICATION_AND_PERMANENCY_RULES: readonly ParentAssistanceRul
     authorityId: "CYFSA:122(1)",
     secondaryAuthorityIds: ["CYFSA:122(5)", "CYFSA:100", "CYFSA:113(1)", "CYFSA:114", "CYFSA:75(6)"],
     legalSource: "Child, Youth and Family Services Act, 2017, S.O. 2017, c. 14, Sched. 1",
-    exactSectionOrStandard: "ss. 75(6), 100(b), 113(1), 114, 122(1), 122(5)",
+    exactSectionOrStandard: "ss. 75(6), 100(b), 113(1), 114, 122(1), 122(2), 122(4), 122(5)",
     effectiveDate: "2018-04-30",
     legalForce: "LEGALLY_REQUIRED",
-    title: "Statutory Cumulative Time-in-Care Limits (12 / 24 Months), Discretionary 6-Month Extension & Status Review",
+    title: "Statutory Cumulative Interim Society Care Time Limits (12 / 24 Months), Deemed Extension (s. 122(4)), Discretionary 6-Month Extension (s. 122(5)) & Status Review",
     requiredOrExpectedAction:
-      "Ensure timely reunification planning and status review (ss. 113–114) within statutory cumulative temporary society care limits under CYFSA s. 122(1): 12 months if the child is under 6 years of age on the day the court makes the order, or 24 months if the child is 6 years of age or older. Under s. 122(5), the court may by order extend the period permitted under s. 122(1) by up to 6 months if it is in the child's best interests to do so. Where the society intends for the child to return to a parent, the Plan of Care (s. 100(b)(i)) must state the changes required before the child can return.",
+      "Ensure timely reunification planning and status review (ss. 113–114) within statutory cumulative interim society care limits under CYFSA s. 122(1): 12 months if the child is younger than 6 on the day the court makes the order, or 24 months if the child is 6 or older on the day the court makes the order. Time in care under temporary care agreements (s. 75(1)) or temporary adjournment custody (s. 94(2)(d)) counts toward the limit (s. 122(2)). Where the period expires while an appeal of a s. 101(1) order is pending or a s. 114 status review hearing is adjourned, the period is deemed extended until the appeal is disposed of or the s. 114 order is made (s. 122(4)). Under s. 122(5), the court may by order extend the period permitted under s. 122(1) by up to 6 months if in the child's best interests. Where the society intends for the child to return to a parent, the Plan of Care (s. 100(b)(i)) must state the changes required before the child can return.",
     triggeringCircumstances:
-      "Any case where a child is in temporary care (by Temporary Care Agreement under s. 75 or temporary society care order under s. 101(1) para. 2) or approaching a status review under s. 113.",
+      "Any case where a child is in temporary care (by Temporary Care Agreement under s. 75 or interim society care order under s. 101(1) para. 2) or approaching a status review under s. 113.",
     applicabilityConditions:
-      "Applies to all children in temporary society care; s. 122(2) includes time spent in continuous society care under temporary care agreements (s. 75(6) max 12 months in 24) and temporary orders.",
+      "Applies to all children in interim society care; s. 122(2) includes time spent in society care under temporary care agreements (s. 75(6) max 12 months in 24) and temporary orders.",
     exceptionsAndStatutoryLimits:
-      "Court may grant up to a 6-month extension under s. 122(5) if in the child's best interests.",
+      "Deemed extension under s. 122(4) during pending appeals or adjourned s. 114 status review hearings; discretionary judicial extension of up to 6 months under s. 122(5) where in the child's best interests.",
     accessibilityFactorsToEvaluate: [
       "Whether the required behavioural/safety changes for return of the child were clearly stated in the Plan of Care (s. 100(b)(i)) and Service Plan",
       "Whether referral delays or waitlists consumed the 12-month or 24-month statutory clock under s. 122(1)",
@@ -501,7 +501,7 @@ export const B7_REUNIFICATION_AND_PERMANENCY_RULES: readonly ParentAssistanceRul
       "Status review application filed before expiry of the existing order (s. 113(2)) and accurate calculation of cumulative time in care under s. 122",
     ],
     overstatementGuard:
-      "Always state both the statutory ceiling (12 months for under 6; 24 months for 6 and older under s. 122(1)) and the court's discretionary authority to extend by up to 6 months under s. 122(5).",
+      "Always state both the statutory ceiling (12 months for under 6; 24 months for 6 and older under s. 122(1)), the deemed extension under s. 122(4), and the court's discretionary authority to extend by up to 6 months under s. 122(5).",
   },
 ] as const;
 

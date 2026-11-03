@@ -15,6 +15,6 @@ alter table public.navigator_legal_sources
 
 alter table public.navigator_legal_sources
   add constraint navigator_legal_sources_source_type_check
-  check (source_type in ('STATUTE','REGULATION','COURT_RULE','CASE_LAW','CHARTER'));
+  check (source_type in ('STATUTE','REGULATION','COURT_RULE','CASE_LAW','CHARTER','OTHER_OFFICIAL_AUTHORITY'));
 
 commit;

@@ -374,61 +374,84 @@ export const BUNDLED_STATUTE_ENTRIES: Record<string, BundledStatuteEntry> = {
   "93(1)": {
     citation: "CYFSA s. 93(1)",
     heading: "Evidence — Past conduct",
-    text: "(1)  Despite anything in the Evidence Act, at a hearing under this Part, the court may admit as evidence,\n  (a)  evidence of past conduct of a person towards any child, if that conduct is relevant to that person’s ability to care for a child; or\n  (b)  any oral or written statement or report that the court considers relevant to the proceeding, including a transcript, exhibit or finding in an earlier civil or criminal proceeding.",
+    text: `(1)  Despite anything in the Evidence Act, in any proceeding under this Part,
+  (a)  the court may consider the past conduct of a person toward any child if that person is caring for or has access to or may care for or have access to a child who is the subject of the proceeding; and
+  (b)  any oral or written statement or report that the court considers relevant to the proceeding, including a transcript, exhibit or finding or the reasons for a decision in an earlier civil or criminal proceeding, is admissible into evidence.`,
     note: "Governs admissibility of relevant past conduct towards a child and prior proceedings/reports at a Part V hearing.",
   },
   "94(10)": {
     citation: "CYFSA s. 94(10)",
     heading: "Evidence on adjournment",
-    text: "(10)  For the purpose of this section, the court may admit and act on evidence that the court considers credible and trustworthy in the circumstances.",
+    text: `(10)  For the purpose of this section, the court may admit and act on evidence that the court considers credible and trustworthy in the circumstances.`,
     note: "Sets the 'credible and trustworthy in the circumstances' evidentiary standard for temporary care and custody hearings under s. 94.",
   },
   "98(1)": {
     citation: "CYFSA s. 98(1)",
     heading: "Order for assessment",
-    text: "(1)  In the course of a proceeding under this Part, the court may order that one or more of the following persons undergo an assessment within a specified time by a person appointed in accordance with subsections (2) and (3):\n  1.  The child.\n  2.  A parent of the child.\n  3.  Any other person, other than a foster parent, who is putting forward or would participate in a plan for the care and custody of or access to the child.",
+    text: `(1)  In the course of a proceeding under this Part, the court may order that one or more of the following persons undergo an assessment within a specified time by a person appointed in accordance with subsections (3) and (4):
+  1.  The child.
+  2.  A parent of the child.
+  3.  Any other person, other than a foster parent, who is putting forward or would participate in a plan for the care and custody of or access to the child.`,
     note: "Authorizes court-ordered assessments under s. 98 where necessary for the court to make a determination under Part V.",
   },
   "105(1)": {
     citation: "CYFSA s. 105(1)",
     heading: "Access: where child removed from person in charge",
-    text: "(1)  Where an order is made under paragraph 1 or 2 of subsection 101 (1) removing a child from the person who had charge of the child immediately before intervention under this Part, the court shall make an order for access by the person unless the court is satisfied that continued contact with the person would not be in the child’s best interests.",
+    text: `(1)  Where an order is made under paragraph 1 or 2 of subsection 101 (1) removing a child from the person who had charge of the child immediately before intervention under this Part, the court shall make an order for access by the person unless the court is satisfied that continued contact with the person would not be in the child’s best interests.`,
     note: "Establishes a statutory presumption in favour of an access order for the person who had charge of the child when the child is removed under a supervision or interim society care order, unless continued contact would not be in the child's best interests.",
   },
   "105(5)": {
     citation: "CYFSA s. 105(5)",
     heading: "When court may order access to child in extended society care",
-    text: "(5)  A court shall not make or vary an access order under section 104 with respect to a child who is in extended society care under an order made under paragraph 3 of subsection 101 (1) or clause 116 (1) (c) unless the court is satisfied that,\n  (a)  the relationship between the person and the child is beneficial and meaningful to the child; and\n  (b)  the ordered access will not impair the child’s future opportunities for adoption.",
-    note: "Sets the two-part statutory test for access to a child in extended society care: (a) beneficial and meaningful relationship to the child, and (b) ordered access will not impair future opportunities for adoption.",
+    text: `(5)  A court shall not make or vary an access order under section 104 with respect to a child who is in extended society care under an order made under paragraph 3 of subsection 101 (1) or clause 116 (1) (c) unless the court is satisfied that the order or variation would be in the child’s best interests.`,
+    note: "Governs when the court may make or vary an access order under s. 104 for a child in extended society care (requiring satisfaction that the order or variation would be in the child's best interests).",
   },
   "113(1)": {
     citation: "CYFSA s. 113(1)",
-    heading: "Status review — Application by parent, child, caregiver",
-    text: "(1)  Where a child is the subject of an order for society supervision or interim society care under subsection 101 (1) or an order for custody under subsection 102 (1), any of the following may apply to the court for a review of the child’s status:\n  1.  A parent of the child.\n  2.  The child, if the child is 12 or older.\n  3.  A person with whom the child has been placed under an order for society supervision.\n  4.  A person to whom custody of the child has been granted under an order for custody.\n  5.  In the case of a First Nations, Inuk or Métis child, a person described in paragraph 1, 2, 3 or 4 or a representative chosen by each of the child’s bands and First Nations, Inuit or Métis communities.",
-    note: "Lists who may apply for a status review of a supervision order, interim society care order, or s. 102(1) custody order (subject to the six-month waiting period in s. 113(3) unless the court grants leave).",
+    heading: "Status review — Application",
+    text: `(1)  This section applies where a child is the subject of an order made under paragraph 1 or 4 of subsection 101 (1) for society supervision or under paragraph 2 of subsection 101 (1) for interim society care.`,
+    note: "Specifies that section 113 status reviews apply where a child is subject to an order for society supervision or interim society care under s. 101(1).",
   },
   "113(2)": {
     citation: "CYFSA s. 113(2)",
     heading: "Society to seek status review",
-    text: "(2)  The society having care, custody or supervision of a child,\n  (a)  may apply to the court at any time for a review of the child’s status;\n  (b)  shall apply to the court for a review of the child’s status before the order expires, unless the expiry is by reason of section 123 (expiry at 18 or marriage); and\n  (c)  shall apply to the court for a review of the child’s status within five days after removing the child, if the society has removed the child from the care of a person with whom the child was placed under an order for society supervision or from the custody of a person who had custody of the child under an order for custody.",
-    note: "Requires the society to apply for a status review before a supervision or interim society care order expires, and within 5 days after removing a child from a person's care under a s. 101(1) supervision or s. 102(1) custody order.",
+    text: `(2)  The society having care, custody or supervision of a child,
+  (a)  may apply to the court at any time for a review of the child’s status;
+  (b)  shall apply to the court for a review of the child’s status before the order expires, unless the expiry is by reason of section 123; and
+  (c)  shall apply to the court for a review of the child’s status within five days after removing the child, if the society has removed the child from the care of a person with whom the child was placed under an order for society supervision.`,
+    note: "Requires the society to apply for a status review before a supervision or interim society care order expires, and within 5 days after removing a child from care under a supervision order.",
   },
   "114": {
     citation: "CYFSA s. 114",
     heading: "Court may vary, etc. on status review",
-    text: "Where an application for review of a child’s status is made under section 113, the court may, in the child’s best interests,\n  (a)  vary or terminate the original order made under subsection 101 (1) or 102 (1), including a term or condition or a provision for access that is part of the order;\n  (b)  order that the original order terminate on a specified future date;\n  (c)  make a further order or orders under section 101; or\n  (d)  make an order under section 102.",
+    text: `Where an application for review of a child’s status is made under section 113, the court may, in the child’s best interests,
+  (a)  vary or terminate the original order made under subsection 101 (1), including a term or condition or a provision for access that is part of the order;
+  (b)  order that the original order terminate on a specified future date;
+  (c)  make a further order or orders under section 101; or
+  (d)  make an order under section 102.`,
     note: "Sets out the court's dispositive powers on a status review application under s. 113.",
   },
   "116(1)": {
     citation: "CYFSA s. 116(1)",
     heading: "Court order on status review under s. 115",
-    text: "(1)  When an application is made under section 115, the court may, in the child’s best interests,\n  (a)  make an order for society supervision of the child for a specified period of at least three and not more than 12 months;\n  (b)  make an order granting custody of the child to one or more persons, other than a foster parent of the child, with the consent of the person or persons; or\n  (c)  make an order that the child be placed in extended society care until the order expires under section 123 (expiry at 18 or marriage).",
+    text: `(1)  If an application for review of a child’s status is made under section 115, the court may, in the child’s best interests,
+  (a)  order that the child be placed in the care and custody of a parent or another person, subject to the supervision of the society, for a specified period of at least three months and not more than 12 months;
+  (b)  order that custody be granted to one or more persons, including a foster parent, with the consent of the person or persons;
+  (c)  order that the child be placed in extended society care until the order is terminated under this section or expires under section 123; or
+  (d)  terminate or vary any order made under section 101 or this section.`,
     note: "Sets out the orders a court may make in the child's best interests on a status review application under s. 115.",
   },
   "116(4)": {
     citation: "CYFSA s. 116(4)",
     heading: "Terms and conditions of status review supervision order",
-    text: "(4)  If the court makes an order for society supervision under clause (1) (a), the court may impose,\n  (a)  reasonable terms and conditions relating to the child’s care and supervision;\n  (b)  reasonable terms and conditions on,\n  (i)  the child’s parent,\n  (ii)  the person who will have care and custody of the child under the order,\n  (iii)  the child, and\n  (iv)  any other person, other than a foster parent, who is putting forward or would participate in a plan for the care and custody of or access to the child; and\n  (c)  reasonable terms and conditions on the society that will supervise the placement, but shall not require the society to provide financial assistance or to purchase any goods or services.",
+    text: `(4)  If the court makes a supervision order described in clause (1) (a), the court may impose,
+  (a)  reasonable terms and conditions relating to the child’s care and supervision;
+  (b)  reasonable terms and conditions on,
+  (i)  the child’s parent,
+  (ii)  the person who will have care and custody of the child under the order,
+  (iii)  the child, and
+  (iv)  any other person, other than a foster parent, who is putting forward a plan or who would participate in a plan for care and custody of or access to the child; and
+  (c)  reasonable terms and conditions on the society that will supervise the placement, but shall not require the society to provide financial assistance or purchase any goods or services.`,
     note: "Authorizes reasonable terms and conditions on a status review supervision order under s. 116(1)(a), while clause (c) expressly prohibits requiring the society to provide financial assistance or purchase goods or services.",
   },
   "119(1)": {
