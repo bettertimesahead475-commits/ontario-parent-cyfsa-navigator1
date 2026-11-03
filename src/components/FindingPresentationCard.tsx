@@ -10,7 +10,7 @@
  * Connecting the finding to the official Ontario Court Forms Education Library.
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { 
   Scale, 
   BookOpen, 
@@ -35,6 +35,8 @@ import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
 import { ParagraphListenButton } from "./narration";
 import FormattedReportText from "./FormattedReportText";
+import { useNarration } from "../hooks/useNarration";
+import { NarrationSegment } from "../utils/narration/types";
 
 interface FindingPresentationCardProps {
   flag: any;
@@ -60,11 +62,71 @@ export const FindingPresentationCard: React.FC<FindingPresentationCardProps> = (
   const { educationalAnalysis: edu, courtroomPresentation: court, practicalUses: uses } = enhanced;
   const flagId = flag.id || `rf-${idx + 1}`;
 
+  const narration = useNarration();
+
+  // Construct dynamic NarrationSegment reflecting the active presentation mode and actual displayed content
+  const activeFindingSegment: NarrationSegment = useMemo(() => {
+    if (activeTab === "courtroom") {
+      const parts = [
+        `Courtroom-Style Legal Presentation for Finding ${idx + 1}: ${flag.category || 'Evidence Finding'}.`,
+        court.courtroomDialogueExample ? `Courtroom submission: ${court.courtroomDialogueExample}` : '',
+        court.legalAuthoritySubmission ? `Legal authority and jurisprudence: ${court.legalAuthoritySubmission}` : '',
+        court.evidentiaryStandardStatus ? `Standard of proof: ${court.evidentiaryStandardStatus}` : '',
+        court.substantivePrayerForRelief ? `Submission for relief: ${court.substantivePrayerForRelief}` : '',
+      ].filter(Boolean);
+
+      return {
+        id: `rf-${flagId}-courtroom`,
+        sectionId: 'redFlags',
+        label: `Courtroom Presentation: Finding ${idx + 1}`,
+        text: parts.join(' '),
+        domId: `red-flag-card-${flagId}`,
+      };
+    } else {
+      const parts = [
+        `Educational Legal Analysis for Finding ${idx + 1}: Severity: ${flag.severity || 'Unspecified'}, Category: ${flag.category || 'Evidence Finding'}.`,
+        edu.directFindingStatement || '',
+        flag.phraseDetected ? `Quoted document text: "${flag.phraseDetected}".` : '',
+        flag.locationInDocument ? `Location in document: ${flag.locationInDocument}.` : '',
+        edu.applicableLegislation ? `Statutory authority: ${edu.applicableLegislation}.` : '',
+        edu.proceduralRule ? `Procedural rule: ${edu.proceduralRule}.` : '',
+        edu.verifiedCaseLaw?.caseName ? `Case authority: ${edu.verifiedCaseLaw.caseName}, citation ${edu.verifiedCaseLaw.citation}. Legal principle: ${edu.verifiedCaseLaw.legalPrinciple}.` : '',
+        edu.whatEvidenceEstablishes ? `What the evidence establishes: ${edu.whatEvidenceEstablishes}` : '',
+        edu.whatLawRequires ? `What Ontario law requires: ${edu.whatLawRequires}` : '',
+        edu.whyFindingMatters ? `Why this matters: ${edu.whyFindingMatters}` : '',
+        edu.missingEvidenceToResolve ? `Missing evidence required: ${edu.missingEvidenceToResolve}` : '',
+        Array.isArray(edu.parentExaminationGuidance) && edu.parentExaminationGuidance.length > 0
+          ? `Parent preparation guidance: ${edu.parentExaminationGuidance.join('. ')}`
+          : '',
+      ].filter(Boolean);
+
+      return {
+        id: `rf-${flagId}-educational`,
+        sectionId: 'redFlags',
+        label: `Educational Analysis: Finding ${idx + 1}`,
+        text: parts.join(' '),
+        domId: `red-flag-card-${flagId}`,
+      };
+    }
+  }, [activeTab, flag, idx, flagId, edu, court]);
+
+  // When presentation mode changes, cancel stale narration if this finding was actively speaking
+  const handleTabChange = (newTab: "educational" | "courtroom") => {
+    if (newTab !== activeTab) {
+      if (narration.isSegmentPlaying(activeFindingSegment.id) || narration.isSegmentActive(activeFindingSegment.id)) {
+        narration.stop();
+      }
+      setActiveTab(newTab);
+    }
+  };
+
+  const isFindingActiveInNarration = narration.isSegmentActive(activeFindingSegment.id) || narrationActive;
+
   return (
     <div
       id={`red-flag-card-${flagId}`}
       className={`bg-white border rounded-2xl p-5 space-y-4 text-xs shadow-xs transition-all duration-200 ${
-        narrationActive 
+        isFindingActiveInNarration 
           ? "border-rose-400 ring-2 ring-rose-500 bg-rose-50/30 shadow-md" 
           : "border-slate-200 hover:border-slate-300"
       }`}
@@ -133,7 +195,10 @@ export const FindingPresentationCard: React.FC<FindingPresentationCardProps> = (
 
         {/* Right Action Buttons: Narration Listen & Statute Reference */}
         <div className="flex items-center gap-2">
-          <ParagraphListenButton segmentId={`rf-${flagId}`} />
+          <ParagraphListenButton 
+            segment={activeFindingSegment} 
+            label={activeTab === 'courtroom' ? 'Listen to Courtroom Presentation' : 'Listen to Educational Analysis'} 
+          />
           {flag.legalReference && (
             <button
               onClick={() => openLegislativeReference(flag.legalReference)}
@@ -201,7 +266,7 @@ export const FindingPresentationCard: React.FC<FindingPresentationCardProps> = (
             type="button"
             role="tab"
             aria-selected={activeTab === "educational"}
-            onClick={() => setActiveTab("educational")}
+            onClick={() => handleTabChange("educational")}
             className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer font-sans ${
               activeTab === "educational"
                 ? "bg-white text-brand-700 shadow-xs border border-slate-200/80 font-extrabold"
@@ -215,7 +280,7 @@ export const FindingPresentationCard: React.FC<FindingPresentationCardProps> = (
             type="button"
             role="tab"
             aria-selected={activeTab === "courtroom"}
-            onClick={() => setActiveTab("courtroom")}
+            onClick={() => handleTabChange("courtroom")}
             className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer font-sans ${
               activeTab === "courtroom"
                 ? "bg-slate-900 text-white shadow-xs border border-slate-800 font-extrabold"

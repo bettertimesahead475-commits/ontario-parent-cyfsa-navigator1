@@ -2,27 +2,40 @@ import React from 'react';
 import { Volume2, Pause } from 'lucide-react';
 import { useNarration } from '../../hooks/useNarration';
 import { NarrationSegment } from '../../utils/narration/types';
+import { extractReportSegments } from '../../utils/narration/reportSegments';
 
-interface SectionListenButtonProps {
+export interface SectionListenButtonProps {
   sectionId: string;
-  segments: NarrationSegment[];
-  sectionTitle: string;
+  segments?: NarrationSegment[];
+  report?: Record<string, any>;
+  sectionTitle?: string;
+  label?: string;
   className?: string;
 }
 
 export const SectionListenButton: React.FC<SectionListenButtonProps> = ({
   sectionId,
   segments,
+  report,
   sectionTitle,
+  label,
   className = '',
 }) => {
   const { status, currentSectionId, playSection, pause, resume, isSpeechSupported } = useNarration();
 
   if (!isSpeechSupported) return null;
 
-  const sectionSegments = segments.filter(s => s.sectionId === sectionId);
+  // Resolve segments either from segments prop or from report prop
+  const allSegments: NarrationSegment[] = Array.isArray(segments) && segments.length > 0
+    ? segments
+    : report
+    ? extractReportSegments(report)
+    : [];
+
+  const sectionSegments = allSegments.filter(s => s.sectionId === sectionId);
   if (sectionSegments.length === 0) return null;
 
+  const titleText = sectionTitle || label || 'Section';
   const isCurrentSectionActive = currentSectionId === sectionId && status !== 'idle';
   const isPlaying = isCurrentSectionActive && status === 'playing';
 
@@ -33,7 +46,7 @@ export const SectionListenButton: React.FC<SectionListenButtonProps> = ({
     } else if (isCurrentSectionActive && status === 'paused') {
       resume();
     } else {
-      playSection(sectionId, segments);
+      playSection(sectionId, allSegments);
     }
   };
 
@@ -41,8 +54,8 @@ export const SectionListenButton: React.FC<SectionListenButtonProps> = ({
     <button
       type="button"
       onClick={handleClick}
-      title={isPlaying ? `Pause narration of ${sectionTitle}` : `Listen to ${sectionTitle}`}
-      aria-label={isPlaying ? `Pause narration of ${sectionTitle}` : `Listen to entire section: ${sectionTitle}`}
+      title={isPlaying ? `Pause narration of ${titleText}` : `Listen to ${titleText}`}
+      aria-label={isPlaying ? `Pause narration of ${titleText}` : `Listen to entire section: ${titleText}`}
       aria-pressed={isPlaying}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-brand-500 ${
         isPlaying
@@ -57,7 +70,7 @@ export const SectionListenButton: React.FC<SectionListenButtonProps> = ({
       ) : (
         <Volume2 className="w-3.5 h-3.5 text-brand-600" />
       )}
-      <span>{isPlaying ? 'Pause Section' : 'Listen to Section'}</span>
+      <span>{isPlaying ? 'Pause Section' : label || 'Listen to Section'}</span>
     </button>
   );
 };

@@ -5,7 +5,7 @@
 
 import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
@@ -86,6 +86,7 @@ import {
 import { FindingPresentationCard } from "./FindingPresentationCard";
 import { useNarration } from "../hooks/useNarration";
 import { extractReportSegments } from "../utils/narration/reportSegments";
+import type { NarrationSegment } from "../utils/narration/types";
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
 
@@ -3051,6 +3052,14 @@ export default function DocumentAnalyzerTab() {
     ? currentDeepReport
     : (currentQuickReport || currentDeepReport || selectedReport);
 
+  const reportSegments = useMemo<NarrationSegment[]>(() => {
+    return displayedReport ? extractReportSegments(displayedReport) : [];
+  }, [displayedReport]);
+
+  const getReportSegment = useCallback((id: string): NarrationSegment | null => {
+    return reportSegments.find(s => s.id === id) || null;
+  }, [reportSegments]);
+
   // Group files count by category for rendering directories
   const categoriesList: OrganizedFile["category"][] = [
     "CAS Correspondence",
@@ -4110,7 +4119,15 @@ export default function DocumentAnalyzerTab() {
                             <h4 className="font-display font-bold text-[#0f172a] text-lg truncate">
                               {displayedReport.documentTitle}
                             </h4>
-                            <ParagraphListenButton segmentId="header-title" iconOnly />
+                            <ParagraphListenButton 
+                              segment={getReportSegment("header-title") || {
+                                id: "header-title",
+                                sectionId: "overview",
+                                label: "Document Title",
+                                text: `Document Under Review: ${displayedReport.documentTitle || 'Ontario Court Record'}. Classification: ${displayedReport.documentType || 'Ontario Court Record'}.`
+                              }} 
+                              iconOnly 
+                            />
                           </div>
                         </div>
 
@@ -4192,7 +4209,14 @@ export default function DocumentAnalyzerTab() {
                             <span className="font-sans font-bold text-[11px] uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                               <Sparkles className="w-3.5 h-3.5 text-brand-600" /> Executive Case Summary
                             </span>
-                            <ParagraphListenButton segmentId="summary-main" />
+                            <ParagraphListenButton 
+                              segment={getReportSegment("summary-main") || {
+                                id: "summary-main",
+                                sectionId: "overview",
+                                label: "Executive Case Summary",
+                                text: String(displayedReport.fileSummary || "")
+                              }} 
+                            />
                           </div>
                           <p className="leading-relaxed text-slate-700 font-sans italic">
                             {displayedReport.fileSummary}
@@ -4338,7 +4362,12 @@ export default function DocumentAnalyzerTab() {
                                     </p>
                                   </div>
                                 </div>
-                                <SectionListenButton sectionId="guidance" report={displayedReport} label="Listen to Brief" />
+                                <SectionListenButton 
+                                  sectionId="guidance" 
+                                  segments={reportSegments} 
+                                  sectionTitle="Lawyer Detailed Case Brief" 
+                                  label="Listen to Brief" 
+                                />
                               </div>
                               
                               <div className="space-y-3.5 pt-1">
@@ -4366,7 +4395,13 @@ export default function DocumentAnalyzerTab() {
                                         </p>
                                       </div>
                                       <ParagraphListenButton 
-                                        segmentId={`brief-bullet-${idx}`} 
+                                        segment={getReportSegment(`brief-bullet-${idx}`) || {
+                                          id: `brief-bullet-${idx}`,
+                                          sectionId: "guidance",
+                                          label: `Case Brief Point ${idx + 1}`,
+                                          text: bullet.replace(/\*\*/g, ""),
+                                          domId: `lawyer-brief-bullet-${idx}`,
+                                        }} 
                                         iconOnly 
                                         className="shrink-0 text-slate-400 hover:text-white mt-0.5" 
                                       />
@@ -4517,7 +4552,12 @@ export default function DocumentAnalyzerTab() {
                                 <div className="space-y-2">
                                   <div className="flex items-center justify-between gap-2 pb-1">
                                     <h4 className="font-display font-bold text-slate-900 text-sm">Chronology (as stated in the document)</h4>
-                                    <SectionListenButton sectionId="chronology" report={displayedReport} label="Listen to Chronology" />
+                                    <SectionListenButton 
+                                      sectionId="chronology" 
+                                      segments={reportSegments} 
+                                      sectionTitle="Chronology & Contradictions" 
+                                      label="Listen to Chronology" 
+                                    />
                                   </div>
                                   <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse">
@@ -4546,7 +4586,16 @@ export default function DocumentAnalyzerTab() {
                                               <td className="py-1.5 pr-3 text-[10px] font-bold text-slate-600">{entry.evidenceClassification}</td>
                                               <td className="py-1.5 text-slate-500">{entry.locationInDocument}</td>
                                               <td className="py-1.5 text-right">
-                                                <ParagraphListenButton segmentId={`chrono-${i}`} iconOnly />
+                                                <ParagraphListenButton 
+                                                  segment={getReportSegment(`chrono-${i}`) || {
+                                                    id: `chrono-${i}`,
+                                                    sectionId: "chronology",
+                                                    label: `Chronology: ${entry.date || `Event ${i + 1}`}`,
+                                                    text: `Date: ${entry.date || 'Undated'}. Event: ${entry.event || ''}. Evidence: ${entry.evidenceClassification || ''}. Location: ${entry.locationInDocument || ''}.`,
+                                                    domId: `chronology-row-${i}`,
+                                                  }} 
+                                                  iconOnly 
+                                                />
                                               </td>
                                             </tr>
                                           );
@@ -4572,7 +4621,17 @@ export default function DocumentAnalyzerTab() {
                                         >
                                           <div className="flex items-start justify-between gap-2">
                                             <p className="text-slate-800 flex-1">{c.description}</p>
-                                            <ParagraphListenButton segmentId={`contra-${i}`} iconOnly className="shrink-0" />
+                                            <ParagraphListenButton 
+                                              segment={getReportSegment(`contra-${i}`) || {
+                                                id: `contra-${i}`,
+                                                sectionId: "chronology",
+                                                label: `Contradiction ${i + 1}`,
+                                                text: `Document Contradiction ${i + 1}: ${c.description || ''}. Significance: ${c.significance || ''}.`,
+                                                domId: `contradiction-item-${i}`,
+                                              }} 
+                                              iconOnly 
+                                              className="shrink-0" 
+                                            />
                                           </div>
                                           {c.locations && c.locations.length > 0 && <p className="text-[10.5px] text-slate-500">Where: {c.locations.join("; ")}</p>}
                                           {c.significance && <p className="text-[10.5px] text-slate-600">{c.significance}</p>}
@@ -4596,7 +4655,12 @@ export default function DocumentAnalyzerTab() {
                                 <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
                                   <Clock className="w-4 h-4 text-amber-600" /> Statutory Timeline & Procedural Defects ({displayedReport.proceduralTimelineViolations.length})
                                 </h5>
-                                <SectionListenButton sectionId="timelines" report={displayedReport} label="Listen to Timelines" />
+                                <SectionListenButton 
+                                  sectionId="timelines" 
+                                  segments={reportSegments} 
+                                  sectionTitle="Procedural Timelines" 
+                                  label="Listen to Timelines" 
+                                />
                               </div>
                               <div className="space-y-3.5">
                                 {displayedReport.proceduralTimelineViolations.map((violation: any, idx: number) => {
@@ -4617,7 +4681,15 @@ export default function DocumentAnalyzerTab() {
                                           <span className="font-sans font-semibold text-amber-900 text-[11px]">{violation.timelineRule}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                          <ParagraphListenButton segmentId={`timeline-${idx}`} />
+                                          <ParagraphListenButton 
+                                            segment={getReportSegment(`timeline-${idx}`) || {
+                                              id: `timeline-${idx}`,
+                                              sectionId: "timelines",
+                                              label: `Timeline: ${violation.timelineRule || `Timeline ${idx + 1}`}`,
+                                              text: `Procedural Timeline: ${violation.timelineRule || ''}. Document Assertion: ${violation.documentAssertion || ''}. Legal Analysis: ${violation.evaluation || ''}. Citation: ${violation.citation || ''}. Action: ${violation.parentActionStep || ''}.`,
+                                              domId: `timeline-card-${idx}`,
+                                            }} 
+                                          />
                                           <button
                                             onClick={() => openLegislativeReference(violation.citation)}
                                             className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
@@ -4689,7 +4761,12 @@ export default function DocumentAnalyzerTab() {
                               <div className="flex items-center justify-between w-full">
                                 <span>Evidence Objections & Hearsay ({displayedReport.redFlags?.length || 0})</span>
                                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                   <SectionListenButton sectionId="redFlags" report={displayedReport} label="Listen to Findings" />
+                                   <SectionListenButton 
+                                     sectionId="redFlags" 
+                                     segments={reportSegments} 
+                                     sectionTitle="Evidence Findings" 
+                                     label="Listen to Findings" 
+                                   />
                                    <input type="checkbox" checked={factCheckEnabled} onChange={() => setFactCheckEnabled(!factCheckEnabled)} />
                                    <span className="text-[9px]">Fact-Check</span>
                                 </div>
@@ -4745,7 +4822,12 @@ export default function DocumentAnalyzerTab() {
                                 Immediate Life-Safety Protection Thresholds
                               </h5>
                               {displayedReport.thresholdAnalysis && displayedReport.thresholdAnalysis.length > 0 && (
-                                <SectionListenButton sectionId="thresholds" report={displayedReport} label="Listen to Thresholds" />
+                                <SectionListenButton 
+                                  sectionId="thresholds" 
+                                  segments={reportSegments} 
+                                  sectionTitle="Statutory Thresholds" 
+                                  label="Listen to Thresholds" 
+                                />
                               )}
                             </div>
                             {(!displayedReport.thresholdAnalysis || displayedReport.thresholdAnalysis.length === 0) ? (
@@ -4774,7 +4856,16 @@ export default function DocumentAnalyzerTab() {
                                     <div className="flex justify-between items-center text-[10px] font-sans text-slate-600 font-semibold uppercase">
                                       <span>{thresh.thresholdChecked}</span>
                                       <div className="flex items-center gap-1.5">
-                                        <ParagraphListenButton segmentId={`threshold-${idx}`} iconOnly />
+                                        <ParagraphListenButton 
+                                          segment={getReportSegment(`threshold-${idx}`) || {
+                                            id: `threshold-${idx}`,
+                                            sectionId: "thresholds",
+                                            label: `Threshold: ${thresh.thresholdChecked || `Threshold ${idx + 1}`}`,
+                                            text: `CYFSA Threshold Check: ${thresh.thresholdChecked || ''}. Status: ${thresh.isMet || ''}. Reasoning: ${thresh.reasoning || ''}. Law: ${thresh.primarySourceLaw || ''}.`,
+                                            domId: `threshold-card-${idx}`,
+                                          }} 
+                                          iconOnly 
+                                        />
                                         <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
                                           Analyzer read: {thresh.isMet}
                                         </span>
@@ -4798,7 +4889,12 @@ export default function DocumentAnalyzerTab() {
                                 <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
                                   <ShieldAlert className="w-4 h-4 text-purple-600" /> Charter & Human Rights Issues ({displayedReport.charterAndHumanRightsIssues.length})
                                 </h5>
-                                <SectionListenButton sectionId="charter" report={displayedReport} label="Listen to Charter Issues" />
+                                <SectionListenButton 
+                                  sectionId="charter" 
+                                  segments={reportSegments} 
+                                  sectionTitle="Charter & Human Rights" 
+                                  label="Listen to Charter Issues" 
+                                />
                               </div>
                               <div className="space-y-2">
                                 {displayedReport.charterAndHumanRightsIssues.map((issue: string, idx: number) => {
@@ -4817,7 +4913,17 @@ export default function DocumentAnalyzerTab() {
                                         <FormattedReportText text={issue} />
                                       </div>
                                     </div>
-                                    <ParagraphListenButton segmentId={`charter-${idx}`} iconOnly className="shrink-0" />
+                                    <ParagraphListenButton 
+                                      segment={getReportSegment(`charter-${idx}`) || {
+                                        id: `charter-${idx}`,
+                                        sectionId: "charter",
+                                        label: `Charter: Issue ${idx + 1}`,
+                                        text: `Constitutional Protection ${idx + 1}: ${issue}`,
+                                        domId: `charter-card-${idx}`,
+                                      }} 
+                                      iconOnly 
+                                      className="shrink-0" 
+                                    />
                                   </div>
                                   );
                                 })}
@@ -4880,7 +4986,12 @@ export default function DocumentAnalyzerTab() {
                           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-1">
                             <div className="flex items-center justify-between gap-2">
                               <h5 className="font-display font-bold text-sm text-slate-900">Findings &amp; Legal Assessment</h5>
-                              <SectionListenButton sectionId="guidance" report={displayedReport} label="Listen to Action Plan" />
+                              <SectionListenButton 
+                                sectionId="guidance" 
+                                segments={reportSegments} 
+                                sectionTitle="Action Plan & Guidance" 
+                                label="Listen to Action Plan" 
+                              />
                             </div>
                             <p className="text-xs text-slate-600">The quick flags identify potential concerns. The following checks explain the relevant protection thresholds, evidence to verify, missing support, and questions for counsel. These are preliminary document observations, not court findings.</p>
                           </div>
@@ -4911,7 +5022,17 @@ export default function DocumentAnalyzerTab() {
                                         <FormattedReportText text={item} />
                                       </div>
                                     </div>
-                                    <ParagraphListenButton segmentId={`verify-${i}`} iconOnly className="shrink-0" />
+                                    <ParagraphListenButton 
+                                      segment={getReportSegment(`verify-${i}`) || {
+                                        id: `verify-${i}`,
+                                        sectionId: "guidance",
+                                        label: `Verification Check ${i + 1}`,
+                                        text: `Item to verify: ${item}`,
+                                        domId: `verify-item-${i}`,
+                                      }} 
+                                      iconOnly 
+                                      className="shrink-0" 
+                                    />
                                   </li>
                                   );
                                 })}
@@ -4942,7 +5063,17 @@ export default function DocumentAnalyzerTab() {
                                         <FormattedReportText text={item} />
                                       </div>
                                     </div>
-                                    <ParagraphListenButton segmentId={`missing-${i}`} iconOnly className="shrink-0" />
+                                    <ParagraphListenButton 
+                                      segment={getReportSegment(`missing-${i}`) || {
+                                        id: `missing-${i}`,
+                                        sectionId: "guidance",
+                                        label: `Missing Element ${i + 1}`,
+                                        text: `Missing evidentiary element: ${item}`,
+                                        domId: `missing-item-${i}`,
+                                      }} 
+                                      iconOnly 
+                                      className="shrink-0" 
+                                    />
                                   </li>
                                   );
                                 })}
@@ -4973,7 +5104,17 @@ export default function DocumentAnalyzerTab() {
                                         <FormattedReportText text={item} />
                                       </div>
                                     </div>
-                                    <ParagraphListenButton segmentId={`ask-${i}`} iconOnly className="shrink-0" />
+                                    <ParagraphListenButton 
+                                      segment={getReportSegment(`ask-${i}`) || {
+                                        id: `ask-${i}`,
+                                        sectionId: "guidance",
+                                        label: `Question for Counsel ${i + 1}`,
+                                        text: `Question for counsel: ${item}`,
+                                        domId: `ask-item-${i}`,
+                                      }} 
+                                      iconOnly 
+                                      className="shrink-0" 
+                                    />
                                   </li>
                                   );
                                 })}

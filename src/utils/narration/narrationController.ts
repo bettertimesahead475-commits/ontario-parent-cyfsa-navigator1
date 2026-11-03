@@ -140,7 +140,7 @@ export class NarrationController {
     // Auto-scroll the reading target into view smoothly
     if (typeof document !== 'undefined' && segment.domId) {
       const el = document.getElementById(segment.domId);
-      if (el) {
+      if (el && typeof el.scrollIntoView === 'function') {
         el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
