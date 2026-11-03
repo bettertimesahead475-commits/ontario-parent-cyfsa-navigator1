@@ -299,6 +299,245 @@ export const BUNDLED_STATUTE_ENTRIES: Record<string, BundledStatuteEntry> = {
     text: "(1)  An individual has a right of access to a record of personal information about the individual that is in a service provider’s custody or control and that relates to the provision of a service to the individual unless,\n  (a)  the record or the information in the record is subject to a legal privilege that restricts its disclosure to the individual;\n  (b)  another Act, an Act of Canada or a court order prohibits its disclosure to the individual;\n  (c)  the information in the record was collected or created primarily in anticipation of or for use in a proceeding, and the proceeding, together with all appeals or processes resulting from it, has not been concluded; or\n  (d)  granting the access could reasonably be expected to,\n  (i)  result in a risk of serious harm to the individual or another individual,\n  (ii)  lead to the identification of an individual who was required by law to provide information in the record to the service provider, or\n  (iii)  lead to the identification of an individual who provided information in the record to the service provider explicitly or implicitly in confidence if the service provider considers it appropriate in the circumstances that the identity of the individual be kept confidential.",
     note: "Part X right of an individual to access a record of personal information in a service provider's custody or control, subject to the exceptions in clauses (a) to (d). Distinct from s. 292, which governs disclosure without consent.",
   },
+  "14": {
+    citation: "CYFSA s. 14",
+    heading: "Parental consent, etc.",
+    text: "Subject to subsection 94 (7) and sections 110 and 111 (custody during adjournment, interim and extended society care), the parent of a child in care retains any right that the parent may have,\n  (a)  to direct the child’s or young person’s education and upbringing, in accordance with the child’s or young person’s creed, community identity and cultural identity; and\n  (b)  to consent to treatment on behalf of an incapable child or young person, if the parent is the child’s or young person’s substitute decision-maker in accordance with section 20 of the Health Care Consent Act, 1996.",
+    note: "Preserves a parent's rights regarding education, upbringing, and Health Care Consent Act substitute decision-making for a child in care, subject to s. 94(7) and ss. 110–111.",
+  },
+  "15(2)": {
+    citation: "CYFSA s. 15(2)",
+    heading: "Children, young persons to be heard and represented",
+    text: "(2)  Service providers shall ensure that children and young persons and their parents have an opportunity to be heard and represented when decisions affecting their interests are made and to be heard when they have concerns about the services they are receiving.",
+    note: "Requires service providers to ensure children, young persons, and their parents have an opportunity to be heard and represented when decisions affecting their interests are made (subject to s. 15(3) good-cause exception). Reviewable by the CFSRB under s. 120(4), para. 4.",
+  },
+  "15(4)": {
+    citation: "CYFSA s. 15(4)",
+    heading: "Criteria and safeguards re decisions",
+    text: "(4)  Service providers shall ensure that decisions affecting the interests and rights of children and young persons and their parents are made according to clear, consistent criteria and are subject to appropriate procedural safeguards.",
+    note: "Requires service providers to make decisions affecting the interests and rights of children, young persons, and parents according to clear, consistent criteria and procedural safeguards.",
+  },
+  "35(2)": {
+    citation: "CYFSA s. 35(2)",
+    heading: "Prescribed standards, etc.",
+    text: "(2)  A society shall,\n  (a)  provide the prescribed standard of services in its performance of its functions; and\n  (b)  follow the prescribed procedures and practices.",
+    note: "Statutorily obligates every children's aid society to provide the prescribed standard of services and follow prescribed procedures and practices.",
+  },
+  "73": {
+    citation: "CYFSA s. 73",
+    heading: "Consultation in specified cases",
+    text: "A society, person or entity that proposes to provide a prescribed service to a First Nations, Inuk or Métis child or young person, or to exercise a prescribed power under this Act in relation to such a child or young person, shall consult with a representative chosen by each of the child’s or young person’s bands and First Nations, Inuit or Métis communities in accordance with the regulations.",
+    note: "Requires consultation with a representative chosen by each of a First Nations, Inuk or Métis child's bands and communities when proposing to provide a prescribed service or exercise a prescribed power.",
+  },
+  "75(1)": {
+    citation: "CYFSA s. 75(1)",
+    heading: "Temporary care agreement",
+    text: "(1)  A person who is temporarily unable to care adequately for a child in the person’s custody, and the society having jurisdiction where the person resides, may make a written agreement for the society’s care and custody of the child.",
+    note: "Authorizes a voluntary written temporary care agreement between a custodial parent/person temporarily unable to care adequately for a child and the society.",
+  },
+  "75(4)": {
+    citation: "CYFSA s. 75(4)",
+    heading: "Duty of society — Temporary care agreement",
+    text: "(4)  A society shall not make a temporary care agreement unless the society,\n  (a)  has determined that an appropriate residential placement that is likely to benefit the child is available; and\n  (b)  is satisfied that no course of action less disruptive to the child, such as care in the child’s own home, is able to adequately protect the child.",
+    note: "Prohibits a society from entering into a temporary care agreement unless satisfied that no less disruptive course of action, such as care in the child's own home, can adequately protect the child.",
+  },
+  "75(5)": {
+    citation: "CYFSA s. 75(5)",
+    heading: "Term of temporary care agreement limited",
+    text: "(5)  No temporary care agreement shall be made for a term exceeding six months, but the parties to a temporary care agreement may, with a Director’s written approval, agree to extend it for a further period or periods if the total term of the agreement, as extended, does not exceed 12 months.",
+    note: "Limits a temporary care agreement to an initial term of 6 months and a maximum extended term of 12 months with a Director's written approval.",
+  },
+  "75(6)": {
+    citation: "CYFSA s. 75(6)",
+    heading: "Time limit — Temporary care agreement",
+    text: "(6)  No temporary care agreement shall be made or extended so as to result in a child being in a society’s care and custody, for a period exceeding,\n  (a)  12 months, if the child is younger than 6 on the day the agreement is entered into or extended; or\n  (b)  24 months, if the child is 6 or older on the day the agreement is entered into or extended.",
+    note: "Sets cumulative time-in-care limits (12 months for children under 6; 24 months for children 6 or older) for temporary care agreements.",
+  },
+  "76(3)": {
+    citation: "CYFSA s. 76(3)",
+    heading: "Society response to notice of termination",
+    text: "(3)  Where notice of a wish to terminate a temporary care agreement is given by or to a society under subsection (1), the society shall as soon as possible, and in any event before the agreement terminates under subsection (2),\n  (a)  cause the child to be returned to the person who made the agreement, or to a person who has obtained an order for the child’s custody since the agreement was made;\n  (b)  where the society is of the opinion that the child would be in need of protection if returned to the person referred to in clause (a), bring the child before the court under this Part to determine whether the child would be in need of protection in that case; or\n  (c)  where the child is 16 or 17 and the criteria set out in clauses 77 (1) (a), (b), (c) and (d) are met, make a written agreement with the child under subsection 77 (1).",
+    note: "Requires a society receiving or giving notice of termination of a temporary care agreement to return the child or bring the matter before the court before the notice period (5 days, or up to 21 days if specified in the agreement) expires.",
+  },
+  "79(1)": {
+    citation: "CYFSA s. 79(1)",
+    heading: "Parties",
+    text: "(1)  The following are parties to a proceeding under this Part:\n  1.  The applicant.\n  2.  The society having jurisdiction in the matter.\n  3.  The child’s parent.\n  4.  In the case of a First Nations, Inuk or Métis child, the persons described in paragraphs 1, 2 and 3 and a representative chosen by each of the child’s bands and First Nations, Inuit or Métis communities.",
+    note: "Defines the statutory parties to a Part V child protection proceeding, including the child's parent and, for a First Nations, Inuk or Métis child, a representative chosen by each of the child's bands and communities.",
+  },
+  "80": {
+    citation: "CYFSA s. 80",
+    heading: "Customary care",
+    text: "A society shall make all reasonable efforts to pursue a plan for customary care for a First Nations, Inuk or Métis child if the child,\n  (a)  is in need of protection;\n  (b)  cannot remain in or be returned to the care and custody of the person who had charge of the child immediately before intervention under this Part or, where there is an order for the child’s custody that is enforceable in Ontario, of the person entitled to custody under the order; and\n  (c)  is a member of or identifies with a band, or is a member of or identifies with a First Nations, Inuit or Métis community.",
+    note: "Imposes a mandatory duty on a society to make all reasonable efforts to pursue a plan for customary care for a First Nations, Inuk or Métis child in need of protection who cannot remain with or return to the person who had charge.",
+  },
+  "93(1)": {
+    citation: "CYFSA s. 93(1)",
+    heading: "Evidence — Past conduct",
+    text: `(1)  Despite anything in the Evidence Act, in any proceeding under this Part,
+  (a)  the court may consider the past conduct of a person toward any child if that person is caring for or has access to or may care for or have access to a child who is the subject of the proceeding; and
+  (b)  any oral or written statement or report that the court considers relevant to the proceeding, including a transcript, exhibit or finding or the reasons for a decision in an earlier civil or criminal proceeding, is admissible into evidence.`,
+    note: "Governs admissibility of relevant past conduct towards a child and prior proceedings/reports at a Part V hearing.",
+  },
+  "94(10)": {
+    citation: "CYFSA s. 94(10)",
+    heading: "Evidence on adjournment",
+    text: `(10)  For the purpose of this section, the court may admit and act on evidence that the court considers credible and trustworthy in the circumstances.`,
+    note: "Sets the 'credible and trustworthy in the circumstances' evidentiary standard for temporary care and custody hearings under s. 94.",
+  },
+  "98(1)": {
+    citation: "CYFSA s. 98(1)",
+    heading: "Order for assessment",
+    text: `(1)  In the course of a proceeding under this Part, the court may order that one or more of the following persons undergo an assessment within a specified time by a person appointed in accordance with subsections (3) and (4):
+  1.  The child.
+  2.  A parent of the child.
+  3.  Any other person, other than a foster parent, who is putting forward or would participate in a plan for the care and custody of or access to the child.`,
+    note: "Authorizes court-ordered assessments under s. 98 where necessary for the court to make a determination under Part V.",
+  },
+  "105(1)": {
+    citation: "CYFSA s. 105(1)",
+    heading: "Access: where child removed from person in charge",
+    text: `(1)  Where an order is made under paragraph 1 or 2 of subsection 101 (1) removing a child from the person who had charge of the child immediately before intervention under this Part, the court shall make an order for access by the person unless the court is satisfied that continued contact with the person would not be in the child’s best interests.`,
+    note: "Establishes a statutory presumption in favour of an access order for the person who had charge of the child when the child is removed under a supervision or interim society care order, unless continued contact would not be in the child's best interests.",
+  },
+  "105(5)": {
+    citation: "CYFSA s. 105(5)",
+    heading: "When court may order access to child in extended society care",
+    text: `(5)  A court shall not make or vary an access order under section 104 with respect to a child who is in extended society care under an order made under paragraph 3 of subsection 101 (1) or clause 116 (1) (c) unless the court is satisfied that the order or variation would be in the child’s best interests.`,
+    note: "Governs when the court may make or vary an access order under s. 104 for a child in extended society care (requiring satisfaction that the order or variation would be in the child's best interests).",
+  },
+  "113(1)": {
+    citation: "CYFSA s. 113(1)",
+    heading: "Status review — Application",
+    text: `(1)  This section applies where a child is the subject of an order made under paragraph 1 or 4 of subsection 101 (1) for society supervision or under paragraph 2 of subsection 101 (1) for interim society care.`,
+    note: "Specifies that section 113 status reviews apply where a child is subject to an order for society supervision or interim society care under s. 101(1).",
+  },
+  "113(2)": {
+    citation: "CYFSA s. 113(2)",
+    heading: "Society to seek status review",
+    text: `(2)  The society having care, custody or supervision of a child,
+  (a)  may apply to the court at any time for a review of the child’s status;
+  (b)  shall apply to the court for a review of the child’s status before the order expires, unless the expiry is by reason of section 123; and
+  (c)  shall apply to the court for a review of the child’s status within five days after removing the child, if the society has removed the child from the care of a person with whom the child was placed under an order for society supervision.`,
+    note: "Requires the society to apply for a status review before a supervision or interim society care order expires, and within 5 days after removing a child from care under a supervision order.",
+  },
+  "114": {
+    citation: "CYFSA s. 114",
+    heading: "Court may vary, etc. on status review",
+    text: `Where an application for review of a child’s status is made under section 113, the court may, in the child’s best interests,
+  (a)  vary or terminate the original order made under subsection 101 (1), including a term or condition or a provision for access that is part of the order;
+  (b)  order that the original order terminate on a specified future date;
+  (c)  make a further order or orders under section 101; or
+  (d)  make an order under section 102.`,
+    note: "Sets out the court's dispositive powers on a status review application under s. 113.",
+  },
+  "116(1)": {
+    citation: "CYFSA s. 116(1)",
+    heading: "Court order on status review under s. 115",
+    text: `(1)  If an application for review of a child’s status is made under section 115, the court may, in the child’s best interests,
+  (a)  order that the child be placed in the care and custody of a parent or another person, subject to the supervision of the society, for a specified period of at least three months and not more than 12 months;
+  (b)  order that custody be granted to one or more persons, including a foster parent, with the consent of the person or persons;
+  (c)  order that the child be placed in extended society care until the order is terminated under this section or expires under section 123; or
+  (d)  terminate or vary any order made under section 101 or this section.`,
+    note: "Sets out the orders a court may make in the child's best interests on a status review application under s. 115.",
+  },
+  "116(4)": {
+    citation: "CYFSA s. 116(4)",
+    heading: "Terms and conditions of status review supervision order",
+    text: `(4)  If the court makes a supervision order described in clause (1) (a), the court may impose,
+  (a)  reasonable terms and conditions relating to the child’s care and supervision;
+  (b)  reasonable terms and conditions on,
+  (i)  the child’s parent,
+  (ii)  the person who will have care and custody of the child under the order,
+  (iii)  the child, and
+  (iv)  any other person, other than a foster parent, who is putting forward a plan or who would participate in a plan for care and custody of or access to the child; and
+  (c)  reasonable terms and conditions on the society that will supervise the placement, but shall not require the society to provide financial assistance or purchase any goods or services.`,
+    note: "Authorizes reasonable terms and conditions on a status review supervision order under s. 116(1)(a), while clause (c) expressly prohibits requiring the society to provide financial assistance or purchase goods or services.",
+  },
+  "119(1)": {
+    citation: "CYFSA s. 119(1)",
+    heading: "Complaint to society",
+    text: "(1)  A person may make a complaint to a society relating to a service sought or received by that person from the society in accordance with the regulations.",
+    note: "Establishes the statutory right to make an internal complaint to a children's aid society regarding a service sought or received.",
+  },
+  "119(2)": {
+    citation: "CYFSA s. 119(2)",
+    heading: "Complaint review procedure",
+    text: "(2)  Where a society receives a complaint under subsection (1), it shall deal with the complaint in accordance with the complaint review procedure established by regulation, subject to subsection 120 (2).",
+    note: "Mandates that a society deal with a s. 119(1) complaint in accordance with the prescribed complaint review procedure (O. Reg. 155/18).",
+  },
+  "119(11)": {
+    citation: "CYFSA s. 119(11)",
+    heading: "No review if matter within purview of court",
+    text: "(11)  A society shall not conduct a review of a complaint under this section if the subject of the complaint,\n  (a)  is an issue that has been decided by the court or is before the court; or\n  (b)  is subject to another decision-making process under this Act or the Labour Relations Act, 1995.",
+    note: "Expressly bars a society from reviewing an internal complaint under s. 119 if the subject of the complaint is an issue that has been decided by the court or is currently before the court.",
+  },
+  "120(1)": {
+    citation: "CYFSA s. 120(1)",
+    heading: "Complaint to Board (CFSRB)",
+    text: "(1)  If a complaint in respect of a service sought or received from a society relates to a matter described in subsection (4), the person who sought or received the service may,\n  (a)  decide not to make the complaint to the society under section 119 and make the complaint directly to the Board under this section; or\n  (b)  where the person first makes the complaint to the society under section 119, submit the complaint to the Board before the society’s complaint review procedure is completed.",
+    note: "Allows a person seeking or receiving a society service to bring a complaint regarding a matter in s. 120(4) directly to the Child and Family Services Review Board (CFSRB) or before the society's internal review is completed.",
+  },
+  "120(4)": {
+    citation: "CYFSA s. 120(4)",
+    heading: "Matters for Board review",
+    text: "(4)  The following matters may be reviewed by the Board under this section:\n  1.  Allegations that the society has refused to proceed with a complaint made by the complainant under subsection 119 (1) as required under subsection 119 (2).\n  2.  Allegations that the society has failed to respond to the complainant’s complaint within the timeframe required by regulation.\n  3.  Allegations that the society has failed to comply with the complaint review procedure or with any other procedural requirements under this Act relating to the review of complaints.\n  4.  Allegations that the society has failed to comply with subsection 15 (2).\n  5.  Allegations that the society has failed to provide the complainant with reasons for a decision that affects the complainant’s interests.\n  6.  Such other matters as may be prescribed.",
+    note: "Enumerates the specific procedural and service matters within the CFSRB's review jurisdiction under s. 120, including failure to comply with s. 15(2) (opportunity to be heard) and failure to provide reasons for a decision.",
+  },
+  "120(8)": {
+    citation: "CYFSA s. 120(8)",
+    heading: "No review by Board if matter within purview of court",
+    text: "(8)  The Board shall not conduct a review of a complaint under this section if the subject of the complaint,\n  (a)  is an issue that has been decided by the court or is before the court; or\n  (b)  is subject to another decision-making process under this Act or the Labour Relations Act, 1995.",
+    note: "Expressly bars the CFSRB from reviewing a complaint if the subject of the complaint has been decided by the court or is before the court. The CFSRB cannot overturn a court order.",
+  },
+  "122(1)": {
+    citation: "CYFSA s. 122(1)",
+    heading: "Time limit — Interim society care",
+    text: "(1)  Subject to subsections (4) and (5), the court shall not make an order for interim society care under paragraph 2 of subsection 101 (1) that results in a child being in the care and custody of a society for a period exceeding,\n  (a)  12 months, if the child is younger than 6 on the day the court makes the order; or\n  (b)  24 months, if the child is 6 or older on the day the court makes the order.",
+    note: "Establishes the cumulative statutory time-in-care limits for interim society care (12 months if the child is under 6; 24 months if the child is 6 or older), counting prior temporary care agreements (s. 75(1)) and temporary society care orders (s. 94(2)(d)), subject to a discretionary 6-month extension under s. 122(5).",
+  },
+  "122(5)": {
+    citation: "CYFSA s. 122(5)",
+    heading: "Six-month extension of time limit",
+    text: "(5)  Subject to paragraphs 2 and 4 of subsection 101 (1), the court may by order extend the period permitted under subsection (1) by a period not to exceed six months if it is in the child’s best interests to do so.",
+    note: "Permits the court to extend the cumulative s. 122(1) time-in-care limit by up to 6 months where it is in the child's best interests.",
+  },
+  "126(1)": {
+    citation: "CYFSA s. 126(1)",
+    heading: "Society to assess and verify report of child in need of protection",
+    text: "(1)  A society that receives a report under section 125 that a child, including a child in the society’s care or supervision, is or may be in need of protection shall as soon as possible carry out an assessment as prescribed and verify the reported information, or ensure that the information is assessed and verified by another society.",
+    note: "Imposes a mandatory statutory duty on a society receiving a s. 125 report to carry out a prescribed assessment as soon as possible and verify the reported information.",
+  },
+  "306(1)": {
+    citation: "CYFSA s. 306(1)",
+    heading: "Steps to ensure accuracy, etc. of personal information",
+    text: "(1)  A service provider that uses personal information for the purpose of providing a service shall take reasonable steps to ensure that the information is as accurate, complete and up-to-date as is necessary for the purposes for which it uses the information.",
+    note: "Part X statutory obligation requiring service providers (including societies) to take reasonable steps to ensure personal information used to provide a service is accurate, complete, and up-to-date.",
+  },
+  "314(3)": {
+    citation: "CYFSA s. 314(3)",
+    heading: "Time for response to access request",
+    text: "(3)  As soon as possible, but no later than 30 days after receiving the request, the service provider shall, by written notice to the individual, give the response required by subsection (1) or extend the deadline for responding by not more than 90 days if,\n  (a)  responding to the request within 30 days would unreasonably interfere with the operations of the service provider because the information consists of numerous pieces of information or locating the information would necessitate a lengthy search; or\n  (b)  the time required to undertake an assessment under subsection 312 (1) necessary to respond to the request within 30 days after receiving it would make it not reasonably practical to respond within that time.",
+    note: "Requires a service provider to respond to a Part X personal information access request as soon as possible and no later than 30 days after receipt (subject to a noticed extension of up to 90 days).",
+  },
+  "315(2)": {
+    citation: "CYFSA s. 315(2)",
+    heading: "Correction to record — Written request",
+    text: "(2)  If a service provider has granted an individual access to a record of personal information and if the individual believes that the record is inaccurate or incomplete, the individual may request in writing that the service provider correct the record. 2017, c. 14, Sched. 1, s. 315 (2).",
+    note: "Establishes the Part X statutory right to request in writing that a service provider correct an inaccurate or incomplete record of personal information (with a 30-day response limit under s. 315(4) and a right to attach a statement of disagreement under s. 315(12)).",
+  },
+  "316(1)": {
+    citation: "CYFSA s. 316(1)",
+    heading: "Complaint to Information and Privacy Commissioner",
+    text: "(1)  A person who has reasonable grounds to believe that another person has contravened or is about to contravene a provision of this Part or the regulations made for the purposes of this Part may make a complaint to the Commissioner.",
+    note: "Authorizes a Part X privacy, access refusal, or correction refusal complaint to the Information and Privacy Commissioner of Ontario (IPC).",
+  },
+  "333(1)": {
+    citation: "CYFSA s. 333(1)",
+    heading: "Child and Family Services Review Board",
+    text: "(1)  The Child and Family Services Review Board is continued under the name Child and Family Services Review Board in English and Commission de révision des services à l’enfance et à la famille in French.",
+    note: "Continues the Child and Family Services Review Board (CFSRB) with the powers and duties conferred by the CYFSA and regulations.",
+  },
 };
 
 /**

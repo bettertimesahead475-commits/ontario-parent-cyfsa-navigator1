@@ -22,14 +22,26 @@ export const INTERNAL_CYFSA_SECTION_KEYS = [
   "3",
   "9.1",
   "13(1)",
+  "14",
+  "15(2)",
+  "15(4)",
   "35(1)",
+  "35(2)",
   "72",
+  "73",
   "74(1)",
   "74(2)",
   "74(3)",
+  "75(1)",
+  "75(4)",
+  "75(5)",
+  "75(6)",
+  "76(3)",
   "78",
   "78(1)",
   "78(4)",
+  "79(1)",
+  "80",
   "81(1)",
   "81(2)",
   "81(7)",
@@ -37,10 +49,13 @@ export const INTERNAL_CYFSA_SECTION_KEYS = [
   "81(13)",
   "88",
   "90(1)",
+  "93(1)",
   "94(1)",
   "94(2)",
   "94(4)",
   "94(6)",
+  "94(10)",
+  "98(1)",
   "100",
   "101(1)",
   "101(1), para. 1",
@@ -51,16 +66,37 @@ export const INTERNAL_CYFSA_SECTION_KEYS = [
   "101(7)",
   "102(1)",
   "104(1)",
+  "105(1)",
+  "105(5)",
   "109(2)",
   "109(2)(d)",
+  "113(1)",
+  "113(2)",
+  "114",
   "115(2)",
+  "116(1)",
+  "116(4)",
+  "119(1)",
+  "119(2)",
+  "119(11)",
+  "120(1)",
+  "120(4)",
+  "120(8)",
   "121(1)",
   "121(2.1)",
   "121(3)",
+  "122(1)",
+  "122(5)",
   "123",
   "125(1)",
+  "126(1)",
   "136(5)",
+  "306(1)",
   "312(1)",
+  "314(3)",
+  "315(2)",
+  "316(1)",
+  "333(1)",
 ] as const;
 
 /**
@@ -69,30 +105,52 @@ export const INTERNAL_CYFSA_SECTION_KEYS = [
  * while rejecting nonexistent or repealed clauses/paragraphs (e.g. "74(2)(z)", "88(2)", "3, para. 6").
  */
 export const VERIFIED_CYFSA_CLAUSES: Record<string, readonly string[]> = {
-  "1(2)": ["para. 1", "para. 2"],
+  "1(2)": ["para. 1", "para. 2", "para. 3", "para. 4", "para. 5", "para. 6", "para. 7"],
   "3": ["para. 1", "para. 2", "para. 3", "para. 4", "para. 5"], // para. 6 repealed by 2018, c. 17, Sched. 34, s. 6(1)
+  "14": ["a", "b"],
   "35(1)": ["a", "b", "c", "d", "e", "f", "g"],
+  "35(2)": ["a", "b"],
   "72": ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
   "74(2)": ["a", "b", "c", "d", "d.1", "d.2", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"],
   "74(3)": ["a", "b", "c"],
+  "75(4)": ["a", "b"],
+  "75(6)": ["a", "b"],
+  "76(3)": ["a", "b", "c"],
   "78(4)": ["a", "b", "c"],
+  "79(1)": ["para. 1", "para. 2", "para. 3", "para. 4"],
+  "80": ["a", "b", "c"],
   "81(2)": ["a", "b", "c"],
   "81(7)": ["a", "b", "c"],
   "88": ["a", "b", "c", "d", "e"],
+  "93(1)": ["a", "b"],
   "94(1)": ["a", "b"],
   "94(2)": ["a", "b", "c", "d"],
   "94(6)": ["a", "b", "c"],
+  "98(1)": ["para. 1", "para. 2", "para. 3"],
   "100": ["a", "b", "c", "d", "e", "f"],
-  "101(1)": ["para. 1"],
+  "101(1)": ["para. 1", "para. 2", "para. 3", "para. 4"],
   "101(5)": ["a", "b", "c"],
   "101(7)": ["a", "b", "c"],
+  "104(1)": ["a", "b"],
+  "105(5)": ["a", "b"],
   "109(2)": ["a", "b", "c", "d", "e"],
+  "113(1)": ["para. 1", "para. 2", "para. 3", "para. 4", "para. 5"],
+  "113(2)": ["a", "b", "c"],
+  "114": ["a", "b", "c", "d"],
   "115(2)": ["a", "b", "c"],
+  "116(1)": ["a", "b", "c"],
+  "116(4)": ["a", "b", "c"],
+  "119(11)": ["a", "b"],
+  "120(1)": ["a", "b"],
+  "120(4)": ["para. 1", "para. 2", "para. 3", "para. 4", "para. 5", "para. 6"],
+  "120(8)": ["a", "b"],
   "121(1)": ["a", "b", "c", "d", "e"],
   "121(2.1)": ["a", "b"],
   "121(3)": ["a", "b"],
+  "122(1)": ["a", "b"],
   "123": ["a", "b"],
   "312(1)": ["a", "b", "c", "d"],
+  "314(3)": ["a", "b"],
 };
 
 export const CITATION_UNVERIFIED_NOTE =
@@ -108,6 +166,9 @@ export type AuthorityCategory =
   | "CHARTER"
   | "CHILDRENS_LAW_REFORM_ACT"
   | "REGULATION"
+  | "CAS_STANDARD"
+  | "PROFESSIONAL_STANDARD"
+  | "OVERSIGHT_PATHWAY"
   | "CASE_LAW"
   | "OTHER"
   | "MULTIPLE"
@@ -132,7 +193,7 @@ const cyfsaNamePattern = () =>
 // Any other statute, regulation, rules set, charter or code. Including a bare "Act" is deliberate: an unnamed
 // "the Act" is ambiguous, so it is not treated as the CYFSA.
 const otherInstrumentPattern = () =>
-  /\b(?:Acts?|Codes?|Charter|Regulations?|Regs?|Rules?|CLRA|FLR|R\.R\.O\.|R\.S\.O\.|S\.\s*O\.|S\.\s*C\.|O\.\s*Reg\.?|Bills?|Statutes?)\b/gi;
+  /\b(?:Acts?|Codes?|Charter|Regulations?|Regs?|Rules?|CLRA|FLR|OCPS|OCSWSSW|R\.R\.O\.|R\.S\.O\.|S\.\s*O\.|S\.\s*C\.|O\.\s*Reg\.?|Bills?|Statutes?|Ontario\s+Child\s+Protection\s+Standards)\b/gi;
 
 /**
  * Resolves a section or clause pinpoint to its corresponding key in INTERNAL_CYFSA_SECTION_KEYS
@@ -260,6 +321,13 @@ export function identifyAuthorityCategory(text: string | null | undefined): Auth
     (!cyfsa && /\b(?:Rule|Subrule|r\.)\s*(?:1\(8\)|1\.8|14\(18\)|14\.18|14\(19\)|14\.19|33)(?!\w)/i.test(t));
   const hasCharter = /\b(?:Canadian\s+)?Charter(?:\s+of\s+Rights\s+and\s+Freedoms)?\b/i.test(t);
   const hasClra = /\b(?:CLRA|Children['’]s\s+Law\s+Reform\s+Act)\b/i.test(t);
+  const hasCasStandard =
+    /\b(?:Ontario\s+Child\s+Protection\s+Standards|OCPS|Child\s+Protection\s+Standards\s*\(?2016\)?)\b/i.test(t);
+  const hasProfessionalStandard =
+    /\b(?:OCSWSSW|Ontario\s+College\s+of\s+Social\s+Workers(?:\s+and\s+Social\s+Service\s+Workers)?|Social\s+Work\s+and\s+Social\s+Service\s+Work\s+Act)\b/i.test(t);
+  const hasOversightPathway =
+    !cyfsa &&
+    /\b(?:Ombudsman\s+Act|Ontario\s+Ombudsman|Information\s+and\s+Privacy\s+Commissioner)\b/i.test(t);
   const hasReg = !hasFlr && /\b(?:O\.\s*Reg\.?|R\.R\.O\.|Regulations?)\b/i.test(t);
   const hasCaseLaw = /\bv\.\s+[A-Z]|\b\d{4}\s+(?:SCC|ONCA|ONSC|ONCJ)\s+\d+|\[\d{4}\]\s*\d+\s*S\.C\.R\./i.test(t);
 
@@ -268,6 +336,9 @@ export function identifyAuthorityCategory(text: string | null | undefined): Auth
   if (hasFlr) matchedCategories.push("FAMILY_LAW_RULES");
   if (hasCharter) matchedCategories.push("CHARTER");
   if (hasClra) matchedCategories.push("CHILDRENS_LAW_REFORM_ACT");
+  if (hasCasStandard) matchedCategories.push("CAS_STANDARD");
+  if (hasProfessionalStandard) matchedCategories.push("PROFESSIONAL_STANDARD");
+  if (hasOversightPathway) matchedCategories.push("OVERSIGHT_PATHWAY");
   if (hasReg) matchedCategories.push("REGULATION");
   if (hasCaseLaw) matchedCategories.push("CASE_LAW");
 

@@ -35,6 +35,7 @@ import {
   severityCeiling,
   VERIFICATION_STATUS,
 } from "../../shared/quoteVerification.js";
+import { buildComplianceMatrixFromReport } from "../../shared/complianceMatrixEngine.js";
 
 export { isVerbatimQuoteStatus };
 
@@ -759,6 +760,13 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
     if (g.authorityId) flag.authorityId = g.authorityId;
   }
   applyCitationGuards(report);
+  if (!report.complianceMatrix) {
+    try {
+      report.complianceMatrix = buildComplianceMatrixFromReport(report, sourceText);
+    } catch (err) {
+      logAnalyzerDiagnostic("compliance matrix generation", err);
+    }
+  }
   return report;
 }
 

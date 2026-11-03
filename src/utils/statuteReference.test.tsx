@@ -20,7 +20,7 @@ describe("bundled statute quotations", () => {
   it("matches INTERNAL_CYFSA_SECTION_KEYS exactly and never includes non-CYFSA rules or Charter provisions", () => {
     const keys = Object.keys(BUNDLED_STATUTE_ENTRIES).sort();
     expect(keys).toEqual([...INTERNAL_CYFSA_SECTION_KEYS].sort());
-    expect(keys.length).toBe(47);
+    expect(keys.length).toBe(83);
     expect(keys).not.toContain("14(18)");
     expect(keys).not.toContain("7");
   });

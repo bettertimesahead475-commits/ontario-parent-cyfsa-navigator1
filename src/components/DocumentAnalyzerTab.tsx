@@ -84,6 +84,7 @@ import {
   NarrationBar,
 } from "./narration";
 import { FindingPresentationCard } from "./FindingPresentationCard";
+import { AgencyComplianceMatrixView } from "./AgencyComplianceMatrixView";
 import { useNarration } from "../hooks/useNarration";
 import { extractReportSegments } from "../utils/narration/reportSegments";
 import type { NarrationSegment } from "../utils/narration/types";
@@ -586,7 +587,7 @@ export default function DocumentAnalyzerTab() {
   });
 
   // Professional 5-Tab Report Workspace state & independent report mode selection
-  const [reportWorkspaceTab, setReportWorkspaceTab] = useState<"brief" | "chronology" | "evidence" | "thresholds" | "findings">("brief");
+  const [reportWorkspaceTab, setReportWorkspaceTab] = useState<"brief" | "chronology" | "evidence" | "thresholds" | "findings" | "compliance">("brief");
   const [activeReportMode, setActiveReportMode] = useState<"quick" | "deep">("quick");
 
   // Helper to reliably detect whether any report is a Forensic In-Depth report
@@ -4274,6 +4275,7 @@ export default function DocumentAnalyzerTab() {
                           { id: "evidence", label: "Evidence & Hearsay", icon: ShieldAlert, count: displayedReport.redFlags?.length },
                           { id: "thresholds", label: "CYFSA Thresholds", icon: Scale, count: displayedReport.thresholdAnalysis?.length },
                           { id: "findings", label: "Findings & Legal Assessment", icon: FileCheck, count: (displayedReport.whatToVerify?.length || 0) + (displayedReport.whatIsMissing?.length || 0) + (displayedReport.whatToAskALawyer?.length || 0) },
+                          { id: "compliance", label: "Agency Compliance Matrix", icon: Scale, count: displayedReport.complianceMatrix?.items?.length },
                         ].map(tab => {
                           const Icon = tab.icon;
                           const isActive = reportWorkspaceTab === tab.id;
@@ -5184,6 +5186,18 @@ export default function DocumentAnalyzerTab() {
                               </button>
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {/* ============================================================ */}
+                      {/* TAB 6: AGENCY COMPLIANCE MATRIX                              */}
+                      {/* ============================================================ */}
+                      {reportWorkspaceTab === "compliance" && (
+                        <div className="space-y-5 animate-fadeIn">
+                          <AgencyComplianceMatrixView
+                            matrix={displayedReport.complianceMatrix}
+                            openLegislativeReference={openLegislativeReference}
+                          />
                         </div>
                       )}
 
