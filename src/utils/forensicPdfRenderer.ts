@@ -791,22 +791,22 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
             ${report.complianceMatrix.items.map((item: any) => `
               <tr>
                 <td>
-                  <strong>${escapeHtml(item.authority?.legalCitation || "")}</strong><br/>
-                  <span style="font-size:8.5px; color:#475569;">${escapeHtml(item.obligation?.mandateSummary || "")}</span>
+                  <strong>${escapeHtml(item.authority?.exactSectionOrStandard || item.authority?.legalCitation || "")}</strong><br/>
+                  <span style="font-size:8.5px; color:#475569;">${escapeHtml(item.title || item.obligation?.requiredAction || "")}</span>
                 </td>
                 <td>
                   <span style="display:inline-block; padding:2px 6px; border-radius:4px; font-size:8.5px; font-weight:700; ${
-                    item.assessment?.status === "COMPLIANT" ? "background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0;" :
-                    item.assessment?.status === "NON_COMPLIANT_POTENTIAL" ? "background:#fff1f2; color:#9f1239; border:1px solid #fecdd3;" :
-                    item.assessment?.status === "PARTIALLY_COMPLIANT" ? "background:#fffbeb; color:#92400e; border:1px solid #fde68a;" :
+                    item.assessment?.complianceStatus === "COMPLIANT_ON_AVAILABLE_EVIDENCE" ? "background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0;" :
+                    item.assessment?.complianceStatus === "POTENTIAL_NONCOMPLIANCE" ? "background:#fff1f2; color:#9f1239; border:1px solid #fecdd3;" :
+                    item.assessment?.complianceStatus === "PARTIAL_COMPLIANCE" ? "background:#fffbeb; color:#92400e; border:1px solid #fde68a;" :
                     "background:#f1f5f9; color:#334155; border:1px solid #cbd5e1;"
                   }">
-                    ${escapeHtml(item.assessment?.status?.replace(/_/g, " ") || "")}
+                    ${escapeHtml(item.assessment?.complianceStatus?.replace(/_/g, " ") || "")}
                   </span>
                 </td>
                 <td style="font-size:8.5px;">
-                  ${escapeHtml(item.evidence?.documentedActionInRecord || "Not documented in record.")}
-                  ${item.evidence?.recordExcerpts?.length ? `<div style="font-style:italic; color:#64748b; margin-top:4px;">\"${escapeHtml(item.evidence.recordExcerpts[0])}\"</div>` : ""}
+                  ${escapeHtml(item.evidence?.exactExcerpt || "Not documented in record.")}
+                  ${item.evidence?.corroboratingEvidence?.length ? `<div style="font-style:italic; color:#64748b; margin-top:4px;">\"${escapeHtml(item.evidence.corroboratingEvidence[0])}\"</div>` : ""}
                 </td>
                 <td style="font-size:8.5px; color:#1e293b;">
                   ${escapeHtml(item.presentation?.courtroomMode?.evidentiaryFraming || "")}

@@ -7,7 +7,7 @@
  *
  * Supports:
  * - Dual presentation modes: Educational Legal Analysis vs Courtroom-Style Evidence Matrix
- * - Category filter tabs (All, Mandatory Duties, Parent Assistance, Child Participation, Court Orders, Complaints)
+ * - Category filter tabs (All, Law & Procedure, CAS Accountability, Parent Assistance, Reunification, Evidence & Contradictions)
  * - Strict neutrality compliance status badges with evidence quotes and citations
  * - Parent Assistance 15-Question Analysis summary card
  * - Missing records and non-prejudgment legal disclaimers
@@ -48,21 +48,21 @@ const STATUS_CONFIG: Record<
   AgencyComplianceStatus,
   { label: string; bg: string; text: string; border: string; icon: React.FC<{ className?: string }> }
 > = {
-  COMPLIANT: {
+  COMPLIANT_ON_AVAILABLE_EVIDENCE: {
     label: "Documented Compliance",
     bg: "bg-emerald-50",
     text: "text-emerald-800",
     border: "border-emerald-200",
     icon: CheckCircle2,
   },
-  PARTIALLY_COMPLIANT: {
+  PARTIAL_COMPLIANCE: {
     label: "Partially Documented",
     bg: "bg-amber-50",
     text: "text-amber-800",
     border: "border-amber-200",
     icon: AlertTriangle,
   },
-  NON_COMPLIANT_POTENTIAL: {
+  POTENTIAL_NONCOMPLIANCE: {
     label: "Potential Compliance Concern",
     bg: "bg-rose-50",
     text: "text-rose-800",
@@ -76,20 +76,6 @@ const STATUS_CONFIG: Record<
     border: "border-slate-300",
     icon: HelpCircle,
   },
-  CONTRADICTORY_IN_RECORDS: {
-    label: "Contradictory in Records",
-    bg: "bg-purple-50",
-    text: "text-purple-800",
-    border: "border-purple-200",
-    icon: AlertTriangle,
-  },
-  EXEMPT_OR_ALTERNATIVE_PATHWAY: {
-    label: "Exempt or Alternative Pathway",
-    bg: "bg-blue-50",
-    text: "text-blue-800",
-    border: "border-blue-200",
-    icon: Info,
-  },
   INSUFFICIENT_EVIDENCE: {
     label: "Insufficient Evidence to Evaluate",
     bg: "bg-zinc-50",
@@ -97,21 +83,35 @@ const STATUS_CONFIG: Record<
     border: "border-zinc-300",
     icon: HelpCircle,
   },
-  SUPERSEDED_OR_AMENDED: {
-    label: "Superseded or Amended",
+  NOT_APPLICABLE: {
+    label: "Not Applicable to Stage",
     bg: "bg-gray-50",
     text: "text-gray-700",
     border: "border-gray-200",
     icon: Layers,
   },
+  EXCEPTION_MAY_APPLY: {
+    label: "Statutory Exception May Apply",
+    bg: "bg-blue-50",
+    text: "text-blue-800",
+    border: "border-blue-200",
+    icon: Info,
+  },
+  REQUIRES_LEGAL_REVIEW: {
+    label: "Requires Counsel Review",
+    bg: "bg-purple-50",
+    text: "text-purple-800",
+    border: "border-purple-200",
+    icon: AlertTriangle,
+  },
 };
 
 const CATEGORY_LABELS: Record<ComplianceMatrixCategory, string> = {
-  STATUTORY_CAS_DUTIES: "Statutory Duties",
-  PARENT_ASSISTANCE_REUNIFICATION: "Parent Assistance & Reunification",
-  CHILD_PARTICIPATION_CULTURAL: "Child Participation & Culture",
-  COURT_ORDERS_AND_TIMELINES: "Court Orders & Timelines",
-  DISCLOSURE_RECORDS_COMPLAINTS: "Disclosures & Complaints",
+  LAW_AND_PROCEDURE: "Law & Procedure",
+  CAS_ACCOUNTABILITY: "CAS Accountability",
+  PARENT_ASSISTANCE: "Parent Assistance",
+  REUNIFICATION: "Reunification & Preservation",
+  EVIDENCE_AND_CONTRADICTIONS: "Evidence & Contradictions",
 };
 
 export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProps> = ({
@@ -146,13 +146,13 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
 
   const counts = matrix.summaryCounts || {
     totalEvaluated: matrix.items.length,
-    compliant: matrix.items.filter((i) => i.assessment.status === "COMPLIANT").length,
-    partiallyCompliant: matrix.items.filter((i) => i.assessment.status === "PARTIALLY_COMPLIANT").length,
-    potentialConcerns: matrix.items.filter((i) => i.assessment.status === "NON_COMPLIANT_POTENTIAL").length,
-    notDocumentedInRecords: matrix.items.filter((i) => i.assessment.status === "NOT_DOCUMENTED_IN_UPLOADED_RECORDS").length,
-    contradictoryInRecords: matrix.items.filter((i) => i.assessment.status === "CONTRADICTORY_IN_RECORDS").length,
-    exemptOrAlternative: matrix.items.filter((i) => i.assessment.status === "EXEMPT_OR_ALTERNATIVE_PATHWAY").length,
-    insufficientEvidence: matrix.items.filter((i) => i.assessment.status === "INSUFFICIENT_EVIDENCE").length,
+    compliant: matrix.items.filter((i) => i.assessment.complianceStatus === "COMPLIANT_ON_AVAILABLE_EVIDENCE").length,
+    partiallyCompliant: matrix.items.filter((i) => i.assessment.complianceStatus === "PARTIAL_COMPLIANCE").length,
+    potentialConcerns: matrix.items.filter((i) => i.assessment.complianceStatus === "POTENTIAL_NONCOMPLIANCE").length,
+    notDocumentedInRecords: matrix.items.filter((i) => i.assessment.complianceStatus === "NOT_DOCUMENTED_IN_UPLOADED_RECORDS").length,
+    contradictoryInRecords: matrix.items.filter((i) => (i.evidence.contradictoryEvidence || []).length > 0).length,
+    exemptOrAlternative: matrix.items.filter((i) => i.assessment.complianceStatus === "EXCEPTION_MAY_APPLY").length,
+    insufficientEvidence: matrix.items.filter((i) => i.assessment.complianceStatus === "INSUFFICIENT_EVIDENCE").length,
   };
 
   return (
@@ -358,19 +358,19 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
       {/* Matrix Item Cards */}
       <div className="space-y-3">
         {filteredItems.map((item) => {
-          const statusStyle = STATUS_CONFIG[item.assessment.status] || STATUS_CONFIG.INSUFFICIENT_EVIDENCE;
+          const statusStyle = STATUS_CONFIG[item.assessment.complianceStatus] || STATUS_CONFIG.INSUFFICIENT_EVIDENCE;
           const StatusIcon = statusStyle.icon;
-          const isExpanded = !!expandedItems[item.id];
+          const isExpanded = !!expandedItems[item.itemId];
 
           return (
             <div
-              key={item.id}
+              key={item.itemId}
               className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow transition-all overflow-hidden"
             >
               {/* Card Header */}
               <div
                 className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none bg-slate-50/40 hover:bg-slate-50 transition-colors"
-                onClick={() => toggleExpand(item.id)}
+                onClick={() => toggleExpand(item.itemId)}
               >
                 <div className="space-y-1.5 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -385,21 +385,21 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        openLegislativeReference?.(item.authority.legalCitation);
+                        openLegislativeReference?.(item.authority.exactSectionOrStandard);
                       }}
                       className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-brand-700 hover:underline cursor-pointer"
                     >
-                      {item.authority.legalCitation}
+                      {item.authority.exactSectionOrStandard}
                       <ExternalLink className="w-2.5 h-2.5" />
                     </button>
 
                     <span className="text-[10px] px-2 py-0.5 bg-slate-200/70 text-slate-700 rounded-md font-medium">
-                      {item.authority.legalForce.replace(/_/g, " ")}
+                      {String(item.authority.legalForce).replace(/_/g, " ")}
                     </span>
                   </div>
 
                   <h4 className="text-xs font-bold text-slate-900 leading-snug">
-                    {item.obligation.mandateSummary}
+                    {item.title}
                   </h4>
                 </div>
 
@@ -425,7 +425,7 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
                         <BookOpen className="w-3.5 h-3.5 text-amber-700" />
                         Plain-Language Educational Guidance
                       </div>
-                      <p className="leading-relaxed">{item.presentation.educationalMode.plainLanguageExplanation}</p>
+                      <p className="leading-relaxed">{item.presentation.educationalMode.whatRuleRequires}</p>
                       <div className="pt-1.5 border-t border-amber-200/60">
                         <strong className="text-slate-900 font-semibold">What this means for parents: </strong>
                         <span>{item.presentation.educationalMode.whatThisMeansForParent}</span>
@@ -479,18 +479,18 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
                         Documented Agency Actions in Record
                       </div>
                       <p className="text-slate-700 leading-relaxed text-[11px]">
-                        {item.evidence.documentedActionInRecord || "No specific agency action documented in uploaded records."}
+                        {item.evidence.exactExcerpt || "No specific agency action documented in uploaded records."}
                       </p>
-                      {item.evidence.recordExcerpts.length > 0 && (
+                      {item.evidence.corroboratingEvidence.length > 0 && (
                         <div className="pt-1.5 space-y-1 border-t border-slate-200">
-                          <strong className="text-slate-800 text-[10px] uppercase tracking-wider">Record Quotations:</strong>
+                          <strong className="text-slate-800 text-[10px] uppercase tracking-wider">Corroborating Records:</strong>
                           <ul className="space-y-1">
-                            {item.evidence.recordExcerpts.map((excerpt, eIdx) => (
+                            {item.evidence.corroboratingEvidence.map((corrob, cIdx) => (
                               <li
-                                key={eIdx}
-                                className="p-1.5 bg-white border border-slate-200 rounded text-[11px] italic text-slate-700"
+                                key={cIdx}
+                                className="p-1.5 bg-white border border-slate-200 rounded text-[11px] text-slate-700"
                               >
-                                &ldquo;{excerpt}&rdquo;
+                                {corrob}
                               </li>
                             ))}
                           </ul>
@@ -505,31 +505,26 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
                       </div>
                       <div className="text-[11px] text-slate-700 space-y-1">
                         <div>
-                          <strong>Stage of Case: </strong>
-                          <span className="capitalize">{item.obligation.stageOfCase.toLowerCase().replace(/_/g, " ")}</span>
+                          <strong>Triggering Event: </strong>
+                          <span>{item.obligation.triggeringEvent}</span>
                         </div>
-                        {item.obligation.timeframeRequirement && (
+                        {item.obligation.deadline && (
                           <div>
                             <strong>Prescribed Timeframe: </strong>
-                            <span>{item.obligation.timeframeRequirement}</span>
+                            <span>{item.obligation.deadline}</span>
                           </div>
                         )}
                         <div>
                           <strong>Responsible Role: </strong>
-                          <span>{item.obligation.responsibleEntity}</span>
+                          <span>{String(item.obligation.responsibleParty)}</span>
                         </div>
-                        {item.assessment.oversightPathways.length > 0 && (
+                        {item.assessment.potentialOversightPathway && (
                           <div className="pt-1">
-                            <strong>Available Oversight Pathways: </strong>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {item.assessment.oversightPathways.map((pathway, pIdx) => (
-                                <span
-                                  key={pIdx}
-                                  className="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 rounded text-[10px] font-medium"
-                                >
-                                  {pathway.replace(/_/g, " ")}
-                                </span>
-                              ))}
+                            <strong>Available Oversight Pathway: </strong>
+                            <div className="mt-1">
+                              <span className="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-200 rounded text-[10px] font-medium">
+                                {item.assessment.potentialOversightPathway.pathwayName} ({item.assessment.potentialOversightPathway.statutoryAuthority})
+                              </span>
                             </div>
                           </div>
                         )}
@@ -538,12 +533,12 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
                   </div>
 
                   {/* Missing Records Note */}
-                  {item.evidence.missingRecordsIdentified.length > 0 && (
+                  {item.assessment.missingInformation.length > 0 && (
                     <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
                       <div>
                         <strong>Additional records necessary for definitive conclusion: </strong>
-                        {item.evidence.missingRecordsIdentified.join("; ")}
+                        {item.assessment.missingInformation.join("; ")}
                       </div>
                     </div>
                   )}
