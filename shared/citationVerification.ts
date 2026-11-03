@@ -255,7 +255,9 @@ export function identifyAuthorityCategory(text: string | null | undefined): Auth
 
   const hasBillC92 =
     /\bBill\s+C-92\b|\bS\.\s*C\.\s*2019,?\s*c\.\s*24\b|Act\s+respecting\s+First\s+Nations,?\s+Inuit\s+and\s+M[ée]tis\s+children/i.test(t);
-  const hasFlr = /\b(?:Family\s+Law\s+Rules?|FLR|O\.\s*Reg\.?\s*114\/99)\b/i.test(t);
+  const hasFlr =
+    /\b(?:Family\s+Law\s+Rules?|FLR|O\.\s*Reg\.?\s*114\/99)\b/i.test(t) ||
+    (!cyfsa && /\b(?:Rule|Subrule|r\.)\s*(?:1\(8\)|1\.8|14\(18\)|14\.18|14\(19\)|14\.19|33)(?!\w)/i.test(t));
   const hasCharter = /\b(?:Canadian\s+)?Charter(?:\s+of\s+Rights\s+and\s+Freedoms)?\b/i.test(t);
   const hasClra = /\b(?:CLRA|Children['’]s\s+Law\s+Reform\s+Act)\b/i.test(t);
   const hasReg = !hasFlr && /\b(?:O\.\s*Reg\.?|R\.R\.O\.|Regulations?)\b/i.test(t);

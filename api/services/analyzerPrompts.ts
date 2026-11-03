@@ -107,7 +107,7 @@ export const FIELD_SCHEMAS: Record<string, string> = {
     {
       "thresholdChecked": "CYFSA s. 81 — Application / Child Protection Proceeding Authority",
       "isMet": "Yes / No / Inconclusive",
-      "reasoning": "Analyze the role of CYFSA s. 81(1) in commencing the proceeding, distinguishing application authority under s. 81(1) from warrantless apprehension under s. 81(7) and protection grounds under s. 74(2).",
+      "reasoning": "Analyze the role of CYFSA s. 81(1) in commencing the proceeding, distinguishing application authority under s. 81(1) from warrant-based apprehension under s. 81(2), warrantless apprehension under s. 81(7), and protection grounds under s. 74(2). Never attribute warrantless apprehension to s. 81(1) or s. 81(2).",
       "primarySourceLaw": "CYFSA, S.O. 2017, c. 14, Sched. 1, s. 81(1)"
     },
     {

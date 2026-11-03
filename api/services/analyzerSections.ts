@@ -667,7 +667,7 @@ const CORROBORATION_LABELS = new Set(["CORROBORATED", "DOCUMENTARY", "DIRECT"]);
  */
 export function guardCitation(
   text: string,
-  options?: { caseDate?: string; proposition?: string }
+  options?: { caseDate?: string; proposition?: string } | string
 ): {
   text: string;
   status: CitationStatus;
@@ -677,8 +677,9 @@ export function guardCitation(
   authorityResolution?: any;
 } {
   const t = str(text);
+  const normalizedOptions = typeof options === "string" ? { proposition: options } : options;
   const c = classifyCitation(t);
-  const auth = resolveLegalAuthority(t, options);
+  const auth = resolveLegalAuthority(t, normalizedOptions);
   const authorityResolution = auth.status === "VERIFIED" && auth.entry ? {
     id: auth.entry.id,
     category: auth.entry.category,
@@ -777,7 +778,11 @@ export function applyCitationGuards(report: Record<string, any>): Record<string,
   for (const item of Array.isArray(report.proceduralTimelineViolations) ? report.proceduralTimelineViolations : []) {
     if (!item || typeof item !== "object") continue;
     // s.94(5) is the relative-placement clause, never a "5-day hearing" rule.
-    if (/94\(5\)/.test(`${item.evaluation} ${item.citation}`) && /5-day|five-day|five day/i.test(item.evaluation)) {
+    if (
+      /94\(5\)/.test(`${item.evaluation} ${item.citation}`) &&
+      /5-day|five-day|five day/i.test(item.evaluation) &&
+      !/\b(?:relative|extended\s+family|community)\b/i.test(item.evaluation)
+    ) {
       item.citation = UNVERIFIED_CITATION_NOTE;
     }
     const g = guardCitation(item.citation, { proposition: `${item.timelineRule || ""} ${item.evaluation || ""}` });

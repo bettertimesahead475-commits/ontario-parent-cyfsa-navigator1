@@ -253,6 +253,27 @@ describe("deterministic guards", () => {
         proposition: "CAS has a universal duty to fund and pay for all private therapy and services.",
       }).status
     ).toBe("UNVERIFIED");
+    expect(
+      guardCitation("CYFSA, S.O. 2017, c. 14, Sched. 1, s. 81(1) & s. 81(7)", {
+        proposition:
+          "Under s. 81(1), the society applies to court for a protection hearing, while s. 81(7) governs warrantless apprehension where delay would result in an immediate substantial risk.",
+      }).status
+    ).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(
+      guardCitation("CYFSA, S.O. 2017, c. 14, Sched. 1, s. 81(1) & s. 81(7)", {
+        proposition: "Both s. 81(1) and s. 81(7) authorize warrantless apprehension of a child.",
+      }).status
+    ).toBe("UNVERIFIED");
+    expect(
+      guardCitation("CYFSA s. 102(1)", {
+        proposition: "The court may grant a custody order under s. 102(1) instead of a supervision order under s. 101(1), para. 1.",
+      }).status
+    ).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(
+      guardCitation("CYFSA s. 102(1)", {
+        proposition: "Instead of s. 101(1), CYFSA s. 102(1) authorizes a supervision order.",
+      }).status
+    ).toBe("UNVERIFIED");
     expect(s81.text).not.toContain(UNVERIFIED_CITATION_NOTE);
     expect(guardCitation("CLRA s. 8(1)").status).toBe("UNVERIFIED");
     expect(guardCitation(UNVERIFIED_CITATION_NOTE).text).toBe(UNVERIFIED_CITATION_NOTE); // not doubled

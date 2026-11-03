@@ -25,7 +25,9 @@ describe("internal reference list and authority category separation", () => {
     expect(identifyAuthorityCategory("CYFSA, s. 74(2)")).toBe("CYFSA");
     expect(identifyAuthorityCategory("An Act respecting First Nations, Inuit and Métis children, youth and families, s. 16")).toBe("BILL_C92");
     expect(identifyAuthorityCategory("Family Law Rules, r. 14(18)")).toBe("FAMILY_LAW_RULES");
+    expect(identifyAuthorityCategory("Rule 1(8)")).toBe("FAMILY_LAW_RULES");
     expect(identifyAuthorityCategory("Canadian Charter of Rights and Freedoms, s. 7")).toBe("CHARTER");
+    expect(identifyAuthorityCategory("Charter s. 24(1)")).toBe("CHARTER");
     expect(identifyAuthorityCategory("O. Reg. 156/18, s. 4")).toBe("REGULATION");
     expect(identifyAuthorityCategory("Children's Law Reform Act, s. 24")).toBe("CHILDRENS_LAW_REFORM_ACT");
     expect(identifyAuthorityCategory("Family Law Act, s. 88")).toBe("OTHER");

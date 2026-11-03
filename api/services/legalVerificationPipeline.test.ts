@@ -209,7 +209,179 @@ describe("Authoritative Legal Citation Verification Pipeline", () => {
       expect(VERIFIED_STATUTORY_PROVISIONS["74(2)"].id).toBe("CYFSA:74(2)");
       expect(VERIFIED_STATUTORY_PROVISIONS["88"].id).toBe("CYFSA:88");
       expect(VERIFIED_STATUTORY_PROVISIONS["FLR_14_18"].id).toBe("FLR:14(18)");
+      expect(VERIFIED_STATUTORY_PROVISIONS["FLR_1_8"].id).toBe("FLR:1(8)");
       expect(VERIFIED_STATUTORY_PROVISIONS["CHARTER_7"].id).toBe("CHARTER:7");
+      expect(VERIFIED_STATUTORY_PROVISIONS["CHARTER_24_1"].id).toBe("CHARTER:24(1)");
+    });
+  });
+
+  describe("6. Milestone 1 Legal Accuracy Hotfix Regression Suite", () => {
+    describe("Hotfix 1: CYFSA s. 102(1) custody order vs s. 101(1) supervision order attribution", () => {
+      it("accepts accurate comparisons between a custody order under s. 102(1) and a supervision order under s. 101(1)", () => {
+        const res1 = resolveLegalAuthority("CYFSA s. 102(1)", {
+          proposition: "Under CYFSA s. 102(1), the court may grant a custody order instead of a supervision order under s. 101(1), para. 1.",
+        });
+        expect(res1.status).toBe("VERIFIED");
+        expect(res1.propositionSupport).toBe("SUPPORTED");
+
+        const res2 = resolveLegalAuthority("CYFSA s. 102(1) and s. 101(1)", {
+          proposition: "Whereas CYFSA s. 101(1), para. 1 governs a supervision order, CYFSA s. 102(1) authorizes a custody order.",
+        });
+        expect(res2.status).toBe("VERIFIED");
+        expect(res2.propositionSupport).toBe("SUPPORTED");
+      });
+
+      it("rejects propositions that attribute a supervision order to s. 102(1) even when 'instead of' or 's. 101' appears", () => {
+        const mis1 = resolveLegalAuthority("CYFSA s. 102(1)", {
+          proposition: "Instead of s. 101(1), CYFSA s. 102(1) authorizes a supervision order.",
+        });
+        expect(mis1.status).toBe("INAPPLICABLE");
+        expect(mis1.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+
+        const mis2 = resolveLegalAuthority("CYFSA s. 102(1)", {
+          proposition: "Under CYFSA s. 102(1), the court may make a supervision order instead of a custody order.",
+        });
+        expect(mis2.status).toBe("INAPPLICABLE");
+        expect(mis2.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+
+        const mis3 = resolveLegalAuthority("CYFSA s. 102(1)", {
+          proposition: "Under CYFSA s. 102(1), the court may grant a custody order or a supervision order.",
+        });
+        expect(mis3.status).toBe("INAPPLICABLE");
+        expect(mis3.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+      });
+    });
+
+    describe("Hotfix 2: CYFSA s. 81(1), s. 81(2), and s. 81(7) multi-authority attribution", () => {
+      it("accepts multi-authority propositions that accurately distinguish application (s. 81(1)), warrant (s. 81(2)), and warrantless apprehension (s. 81(7))", () => {
+        const res = resolveLegalAuthority("CYFSA s. 81(1) and s. 81(7)", {
+          proposition:
+            "Under CYFSA s. 81(1), a society may apply to the court to determine whether a child is in need of protection, whereas warrantless apprehension is governed by s. 81(7).",
+        });
+        expect(res.status).toBe("VERIFIED");
+        expect(res.propositionSupport).toBe("SUPPORTED");
+        expect(res.allSectionsCited).toEqual(["81(1)", "81(7)"]);
+
+        const resWarrant = resolveLegalAuthority("CYFSA s. 81(1), s. 81(2), and s. 81(7)", {
+          proposition:
+            "Section 81(1) governs applications to court, s. 81(2) governs warrants to apprehend a child, and s. 81(7) governs apprehension without a warrant.",
+        });
+        expect(resWarrant.status).toBe("VERIFIED");
+        expect(resWarrant.propositionSupport).toBe("SUPPORTED");
+      });
+
+      it("does not allow a valid s. 81(7) citation to conceal an invalid attribution of warrantless apprehension to s. 81(1) or s. 81(2)", () => {
+        const misMulti1 = resolveLegalAuthority("CYFSA s. 81(1) and s. 81(7)", {
+          proposition:
+            "Both CYFSA s. 81(1) and s. 81(7) authorize warrantless apprehension where the worker believes there is risk.",
+        });
+        expect(misMulti1.status).toBe("INAPPLICABLE");
+        expect(misMulti1.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+
+        const misMulti2 = resolveLegalAuthority("CYFSA s. 81(1) and s. 81(7)", {
+          proposition:
+            "Under CYFSA s. 81(1), the worker conducted a warrantless apprehension, and s. 81(7) also applies.",
+        });
+        expect(misMulti2.status).toBe("INAPPLICABLE");
+        expect(misMulti2.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+
+        const misWarrant = resolveLegalAuthority("CYFSA s. 81(2) and s. 81(7)", {
+          proposition: "Under CYFSA s. 81(2), a child protection worker may apprehend a child without a warrant.",
+        });
+        expect(misWarrant.status).toBe("INAPPLICABLE");
+        expect(misWarrant.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+
+        const mis817 = resolveLegalAuthority("CYFSA s. 81(7)", {
+          proposition: "Under CYFSA s. 81(7), a justice of the peace may issue a warrant to apprehend a child.",
+        });
+        expect(mis817.status).toBe("INAPPLICABLE");
+        expect(mis817.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+      });
+    });
+
+    describe("Hotfix 3: CYFSA s. 88 and s. 94(1) combined procedural timelines & false deadline claims", () => {
+      it("accepts combined procedural timelines that accurately attribute the 5-day hearing to s. 88 and the 30-day adjournment limit to s. 94(1)", () => {
+        const combo1 = resolveLegalAuthority("CYFSA s. 88 and s. 94(1)", {
+          proposition:
+            "Following apprehension, the matter was brought to court within the 5-day post-apprehension hearing deadline under CYFSA s. 88, and the court subsequently adjourned the hearing for more than 30 days contrary to s. 94(1).",
+        });
+        expect(combo1.status).toBe("VERIFIED");
+        expect(combo1.propositionSupport).toBe("SUPPORTED");
+
+        const combo2 = resolveLegalAuthority("CYFSA s. 94(1)", {
+          proposition:
+            "After the initial 5-day hearing under s. 88 was completed, the temporary care and custody hearing was adjourned for 42 days without consent contrary to s. 94(1).",
+        });
+        expect(combo2.status).toBe("VERIFIED");
+        expect(combo2.propositionSupport).toBe("SUPPORTED");
+      });
+
+      it("rejects swapped timeline attributions and genuinely false statutory deadline claims under s. 88 and s. 94(1)", () => {
+        const swapped = resolveLegalAuthority("CYFSA s. 88 and s. 94(1)", {
+          proposition:
+            "Under CYFSA s. 94(1), the initial post-apprehension hearing must occur within 5 days, whereas s. 88 limits adjournments to 30 days.",
+        });
+        expect(swapped.status).toBe("INAPPLICABLE");
+        expect(swapped.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+
+        const false88Deadline = resolveLegalAuthority("CYFSA s. 88", {
+          proposition:
+            "Under CYFSA s. 88, the Society has a 10-day post-apprehension hearing deadline to bring the matter before the court.",
+        });
+        expect(false88Deadline.status).toBe("INAPPLICABLE");
+        expect(false88Deadline.propositionSupport).toBe("CONTRADICTED_BY_STATUTE");
+
+        const false94Deadline = resolveLegalAuthority("CYFSA s. 94(1)", {
+          proposition:
+            "Under CYFSA s. 94(1), the court may adjourn a temporary care hearing for up to 60 days without consent.",
+        });
+        expect(false94Deadline.status).toBe("INAPPLICABLE");
+        expect(false94Deadline.propositionSupport).toBe("CONTRADICTED_BY_STATUTE");
+      });
+    });
+
+    describe("Hotfix 5: Synchronized Family Law Rules r. 1(8) and Charter s. 24(1) verification", () => {
+      it("verifies Family Law Rules r. 1(8) and rejects unverified subrules or misapplied propositions", () => {
+        const r18 = resolveLegalAuthority("Family Law Rules, O. Reg. 114/99, Rule 1(8)", {
+          proposition: "Remedies for failure to obey a court order include costs, striking pleadings, or postponement.",
+        });
+        expect(r18.status).toBe("VERIFIED");
+        expect(r18.authorityCategory).toBe("FAMILY_LAW_RULES");
+        expect(r18.authorityId).toBe("FLR:1(8)");
+        expect(r18.propositionSupport).toBe("SUPPORTED");
+
+        const bareR18 = resolveLegalAuthority("Rule 1(8)");
+        expect(bareR18.status).toBe("VERIFIED");
+        expect(bareR18.authorityId).toBe("FLR:1(8)");
+
+        const unverified181 = resolveLegalAuthority("Family Law Rules, Rule 1(8.1)");
+        expect(unverified181.status).toBe("UNVERIFIED");
+
+        const misapplied18 = resolveLegalAuthority("Family Law Rules, Rule 1(8)", {
+          proposition: "Rule 1(8) authorizes warrantless apprehension of a child.",
+        });
+        expect(misapplied18.status).toBe("INAPPLICABLE");
+        expect(misapplied18.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+      });
+
+      it("verifies Charter s. 24(1) and rejects unverified s. 24(2) or misapplied propositions", () => {
+        const c24 = resolveLegalAuthority("Canadian Charter of Rights and Freedoms, s. 24(1)", {
+          proposition: "Application to a court of competent jurisdiction for an appropriate and just remedy for a Charter infringement.",
+        });
+        expect(c24.status).toBe("VERIFIED");
+        expect(c24.authorityCategory).toBe("CHARTER");
+        expect(c24.authorityId).toBe("CHARTER:24(1)");
+        expect(c24.propositionSupport).toBe("SUPPORTED");
+
+        const c242 = resolveLegalAuthority("Charter s. 24(2)");
+        expect(c242.status).toBe("UNVERIFIED");
+
+        const misapplied24 = resolveLegalAuthority("Charter s. 24(1)", {
+          proposition: "Charter s. 24(1) sets the 5-day post-apprehension hearing deadline.",
+        });
+        expect(misapplied24.status).toBe("INAPPLICABLE");
+        expect(misapplied24.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
+      });
     });
   });
 });

@@ -190,17 +190,24 @@ export function buildEducationalAnalysis(flag: any): EducationalAnalysis {
     : (page ? `Document Page ${page}` : "Reference location in uploaded document");
 
   const legalRef = String(flag?.legalReference || "").trim();
-  const resolvedStatute = resolveLegalAuthority(legalRef);
+  const resolvedStatute = resolveLegalAuthority(legalRef, {
+    proposition: typeof flag?.explanation === "string" ? flag.explanation : undefined,
+  });
   const applicableAuthorityId = flag?.authorityId || resolvedStatute.entry?.id;
   const legislation = legalRef.includes("CYFSA") 
     ? legalRef 
     : (legalRef ? `CYFSA & ${legalRef}` : "Child, Youth and Family Services Act, 2017 (CYFSA)");
 
   const isHearsay = flag?.evidenceClassification === "HEARSAY" || flag?.category?.toLowerCase().includes("hearsay");
+  const isOrderFailure =
+    resolvedStatute.entry?.id === "FLR:1(8)" ||
+    /\b(?:Rule|r\.?)\s*1\(8\)|failure\s+to\s+obey\s+an?\s+order/i.test(`${legalRef} ${flag?.explanation || ""}`);
   const proceduralRule = isHearsay
     ? "Ontario Family Law Rules (O. Reg. 114/99), Rule 14(18) and 14(19) (Evidence on Motions & Information/Belief requirements)"
-    : "Ontario Family Law Rules (O. Reg. 114/99), Rule 1(7) and Rule 14(18) (Fairness & Firsthand Affidavits)";
-  const proceduralRuleAuthorityId = "FLR:14(18)";
+    : isOrderFailure
+      ? "Ontario Family Law Rules (O. Reg. 114/99), Rule 1(8) (Failure to obey order) and Rule 14(18) (Firsthand Affidavits)"
+      : "Ontario Family Law Rules (O. Reg. 114/99), Rule 1(7) and Rule 14(18) (Fairness & Firsthand Affidavits)";
+  const proceduralRuleAuthorityId = isOrderFailure ? "FLR:1(8)" : "FLR:14(18)";
 
   const caseLaw = getAuthoritativeJurisprudence(flag);
 

@@ -119,6 +119,7 @@ export interface AuthorityResolutionResult {
   temporalStatus: TemporalVerificationStatus;
   propositionSupport: PropositionSupportStatus;
   propositionReason: string | null;
+  allSectionsCited?: string[];
 }
 
 const CYFSA_TITLE = "Child, Youth and Family Services Act, 2017, S.O. 2017, c. 14, Sched. 1";
@@ -1072,6 +1073,23 @@ const CORE_AUTHORITIES: VerifiedAuthorityEntry[] = [
   // FAMILY LAW RULES (O. Reg. 114/99) — Distinct category, never in CYFSA allowlist
   // ---------------------------------------------------------------------------
   {
+    authorityId: "FLR:1(8)",
+    citation: "Family Law Rules, O. Reg. 114/99, Rule 1(8)",
+    instrument: "FAMILY_LAW_RULES",
+    statuteTitle: FLR_TITLE,
+    sectionKey: "1(8)",
+    heading: "Failure to obey order",
+    exactWording: "1 (8) If a person fails to obey an order in a case or a related case, the court may deal with the failure by making any order that it considers necessary for a just determination of the matter, including, (a) an order for costs; (b) an order dismissing a claim; (c) an order striking out any application, answer, notice of motion, motion to change, response to motion to change, financial statement, affidavit, or any other document filed by a party; (d) an order that all or part of a document that was required to be provided but was not, may not be used in the case; (e) an order that a party is not entitled to any further order from the court unless the court orders otherwise; (f) an order postponing the trial or any other step in the case; and (g) on motion, a contempt order.",
+    sourceUrl: "https://www.ontario.ca/laws/regulation/990114#BK1",
+    consolidationPeriod: "Consolidation period: In Force (O. Reg. 114/99, r. 1(8), as amended by O. Reg. 322/13, s. 1 and O. Reg. 298/18, s. 2)",
+    effectiveFrom: "1999-09-15",
+    effectiveTo: null,
+    verificationSourceType: "REGULATION_REFERENCE_SUMMARY",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Empowers the court to deal with a failure to obey an order in a case or a related case by making any order necessary for a just determination, including costs, dismissing a claim, striking documents, prohibiting use of undisclosed documents, postponing steps, or (on motion) a contempt order.",
+    practiceNote: "Distinguish Rule 1(8) (failure to obey a court order) from Rule 1(8.1) (failure to follow the Family Law Rules, which excludes contempt under clause (g)). In child protection proceedings, courts exercise extreme caution before striking a parent's participation given the child's best interests."
+  },
+  {
     authorityId: "FLR:14(18)",
     citation: "Family Law Rules, O. Reg. 114/99, Rule 14(18)",
     instrument: "FAMILY_LAW_RULES",
@@ -1095,14 +1113,14 @@ const CORE_AUTHORITIES: VerifiedAuthorityEntry[] = [
     statuteTitle: FLR_TITLE,
     sectionKey: "14(19)",
     heading: "Affidavit evidence on motions — Information from other person",
-    exactWording: "14 (19) The affidavit may also contain information that the person learned from someone else, bytes/statements of information and belief, only if the source of the information is identified by name and the affidavit states that the person signing it believes the information is true.",
+    exactWording: "14 (19) The affidavit may also contain information that the person learned from someone else, but only if, (a) the source of the information is identified by name and the affidavit states that the person signing it believes the information is true; and (b) in addition, if the motion is a contempt motion under rule 31, the information is not likely to be disputed.",
     sourceUrl: "https://www.ontario.ca/laws/regulation/990114#BK20",
     consolidationPeriod: "Consolidation period: In Force (O. Reg. 114/99; full text not bundled in local corpus)",
     effectiveFrom: "1999-09-15",
     effectiveTo: null,
     verificationSourceType: "REGULATION_REFERENCE_SUMMARY",
     verifiedDate: "2026-11-03",
-    legalTestSummary: "Permits secondhand information in a motion affidavit only if the source is identified and the affiant states a belief that the information is true.",
+    legalTestSummary: "Permits secondhand information (information and belief) in a motion affidavit only if the source is identified by name and the affiant states a belief that the information is true.",
     practiceNote: "Even where formally admissible under Rule 14(19), uncorroborated hearsay on disputed central facts carries reduced evidentiary weight."
   },
   {
@@ -1160,11 +1178,28 @@ const CORE_AUTHORITIES: VerifiedAuthorityEntry[] = [
     legalTestSummary: "Protects equality before and under the law without discrimination based on enumerated or analogous grounds, including disability, race, and ethnic origin.",
     practiceNote: "Relevant where parenting assessments or service delivery fail to accommodate parental disability or cultural background."
   },
+  {
+    authorityId: "CHARTER:24(1)",
+    citation: "Canadian Charter of Rights and Freedoms, Section 24(1)",
+    instrument: "CHARTER",
+    statuteTitle: CHARTER_TITLE,
+    sectionKey: "24(1)",
+    heading: "Enforcement of guaranteed rights and freedoms",
+    exactWording: "24. (1) Anyone whose rights or freedoms, as guaranteed by this Charter, have been infringed or denied may apply to a court of competent jurisdiction to obtain such remedy as the court considers appropriate and just in the circumstances.",
+    sourceUrl: "https://laws-lois.justice.gc.ca/eng/const/page-12.html",
+    consolidationPeriod: "Constitutional Law of Canada (in force April 17, 1982)",
+    effectiveFrom: "1982-04-17",
+    effectiveTo: null,
+    verificationSourceType: "CONSTITUTIONAL_TEXT",
+    verifiedDate: "2026-11-03",
+    legalTestSummary: "Authorizes an individual whose Charter rights or freedoms (such as s. 7 security of the person or s. 15 equality) have been infringed or denied by state action to apply to a court of competent jurisdiction for an appropriate and just remedy.",
+    practiceNote: "Section 24(1) is a remedial provision, not an independent substantive right; it requires proving an infringement of a substantive Charter guarantee (such as s. 7 or s. 15) before a court with statutory jurisdiction over the parties, subject matter, and remedy sought."
+  },
 ];
 
 /**
  * Authoritative verified provisions registry.
- * Keyed by canonical category-prefixed authorityId (e.g. "CYFSA:88", "FLR:14(18)", "CHARTER:7")
+ * Keyed by canonical category-prefixed authorityId (e.g. "CYFSA:88", "FLR:1(8)", "FLR:14(18)", "CHARTER:7", "CHARTER:24(1)")
  * as well as backwards-compatible section aliases for CYFSA and core rules.
  */
 export const VERIFIED_AUTHORITIES_REGISTRY: Record<string, VerifiedAuthorityEntry> = {};
@@ -1179,16 +1214,292 @@ for (const entry of CORE_AUTHORITIES) {
 }
 // Backwards-compatible aliases used by existing callers/tests
 VERIFIED_AUTHORITIES_REGISTRY["125"] = VERIFIED_AUTHORITIES_REGISTRY["CYFSA:125(1)"];
+VERIFIED_AUTHORITIES_REGISTRY["FLR_1_8"] = VERIFIED_AUTHORITIES_REGISTRY["FLR:1(8)"];
 VERIFIED_AUTHORITIES_REGISTRY["FLR_14_18"] = VERIFIED_AUTHORITIES_REGISTRY["FLR:14(18)"];
 VERIFIED_AUTHORITIES_REGISTRY["FLR_14_19"] = VERIFIED_AUTHORITIES_REGISTRY["FLR:14(19)"];
 VERIFIED_AUTHORITIES_REGISTRY["CHARTER_7"] = VERIFIED_AUTHORITIES_REGISTRY["CHARTER:7"];
 VERIFIED_AUTHORITIES_REGISTRY["CHARTER_15"] = VERIFIED_AUTHORITIES_REGISTRY["CHARTER:15"];
+VERIFIED_AUTHORITIES_REGISTRY["CHARTER_24_1"] = VERIFIED_AUTHORITIES_REGISTRY["CHARTER:24(1)"];
+VERIFIED_AUTHORITIES_REGISTRY["CHARTER:24"] = VERIFIED_AUTHORITIES_REGISTRY["CHARTER:24(1)"];
 VERIFIED_AUTHORITIES_REGISTRY["BILL_C92:10"] = VERIFIED_AUTHORITIES_REGISTRY["BILL_C92:10(1)"];
 VERIFIED_AUTHORITIES_REGISTRY["BILL_C92:12"] = VERIFIED_AUTHORITIES_REGISTRY["BILL_C92:12(1)"];
 VERIFIED_AUTHORITIES_REGISTRY["BILL_C92:14"] = VERIFIED_AUTHORITIES_REGISTRY["BILL_C92:14(1)"];
 VERIFIED_AUTHORITIES_REGISTRY["BILL_C92:16"] = VERIFIED_AUTHORITIES_REGISTRY["BILL_C92:16(1)"];
 
 export const VERIFIED_STATUTORY_PROVISIONS = VERIFIED_AUTHORITIES_REGISTRY;
+
+/**
+ * Normalizes periods inside statutory abbreviations ("s.", "ss.", "sec.", "sub.", "para.", "r.", "c.", "O.", "S.", "Reg.", "Sched.")
+ * so clause-level regexes that stop at sentence boundaries (`.` or `;`) do not prematurely stop at `s. 81(7)`.
+ */
+function normalizeClauseAbbreviations(input: string): string {
+  return input.replace(/\b(s|ss|sec|sub|subs|para|r|c|O|S|R|Reg|Sched)\./gi, "$1 ");
+}
+
+/**
+ * Authority-specific proposition evaluator for CYFSA s. 102 / s. 102(1).
+ * Distinguishes accurate comparisons between a custody order under s. 102(1) and a supervision order
+ * under s. 101(1), para. 1 from false propositions that attribute a supervision order to s. 102.
+ */
+function evaluateSection102Proposition(prop: string): { misapplied: boolean; reason: string } {
+  const reason =
+    "CYFSA s. 102(1) governs custody orders (deemed parenting/contact orders under CLRA s. 28) granted instead of an order under s. 101(1). Supervision orders are governed by CYFSA s. 101(1), para. 1 (and s. 94(2)(b)-(c) on adjournment or s. 116(1)(a) on status review).";
+  const norm = normalizeClauseAbbreviations(prop);
+
+  // 1. Direct nominal attachment of a supervision order to s. 102 / s. 102(1)
+  if (
+    /\b102(?:\(\d+\))?\s+(?:society\s+|temporary\s+|final\s+)?supervision\s+order\b|\bsupervision\s+order(?:s)?\s*\(\s*(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?102(?:\(\d+\))?\s*\)|\bsupervision\s+order(?:s)?\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?102(?:\(\d+\))?(?!\w)/i.test(
+      norm
+    )
+  ) {
+    return { misapplied: true, reason };
+  }
+
+  // 2. Clause-level predicate where s. 102 is the subject or governing prepositional phrase of authorizing/making/governing a supervision order
+  // (Catches "Instead of s. 101(1), CYFSA s. 102(1) authorizes a supervision order" and "Under s. 102(1), the court may make a supervision order instead of a custody order")
+  if (
+    /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)102(?:\(\d+\))?(?:(?!\b(?:instead\s+of|rather\s+than|as\s+opposed\s+to|unlike|whereas|while|distinguished\s+from|distinct\s+from)\b)[^.;])*?\b(?:governs?|authorizes?|provides?\s+for|permits?|is\s+(?:a\s+)?|makes?\s+(?:a\s+)?|made\s+(?:a\s+)?|grants?\s+(?:a\s+)?|granted\s+(?:a\s+)?|imposes?\s+(?:a\s+)?|orders?\s+(?:a\s+)?|places?\s+[^.;]{1,35}\bunder\s+(?:a\s+)?)(?:an?\s+|temporary\s+|final\s+|society\s+|\d+-month\s+)?supervision\s+order\b/i.test(
+      norm
+    )
+  ) {
+    return { misapplied: true, reason };
+  }
+
+  // 3. Conjoined attribution claiming s. 102 grants/authorizes both custody and supervision orders without attributing supervision to s. 101/94/116
+  if (
+    /\b102(?:\(\d+\))?(?:(?!\b(?:instead\s+of|rather\s+than|as\s+opposed\s+to|unlike|whereas|while)\b)[^.;])*?\b(?:custody\s+(?:order\s+)?(?:or|and)\s+(?:a\s+|society\s+)?supervision\s+order|supervision\s+(?:order\s+)?(?:or|and)\s+(?:a\s+)?custody\s+order)\b/i.test(
+      norm
+    )
+  ) {
+    return { misapplied: true, reason };
+  }
+
+  // 4. Proposition discusses a supervision order without mentioning custody at all
+  if (/\bsupervision\s+order\b/i.test(norm) && !/\bcustody\b/i.test(norm)) {
+    return { misapplied: true, reason };
+  }
+
+  return { misapplied: false, reason };
+}
+
+/**
+ * Authority-specific proposition evaluator for CYFSA s. 81(1), s. 81(2), and s. 81(7).
+ * Distinguishes:
+ * - s. 81(1): Society application to the court to determine whether a child is in need of protection;
+ * - s. 81(2): Warrant to apprehend a child issued by a justice of the peace;
+ * - s. 81(7): Warrantless apprehension by a child protection worker where there is substantial risk during the time needed for a s. 90(1) hearing or s. 81(2) warrant.
+ */
+function evaluateSection81Proposition(
+  secKey: "81(1)" | "81(2)" | "81(7)",
+  prop: string
+): { misapplied: boolean; reason: string } {
+  const norm = normalizeClauseAbbreviations(prop);
+
+  if (secKey === "81(1)") {
+    const reason =
+      "CYFSA s. 81(1) merely authorizes a society to apply to the court to determine whether a child is in need of protection. A warrant to apprehend is governed by CYFSA s. 81(2), and warrantless apprehension requires meeting the three-part test in CYFSA s. 81(7).";
+
+    // 1. Direct or conjoined attribution of warrantless apprehension or warrant issuance to s. 81(1)
+    if (
+      /\b(?:warrantless\s+apprehension|apprehend(?:ed|ing|s)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|remov(?:e|ed|ing|al)\s+(?:of\s+a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|emergency\s+warrantless\s+removal|warrant\s+to\s+apprehend|issu(?:e|ed|ing)\s+a\s+warrant)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(1\)/i.test(
+        norm
+      ) ||
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(1\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|distinguish(?:ed|ing)?\s+from|rather\s+than|following|after|prior\s+to|and\s+not)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:(?:authorizes?|governs?|permits?|empowers?|allows?|sets?\s+the\s+(?:test|threshold|standard)\s+for|conduct(?:ed|s|ing)?|made|effect(?:ed|s|ing)?|exercis(?:ed|es|ing)?|may\s+apprehend|apprehend(?:ed|s|ing)?)\s+(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;]){0,65}?\b(?:warrantless\s+apprehension|(?:apprehend|remove)(?:ing)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|without\s+a\s+warrant|issu(?:e|ing)\s+a\s+warrant\s+to\s+apprehend|substantial\s+risk\s+during\s+the\s+time\s+necessary|imminent\s+danger)|warrantless\s+apprehension\s+authority)/i.test(
+        norm
+      ) ||
+      /\b81\(1\)\s+(?:warrantless\s+apprehension|apprehension\s+warrant|imminent\s+danger\s+test)\b/i.test(norm)
+    ) {
+      return { misapplied: true, reason };
+    }
+
+    // 2. Proposition discusses warrantless apprehension / imminent danger without identifying s. 81(7) as the warrantless apprehension authority
+    const mentionsWarrantless =
+      /\b(?:warrantless\s+apprehension|apprehend(?:ed|ing|s)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|remov(?:e|ed|ing)\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|substantial\s+risk\s+(?:to\s+the\s+child['’]?s\s+health\s+or\s+safety\s+)?during\s+the\s+time\s+necessary|imminent\s+danger)\b/i.test(
+        norm
+      );
+    if (mentionsWarrantless) {
+      const identifies81_7 = /\b81\(7\)|subsection\s*\(7\)/i.test(norm);
+      const negates81_1Apprehension =
+        /\b81\(1\)\b[^.;]*?\b(?:does\s+not|not)\s+(?:authorize|govern|permit)\s+(?:warrantless\s+)?apprehension/i.test(norm);
+      if (!identifies81_7 && !negates81_1Apprehension) {
+        return { misapplied: true, reason };
+      }
+    }
+
+    // 3. Proposition discusses a warrant to apprehend issued by a justice of the peace without identifying s. 81(2)
+    const mentionsWarrantIssuance =
+      /\b(?:justice\s+of\s+the\s+peace\s+(?:may\s+)?issue(?:d|s)?\s+a\s+warrant|warrant\s+to\s+apprehend\s+(?:a\s+child|the\s+child))\b/i.test(
+        norm
+      );
+    if (mentionsWarrantIssuance && !/\b81\(2\)|subsection\s*\(2\)/i.test(norm)) {
+      return { misapplied: true, reason };
+    }
+
+    return { misapplied: false, reason };
+  }
+
+  if (secKey === "81(2)") {
+    const reason =
+      "CYFSA s. 81(2) governs warrants to apprehend a child issued by a justice of the peace where a less restrictive course of action is unavailable or inadequate. Warrantless apprehension by a worker is governed by CYFSA s. 81(7).";
+
+    if (
+      /\b(?:warrantless\s+apprehension|apprehend(?:ed|ing|s)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|remov(?:e|ed|ing)\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(2\)/i.test(
+        norm
+      ) ||
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(2\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|distinguish(?:ed|ing)?\s+from|rather\s+than|instead\s+of|time\s+necessary\s+to)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:authorizes?|governs?|permits?|empowers?|allows?|sets?\s+the\s+(?:test|threshold|standard)\s+for|conduct(?:ed|s|ing)?|made|may\s+apprehend|apprehend(?:ed|s|ing)?)\s+(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;]){0,65}?\b(?:warrantless\s+apprehension|(?:apprehend|remove)(?:ing)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|without\s+a\s+warrant)\b/i.test(
+        norm
+      )
+    ) {
+      return { misapplied: true, reason };
+    }
+
+    const mentionsWarrantless =
+      /\b(?:warrantless\s+apprehension|apprehend(?:ed|ing|s)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|remov(?:e|ed|ing)\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant)\b/i.test(
+        norm
+      );
+    if (mentionsWarrantless && !/\b81\(7\)|subsection\s*\(7\)/i.test(norm)) {
+      return { misapplied: true, reason };
+    }
+
+    return { misapplied: false, reason };
+  }
+
+  // secKey === "81(7)"
+  const reason =
+    "CYFSA s. 81(7) governs warrantless apprehension where there would be a substantial risk to the child's health or safety during the time necessary for a s. 90(1) hearing or to obtain a warrant under s. 81(2). Warrants to apprehend issued by a justice of the peace are governed by s. 81(2), and court applications are governed by s. 81(1).";
+
+  if (
+    /\b(?:warrant\s+to\s+apprehend|apprehension\s+warrant|justice\s+of\s+the\s+peace\s+(?:may\s+)?issue(?:d|s)?\s+a\s+warrant|issu(?:e|ed|ing)\s+a\s+warrant\s+to\s+apprehend)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(7\)/i.test(
+      norm
+    ) ||
+    /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(7\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than|instead\s+of|time\s+necessary\s+to|without\s+a\s+warrant)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:(?:authorizes?|governs?|permits?|empowers?)\s+(?:a\s+)?(?:justice\s+of\s+the\s+peace\s+to\s+issue\s+a\s+warrant|issu(?:e|ing)\s+a\s+warrant\s+to\s+apprehend)|justice\s+of\s+the\s+peace\s+(?:may|can|shall)\s+issue\s+a\s+warrant\s+to\s+apprehend)\b/i.test(
+      norm
+    )
+  ) {
+    return { misapplied: true, reason };
+  }
+
+  if (
+    /\b(?:apprehended\s+(?:pursuant\s+to|with)\s+a\s+warrant|justice\s+of\s+the\s+peace\s+(?:may\s+)?issue(?:d|s)?\s+a\s+warrant\s+to\s+apprehend)\b/i.test(
+      norm
+    ) &&
+    !/\b81\(2\)|subsection\s*\(2\)|without\s+a\s+warrant|warrantless\b/i.test(norm)
+  ) {
+    return { misapplied: true, reason };
+  }
+
+  return { misapplied: false, reason };
+}
+
+/**
+ * Authority-specific proposition evaluator for CYFSA s. 88, s. 94(1), and s. 94(5).
+ * Distinguishes:
+ * - s. 88: Mandatory 5-day deadline ("as soon as practicable, but in any event within five days") after a child is brought to a place of safety under s. 81, s. 83(1)(a)(ii), or s. 136(5) to bring the matter before a court for a s. 90(1) hearing, return the child, or make a s. 75(1)/s. 77 agreement;
+ * - s. 94(1): Prohibition against adjourning a hearing for more than 30 days unless all parties present and the caregiver during the adjournment consent and no absent party is known to object;
+ * - s. 94(5): Requirement to consider placement with a relative or extended-family/community member under s. 94(2)(c) before ordering temporary society custody under s. 94(2)(d).
+ */
+function evaluateSection88And94Proposition(
+  secKey: "88" | "94(1)" | "94(5)",
+  prop: string
+): { misapplied: boolean; support?: PropositionSupportStatus; reason: string } {
+  const norm = normalizeClauseAbbreviations(prop);
+
+  if (secKey === "88") {
+    const reason =
+      "CYFSA s. 88 requires that as soon as practicable, and in any event within five days after a child is brought to a place of safety under s. 81, s. 83(1)(a)(ii), or s. 136(5), the matter be brought before a court for a s. 90(1) hearing, the child be returned, or a s. 75(1)/s. 77 agreement be made. Adjournments (30-day limit absent consent) are governed by CYFSA s. 94(1).";
+
+    // 1. Direct attribution of the 30-day adjournment limit to s. 88
+    if (
+      /\b(?:30-day|thirty-day|30\s+days?)\s+adjournment\s+(?:limit|maximum|rule|period|cap)?\s*(?:under|pursuant\s+to|in|per|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*)?88\b/i.test(
+        norm
+      ) ||
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*)88(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|after|following|and\s+then|subsequently)\b)[^.;])*?\b(?:shall\s+not\s+adjourn|adjourn(?:ed|ment|s)?\s+(?:a\s+hearing\s+)?(?:for\s+(?:more\s+than|up\s+to)|to)\s+30\s+days|limits?\s+adjournments?\s+to\s+30\s+days|governs?\s+(?:the\s+)?30-day\s+adjournment|sets?\s+(?:a\s+|the\s+)?30-day\s+adjournment)/i.test(
+        norm
+      )
+    ) {
+      return { misapplied: true, support: "IRRELEVANT_OR_MISAPPLIED", reason };
+    }
+
+    // 2. False statutory deadline claim attributed to s. 88 (e.g., claiming s. 88 allows 7, 10, 14, 15, 30, or 45 days to bring the matter to court)
+    if (
+      /\b(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)-day\s+(?:post-apprehension|place\s+of\s+safety|initial|statutory)\s+hearing\s+(?:deadline|rule|requirement|limit)\s*(?:under|pursuant\s+to|in|per|governed\s+by)?\s*(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*)?88\b/i.test(
+        norm
+      ) ||
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*)88(?:(?!\b(?:whereas|while|unlike|breach|violat|exceed|contrary|late|overdue|instead\s+of\s+the\s+(?:mandatory\s+)?(?:5|five))\b)[^.;])*?\b(?:(?:requires?|mandates?|permits?|allows?|provides?\s+that|sets?\s+a\s+deadline\s+of|has\s+a)\s+[^.;]{0,65}?\b(?:within\s+(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)\s+days|(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)-day\s+(?:post-apprehension|place\s+of\s+safety|initial|statutory)?\s*hearing\s+deadline)|(?:matter|child)\s+(?:shall|must|may)\s+be\s+brought\s+before\s+a\s+court\s+within\s+(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)\s+days)\b/i.test(
+        norm
+      )
+    ) {
+      return { misapplied: true, support: "CONTRADICTED_BY_STATUTE", reason };
+    }
+
+    // 3. Proposition is solely about the 30-day adjournment limit without mentioning the 5-day hearing or place of safety
+    if (
+      /\b(?:30-day|thirty-day)\s+adjournment\b|\badjourn(?:ed|ment)?\s+(?:a\s+hearing\s+)?for\s+more\s+than\s+30\s+days\b/i.test(
+        norm
+      ) &&
+      !/\b(?:5-day|five-day|(?:5|five)\s+days|place\s+of\s+safety|post-apprehension|initial\s+hearing)\b/i.test(norm)
+    ) {
+      return { misapplied: true, support: "IRRELEVANT_OR_MISAPPLIED", reason };
+    }
+
+    return { misapplied: false, reason };
+  }
+
+  if (secKey === "94(1)") {
+    const reason =
+      "CYFSA s. 94(1) prohibits adjourning a hearing for more than 30 days unless all parties present and the caregiver during the adjournment consent and no absent party is known to object. It is NOT the 5-day post-apprehension hearing deadline, which is governed by CYFSA s. 88.";
+
+    // 1. Direct attribution of the 5-day post-apprehension hearing deadline to s. 94(1)
+    if (
+      /\b(?:5-day|five-day|five\s+days?|5\s+days?)\s+(?:post-apprehension|place\s+of\s+safety|initial)?\s*hearing\s+(?:deadline|rule|requirement|limit|timeline)?\s*(?:under|pursuant\s+to|in|per|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(1\)/i.test(
+        norm
+      ) ||
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)94\(1\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|after|following)\b)[^.;])*?\b(?:within\s+(?:5|five)\s+days\s+after\s+(?:a\s+child\s+is\s+)?(?:brought\s+to\s+a\s+place\s+of\s+safety|apprehen(?:ded|sion)|remov(?:ed|al))|governs?\s+the\s+(?:5-day|five-day)\s+(?:post-apprehension\s+)?hearing|(?:initial\s+|post-apprehension\s+)?hearing\s+(?:shall|must)\s+(?:occur|take\s+place|be\s+held)\s+within\s+(?:5|five)\s+days|(?:matter|child)\s+(?:shall|must)\s+be\s+brought\s+before\s+a\s+court\s+within\s+(?:5|five)\s+days)\b/i.test(
+        norm
+      )
+    ) {
+      return { misapplied: true, support: "IRRELEVANT_OR_MISAPPLIED", reason };
+    }
+
+    // 2. False statutory adjournment deadline or false consent rule attributed to s. 94(1)
+    if (
+      /\b(?:5|7|10|14|45|60|90)-day\s+(?:statutory\s+|maximum\s+)?adjournment\s+(?:limit|maximum|cap|rule)\s*(?:under|pursuant\s+to|in|per|governed\s+by)?\s*(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(1\)/i.test(
+        norm
+      ) ||
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)94\(1\)(?:(?!\b(?:breach|violat|exceed|contrary|unlawful|impermissibl|beyond\s+the\s+30-day)\b)[^.;])*?\b(?:(?:may|can|permits?\s+the\s+court\s+to)\s+adjourn\s+(?:a\s+(?:temporary\s+care\s+)?hearing\s+)?for\s+(?:up\s+to|more\s+than)\s+(?:45|60|90)\s+days\s+without\s+(?:all\s+parties['’]?\s+)?consent|shall\s+not\s+adjourn\s+(?:a\s+hearing\s+)?for\s+more\s+than\s+(?:5|7|10|14|45|60|90)\s+days|only\s+the\s+society['’]?s\s+consent\s+is\s+required\s+to\s+adjourn|even\s+if\s+an\s+absent\s+party\s+objects)\b/i.test(
+        norm
+      )
+    ) {
+      return { misapplied: true, support: "CONTRADICTED_BY_STATUTE", reason };
+    }
+
+    // 3. Proposition discusses the 5-day post-apprehension hearing without mentioning adjournment or the 30-day limit
+    if (
+      /\b(?:5-day|five-day|five\s+day|within\s+(?:5|five)\s+days|post-apprehension\s+hearing)\b/i.test(norm) &&
+      !/\b(?:adjourn(?:ed|ment|s|ing)?|30-day|thirty-day|30\s+days)\b/i.test(norm)
+    ) {
+      return { misapplied: true, support: "IRRELEVANT_OR_MISAPPLIED", reason };
+    }
+
+    return { misapplied: false, reason };
+  }
+
+  // secKey === "94(5)"
+  const reason =
+    "CYFSA s. 94(5) requires the court to consider placement with a relative or extended-family/community member before ordering temporary society custody on adjournment. It is NOT the 5-day post-apprehension hearing deadline (governed by CYFSA s. 88) or the 30-day adjournment limit (governed by CYFSA s. 94(1)).";
+
+  if (
+    /\b(?:5-day|five-day|five\s+days?|5\s+days?|30-day|thirty-day|30\s+days?)\s+(?:post-apprehension\s+|initial\s+)?(?:hearing|adjournment)\s*(?:deadline|rule|requirement|limit|timeline)?\s*(?:under|pursuant\s+to|in|per|governed\s+by)?\s*(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(5\)/i.test(
+      norm
+    ) ||
+    (/\b(?:5-day|five-day|five\s+day|post-apprehension\s+hearing|within\s+(?:5|five)\s+days)\b/i.test(norm) &&
+      !/\b(?:relative|extended\s+family|community)\b/i.test(norm))
+  ) {
+    return { misapplied: true, support: "IRRELEVANT_OR_MISAPPLIED", reason };
+  }
+
+  return { misapplied: false, reason };
+}
 
 /**
  * Known CYFSA sections that exist in the statute (sourceExists = true) but are frequently
@@ -1198,18 +1509,6 @@ const KNOWN_MISAPPLIED_CYFSA_PROVISIONS: Record<
   string,
   { actualHeading: string; misappliedPattern: RegExp; reason: string }
 > = {
-  "94(5)": {
-    actualHeading: "CYFSA s. 94(5) (Relative-placement consideration on adjournment)",
-    misappliedPattern: /5-day|five-day|five day|post-apprehension hearing|within 5 days/i,
-    reason:
-      "CYFSA s. 94(5) requires the court to consider placement with a relative or extended-family/community member before ordering temporary society custody on adjournment. It is NOT the 5-day post-apprehension hearing deadline, which is governed by CYFSA s. 88.",
-  },
-  "94(1)": {
-    actualHeading: "CYFSA s. 94(1) (30-day adjournment limit)",
-    misappliedPattern: /5-day|five-day|five day|within 5 days after apprehension/i,
-    reason:
-      "CYFSA s. 94(1) limits adjournments to 30 days absent consent. It is NOT the 5-day post-apprehension hearing deadline, which is governed by CYFSA s. 88.",
-  },
   "125": {
     actualHeading: "CYFSA s. 125(1) (Duty to report suspicion)",
     misappliedPattern: /\b(?:proves?|establishes?|satisfies)\b.*\b(?:in need of protection|74\(2\)|removal|apprehension threshold)\b|\b(?:warrantless apprehension authority|proof of maltreatment)\b/i,
@@ -1221,12 +1520,6 @@ const KNOWN_MISAPPLIED_CYFSA_PROVISIONS: Record<
     misappliedPattern: /\b(?:proves?|establishes?|satisfies)\b.*\b(?:in need of protection|74\(2\)|removal|apprehension threshold)\b|\b(?:warrantless apprehension authority|proof of maltreatment)\b/i,
     reason:
       "CYFSA s. 125(1) sets the 'reasonable grounds to suspect' threshold for reporting to a society. It does NOT establish proof that a child is in need of protection under s. 74(2) or authorize removal under s. 81(7).",
-  },
-  "81(1)": {
-    actualHeading: "CYFSA s. 81(1) (Application to court)",
-    misappliedPattern: /\b(?:imminent danger|warrantless apprehension|remove without a warrant|substantial risk during the time necessary)\b/i,
-    reason:
-      "CYFSA s. 81(1) merely authorizes a society to apply to the court to determine whether a child is in need of protection. Warrantless apprehension requires meeting the three-part test in CYFSA s. 81(7).",
   },
   "41": {
     actualHeading: "CYFSA s. 41 (Society-Minister accountability agreement)",
@@ -1251,18 +1544,6 @@ const KNOWN_MISAPPLIED_CYFSA_PROVISIONS: Record<
     misappliedPattern: /\b(?:plan of care|society's plan|care plan|remedial services)\b/i,
     reason:
       "CYFSA s. 51(1) governs gifts and trusts upon transfer of charitable property. The Society's written Plan of Care is governed by CYFSA s. 100 (and s. 13(1) for a child in care).",
-  },
-  "102": {
-    actualHeading: "CYFSA s. 102 (Custody order)",
-    misappliedPattern: /\bsupervision order\b/i,
-    reason:
-      "CYFSA s. 102 governs custody orders. Supervision orders are governed by CYFSA s. 101(1), para. 1 (and s. 116(1)(a) on status review).",
-  },
-  "102(1)": {
-    actualHeading: "CYFSA s. 102(1) (Custody order)",
-    misappliedPattern: /\bsupervision order\b/i,
-    reason:
-      "CYFSA s. 102(1) governs custody orders. Supervision orders are governed by CYFSA s. 101(1), para. 1.",
   },
   "81(12)": {
     actualHeading: "CYFSA s. 81(12) (Peace officer powers under s. 81)",
@@ -1319,7 +1600,81 @@ export function evaluatePropositionSupport(
     };
   }
 
+  // Non-CYFSA authority proposition checks (FLR & Charter)
+  if (/^(?:FLR:)?1\(8\)$/i.test(sectionOrAuthorityKey)) {
+    if (
+      /\b(?:contempt\s+order\s+for\s+failing\s+to\s+follow\s+(?:the\s+)?rules\s+without\s+(?:a\s+)?court\s+order|child\s+in\s+need\s+of\s+protection\s+threshold\s+under\s+Rule\s+1\(8\)|warrantless\s+apprehension|apprehend\s+a\s+child\s+without\s+a\s+warrant|(?:5-day|five-day)\s+post-apprehension\s+hearing|30-day\s+adjournment\s+limit)\b/i.test(
+        prop
+      )
+    ) {
+      return {
+        support: "IRRELEVANT_OR_MISAPPLIED",
+        reason:
+          "Family Law Rules r. 1(8) governs remedies for failing to obey a court order (whereas r. 1(8.1) governs failing to follow the Rules and excludes contempt under clause (g), and child protection apprehension/hearing rules are governed by the CYFSA).",
+      };
+    }
+    return { support: "SUPPORTED", reason: null };
+  }
+
+  if (/^(?:FLR:)?14\((?:18|19)\)$/i.test(sectionOrAuthorityKey)) {
+    if (
+      /\b(?:anonymous\s+hearsay\s+is\s+admissible\s+without\s+identifying\s+the\s+source|unattributed\s+hearsay\s+without\s+naming\s+the\s+source\s+satisfies\s+Rule\s+14\((?:18|19)\))\b/i.test(
+        prop
+      )
+    ) {
+      return {
+        support: "CONTRADICTED_BY_STATUTE",
+        reason:
+          "Family Law Rules r. 14(18)-(19) permit information and belief in a motion affidavit ONLY if the source of the information is identified by name and the affiant states a belief that the information is true.",
+      };
+    }
+    return { support: "SUPPORTED", reason: null };
+  }
+
+  if (/^(?:CHARTER:)?24(?:\(1\))?$/i.test(sectionOrAuthorityKey)) {
+    if (
+      /\b(?:standalone\s+substantive\s+right\s+without\s+any\s+Charter\s+infringement|automatic\s+exclusion\s+of\s+evidence\s+under\s+s\.?\s*24\(1\)\s+without\s+a\s+Charter\s+breach|(?:5-day|five-day)\s+post-apprehension\s+hearing|30-day\s+adjournment\s+limit|warrantless\s+apprehension\s+authority)\b/i.test(
+        prop
+      )
+    ) {
+      return {
+        support: "IRRELEVANT_OR_MISAPPLIED",
+        reason:
+          "Charter s. 24(1) is a remedial enforcement provision requiring an infringement or denial of a guaranteed Charter right or freedom before a court of competent jurisdiction.",
+      };
+    }
+    return { support: "SUPPORTED", reason: null };
+  }
+
   const normalizedKey = sectionOrAuthorityKey.replace(/^CYFSA:/i, "");
+
+  if (normalizedKey === "102" || normalizedKey === "102(1)") {
+    const check102 = evaluateSection102Proposition(prop);
+    if (check102.misapplied) {
+      return { support: "IRRELEVANT_OR_MISAPPLIED", reason: check102.reason };
+    }
+    return { support: "SUPPORTED", reason: null };
+  }
+
+  if (normalizedKey === "81(1)" || normalizedKey === "81(2)" || normalizedKey === "81(7)") {
+    const check81 = evaluateSection81Proposition(normalizedKey, prop);
+    if (check81.misapplied) {
+      return { support: "IRRELEVANT_OR_MISAPPLIED", reason: check81.reason };
+    }
+    return { support: "SUPPORTED", reason: null };
+  }
+
+  if (normalizedKey === "88" || normalizedKey === "94(1)" || normalizedKey === "94(5)") {
+    const check88_94 = evaluateSection88And94Proposition(normalizedKey, prop);
+    if (check88_94.misapplied) {
+      return {
+        support: check88_94.support || "IRRELEVANT_OR_MISAPPLIED",
+        reason: check88_94.reason,
+      };
+    }
+    return { support: "SUPPORTED", reason: null };
+  }
+
   const misapplied = KNOWN_MISAPPLIED_CYFSA_PROVISIONS[normalizedKey];
   if (misapplied && misapplied.misappliedPattern.test(prop)) {
     return {
@@ -1363,18 +1718,18 @@ export function resolveLegalAuthority(
   const category = identifyAuthorityCategory(text);
   const combinedProposition = [options?.proposition || "", text].filter(Boolean).join(" ");
 
-  // Helper to apply temporal & proposition checks once an entry is resolved
+  // Helper to apply temporal & proposition checks once an entry (and optional list of all cited sections) is resolved
   const finalizeResolution = (
     entry: VerifiedAuthorityEntry,
-    specificSectionCited?: string
+    specificSectionCited?: string,
+    allSectionsCited?: string[]
   ): AuthorityResolutionResult => {
-    // 1. Check clause-level effective dates (e.g., 74(2)(d.1) and 74(2)(d.2) effective 2021-10-01)
-    let effectiveFrom = entry.effectiveFrom;
-    if (specificSectionCited && /^74\(2\)\(d\.[12]\)$/i.test(specificSectionCited)) {
-      effectiveFrom = "2021-10-01";
-    }
+    const sectionsToCheck =
+      allSectionsCited && allSectionsCited.length > 0
+        ? allSectionsCited
+        : [specificSectionCited || entry.sectionKey];
 
-    // 2. Temporal check if caseDate is provided
+    // 1. Temporal check if caseDate is provided (checks every cited section in multi-section citations)
     let temporalStatus: TemporalVerificationStatus = "NOT_CHECKED";
     if (options?.caseDate != null && String(options.caseDate).trim() !== "") {
       const rawDate = String(options.caseDate).trim();
@@ -1396,72 +1751,89 @@ export function resolveLegalAuthority(
           propositionReason: null,
         };
       }
-      if (rawDate < effectiveFrom) {
-        return {
-          status: "INAPPLICABLE",
-          authorityId: entry.authorityId,
-          authorityCategory: category,
-          category,
-          entry,
-          officialCitation: entry.citation,
-          sourceUrl: entry.sourceUrl,
-          exactWording: entry.exactWording,
-          practiceNote: entry.practiceNote,
-          warningText: `Temporal version mismatch: ${ specificSectionCited ? `CYFSA s. ${specificSectionCited}` : entry.citation } came into force on ${effectiveFrom} and was not in force on the case date (${rawDate}).`,
-          sourceExists: true,
-          temporalStatus: "BEFORE_EARLIEST_VERSION",
-          propositionSupport: "NOT_EVALUATED",
-          propositionReason: null,
-        };
-      }
-      if (entry.effectiveTo !== null && rawDate >= entry.effectiveTo) {
-        return {
-          status: "INAPPLICABLE",
-          authorityId: entry.authorityId,
-          authorityCategory: category,
-          category,
-          entry,
-          officialCitation: entry.citation,
-          sourceUrl: entry.sourceUrl,
-          exactWording: entry.exactWording,
-          practiceNote: entry.practiceNote,
-          warningText: `Temporal version mismatch: ${entry.citation} was repealed or superseded on ${entry.effectiveTo} prior to the case date (${rawDate}).`,
-          sourceExists: true,
-          temporalStatus: "AFTER_REPEAL",
-          propositionSupport: "NOT_EVALUATED",
-          propositionReason: null,
-        };
+
+      for (const sec of sectionsToCheck) {
+        const secResolvedKey = category === "CYFSA" ? resolveBundledCyfsaKey(sec) : null;
+        const secEntry =
+          (category === "CYFSA"
+            ? VERIFIED_AUTHORITIES_REGISTRY[`CYFSA:${sec}`] ||
+              (secResolvedKey ? VERIFIED_AUTHORITIES_REGISTRY[`CYFSA:${secResolvedKey}`] : null)
+            : null) || entry;
+
+        let effectiveFrom = secEntry.effectiveFrom;
+        if (/^74\(2\)\(d\.[12]\)$/i.test(sec)) {
+          effectiveFrom = "2021-10-01";
+        }
+
+        if (rawDate < effectiveFrom) {
+          return {
+            status: "INAPPLICABLE",
+            authorityId: secEntry.authorityId,
+            authorityCategory: category,
+            category,
+            entry: secEntry,
+            officialCitation: secEntry.citation,
+            sourceUrl: secEntry.sourceUrl,
+            exactWording: secEntry.exactWording,
+            practiceNote: secEntry.practiceNote,
+            warningText: `Temporal version mismatch: ${category === "CYFSA" ? `CYFSA s. ${sec}` : secEntry.citation} came into force on ${effectiveFrom} and was not in force on the case date (${rawDate}).`,
+            sourceExists: true,
+            temporalStatus: "BEFORE_EARLIEST_VERSION",
+            propositionSupport: "NOT_EVALUATED",
+            propositionReason: null,
+          };
+        }
+        if (secEntry.effectiveTo !== null && rawDate >= secEntry.effectiveTo) {
+          return {
+            status: "INAPPLICABLE",
+            authorityId: secEntry.authorityId,
+            authorityCategory: category,
+            category,
+            entry: secEntry,
+            officialCitation: secEntry.citation,
+            sourceUrl: secEntry.sourceUrl,
+            exactWording: secEntry.exactWording,
+            practiceNote: secEntry.practiceNote,
+            warningText: `Temporal version mismatch: ${secEntry.citation} was repealed or superseded on ${secEntry.effectiveTo} prior to the case date (${rawDate}).`,
+            sourceExists: true,
+            temporalStatus: "AFTER_REPEAL",
+            propositionSupport: "NOT_EVALUATED",
+            propositionReason: null,
+          };
+        }
       }
       temporalStatus = "IN_FORCE";
     }
 
-    // 3. Proposition support check
-    const propCheck = evaluatePropositionSupport(
-      specificSectionCited || entry.sectionKey,
-      options?.proposition !== undefined ? options.proposition : text
-    );
-    if (
-      propCheck.support === "IRRELEVANT_OR_MISAPPLIED" ||
-      propCheck.support === "CONTRADICTED_BY_STATUTE"
-    ) {
-      return {
-        status: "INAPPLICABLE",
-        authorityId: entry.authorityId,
-        authorityCategory: category,
-        category,
-        entry,
-        officialCitation: entry.citation,
-        sourceUrl: entry.sourceUrl,
-        exactWording: entry.exactWording,
-        practiceNote: entry.practiceNote,
-        warningText: propCheck.reason,
-        sourceExists: true,
-        temporalStatus,
-        propositionSupport: propCheck.support,
-        propositionReason: propCheck.reason,
-      };
+    // 2. Proposition support check across all cited sections
+    const propTargetText = options?.proposition !== undefined ? options.proposition : text;
+    for (const sec of sectionsToCheck) {
+      const propCheck = evaluatePropositionSupport(sec, propTargetText);
+      if (
+        propCheck.support === "IRRELEVANT_OR_MISAPPLIED" ||
+        propCheck.support === "CONTRADICTED_BY_STATUTE"
+      ) {
+        return {
+          status: "INAPPLICABLE",
+          authorityId: entry.authorityId,
+          authorityCategory: category,
+          category,
+          entry,
+          officialCitation: entry.citation,
+          sourceUrl: entry.sourceUrl,
+          exactWording: entry.exactWording,
+          practiceNote: entry.practiceNote,
+          warningText: propCheck.reason,
+          sourceExists: true,
+          temporalStatus,
+          propositionSupport: propCheck.support,
+          propositionReason: propCheck.reason,
+          allSectionsCited: sectionsToCheck,
+        };
+      }
     }
 
+    const firstPropCheck = evaluatePropositionSupport(sectionsToCheck[0], propTargetText);
     return {
       status: "VERIFIED",
       authorityId: entry.authorityId,
@@ -1475,8 +1847,9 @@ export function resolveLegalAuthority(
       warningText: null,
       sourceExists: true,
       temporalStatus,
-      propositionSupport: options?.proposition ? "SUPPORTED" : propCheck.support,
+      propositionSupport: options?.proposition ? "SUPPORTED" : firstPropCheck.support,
       propositionReason: null,
+      allSectionsCited: sectionsToCheck,
     };
   };
 
@@ -1486,7 +1859,7 @@ export function resolveLegalAuthority(
   if (category === "CYFSA") {
     const sections = citedSections(text);
     if (sections.length > 0) {
-      // Check if any cited section is a known misapplied CYFSA provision (even if not in BUNDLED_STATUTE_ENTRIES, e.g., 94(5), 41, 51, 292)
+      // Check if any cited section is misapplied to an unsupported proposition (even if not in BUNDLED_STATUTE_ENTRIES, e.g., 94(5), 41, 51, 292)
       for (const sec of sections) {
         const propEval = evaluatePropositionSupport(sec, combinedProposition);
         if (
@@ -1523,7 +1896,7 @@ export function resolveLegalAuthority(
       if (sections.length === 1 && (firstSec === "74" || firstSec === "81" || firstSec === "125")) {
         const directEntry = VERIFIED_AUTHORITIES_REGISTRY[firstSec];
         if (directEntry) {
-          return finalizeResolution(directEntry, firstSec);
+          return finalizeResolution(directEntry, firstSec, sections);
         }
       }
 
@@ -1534,7 +1907,7 @@ export function resolveLegalAuthority(
           VERIFIED_AUTHORITIES_REGISTRY[`CYFSA:${firstSec}`] ||
           (primaryKey ? VERIFIED_AUTHORITIES_REGISTRY[`CYFSA:${primaryKey}`] : null);
         if (entry) {
-          return finalizeResolution(entry, firstSec);
+          return finalizeResolution(entry, firstSec, sections);
         }
       }
     }
@@ -1549,7 +1922,7 @@ export function resolveLegalAuthority(
       const sec = sections[0];
       const entry = VERIFIED_AUTHORITIES_REGISTRY[`BILL_C92:${sec}`];
       if (entry) {
-        return finalizeResolution(entry, sec);
+        return finalizeResolution(entry, sec, sections);
       }
     }
   }
@@ -1559,16 +1932,17 @@ export function resolveLegalAuthority(
   // ---------------------------------------------------------------------------
   if (category === "FAMILY_LAW_RULES") {
     const ruleMatch =
-      text.match(/\b(?:Rule|r\.?|s\.?)\s*(14\(18\)|14\.18|14\(19\)|14\.19|33)(?!\w)/i) ||
-      text.match(/\b(14\(18\)|14\.18|14\(19\)|14\.19)(?!\w)/i);
+      text.match(/\b(?:Rule|Subrule|r\.?|s\.?)\s*(1\(8\)|1\.8|14\(18\)|14\.18|14\(19\)|14\.19|33)(?!\w)/i) ||
+      text.match(/\b(1\(8\)|1\.8|14\(18\)|14\.18|14\(19\)|14\.19)(?!\w)/i);
     if (ruleMatch) {
       const normalizedRule = ruleMatch[1].replace(".", "(") + (ruleMatch[1].includes(".") ? ")" : "");
-      // Reject if a fabricated subrule is appended, e.g. "Rule 14(18)(z)" or "Rule 33(99)"
-      const hasInvalidSuffix = /\b(?:14\(18\)|14\(19\)|33)\(\d{2,}|\b(?:14\(18\)|14\(19\))\([a-z]\)/i.test(text);
+      // Reject if a fabricated subrule or unverified clause is appended, e.g. "Rule 1(8.1)", "Rule 1(8)(z)", "Rule 14(18)(z)", or "Rule 33(99)"
+      const hasInvalidSuffix =
+        /\b1\(8\.1\)|\b(?:1\(8\)|14\(18\)|14\(19\)|33)\(\d+|\b(?:1\(8\)|14\(18\)|14\(19\))\([h-z]\)/i.test(text);
       if (!hasInvalidSuffix) {
         const entry = VERIFIED_AUTHORITIES_REGISTRY[`FLR:${normalizedRule}`];
         if (entry) {
-          return finalizeResolution(entry, normalizedRule);
+          return finalizeResolution(entry, `FLR:${normalizedRule}`);
         }
       }
     }
@@ -1578,12 +1952,21 @@ export function resolveLegalAuthority(
   // Category 4: CHARTER (Canadian Charter of Rights and Freedoms)
   // ---------------------------------------------------------------------------
   if (category === "CHARTER") {
-    const charterSecMatch = text.match(/\b(?:Section|sec\.?|s\.?)\s*(7|15)(?:\(1\))?(?!\w)/i);
+    const charterSecMatch = text.match(/\b(?:Section|sec\.?|s\.?)\s*(7|15(?:\(1\))?|24\(1\)|24)(?!\w)/i);
     if (charterSecMatch) {
-      const secNum = charterSecMatch[1];
-      const entry = VERIFIED_AUTHORITIES_REGISTRY[`CHARTER:${secNum}`];
-      if (entry) {
-        return finalizeResolution(entry, secNum);
+      const rawSec = charterSecMatch[1];
+      // Reject unbundled or nonexistent Charter subsections such as s. 24(2), s. 24(9), s. 7(2), s. 15(9)
+      const hasInvalidCharterSub = /\b(?:7|15|24)\((?!1\))\d+\)/i.test(text);
+      if (!hasInvalidCharterSub) {
+        const registryKey = rawSec.startsWith("24")
+          ? "CHARTER:24(1)"
+          : rawSec.startsWith("15")
+            ? "CHARTER:15"
+            : "CHARTER:7";
+        const entry = VERIFIED_AUTHORITIES_REGISTRY[registryKey];
+        if (entry) {
+          return finalizeResolution(entry, registryKey);
+        }
       }
     }
   }
