@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { getUserKey } from "../utils/storage";
+import DictateButton from "./DictateButton";
 
 interface LocalFile {
   name: string;
@@ -448,6 +449,7 @@ export default function ParentChatBot() {
                   placeholder={files.length > 0 ? "Ask about your files..." : "Ask a CYFSA / rights question..."}
                   className="flex-1 bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-75"
                 />
+                <DictateButton compact onTranscript={(transcript) => setInput(previous => [previous.trim(), transcript].filter(Boolean).join(" "))} />
                 <button
                   type="submit"
                   disabled={isQuerying || !input.trim()}
