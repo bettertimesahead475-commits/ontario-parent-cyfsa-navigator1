@@ -62,22 +62,34 @@ export async function handleChatRequest(
     mode = 'cas_process';
   }
 
-  // Tenant Isolation: Mode 'report' requires verified identity when FIREBASE_PROJECT_ID is configured
+  // Privacy boundary: case material must be fetched server-side using a verified
+  // owner-scoped report ID. Never trust arbitrary report text supplied by a browser.
+  // Until that lookup exists, fail closed rather than sending private case data
+  // to a third-party model without ownership verification.
+  const hasClientCaseData = body?.reportContext != null ||
+    (Array.isArray(body?.files) && body.files.length > 0);
+  if (mode === 'report' || hasClientCaseData) {
+    return Response.json(
+      {
+        error: 'Private report conversations are temporarily unavailable while secure case retrieval is being completed.',
+        code: 'SECURE_REPORT_RETRIEVAL_REQUIRED',
+      },
+      { status: 403, headers: DEFAULT_HEADERS }
+    );
+  }
+
+  // Public educational questions may proceed without a case payload. If an
+  // identity is provided, verify it; never reflect unverified identity data.
   let authenticatedUid: string | null = null;
-  if (!deps.skipAuthForTest && env.FIREBASE_PROJECT_ID) {
+  if (env.FIREBASE_PROJECT_ID && request.headers.has('Authorization')) {
     const authResult = await verifyFirebaseRequest(request, env);
-    if (authResult.status === 'verified') {
-      authenticatedUid = authResult.uid;
-    } else if (mode === 'report') {
-      const status = authResult.status === 'unavailable' ? 503 : 401;
+    if (authResult.status !== 'verified') {
       return Response.json(
-        {
-          error: 'Please sign in to ask questions about your personal case reports.',
-          code: 'SIGN_IN_REQUIRED',
-        },
-        { status, headers: DEFAULT_HEADERS }
+        { error: 'Invalid or unavailable sign-in session.', code: 'AUTH_VERIFICATION_FAILED' },
+        { status: authResult.status === 'unavailable' ? 503 : 401, headers: DEFAULT_HEADERS }
       );
     }
+    authenticatedUid = authResult.uid;
   }
 
   const chatOptions: KaceChatRequestOptions = {
@@ -85,9 +97,7 @@ export async function handleChatRequest(
     query,
     history: Array.isArray(body?.history) ? body.history : [],
     model: body?.model === 'claude' ? 'claude' : 'gemini',
-    reportContext: body?.reportContext,
     formNumber: typeof body?.formNumber === 'string' ? body.formNumber : undefined,
-    files: Array.isArray(body?.files) ? body.files : undefined,
     focus: body?.focus,
   };
 
