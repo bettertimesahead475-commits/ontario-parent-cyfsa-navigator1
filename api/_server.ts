@@ -93,6 +93,7 @@ import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, de
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
 import { monitoringRouter } from "./services/monitoring/routes.js";
+import { executeKaceChat, type KaceChatMode } from "./services/kaceChatService.js";
 
 dotenv.config();
 
@@ -2929,6 +2930,76 @@ OUTPUT — return strictly this JSON schema, nothing else:
 
   const RAG_QUERY_DISCLAIMER =
     "This response is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on it.";
+
+  // API: Kace Interactive AI Assistant Endpoint
+  app.post("/api/chat", async (req: Request, res: Response) => {
+    try {
+      const { query, mode, history, model, reportContext, formNumber, files, focus } = req.body;
+      if (!query || typeof query !== "string" || !query.trim()) {
+        return res.status(400).json({ error: "A question or prompt is required.", code: "QUERY_REQUIRED" });
+      }
+
+      let chatMode: KaceChatMode = "rights";
+      if (mode === "report" || mode === "forms" || mode === "cas_process" || mode === "rights") {
+        chatMode = mode;
+      } else if (focus === "evidentiary-auditor") {
+        chatMode = "report";
+      } else if (focus === "cas-process") {
+        chatMode = "cas_process";
+      }
+
+      let authenticatedUid: string | null = null;
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        try {
+          const decoded = await verifyFirebaseToken(authHeader.slice(7));
+          authenticatedUid = decoded?.uid || null;
+        } catch {}
+      }
+
+      if (chatMode === "report" && !authenticatedUid && process.env.FIREBASE_PROJECT_ID) {
+        return res.status(401).json({
+          error: "Please sign in to ask questions about your personal case reports.",
+          code: "SIGN_IN_REQUIRED",
+        });
+      }
+
+      const env = {
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+        GEMINI_CHAT_MODEL: process.env.GEMINI_CHAT_MODEL || process.env.GEMINI_OCR_MODEL || "gemini-3.6-flash",
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        ANTHROPIC_API_URL: process.env.ANTHROPIC_API_URL,
+        ANTHROPIC_CHAT_MODEL: process.env.ANTHROPIC_CHAT_MODEL,
+        DEFAULT_CHAT_MODEL: (process.env.DEFAULT_CHAT_MODEL as any) || "gemini",
+      };
+
+      const result = await executeKaceChat(env, {
+        mode: chatMode,
+        query,
+        history: Array.isArray(history) ? history : [],
+        model: model === "claude" ? "claude" : "gemini",
+        reportContext,
+        formNumber,
+        files: Array.isArray(files) ? files : undefined,
+        focus,
+      });
+
+      res.json({
+        answer: result.answer,
+        mode: result.mode,
+        modelUsed: result.modelUsed,
+        citations: result.citations,
+        disclaimer: result.disclaimer,
+        uid: authenticatedUid,
+      });
+    } catch (err: any) {
+      console.error("[Kace Chat Endpoint] Error:", err);
+      res.status(500).json({
+        error: err?.message || "The AI assistant was unable to process your query.",
+        code: "CHAT_GENERATION_FAILED",
+      });
+    }
+  });
 
   // API: Retrieval-Augmented Generation (RAG) Query Pipeline
   app.post("/api/rag-query", async (req: Request, res: Response) => {
