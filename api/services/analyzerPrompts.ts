@@ -107,26 +107,26 @@ export const FIELD_SCHEMAS: Record<string, string> = {
     {
       "thresholdChecked": "CYFSA s. 81 — Application / Child Protection Proceeding Authority",
       "isMet": "Yes / No / Inconclusive",
-      "reasoning": "Analyze the role of CYFSA s. 81 in the proceeding. Do not characterize s. 81 itself as an 'imminent danger' threshold. Distinguish the statutory authority for commencing proceedings from the separate statutory grounds and tests applicable to whether a child is in need of protection or may be apprehended.",
-      "primarySourceLaw": "⚠️ Statute citation unverified — confirm exact subsection with counsel before relying on this. (s.81 generally covers warrants/apprehension/hearing procedure, but the exact subsection for this point is not in the confirmed reference and must not be stated as fact.)"
+      "reasoning": "Analyze the role of CYFSA s. 81(1) in commencing the proceeding, distinguishing application authority under s. 81(1) from warrant-based apprehension under s. 81(2), warrantless apprehension under s. 81(7), and protection grounds under s. 74(2). Never attribute warrantless apprehension to s. 81(1) or s. 81(2).",
+      "primarySourceLaw": "CYFSA, S.O. 2017, c. 14, Sched. 1, s. 81(1)"
     },
     {
       "thresholdChecked": "Child in Need of Protection grounds (CYFSA s. 74)",
       "isMet": "Yes / No / Inconclusive",
-      "reasoning": "Identify the specific protection allegation(s) actually asserted in the file. For each, separate allegation from supporting proof; name the strongest direct/documentary support, any hearsay or source limitation, any contradiction or missing corroboration, and state why the result is Yes, No, or Inconclusive. Be concrete and document-specific, not generic.",
-      "primarySourceLaw": "CYFSA 2017, Section 74"
+      "reasoning": "Identify the specific protection allegation(s) actually asserted in the file under s. 74(2). For each, separate allegation from supporting proof; name the strongest direct/documentary support, any hearsay or source limitation, any contradiction or missing corroboration, and state why the result is Yes, No, or Inconclusive. Be concrete and document-specific, not generic.",
+      "primarySourceLaw": "CYFSA, S.O. 2017, c. 14, Sched. 1, s. 74(2)"
     },
     {
       "thresholdChecked": "Duty to Report standard vs Direct evidence (CYFSA s. 125)",
       "isMet": "Yes / No / Inconclusive",
-      "reasoning": "Analyze if CAS or a reporter is misrepresenting the basic 'reasonable grounds to suspect' s. 125 duty to report standard as actual direct evidence of maltreatment inside this file.",
-      "primarySourceLaw": "CYFSA 2017, Section 125"
+      "reasoning": "Analyze if CAS or a reporter is misrepresenting the basic 'reasonable grounds to suspect' s. 125(1) duty to report standard as actual direct evidence of maltreatment inside this file.",
+      "primarySourceLaw": "CYFSA, S.O. 2017, c. 14, Sched. 1, s. 125(1)"
     },
     {
       "thresholdChecked": "Kinship / Family-Based Alternatives — Documentation Check",
       "isMet": "Yes / No / Inconclusive",
-      "reasoning": "Determine whether the reviewed document documents consideration of kinship, extended-family, customary-care, Indigenous, or other family-based alternatives where legally relevant. Do NOT infer that the Society failed to consider such alternatives merely because the affidavit does not mention them. Classify an absence of documentation as 'Missing Evidence' or 'Not Determinable From This Document' and identify the records required to verify what was actually considered.",
-      "primarySourceLaw": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this."
+      "reasoning": "Determine whether the reviewed document documents consideration of less disruptive alternatives, community assistance, or kinship/extended-family placement under CYFSA s. 101(2), s. 101(3), and s. 94(4). Note that under s. 94(6)(c) and s. 101(7)(c), court terms on a society cannot require the society to provide financial assistance or purchase goods or services. Do NOT infer that the Society failed to consider alternatives merely because the affidavit omits them; classify an absence of documentation as 'Not Determinable From This Document'.",
+      "primarySourceLaw": "CYFSA, S.O. 2017, c. 14, Sched. 1, s. 101(3)"
     }
   ]`,
   proceduralTimelineViolations: `  "proceduralTimelineViolations": [
@@ -139,25 +139,25 @@ export const FIELD_SCHEMAS: Record<string, string> = {
       "parentActionStep": "Parent action steps to track scheduled court dates and ensure their lawyer asserts s. 94(1) rights."
     },
     {
-      "timelineRule": "Court hearing timeline following apprehension without warrant",
+      "timelineRule": "Court hearing timeline following apprehension without warrant (CYFSA s. 88)",
       "documentAssertion": "E.g. dates of removal or court schedules.",
-      "evaluation": "BUG FIX (flagged in audit): this checkpoint previously cited CYFSA s.94(5) for a '5-day post-apprehension hearing rule.' s.94(5) is not on the internal reference list and has not been checked against official text. Do not cite it for a hearing-timeline rule. A statutory deadline for bringing an apprehended child before the court does exist under CYFSA, but its exact section number is not on the internal reference list and must be verified with counsel before being cited by number. Evaluate the document on its facts (was the child taken without a warrant, and how long before a court appearance) without asserting a specific section number.",
-      "citation": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.",
+      "evaluation": "Evaluate whether the matter was brought before the court as soon as practicable and within five days after the child was brought to a place of safety under CYFSA s. 88 (unless returned or reached an agreement). Never cite s. 94(5) for the 5-day hearing rule.",
+      "citation": "CYFSA, S.O. 2017, c. 14, s. 88",
       "locationInDocument": "Page X, Paragraph Y, or state 'Not applicable - child in home care'",
-      "parentActionStep": "Verify immediate court scheduling if a sudden take occurs. Ask your lawyer to confirm the exact CYFSA section governing the post-apprehension hearing deadline. Keep court liaison logs."
+      "parentActionStep": "Verify immediate court scheduling under CYFSA s. 88 if an apprehension occurs. Keep court liaison logs."
     },
     {
-      "timelineRule": "Child Ombudsman Access & Continuous Care Rights",
+      "timelineRule": "Child Ombudsman Access & Continuous Care Rights (CYFSA s. 9.1)",
       "documentAssertion": "E.g. references to child consultation, Ombudsman access, or CAS contact rules.",
-      "evaluation": "Evaluate if the child's rights to reach the Ombudsman, or the duty for frequent in-care visitation, are met. Focus on rights access. Two distinct acts are relevant here and must be named separately, never combined into one label: Bill 188, Supporting Children's Futures Act, 2024 (S.O. 2024, c. 17), which amended CYFSA Part II regarding children's rights to be informed about the Ombudsman; and Bill 33, Supporting Children and Students Act, 2025 (S.O. 2025, c. 12), Schedule 4, which separately expanded the Ombudsman's own mandate to investigate CAS and licensed-provider services. Cite whichever actually applies to the specific fact in this document, or both by their full separate names if both apply.",
-      "citation": "Bill 188, Supporting Children's Futures Act, 2024 (S.O. 2024, c. 17) and/or Bill 33, Supporting Children and Students Act, 2025 (S.O. 2025, c. 12) — cite by full name, never as a combined 'SCFA 2024 / Bill 33 2025' label.",
+      "evaluation": "Evaluate if the child's rights to be informed of the Ombudsman under CYFSA s. 9.1 (enacted by S.O. 2024, c. 17) are documented where a child is in care.",
+      "citation": "CYFSA, S.O. 2017, c. 14, s. 9.1",
       "locationInDocument": "Page X, Paragraph Y, or 'Checked & Advised'",
-      "parentActionStep": "Confirm child is aware they can contact the Ontario Ombudsman regarding CAS placements."
+      "parentActionStep": "Confirm child is aware they can contact the Ontario Ombudsman regarding CAS placements under CYFSA s. 9.1."
     },
     {
       "timelineRule": "300-Day Presumption of Parentage",
       "documentAssertion": "E.g. marriage status, cohabitant records, or parent naming details.",
-      "evaluation": "Check for adherence to Children's Law Reform Act presumptions of parentage for separations within 300 days of birth, if relevant on the facts. The exact subsection is not in the confirmed reference and must not be stated as settled fact.",
+      "evaluation": "Check for adherence to Children's Law Reform Act presumptions of parentage for separations within 300 days of birth, if relevant on the facts. The CLRA is not in the internal CYFSA reference list and must carry the unverified citation warning.",
       "citation": "⚠️ Statute citation unverified — confirm exact section with counsel before relying on this.",
       "locationInDocument": "Page X, Paragraph Y, or state 'Checked & Compliant'",
       "parentActionStep": "Action step for parent to confirm both actual parent parties are formally integrated in notices."

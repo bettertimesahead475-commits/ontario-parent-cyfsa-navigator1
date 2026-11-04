@@ -42,6 +42,7 @@ export const REPORT_SECTIONS = [
 
 import { effectiveCitationStatus } from "./citationVerification";
 import { effectiveQuoteStatus, type DisplayQuoteStatus } from "./quoteVerification";
+import type { ComplianceMatrixReport } from "./complianceMatrixEngine";
 
 export type ReportSectionId = (typeof REPORT_SECTIONS)[number]["id"];
 
@@ -136,6 +137,7 @@ export interface ReportContract {
   warnings: string[];
   /** Run-level notes kept for professional review. No cost, token, or model data. */
   runNotes: string[];
+  complianceMatrix?: ComplianceMatrixReport;
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +529,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
     findings,
     warnings,
     runNotes,
+    complianceMatrix: (legacy as Loose)?.complianceMatrix,
   };
 }
 

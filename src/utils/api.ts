@@ -87,6 +87,7 @@ export async function safeReadJson(response: Response): Promise<any> {
 export interface AnalysisStreamCallbacks {
   onStage?: (stage: string, percent: number, message: string) => void;
   onSection?: (section: string, data: any) => void;
+  onHeartbeat?: (data: { requestId?: string; elapsedMs?: number }) => void;
   onComplete?: (report: any, credits?: any) => void;
   onError?: (error: { code: string; message: string; statusCode: number; retryable: boolean }) => void;
 }
@@ -113,9 +114,9 @@ export async function readAnalysisEventStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let finalReport: any = null;
-  // The server sends a heartbeat every 5 s, so 45 s of silence means the connection is gone.
+  // Cloudflare can be silent during long model calls; avoid false 45-second disconnects.
   // The overall cap sits above the server's 300 s function limit.
-  const inactivityTimeoutMs = options?.inactivityTimeoutMs ?? 45000;
+  const inactivityTimeoutMs = options?.inactivityTimeoutMs ?? 280000;
   const maxDurationMs = options?.maxDurationMs ?? 330000;
   const startOverall = Date.now();
 
@@ -149,37 +150,44 @@ export async function readAnalysisEventStream(
     buffer = events.pop() || "";
 
     for (const rawEvent of events) {
-      const line = rawEvent.trim();
-      if (!line || line.startsWith(":")) continue; // heartbeat
-      if (line.startsWith("data: ")) {
-        try {
-          const payload = JSON.parse(line.slice(6));
-          if (payload.type === "stage") {
-            callbacks?.onStage?.(payload.stage, payload.percent, payload.message);
-          } else if (payload.type === "section") {
-            callbacks?.onSection?.(payload.section, payload.data);
-          } else if (payload.type === "complete") {
-            finalReport = payload.report;
-            callbacks?.onComplete?.(payload.report, payload.credits);
-          } else if (payload.type === "error") {
-            callbacks?.onError?.({
-              code: payload.code,
-              message: payload.error,
-              statusCode: payload.statusCode,
-              retryable: payload.retryable,
-            });
-            throw new ApiResponseError(
-              payload.error || "Analysis failed.",
-              payload.statusCode || 500,
-              payload.code || "AI_ERROR",
-              payload.retryable ?? true,
-              payload.statusCode === 429
-            );
-          }
-        } catch (e) {
-          if (e instanceof ApiResponseError) throw e;
-          console.warn("Failed to parse SSE line:", line, e);
-        }
+      const lines = rawEvent.split("\n").map(line => line.trimEnd());
+      const eventName = lines.find(line => line.startsWith("event:"))?.slice(6).trim();
+      const dataText = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
+      if (!dataText) continue; // heartbeat or comment
+      let payload: any;
+      try {
+        payload = JSON.parse(dataText);
+      } catch {
+        console.warn("Ignoring malformed analysis SSE payload.");
+        continue;
+      }
+      // Cloudflare Pages emits named SSE events with raw payloads. Legacy API
+      // emits unnamed events with a 'type' discriminator. Support both.
+      const type = eventName || payload.type;
+      if (type === "stage") {
+        callbacks?.onStage?.(payload.stage, payload.percent, payload.message);
+      } else if (type === "section") {
+        const section = payload.section;
+        callbacks?.onSection?.(section, payload.data ?? payload);
+      } else if (type === "heartbeat") {
+        callbacks?.onHeartbeat?.(payload);
+      } else if (type === "complete") {
+        finalReport = payload.report ?? payload;
+        callbacks?.onComplete?.(finalReport, payload.credits);
+      } else if (type === "error") {
+        callbacks?.onError?.({
+          code: payload.code,
+          message: payload.error ?? payload.message,
+          statusCode: payload.statusCode ?? 500,
+          retryable: payload.retryable ?? true,
+        });
+        throw new ApiResponseError(
+          payload.error || payload.message || "Analysis failed.",
+          payload.statusCode || 500,
+          payload.code || "AI_ERROR",
+          payload.retryable ?? true,
+          payload.statusCode === 429
+        );
       }
     }
   }
@@ -207,7 +215,7 @@ function streamInterrupted(): ApiResponseError {
 
 export interface AnalysisJobSnapshot {
   jobId: string;
-  status: "pending" | "analyzing" | "completed" | "failed";
+  status: "pending" | "analyzing" | "completed" | "failed" | "timed_out";
   currentStage?: string;
   percent?: number;
   message?: string;
@@ -280,14 +288,9 @@ export async function pollAnalysisJob(
     }
     if (res.status === 404) {
       // The record may not be written yet right after the request starts; then it truly does not exist.
-      if (++notFoundCount >= 6) {
-        throw new ApiResponseError(
-          "This analysis never started on the server (for example, the request was refused). Nothing was charged. Please start it again.",
-          404,
-          "JOB_NOT_FOUND",
-          false
-        );
-      }
+      notFoundCount++;
+      // A 404/pending result is normal while Cloudflare has not yet saved
+      // the completed job. Never infer failure or start a new analysis here.
       await sleep(intervalMs);
       continue;
     }
@@ -297,21 +300,17 @@ export async function pollAnalysisJob(
     }
     const job = (await res.json().catch(() => null)) as AnalysisJobSnapshot | null;
     if (job?.status === "completed" && job.report) return { status: "completed", report: job.report };
-    if (job?.status === "failed") {
+    if (job?.status === "failed" || job?.status === "timed_out") {
+      // A stopped analysis is reported with its reason, and the caller decides whether to start it again.
       return {
         status: "failed",
         error: job.error || { code: "INTERNAL_ANALYSIS_ERROR", message: "The analysis could not be completed.", statusCode: 500, retryable: true },
       };
     }
     if (job?.status === "pending") {
-      if (++notFoundCount >= 6) {
-        throw new ApiResponseError(
-          "This analysis never started on the server (for example, the request was refused). Nothing was charged. Please start it again.",
-          404,
-          "JOB_NOT_FOUND",
-          false
-        );
-      }
+      notFoundCount++;
+      // A 404/pending result is normal while Cloudflare has not yet saved
+      // the completed job. Never infer failure or start a new analysis here.
     } else if (job) {
       options.onProgress?.(job);
     }
