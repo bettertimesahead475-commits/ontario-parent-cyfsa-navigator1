@@ -269,9 +269,34 @@ describe('Kace Interactive AI Chatbot Service', () => {
         GEMINI_API_KEY: 'key',
       });
 
-      expect(response.status).toBe(401);
+      expect(response.status).toBe(403);
       const data = await response.json();
-      expect(data.code).toBe('SIGN_IN_REQUIRED');
+      expect(data.code).toBe('SECURE_REPORT_RETRIEVAL_REQUIRED');
+    });
+
+    it('rejects private report payloads disguised as public rights questions before invoking AI', async () => {
+      const mockFetcher = vi.fn();
+      const request = new Request('https://cyfsa-navigator.pages.dev/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'rights', query: 'Explain this', reportContext: { summary: 'Sensitive case details' } }),
+      });
+      const response = await handleChatRequest(request, { GEMINI_API_KEY: 'key' }, { fetcher: mockFetcher as any });
+      expect(response.status).toBe(403);
+      expect((await response.json()).code).toBe('SECURE_REPORT_RETRIEVAL_REQUIRED');
+      expect(mockFetcher).not.toHaveBeenCalled();
+    });
+
+    it('rejects uploaded private files in forms mode before invoking AI', async () => {
+      const mockFetcher = vi.fn();
+      const request = new Request('https://cyfsa-navigator.pages.dev/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'forms', query: 'Help', files: [{ name: 'private.txt', content: 'Confidential' }] }),
+      });
+      const response = await handleChatRequest(request, { GEMINI_API_KEY: 'key' }, { fetcher: mockFetcher as any });
+      expect(response.status).toBe(403);
+      expect(mockFetcher).not.toHaveBeenCalled();
     });
 
     it('allows general educational inquiries in rights mode without authentication', async () => {
