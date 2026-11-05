@@ -45,8 +45,12 @@ function errorResponse(response: Response): Promise<{ code: string; error: strin
 async function releaseReservation(env: ConsumerEnv, job: DurableJobRecord): Promise<void> {
   if (job.owner_bypass || !job.reservation_id) return;
   const rpc = createStagingCreditRpc(env);
-  if (job.session_id) await releasePaidReservation(job.session_id, job.job_id, job.reservation_id, rpc);
-  else await releaseFreeScan(job.owner_uid, job.job_id, job.reservation_id, rpc);
+  const released = job.session_id
+    ? await releasePaidReservation(job.session_id, job.job_id, job.reservation_id, rpc)
+    : await releaseFreeScan(job.owner_uid, job.job_id, job.reservation_id, rpc);
+  if (released.status === 'unavailable' || released.status === 'denied') {
+    throw Object.assign(new Error('Credit release is not yet confirmed.'), { retryable: true, code: 'CREDIT_RELEASE_UNAVAILABLE' });
+  }
 }
 
 async function finalizeReservation(env: ConsumerEnv, job: DurableJobRecord): Promise<boolean> {

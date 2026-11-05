@@ -138,6 +138,7 @@ interface OrganizedFile {
   category: "CAS Correspondence" | "Court Filings" | "Evidence & Loggers" | "Children Services" | "Parenting Identity";
   uploadedAt: string;
   content: string; // Plaintext content or base64 representation
+  originalContent?: string; // Preserve uploaded bytes when content becomes extracted text.
   analysisStatus: "pending" | "analyzing" | "completed" | "failed";
   analysisReport?: AnalysisReport;
   // Why the last analysis attempt failed, as reported by the server (shown to the parent).
@@ -663,7 +664,7 @@ export default function DocumentAnalyzerTab() {
         }
         documentTextToScan = extractResult.extractedText;
         setOrganizedFiles(prev => prev.map(f => f.id === file.id
-          ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+          ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
       } catch (err: any) {
         setIsDeepScanning(false);
         setDeepScanFileId(null);
@@ -1938,7 +1939,7 @@ export default function DocumentAnalyzerTab() {
                       payload.textContent = extractResult.extractedText;
                       extractedContentById[file.id] = extractResult.extractedText;
                       setOrganizedFiles(prev => prev.map(f => f.id === file.id
-                        ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+                        ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
                     }
                     textForFile = payload.textContent;
 
@@ -2099,7 +2100,7 @@ export default function DocumentAnalyzerTab() {
         }
         payload.textContent = extractResult.extractedText;
         setOrganizedFiles(prev => prev.map(f => f.id === file.id
-          ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+          ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
       }
 
       // One analysis per click, retried under the shared policy (shared/analyzerRetryPolicy.ts). Every attempt carries
@@ -5641,7 +5642,7 @@ export default function DocumentAnalyzerTab() {
                                   <span>{file.name}</span>
                                 </h4>
                                 <p className="text-[10px] font-sans text-slate-500 mt-0.5">
-                                  Uploaded: {file.uploadedAt} • Size: {Math.round(file.content.length / 1024)} KB
+                                  Uploaded: {file.uploadedAt} • Size: {Math.round(file.size / 1024)} KB
                                 </p>
                               </div>
 

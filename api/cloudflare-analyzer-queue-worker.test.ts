@@ -58,6 +58,31 @@ describe('durable analyzer queue consumer', () => {
     }
   });
 
+  it('retries release of a terminal failed job before acknowledging its delivery', async () => {
+    mocks.claim.mockResolvedValue(null);
+    mocks.read.mockResolvedValue({ ...job(), status: 'failed' });
+    mocks.releaseFree.mockResolvedValueOnce({ status: 'unavailable' }).mockResolvedValue({ status: 'released' });
+    const first = message();
+    await processJob(first, {} as any);
+    expect(first.ack).not.toHaveBeenCalled();
+    expect(first.retry).toHaveBeenCalledOnce();
+    const second = message(undefined, 2);
+    await processJob(second, {} as any);
+    expect(second.ack).toHaveBeenCalledOnce();
+    expect(mocks.handle).not.toHaveBeenCalled();
+  });
+
+  it('routes the isolated staging dead-letter queue through dead-letter recovery', async () => {
+    mocks.read.mockResolvedValue({ ...job(), status: 'completed' });
+    const msg = message();
+    await consumer.queue({ queue: 'cyfsa-staging-analyzer-dead-letter', messages: [msg] }, {
+      ANALYZER_JOBS_QUEUE_NAME: 'cyfsa-staging-analyzer-jobs',
+      ANALYZER_JOBS_DLQ_NAME: 'cyfsa-staging-analyzer-dead-letter',
+    });
+    expect(mocks.claim).not.toHaveBeenCalled();
+    expect(msg.ack).toHaveBeenCalledOnce();
+  });
+
   it('acks duplicate delivery after another consumer completed the job', async () => {
     mocks.claim.mockResolvedValue(null);
     mocks.read.mockResolvedValue({ ...job(), status: 'completed' });

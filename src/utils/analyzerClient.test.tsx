@@ -54,7 +54,7 @@ describe("queued analyzer responses", () => {
       onStage: progress,
     }, { fetcher, intervalMs: 0 });
     expect(result).toEqual({ documentTitle: "Recovered" });
-    expect(fetcher).toHaveBeenCalledWith("/api/analyze/job/job_12345678");
+    expect(fetcher).toHaveBeenCalledWith("/api/analyze/job/job_12345678", { signal: expect.any(AbortSignal) });
     expect(progress).toHaveBeenCalledWith("queued", 10, "Waiting for a worker.");
   });
 

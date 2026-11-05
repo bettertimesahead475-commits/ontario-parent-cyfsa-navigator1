@@ -379,11 +379,11 @@ describe('Cloudflare Pages Functions /api/deep-scan Endpoint', () => {
     expect(mockRpc).not.toHaveBeenCalledWith('paid_finalize_credit', expect.anything());
   });
   
-  it('allows owner user (mr.pelkie@gmail.com) to execute Deep Scan without paid session', async () => {
+  it('allows owner user (mrpelkey@gmail.com) to execute Deep Scan without paid session', async () => {
     mockAuthVerification.mockResolvedValueOnce({
       status: 'verified',
       uid: 'owner_uid',
-      email: 'mr.pelkie@gmail.com',
+      email: 'mrpelkey@gmail.com',
       emailVerified: true,
     });
 
@@ -425,7 +425,7 @@ describe('Cloudflare Pages Functions /api/deep-scan Endpoint', () => {
     mockAuthVerification.mockResolvedValueOnce({
       status: 'verified',
       uid: 'owner_uid',
-      email: 'mr.pelkie@gmail.com',
+      email: 'mrpelkey@gmail.com',
       emailVerified: true,
     });
 
