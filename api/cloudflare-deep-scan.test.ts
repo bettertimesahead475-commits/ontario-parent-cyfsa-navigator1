@@ -308,6 +308,77 @@ describe('Cloudflare Pages Functions /api/deep-scan Endpoint', () => {
     }));
   });
 
+  it('does not finalize a paid credit when completed report storage fails', async () => {
+    mockAuthVerification.mockResolvedValueOnce({
+      status: 'verified',
+      uid: 'user_paid_premium',
+      email: 'premium@example.com',
+      emailVerified: true,
+    });
+
+    mockSessionRead.mockResolvedValueOnce({
+      status: 'verified',
+      session: {
+        sessionId: '22222222-3333-4444-5555-666666666666',
+        ownerUid: 'user_paid_premium',
+        tier: 'Premium',
+        status: 'active',
+        issuedAt: new Date(Date.now() - 3600_000).toISOString(),
+        expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+      },
+    });
+
+    const mockRpc = vi.fn().mockImplementation((name: string) => {
+      if (name === 'paid_reserve_credit') {
+        return Promise.resolve({ status: 'reserved', reservation_id: 'res_paid_123' });
+      }
+      if (name === 'paid_finalize_credit') {
+        return Promise.resolve({ status: 'consumed' });
+      }
+      return Promise.resolve({ status: 'ok' });
+    });
+
+    const mockGenerate = vi.fn().mockImplementation((params: any) => {
+      const stage = params?.stage || '';
+      let text = OVERVIEW_JSON;
+      if (stage === 'section:redFlags') text = REDFLAGS_JSON;
+      else if (stage === 'section:chronology') text = CHRONOLOGY_JSON;
+      else if (stage === 'section:guidance') text = GUIDANCE_JSON;
+      else if (stage === 'section:thresholds') text = THRESHOLDS_JSON;
+      else if (stage === 'section:timeline') text = TIMELINE_JSON;
+      else if (stage === 'forensic_verification') text = VERIFICATION_JSON;
+
+      return Promise.resolve({
+        text,
+        usage: { input_tokens: 500, output_tokens: 300 },
+        model: 'claude-sonnet-5',
+        durationMs: 50,
+      });
+    });
+
+    mockSaveCompletedJob.mockResolvedValue(false);
+    const scanId = 'deep_scan_storage_failed_12345';
+    const req = new Request('https://cyfsa-navigator-git-staging.pages.dev/api/deep-scan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Analysis-Id': scanId,
+      },
+      body: JSON.stringify({
+        documentText: SAMPLE_DOC,
+        sessionId: '22222222-3333-4444-5555-666666666666',
+        stream: false,
+      }),
+    });
+
+    const res = await handleDeepScanRequest(req, env, { rpc: mockRpc, generate: mockGenerate as unknown as GenerateFn });
+    expect(res.status).toBe(503);
+    const error = await res.json();
+    expect(error.code).toBe('ANALYSIS_PERSISTENCE_FAILED');
+    expect(mockSaveCompletedJob).toHaveBeenCalledOnce();
+    expect(mockRpc).not.toHaveBeenCalledWith('paid_finalize_credit', expect.anything());
+  });
+  
   it('allows owner user (mr.pelkie@gmail.com) to execute Deep Scan without paid session', async () => {
     mockAuthVerification.mockResolvedValueOnce({
       status: 'verified',
