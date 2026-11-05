@@ -18,6 +18,8 @@ import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { saveCompletedJob, saveJobState } from './_analysis-jobs';
+import { createDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
+import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
 import { DEFAULT_QUICK_MODEL, DEFAULT_FORENSIC_MODEL } from '../../api/services/analyzerModels';
@@ -76,6 +78,7 @@ export interface AnalyzerEnv {
   QUICK_ANALYSIS_BUDGET_MS?: string;
   FORENSIC_ANALYSIS_BUDGET_MS?: string;
   DIRECT_ANALYZER_DISABLED?: string;
+  ANALYZER_JOBS_QUEUE?: AnalyzerQueueBinding;
 }
 
 const DEFAULT_HEADERS = {
@@ -87,6 +90,11 @@ export interface AnalyzeDependencies {
   rpc?: CreditRpc;
   generate?: GenerateFn;
   fetcher?: typeof fetch;
+  /** Set only by the private queue consumer after loading the job from the server-side job ledger. */
+  trustedJob?: Pick<DurableJobRecord, 'owner_uid' | 'session_id' | 'reservation_id' | 'owner_bypass'> & {
+    workerToken: string;
+    onProgress?: (stage: string, percent: number, message: string) => Promise<void> | void;
+  };
 }
 
 /** A budget from configuration, bounded so a typo cannot disable the limit or remove it entirely. */
@@ -158,6 +166,10 @@ export async function handleAnalyzeRequest(
     );
   }
 
+  if (body?.mode !== undefined && body?.mode !== null && body.mode !== 'fast' && body.mode !== 'full') {
+    return Response.json({ error: 'Analysis mode must be fast or full.', code: 'INVALID_ANALYSIS_MODE' }, { status: 400, headers: DEFAULT_HEADERS });
+  }
+
   if (
     documentText.startsWith('JVBER') ||
     documentText.startsWith('UEsDB') ||
@@ -172,7 +184,7 @@ export async function handleAnalyzeRequest(
   const mode: 'fast' | 'full' = body?.mode === 'full' ? 'full' : 'fast';
   const isForensic = mode === 'full';
   const rawSession = body?.sessionId || request.headers.get('x-ps-session') || request.headers.get('x-session-id');
-  const sessionId = extractSessionId(rawSession);
+  const sessionId = deps.trustedJob ? deps.trustedJob.session_id : extractSessionId(rawSession);
   const rawRequestId = request.headers.get('X-Analysis-Id') || body?.analysisId || '';
   const requestId = /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId)
     ? rawRequestId
@@ -183,7 +195,9 @@ export async function handleAnalyzeRequest(
 
   // Authenticate user via Firebase JWT
   const authFetcher = deps.fetcher || fetch;
-  const identity = await verifyFirebaseRequest(request, env);
+  const identity = deps.trustedJob
+    ? { status: 'verified' as const, uid: deps.trustedJob.owner_uid, emailVerified: false, email: null }
+    : await verifyFirebaseRequest(request, env);
   if (identity.status !== 'verified') {
     const status = identity.status === 'unavailable' ? 503 : 401;
     return Response.json(
@@ -194,14 +208,16 @@ export async function handleAnalyzeRequest(
   const uid = identity.uid;
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
   // No client-supplied role, email or session can grant this entitlement.
-  const isOwner = identity.emailVerified && identity.email?.toLowerCase() === 'mr.pelkie@gmail.com';
+  const isOwner = deps.trustedJob ? deps.trustedJob.owner_bypass : identity.emailVerified && identity.email?.toLowerCase() === 'mr.pelkie@gmail.com';
 
   // Set up RPC transport
   const rpc = deps.rpc || createStagingCreditRpc(env, authFetcher);
 
   // Reserve credits according to user tier
   let reservationId: string | null = null;
-  if (isOwner) {
+  if (deps.trustedJob) {
+    reservationId = deps.trustedJob.reservation_id;
+  } else if (isOwner) {
     // Owner requests have no paid/free credit reservation; normal authentication and AI limits still apply.
   } else if (sessionId) {
     const sessionRead = await readVerifiedPaidSession(env, uid, sessionId, authFetcher);
@@ -273,6 +289,50 @@ export async function handleAnalyzeRequest(
       });
     }
     reservationId = reservation.reservation_id;
+  }
+
+  // Queue mode returns quickly and lets a separate Worker process the job. The credit reservation above is
+  // retained across retries. Only the opaque job identifier is published to Cloudflare Queues.
+  if (!deps.trustedJob && env.ANALYZER_JOBS_QUEUE) {
+    const inputKey = `inputs/${requestId}.json`;
+    const job: Omit<DurableJobRecord, 'status'> = {
+      job_id: requestId,
+      owner_uid: uid,
+      mode,
+      input_key: inputKey,
+      session_id: sessionId,
+      reservation_id: reservationId,
+      owner_bypass: isOwner,
+    };
+    try {
+      await createDurableJob(env, job, authFetcher);
+      await saveDurableInput(env, inputKey, { documentText, fileName: typeof body?.documentName === 'string' ? body.documentName : undefined }, authFetcher);
+      await env.ANALYZER_JOBS_QUEUE.send(createAnalyzerQueueMessage(requestId));
+      return Response.json({
+        jobId: requestId,
+        status: 'queued',
+        statusUrl: `/api/analyze/job/${encodeURIComponent(requestId)}`,
+        stream: wantsStream ? 'poll' : undefined,
+      }, { status: 202, headers: DEFAULT_HEADERS });
+    } catch {
+      // This request id is now a terminal failed job, and its reservation is released below.
+      // The user can start a fresh request; silently retrying the same id would be rejected as a duplicate.
+      const retryable = false;
+      try {
+        await updateDurableJob(env, { jobId: requestId, status: 'failed', errorCode: 'ANALYSIS_ENQUEUE_FAILED', errorMessage: 'The analysis could not be placed in the queue. Please retry.', retryable }, authFetcher);
+      } catch { /* The producer still releases its reservation below. */ }
+      if (!isOwner && reservationId) {
+        try {
+          if (sessionId) await releasePaidReservation(sessionId, requestId, reservationId, rpc);
+          else await releaseFreeScan(uid, requestId, reservationId, rpc);
+        } catch (releaseError) { console.error('[ANALYZER_ENQUEUE_RELEASE_FAILED]', releaseError instanceof Error ? releaseError.name : 'error'); }
+      }
+      return Response.json({
+        error: 'The analysis could not be queued. Your reserved credit was released when possible.',
+        code: 'ANALYSIS_ENQUEUE_FAILED',
+        retryable,
+      }, { status: 503, headers: DEFAULT_HEADERS });
+    }
   }
 
   // Model selection:
@@ -417,6 +477,7 @@ export async function handleAnalyzeRequest(
 
   // Helper to finalize credits
   const finalize = async (): Promise<boolean> => {
+    if (deps.trustedJob) return true; // the queue consumer finalizes after persisting and reconciling the report
     if (isOwner) return true;
     if (sessionId) {
       const res = await finalizePaidReservation(sessionId, requestId, rpc);
@@ -429,6 +490,7 @@ export async function handleAnalyzeRequest(
 
   // Helper to release credits on error
   const release = async (): Promise<void> => {
+    if (deps.trustedJob) return; // transient failures keep the reservation for a queue retry
     if (isOwner || !reservationId) return;
     try {
       if (sessionId) {
@@ -552,7 +614,7 @@ export async function handleAnalyzeRequest(
 
   // Synchronous JSON response
   try {
-    const report = await executeAnalysis();
+    const report = await executeAnalysis(deps.trustedJob?.onProgress);
     await persistBeforeFinalization(report);
     const finalized = await finalize();
     if (!finalized) {

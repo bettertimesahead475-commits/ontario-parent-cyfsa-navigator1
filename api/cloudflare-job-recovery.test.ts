@@ -15,7 +15,11 @@ describe('Cloudflare Job Recovery Endpoint (/api/analyze/job/:jobId)', () => {
   });
 
   it('returns 404 not_found for unrecorded job id outside grace window', async () => {
-    const response = await onRequestGet({ params: { jobId: 'req_1000000000000_expired' } });
+    const response = await onRequestGet({
+      request: new Request('http://localhost/api/analyze/job/req_1000000000000_expired', { headers: { 'x-admin-secret': 'admin-test' } }),
+      env: { ADMIN_SECRET: 'admin-test' },
+      params: { jobId: 'req_1000000000000_expired' },
+    });
     expect(response.status).toBe(404);
     const json = await response.json();
     expect(json.code).toBe('JOB_NOT_FOUND');
@@ -25,7 +29,11 @@ describe('Cloudflare Job Recovery Endpoint (/api/analyze/job/:jobId)', () => {
   it('returns pending grace status for recently created request IDs', async () => {
     const now = Date.now();
     const jobId = `req_${now - 5000}_recentjob123`;
-    const response = await onRequestGet({ params: { jobId } });
+    const response = await onRequestGet({
+      request: new Request(`http://localhost/api/analyze/job/${jobId}`, { headers: { 'x-admin-secret': 'admin-test' } }),
+      env: { ADMIN_SECRET: 'admin-test' },
+      params: { jobId },
+    });
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.status).toBe('pending');
@@ -45,6 +53,7 @@ describe('Cloudflare Job Recovery Endpoint (/api/analyze/job/:jobId)', () => {
     };
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/rest/v1/rpc/analyzer_get_job')) return Response.json(null, { status: 200 });
       if (url.includes('req_9999999999999_savedjob.json')) {
         return Response.json(mockJob, { status: 200 });
       }

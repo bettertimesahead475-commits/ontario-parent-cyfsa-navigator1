@@ -175,6 +175,8 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
     ANALYZER_ENABLED: 'true',
     FIREBASE_PROJECT_ID: 'test-project',
     ANTHROPIC_API_KEY: 'test-anthropic-key',
+    STAGING_SUPABASE_URL: 'https://test-project.supabase.co',
+    STAGING_SUPABASE_SERVICE_ROLE_KEY: 'service-role-test-key',
   };
 
   beforeEach(() => {
@@ -235,7 +237,11 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
       }),
     });
 
-    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc, generate: mockGenerate as any });
+    const response = await handleAnalyzeRequest(request, env, {
+      rpc: mockRpc,
+      generate: mockGenerate as any,
+      fetcher: vi.fn(async () => new Response('{}', { status: 200 })) as any,
+    });
     expect(response.status).toBe(200);
     const json = await response.json() as any;
 

@@ -6,6 +6,7 @@
  */
 import { verifyFirebaseRequest } from '../../_auth-check';
 import { effectiveJob, jobObjectUrl, secretEquals } from '../../_analysis-jobs';
+import { loadPersistedReport, readDurableJob } from '../../_durable-analysis-jobs';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -37,7 +38,8 @@ export const onRequestGet = async ({
     );
   }
 
-  // 1. Authenticate caller if credentials are provided
+  // Status reads always require a verified Firebase identity, except the existing explicit
+  // owner/admin testing bypass. A missing Firebase configuration is not anonymous access.
   let callerUid: string | null = null;
   let isAdmin = false;
   const adminSecretHeader = request?.headers.get('x-admin-secret');
@@ -47,6 +49,38 @@ export const onRequestGet = async ({
     const authResult = await verifyFirebaseRequest(request, env);
     if (authResult.status === 'verified') {
       callerUid = authResult.uid;
+    }
+  }
+  if (!isAdmin && !callerUid) {
+    return Response.json({ error: 'Please sign in again to see this analysis.', code: 'SIGN_IN_REQUIRED' }, { status: 401, headers: DEFAULT_HEADERS });
+  }
+
+  // New queue jobs use the transactional Postgres ledger for status and ownership. The report
+  // remains in the private Storage bucket and is fetched only after checking the owner's UID.
+  if (env?.STAGING_SUPABASE_URL && env?.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const job = await readDurableJob(env, jobId);
+      if (job) {
+        if (!isAdmin && job.owner_uid !== callerUid) {
+          return Response.json({ error: "Access denied. You cannot access another user's analysis job.", code: 'FORBIDDEN' }, { status: 403, headers: DEFAULT_HEADERS });
+        }
+        if (job.status === 'completed') {
+          const report = await loadPersistedReport(env, jobId);
+          if (!report) return Response.json({ error: 'The saved report is temporarily unavailable.', code: 'ANALYSIS_PERSISTENCE_FAILED', retryable: true }, { status: 503, headers: DEFAULT_HEADERS });
+          return Response.json({ jobId, status: 'completed', percent: 100, currentStage: 'complete', report }, { status: 200, headers: DEFAULT_HEADERS });
+        }
+        if (job.status === 'failed') {
+          return Response.json({ jobId, status: 'failed', percent: 100, currentStage: 'failed', error: {
+            code: job.error_code || 'ANALYSIS_FAILED',
+            message: job.error_message || 'The analysis could not be completed.',
+            retryable: job.retryable ?? false,
+            statusCode: job.retryable ? 503 : 422,
+          } }, { status: 200, headers: DEFAULT_HEADERS });
+        }
+        return Response.json({ jobId, status: job.status, currentStage: job.stage || job.status, percent: job.progress || (job.status === 'queued' ? 10 : 35), message: job.status === 'queued' ? 'Waiting for an analyzer worker.' : 'Analysis is running.' }, { status: 200, headers: DEFAULT_HEADERS });
+      }
+    } catch {
+      return Response.json({ error: 'Analysis status is temporarily unavailable.', code: 'JOB_STATUS_UNAVAILABLE', retryable: true }, { status: 503, headers: DEFAULT_HEADERS });
     }
   }
 
@@ -66,19 +100,11 @@ export const onRequestGet = async ({
         const job = (await res.json()) as any;
         if (job && typeof job === 'object') {
           // Access control: if job has an owner, require matching UID or admin
-          if (!isAdmin && job.uid) {
-            if (!callerUid) {
-              return Response.json(
-                { error: 'Please sign in again to see this analysis.', code: 'SIGN_IN_REQUIRED' },
-                { status: 401, headers: DEFAULT_HEADERS }
-              );
-            }
-            if (job.uid !== callerUid) {
-              return Response.json(
-                { error: "Access denied. You cannot access another user's analysis job.", code: 'FORBIDDEN' },
-                { status: 403, headers: DEFAULT_HEADERS }
-              );
-            }
+          if (!isAdmin && (!callerUid || typeof job.uid !== 'string' || job.uid !== callerUid)) {
+            return Response.json(
+              { error: "Access denied. You cannot access another user's analysis job.", code: 'FORBIDDEN' },
+              { status: 403, headers: DEFAULT_HEADERS }
+            );
           }
           return Response.json(effectiveJob(job, Date.now()), { status: 200, headers: DEFAULT_HEADERS });
         }

@@ -4,6 +4,7 @@ import type { GenerateFn } from './services/analyzerSections';
 
 const mockAuthVerification = vi.fn();
 const mockSessionRead = vi.fn();
+const successfulJobStorageWrite = () => vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
 
 vi.mock('../functions/api/_auth-check', () => ({
   verifyFirebaseRequest: (req: Request, env: any) => mockAuthVerification(req, env),
@@ -203,6 +204,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
+      fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.status).toBe(200);
@@ -264,6 +266,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
+      fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.ok).toBe(false);
@@ -352,6 +355,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
+      fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.status).toBe(200);
@@ -426,6 +430,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
+      fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.status).toBe(200);

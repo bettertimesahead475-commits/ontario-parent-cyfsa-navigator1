@@ -7,7 +7,7 @@ import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
+import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, readAnalysisResponse, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
 import {
   readSavedAnalysisJobId,
@@ -706,6 +706,11 @@ export default function DocumentAnalyzerTab() {
               priorAnalysis: file.analysisReport || null
             })
           });
+          if (response.status === 202) {
+            return readAnalysisResponse(response, {
+              onStage: (stage, percent, message) => setDeepScanProgress({ stage, percent, message }),
+            });
+          }
           const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
           if (!isStream) return safeReadJson(response);
           return readAnalysisEventStream(response, {
@@ -2128,6 +2133,15 @@ export default function DocumentAnalyzerTab() {
       report = await runAnalysisWithRetry({
         attempt: async () => {
           const response = await postAnalysis();
+          if (response.status === 202) {
+            return readAnalysisResponse(response, {
+              onStage: (stage, percent, message) => {
+                setLastActivityAt(Date.now());
+                setIsProcessingStalled(false);
+                setStreamingProgress(prev => ({ ...prev, stage, percent: Math.max(prev.percent, percent), message }));
+              },
+            }, { isCancelled: () => stopWaitingRef.current });
+          }
           const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
           // A JSON reply is a saved report (200) or an error (thrown by safeReadJson with its code and retryable flag).
           if (!isStream) return safeReadJson(response);

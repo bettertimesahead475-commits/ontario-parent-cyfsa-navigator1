@@ -3,8 +3,7 @@
  * Queue payloads contain only an opaque job identifier; document text,
  * Firebase credentials, user identifiers and paid-session data stay in private storage.
  *
- * This module is deliberately transport-independent. Binding a Pages producer and
- * a separate consumer requires a verified persistence/credit lifecycle first.
+ * The Pages producer and the separate Worker consumer share this strict contract.
  */
 export interface AnalyzerQueueMessage {
   version: 1;

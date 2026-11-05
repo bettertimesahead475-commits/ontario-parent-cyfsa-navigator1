@@ -84,6 +84,34 @@ export async function safeReadJson(response: Response): Promise<any> {
   return data;
 }
 
+/** Reads legacy JSON/SSE analyzer replies and follows the same authenticated job after HTTP 202. */
+export async function readAnalysisResponse(
+  response: Response,
+  callbacks?: AnalysisStreamCallbacks,
+  options: { isCancelled?: () => boolean; intervalMs?: number; maxWaitMs?: number; fetcher?: (input: string, init?: RequestInit) => Promise<Response> } = {},
+): Promise<any> {
+  if ((response.headers.get('content-type') || '').includes('text/event-stream')) {
+    return readAnalysisEventStream(response, callbacks);
+  }
+  const data = await safeReadJson(response);
+  if (response.status !== 202) return data;
+  if (typeof data?.jobId !== 'string') throw new ApiResponseError('The queued analysis response did not include a job ID.', 502, 'INVALID_QUEUE_RESPONSE', true);
+  const outcome = await pollAnalysisJob(data.jobId, {
+    isCancelled: options.isCancelled,
+    intervalMs: options.intervalMs,
+    maxWaitMs: options.maxWaitMs,
+    fetcher: options.fetcher,
+    onProgress: (job) => callbacks?.onStage?.(job.currentStage || job.status, job.percent ?? (job.status === 'completed' ? 100 : 35), job.message || (job.status === 'completed' ? 'Report is ready.' : 'Analysis is running.')),
+  });
+  if (outcome.status === 'completed') {
+    callbacks?.onComplete?.(outcome.report);
+    return outcome.report;
+  }
+  const failure = outcome.error;
+  callbacks?.onError?.({ code: failure.code, message: failure.message, statusCode: failure.statusCode, retryable: failure.retryable });
+  throw new ApiResponseError(failure.message, failure.statusCode, failure.code, failure.retryable);
+}
+
 export interface AnalysisStreamCallbacks {
   onStage?: (stage: string, percent: number, message: string) => void;
   onSection?: (section: string, data: any) => void;
@@ -215,7 +243,7 @@ function streamInterrupted(): ApiResponseError {
 
 export interface AnalysisJobSnapshot {
   jobId: string;
-  status: "pending" | "analyzing" | "completed" | "failed" | "timed_out";
+  status: "pending" | "queued" | "running" | "analyzing" | "completed" | "failed" | "timed_out";
   currentStage?: string;
   percent?: number;
   message?: string;

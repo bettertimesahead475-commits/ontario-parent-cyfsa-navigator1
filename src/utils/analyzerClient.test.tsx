@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./firebase", () => ({ auth: { currentUser: null } }));
-const { safeReadJson, ApiResponseError } = await import("./api");
+const { safeReadJson, readAnalysisResponse, ApiResponseError } = await import("./api");
 const { normalizeAnalysisReport } = await import("./analysisReport");
 
 function response(status: number, body: string, contentType = "application/json") {
@@ -41,6 +41,36 @@ describe("safeReadJson", () => {
     expect(err.retryable).toBe(true);
     expect(err.message).not.toMatch(/<html/i);
     expect(err.message).toMatch(/took too long/);
+  });
+});
+
+describe("queued analyzer responses", () => {
+  it("recognizes HTTP 202, polls the authenticated status URL and returns the saved report", async () => {
+    const progress = vi.fn();
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response(200, JSON.stringify({ jobId: "job_12345678", status: "queued", currentStage: "queued", percent: 10, message: "Waiting for a worker." })))
+      .mockResolvedValueOnce(response(200, JSON.stringify({ jobId: "job_12345678", status: "completed", report: { documentTitle: "Recovered" } })));
+    const result = await readAnalysisResponse(response(202, JSON.stringify({ jobId: "job_12345678", status: "queued" })), {
+      onStage: progress,
+    }, { fetcher, intervalMs: 0 });
+    expect(result).toEqual({ documentTitle: "Recovered" });
+    expect(fetcher).toHaveBeenCalledWith("/api/analyze/job/job_12345678");
+    expect(progress).toHaveBeenCalledWith("queued", 10, "Waiting for a worker.");
+  });
+
+  it("keeps legacy JSON response handling unchanged", async () => {
+    await expect(readAnalysisResponse(response(200, '{"documentTitle":"Legacy"}'))).resolves.toEqual({ documentTitle: "Legacy" });
+  });
+
+  it("keeps the existing SSE completion shape unchanged", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('event: complete\ndata: {"documentTitle":"SSE report"}\n\n'));
+        controller.close();
+      },
+    });
+    const result = await readAnalysisResponse(new Response(stream, { headers: { "content-type": "text/event-stream" } }));
+    expect(result).toEqual({ documentTitle: "SSE report" });
   });
 });
 
