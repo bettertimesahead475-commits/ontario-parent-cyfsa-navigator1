@@ -3,6 +3,13 @@ import { handleDeepScanRequest } from '../functions/api/deep-scan';
 import type { AnalyzerEnv } from '../functions/api/analyze';
 import type { GenerateFn } from './services/analyzerSections';
 
+const mockSaveCompletedJob = vi.fn(async () => true);
+const mockSaveJobState = vi.fn(async () => true);
+vi.mock('../functions/api/_analysis-jobs', () => ({
+  saveCompletedJob: (...args: unknown[]) => mockSaveCompletedJob(...args),
+  saveJobState: (...args: unknown[]) => mockSaveJobState(...args),
+}));
+
 const mockAuthVerification = vi.fn();
 const mockSessionRead = vi.fn();
 
@@ -137,6 +144,8 @@ describe('Cloudflare Pages Functions /api/deep-scan Endpoint', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSaveCompletedJob.mockResolvedValue(true);
+    mockSaveJobState.mockResolvedValue(true);
   });
 
   it('rejects unauthenticated requests with HTTP 401', async () => {
