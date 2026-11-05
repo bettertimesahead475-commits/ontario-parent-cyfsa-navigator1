@@ -17,8 +17,8 @@ export const DEFAULT_QUICK_MODEL = "claude-sonnet-5";
 export const DEFAULT_FORENSIC_MODEL = "claude-opus-5";
 
 export const ANALYZER_MODELS = {
-  QUICK: process.env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL,
-  FORENSIC: process.env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL,
+  QUICK: (typeof process === 'undefined' ? undefined : process.env.ANTHROPIC_QUICK_MODEL) || DEFAULT_QUICK_MODEL,
+  FORENSIC: (typeof process === 'undefined' ? undefined : process.env.ANTHROPIC_FORENSIC_MODEL) || DEFAULT_FORENSIC_MODEL,
 } as const;
 
 export const CLAUDE_MODELS = new Set<string>([

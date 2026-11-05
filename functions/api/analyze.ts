@@ -171,6 +171,7 @@ export async function handleAnalyzeRequest(
   }
 
   if (
+    documentText.startsWith('%PDF-') ||
     documentText.startsWith('JVBER') ||
     documentText.startsWith('UEsDB') ||
     /^data:application\/(pdf|vnd|octet-stream)/i.test(documentText)
@@ -336,13 +337,12 @@ export async function handleAnalyzeRequest(
   }
 
   // Model selection:
-  // In Forensic In-Depth mode, Sonnet generates all 6 sections rapidly in parallel,
-  // followed by independent Claude Opus verification of high-impact findings
-  // (strictly adhering to resolveServerAuthoritativeModel in api/services/analyzerModels.ts).
-  const primaryModel = (isForensic && env.ANTHROPIC_FORENSIC_PRIMARY_MODEL)
-    ? env.ANTHROPIC_FORENSIC_PRIMARY_MODEL
-    : (env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL);
+  // Deep Scan uses the configured Opus for primary sections and verification.
+  // A legacy primary override cannot silently downgrade a Deep Scan to Sonnet.
   const verificationModel = env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL;
+  const primaryModel = isForensic
+    ? verificationModel
+    : (env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL);
   const generate = deps.generate || createCloudflareGenerateFn(env, authFetcher);
 
   // Product latency budgets. Leave a small margin for report guards,
@@ -428,7 +428,7 @@ export async function handleAnalyzeRequest(
     const report: Record<string, any> = {
       ...run.report,
       modelMetadata: {
-        engineName: isForensic ? 'Claude Opus & Sonnet' : 'Claude Sonnet',
+        engineName: isForensic ? 'Claude Opus' : 'Claude Sonnet',
         mode,
         modeName: isForensic ? 'Forensic In-Depth Scan' : 'Quick Document Review',
         durationMs: Date.now() - pipelineStartedAt,
@@ -614,7 +614,11 @@ export async function handleAnalyzeRequest(
 
   // Synchronous JSON response
   try {
-    const report = await executeAnalysis(deps.trustedJob?.onProgress);
+    const report = await withHardDeadline(
+      executeAnalysis(deps.trustedJob?.onProgress),
+      analysisBudgetMs + HARD_DEADLINE_GRACE_MS,
+      () => new AnalyzerError('ANALYSIS_TIMED_OUT', 504, 'The analysis did not finish in time. Your document is safe. Please retry.', true)
+    );
     await persistBeforeFinalization(report);
     const finalized = await finalize();
     if (!finalized) {

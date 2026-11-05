@@ -3862,9 +3862,9 @@ export default function DocumentAnalyzerTab() {
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Word and Character Count Counter */}
                         <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded text-[10px] font-sans text-slate-600">
-                          <span>Characters: <strong>{activeSelectedFile.content.length.toLocaleString()}</strong></span>
+                          <span>Characters: <strong>{(activeSelectedFile.mimeType === "text/plain" || activeSelectedFile.sourcePages ? activeSelectedFile.content.length.toLocaleString() : "Pending extraction")}</strong></span>
                           <span className="text-slate-300">|</span>
-                          <span>Words: <strong>{activeSelectedFile.content ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length.toLocaleString() : "0"}</strong></span>
+                          <span>Words: <strong>{activeSelectedFile.mimeType === "text/plain" || activeSelectedFile.sourcePages ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length.toLocaleString() : "Pending extraction"}</strong></span>
                         </div>
 
                         {activeSelectedFile.name.toLowerCase().includes("transcript") && (
@@ -3977,10 +3977,10 @@ export default function DocumentAnalyzerTab() {
                       // substantial it actually was. Real text extraction for those
                       // files happens server-side (Gemini OCR) during analysis, so we
                       // can't judge word density client-side before that runs.
-                      if (activeSelectedFile.mimeType !== "text/plain") {
+                      if (activeSelectedFile.mimeType !== "text/plain" && !activeSelectedFile.sourcePages) {
                         return (
                           <div className="p-2 border rounded-lg text-[10px] leading-relaxed flex items-center gap-1 px-3 bg-slate-50 text-slate-600 border-slate-200 select-none text-left">
-                            <span>📄 This document will be read via OCR text extraction when you run the audit — its content isn't previewable here beforehand.</span>
+                            <span>📄 Text will be extracted from this document when you run analysis. Scanned pages use OCR.</span>
                           </div>
                         );
                       }
@@ -4091,7 +4091,7 @@ export default function DocumentAnalyzerTab() {
                             <span>{deepScanProgress.message || "Tracing omissions, evaluating CYFSA thresholds, and constructing defense retorts..."}</span>
                           </div>
                           <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-brand-500 h-full rounded-full transition-all duration-300" style={{ width: `${Math.max(20, Math.min(100, deepScanProgress.percent))}%` }} />
+                            <div className="bg-brand-500 h-full rounded-full transition-all duration-300" role="progressbar" aria-label={deepScanProgress.message || "Processing document"} />
                           </div>
                         </div>
                       )}
@@ -5327,12 +5327,12 @@ export default function DocumentAnalyzerTab() {
                                 <span className={`inline-block w-2 h-2 rounded-full ${isProcessingStalled ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
                                 <span>{isProcessingStalled ? "Processing taking longer than expected. Monitoring server connection..." : (streamingProgress.message || "Auditing document against statutory thresholds...")}</span>
                               </span>
-                              <span className={isProcessingStalled ? "text-amber-600 font-medium" : "text-brand-600"}>{`${streamingProgress.percent || 30}%`}</span>
+                              <span className={isProcessingStalled ? "text-amber-600 font-medium" : "text-brand-600"}>{streamingProgress.stage === "extracting" ? "Reading pages" : "Processing"}</span>
                             </div>
                             <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                               <div
                                 className="bg-brand-600 h-2 rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${Math.max(10, streamingProgress.percent || 30)}%` }}
+                                role="progressbar" aria-label={streamingProgress.message || "Processing document"}
                               />
                             </div>
                           </div>

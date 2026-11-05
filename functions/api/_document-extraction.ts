@@ -291,6 +291,7 @@ async function readPdfTextLayer(bytes: Uint8Array, proxyGetter = getDocumentProx
           let text = '';
           for (const item of (content.items as any[])) {
             if (typeof item?.str !== 'string') continue;
+            if (text && !/\s$/.test(text) && item.str && !/^\s/.test(item.str)) text += ' ';
             text += item.str;
             if (item.hasEOL) text += '\n';
           }
@@ -319,7 +320,7 @@ async function singlePagePdf(source: PDFDocument, index: number): Promise<Uint8A
   const out = await PDFDocument.create();
   const [page] = await out.copyPages(source, [index]);
   out.addPage(page);
-  return out.save();
+  return out.save({ useObjectStreams: false });
 }
 
 async function ocr(env: GeminiEnv, mimeType: string, data: Uint8Array, fetcher?: typeof fetch) {

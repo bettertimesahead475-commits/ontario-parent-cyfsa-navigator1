@@ -5,8 +5,8 @@
  * - Models: GEMINI_OCR_MODEL (documents and images) and GEMINI_AUDIO_MODEL (transcription). There is no automatic
  *   fallback to other models: a model the account cannot use fails with MODEL_UNAVAILABLE, which names the setting to
  *   change. GET /api/admin/gemini-models lists what the configured key can actually use.
- * - The default is the model production's Node server already calls (api/_server.ts). It is not proven for every key;
- *   verify it with the admin route, and set GEMINI_OCR_MODEL if the key needs another one.
+ * - OCR defaults to the documented PDF-capable Gemini 2.5 Flash. Availability for the deployed key must still be
+ *   verified with the admin route and a PDF request; a public model listing alone is not a live extraction test.
  * - The key is sent in the x-goog-api-key header, never in the URL, so it cannot end up in URL logs.
  * - Provider error bodies are never returned to callers; only a classified kind.
  */
@@ -17,7 +17,7 @@ export interface GeminiEnv {
   GEMINI_AUDIO_MODEL?: string;
 }
 
-export const DEFAULT_GEMINI_OCR_MODEL = 'gemini-3.6-flash';
+export const DEFAULT_GEMINI_OCR_MODEL = 'gemini-2.5-flash';
 export const DEFAULT_GEMINI_AUDIO_MODEL = 'gemini-3.6-flash';
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const MODEL_ID = /^[a-z0-9][a-z0-9.\-]{1,80}$/;
@@ -32,7 +32,8 @@ export type GeminiErrorKind =
   | 'TIMEOUT'
   | 'INVALID_RESPONSE'
   | 'BLOCKED'
-  | 'BAD_REQUEST';
+  | 'BAD_REQUEST'
+  | 'PDF_REJECTED';
 
 export class GeminiError extends Error {
   constructor(readonly kind: GeminiErrorKind, readonly retryAfterSeconds: number | null = null) {
@@ -51,7 +52,8 @@ export const GEMINI_ERROR_RESPONSE: Record<GeminiErrorKind, { status: number; co
   TIMEOUT: { status: 504, code: 'OCR_TIMEOUT', error: 'Reading this document took too long. Try a smaller file or fewer pages. Nothing was charged.', retryable: true },
   INVALID_RESPONSE: { status: 502, code: 'OCR_INVALID_RESPONSE', error: 'Document text recognition returned an unusable result. Please try again. Nothing was charged.', retryable: true },
   BLOCKED: { status: 422, code: 'OCR_BLOCKED', error: 'This document could not be read by the text recognition service.', retryable: false },
-  BAD_REQUEST: { status: 422, code: 'OCR_REJECTED', error: 'The text recognition service could not read this file. It may be damaged or in an unsupported format.', retryable: false },
+  BAD_REQUEST: { status: 502, code: 'OCR_REJECTED', error: 'The text recognition provider rejected the extraction request. This does not establish that your file is damaged. Nothing was charged.', retryable: false },
+  PDF_REJECTED: { status: 422, code: 'OCR_PDF_REJECTED', error: 'The text recognition provider could not decode the PDF pages. Try exporting a new PDF copy with printing enabled. Nothing was charged.', retryable: false },
 };
 
 export function resolveGeminiModel(env: GeminiEnv, use: 'ocr' | 'audio'): string {
@@ -71,6 +73,7 @@ export function classifyGeminiStatus(status: number, bodyText: string): GeminiEr
   if (status >= 500) return 'PROVIDER_UNAVAILABLE';
   // A 400 that names the model ("not found", "not supported") is a model problem, not the user's file.
   if (status === 400 && /model.*(not found|not supported|is not available)|not supported for generateContent/i.test(bodyText)) return 'MODEL_UNAVAILABLE';
+  if (status === 400 && /document.*(no pages|zero pages)|pdf.*(encrypted|password|unsupported|invalid)|unable to process.*(pdf|document)/i.test(bodyText)) return 'PDF_REJECTED';
   return 'BAD_REQUEST';
 }
 
@@ -105,7 +108,13 @@ export async function generateGemini(
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     const retry = Number(res.headers.get('retry-after'));
-    throw new GeminiError(classifyGeminiStatus(res.status, text), Number.isFinite(retry) && retry > 0 ? retry : null);
+    let providerStatus: string | null = null;
+    try { const parsed = JSON.parse(text); if (/^[A-Z_]+$/.test(parsed?.error?.status)) providerStatus = parsed.error.status; } catch {}
+    const kind = classifyGeminiStatus(res.status, text);
+    // Never log the provider message: it may echo document contents or credentials.
+    console.error(JSON.stringify({ tag: '[GEMINI_REJECTED]', model, httpStatus: res.status, providerStatus, kind,
+      reason: /no pages|zero pages/i.test(text) ? 'PDF_NO_PAGES' : /encrypted|password/i.test(text) ? 'PDF_ENCRYPTED' : /mime|inline.data|inlineData/i.test(text) ? 'INPUT_FORMAT' : kind }));
+    throw new GeminiError(kind, Number.isFinite(retry) && retry > 0 ? retry : null);
   }
   let json: any;
   try {
@@ -120,7 +129,7 @@ export async function generateGemini(
     if (candidate?.finishReason === 'SAFETY' || candidate?.finishReason === 'RECITATION') throw new GeminiError('BLOCKED');
     throw new GeminiError('INVALID_RESPONSE');
   }
-  const text = parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('');
+  const text = parts.map((p: any) => (typeof p?.text === 'string' && p.thought !== true ? p.text : '')).join('');
   return {
     text,
     model,

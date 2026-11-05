@@ -43,5 +43,5 @@ export const onRequestPost = async (context: {
   env: AnalyzerEnv;
   waitUntil?: (promise: Promise<unknown>) => void;
 }): Promise<Response> => {
-  return handleDeepScanRequest(context.request, context.env, {}, context.waitUntil);
+  return handleDeepScanRequest(context.request, context.env, {}, context.waitUntil?.bind(context));
 };

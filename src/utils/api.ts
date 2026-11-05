@@ -31,7 +31,14 @@ export async function apiFetch(input: string, init?: RequestInit): Promise<Respo
     console.warn("Failed to attach session token to request:", e);
   }
 
-  return fetch(input, { ...init, headers });
+  try {
+    return await fetch(input, { ...init, headers, signal: init?.signal ?? AbortSignal.timeout(input.includes('/api/extract-text') ? 180_000 : 240_000) });
+  } catch (error: any) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      throw new ApiResponseError('The request timed out. Your document is safe. Reconnect to the existing analysis before starting another.', 504, 'REQUEST_TIMEOUT', false);
+    }
+    throw new ApiResponseError('The secure connection was interrupted. Your document is safe. Reconnect to the existing analysis before starting another.', 0, 'NETWORK_ERROR', false);
+  }
 }
 
 /** Error thrown by safeReadJson for a non-2xx or non-JSON response. */
@@ -69,7 +76,9 @@ export async function safeReadJson(response: Response): Promise<any> {
           : `Unexpected server response (${status}).`;
     throw new ApiResponseError(message, status, null, status >= 500 || status === 408);
   }
-  const data = await response.json();
+  let data: any;
+  try { data = await response.json(); }
+  catch { throw new ApiResponseError('The server returned an incomplete response. Your document is safe.', response.status, 'INVALID_JSON_RESPONSE', response.status >= 500); }
   if (!response.ok) {
     const status = response.status;
     const retryable = typeof data?.retryable === "boolean" ? data.retryable : status >= 500 || status === 429 || status === 408;
@@ -286,7 +295,7 @@ export async function pollAnalysisJob(
     if (options.isCancelled?.()) throw new ApiResponseError("Cancelled.", 0, "CANCELLED", false);
     if (Date.now() - started > maxWaitMs) {
       throw new ApiResponseError(
-        "We couldn't confirm whether this analysis finished. Your document is safe. Check your saved reports, or start the analysis again.",
+        "We couldn't confirm whether this analysis finished. Your document is safe. Check your saved reports, or reconnect to this analysis.",
         504,
         "RECOVERY_TIMEOUT",
         true
@@ -294,7 +303,7 @@ export async function pollAnalysisJob(
     }
     let res: Response;
     try {
-      res = await fetcher(`/api/analyze/job/${encodeURIComponent(jobId)}`);
+      res = await fetcher(`/api/analyze/job/${encodeURIComponent(jobId)}`, { signal: AbortSignal.timeout(Math.max(1, Math.min(20_000, maxWaitMs - (Date.now() - started)))) });
       networkFailures = 0;
     } catch {
       if (++networkFailures >= 10) {

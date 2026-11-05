@@ -30,6 +30,7 @@ interface QueueBatchLike {
 
 interface ConsumerEnv extends AnalyzerEnv {
   ANALYZER_JOBS_QUEUE_NAME?: string;
+  ANALYZER_JOBS_DLQ_NAME?: string;
   ANALYZER_JOBS_REQUEUE?: AnalyzerQueueBinding;
 }
 
@@ -89,7 +90,8 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
   if (!job) {
     try {
       const current = await readDurableJob(env, parsed.jobId);
-      if (!current || current.status === 'completed' || current.status === 'failed') { message.ack(); return; }
+      if (!current || current.status === 'completed') { message.ack(); return; }
+      if (current.status === 'failed') { await releaseReservation(env, current); message.ack(); return; }
       // A parallel delivery or an earlier Worker still owns the lease. Keep the delivery alive
       // until it finishes or its lease expires, instead of starting a second analysis.
       message.retry({ delaySeconds: Math.max(30, Math.min(240, retryDelay(message.attempts))) });
@@ -196,8 +198,11 @@ async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): P
 
 const consumer = {
   async queue(batch: QueueBatchLike, env: ConsumerEnv): Promise<void> {
+    const primary = env.ANALYZER_JOBS_QUEUE_NAME || 'cyfsa-analyzer-jobs';
+    const dlq = env.ANALYZER_JOBS_DLQ_NAME || 'cyfsa-analyzer-dead-letter';
+    if (batch.queue !== primary && batch.queue !== dlq) throw new Error('Unexpected analyzer queue');
     for (const message of batch.messages) {
-      if (batch.queue === 'cyfsa-analyzer-dead-letter') await processDeadLetter(message, env);
+      if (batch.queue === (env.ANALYZER_JOBS_DLQ_NAME || 'cyfsa-analyzer-dead-letter')) await processDeadLetter(message, env);
       else await processJob(message, env);
     }
   },
