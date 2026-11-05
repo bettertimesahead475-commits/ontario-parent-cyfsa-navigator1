@@ -15,7 +15,7 @@ describe('extraction repair regressions', () => {
     const fetcher = vi.fn(async () => Response.json({
       candidates: [{ content: { parts: [{ thought: true, text: 'Private reasoning' }, { text: 'Sworn before me.' }] }, finishReason: 'STOP' }],
     }));
-    const result = await generateGemini({ GEMINI_API_KEY: 'fake' }, 'gemini-2.5-flash', {}, { fetcher: fetcher as typeof fetch, timeoutMs: 1000 });
+    const result = await generateGemini({ GEMINI_API_KEY: 'fake' }, 'gemini-3.6-flash', {}, { fetcher: fetcher as typeof fetch, timeoutMs: 1000 });
     expect(result.text).toBe('Sworn before me.');
   });
 
