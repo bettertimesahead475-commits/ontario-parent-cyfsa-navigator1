@@ -6,8 +6,8 @@ import type { GenerateFn } from './services/analyzerSections';
 const mockSaveCompletedJob = vi.fn(async () => true);
 const mockSaveJobState = vi.fn(async () => true);
 vi.mock('../functions/api/_analysis-jobs', () => ({
-  saveCompletedJob: (...args: unknown[]) => mockSaveCompletedJob(...args),
-  saveJobState: (...args: unknown[]) => mockSaveJobState(...args),
+  saveCompletedJob: () => mockSaveCompletedJob(),
+  saveJobState: () => mockSaveJobState(),
 }));
 
 const mockAuthVerification = vi.fn();
