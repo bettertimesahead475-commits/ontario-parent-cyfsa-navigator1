@@ -441,6 +441,20 @@ export async function handleAnalyzeRequest(
     }
   };
 
+  // A completed report must be recoverable before the credit is consumed.
+  // Never advertise success when Supabase Storage rejects or times out on the write.
+  const persistBeforeFinalization = async (report: Record<string, any>): Promise<void> => {
+    const saved = await saveCompletedJob(env, { jobId: requestId, uid, report }, deps.fetcher || fetch);
+    if (!saved) {
+      throw new AnalyzerError(
+        'ANALYSIS_PERSISTENCE_FAILED',
+        503,
+        'The completed report could not be saved. Your credit was not finalized. Please retry.',
+        true
+      );
+    }
+  };
+
   // Streaming SSE response
   if (wantsStream) {
     const { readable, writable } = new TransformStream();
@@ -489,16 +503,15 @@ export async function handleAnalyzeRequest(
         );
         stageLog('analysis_done');
 
-        // Atomic finalization before delivering complete report
+        await persistBeforeFinalization(report);
+        stageLog('persisted');
+
+        // Only consume the reserved credit after a recoverable report exists.
         const finalized = await finalize();
         if (!finalized) {
           throw new AnalyzerError('ANALYSIS_PERSISTENCE_FAILED', 503, 'Credit finalization failed. Result cannot be delivered.', false);
         }
         stageLog('finalized');
-
-        // Persist the completed job so a refresh can recover it (see ./_analysis-jobs.ts).
-        await saveCompletedJob(env, { jobId: requestId, uid, report }, deps.fetcher || fetch);
-        stageLog('persisted');
 
         // The report itself is sent unchanged, so the saved and streamed shapes stay identical.
         await sendEvent('complete', report);
@@ -540,6 +553,7 @@ export async function handleAnalyzeRequest(
   // Synchronous JSON response
   try {
     const report = await executeAnalysis();
+    await persistBeforeFinalization(report);
     const finalized = await finalize();
     if (!finalized) {
       await release();
@@ -548,8 +562,6 @@ export async function handleAnalyzeRequest(
         { status: 503, headers: DEFAULT_HEADERS }
       );
     }
-    // Persist the completed job so a refresh can recover it (see ./_analysis-jobs.ts).
-    await saveCompletedJob(env, { jobId: requestId, uid, report }, deps.fetcher || fetch);
     return Response.json(report, { status: 200, headers: DEFAULT_HEADERS });
   } catch (err: any) {
     await release();
