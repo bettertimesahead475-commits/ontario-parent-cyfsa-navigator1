@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cyfsa-navigator-staging",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-11-04",
+  "queues": {
+    "producers": [
+      {
+        "binding": "ANALYZER_JOBS_QUEUE",
+        "queue": "cyfsa-analyzer-jobs"
+      }
+    ]
+  }
+}
