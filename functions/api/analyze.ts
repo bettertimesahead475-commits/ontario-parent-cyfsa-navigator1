@@ -208,7 +208,7 @@ export async function handleAnalyzeRequest(
   const uid = identity.uid;
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
   // No client-supplied role, email or session can grant this entitlement.
-  const isOwner = deps.trustedJob ? deps.trustedJob.owner_bypass : identity.emailVerified && identity.email?.toLowerCase() === 'mr.pelkie@gmail.com';
+  const isOwner = deps.trustedJob ? deps.trustedJob.owner_bypass : identity.emailVerified && identity.email?.toLowerCase() === 'mrpelkey@gmail.com';
 
   // Set up RPC transport
   const rpc = deps.rpc || createStagingCreditRpc(env, authFetcher);
