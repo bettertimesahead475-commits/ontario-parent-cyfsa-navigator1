@@ -28,7 +28,7 @@ interface QueueBatchLike {
   messages: QueueMessageLike[];
 }
 
-interface ConsumerEnv extends AnalyzerEnv {
+export interface ConsumerEnv extends AnalyzerEnv {
   ANALYZER_JOBS_QUEUE_NAME?: string;
   ANALYZER_JOBS_DLQ_NAME?: string;
   ANALYZER_JOBS_REQUEUE?: AnalyzerQueueBinding;
