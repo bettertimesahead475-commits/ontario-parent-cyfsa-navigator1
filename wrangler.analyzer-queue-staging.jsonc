@@ -30,5 +30,7 @@
       "service": "cyfsa-analyzer-queue-consumer",
       "entrypoint": "StagingAnalyzerJobs"
     }
-  ]
+  ],
+  "workers_dev": false,
+  "preview_urls": false
 }
