@@ -37,6 +37,10 @@ jobs:
       - name: Type-check
         run: npm run lint
 
+      - name: Live runner evidence regressions (offline)
+        shell: pwsh
+        run: ./scripts/Test-AnalyzerStaging.Tests.ps1
+
       - name: Test
         env:
           NAVIGATOR_PG_TEST_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
