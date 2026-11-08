@@ -118,6 +118,12 @@ const legalSources: Record<string, LegalSource[]> = {
  {label:"CFSRB — complaint application (Form 2)",url:"https://tribunalsontario.ca/documents/cfsrb/CFS002E.pdf",note:"Official tribunal application; read eligibility, required attachments and filing instructions."},
  {label:"CFSRB — rules of procedure",url:"https://tribunalsontario.ca/documents/cfsrb/CFSRB-Rules_of_Procedure.html",note:"Official procedural rules; check current filing and review requirements."}
  ],
+ "other": [
+ {label:"CYFSA s. 74(2) — full list of protection grounds",url:statuteUrl,note:"Official Act. Review the actual paragraph pleaded, not a broad label or an assumption that every concern is a ground."},
+ {label:"CYFSA s. 74(3) — best interests",url:statuteUrl,note:"Official Act. Best-interests analysis is a separate statutory question when applicable."},
+ {label:"CYFSA s. 1(2) — guiding purposes",url:statuteUrl,note:"Official Act. Includes least disruptive appropriate action, family involvement and cultural considerations."},
+ {label:"Ontario Court of Justice — child protection overview",url:"https://www.ontariocourts.ca/ocj/family-court/child-protection/",note:"Official guide for understanding allegations, hearings and court procedure."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -209,6 +215,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
  grounds:"CYFSA s. 119 governs complaints to a children's aid society and s. 120 provides a route to the Child and Family Services Review Board for specified matters. An eligible person may apply to the Board directly in some circumstances. The Ontario Ombudsman is another oversight route. A service complaint, privacy request, judicial appeal and child-protection motion are different processes; the Board cannot simply reverse a protection order.",
  procedure:"Identify the specific conduct, dates, requested correction and proper forum. Preserve written complaints, responses and proof of submission. Check whether the issue is before a court or falls under another statutory decision process before filing with the Board. Use the current official complaint form and tribunal rules. Continue complying with court orders and deadlines while a complaint is pending.",
  review:"CYFSA ss. 119–120, government complaint guidance and official CFSRB application and rules linked; jurisdiction must be checked for each complaint."
+ },
+ "other": {
+ grounds:"The complete list of grounds is in CYFSA s. 74(2); not every family difficulty, school issue, poverty concern or disagreement is an independent ground. Identify the exact paragraph alleged and distinguish the threshold question of whether the child needs protection from the separate best-interests and disposition questions. CYFSA s. 1(2) informs appropriate less disruptive responses.",
+ procedure:"Quote the exact pleaded subsection, identify each element and map each factual allegation to dated, independently supported evidence. Separate a referral, CAS assertion, professional opinion and court finding. Check the child's age, applicable procedure, Indigenous community notice and participation where relevant, and any alternative care arrangement. Do not infer an unlisted statutory power from a broad heading.",
+ review:"Official CYFSA and Ontario court guide linked; no case-specific precedent is claimed."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
