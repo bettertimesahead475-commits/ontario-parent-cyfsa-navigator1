@@ -85,6 +85,11 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"CYFSA s. 81 — child-protection applications and protective powers",url:statuteUrl,note:"Official Ontario e-Laws. Read the precise subsection for warrants, protective steps and the circumstances of the particular investigation."},
   {label:"CYFSA s. 74(2) — statutory grounds",url:statuteUrl,note:"Official Ontario e-Laws. Identify the specific ground under investigation; an allegation alone does not prove it."}
  ],
+ "safety-plans": [
+  {label:"CYFSA s. 75 — temporary care agreements",url:statuteUrl,note:"Official Ontario e-Laws. A written temporary care agreement transfers care and custody to the society under specified conditions; it is not equivalent to every informal safety plan."},
+  {label:"CYFSA s. 76 — termination of temporary care agreements",url:statuteUrl,note:"Official Ontario e-Laws. Written notice and the statutory response period apply to s. 75 agreements; do not assume the same termination rule applies to an informal plan."},
+  {label:"CYFSA s. 77 — agreements with 16- and 17-year-olds",url:statuteUrl,note:"Official Ontario e-Laws. Separate statutory agreement framework; the child's age and participation matter."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -151,6 +156,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"A duty to report suspected child-protection concerns under CYFSA s. 72 is distinct from a finding that a child needs protection under s. 74(2). Section 81 provides court-application and protective powers, subject to its separate requirements. A home visit, interview, request for records, court order and urgent protective action do not all rest on the same legal authority.",
   procedure:"Ask which protection concern and legal authority apply; distinguish a voluntary interview or visit from an action supported by a warrant or other statutory power. Record dates, persons present, requests for consent, documents provided and any written notices. Seek counsel promptly before refusing a lawful direction or signing a substantive agreement. Preserve the child's independent account; do not coach witnesses.",
   review:"CYFSA ss. 72, 74 and 81 cross-referenced to official Ontario e-Laws; specific entry/interview powers and any judicial case law still require paragraph-level legal review."
+ },
+ "safety-plans": {
+  grounds:"An informal safety plan, a written temporary care agreement under CYFSA s. 75, an agreement with a 16- or 17-year-old under s. 77, and a court order are legally distinct. Section 75 includes conditions for a temporary care agreement and requires a child aged 12 or older to be a party unless the statutory developmental-disability exception applies. Section 76 sets out written termination notice for a s. 75 agreement, including the applicable notice period and the society's obligation to respond.",
+  procedure:"Obtain a complete copy of any proposed plan before signing. Identify whether it is voluntary, who has legal care and custody, the precise restrictions, review date, contact arrangements and the route to change or terminate it. Ask what CAS proposes if consent is declined or withdrawn. A s. 75 termination notice does not automatically prevent the society from seeking a protection order if statutory grounds exist.",
+  review:"CYFSA ss. 75–77 checked against Ontario e-Laws. No verified judgment is yet linked; informal safety plans must not be presented as having the same statutory termination rights as a s. 75 agreement."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
