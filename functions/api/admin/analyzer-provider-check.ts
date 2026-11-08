@@ -28,7 +28,16 @@ export async function handleProviderCheck(request: Request, env: Env): Promise<R
     if (request.method === 'GET') {
       let gemini: string[] = []; let geminiFailure: unknown; try { gemini = await listGeminiModels(env); } catch (error) { geminiFailure = error instanceof GeminiError ? { code: 'GEMINI_' + error.kind, diagnostic: error.diagnostic } : { code: 'GEMINI_UNAVAILABLE' }; }
       const response = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': env.ANTHROPIC_API_KEY || '', 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(20000) });
-      if (!response.ok) return Response.json({ geminiFailure, anthropicFailure: providerDiagnostic(response.status, await response.text()) }, { headers });
+      if (!response.ok) {
+        const control = await Promise.all(['https://generativelanguage.googleapis.com/v1beta/models?pageSize=1','https://api.anthropic.com/v1/models?limit=1'].map(async url => {
+          const probe = await fetch(url, { signal: AbortSignal.timeout(15000) });
+          const text = await probe.text();
+          // This fixed control request has no API key, auth header or document input.
+          const publicError = probe.ok ? undefined : text.replace(/<[^>]*>/g, ' ').replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, '[IP]').replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]').replace(/AIza[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]+/g, '[credential]').replace(/\s+/g, ' ').slice(0,500);
+          return { host: new URL(url).hostname, diagnostic: providerDiagnostic(probe.status, text), publicUnauthenticatedError: publicError };
+        }));
+        return Response.json({ geminiFailure, anthropicFailure: providerDiagnostic(response.status, await response.text()), unauthenticatedControl: control, credentialShapes: { gemini: /^AIza[A-Za-z0-9_-]{20,100}$/.test(env.GEMINI_API_KEY?.trim() || ''), anthropic: /^sk-ant-[A-Za-z0-9_-]{20,300}$/.test(env.ANTHROPIC_API_KEY?.trim() || '') } }, { headers });
+      }
       const data = await response.json() as { data?: Array<{ id: string }> };
       const anthropic = (data.data || []).map(x => x.id);
       return Response.json({ ocrModel: resolveGeminiModel(env, 'ocr'), quickModel: quick, deepModel: deep, geminiFailure, availableGeminiModels: gemini, availableAnthropicModels: anthropic }, { headers });
