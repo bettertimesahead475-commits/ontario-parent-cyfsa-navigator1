@@ -27,12 +27,18 @@ describe("CAS Powers & Limits legal hub", () => {
     expect(component).toContain("legalSources[topic.slug]");
     expect(component).toContain("reviewedGrounds[topic.slug]");
   });
+  it("searches more than just topic titles", () => {
+    expect(component).toContain("reviewedGrounds[t.slug]?.grounds");
+    expect(component).toContain("defenceAnalysis[t.slug]?.legalQuestion");
+  });
   it("registers a discoverable route and sitemap entry", () => {
     expect(app).toContain('<Route path="/cas-powers-rights"><CASRightsLimitsTab /></Route>');
     expect(sitemap).toContain("https://cyfsanavigator.com/cas-powers-rights");
   });
   it("does not claim a legal result or treat unverified case law as verified", () => {
     expect(component).toContain("not a pleaded defence");
-    expect(component).toContain("not confirmation of the quoted proposition");
+    expect(component).toContain("Source links are research starting points");
+    expect(component).toContain("do not rely on unverified judgment summaries");
+    expect(component).not.toContain("minicounsel.ca");
   });
 });
