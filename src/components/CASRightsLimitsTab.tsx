@@ -90,6 +90,13 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"CYFSA s. 76 — termination of temporary care agreements",url:statuteUrl,note:"Official Ontario e-Laws. Written notice and the statutory response period apply to s. 75 agreements; do not assume the same termination rule applies to an informal plan."},
   {label:"CYFSA s. 77 — agreements with 16- and 17-year-olds",url:statuteUrl,note:"Official Ontario e-Laws. Separate statutory agreement framework; the child's age and participation matter."}
  ],
+ "removal": [
+  {label:"CYFSA s. 81(2) — warrant to bring a child to safety",url:statuteUrl,note:"Official Ontario e-Laws. For children younger than 16, the statute specifies reasonable and probable grounds and the inadequacy of a less restrictive course."},
+  {label:"CYFSA s. 81(7) — bringing a child to safety without a warrant",url:statuteUrl,note:"Official Ontario e-Laws. Distinct warrantless statutory test; read its actual conditions and age restrictions."},
+  {label:"CYFSA s. 88 — five-day limit after specified removals",url:statuteUrl,note:"Official Ontario e-Laws. Lists alternative lawful steps within five days; it does not simply say every child must receive a completed hearing within five days."},
+  {label:"CYFSA s. 90 — child-protection hearing",url:statuteUrl,note:"Official Ontario e-Laws. Governs a hearing to determine whether a child needs protection."},
+  {label:"Anishinaabe Abinoojii Family Services v. S.B.-M., 2024 ONCJ 89",url:"https://www.minicounsel.ca/ocj/2024/89",note:"Published third-party judgment reproduction discussing s. 88 timing and consent disputes. Outcome and subsequent treatment must be independently reviewed before citing it as a rule."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -161,6 +168,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"An informal safety plan, a written temporary care agreement under CYFSA s. 75, an agreement with a 16- or 17-year-old under s. 77, and a court order are legally distinct. Section 75 includes conditions for a temporary care agreement and requires a child aged 12 or older to be a party unless the statutory developmental-disability exception applies. Section 76 sets out written termination notice for a s. 75 agreement, including the applicable notice period and the society's obligation to respond.",
   procedure:"Obtain a complete copy of any proposed plan before signing. Identify whether it is voluntary, who has legal care and custody, the precise restrictions, review date, contact arrangements and the route to change or terminate it. Ask what CAS proposes if consent is declined or withdrawn. A s. 75 termination notice does not automatically prevent the society from seeking a protection order if statutory grounds exist.",
   review:"CYFSA ss. 75–77 checked against Ontario e-Laws. No verified judgment is yet linked; informal safety plans must not be presented as having the same statutory termination rights as a s. 75 agreement."
+ },
+ "removal": {
+  grounds:"CYFSA s. 81 distinguishes a court application, a warrant to bring a child under 16 to a place of safety, and specified warrantless powers. The statutory criteria depend on age, urgency, reasonable and probable grounds and whether less restrictive protection is adequate. Section 88 applies after specified removals and requires action as soon as practicable and within five days, with several listed alternatives including a court hearing, return or qualifying agreement. Section 90 concerns the protection hearing. Do not confuse the s. 88 five-day limit with a blanket deadline for every CAS investigation or with the date of final disposition.",
+  procedure:"Record the exact date and time of removal, child's age, whether a warrant existed, the specific statutory subsection relied upon, what less restrictive alternatives were considered, the court application date, hearing date, notices, any agreement and all endorsements. Obtain immediate legal advice about available remedies; a timing dispute does not by itself establish that the court lacks jurisdiction or that the child must automatically be returned.",
+  review:"CYFSA ss. 81, 88 and 90 cross-checked against Ontario e-Laws. One published decision linked as an example, but its holding, subsequent treatment and applicability remain to be verified."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
