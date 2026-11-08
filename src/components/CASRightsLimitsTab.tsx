@@ -49,6 +49,20 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"CYFSA s. 74(2)(a)(i)–(ii), (b)(i)–(ii)",url:statuteUrl,note:"Official Ontario e-Laws; actual physical harm and likely physical harm have different tests"},
   {label:"Windsor-Essex CAS v. E.W., 2020 ONCA 682, paras. 5–7",url:"https://www.minicounsel.ca/oca/2020/682",note:"Published Ontario Court of Appeal judgment; discusses likely harm from inadequate care or patterns of neglect"}
  ],
+ "housing": [
+  {label:"CYFSA s. 74(2)(a)–(b) — actual or likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws. Housing or poverty is not a standalone child-protection ground; any alleged harm must satisfy the specific statutory elements."},
+  {label:"CYFSA s. 74(3) — best interests of the child",url:statuteUrl,note:"Official Ontario e-Laws. Applies when the statute directs a best-interests determination; distinct from the threshold protection-ground inquiry."}
+ ],
+ "disability": [
+  {label:"CYFSA s. 74(2) — statutory protection grounds",url:statuteUrl,note:"Official Ontario e-Laws. A parent's disability alone is not a listed protection ground."},
+  {label:"CYFSA s. 74(3)(c)(iii) — disability in best-interests factors",url:statuteUrl,note:"Official Ontario e-Laws. Disability is among the characteristics listed for consideration in the applicable best-interests assessment."},
+  {label:"Ontario Human Rights Code",url:"https://www.ontario.ca/laws/statute/90h19",note:"Official Ontario e-Laws. Disability discrimination and accommodation duties depend on the facts and applicable services."}
+ ],
+ "emotional-harm": [
+  {label:"CYFSA s. 74(2)(f) — serious emotional harm",url:statuteUrl,note:"Official Ontario e-Laws. Includes specified serious manifestations and a connection to caregiver actions, omissions or neglect."},
+  {label:"CYFSA s. 74(2)(g) — treatment or services for existing harm",url:statuteUrl,note:"Official Ontario e-Laws. Distinct treatment-access ground."},
+  {label:"CYFSA s. 74(2)(h)–(i) — likely emotional harm",url:statuteUrl,note:"Official Ontario e-Laws. Distinguishes anticipated harm from anticipated failure to provide services or treatment."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -80,6 +94,21 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"Sections 74(2)(a)(i)–(ii) concern physical harm from inadequate care, provision, supervision or protection, or a pattern of neglect. Sections 74(2)(b)(i)–(ii) address a risk of likely physical harm under corresponding circumstances. Other grounds can apply where their separate elements are established.",
   procedure:"Compare actual child needs, supervision, health, living conditions and dated incidents against the precise allegation. Document available supports and reasonable alternatives. Do not treat poverty alone as proof of neglect.",
   review:"Statutory text and Ontario Court of Appeal reference checked (2026-11-08); case link is a published reproduction."
+ },
+ "housing": {
+  grounds:"Housing instability or low income is not a standalone ground under s. 74(2). If housing conditions allegedly cause physical harm or make it likely, CAS must identify the relevant elements under s. 74(2)(a) or (b), including inadequate care, supervision or protection or a pattern of neglect. Section 74(3) addresses best-interests decisions and is not itself a protection ground.",
+  procedure:"Identify the alleged unsafe condition and its effect on the child. Document rent or housing applications, temporary safe accommodation, financial assistance requests, community supports and practical alternatives. Ask which exact ground is alleged rather than assuming poverty proves neglect.",
+  review:"Statutory text checked against Ontario e-Laws (2026-11-08). No topic-specific court holding has been verified."
+ },
+ "disability": {
+  grounds:"A parent's disability is not a standalone ground in s. 74(2). CAS must identify evidence satisfying an applicable child-protection ground rather than infer risk from diagnosis or disability. Section 74(3)(c)(iii) lists disability among characteristics relevant to best-interests assessments when that test applies. Human-rights accommodation issues require their own contextual analysis.",
+  procedure:"Identify any communication, accessibility or service barriers; request appropriate accommodations; document actual parenting capacity with supports. Distinguish a child's disability and unmet treatment needs from a parent's disability. Obtain legal advice on any discrimination or procedural fairness issue.",
+  review:"CYFSA and Ontario Human Rights Code sources checked (2026-11-08). No topic-specific court holding has been verified."
+ },
+ "emotional-harm": {
+  grounds:"Section 74(2)(f) requires serious emotional harm manifested by specified symptoms, with reasonable grounds linking the harm to caregiver action, inaction or neglect. Section 74(2)(g) addresses failures to provide services or treatment for existing harm. Sections 74(2)(h) and (i) concern likely future emotional harm and distinguish caregiver conduct from treatment or service failures.",
+  procedure:"Identify the precise pleaded paragraph, the child's symptoms and severity, the causal basis, any professional assessment, available treatment and alternative explanations. Do not treat ordinary distress, disagreement or an allegation as automatically meeting the statutory test.",
+  review:"Statutory text checked against Ontario e-Laws (2026-11-08). No topic-specific court holding has been verified."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
