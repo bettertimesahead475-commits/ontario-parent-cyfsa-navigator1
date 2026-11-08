@@ -11,6 +11,7 @@
       }
     ]
   },
+  "services": [{ "binding": "ANALYZER_PROVIDER_EXECUTOR", "service": "cyfsa-analyzer-queue-consumer", "entrypoint": "StagingAnalyzerJobs" }],
   "vars": {
     "ANALYZER_ENABLED": "true",
     "FIREBASE_PROJECT_ID": "cyfsa-navigator-e2e-20261108",

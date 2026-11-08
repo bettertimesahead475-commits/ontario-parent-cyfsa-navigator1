@@ -8,6 +8,7 @@ import { AnalyzerError } from '../../../api/services/analyzerErrors';
 import { listGeminiModels, resolveGeminiModel, GeminiError } from '../_gemini';
 
 type Env = {
+  ANALYZER_PROVIDER_EXECUTOR?: { checkProvider(token: string, mode: string): Promise<{ status: number; body: unknown }> };
   FIREBASE_PROJECT_ID?: string; STAGING_PROVIDER_CHECKS_ENABLED?: string; ANALYZER_ENABLED?: string;
   STAGING_PROVIDER_CHECK_UIDS?: string; ANTHROPIC_API_KEY?: string; GEMINI_API_KEY?: string;
   GEMINI_OCR_MODEL?: string; GEMINI_AUDIO_MODEL?: string;
@@ -26,6 +27,7 @@ export async function handleProviderCheck(request: Request, env: Env): Promise<R
   const deep = env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL;
   try {
     if (request.method === 'GET') {
+      if (env.ANALYZER_PROVIDER_EXECUTOR) { const result = await env.ANALYZER_PROVIDER_EXECUTOR.checkProvider(request.headers.get('Authorization')!.slice(7), 'models'); return Response.json(result.body, { status: result.status, headers }); }
       let gemini: string[] = []; let geminiFailure: unknown; try { gemini = await listGeminiModels(env); } catch (error) { geminiFailure = error instanceof GeminiError ? { code: 'GEMINI_' + error.kind, diagnostic: error.diagnostic } : { code: 'GEMINI_UNAVAILABLE' }; }
       const response = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': env.ANTHROPIC_API_KEY || '', 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(20000) });
       if (!response.ok) {
@@ -46,6 +48,7 @@ export async function handleProviderCheck(request: Request, env: Env): Promise<R
     let body: any;
     try { body = await request.json(); } catch { return Response.json({ code: 'INVALID_REQUEST' }, { status: 400, headers }); }
     if (!body || Object.keys(body).some(k => k !== 'mode') || !['fast','full'].includes(body.mode)) return Response.json({ code: 'FIXED_SYNTHETIC_INPUT_ONLY' }, { status: 400, headers });
+    if (env.ANALYZER_PROVIDER_EXECUTOR) { const result = await env.ANALYZER_PROVIDER_EXECUTOR.checkProvider(request.headers.get('Authorization')!.slice(7), body.mode); return Response.json(result.body, { status: result.status, headers }); }
     const started = Date.now();
     const model = body.mode === 'full' ? deep : quick;
     const run = await runSectionedAnalysis({ mode: body.mode, documentText: fixture, primaryModel: model, verificationModel: body.mode === 'full' ? deep : undefined, generate: createCloudflareGenerateFn(env), deadlineAt: started + (body.mode === 'full' ? 178000 : 98000), requestId: crypto.randomUUID() });
