@@ -613,7 +613,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
 });
 
 it('uses configured Opus for every Deep Scan section despite a legacy Sonnet primary override', async () => {
-  mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'owner', emailVerified: true, email: 'mrpelkey@gmail.com' });
+  mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'owner', emailVerified: true, email: 'mr.pelkie@gmail.com' });
   const generate = vi.fn(async (..._args: Parameters<GenerateFn>) => { throw new (await import('./services/analyzerErrors')).AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'Test provider rejected request', false); });
   const response = await handleAnalyzeRequest(new Request('https://staging.example/api/analyze', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -625,4 +625,21 @@ it('uses configured Opus for every Deep Scan section despite a legacy Sonnet pri
   expect(response.status).toBe(503);
   expect(generate).toHaveBeenCalled();
   for (const call of generate.mock.calls) expect(call[1]).toBe('claude-opus-5-5');
+});
+
+it.each([
+  { email: 'mrpelkey@gmail.com', emailVerified: true },
+  { email: 'mr.pelkie@gmail.com', emailVerified: false },
+  { email: 'customer@example.com', emailVerified: true },
+])('does not grant owner bypass to $email verified=$emailVerified', async (identity) => {
+  mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'customer', ...identity });
+  const generate = vi.fn();
+  const rpc = vi.fn();
+  const response = await handleAnalyzeRequest(new Request('https://staging.example/api/analyze', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documentText: SAMPLE_DOC, mode: 'full', stream: false, email: 'mr.pelkie@gmail.com', owner_bypass: true }),
+  }), { ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'test', ANTHROPIC_API_KEY: 'fake' }, { generate, rpc });
+  expect(response.status).toBe(403);
+  expect(generate).not.toHaveBeenCalled();
+  expect(rpc).not.toHaveBeenCalled();
 });
