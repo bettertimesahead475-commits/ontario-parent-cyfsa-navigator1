@@ -9,6 +9,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, readAnalysisResponse, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
+import { requireCompleteExtraction } from "../utils/extractionCompleteness";
 import {
   readSavedAnalysisJobId,
   saveAnalysisJobId,
@@ -659,6 +660,7 @@ export default function DocumentAnalyzerTab() {
         if (!extractResponse.ok) {
           throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
         }
+        requireCompleteExtraction(extractResult);
         if (!extractResult.extractedText) {
           throw new Error("No readable text could be extracted from this document.");
         }
@@ -1933,6 +1935,7 @@ export default function DocumentAnalyzerTab() {
                       });
                       // safeReadJson throws an ApiResponseError (status, code, retryable) for any non-2xx response.
                       const extractResult = await safeReadJson(extractResponse);
+                      requireCompleteExtraction(extractResult);
                       if (!extractResult.extractedText) {
                         throw new Error("No readable text could be extracted from this document.");
                       }
@@ -2095,6 +2098,7 @@ export default function DocumentAnalyzerTab() {
         if (!extractResponse.ok) {
           throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
         }
+        requireCompleteExtraction(extractResult);
         if (!extractResult.extractedText) {
           throw new Error("No readable text could be extracted from this document.");
         }

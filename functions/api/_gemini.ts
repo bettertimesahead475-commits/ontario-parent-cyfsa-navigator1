@@ -84,12 +84,49 @@ export interface GeminiCallResult {
   finishReason: string | null;
 }
 
-/** One generateContent call. Throws GeminiError; never returns provider error text. */
+/** Bounded generateContent retries. The deadline includes headers, body parsing and backoff. */
 export async function generateGemini(
   env: GeminiEnv,
   model: string,
   body: Record<string, unknown>,
-  opts: { timeoutMs: number; fetcher?: typeof fetch }
+  opts: { timeoutMs: number; fetcher?: typeof fetch; maxAttempts?: number }
+): Promise<GeminiCallResult> {
+  if (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs <= 0) throw new GeminiError('TIMEOUT');
+  const controller = new AbortController();
+  const end = Date.now() + opts.timeoutMs;
+  let timer: ReturnType<typeof setTimeout>;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new GeminiError('TIMEOUT')); }, opts.timeoutMs);
+  });
+  const attempts = Math.min(3, Math.max(1, Math.floor(opts.maxAttempts ?? 2)));
+  try {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await Promise.race([generateGeminiAttempt(env, model, body, { ...opts, signal: controller.signal }), expired]);
+      } catch (error) {
+        if (!(error instanceof GeminiError) || !['RATE_LIMITED', 'PROVIDER_UNAVAILABLE'].includes(error.kind) || attempt === attempts || controller.signal.aborted) throw error;
+        const delay = Math.max(250 * 2 ** (attempt - 1), (error.retryAfterSeconds ?? 0) * 1000);
+        if (delay >= end - Date.now()) throw error;
+        await Promise.race([new Promise<void>((resolve, reject) => {
+          const onAbort = () => { clearTimeout(backoff); reject(new GeminiError('TIMEOUT')); };
+          const backoff = setTimeout(() => { controller.signal.removeEventListener('abort', onAbort); resolve(); }, delay);
+          controller.signal.addEventListener('abort', onAbort, { once: true });
+        }), expired]);
+      }
+    }
+    throw new GeminiError('PROVIDER_UNAVAILABLE');
+  } finally {
+    clearTimeout(timer!);
+    controller.abort();
+  }
+}
+
+/** A single attempt. Throws only sanitized provider errors. */
+async function generateGeminiAttempt(
+  env: GeminiEnv,
+  model: string,
+  body: Record<string, unknown>,
+  opts: { timeoutMs: number; fetcher?: typeof fetch; signal: AbortSignal }
 ): Promise<GeminiCallResult> {
   const key = env.GEMINI_API_KEY?.trim();
   if (!key) throw new GeminiError('NOT_CONFIGURED');
@@ -100,7 +137,7 @@ export async function generateGemini(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(opts.timeoutMs),
+      signal: opts.signal,
     });
   } catch (err: any) {
     throw new GeminiError(err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'TIMEOUT' : 'PROVIDER_UNAVAILABLE');
@@ -130,6 +167,7 @@ export async function generateGemini(
     throw new GeminiError('INVALID_RESPONSE');
   }
   const text = parts.map((p: any) => (typeof p?.text === 'string' && p.thought !== true ? p.text : '')).join('');
+  if (!text.trim()) throw new GeminiError('INVALID_RESPONSE');
   return {
     text,
     model,

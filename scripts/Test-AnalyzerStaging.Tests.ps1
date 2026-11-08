@@ -18,7 +18,7 @@ function Invoke-WebRequest {
 function Invoke-RestMethod {
   param($Method, $Uri, $Headers, $ContentType, $Body, $TimeoutSec)
   if ($Uri.EndsWith('/_auth-check')) { return @{ authenticated = $true } }
-  if ($Uri.EndsWith('/extract-text')) { return @{ extractedText = '[Page 1] Synthetic document'; characters = 27; document = @{ ocrModel = $null } } }
+  if ($Uri.EndsWith('/extract-text')) { return @{ extractedText = '[Page 1] Synthetic document'; characters = 27; document = @{ ocrModel = $null; complete = ($global:AnalyzerHarnessScenario -ne 'partial-extraction') } } }
   $global:AnalyzerHarnessPoll++
   $model = if ($global:AnalyzerHarnessMode -eq 'fast') { 'claude-sonnet-5-5' } else { 'claude-opus-5-5' }
   if ($global:AnalyzerHarnessScenario -eq 'wrong-model') { $model = 'claude-haiku-5-5' }
@@ -29,6 +29,7 @@ function Start-Sleep { param($Seconds) }
 $passed = 0
 try {
   foreach ($case in @(
+    @{ name = 'partial-extraction'; error = 'Extraction is incomplete' },
     @{ name = 'synchronous'; error = 'HTTP 202' },
     @{ name = 'wrong-model'; error = 'unexpected or missing provider model' },
     @{ name = 'changed-report'; error = 'differs from the persisted' },

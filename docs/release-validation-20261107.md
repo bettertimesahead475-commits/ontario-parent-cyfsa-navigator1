@@ -58,3 +58,13 @@ No authenticated PDF extraction, Gemini OCR, Sonnet/Opus analysis, citation accu
 6. Public project `cyfsa-navigator-git-staging` serves `cyfsanavigator.com`; it and production Supabase `qboidsfpjuxeqtfotryj` are outside this authorization.
 
 Production merge/deployment requires explicit authorization after authenticated staging results are available.
+
+## OCR incident follow-up (2026-11-07)
+
+The customer OCR_REJECTED/502 maps to a provider rejection, but the exact upstream rejection remains unproven: accessible sanitized telemetry returned no matching record. No real customer document was used. The candidate pins Gemini 2.5 Flash in staging configuration, bounds the entire OCR operation including body parsing and retries, retries only transient failures, preserves successful pages, and blocks analysis/credit reservation for incomplete extraction. Regression fixtures are synthetic and provider calls are mocked.
+
+Local TypeScript passed. Nine offline staging-runner regressions passed. Focused tests executed 49 passing assertions, but the DOM worker failed to start locally; this is not a DOM pass. Full CI must validate the candidate.
+
+Authentication remains blocked: standard Firebase anonymous signup returned HTTP 400 ADMIN_ONLY_OPERATION. No authenticated browser session, ID token, or usable Admin service account is available. Existing Vercel service-account secret is not readable. Required next access is a legitimate signed-in Firebase test user in project gen-lang-client-0105737183 (with two isolated users for ownership tests), plus approved staging test credits. Do not enable anonymous auth or bypass token verification.
+
+Authenticated OCR, Sonnet Quick Review, Opus Deep Scan, persisted report reopen, cross-user isolation, and application/queue credit-safety tests remain unverified. No provider-backed latency measurements exist. Production is NOT YET VERIFIED and must not be promoted on mock/SQL evidence. The public Pages project currently targets the staging database; changing its destination requires an explicit migration plan, not a blind URL switch.

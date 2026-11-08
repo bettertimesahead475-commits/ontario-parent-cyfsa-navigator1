@@ -25,12 +25,13 @@ export const MAX_PDF_PAGES = 200;
 export const MAX_OCR_PAGES = 30;
 const OCR_CONCURRENCY = 3;
 const OCR_PAGE_TIMEOUT_MS = 60_000;
+const EXTRACTION_TIMEOUT_MS = 120_000;
 /** A page with fewer letters and digits than this in its text layer is treated as needing OCR. */
 const MIN_TEXT_LAYER_CHARS = 25;
 
 export type DetectedType = 'pdf' | 'docx' | 'image' | 'text';
 export type ExtractionMethod = 'TEXT_LAYER' | 'OCR' | 'DOCX_XML' | 'PLAIN_TEXT';
-export type PageStatus = 'ok' | 'empty' | 'not_processed';
+export type PageStatus = 'ok' | 'empty' | 'not_processed' | 'partial';
 
 export interface ExtractedPage {
   /** The page in the source file, or null where the format has no fixed pages (DOCX, plain text). */
@@ -273,7 +274,6 @@ async function readPdfTextLayer(bytes: Uint8Array, proxyGetter = getDocumentProx
     console.error(JSON.stringify({
       tag: '[EXTRACT_DIAGNOSTIC]',
       stage: 'PDF_TEXT_LAYER_OPEN_FAILED',
-      error: String(err?.message || err),
     }));
     return [];
   }
@@ -304,7 +304,6 @@ async function readPdfTextLayer(bytes: Uint8Array, proxyGetter = getDocumentProx
           tag: '[EXTRACT_DIAGNOSTIC]',
           stage: 'PDF_PAGE_TEXT_LAYER_FAILED',
           page: i,
-          error: String(pageErr?.message || pageErr),
         }));
         pageText = '';
       }
@@ -323,7 +322,16 @@ async function singlePagePdf(source: PDFDocument, index: number): Promise<Uint8A
   return out.save({ useObjectStreams: false });
 }
 
-async function ocr(env: GeminiEnv, mimeType: string, data: Uint8Array, fetcher?: typeof fetch) {
+async function withinExtractionBudget<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([operation, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new ExtractionError(504, 'EXTRACTION_TIMEOUT', 'Reading this document took too long. Try a smaller file or fewer pages. Nothing was charged.')), Math.max(0, timeoutMs));
+    })]);
+  } finally { clearTimeout(timer!); }
+}
+
+async function ocr(env: GeminiEnv, mimeType: string, data: Uint8Array, fetcher?: typeof fetch, timeoutMs = OCR_PAGE_TIMEOUT_MS) {
   const model = resolveGeminiModel(env, 'ocr');
   const result = await generateGemini(
     env,
@@ -332,7 +340,7 @@ async function ocr(env: GeminiEnv, mimeType: string, data: Uint8Array, fetcher?:
       contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: toBase64(data) } }, { text: OCR_PROMPT }] }],
       generationConfig: { temperature: 0, maxOutputTokens: 8192 },
     },
-    { timeoutMs: OCR_PAGE_TIMEOUT_MS, fetcher }
+    { timeoutMs, fetcher }
   );
   const text = result.text.trim();
   return { ...result, text: /^\[no text\]$/i.test(text) ? '' : text };
@@ -343,8 +351,10 @@ async function ocr(env: GeminiEnv, mimeType: string, data: Uint8Array, fetcher?:
 export async function extractDocument(
   input: { base64: string; mimeType?: string; fileName?: string },
   env: GeminiEnv,
-  deps: { fetcher?: typeof fetch; getDocumentProxy?: typeof getDocumentProxy } = {}
+  deps: { fetcher?: typeof fetch; getDocumentProxy?: typeof getDocumentProxy; timeoutMs?: number } = {}
 ): Promise<ExtractionResult> {
+  const deadline = Date.now() + Math.min(EXTRACTION_TIMEOUT_MS, Math.max(1, deps.timeoutMs ?? EXTRACTION_TIMEOUT_MS));
+  const remaining = () => Math.max(0, Math.min(OCR_PAGE_TIMEOUT_MS, deadline - Date.now()));
   const bytes = decodeBase64(input.base64);
   if (bytes.length > MAX_FILE_BYTES) throw new ExtractionError(413, 'FILE_TOO_LARGE', 'File is too large. The limit is 20 MB.');
   const fileName = String(input.fileName ?? 'document').slice(0, 255);
@@ -397,19 +407,19 @@ export async function extractDocument(
   } else if (type === 'docx') {
     pages = [await page(null, extractDocx(bytes), 'DOCX_XML', 'ok')];
   } else if (type === 'image') {
-    const r = await ocr(env, mimeType, bytes, deps.fetcher);
+    const r = await ocr(env, mimeType, bytes, deps.fetcher, remaining());
     track(r);
     pageCount = 1;
-    pages = [await page(1, r.text, 'OCR', r.text ? 'ok' : 'empty')];
+    pages = [await page(1, r.text, 'OCR', r.finishReason === 'MAX_TOKENS' ? 'partial' : r.text ? 'ok' : 'empty')];
   } else {
-    let layer = await readPdfTextLayer(bytes, deps.getDocumentProxy);
+    let layer = await withinExtractionBudget(readPdfTextLayer(bytes, deps.getDocumentProxy), deadline - Date.now());
     let source: PDFDocument | null = null;
 
     if (layer.length === 0) {
       // unpdf could not open the text layer (PDF_TEXT_LAYER_OPEN_FAILED).
       // Attempt fallback to pdf-lib to check if the PDF can be loaded and split for OCR.
       try {
-        source = await PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true });
+        source = await withinExtractionBudget(PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true }), deadline - Date.now());
         const count = source.getPageCount();
         if (count > MAX_PDF_PAGES) {
           throw new ExtractionError(413, 'TOO_MANY_PAGES', `This PDF has ${count} pages. The limit is ${MAX_PDF_PAGES}.`);
@@ -420,7 +430,6 @@ export async function extractDocument(
         console.error(JSON.stringify({
           tag: '[EXTRACT_DIAGNOSTIC]',
           stage: 'PDF_PAGE_SPLIT_FAILED',
-          error: String(pdfLibErr?.message || pdfLibErr),
         }));
         throw new ExtractionError(422, 'PDF_MALFORMED', 'This PDF appears to be damaged and could not be read.');
       }
@@ -431,16 +440,18 @@ export async function extractDocument(
     const ocrNow = needOcr.slice(0, MAX_OCR_PAGES);
     const skipped = new Set(needOcr.slice(MAX_OCR_PAGES));
     const ocrText = new Map<number, string>();
+    const failedOcr = new Map<number, GeminiError | null>();
+    const truncated = new Set<number>();
 
     if (ocrNow.length) {
       if (!source) {
         try {
-          source = await PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true });
+          source = await withinExtractionBudget(PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true }), deadline - Date.now());
         } catch (splitErr: any) {
+          if (splitErr instanceof ExtractionError) throw splitErr;
           console.error(JSON.stringify({
             tag: '[EXTRACT_DIAGNOSTIC]',
             stage: 'PDF_PAGE_SPLIT_FAILED',
-            error: String(splitErr?.message || splitErr),
           }));
         }
       }
@@ -448,6 +459,10 @@ export async function extractDocument(
       if (source) {
         for (let i = 0; i < ocrNow.length; i += OCR_CONCURRENCY) {
           const batch = ocrNow.slice(i, i + OCR_CONCURRENCY);
+          if (!remaining()) {
+            ocrNow.slice(i).forEach(idx => failedOcr.set(idx, new GeminiError('TIMEOUT')));
+            break;
+          }
           const results = await Promise.all(
             batch.map(async (idx) => {
               let singleBytes: Uint8Array;
@@ -458,22 +473,24 @@ export async function extractDocument(
                   tag: '[EXTRACT_DIAGNOSTIC]',
                   stage: 'PDF_PAGE_SPLIT_FAILED',
                   page: idx + 1,
-                  error: String(splitErr?.message || splitErr),
                 }));
+                failedOcr.set(idx, null);
                 return null;
               }
               try {
-                return await ocr(env, 'application/pdf', singleBytes, deps.fetcher);
+                return await ocr(env, 'application/pdf', singleBytes, deps.fetcher, remaining());
               } catch (ocrErr: any) {
                 if (ocrErr instanceof GeminiError) {
-                  throw ocrErr;
+                  failedOcr.set(idx, ocrErr);
+                  console.error(JSON.stringify({ tag: '[EXTRACT_DIAGNOSTIC]', stage: 'PDF_PAGE_OCR_FAILED', page: idx + 1, kind: ocrErr.kind }));
+                  return null;
                 }
                 console.error(JSON.stringify({
                   tag: '[EXTRACT_DIAGNOSTIC]',
                   stage: 'PDF_PAGE_OCR_FAILED',
                   page: idx + 1,
-                  error: String(ocrErr?.message || ocrErr),
                 }));
+                failedOcr.set(idx, null);
                 return null;
               }
             })
@@ -482,21 +499,36 @@ export async function extractDocument(
             if (r) {
               track(r);
               ocrText.set(batch[j], r.text);
+              if (r.finishReason === 'MAX_TOKENS') truncated.add(batch[j]);
             }
           });
+          const permanent = [...failedOcr.values()].find(error => error && ['NOT_CONFIGURED', 'MODEL_UNAVAILABLE', 'AUTH_FAILED', 'QUOTA_EXHAUSTED', 'BAD_REQUEST'].includes(error.kind));
+          if (permanent) {
+            ocrNow.slice(i + OCR_CONCURRENCY).forEach(idx => failedOcr.set(idx, permanent));
+            break;
+          }
         }
       } else {
+        ocrNow.forEach(idx => failedOcr.set(idx, null));
         incomplete.push('Scanned page OCR could not be performed due to PDF page structure; using available text layer.');
       }
     }
 
+    // Preserve the original provider classification when no page yielded any readable evidence.
+    if (!layer.some(text => text.trim()) && ![...ocrText.values()].some(text => text.trim())) {
+      const failure = [...failedOcr.values()].find(error => error !== null);
+      if (failure) throw failure;
+    }
+    if (failedOcr.size) incomplete.push(`Text recognition did not finish for page(s) ${[...failedOcr.keys()].map(i => i + 1).sort((a, b) => a - b).join(', ')}. The available text is incomplete.`);
+
     pages = await Promise.all(
       layer.map(async (t, i) => {
         if (skipped.has(i)) return page(i + 1, t, 'OCR', 'not_processed');
+        if (failedOcr.has(i)) return page(i + 1, t, 'OCR', t ? 'partial' : 'not_processed');
         if (ocrText.has(i)) {
           // Keep any text-layer fragment the page had alongside its OCR, without duplicating it.
           const o = ocrText.get(i)!;
-          return page(i + 1, o || t, 'OCR', o || t ? 'ok' : 'empty');
+          return page(i + 1, o || t, 'OCR', truncated.has(i) ? 'partial' : o || t ? 'ok' : 'empty');
         }
         if (needOcr.includes(i) && !t) {
           return page(i + 1, '', 'OCR', source ? 'empty' : 'not_processed');

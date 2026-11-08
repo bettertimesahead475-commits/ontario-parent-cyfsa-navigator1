@@ -21,6 +21,7 @@ foreach ($file in $PdfPath) {
   $extracted = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/extract-text" -Headers $headers -ContentType 'application/json' -Body $payload -TimeoutSec 180
   $extractionClock.Stop()
   if (-not $extracted.extractedText -or $extracted.extractedText.StartsWith('JVBER')) { throw 'Extraction did not produce document text.' }
+  if ($extracted.document.complete -eq $false -or @($extracted.pages | Where-Object { $_.status -in @('partial','not_processed') }).Count) { throw 'Extraction is incomplete; no analysis was submitted and no analysis credit was reserved.' }
   Write-Host "Extracted $($extracted.characters) characters; OCR model: $($extracted.document.ocrModel)"
   foreach ($mode in @('fast','full')) {
     $id = 'live_' + [Guid]::NewGuid().ToString('N')
