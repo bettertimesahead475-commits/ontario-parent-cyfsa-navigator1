@@ -37,6 +37,18 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"CYFSA s. 74(2)(a), (b), (f)–(i)",url:statuteUrl,note:"Official Ontario e-Laws statute; applicable grounds depend on the evidence"},
   {label:"2019 ONCJ 916 — Dilico Anishinabek Family Care v. E.J.",url:"https://www.minicounsel.ca/ocj/2019/916",note:"Published judgment reproduction; discusses evidence and the likely-harm test under s. 74(2)(b)(i), not a rule that drug use alone proves harm"}
  ],
+ "sexual-abuse": [
+  {label:"CYFSA s. 74(2)(c)–(d.2) — sexual abuse, exploitation and trafficking",url:statuteUrl,note:"Official Ontario e-Laws; see each distinct statutory ground"},
+  {label:"Windsor-Essex CAS v. E.W., 2020 ONCA 682, paras. 5–7",url:"https://www.minicounsel.ca/oca/2020/682",note:"Published Ontario Court of Appeal judgment; discusses s. 74(2)(c) and the separate best-interests inquiry"}
+ ],
+ "domestic-violence": [
+  {label:"CYFSA s. 74(2)(a)–(b), (f)–(i) — harm and risk",url:statuteUrl,note:"Official Ontario e-Laws; domestic violence is not itself a separately named ground"},
+  {label:"Windsor-Essex CAS v. E.W., 2020 ONCA 682, paras. 5–7",url:"https://www.minicounsel.ca/oca/2020/682",note:"Published Ontario Court of Appeal judgment; identifies emotional harm from exposure to domestic violence as potentially relevant"}
+ ],
+ "neglect": [
+  {label:"CYFSA s. 74(2)(a)(i)–(ii), (b)(i)–(ii)",url:statuteUrl,note:"Official Ontario e-Laws; actual physical harm and likely physical harm have different tests"},
+  {label:"Windsor-Essex CAS v. E.W., 2020 ONCA 682, paras. 5–7",url:"https://www.minicounsel.ca/oca/2020/682",note:"Published Ontario Court of Appeal judgment; discusses likely harm from inadequate care or patterns of neglect"}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -53,6 +65,21 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"Substance use is not a standalone paragraph in s. 74(2). Depending on the facts, physical harm or likely harm through inadequate care, supervision or neglect may engage s. 74(2)(a)–(b); serious emotional harm or risk may engage s. 74(2)(f)–(i). These provisions require their own factual elements.",
   procedure:"Check whether there is evidence of impairment affecting supervision, unsafe exposure or unmet needs, and whether sober caregivers or other safeguards address the alleged risk. A test result is evidence to evaluate, not itself a protection order.",
   review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Published judgment link checked; pinpoint paragraphs and precedential treatment not yet verified."
+ },
+ "sexual-abuse": {
+  grounds:"Section 74(2)(c) concerns sexual abuse or exploitation by a person having charge of the child, or by another person when the caregiver knows or should know of the possibility and fails to protect the child. Section 74(2)(d) addresses the corresponding likelihood of future abuse or exploitation. Sections 74(2)(d.1)–(d.2) separately address child sex trafficking and its risk.",
+  procedure:"Determine which specific paragraph is alleged and whether the concern involves an alleged perpetrator, a caregiver's failure to protect, or trafficking. Protect the child and preserve independent evidence; do not coach or repeatedly question the child. Seek counsel about disclosure and protective orders.",
+  review:"Statutory text and Ontario Court of Appeal reference checked (2026-11-08); judgment linked to published reproduction, not an official court-hosted copy."
+ },
+ "domestic-violence": {
+  grounds:"Domestic violence is not a separately enumerated s. 74(2) ground. Depending on the evidence, physical harm or likely harm may engage s. 74(2)(a)–(b), and serious emotional harm or risk may engage s. 74(2)(f)–(i). The legal test concerns the child's circumstances, not a presumption that a victimized parent caused harm.",
+  procedure:"Identify the alleged acts, child's exposure or impact, protective actions and feasible supports. Distinguish the alleged perpetrator from a survivor. Ask which specific protection ground is pleaded and whether the statutory elements are supported.",
+  review:"Statutory text and Ontario Court of Appeal reference checked (2026-11-08); case link is a published reproduction."
+ },
+ "neglect": {
+  grounds:"Sections 74(2)(a)(i)–(ii) concern physical harm from inadequate care, provision, supervision or protection, or a pattern of neglect. Sections 74(2)(b)(i)–(ii) address a risk of likely physical harm under corresponding circumstances. Other grounds can apply where their separate elements are established.",
+  procedure:"Compare actual child needs, supervision, health, living conditions and dated incidents against the precise allegation. Document available supports and reasonable alternatives. Do not treat poverty alone as proof of neglect.",
+  review:"Statutory text and Ontario Court of Appeal reference checked (2026-11-08); case link is a published reproduction."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
