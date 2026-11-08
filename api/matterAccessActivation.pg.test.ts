@@ -164,8 +164,12 @@ d('Stage 10 slice 8 -- activated lifecycle through the real server on real Postg
     await db?.end();
     await v3db?.end();
     if (admin) {
-      await admin.query(`drop database if exists ${dbName} with (force)`);
-      await admin.query(`drop database if exists ${v3Name} with (force)`);
+      // All test pools are closed above. Avoid WITH (FORCE): terminating an
+      // idle pg Client can emit an asynchronous uncaught exception after
+      // tests have passed, causing Vitest to fail the entire CI run.
+      // A plain DROP DATABASE instead exposes any leaked connections.
+      await admin.query(`drop database if exists ${dbName}`);
+      await admin.query(`drop database if exists ${v3Name}`);
       await admin.end();
     }
   });
