@@ -111,6 +111,13 @@ const legalSources: Record<string, LegalSource[]> = {
  {label:"CYFSA Part X — personal-information access",url:statuteUrl,note:"Official Act. Privacy access requests and litigation disclosure are different routes, with exceptions and confidentiality safeguards."},
  {label:"Information and Privacy Commissioner — Part X access",url:"https://www.ipc.on.ca/en/part-x-cyfsa",note:"Ontario privacy regulator guidance; an access right is subject to statutory exceptions."}
  ],
+ "complaints": [
+ {label:"CYFSA s. 119 — complaint to a society",url:statuteUrl,note:"Official Act. Society complaint process subject to regulations and jurisdictional restrictions."},
+ {label:"CYFSA s. 120 — complaint to Child and Family Services Review Board",url:statuteUrl,note:"Official Act. Board reviews specified procedural/service matters; court matters and other statutory processes can be excluded."},
+ {label:"Ontario government — child welfare complaint pathways",url:"https://www.ontario.ca/page/submitting-complaint-about-child-welfare-services",note:"Official guide distinguishing society, CFSRB and Ontario Ombudsman routes."},
+ {label:"CFSRB — complaint application (Form 2)",url:"https://tribunalsontario.ca/documents/cfsrb/CFS002E.pdf",note:"Official tribunal application; read eligibility, required attachments and filing instructions."},
+ {label:"CFSRB — rules of procedure",url:"https://tribunalsontario.ca/documents/cfsrb/CFSRB-Rules_of_Procedure.html",note:"Official procedural rules; check current filing and review requirements."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -197,6 +204,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
  grounds:"Disclosure is a procedural issue, not a standalone s. 74(2) protection ground. Family Law Rules rr. 19 and 20 govern document production and questioning; importantly r. 19(1.1) excepts children's aid societies and the Office of the Children's Lawyer from the ordinary affidavit-listing obligation. Other disclosure duties and court orders may still apply. CYFSA Part X personal-information requests are a distinct access process and do not replace litigation disclosure.",
  procedure:"Build an itemized disclosure log showing document, author, date, requested date, response, relevance and privilege claim. Compare affidavits with underlying records; mark allegations versus sworn evidence versus judicial findings. Preserve original files and metadata, redact children's identifying information before sharing publicly, and raise unresolved production issues with counsel or the court rather than assuming undisclosed documents do not exist.",
  review:"Official rules, court guidance, CYFSA and privacy-regulator resources linked. Specific disclosure entitlements must be checked against current rules, court directions and privilege."
+ },
+ "complaints": {
+ grounds:"CYFSA s. 119 governs complaints to a children's aid society and s. 120 provides a route to the Child and Family Services Review Board for specified matters. An eligible person may apply to the Board directly in some circumstances. The Ontario Ombudsman is another oversight route. A service complaint, privacy request, judicial appeal and child-protection motion are different processes; the Board cannot simply reverse a protection order.",
+ procedure:"Identify the specific conduct, dates, requested correction and proper forum. Preserve written complaints, responses and proof of submission. Check whether the issue is before a court or falls under another statutory decision process before filing with the Board. Use the current official complaint form and tribunal rules. Continue complying with court orders and deadlines while a complaint is pending.",
+ review:"CYFSA ss. 119–120, government complaint guidance and official CFSRB application and rules linked; jurisdiction must be checked for each complaint."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
