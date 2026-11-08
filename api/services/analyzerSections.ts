@@ -988,9 +988,20 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
 
   applyReportGuards(report, opts.documentText);
 
-  if (opts.mode === "full" && opts.verificationModel) {
+  if (opts.mode === "full") {
+    // Forensic reports are only complete after the independent verification pass.
+    // Never persist or charge for a report whose second review did not finish.
+    if (!opts.verificationModel) {
+      throw new AnalyzerError("FORENSIC_VERIFICATION_UNAVAILABLE", 503,
+        "Independent forensic verification is not configured. No completed report was saved and nothing was charged.", true);
+    }
     opts.onVerificationStart?.();
-    report.forensicVerification = await runForensicVerification(report, opts, usageByModel);
+    const verification = await runForensicVerification(report, opts, usageByModel);
+    if (verification.status !== "completed") {
+      throw new AnalyzerError("FORENSIC_VERIFICATION_INCOMPLETE", 503,
+        "Independent forensic verification did not finish. This scan has not been marked complete; please retry. Nothing was charged.", true);
+    }
+    report.forensicVerification = verification;
   }
 
   return { report, usageByModel, sectionTimingsMs, attempts };
