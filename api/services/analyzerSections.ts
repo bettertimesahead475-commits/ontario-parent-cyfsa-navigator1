@@ -952,6 +952,11 @@ export async function runOneSection(
 export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<SectionRunResult> {
   const defaultKeys = opts.mode === "full" ? FORENSIC_SECTIONS : QUICK_SECTIONS;
   const keys = opts.targetSections && opts.targetSections.length > 0 ? opts.targetSections : defaultKeys;
+  // Keep a dedicated verification window rather than letting report sections consume
+  // the entire shared deadline. The full deadline remains available to the verifier.
+  const sectionOpts = opts.mode === "full"
+    ? { ...opts, deadlineAt: opts.deadlineAt - 40_000 }
+    : opts;
   const usageByModel: SectionRunResult["usageByModel"] = {};
   const sectionTimingsMs: Record<string, number> = {};
   const attempts: Record<string, number> = {};
@@ -971,7 +976,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
       const key = queue.shift();
       if (!key) break;
       try {
-        const { value, attempts: n } = await runOneSection(key, opts, usageByModel);
+        const { value, attempts: n } = await runOneSection(key, sectionOpts, usageByModel);
         sectionTimingsMs[key] = now() - started;
         attempts[key] = n;
         Object.assign(report, value);
