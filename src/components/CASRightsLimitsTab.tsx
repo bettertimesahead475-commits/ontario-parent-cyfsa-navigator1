@@ -47,17 +47,17 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
  "mental-health": {
   grounds:"A parent's mental-health diagnosis is not itself listed as a standalone protection ground. Where evidence supports it, the relevant grounds may concern physical harm or likely physical harm (s. 74(2)(a)–(b)), or specified serious emotional harm or risk (s. 74(2)(f)–(i)). Section 74(2)(j) concerns a condition of the CHILD and access to treatment, not merely a parent's diagnosis.",
   procedure:"Identify the particular pleaded paragraph and evidence of the child's actual harm or legally specified risk. Compare parenting observations, support arrangements and available services. Do not infer incapacity from treatment history alone.",
-  review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Case-law citation not yet verified."
+  review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Published judgment link checked; pinpoint paragraphs and precedential treatment not yet verified."
  },
  "substance-use": {
   grounds:"Substance use is not a standalone paragraph in s. 74(2). Depending on the facts, physical harm or likely harm through inadequate care, supervision or neglect may engage s. 74(2)(a)–(b); serious emotional harm or risk may engage s. 74(2)(f)–(i). These provisions require their own factual elements.",
   procedure:"Check whether there is evidence of impairment affecting supervision, unsafe exposure or unmet needs, and whether sober caregivers or other safeguards address the alleged risk. A test result is evidence to evaluate, not itself a protection order.",
-  review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Case-law citation not yet verified."
+  review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Published judgment link checked; pinpoint paragraphs and precedential treatment not yet verified."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
   procedure:"Identify the alleged injury, responsible conduct, chronology and supporting evidence. Compare medical findings, witness accounts and alternative explanations. An investigation or allegation is not the same as a court finding; statutory emergency powers may apply when their tests are met.",
-  review:"Statutory grounds checked against Ontario e-Laws (2026-11-08). Case-law citation not yet verified."
+  review:"Statutory grounds checked against Ontario e-Laws (2026-11-08). Published judgment link checked; pinpoint paragraphs and precedential treatment not yet verified."
  }
 };
 
