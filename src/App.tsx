@@ -15,6 +15,7 @@ import { SpeedInsights } from "@vercel/speed-insights/react";
 const CloudflareAuthDiagnostic = lazy(() => import("./components/CloudflareAuthDiagnostic"));
 const CYFSAGuideTab = lazy(() => import("./components/CYFSAGuideTab"));
 const CharterRightsTab = lazy(() => import("./components/CharterRightsTab"));
+const CASRightsLimitsTab = lazy(() => import("./components/CASRightsLimitsTab"));
 const InvestigationTab = lazy(() => import("./components/InvestigationTab"));
 const DefenseStrategiesTab = lazy(() => import("./components/DefenseStrategiesTab"));
 const FamilyCourtTab = lazy(() => import("./components/FamilyCourtTab"));
@@ -159,6 +160,7 @@ export default function App() {
     { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
     { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
     { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
+    { name: "CAS Powers & Limits", path: "/cas-powers-rights", icon: <Scale className="w-4 h-4" /> },
     { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
     { name: "Investigation Process", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
     { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
@@ -362,6 +364,7 @@ export default function App() {
           <Route path="/cloudflare-auth-diagnostic"><CloudflareAuthDiagnostic /></Route>
           <Route path="/"><ParentJourney page="home" /></Route>
           <Route path="/rights"><ParentJourney page="rights" /></Route>
+          <Route path="/cas-powers-rights"><CASRightsLimitsTab /></Route>
           <Route path="/cyfsa-procedure"><ParentJourney page="procedure" /></Route>
           <Route path="/five-day-rule"><ParentJourney page="five-day" /></Route>
           <Route path="/45-day-roadmap"><ParentJourney page="roadmap" /></Route>
