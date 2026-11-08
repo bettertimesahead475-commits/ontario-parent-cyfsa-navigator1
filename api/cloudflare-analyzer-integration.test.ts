@@ -613,7 +613,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
 });
 
 it('uses configured Opus for every Deep Scan section despite a legacy Sonnet primary override', async () => {
-  mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'owner', emailVerified: true, email: 'mrpelkey@gmail.com' });
+  mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'owner', emailVerified: true, email: 'mr.pelkie@gmail.com' });
   const generate = vi.fn(async (..._args: Parameters<GenerateFn>) => { throw new (await import('./services/analyzerErrors')).AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'Test provider rejected request', false); });
   const response = await handleAnalyzeRequest(new Request('https://staging.example/api/analyze', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
