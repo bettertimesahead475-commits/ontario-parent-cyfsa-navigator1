@@ -301,8 +301,8 @@ describe("analyzer access validation", () => {
     const res = await request(app).post("/api/analyze").set(free()).send({ textContent: "text", mode: "fast" });
     expect(res.status).toBe(200);
     expect(res.body.documentTitle).toBe("Affidavit of a worker");
-    // One call per Quick Review section (overview, red flags, chronology, guidance), and no retry for any of them.
-    expect(calls).toHaveLength(4);
+    // Single direct analysis call with repaired JSON, and no retry needed.
+    expect(calls).toHaveLength(1);
   });
 
   it("returns the reserved free scan when the analysis fails, and never when it was delivered", async () => {
@@ -733,7 +733,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         .send({ textContent: "Child protection affidavit excerpt...", mode: "fast" });
 
       expect(res.status).toBe(200);
-      expect(mockCreateMessage).toHaveBeenCalledTimes(4);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(1);
       for (const call of mockCreateMessage.mock.calls) {
         expect(call[0].model).toBe("claude-sonnet-5");
         expect(call[0].max_tokens).toBeLessThanOrEqual(5000);
@@ -868,7 +868,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
         });
 
       expect(res.status).toBe(200);
-      expect(mockCreateMessage).toHaveBeenCalledTimes(4);
+      expect(mockCreateMessage).toHaveBeenCalledTimes(1);
       expect(JSON.stringify(mockCreateMessage.mock.calls[0][0].messages)).toContain("Court filing narrative text...");
       expect(res.body.modelMetadata.engine).toBeUndefined();
     });

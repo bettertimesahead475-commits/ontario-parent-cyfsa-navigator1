@@ -806,7 +806,24 @@ describe("POST /api/analyze", () => {
     "Preparation guidance and questions for counsel",
   ];
 
-  it("runs Quick Review as four bounded Sonnet section requests and ignores a client model override", async () => {
+  it("runs Quick Review as single bounded Sonnet direct analysis and ignores a client model override", async () => {
+    mockCreateMessage.mockImplementation(sectionResponder());
+    const res = await request(app)
+      .post("/api/analyze")
+      .set(paid())
+      .send({ textContent: "some affidavit text", mode: "fast", model: "not-a-real-model" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.documentTitle).toBe("Uploaded Document");
+    expect(mockCreateMessage).toHaveBeenCalledTimes(1);
+    const body = mockCreateMessage.mock.calls[0][0];
+    expect(body.model).toBe("claude-sonnet-5");
+    expect(body.max_tokens).toBeLessThanOrEqual(5000);
+    expect(res.body.whatToVerify.length).toBeGreaterThan(0);
+  });
+
+  it("runs Quick Review as four bounded Sonnet section requests when direct analysis is disabled", async () => {
+    process.env.DIRECT_ANALYZER_DISABLED = "true";
     mockCreateMessage.mockImplementation(sectionResponder());
     const res = await request(app)
       .post("/api/analyze")
@@ -819,9 +836,9 @@ describe("POST /api/analyze", () => {
     const bodies = mockCreateMessage.mock.calls.map(c => c[0]);
     expect(bodies.map(requestedSection).sort()).toEqual([...QUICK_TITLES].sort());
     expect(new Set(bodies.map(b => b.model))).toEqual(new Set(["claude-sonnet-5"]));
-    // Bounded output per section instead of one 16k-token monolith that could be cut off.
     for (const b of bodies) expect(b.max_tokens).toBeLessThanOrEqual(5000);
     expect(res.body.whatToVerify.length).toBeGreaterThan(0);
+    delete process.env.DIRECT_ANALYZER_DISABLED;
   });
 
   it("routes Forensic sections to Sonnet and the independent verification pass to Opus", async () => {

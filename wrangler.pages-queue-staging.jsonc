@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cyfsa-navigator-staging",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-11-04",
+  "queues": {
+    "producers": [
+      {
+        "binding": "ANALYZER_JOBS_QUEUE",
+        "queue": "cyfsa-staging-analyzer-jobs"
+      }
+    ]
+  },
+  "vars": {
+    "ANALYZER_ENABLED": "true",
+    "FIREBASE_PROJECT_ID": "gen-lang-client-0105737183",
+    "GEMINI_OCR_MODEL": "gemini-2.5-flash",
+    "STAGING_SUPABASE_URL": "https://nxfhvebzzobegubefcda.supabase.co/"
+  }
+}

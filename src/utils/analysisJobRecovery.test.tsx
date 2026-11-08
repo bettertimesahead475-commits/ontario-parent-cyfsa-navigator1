@@ -48,12 +48,10 @@ describe("pollAnalysisJob", () => {
     expect(outcome).toMatchObject({ status: "failed", error: { code: "AI_RATE_LIMITED" } });
   });
 
-  it("stops with JOB_NOT_FOUND when the job never existed, and SIGN_IN_REQUIRED on 401", async () => {
-    fetchMock.mockResolvedValue(json(404, { code: "JOB_NOT_FOUND" }));
-    await expect(pollAnalysisJob("req_1_abc", { intervalMs: 1 })).rejects.toMatchObject({ code: "JOB_NOT_FOUND" });
-    fetchMock.mockReset();
+  it("stops at once on 401 (SIGN_IN_REQUIRED); a 404 is not a failure while the analysis is still running", async () => {
     fetchMock.mockResolvedValue(json(401, { code: "SIGN_IN_REQUIRED" }));
     await expect(pollAnalysisJob("req_1_abc", { intervalMs: 1 })).rejects.toMatchObject({ code: "SIGN_IN_REQUIRED" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("after sign-in, polls the same saved job id again and never posts a new analysis", async () => {
@@ -91,10 +89,13 @@ describe("pollAnalysisJob", () => {
     expect(onlyReads(fetchMock)).toBe(true);
   });
 
-  it("a job the server cannot find after the checks ends as JOB_NOT_FOUND, with reads only", async () => {
+  it("keeps following a job that is not saved yet, reads only, and ends as a retryable timeout, not a new analysis", async () => {
+    // The server saves a job record only when the analysis completes, so 404 is the normal state during a run.
     fetchMock.mockResolvedValue(json(404, { code: "JOB_NOT_FOUND" }));
-    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1 }).catch((e) => e);
-    expect(err.code).toBe("JOB_NOT_FOUND");
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1, maxWaitMs: 60 }).catch((e) => e);
+    expect(err.code).toBe("RECOVERY_TIMEOUT");
+    expect(err.retryable).toBe(true);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
     expect(onlyReads(fetchMock)).toBe(true);
   });
 
