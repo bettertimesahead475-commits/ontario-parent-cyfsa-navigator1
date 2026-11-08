@@ -13,6 +13,7 @@ import { SpeedInsights } from "@vercel/speed-insights/react";
 // Keep the home journey in the initial bundle; load feature-only views on demand.
 const CYFSAGuideTab = lazy(() => import("./components/CYFSAGuideTab"));
 const CharterRightsTab = lazy(() => import("./components/CharterRightsTab"));
+const CASRightsLimitsTab = lazy(() => import("./components/CASRightsLimitsTab"));
 const InvestigationTab = lazy(() => import("./components/InvestigationTab"));
 const DefenseStrategiesTab = lazy(() => import("./components/DefenseStrategiesTab"));
 const FamilyCourtTab = lazy(() => import("./components/FamilyCourtTab"));
@@ -157,6 +158,7 @@ export default function App() {
     { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
     { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
     { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
+    { name: "CAS Powers & Limits", path: "/cas-powers-rights", icon: <Scale className="w-4 h-4" /> },
     { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
     { name: "Investigation Process", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
     { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
@@ -365,6 +367,7 @@ export default function App() {
             <CYFSAGuideTab />
           </Route>
 
+          <Route path="/cas-powers-rights"><CASRightsLimitsTab /></Route>
           <Route path="/charter-rights">
             <CharterRightsTab />
           </Route>
