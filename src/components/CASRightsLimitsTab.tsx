@@ -97,6 +97,13 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"CYFSA s. 90 — child-protection hearing",url:statuteUrl,note:"Official Ontario e-Laws. Governs a hearing to determine whether a child needs protection."},
   {label:"Anishinaabe Abinoojii Family Services v. S.B.-M., 2024 ONCJ 89",url:"https://www.minicounsel.ca/ocj/2024/89",note:"Published third-party judgment reproduction discussing s. 88 timing and consent disputes. Outcome and subsequent treatment must be independently reviewed before citing it as a rule."}
  ],
+ "deadlines": [
+ {label:"CYFSA s. 88 — five-day action following specified removals",url:statuteUrl,note:"Official Act. Requires one of the listed steps as soon as practicable and within five days in cases to which s. 88 applies."},
+ {label:"CYFSA s. 90 — protection hearing",url:statuteUrl,note:"Official Act. Sets out the court's determination of whether the child needs protection."},
+ {label:"Family Law Rules, rule 33 — child-protection timetable",url:"https://www.ontario.ca/laws/regulation/990114",note:"Official current regulation. Distinguishes the first hearing, answers and plans, temporary care hearing, settlement conference and hearing; read extension provisions."},
+ {label:"Ontario Court of Justice — child-protection guide",url:"https://www.ontariocourts.ca/ocj/family-court/child-protection/",note:"Official court guidance on stages, court documents and procedure."},
+ {label:"Ontario Court Forms — family-law forms",url:"https://ontariocourtforms.on.ca/en/family-law-rules-forms/",note:"Official forms and revision dates; use the current form for the specific step."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -173,6 +180,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"CYFSA s. 81 distinguishes a court application, a warrant to bring a child under 16 to a place of safety, and specified warrantless powers. The statutory criteria depend on age, urgency, reasonable and probable grounds and whether less restrictive protection is adequate. Section 88 applies after specified removals and requires action as soon as practicable and within five days, with several listed alternatives including a court hearing, return or qualifying agreement. Section 90 concerns the protection hearing. Do not confuse the s. 88 five-day limit with a blanket deadline for every CAS investigation or with the date of final disposition.",
   procedure:"Record the exact date and time of removal, child's age, whether a warrant existed, the specific statutory subsection relied upon, what less restrictive alternatives were considered, the court application date, hearing date, notices, any agreement and all endorsements. Obtain immediate legal advice about available remedies; a timing dispute does not by itself establish that the court lacks jurisdiction or that the child must automatically be returned.",
   review:"CYFSA ss. 81, 88 and 90 cross-checked against Ontario e-Laws. One published decision linked as an example, but its holding, subsequent treatment and applicability remain to be verified."
+ },
+ "deadlines": {
+ grounds:"The CYFSA s. 88 five-day rule applies following specified ways a child is brought to a place of safety; it requires one of the statutory outcomes, not necessarily a final protection trial. Section 90 governs the protection hearing. Family Law Rules r. 33 provides a separate child-protection timetable, including the first hearing, answers and plans of care, temporary care and custody, settlement conference and later hearing. Court extensions and case-specific orders must be examined before alleging a breach.",
+ procedure:"Create a dated chronology with the child's age, removal authority, date and time, service, court filing, first hearing, endorsements, adjournments, orders and any consent. Identify which deadline actually applies, whether the court varied it and what remedy is sought. Use current official forms; seek counsel immediately if a hearing is imminent.",
+ review:"Official CYFSA, Family Law Rules, Ontario Court of Justice and court forms linked; case-specific procedural effect requires review of actual orders."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
