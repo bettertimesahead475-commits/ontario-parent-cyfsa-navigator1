@@ -68,6 +68,12 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"CYFSA s. 74(2)(a)–(b) — physical harm or likely harm",url:statuteUrl,note:"Official Ontario e-Laws. May be relevant where failure to obtain necessary care meets the statutory harm test."},
   {label:"Health Care Consent Act, 1996",url:"https://www.ontario.ca/laws/statute/96h02",note:"Official Ontario e-Laws. Treatment consent and capacity rules require separate analysis; do not assume a parent can consent for every capable minor."}
  ],
+ "education": [
+  {label:"CYFSA s. 74(2)(j) — developmental condition and treatment or services",url:statuteUrl,note:"Official Ontario e-Laws. Only applicable where its particular elements are met; not a general truancy provision."},
+  {label:"CYFSA s. 74(2)(a)–(b) — harm or likely harm",url:statuteUrl,note:"Official Ontario e-Laws. May apply if facts establish the separate physical-harm tests."},
+  {label:"Education Act (Ontario)",url:"https://www.ontario.ca/laws/statute/90e02",note:"Official Ontario e-Laws. School attendance, special education and educational duties require analysis under the applicable education provisions."},
+  {label:"CYFSA s. 13(2)(e) — education for a child in care",url:statuteUrl,note:"Official Ontario e-Laws. A right of children in care, distinct from grounds for taking a child into protection."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -119,6 +125,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"Section 74(2)(j) concerns a child's mental, emotional or developmental condition that could seriously impair development, together with the caregiver's failure to provide or consent to treatment or services as specified by the Act. Physical harm or likely physical harm from inadequate care may separately engage s. 74(2)(a)–(b). Not every disagreement over a treatment plan is a child-protection ground. Treatment consent is governed by its own legal rules.",
   procedure:"Obtain the exact diagnosis or clinical concern, recommended care, urgency, informed-consent records, referrals, access barriers, second opinions and evidence of actual child impact. Identify whether the dispute concerns capacity, consent, availability or neglect. Seek legal advice urgently where a child faces immediate danger.",
   review:"Official CYFSA and Health Care Consent Act links supplied. No case-specific judicial holding has been verified; section-level anchors remain unverified."
+ },
+ "education": {
+  grounds:"Poor grades, missed school or a disability do not automatically establish a CYFSA protection ground. Section 74(2)(j) can be relevant to a qualifying child's mental, emotional or developmental condition and the statutory treatment or services requirements. Sections 74(2)(a)–(b) require their separate physical-harm elements. The Education Act governs school obligations, while CYFSA s. 13(2)(e) addresses education for a child already in care.",
+  procedure:"Review attendance and school communications, learning assessments, individualized education plans, accommodation requests, service referrals, transportation or access barriers, and actual developmental impact. Keep school-law remedies separate from a child-protection court application.",
+  review:"Official CYFSA and Education Act links supplied. No topic-specific court decision or pinpoint section anchors have been verified."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
