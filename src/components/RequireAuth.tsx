@@ -8,13 +8,16 @@
  * the explicit rule that informational content is always free and never gated.
  */
 import { useEffect, useState, ReactNode } from "react";
-import { onAuthStateChanged, User } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword, User } from "firebase/auth";
 import { auth, signInMinimal } from "../utils/firebase";
 import { Shield, Loader2 } from "lucide-react";
 
 export default function RequireAuth({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null | undefined>(undefined); // undefined = still checking
   const [signingIn, setSigningIn] = useState(false);
+  const stagingTestAuth = auth?.app?.options?.projectId === "cyfsa-navigator-e2e-20261108";
+  const [testEmail, setTestEmail] = useState("");
+  const [testPassword, setTestPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,7 +49,12 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
     setSigningIn(true);
     setError(null);
     try {
-      await signInMinimal();
+      if (stagingTestAuth) {
+        await signInWithEmailAndPassword(auth, testEmail, testPassword);
+        setTestPassword("");
+      } else {
+        await signInMinimal();
+      }
       // onAuthStateChanged above will pick up the new user automatically.
     } catch (e: any) {
       const code = e?.code || "";
@@ -88,13 +96,20 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
           case information.
         </p>
 
+        {stagingTestAuth && (
+          <div className="flex flex-col gap-3 w-full max-w-sm mb-4">
+            <p className="text-sm text-slate-600">Isolated staging test account</p>
+            <label className="text-left text-sm">Email<input type="email" autoComplete="username" value={testEmail} onChange={e => setTestEmail(e.target.value)} className="block w-full border rounded p-2" /></label>
+            <label className="text-left text-sm">Password<input type="password" autoComplete="current-password" value={testPassword} onChange={e => setTestPassword(e.target.value)} className="block w-full border rounded p-2" /></label>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <button
             onClick={handleSignIn}
             disabled={signingIn}
             className="w-full sm:w-auto px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold disabled:bg-slate-300 transition-all cursor-pointer shadow-xs"
           >
-            {signingIn ? "Connecting Google..." : "Sign in with Google"}
+            {signingIn ? "Signing in..." : stagingTestAuth ? "Sign in to staging" : "Sign in with Google"}
           </button>
         </div>
 

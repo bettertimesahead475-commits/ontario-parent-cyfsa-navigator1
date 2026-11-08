@@ -1,3 +1,4 @@
+import { providerDiagnostic } from '../../shared/providerDiagnostics';
 /**
  * Cloudflare Worker / Pages Functions Anthropic AI Model Execution Adapter.
  *
@@ -105,17 +106,22 @@ export function createCloudflareGenerateFn(
           const status = response.status;
           const errorText = rawBody;
 
-          logAnalyzerDiagnostic(`provider HTTP ${status}`, new Error(errorText));
+          const diagnostic = providerDiagnostic(status, errorText);
+          console.warn(JSON.stringify({ tag: '[ANTHROPIC_REJECTED]', model: wireModel, ...diagnostic }));
+          const rejected = (error: AnalyzerError): never => { error.providerDiagnostic = diagnostic; throw error; };
           if (status === 429) {
-            throw new AnalyzerError('AI_RATE_LIMITED', 429, 'The AI service is busy right now. Please wait a moment and try again. Nothing was charged.', true);
+            rejected(new AnalyzerError('AI_RATE_LIMITED', 429, 'The AI service is busy right now. Please wait a moment and try again. Nothing was charged.', true));
           }
           if (status >= 500 && status < 600) {
-            throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI analysis engine is temporarily unavailable. Please try again shortly. Nothing was charged.', true);
+            rejected(new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI analysis engine is temporarily unavailable. Please try again shortly. Nothing was charged.', true));
+          }
+          if (status === 400 && !errorText.trim() && apiKey.trim().length < 24) {
+            rejected(new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis provider credentials are not configured correctly. Nothing was charged.', false));
           }
           if (status === 400) {
-            throw new AnalyzerError('AI_REQUEST_REJECTED', 400, 'The AI service could not process this request. Nothing was charged. Please try again or contact support.', false);
+            rejected(new AnalyzerError('AI_REQUEST_REJECTED', 400, 'The AI service could not process this request. Nothing was charged. Please try again or contact support.', false));
           }
-          throw new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is not available right now because of a configuration problem on our side. Nothing was charged.', false);
+          rejected(new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is not available right now because of a configuration problem on our side. Nothing was charged.', false));
         }
 
         let text = '';
