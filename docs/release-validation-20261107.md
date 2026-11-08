@@ -4,7 +4,9 @@ Release decision: **NO-GO** pending authenticated staging tests. This document d
 
 The user explicitly authorized pushing commit `15bd6125d89b49398a19f26465913c048396e980` and subsequent corrections to the feature branch, opening a draft PR, and deploying only isolated staging. The approved commit was pushed. Draft PR: https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/119.
 
-Fresh Node 24 TypeScript and production build checks passed. The first full local run returned 3,911 passed, one failed, and 420 pending tests. The failure was the newly added DOM regression's file-URL lookup under jsdom, not application behavior; it now reads the stylesheet from the repository root. Targeted revalidation and final CI results are recorded in the PR as they complete. Eight offline PowerShell runner regressions passed. Local skips include suites needing database/service credentials; CI supplies disposable PostgreSQL for its integration tests.
+Fresh Node 24 TypeScript and production build checks passed. The first full local run returned 3,911 passed, one failed, and 420 pending tests. The failure was the newly added DOM regression's file-URL lookup under jsdom, not application behavior; it now reads the stylesheet from the repository root and its targeted revalidation passed. CI on the initial commit executed 4,413 passing tests with the same single DOM failure and 108 skipped; final corrected CI results are recorded in the PR. Eight offline PowerShell runner regressions passed. Local skips include suites needing database/service credentials; CI supplies disposable PostgreSQL for its integration tests.
+
+Eight real unauthenticated HTTP checks passed on staging: homepage HTTP 200; missing, malformed, and invalid Firebase token checks HTTP 401; extraction, both analysis modes, and report polling HTTP 401. The runner preflight was corrected to use the application's actual `/api/_auth-check` route. These checks made no provider calls or credit reservations. `scripts/test-staging-public.mjs` repeats them against either the staging alias or its immutable deployment URL.
 
 ## Executed staging database checks
 
@@ -40,7 +42,7 @@ Deployment present at inspection: https://5a68bc90.cyfsa-navigator-staging.pages
 
 No `FIREBASE_ID_TOKEN` is available in the terminal environment. The inspected repository workflows do not provide a Firebase sign-in facility. The legacy preview admin-secret script is not an authorized substitute for Firebase and was not used. Browser inventory timed out twice, so a user-controlled signed-in browser session could not be accessed.
 
-The Node staging smoke probe timed out. An independent curl probe failed its TLS handshake with HTTP code 000. Web retrieval also could not access the staging API. These are transport failures, not evidence of successful unauthorized-access rejection.
+Initial probes encountered a Node timeout, curl TLS handshake failure, and inaccessible web retrieval. Subsequent Node 24 HTTP testing succeeded for all eight public checks. Network transport is no longer a blocker for the terminal-based live runner.
 
 The connected TinyFish browser inventory has no saved signed-in sites. Its API-fetch attempt failed with a connector transport error. The initial automatic approval-review push rejection was resolved by the user's explicit approval; no production authorization was given.
 
