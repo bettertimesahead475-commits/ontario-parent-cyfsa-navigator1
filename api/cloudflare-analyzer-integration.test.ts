@@ -4,6 +4,7 @@ import type { GenerateFn } from './services/analyzerSections';
 
 const mockAuthVerification = vi.fn();
 const mockSessionRead = vi.fn();
+const successfulJobStorageWrite = () => vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
 
 vi.mock('../functions/api/_auth-check', () => ({
   verifyFirebaseRequest: (req: Request, env: any) => mockAuthVerification(req, env),
@@ -203,6 +204,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
+      fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.status).toBe(200);
@@ -264,6 +266,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
+      fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.ok).toBe(false);
@@ -352,6 +355,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
+      fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.status).toBe(200);
@@ -426,6 +430,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, {
       rpc: mockRpc,
       generate: mockGenerate,
+      fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.status).toBe(200);
@@ -605,4 +610,19 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(mockGenerate).toHaveBeenCalled();
     expect(mockRpc).toHaveBeenCalledWith('free_release_scan', expect.anything());
   });
+});
+
+it('uses configured Opus for every Deep Scan section despite a legacy Sonnet primary override', async () => {
+  mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'owner', emailVerified: true, email: 'mrpelkey@gmail.com' });
+  const generate = vi.fn(async (..._args: Parameters<GenerateFn>) => { throw new (await import('./services/analyzerErrors')).AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'Test provider rejected request', false); });
+  const response = await handleAnalyzeRequest(new Request('https://staging.example/api/analyze', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documentText: SAMPLE_DOC, mode: 'full', stream: false }),
+  }), {
+    ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'test', ANTHROPIC_API_KEY: 'fake',
+    ANTHROPIC_FORENSIC_MODEL: 'claude-opus-5-5', ANTHROPIC_FORENSIC_PRIMARY_MODEL: 'claude-sonnet-5-5',
+  }, { generate, fetcher: successfulJobStorageWrite() });
+  expect(response.status).toBe(503);
+  expect(generate).toHaveBeenCalled();
+  for (const call of generate.mock.calls) expect(call[1]).toBe('claude-opus-5-5');
 });

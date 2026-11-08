@@ -88,6 +88,7 @@ export async function handleExtractRequest(
           pageCount: result.pageCount,
           pageAttribution: result.pageAttribution,
           extractionMethods: [...new Set(result.pages.map((p) => p.extractionMethod))],
+          complete: result.pages.every(p => p.status !== 'partial' && p.status !== 'not_processed'),
           incomplete: result.incomplete,
           ocrModel: result.ocr?.model ?? null,
         },

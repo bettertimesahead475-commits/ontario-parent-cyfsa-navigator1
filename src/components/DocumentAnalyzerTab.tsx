@@ -7,8 +7,9 @@ import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
+import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, readAnalysisResponse, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
+import { requireCompleteExtraction } from "../utils/extractionCompleteness";
 import {
   readSavedAnalysisJobId,
   saveAnalysisJobId,
@@ -138,6 +139,7 @@ interface OrganizedFile {
   category: "CAS Correspondence" | "Court Filings" | "Evidence & Loggers" | "Children Services" | "Parenting Identity";
   uploadedAt: string;
   content: string; // Plaintext content or base64 representation
+  originalContent?: string; // Preserve uploaded bytes when content becomes extracted text.
   analysisStatus: "pending" | "analyzing" | "completed" | "failed";
   analysisReport?: AnalysisReport;
   // Why the last analysis attempt failed, as reported by the server (shown to the parent).
@@ -658,12 +660,13 @@ export default function DocumentAnalyzerTab() {
         if (!extractResponse.ok) {
           throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
         }
+        requireCompleteExtraction(extractResult);
         if (!extractResult.extractedText) {
           throw new Error("No readable text could be extracted from this document.");
         }
         documentTextToScan = extractResult.extractedText;
         setOrganizedFiles(prev => prev.map(f => f.id === file.id
-          ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+          ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
       } catch (err: any) {
         setIsDeepScanning(false);
         setDeepScanFileId(null);
@@ -706,6 +709,11 @@ export default function DocumentAnalyzerTab() {
               priorAnalysis: file.analysisReport || null
             })
           });
+          if (response.status === 202) {
+            return readAnalysisResponse(response, {
+              onStage: (stage, percent, message) => setDeepScanProgress({ stage, percent, message }),
+            });
+          }
           const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
           if (!isStream) return safeReadJson(response);
           return readAnalysisEventStream(response, {
@@ -1927,13 +1935,14 @@ export default function DocumentAnalyzerTab() {
                       });
                       // safeReadJson throws an ApiResponseError (status, code, retryable) for any non-2xx response.
                       const extractResult = await safeReadJson(extractResponse);
+                      requireCompleteExtraction(extractResult);
                       if (!extractResult.extractedText) {
                         throw new Error("No readable text could be extracted from this document.");
                       }
                       payload.textContent = extractResult.extractedText;
                       extractedContentById[file.id] = extractResult.extractedText;
                       setOrganizedFiles(prev => prev.map(f => f.id === file.id
-                        ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+                        ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
                     }
                     textForFile = payload.textContent;
 
@@ -2089,12 +2098,13 @@ export default function DocumentAnalyzerTab() {
         if (!extractResponse.ok) {
           throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
         }
+        requireCompleteExtraction(extractResult);
         if (!extractResult.extractedText) {
           throw new Error("No readable text could be extracted from this document.");
         }
         payload.textContent = extractResult.extractedText;
         setOrganizedFiles(prev => prev.map(f => f.id === file.id
-          ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+          ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
       }
 
       // One analysis per click, retried under the shared policy (shared/analyzerRetryPolicy.ts). Every attempt carries
@@ -2128,6 +2138,15 @@ export default function DocumentAnalyzerTab() {
       report = await runAnalysisWithRetry({
         attempt: async () => {
           const response = await postAnalysis();
+          if (response.status === 202) {
+            return readAnalysisResponse(response, {
+              onStage: (stage, percent, message) => {
+                setLastActivityAt(Date.now());
+                setIsProcessingStalled(false);
+                setStreamingProgress(prev => ({ ...prev, stage, percent: Math.max(prev.percent, percent), message }));
+              },
+            }, { isCancelled: () => stopWaitingRef.current });
+          }
           const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
           // A JSON reply is a saved report (200) or an error (thrown by safeReadJson with its code and retryable flag).
           if (!isStream) return safeReadJson(response);
@@ -3848,9 +3867,9 @@ export default function DocumentAnalyzerTab() {
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Word and Character Count Counter */}
                         <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded text-[10px] font-sans text-slate-600">
-                          <span>Characters: <strong>{activeSelectedFile.content.length.toLocaleString()}</strong></span>
+                          <span>Characters: <strong>{(activeSelectedFile.mimeType === "text/plain" || activeSelectedFile.sourcePages ? activeSelectedFile.content.length.toLocaleString() : "Pending extraction")}</strong></span>
                           <span className="text-slate-300">|</span>
-                          <span>Words: <strong>{activeSelectedFile.content ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length.toLocaleString() : "0"}</strong></span>
+                          <span>Words: <strong>{activeSelectedFile.mimeType === "text/plain" || activeSelectedFile.sourcePages ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length.toLocaleString() : "Pending extraction"}</strong></span>
                         </div>
 
                         {activeSelectedFile.name.toLowerCase().includes("transcript") && (
@@ -3963,10 +3982,10 @@ export default function DocumentAnalyzerTab() {
                       // substantial it actually was. Real text extraction for those
                       // files happens server-side (Gemini OCR) during analysis, so we
                       // can't judge word density client-side before that runs.
-                      if (activeSelectedFile.mimeType !== "text/plain") {
+                      if (activeSelectedFile.mimeType !== "text/plain" && !activeSelectedFile.sourcePages) {
                         return (
                           <div className="p-2 border rounded-lg text-[10px] leading-relaxed flex items-center gap-1 px-3 bg-slate-50 text-slate-600 border-slate-200 select-none text-left">
-                            <span>📄 This document will be read via OCR text extraction when you run the audit — its content isn't previewable here beforehand.</span>
+                            <span>📄 Text will be extracted from this document when you run analysis. Scanned pages use OCR.</span>
                           </div>
                         );
                       }
@@ -4077,7 +4096,7 @@ export default function DocumentAnalyzerTab() {
                             <span>{deepScanProgress.message || "Tracing omissions, evaluating CYFSA thresholds, and constructing defense retorts..."}</span>
                           </div>
                           <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-brand-500 h-full rounded-full transition-all duration-300" style={{ width: `${Math.max(20, Math.min(100, deepScanProgress.percent))}%` }} />
+                            <div className="bg-brand-500 h-full rounded-full transition-all duration-300" role="progressbar" aria-label={deepScanProgress.message || "Processing document"} />
                           </div>
                         </div>
                       )}
@@ -5313,12 +5332,12 @@ export default function DocumentAnalyzerTab() {
                                 <span className={`inline-block w-2 h-2 rounded-full ${isProcessingStalled ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
                                 <span>{isProcessingStalled ? "Processing taking longer than expected. Monitoring server connection..." : (streamingProgress.message || "Auditing document against statutory thresholds...")}</span>
                               </span>
-                              <span className={isProcessingStalled ? "text-amber-600 font-medium" : "text-brand-600"}>{`${streamingProgress.percent || 30}%`}</span>
+                              <span className={isProcessingStalled ? "text-amber-600 font-medium" : "text-brand-600"}>{streamingProgress.stage === "extracting" ? "Reading pages" : "Processing"}</span>
                             </div>
                             <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                               <div
                                 className="bg-brand-600 h-2 rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${Math.max(10, streamingProgress.percent || 30)}%` }}
+                                role="progressbar" aria-label={streamingProgress.message || "Processing document"}
                               />
                             </div>
                           </div>
@@ -5627,7 +5646,7 @@ export default function DocumentAnalyzerTab() {
                                   <span>{file.name}</span>
                                 </h4>
                                 <p className="text-[10px] font-sans text-slate-500 mt-0.5">
-                                  Uploaded: {file.uploadedAt} • Size: {Math.round(file.content.length / 1024)} KB
+                                  Uploaded: {file.uploadedAt} • Size: {Math.round(file.size / 1024)} KB
                                 </p>
                               </div>
 

@@ -220,6 +220,7 @@ describe('Forensic Deep Scan Root Cause & Repair Verification', () => {
       const response = await handleDeepScanRequest(request, mockEnv, {
         generate,
         rpc: mockCreditRpc,
+        fetcher: vi.fn(async () => new Response('{}', { status: 200 })) as any,
       });
 
       expect(response.status).toBe(200);
