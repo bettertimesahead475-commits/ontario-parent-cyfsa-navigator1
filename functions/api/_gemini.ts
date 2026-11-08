@@ -5,7 +5,7 @@
  * - Models: GEMINI_OCR_MODEL (documents and images) and GEMINI_AUDIO_MODEL (transcription). There is no automatic
  *   fallback to other models: a model the account cannot use fails with MODEL_UNAVAILABLE, which names the setting to
  *   change. GET /api/admin/gemini-models lists what the configured key can actually use.
- * - OCR defaults to the documented PDF-capable Gemini 3.6 Flash. Availability for the deployed key must still be
+ * - OCR defaults to the broadly available PDF-capable Gemini 2.5 Flash. Availability for the deployed key must still be
  *   verified with the admin route and a PDF request; a public model listing alone is not a live extraction test.
  * - The key is sent in the x-goog-api-key header, never in the URL, so it cannot end up in URL logs.
  * - Provider error bodies are never returned to callers; only a classified kind.
@@ -17,7 +17,7 @@ export interface GeminiEnv {
   GEMINI_AUDIO_MODEL?: string;
 }
 
-export const DEFAULT_GEMINI_OCR_MODEL = 'gemini-3.6-flash';
+export const DEFAULT_GEMINI_OCR_MODEL = 'gemini-2.5-flash';
 export const DEFAULT_GEMINI_AUDIO_MODEL = 'gemini-3.6-flash';
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const MODEL_ID = /^[a-z0-9][a-z0-9.\-]{1,80}$/;
