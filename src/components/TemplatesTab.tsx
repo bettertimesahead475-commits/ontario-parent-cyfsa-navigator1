@@ -7,6 +7,7 @@ import { useAppReset } from "../hooks/useAppReset";
 import React, { useState, useEffect } from "react";
 import { EMPTY_AFFIDAVIT } from "../data";
 import OfficialCourtFormsGuide from "./OfficialCourtFormsGuide";
+import OfficialCourtFormsGuideBatch2 from "./OfficialCourtFormsGuideBatch2";
 import { AffidavitDraft, CaseTimelineItem, EvidenceLogItem, IssueSummarySheet, ParentPrepWorksheet, Form33BAnswer, PlanOfCare } from "../types";
 import { Plus, Trash, Printer, ShieldAlert, CheckCircle, Scale, FileText, LayoutGrid, Calendar, BookOpen, Clock, Layers, Info, Mic, Square, Sparkles, Loader2, RefreshCw, AlertTriangle, Save, ArrowRight, Check, Lock, Heart, CloudUpload } from "lucide-react";
 import { apiFetch, safeReadJson } from "../utils/api";
@@ -1050,6 +1051,7 @@ export default function TemplatesTab() {
   return (
     <div className="space-y-5" id="templates-tab">
       <OfficialCourtFormsGuide />
+      <OfficialCourtFormsGuideBatch2 />
       {/* Handover Alert Banner */}
       {handoverDocName && (
         <div className="bg-emerald-50 border border-emerald-200 p-4.5 rounded-xl flex items-center justify-between gap-4 animate-fade-in text-left no-print shadow-3xs">
