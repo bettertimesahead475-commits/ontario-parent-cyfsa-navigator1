@@ -74,6 +74,12 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"Education Act (Ontario)",url:"https://www.ontario.ca/laws/statute/90e02",note:"Official Ontario e-Laws. School attendance, special education and educational duties require analysis under the applicable education provisions."},
   {label:"CYFSA s. 13(2)(e) — education for a child in care",url:statuteUrl,note:"Official Ontario e-Laws. A right of children in care, distinct from grounds for taking a child into protection."}
  ],
+ "kinship": [
+  {label:"CYFSA s. 1(2) — least disruptive course and family participation",url:statuteUrl,note:"Official Ontario e-Laws. Statutory purposes favour appropriate less disruptive options, subject to the child's best interests and protection."},
+  {label:"CYFSA s. 74(3) — best-interests factors",url:statuteUrl,note:"Official Ontario e-Laws. Includes relationships with relatives and extended family, cultural continuity and proposed care plans where a best-interests decision is required."},
+  {label:"CYFSA s. 97 — orders and placement considerations",url:statuteUrl,note:"Official Ontario e-Laws. Read the actual order-making provisions and court-stage conditions before relying on a proposed kinship arrangement."},
+  {label:"Ontario Bar Association — What is a Kinship Placement?",url:"https://oba.org/what-is-a-kinship-placement-b6ce6d35e6c253bddd785d6a551021d1/",note:"Secondary legal commentary, not legislation or a court judgment; explains differences between voluntary kinship arrangements and court orders."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -130,6 +136,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"Poor grades, missed school or a disability do not automatically establish a CYFSA protection ground. Section 74(2)(j) can be relevant to a qualifying child's mental, emotional or developmental condition and the statutory treatment or services requirements. Sections 74(2)(a)–(b) require their separate physical-harm elements. The Education Act governs school obligations, while CYFSA s. 13(2)(e) addresses education for a child already in care.",
   procedure:"Review attendance and school communications, learning assessments, individualized education plans, accommodation requests, service referrals, transportation or access barriers, and actual developmental impact. Keep school-law remedies separate from a child-protection court application.",
   review:"Official CYFSA and Education Act links supplied. No topic-specific court decision or pinpoint section anchors have been verified."
+ },
+ "kinship": {
+  grounds:"Kinship placement is an alternative care option, not itself a s. 74(2) protection ground. CYFSA s. 1(2) calls for consideration of the least disruptive appropriate course and family involvement. Section 74(3) addresses family relationships and continuity when a best-interests decision is required. The legal effect of a voluntary kinship arrangement differs from a protection order or placement with a society.",
+  procedure:"Identify willing relatives, their relationship to the child, location, safety and capacity to care, existing cultural or community ties, and any proposed supervision or support. Ask CAS to explain which legal arrangement is proposed, who holds decision-making authority, whether it is voluntary, and how review or return home works. Get advice before signing an agreement.",
+  review:"Official CYFSA source and separately identified secondary Ontario Bar Association commentary linked. A specific court judgment has not yet been verified."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
