@@ -23,6 +23,27 @@ const topics: Topic[] = [
   {slug:"complaints",title:"Complaints & oversight",concern:"Parents may have concerns about conduct, fairness, privacy or service decisions.",rights:"Identify the appropriate complaint, oversight or court process for the particular issue.",limits:"An administrative complaint does not automatically overturn a court order or suspend deadlines.",evidence:"Correspondence, complaint records, orders, dates and requested remedy."},
   {slug:"other",title:"Other protection grounds",concern:"Other specific statutory grounds may apply to the child's circumstances.",rights:"Ask CAS to identify the exact provision and factual basis for each allegation.",limits:"A general risk label does not replace the applicable legal test.",evidence:"The alleged ground, child impact, dates and corroboration."},
 ];
+
+// Statutory grounds checked against Ontario e-Laws, CYFSA consolidation current July 1, 2026.
+// These are issue-specific entry points, not findings about an individual parent.
+const reviewedGrounds: Record<string, {grounds: string; procedure: string; review: string}> = {
+ "mental-health": {
+  grounds:"A parent's mental-health diagnosis is not itself listed as a standalone protection ground. Where evidence supports it, the relevant grounds may concern physical harm or likely physical harm (s. 74(2)(a)–(b)), or specified serious emotional harm or risk (s. 74(2)(f)–(i)). Section 74(2)(j) concerns a condition of the CHILD and access to treatment, not merely a parent's diagnosis.",
+  procedure:"Identify the particular pleaded paragraph and evidence of the child's actual harm or legally specified risk. Compare parenting observations, support arrangements and available services. Do not infer incapacity from treatment history alone.",
+  review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Case-law citation not yet verified."
+ },
+ "substance-use": {
+  grounds:"Substance use is not a standalone paragraph in s. 74(2). Depending on the facts, physical harm or likely harm through inadequate care, supervision or neglect may engage s. 74(2)(a)–(b); serious emotional harm or risk may engage s. 74(2)(f)–(i). These provisions require their own factual elements.",
+  procedure:"Check whether there is evidence of impairment affecting supervision, unsafe exposure or unmet needs, and whether sober caregivers or other safeguards address the alleged risk. A test result is evidence to evaluate, not itself a protection order.",
+  review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Case-law citation not yet verified."
+ },
+ "physical-abuse": {
+  grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
+  procedure:"Identify the alleged injury, responsible conduct, chronology and supporting evidence. Compare medical findings, witness accounts and alternative explanations. An investigation or allegation is not the same as a court finding; statutory emergency powers may apply when their tests are met.",
+  review:"Statutory grounds checked against Ontario e-Laws (2026-11-08). Case-law citation not yet verified."
+ }
+};
+
 const tabs = ["CAS concern", "Parent rights", "CAS powers & limits", "Evidence", "Court & next steps"] as const;
 type Tab = typeof tabs[number];
 const resources = [
@@ -36,7 +57,8 @@ export default function CASRightsLimitsTab() {
  const [tab,setTab]=useState<Tab>("Parent rights");
  const filtered=useMemo(()=>topics.filter(t=>t.title.toLowerCase().includes(search.trim().toLowerCase())),[search]);
  const topic=topics.find(t=>t.slug===selected) ?? topics[0];
- const text=tab==="CAS concern"?topic.concern:tab==="Parent rights"?topic.rights:tab==="CAS powers & limits"?topic.limits:tab==="Evidence"?topic.evidence:"Identify the exact allegation, statutory ground, court stage and relevant documents. Seek legal advice about deadlines, disclosure and the appropriate response. No case-specific court decision has yet been verified for this topic.";
+ const reviewed=reviewedGrounds[topic.slug];
+ const text=tab==="CAS concern"?topic.concern:tab==="Parent rights"?topic.rights:tab==="CAS powers & limits"?topic.limits:tab==="Evidence"?topic.evidence:reviewed?reviewed.procedure:"Identify the exact allegation, statutory ground, court stage and relevant documents. Seek legal advice about deadlines, disclosure and the appropriate response. No case-specific court decision has yet been verified for this topic.";
  return <main id="main-content" className="mx-auto max-w-5xl px-4 sm:px-6 py-6 space-y-4">
   <header className="space-y-1"><h1 className="text-2xl font-bold text-slate-900">CAS Powers, Limits & Parents' Rights</h1><p className="text-sm text-slate-600">Explore common child-protection concerns. These are general explanations, not findings about your case or legal advice.</p></header>
   <div className="space-y-1"><label htmlFor="cas-topic-search" className="block text-sm font-semibold text-slate-700">Find a topic</label><input id="cas-topic-search" type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search topics" className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-blue-700" /></div>
@@ -45,7 +67,8 @@ export default function CASRightsLimitsTab() {
    <h2 id="cas-selected-heading" className="text-lg font-bold">{topic.title}</h2>
    <div aria-label="Topic sections" className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">{tabs.map(t=><button key={t} type="button" aria-pressed={tab===t} onClick={()=>setTab(t)} className={`rounded-md px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-blue-700 ${tab===t?"bg-blue-100 text-blue-900 font-semibold":"text-slate-700 hover:bg-slate-100"}`}>{t}</button>)}</div>
    <p className="min-h-16 text-sm leading-6 text-slate-800" aria-live="polite">{text}</p>
-   <div className="text-xs text-slate-600 border-t border-slate-200 pt-3"><strong>Legal source status:</strong> Topic-specific subsections and case-law holdings are pending legal verification. The links below open official primary sources; they do not establish that any particular provision applies to your case.</div>
+   {reviewed&&<div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-2 text-sm"><h3 className="font-semibold">Applicable statutory grounds</h3><p>{reviewed.grounds}</p><a href="https://www.ontario.ca/laws/statute/17c14" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline font-medium">CYFSA, s. 74(2) — Ontario e-Laws (opens new tab)</a><p className="text-xs text-slate-600">{reviewed.review}</p></div>}
+   <div className="text-xs text-slate-600 border-t border-slate-200 pt-3"><strong>Legal source status:</strong> {reviewed?"Statutory grounds reviewed; individual judicial decisions are not yet verified.":"Topic-specific subsections and case-law holdings are pending legal verification."} These sources do not establish that a particular ground applies to your case.</div>
    <details className="border-t border-slate-200 pt-3 text-sm"><summary className="cursor-pointer font-semibold">Official law, court procedure and forms</summary><ul className="mt-2 space-y-2">{resources.map(r=><li key={r.url}><a className="text-blue-700 underline focus-visible:outline-2 focus-visible:outline-blue-700" href={r.url} target="_blank" rel="noopener noreferrer">{r.label} (opens new tab)</a></li>)}</ul></details>
   </section>
   <p className="text-xs text-slate-600">An allegation, an investigation and a court finding are different. Urgent safety concerns require prompt professional assistance.</p>
