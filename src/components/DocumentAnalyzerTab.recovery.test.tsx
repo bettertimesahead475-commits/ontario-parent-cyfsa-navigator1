@@ -154,6 +154,16 @@ describe("saved analysis with an unknown outcome", () => {
 });
 
 describe("duplicate retries", () => {
+  it("does not start or charge an analysis when extraction returns incomplete pages", async () => {
+    mockApiFetch.mockImplementation(async (url: string) => url === '/api/extract-text'
+      ? jsonResponse(200, { extractedText: '[Page 1] Readable evidence.', document: { complete: false }, pages: [{ pageNumber: 2, status: 'not_processed' }] })
+      : jsonResponse(404, {}));
+    const { container } = render(<DocumentAnalyzerTab />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(['%PDF-1.4 synthetic'], 'partial.pdf', { type: 'application/pdf' })] } });
+    expect((await screen.findAllByText(/Text extraction is incomplete on page\(s\) 2/)).length).toBeGreaterThan(0);
+    expect(analyzeCalls()).toHaveLength(0);
+  });
   it("a Retry after a failed start sends the same analysis id as the first attempt", async () => {
     const { container } = render(<DocumentAnalyzerTab />);
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
