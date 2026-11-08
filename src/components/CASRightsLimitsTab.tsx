@@ -68,7 +68,7 @@ const legalSources: Record<string, LegalSource[]> = {
  "kinship": [
   {label:"CYFSA s. 1(2) — least disruptive course and family participation",url:statuteUrl,note:"Official Ontario e-Laws. Statutory purposes favour appropriate less disruptive options, subject to the child's best interests and protection."},
   {label:"CYFSA s. 74(3) — best-interests factors",url:statuteUrl,note:"Official Ontario e-Laws. Includes relationships with relatives and extended family, cultural continuity and proposed care plans where a best-interests decision is required."},
-  {label:"CYFSA s. 97 — orders and placement considerations",url:statuteUrl,note:"Official Ontario e-Laws. Read the actual order-making provisions and court-stage conditions before relying on a proposed kinship arrangement."},
+  {label:"CYFSA s. 97 — reasons for child-protection orders",url:statuteUrl,note:"Official Ontario e-Laws. Requires reasons for orders, including why a child cannot be adequately protected in the previous caregiver’s care where the order removes or keeps the child away; it does not itself define the available orders."},
   {label:"Ontario Bar Association — What is a Kinship Placement?",url:"https://oba.org/what-is-a-kinship-placement-b6ce6d35e6c253bddd785d6a551021d1/",note:"Secondary legal commentary, not legislation or a court judgment; explains differences between voluntary kinship arrangements and court orders."}
  ],
  "investigation": [
@@ -93,7 +93,7 @@ const legalSources: Record<string, LegalSource[]> = {
  "deadlines": [
  {label:"CYFSA s. 88 — five-day action following specified removals",url:statuteUrl,note:"Official Act. Requires one of the listed steps as soon as practicable and within five days in cases to which s. 88 applies."},
  {label:"CYFSA s. 90 — protection hearing",url:statuteUrl,note:"Official Act. Sets out the court's determination of whether the child needs protection."},
- {label:"Family Law Rules, rule 33 — child-protection timetable",url:"https://www.ontario.ca/laws/regulation/990114",note:"Official regulation. Timetable: first hearing 5 days after applicable removal; answers/plans 30 days; temporary care hearing 35 days; settlement conference 80 days; hearing 120 days. Court may lengthen time only if the child’s best interests require it."},
+ {label:"Family Law Rules, rule 33 — child-protection timetable",url:"https://www.ontario.ca/laws/regulation/990114",note:"Official regulation. Timetable measured from the start of the case: first hearing within 5 days if brought to a place of safety; answers/plans 30 days; temporary care hearing 35 days; settlement conference 80 days; hearing 120 days. The separate CYFSA s. 88 clock runs from specified removals. The court may lengthen Rule 33 times only if the child’s best interests require it."},
  {label:"Ontario Court of Justice — child-protection guide",url:"https://www.ontariocourts.ca/ocj/family-court/child-protection/",note:"Official court guidance on stages, court documents and procedure."},
  {label:"Ontario Court Forms — family-law forms",url:"https://ontariocourtforms.on.ca/en/family-law-rules-forms/",note:"Official forms and revision dates; use the current form for the specific step."}
  ],
@@ -125,12 +125,12 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
  "mental-health": {
   grounds:"A parent's mental-health diagnosis is not itself listed as a standalone protection ground. Where evidence supports it, the relevant grounds may concern physical harm or likely physical harm (s. 74(2)(a)–(b)), or specified serious emotional harm or risk (s. 74(2)(f)–(i)). Section 74(2)(j) concerns a condition of the CHILD and access to treatment, not merely a parent's diagnosis.",
   procedure:"Identify the particular pleaded paragraph and evidence of the child's actual harm or legally specified risk. Compare parenting observations, support arrangements and available services. Do not infer incapacity from treatment history alone.",
-  review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Published judgment link checked; pinpoint paragraphs and precedential treatment not yet verified."
+  review:"Statutory research starting point only. Check the consolidation in force on the relevant date, each precise statutory element and any cited authority before use in proceedings; no judgment holding is verified."
  },
  "substance-use": {
   grounds:"Substance use is not a standalone paragraph in s. 74(2). Depending on the facts, physical harm or likely harm through inadequate care, supervision or neglect may engage s. 74(2)(a)–(b); serious emotional harm or risk may engage s. 74(2)(f)–(i). These provisions require their own factual elements.",
   procedure:"Check whether there is evidence of impairment affecting supervision, unsafe exposure or unmet needs, and whether sober caregivers or other safeguards address the alleged risk. A test result is evidence to evaluate, not itself a protection order.",
-  review:"Statutory mapping reviewed against Ontario e-Laws (2026-11-08). Published judgment link checked; pinpoint paragraphs and precedential treatment not yet verified."
+  review:"Statutory research starting point only. Check the consolidation in force on the relevant date, each precise statutory element and any cited authority before use in proceedings; no judgment holding is verified."
  },
  "sexual-abuse": {
   grounds:"Section 74(2)(c) concerns sexual abuse or exploitation by a person having charge of the child, or by another person when the caregiver knows or should know of the possibility and fails to protect the child. Section 74(2)(d) addresses the corresponding likelihood of future abuse or exploitation. Sections 74(2)(d.1)–(d.2) separately address child sex trafficking and its risk.",
@@ -140,12 +140,12 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
  "domestic-violence": {
   grounds:"Domestic violence is not a separately enumerated s. 74(2) ground. Depending on the evidence, physical harm or likely harm may engage s. 74(2)(a)–(b), and serious emotional harm or risk may engage s. 74(2)(f)–(i). The legal test concerns the child's circumstances, not a presumption that a victimized parent caused harm.",
   procedure:"Identify the alleged acts, child's exposure or impact, protective actions and feasible supports. Distinguish the alleged perpetrator from a survivor. Ask which specific protection ground is pleaded and whether the statutory elements are supported.",
-  review:"Statutory text and Ontario Court of Appeal reference checked (2026-11-08); case link is a published reproduction."
+  review:"Statutory research starting point only. Check the consolidation in force on the relevant date, each precise statutory element and any cited authority before use in proceedings; no judgment holding is verified."
  },
  "neglect": {
   grounds:"Sections 74(2)(a)(i)–(ii) concern physical harm from inadequate care, provision, supervision or protection, or a pattern of neglect. Sections 74(2)(b)(i)–(ii) address a risk of likely physical harm under corresponding circumstances. Other grounds can apply where their separate elements are established.",
   procedure:"Compare actual child needs, supervision, health, living conditions and dated incidents against the precise allegation. Document available supports and reasonable alternatives. Do not treat poverty alone as proof of neglect.",
-  review:"Statutory text and Ontario Court of Appeal reference checked (2026-11-08); case link is a published reproduction."
+  review:"Statutory research starting point only. Check the consolidation in force on the relevant date, each precise statutory element and any cited authority before use in proceedings; no judgment holding is verified."
  },
  "housing": {
   grounds:"Housing instability or low income is not a standalone ground under s. 74(2). If housing conditions allegedly cause physical harm or make it likely, CAS must identify the relevant elements under s. 74(2)(a) or (b), including inadequate care, supervision or protection or a pattern of neglect. Section 74(3) addresses best-interests decisions and is not itself a protection ground.",
@@ -190,7 +190,7 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
  "removal": {
   grounds:"CYFSA s. 81 distinguishes a court application, a warrant to bring a child under 16 to a place of safety, and specified warrantless powers. The statutory criteria depend on age, urgency, reasonable and probable grounds and whether less restrictive protection is adequate. Section 88 applies after specified removals and requires action as soon as practicable and within five days, with several listed alternatives including a court hearing, return or qualifying agreement. Section 90 concerns the protection hearing. Do not confuse the s. 88 five-day limit with a blanket deadline for every CAS investigation or with the date of final disposition.",
   procedure:"Record the exact date and time of removal, child's age, whether a warrant existed, the specific statutory subsection relied upon, what less restrictive alternatives were considered, the court application date, hearing date, notices, any agreement and all endorsements. Obtain immediate legal advice about available remedies; a timing dispute does not by itself establish that the court lacks jurisdiction or that the child must automatically be returned.",
-  review:"CYFSA ss. 81, 88 and 90 cross-checked against Ontario e-Laws. One published decision linked as an example, but its holding, subsequent treatment and applicability remain to be verified."
+  review:"Statutory research starting point only. Check the consolidation in force on the relevant date, each precise statutory element and any cited authority before use in proceedings; no judgment holding is verified."
  },
  "deadlines": {
  grounds:"The CYFSA s. 88 five-day rule applies following specified ways a child is brought to a place of safety; it requires one of the statutory outcomes, not necessarily a final protection trial. Section 90 governs the protection hearing. Family Law Rules r. 33 provides a separate child-protection timetable: first hearing within five days if brought to a place of safety, answers and plans of care at 30 days, temporary care and custody hearing at 35 days, settlement conference at 80 days, and hearing at 120 days, measured from the start of the case as provided by the rule. Under r. 33(3), the court may lengthen a time only if the child’s best interests require it. Court extensions and case-specific orders must be examined before alleging a breach.",
@@ -215,7 +215,7 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
   procedure:"Identify the alleged injury, responsible conduct, chronology and supporting evidence. Compare medical findings, witness accounts and alternative explanations. An investigation or allegation is not the same as a court finding; statutory emergency powers may apply when their tests are met.",
-  review:"Statutory cross-reference included; current text and effective date must be verified. Published judgment link checked; pinpoint paragraphs and precedential treatment not yet verified."
+  review:"Statutory research starting point only. Check the consolidation in force on the relevant date, each precise statutory element and any cited authority before use in proceedings; no judgment holding is verified."
  }
 };
 
