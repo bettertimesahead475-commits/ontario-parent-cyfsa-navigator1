@@ -26,6 +26,23 @@ const topics: Topic[] = [
 
 // Statutory grounds checked against Ontario e-Laws, CYFSA consolidation current July 1, 2026.
 // These are issue-specific entry points, not findings about an individual parent.
+type LegalSource = { label: string; url: string; note: string };
+const statuteUrl = "https://www.ontario.ca/laws/statute/17c14";
+const legalSources: Record<string, LegalSource[]> = {
+ "mental-health": [
+  {label:"CYFSA s. 74(2)(a), (b), (f)–(i)",url:statuteUrl,note:"Official Ontario e-Laws statute; locate s. 74(2) on the page"},
+  {label:"2023 ONCJ 213 — Children's Aid Society of Toronto v. I.L.",url:"https://www.minicounsel.ca/oncj/2023/213",note:"Published judgment reproduction; mental-health concerns were considered alongside evidence of parenting and child needs"}
+ ],
+ "substance-use": [
+  {label:"CYFSA s. 74(2)(a), (b), (f)–(i)",url:statuteUrl,note:"Official Ontario e-Laws statute; applicable grounds depend on the evidence"},
+  {label:"2019 ONCJ 916 — Dilico Anishinabek Family Care v. E.J.",url:"https://www.minicounsel.ca/ocj/2019/916",note:"Published judgment reproduction; discusses evidence and the likely-harm test under s. 74(2)(b)(i), not a rule that drug use alone proves harm"}
+ ],
+ "physical-abuse": [
+  {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
+  {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
+  {label:"2019 ONCJ 916 — Dilico Anishinabek Family Care v. E.J.",url:"https://www.minicounsel.ca/ocj/2019/916",note:"Published judgment reproduction; discusses physical harm and likely risk, with citations to other Ontario decisions"}
+ ]
+};
 const reviewedGrounds: Record<string, {grounds: string; procedure: string; review: string}> = {
  "mental-health": {
   grounds:"A parent's mental-health diagnosis is not itself listed as a standalone protection ground. Where evidence supports it, the relevant grounds may concern physical harm or likely physical harm (s. 74(2)(a)–(b)), or specified serious emotional harm or risk (s. 74(2)(f)–(i)). Section 74(2)(j) concerns a condition of the CHILD and access to treatment, not merely a parent's diagnosis.",
@@ -67,8 +84,8 @@ export default function CASRightsLimitsTab() {
    <h2 id="cas-selected-heading" className="text-lg font-bold">{topic.title}</h2>
    <div aria-label="Topic sections" className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">{tabs.map(t=><button key={t} type="button" aria-pressed={tab===t} onClick={()=>setTab(t)} className={`rounded-md px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-blue-700 ${tab===t?"bg-blue-100 text-blue-900 font-semibold":"text-slate-700 hover:bg-slate-100"}`}>{t}</button>)}</div>
    <p className="min-h-16 text-sm leading-6 text-slate-800" aria-live="polite">{text}</p>
-   {reviewed&&<div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-2 text-sm"><h3 className="font-semibold">Applicable statutory grounds</h3><p>{reviewed.grounds}</p><a href="https://www.ontario.ca/laws/statute/17c14" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline font-medium">CYFSA, s. 74(2) — Ontario e-Laws (opens new tab)</a><p className="text-xs text-slate-600">{reviewed.review}</p></div>}
-   <div className="text-xs text-slate-600 border-t border-slate-200 pt-3"><strong>Legal source status:</strong> {reviewed?"Statutory grounds reviewed; individual judicial decisions are not yet verified.":"Topic-specific subsections and case-law holdings are pending legal verification."} These sources do not establish that a particular ground applies to your case.</div>
+   {reviewed&&<div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-2 text-sm"><h3 className="font-semibold">Applicable statutory grounds</h3><p>{reviewed.grounds}</p><ul className="space-y-2">{(legalSources[topic.slug]??[]).map(source=><li key={source.label}><a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline font-medium focus-visible:outline-2 focus-visible:outline-blue-700">{source.label} (opens new tab)</a><p className="text-xs text-slate-600">{source.note}</p></li>)}</ul><p className="text-xs text-slate-600">{reviewed.review} Case examples are fact-specific and do not establish an outcome in another case.</p></div>}
+   <div className="text-xs text-slate-600 border-t border-slate-200 pt-3"><strong>Legal source status:</strong> {reviewed?"Statutory grounds linked; example published judgments are linked for context, but paragraph-level holdings and subsequent treatment require further review.":"Topic-specific subsections and case-law holdings are pending legal verification."} These sources do not establish that a particular ground applies to your case.</div>
    <details className="border-t border-slate-200 pt-3 text-sm"><summary className="cursor-pointer font-semibold">Official law, court procedure and forms</summary><ul className="mt-2 space-y-2">{resources.map(r=><li key={r.url}><a className="text-blue-700 underline focus-visible:outline-2 focus-visible:outline-blue-700" href={r.url} target="_blank" rel="noopener noreferrer">{r.label} (opens new tab)</a></li>)}</ul></details>
   </section>
   <p className="text-xs text-slate-600">An allegation, an investigation and a court finding are different. Urgent safety concerns require prompt professional assistance.</p>
