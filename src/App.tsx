@@ -156,22 +156,37 @@ export default function App() {
     };
   }, []);
 
-  const navItems = [
-    { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
-    { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
-    { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
-    { name: "CAS Powers & Limits", path: "/cas-powers-rights", icon: <Scale className="w-4 h-4" /> },
-    { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
-    { name: "Investigation Process", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
-    { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
-    { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
-    { name: "Defense Strategies", path: "/defense-strategies", icon: <Shield className="w-4 h-4" /> },
-    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
-    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
-    { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
-    { name: "Case Workspace", path: "/case-workspace", icon: <Shield className="w-4 h-4" /> },
-    { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
-    { name: "Membership & Pricing", path: "/pricing", icon: <Coins className="w-4 h-4" /> },
+  // Six primary destinations; keep existing URLs intact for bookmarks and deep links.
+  const navGroups = [
+    { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" />, children: [] },
+    { name: "Your Rights & CAS Powers", path: "/cas-powers-rights", icon: <Scale className="w-4 h-4" />, children: [
+      { name: "CAS Powers & Limits", path: "/cas-powers-rights" },
+      { name: "Family Rights", path: "/rights" },
+      { name: "Charter Rights", path: "/charter-rights" },
+      { name: "CAS Procedure", path: "/cyfsa-procedure" },
+      { name: "Investigation Process", path: "/investigation" },
+    ] },
+    { name: "Court Process", path: "/five-day-rule", icon: <Clock className="w-4 h-4" />, children: [
+      { name: "First 5 Days", path: "/five-day-rule" },
+      { name: "45-Day Plan", path: "/45-day-roadmap" },
+      { name: "Defense Strategies", path: "/defense-strategies" },
+      { name: "Detailed CYFSA Guide", path: "/cyfsa-guide" },
+      { name: "Forms & Case Brief", path: "/templates" },
+    ] },
+    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" />, children: [
+      { name: "Document Analyzer", path: "/document-analyzer" },
+      { name: "Example Analysis", path: "/analysis-example" },
+    ] },
+    { name: "My Case", path: "/case-workspace", icon: <Shield className="w-4 h-4" />, children: [
+      { name: "Case Workspace", path: "/case-workspace" },
+      { name: "Forms & Case Brief", path: "/templates" },
+    ] },
+    { name: "Resources", path: "/lawyers", icon: <BookOpen className="w-4 h-4" />, children: [
+      { name: "Lawyer Directory (paused)", path: "/lawyers" },
+      { name: "Membership & Pricing", path: "/pricing" },
+      { name: "Privacy Policy", path: "/privacy" },
+      { name: "Data Deletion", path: "/data-deletion" },
+    ] },
   ];
 
   return (
@@ -281,22 +296,25 @@ export default function App() {
         {/* Mobile Navigation Drawer Dropdown */}
         {mobileMenuOpen && (
           <div className="md:hidden bg-white border-t border-slate-200 py-3 px-4 space-y-1.5 shadow-md" id="mobile-nav-panel">
-            {navItems.map((item) => {
-              const isActive = location === item.path;
-              return (
-                <Link key={item.path} href={item.path}>
-                  <div
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold ${
-                      isActive 
-                        ? "bg-brand-600 text-white" 
-                        : "text-slate-600 hover:bg-slate-50 bg-white border border-slate-100"
-                    }`}
-                  >
-                    {item.icon}
-                    <span>{item.name}</span>
+            {navGroups.map(group => {
+              const active = location === group.path || group.children.some(child => child.path === location);
+              return group.children.length === 0 ? (
+                <Link key={group.name} href={group.path}>
+                  <div onClick={() => setMobileMenuOpen(false)} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${active ? "bg-brand-600 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
+                    {group.icon}<span>{group.name}</span>
                   </div>
                 </Link>
+              ) : (
+                <details key={group.name} className="rounded-xl border border-slate-200 bg-white" open={active}>
+                  <summary className="cursor-pointer px-3 py-3 text-xs font-semibold text-slate-800">{group.name}</summary>
+                  <div className="px-2 pb-2 space-y-1">
+                    {group.children.map(child => (
+                      <Link key={child.path} href={child.path}>
+                        <div onClick={() => setMobileMenuOpen(false)} className={`rounded-lg px-3 py-2 text-xs ${location === child.path ? "bg-brand-100 text-brand-900 font-bold" : "text-slate-700 hover:bg-slate-50"}`}>{child.name}</div>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
               );
             })}
 
@@ -335,21 +353,24 @@ export default function App() {
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
       <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-2 overflow-x-auto py-1">
-            {navItems.map((item) => {
-              const isActive = location === item.path;
-              return (
-                <Link key={item.path} href={item.path}>
-                  <div
-                    className={`group px-4 py-2.5 font-display rounded-xl transition-all text-xs font-semibold uppercase tracking-wider cursor-pointer flex items-center gap-2 ${
-                      isActive
-                        ? "bg-brand-600 text-white shadow-sm shadow-brand-600/10"
-                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
-                    }`}
-                  >
-                    <span>{item.name}</span>
-                  </div>
+          <div className="flex gap-2 flex-wrap py-1">
+            {navGroups.map(group => {
+              const active = location === group.path || group.children.some(child => child.path === location);
+              return group.children.length === 0 ? (
+                <Link key={group.name} href={group.path}>
+                  <div className={`px-3 py-2.5 rounded-lg text-xs font-semibold whitespace-nowrap ${active ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{group.name}</div>
                 </Link>
+              ) : (
+                <details key={group.name} className="relative group rounded-lg">
+                  <summary className={`list-none cursor-pointer select-none px-3 py-2.5 rounded-lg text-xs font-semibold whitespace-nowrap ${active ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{group.name} <span aria-hidden="true">⌄</span></summary>
+                  <div className="absolute top-full left-0 z-[60] mt-1 min-w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                    {group.children.map(child => (
+                      <Link key={child.path} href={child.path}>
+                        <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${location === child.path ? "bg-brand-100 text-brand-900" : "text-slate-700 hover:bg-slate-50"}`}>{child.name}</div>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
               );
             })}
           </div>
