@@ -80,6 +80,11 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"CYFSA s. 97 — orders and placement considerations",url:statuteUrl,note:"Official Ontario e-Laws. Read the actual order-making provisions and court-stage conditions before relying on a proposed kinship arrangement."},
   {label:"Ontario Bar Association — What is a Kinship Placement?",url:"https://oba.org/what-is-a-kinship-placement-b6ce6d35e6c253bddd785d6a551021d1/",note:"Secondary legal commentary, not legislation or a court judgment; explains differences between voluntary kinship arrangements and court orders."}
  ],
+ "investigation": [
+  {label:"CYFSA s. 72 — duty to report protection concerns",url:statuteUrl,note:"Official Ontario e-Laws. A report or referral triggers assessment; it is not a judicial finding."},
+  {label:"CYFSA s. 81 — child-protection applications and protective powers",url:statuteUrl,note:"Official Ontario e-Laws. Read the precise subsection for warrants, protective steps and the circumstances of the particular investigation."},
+  {label:"CYFSA s. 74(2) — statutory grounds",url:statuteUrl,note:"Official Ontario e-Laws. Identify the specific ground under investigation; an allegation alone does not prove it."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -141,6 +146,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"Kinship placement is an alternative care option, not itself a s. 74(2) protection ground. CYFSA s. 1(2) calls for consideration of the least disruptive appropriate course and family involvement. Section 74(3) addresses family relationships and continuity when a best-interests decision is required. The legal effect of a voluntary kinship arrangement differs from a protection order or placement with a society.",
   procedure:"Identify willing relatives, their relationship to the child, location, safety and capacity to care, existing cultural or community ties, and any proposed supervision or support. Ask CAS to explain which legal arrangement is proposed, who holds decision-making authority, whether it is voluntary, and how review or return home works. Get advice before signing an agreement.",
   review:"Official CYFSA source and separately identified secondary Ontario Bar Association commentary linked. A specific court judgment has not yet been verified."
+ },
+ "investigation": {
+  grounds:"A duty to report suspected child-protection concerns under CYFSA s. 72 is distinct from a finding that a child needs protection under s. 74(2). Section 81 provides court-application and protective powers, subject to its separate requirements. A home visit, interview, request for records, court order and urgent protective action do not all rest on the same legal authority.",
+  procedure:"Ask which protection concern and legal authority apply; distinguish a voluntary interview or visit from an action supported by a warrant or other statutory power. Record dates, persons present, requests for consent, documents provided and any written notices. Seek counsel promptly before refusing a lawful direction or signing a substantive agreement. Preserve the child's independent account; do not coach witnesses.",
+  review:"CYFSA ss. 72, 74 and 81 cross-referenced to official Ontario e-Laws; specific entry/interview powers and any judicial case law still require paragraph-level legal review."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
