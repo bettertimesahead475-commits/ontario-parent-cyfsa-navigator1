@@ -80,3 +80,38 @@ Accessibility: keyboard navigation, readable type, descriptive links, mobile-fri
 6. Refactor legal education and case-law tabs to share verified criteria data.
 7. Update export, pricing, accessibility, regression tests and staging E2E.
 8. Deploy to staging, run legal-content review and seek separate production approval.
+
+
+## CAS Powers, Limits & Parents' Rights — compact topic-tag library
+Add a prominent public educational hub under **Learn Your Rights**, distinct from the analyzer. Use a dense, readable tag/chip selector inspired by compact topic navigation rather than oversized stacked cards. Do not imitate third-party branding or assume unspecified features from named examples.
+
+### Interface
+- Desktop: searchable, wrap-to-fit topic chips under a single concise heading; mobile: horizontally scrollable chip row with accessible overflow and optional "All topics" dropdown. Selected chip visibly active; keyboard and screen-reader usable; preserve selection in URL/query state.
+- Default view: a short 2–3 sentence plain-language answer. Below it, compact tabs **CAS Concern**, **Parent Rights**, **CAS Powers & Limits**, **Evidence**, **Court & Next Steps**. Within a tab use nested disclosure rows only for detail, not a page of cards. Cite exact law and dates beside each legal statement.
+- Offer "Read more", "Official law", "Find a lawyer" and "Print topic" actions without persistent floating clutter. Provide a site-wide topic search. No false guarantees, legal advice masquerading as a court ruling, or automatically generated claims of wrongdoing.
+- Share a common layout and legal-criteria data source with Rights, Charter, Investigation, Procedure, First Five Days, Defense Strategies and Detailed CYFSA Guide. Avoid duplicating whole articles across routes. Preserve SEO-friendly direct URLs for individual topics and redirects for old links.
+
+### Mandatory topic tags
+Mental Health; Drug & Alcohol Use; Physical Abuse; Sexual Abuse & Exploitation; Domestic Violence; Neglect & Supervision; Medical & Educational Needs; Disability & Accommodations; Emotional Harm; Housing & Poverty; Kinship & Alternative Care; Emergency Removal; Home Visits & Interviews; Safety Plans & Consent; Court Deadlines; Disclosure & Evidence; Complaints & Oversight; Other Statutory Grounds.
+
+For every tag, explicitly show:
+1. **Why CAS may intervene:** the particular alleged child impact, exact applicable CYFSA s.74(2) ground (if any), legal triggering conditions, and differences between a referral, investigation, court application and removal.
+2. **Parent rights:** procedural participation, representation, notice, access/disclosure and ability to challenge evidence as applicable, plus any lawful exceptions; distinguish rights of alleged offender, protective/non-offending parent and child.
+3. **CAS powers and limits:** statutory authority, warrant/consent requirements and exceptions where relevant, reasonable alternatives, privacy/confidentiality and applicable human-rights accommodation obligations. Never suggest CAS is powerless to act in urgent safety situations.
+4. **Proof and missing evidence:** required statutory elements, supporting and contrary facts, contemporaneous records, corroboration, child-safety factors and precise missing information. No unsupported claim that a diagnosis, addiction, disability, poverty or allegation alone conclusively proves a child needs protection.
+5. **Practical next steps:** child-safety-first guidance, neutral professional communication, documentation checklist, verified Ontario decisions, official statute and court-form links, and when urgent legal assistance is appropriate.
+
+### Topic-specific safeguards
+- **Mental health:** distinguish diagnosis/forensic history from current functional parenting capacity, symptoms, observed impact, supports and relevant accommodations.
+- **Substance use:** distinguish historical or disclosed use from current impairment, unsafe storage, supervision deficits, treatment and practical protective arrangements.
+- **Physical abuse:** avoid prejudging allegations; identify injuries, medical findings, alternative explanations, discipline law and risk to child.
+- **Sexual abuse:** prioritize child safety, avoid coaching interviews or evidence contamination, distinguish alleged perpetrator and protective parent, explain limits of privacy and urgent protective action.
+- **Domestic violence:** identify coercive control, exposure and actual perpetrator behavior; do not automatically blame a survivor for victimization; analyze realistic protective steps.
+- **Neglect/housing/poverty:** separate resource shortages from actual failure to meet child needs; assess supports and realistic alternatives.
+- **Disability:** use individualized functional evidence, not stereotypes, and assess accommodation and accessible services.
+- **Court deadlines/removal:** keep s.88 and other statutory pathways separate; never assert the five-day rule applies to every CAS interaction.
+
+### QA and publication requirements
+- Verify every statutory citation against official Ontario legislation, including the version applicable at the incident date; link directly to authoritative text. Verify case holdings and procedural guidance before publishing.
+- Add routing and visual regression tests for all tags and deep links, keyboard/touch interaction, mobile overflow, source citations, legal exceptions, privacy, and the public hub. No fabricated legal quotations or cases.
+- Existing analyzer, credit charging, authentication and production deployment remain untouched until tested and separately released.
