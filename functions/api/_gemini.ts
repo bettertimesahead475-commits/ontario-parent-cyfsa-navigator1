@@ -1,3 +1,4 @@
+import { providerDiagnostic, type ProviderDiagnostic } from '../../shared/providerDiagnostics';
 /**
  * Gemini REST access for Cloudflare Pages Functions: one place for model routing, the request, and error
  * classification, so a model change is one environment variable, not edits to several hard-coded URLs.
@@ -36,7 +37,7 @@ export type GeminiErrorKind =
   | 'PDF_REJECTED';
 
 export class GeminiError extends Error {
-  constructor(readonly kind: GeminiErrorKind, readonly retryAfterSeconds: number | null = null) {
+  constructor(readonly kind: GeminiErrorKind, readonly retryAfterSeconds: number | null = null, readonly diagnostic?: ProviderDiagnostic) {
     super(`Gemini request failed: ${kind}`);
   }
 }
@@ -151,7 +152,7 @@ async function generateGeminiAttempt(
     // Never log the provider message: it may echo document contents or credentials.
     console.error(JSON.stringify({ tag: '[GEMINI_REJECTED]', model, httpStatus: res.status, providerStatus, kind,
       reason: /no pages|zero pages/i.test(text) ? 'PDF_NO_PAGES' : /encrypted|password/i.test(text) ? 'PDF_ENCRYPTED' : /mime|inline.data|inlineData/i.test(text) ? 'INPUT_FORMAT' : kind }));
-    throw new GeminiError(kind, Number.isFinite(retry) && retry > 0 ? retry : null);
+    throw new GeminiError(kind, Number.isFinite(retry) && retry > 0 ? retry : null, providerDiagnostic(res.status, text));
   }
   let json: any;
   try {
@@ -193,7 +194,7 @@ export async function listGeminiModels(env: GeminiEnv, fetcher: typeof fetch = f
     } catch {
       throw new GeminiError('PROVIDER_UNAVAILABLE');
     }
-    if (!res.ok) throw new GeminiError(classifyGeminiStatus(res.status, await res.text().catch(() => '')));
+    if (!res.ok) { const text = await res.text().catch(() => ''); throw new GeminiError(classifyGeminiStatus(res.status, text), null, providerDiagnostic(res.status, text)); }
     const json = (await res.json().catch(() => null)) as any;
     for (const m of json?.models ?? []) {
       if (Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent') && typeof m.name === 'string') {

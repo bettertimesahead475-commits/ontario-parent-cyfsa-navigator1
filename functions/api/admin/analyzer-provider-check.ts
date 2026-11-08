@@ -3,6 +3,7 @@ import { verifyFirebaseRequest } from '../_auth-check';
 import { createCloudflareGenerateFn } from '../_analyzer-model-adapter';
 import { runSectionedAnalysis } from '../../../api/services/analyzerSections';
 import { DEFAULT_QUICK_MODEL, DEFAULT_FORENSIC_MODEL } from '../../../api/services/analyzerModels';
+import { providerDiagnostic } from '../../../shared/providerDiagnostics';
 import { AnalyzerError } from '../../../api/services/analyzerErrors';
 import { listGeminiModels, resolveGeminiModel, GeminiError } from '../_gemini';
 
@@ -25,12 +26,12 @@ export async function handleProviderCheck(request: Request, env: Env): Promise<R
   const deep = env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL;
   try {
     if (request.method === 'GET') {
-      const gemini = await listGeminiModels(env);
+      let gemini: string[] = []; let geminiFailure: unknown; try { gemini = await listGeminiModels(env); } catch (error) { geminiFailure = error instanceof GeminiError ? { code: 'GEMINI_' + error.kind, diagnostic: error.diagnostic } : { code: 'GEMINI_UNAVAILABLE' }; }
       const response = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': env.ANTHROPIC_API_KEY || '', 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(20000) });
-      if (!response.ok) return Response.json({ code: `ANTHROPIC_MODELS_HTTP_${response.status}` }, { status: 502, headers });
+      if (!response.ok) return Response.json({ geminiFailure, anthropicFailure: providerDiagnostic(response.status, await response.text()) }, { headers });
       const data = await response.json() as { data?: Array<{ id: string }> };
       const anthropic = (data.data || []).map(x => x.id);
-      return Response.json({ ocrModel: resolveGeminiModel(env, 'ocr'), quickModel: quick, deepModel: deep, availableGeminiModels: gemini, availableAnthropicModels: anthropic }, { headers });
+      return Response.json({ ocrModel: resolveGeminiModel(env, 'ocr'), quickModel: quick, deepModel: deep, geminiFailure, availableGeminiModels: gemini, availableAnthropicModels: anthropic }, { headers });
     }
     if (request.method !== 'POST') return Response.json({ code: 'METHOD_NOT_ALLOWED' }, { status: 405, headers });
     let body: any;
@@ -42,7 +43,7 @@ export async function handleProviderCheck(request: Request, env: Env): Promise<R
     if (typeof run.report.fileSummary !== 'string' || run.report.fileSummary.length < 40) throw new AnalyzerError('AI_RESPONSE_INVALID',502,'Structured summary missing');
     return Response.json({ mode: body.mode, modelUsed: model, elapsedMs: Date.now()-started, fixture: 'fixed-synthetic-v1', report: run.report, usageByModel: run.usageByModel, sectionTimingsMs: run.sectionTimingsMs, databaseWrites: false, creditLifecycleTested: false, persistenceTested: false }, { headers });
   } catch (error) {
-    return Response.json({ code: error instanceof AnalyzerError ? error.code : error instanceof GeminiError ? `GEMINI_${error.kind}` : 'PROVIDER_CHECK_FAILED' }, { status: error instanceof AnalyzerError ? error.statusCode : 502, headers });
+    return Response.json({ diagnostic: error instanceof AnalyzerError ? error.providerDiagnostic : error instanceof GeminiError ? error.diagnostic : undefined, code: error instanceof AnalyzerError ? error.code : error instanceof GeminiError ? `GEMINI_${error.kind}` : 'PROVIDER_CHECK_FAILED' }, { status: error instanceof AnalyzerError ? error.statusCode : 502, headers });
   }
 }
 export const onRequest = ({ request, env }: { request: Request; env: Env }) => handleProviderCheck(request, env);
