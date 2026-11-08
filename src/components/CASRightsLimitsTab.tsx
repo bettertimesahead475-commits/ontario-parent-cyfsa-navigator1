@@ -81,8 +81,8 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"Ontario Bar Association — What is a Kinship Placement?",url:"https://oba.org/what-is-a-kinship-placement-b6ce6d35e6c253bddd785d6a551021d1/",note:"Secondary legal commentary, not legislation or a court judgment; explains differences between voluntary kinship arrangements and court orders."}
  ],
  "investigation": [
-  {label:"CYFSA s. 72 — duty to report protection concerns",url:statuteUrl,note:"Official Ontario e-Laws. A report or referral triggers assessment; it is not a judicial finding."},
-  {label:"CYFSA s. 81 — child-protection applications and protective powers",url:statuteUrl,note:"Official Ontario e-Laws. Read the precise subsection for warrants, protective steps and the circumstances of the particular investigation."},
+  {label:"CYFSA s. 125 — duty to report protection concerns",url:statuteUrl,note:"Official Ontario e-Laws. Reporting a suspicion is not a judicial finding."},
+  {label:"CYFSA s. 81 — child-protection applications and protective powers",url:statuteUrl,note:"Official Ontario e-Laws. Warrant and protective steps have distinct legal tests; this section does not grant an unlimited interview power."},
   {label:"CYFSA s. 74(2) — statutory grounds",url:statuteUrl,note:"Official Ontario e-Laws. Identify the specific ground under investigation; an allegation alone does not prove it."}
  ],
  "safety-plans": [
@@ -187,9 +187,9 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   review:"Official CYFSA source and separately identified secondary Ontario Bar Association commentary linked. A specific court judgment has not yet been verified."
  },
  "investigation": {
-  grounds:"A duty to report suspected child-protection concerns under CYFSA s. 72 is distinct from a finding that a child needs protection under s. 74(2). Section 81 provides court-application and protective powers, subject to its separate requirements. A home visit, interview, request for records, court order and urgent protective action do not all rest on the same legal authority.",
+  grounds:"A duty to report suspected child-protection concerns under CYFSA s. 125 is distinct from a finding that a child needs protection under s. 74(2). Section 81 provides court-application and protective powers, subject to its separate requirements. A home visit, interview, request for records, court order and urgent protective action do not all rest on the same legal authority.",
   procedure:"Ask which protection concern and legal authority apply; distinguish a voluntary interview or visit from an action supported by a warrant or other statutory power. Record dates, persons present, requests for consent, documents provided and any written notices. Seek counsel promptly before refusing a lawful direction or signing a substantive agreement. Preserve the child's independent account; do not coach witnesses.",
-  review:"CYFSA ss. 72, 74 and 81 cross-referenced to official Ontario e-Laws; specific entry/interview powers and any judicial case law still require paragraph-level legal review."
+  review:"CYFSA ss. 125, 74 and 81 cross-referenced to official Ontario e-Laws; specific entry/interview powers and any judicial case law still require paragraph-level legal review."
  },
  "safety-plans": {
   grounds:"An informal safety plan, a written temporary care agreement under CYFSA s. 75, an agreement with a 16- or 17-year-old under s. 77, and a court order are legally distinct. Section 75 includes conditions for a temporary care agreement and requires a child aged 12 or older to be a party unless the statutory developmental-disability exception applies. Section 76 sets out written termination notice for a s. 75 agreement, including the applicable notice period and the society's obligation to respond.",
