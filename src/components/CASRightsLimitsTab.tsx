@@ -104,6 +104,13 @@ const legalSources: Record<string, LegalSource[]> = {
  {label:"Ontario Court of Justice — child-protection guide",url:"https://www.ontariocourts.ca/ocj/family-court/child-protection/",note:"Official court guidance on stages, court documents and procedure."},
  {label:"Ontario Court Forms — family-law forms",url:"https://ontariocourtforms.on.ca/en/family-law-rules-forms/",note:"Official forms and revision dates; use the current form for the specific step."}
  ],
+ "disclosure": [
+ {label:"Family Law Rules, rule 19 — document disclosure",url:"https://www.ontario.ca/laws/regulation/990114",note:"Official current regulation. Important exceptions apply to societies and the Office of the Children's Lawyer; do not assume the ordinary 10-day affidavit rule applies to CAS."},
+ {label:"Family Law Rules, rule 20 — questioning and disclosure",url:"https://www.ontario.ca/laws/regulation/990114",note:"Official regulation. Contains child-protection questioning provisions; availability and limits depend on the rule and court orders."},
+ {label:"Ontario Court of Justice — child-protection trial evidence",url:"https://www.ontariocourts.ca/ocj/family-court/child-protection/child-protection-law-trial/",note:"Official court guidance on authenticating exhibits, disclosing trial evidence and admissibility."},
+ {label:"CYFSA Part X — personal-information access",url:statuteUrl,note:"Official Act. Privacy access requests and litigation disclosure are different routes, with exceptions and confidentiality safeguards."},
+ {label:"Information and Privacy Commissioner — Part X access",url:"https://www.ipc.on.ca/en/part-x-cyfsa",note:"Ontario privacy regulator guidance; an access right is subject to statutory exceptions."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -185,6 +192,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
  grounds:"The CYFSA s. 88 five-day rule applies following specified ways a child is brought to a place of safety; it requires one of the statutory outcomes, not necessarily a final protection trial. Section 90 governs the protection hearing. Family Law Rules r. 33 provides a separate child-protection timetable, including the first hearing, answers and plans of care, temporary care and custody, settlement conference and later hearing. Court extensions and case-specific orders must be examined before alleging a breach.",
  procedure:"Create a dated chronology with the child's age, removal authority, date and time, service, court filing, first hearing, endorsements, adjournments, orders and any consent. Identify which deadline actually applies, whether the court varied it and what remedy is sought. Use current official forms; seek counsel immediately if a hearing is imminent.",
  review:"Official CYFSA, Family Law Rules, Ontario Court of Justice and court forms linked; case-specific procedural effect requires review of actual orders."
+ },
+ "disclosure": {
+ grounds:"Disclosure is a procedural issue, not a standalone s. 74(2) protection ground. Family Law Rules rr. 19 and 20 govern document production and questioning; importantly r. 19(1.1) excepts children's aid societies and the Office of the Children's Lawyer from the ordinary affidavit-listing obligation. Other disclosure duties and court orders may still apply. CYFSA Part X personal-information requests are a distinct access process and do not replace litigation disclosure.",
+ procedure:"Build an itemized disclosure log showing document, author, date, requested date, response, relevance and privilege claim. Compare affidavits with underlying records; mark allegations versus sworn evidence versus judicial findings. Preserve original files and metadata, redact children's identifying information before sharing publicly, and raise unresolved production issues with counsel or the court rather than assuming undisclosed documents do not exist.",
+ review:"Official rules, court guidance, CYFSA and privacy-regulator resources linked. Specific disclosure entitlements must be checked against current rules, court directions and privilege."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
