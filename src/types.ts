@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ComplianceMatrixReport } from "../shared/complianceMatrixEngine";
+
+export type { ComplianceMatrixReport };
+
 export interface PrimarySourceLink {
   label: string;
   url: string;
@@ -203,6 +207,7 @@ export interface AnalysisReport {
     durationMs: number;
   };
   credits?: any;
+  complianceMatrix?: ComplianceMatrixReport;
 }
 
 // User Membership types
