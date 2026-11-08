@@ -115,6 +115,9 @@ export function createCloudflareGenerateFn(
           if (status >= 500 && status < 600) {
             rejected(new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI analysis engine is temporarily unavailable. Please try again shortly. Nothing was charged.', true));
           }
+          if (status === 400 && !errorText.trim() && apiKey.trim().length < 24) {
+            rejected(new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis provider credentials are not configured correctly. Nothing was charged.', false));
+          }
           if (status === 400) {
             rejected(new AnalyzerError('AI_REQUEST_REJECTED', 400, 'The AI service could not process this request. Nothing was charged. Please try again or contact support.', false));
           }

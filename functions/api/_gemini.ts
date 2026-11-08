@@ -148,7 +148,7 @@ async function generateGeminiAttempt(
     const retry = Number(res.headers.get('retry-after'));
     let providerStatus: string | null = null;
     try { const parsed = JSON.parse(text); if (/^[A-Z_]+$/.test(parsed?.error?.status)) providerStatus = parsed.error.status; } catch {}
-    const kind = classifyGeminiStatus(res.status, text);
+    const kind = res.status === 400 && !text.trim() && key.length < 24 ? 'NOT_CONFIGURED' : classifyGeminiStatus(res.status, text);
     // Never log the provider message: it may echo document contents or credentials.
     console.error(JSON.stringify({ tag: '[GEMINI_REJECTED]', model, httpStatus: res.status, providerStatus, kind,
       reason: /no pages|zero pages/i.test(text) ? 'PDF_NO_PAGES' : /encrypted|password/i.test(text) ? 'PDF_ENCRYPTED' : /mime|inline.data|inlineData/i.test(text) ? 'INPUT_FORMAT' : kind }));
@@ -194,7 +194,7 @@ export async function listGeminiModels(env: GeminiEnv, fetcher: typeof fetch = f
     } catch {
       throw new GeminiError('PROVIDER_UNAVAILABLE');
     }
-    if (!res.ok) { const text = await res.text().catch(() => ''); throw new GeminiError(classifyGeminiStatus(res.status, text), null, providerDiagnostic(res.status, text)); }
+    if (!res.ok) { const text = await res.text().catch(() => ''); throw new GeminiError(res.status === 400 && !text.trim() && key.length < 24 ? 'NOT_CONFIGURED' : classifyGeminiStatus(res.status, text), null, providerDiagnostic(res.status, text)); }
     const json = (await res.json().catch(() => null)) as any;
     for (const m of json?.models ?? []) {
       if (Array.isArray(m?.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent') && typeof m.name === 'string') {
