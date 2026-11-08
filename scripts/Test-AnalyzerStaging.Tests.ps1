@@ -17,7 +17,7 @@ function Invoke-WebRequest {
 }
 function Invoke-RestMethod {
   param($Method, $Uri, $Headers, $ContentType, $Body, $TimeoutSec)
-  if ($Uri.EndsWith('/auth-check')) { return @{ authenticated = $true } }
+  if ($Uri.EndsWith('/_auth-check')) { return @{ authenticated = $true } }
   if ($Uri.EndsWith('/extract-text')) { return @{ extractedText = '[Page 1] Synthetic document'; characters = 27; document = @{ ocrModel = $null } } }
   $global:AnalyzerHarnessPoll++
   $model = if ($global:AnalyzerHarnessMode -eq 'fast') { 'claude-sonnet-5-5' } else { 'claude-opus-5-5' }

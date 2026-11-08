@@ -9,7 +9,7 @@ if ($target.Scheme -ne 'https' -or -not $target.IsDefaultPort -or $target.UserIn
 $BaseUrl = $target.GetLeftPart([UriPartial]::Authority)
 if (-not $env:FIREBASE_ID_TOKEN) { throw 'Set FIREBASE_ID_TOKEN locally to a fresh signed-in owner Firebase ID token. Do not paste it into chat.' }
 $headers = @{ Authorization = "Bearer $env:FIREBASE_ID_TOKEN" }
-$identity = Invoke-RestMethod -Uri "$BaseUrl/api/auth-check" -Headers $headers -TimeoutSec 20
+$identity = Invoke-RestMethod -Uri "$BaseUrl/api/_auth-check" -Headers $headers -TimeoutSec 20
 if (-not $identity.authenticated) { throw 'A verified Firebase session is required.' }
 $evidence = @()
 # This performs real provider calls and may reserve/consume credits for non-owner users.

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 
 it('keeps small analyzer text readable with valid class-token selectors', () => {
-  const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+  const css = readFileSync('src/index.css', 'utf8');
   const block = css.match(/#document-analyzer-tab \[class~="text-\[8px\]"\][\s\S]*?\}/)?.[0];
   expect(block).toBeTruthy();
   const selectors = block!.slice(0, block!.indexOf('{')).trim();
