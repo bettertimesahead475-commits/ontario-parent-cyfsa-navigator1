@@ -601,13 +601,13 @@ export default function App() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs text-slate-500 gap-4 pt-4 border-t border-slate-100 pb-2">
             <div className="space-y-1">
               <span className="font-semibold text-slate-900 block">Ontario Parent CYFSA Navigator • Assistance & Document Analysis System</span>
-              <span className="block text-slate-500">Educational Portal only. Designed strictly for parental confidence and information sharing. S.O. 2017 Chapter 14 compliant.</span>
+              <span className="block text-slate-500">Educational information only, not legal advice. Verify current legislation, court rules and orders with qualified counsel.</span>
             </div>
 
             <div className="space-y-1 text-center sm:text-right font-sans text-xs">
-              <span className="block text-slate-600 font-bold">Jurisdiction: Ontario Court of Justice, Canada</span>
+              <span className="block text-slate-600 font-bold">Ontario child protection law · Court jurisdiction depends on the proceeding</span>
               <span className="block text-slate-500 mt-0.5">
-                Primary sources updated: Q2 2026 · <Link href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Privacy Policy</Link> · <Link href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Data Deletion</Link>
+                Check the current version of legal sources · <Link href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Privacy Policy</Link> · <Link href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Data Deletion</Link>
               </span>
             </div>
           </div>
