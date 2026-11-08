@@ -63,6 +63,11 @@ const legalSources: Record<string, LegalSource[]> = {
   {label:"CYFSA s. 74(2)(g) — treatment or services for existing harm",url:statuteUrl,note:"Official Ontario e-Laws. Distinct treatment-access ground."},
   {label:"CYFSA s. 74(2)(h)–(i) — likely emotional harm",url:statuteUrl,note:"Official Ontario e-Laws. Distinguishes anticipated harm from anticipated failure to provide services or treatment."}
  ],
+ "medical-care": [
+  {label:"CYFSA s. 74(2)(j) — child's mental, emotional or developmental condition",url:statuteUrl,note:"Official Ontario e-Laws. Applies to the specific statutory condition and caregiver response; not a general rule covering every medical disagreement."},
+  {label:"CYFSA s. 74(2)(a)–(b) — physical harm or likely harm",url:statuteUrl,note:"Official Ontario e-Laws. May be relevant where failure to obtain necessary care meets the statutory harm test."},
+  {label:"Health Care Consent Act, 1996",url:"https://www.ontario.ca/laws/statute/96h02",note:"Official Ontario e-Laws. Treatment consent and capacity rules require separate analysis; do not assume a parent can consent for every capable minor."}
+ ],
  "physical-abuse": [
   {label:"CYFSA s. 74(2)(a) — physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
   {label:"CYFSA s. 74(2)(b) — likely physical harm",url:statuteUrl,note:"Official Ontario e-Laws statute"},
@@ -109,6 +114,11 @@ const reviewedGrounds: Record<string, {grounds: string; procedure: string; revie
   grounds:"Section 74(2)(f) requires serious emotional harm manifested by specified symptoms, with reasonable grounds linking the harm to caregiver action, inaction or neglect. Section 74(2)(g) addresses failures to provide services or treatment for existing harm. Sections 74(2)(h) and (i) concern likely future emotional harm and distinguish caregiver conduct from treatment or service failures.",
   procedure:"Identify the precise pleaded paragraph, the child's symptoms and severity, the causal basis, any professional assessment, available treatment and alternative explanations. Do not treat ordinary distress, disagreement or an allegation as automatically meeting the statutory test.",
   review:"Statutory text checked against Ontario e-Laws (2026-11-08). No topic-specific court holding has been verified."
+ },
+ "medical-care": {
+  grounds:"Section 74(2)(j) concerns a child's mental, emotional or developmental condition that could seriously impair development, together with the caregiver's failure to provide or consent to treatment or services as specified by the Act. Physical harm or likely physical harm from inadequate care may separately engage s. 74(2)(a)–(b). Not every disagreement over a treatment plan is a child-protection ground. Treatment consent is governed by its own legal rules.",
+  procedure:"Obtain the exact diagnosis or clinical concern, recommended care, urgency, informed-consent records, referrals, access barriers, second opinions and evidence of actual child impact. Identify whether the dispute concerns capacity, consent, availability or neglect. Seek legal advice urgently where a child faces immediate danger.",
+  review:"Official CYFSA and Health Care Consent Act links supplied. No case-specific judicial holding has been verified; section-level anchors remain unverified."
  },
  "physical-abuse": {
   grounds:"Section 74(2)(a) addresses physical harm inflicted by a person having charge or caused by that person's inadequate care, supervision, protection or pattern of neglect. Section 74(2)(b) addresses likely future physical harm under corresponding circumstances. The statute distinguishes harm already suffered from risk of likely harm.",
