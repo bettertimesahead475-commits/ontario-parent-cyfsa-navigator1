@@ -357,7 +357,7 @@ export default function App() {
       </nav>
 
       {/* Primary Main Content Area container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10 pb-32 md:pb-10" id="main-frame-area">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 md:pt-6 pb-32 md:pb-6" id="main-frame-area">
         <ErrorBoundary>
         <Suspense fallback={<div className="min-h-48" aria-busy="true" />}>
           <Switch>
@@ -493,8 +493,8 @@ export default function App() {
       </main>
 
       {/* Professional Legal Footnote footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 md:py-8 pb-32 md:pb-8 mt-12 no-print" id="app-footer">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+      <footer className="bg-white border-t border-slate-200 pt-5 md:pt-6 pb-32 md:pb-6 mt-6 no-print" id="app-footer">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
           
           {/* Real-time PDF / Printexport contextual launcher block */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl" id="footer-print-actions">
