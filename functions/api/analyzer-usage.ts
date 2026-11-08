@@ -68,7 +68,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: Us
   }
 
   // Owner access is determined solely from the verified Firebase token.
-  if (identity.emailVerified && identity.email?.toLowerCase() === 'mr.pelkie@gmail.com') {
+  if (identity.emailVerified && ['mrpelkey@gmail.com', 'mr.pelkie@gmail.com'].includes(identity.email?.trim().toLowerCase() ?? '')) {
     return Response.json({ type: 'owner', tier: 'Owner/Admin', signedIn: true, unlimited: true, allowsForensic: true, countsAvailable: true, limit: null, remaining: null, creditsLimit: null, creditsRemaining: null, quickReviewsLimit: null, quickReviewsRemaining: null, forensicAnalysesLimit: null, forensicAnalysesRemaining: null }, { status: 200, headers: DEFAULT_HEADERS });
   }
 
