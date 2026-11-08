@@ -31,6 +31,12 @@ describe("CAS Powers & Limits legal hub", () => {
     expect(component).toContain("reviewedGrounds[t.slug]?.grounds");
     expect(component).toContain("defenceAnalysis[t.slug]?.legalQuestion");
   });
+  it("does not misstate s. 97 as the order-making section or Rule 33 as removal-based", () => {
+    expect(component).toContain("CYFSA s. 97 — reasons for child-protection orders");
+    expect(component).toContain("Timetable measured from the start of the case");
+    expect(component).not.toContain("CYFSA s. 97 — orders and placement considerations");
+    expect(component).not.toContain("first hearing 5 days after applicable removal");
+  });
   it("registers a discoverable route and sitemap entry", () => {
     expect(app).toContain('<Route path="/cas-powers-rights"><CASRightsLimitsTab /></Route>');
     expect(sitemap).toContain("https://cyfsanavigator.com/cas-powers-rights");
