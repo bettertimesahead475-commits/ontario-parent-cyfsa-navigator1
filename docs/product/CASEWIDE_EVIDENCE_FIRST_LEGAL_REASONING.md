@@ -115,3 +115,20 @@ For every tag, explicitly show:
 - Verify every statutory citation against official Ontario legislation, including the version applicable at the incident date; link directly to authoritative text. Verify case holdings and procedural guidance before publishing.
 - Add routing and visual regression tests for all tags and deep links, keyboard/touch interaction, mobile overflow, source citations, legal exceptions, privacy, and the public hub. No fabricated legal quotations or cases.
 - Existing analyzer, credit charging, authentication and production deployment remain untouched until tested and separately released.
+
+
+## Mandatory legal citation and judicial authority coverage for CAS topic tags
+**Publication gate:** The compact CAS Powers, Limits & Parents' Rights page is currently a high-level educational prototype. Do not describe its topic text as individually statute-cited, case-law verified, legally complete, or production ready until the requirements below are implemented and checked by legal-content review.
+
+Every topic (mental health, substance use, physical abuse, sexual abuse, domestic violence, neglect, disability, emotional harm, housing/poverty, medical/educational needs, kinship, removal, investigation, safety plans, court deadlines, and other statutory grounds) must have a source-backed authority record:
+- Exact jurisdiction, statute, title, section and subsection; official Ontario e-Laws or Justice Laws URL; date-effective version and date verified. Quote only verified wording.
+- Precise child-protection ground (if applicable) and the distinct legal test for investigation, warrant, emergency removal, court application, temporary care, disposition or review; identify burden/standard and exceptions for the relevant procedural posture.
+- Applicable procedural rights and their limits: notice, service, participation, disclosure, legal representation, evidence challenges, child rights and privacy; Ontario Human Rights Code and Charter rights only where actually engaged. Do not imply all Charter protections apply to all private or CAS actions.
+- Relevant reported Canadian judgments with verified neutral citation, court, year, paragraph pinpoint, public link (CanLII or court source), facts, issue, holding, actual outcome, whether binding or persuasive, subsequent treatment if verified, and important distinctions or contrary authority.
+- Official Ontario court rules and forms when pertinent, with form title, form number, official link and instructions for professional completion; do not prefill forms.
+- Evidence checklist with supporting, contradicting and missing records; identify that absent uploaded material is not proof it does not exist.
+- Source provenance, editorial review status and last-checked date; if authorities are unavailable or unverified, display a transparent 'legal sources being verified' state instead of fabricated citations.
+
+Use **CYFSA 2017, s.74(2)** as a starting index for Ontario child-protection grounds, not as a blanket citation proving every concern. Cross-reference other applicable CYFSA sections, Ontario court rules, Human Rights Code, Criminal Code, Charter, and relevant judgments only where genuinely applicable. Distinguish criminal charges from child-protection findings, and avoid conflating a parent's diagnosis, past addiction, poverty or disability with proven danger. Sexual-abuse guidance must prioritize safety and avoid interview coaching or evidence contamination.
+
+Acceptance: every displayed legal assertion has a working authoritative source or a clearly marked unsourced/general-education status; every cited judgment exists and supports the precise proposition; all 18+ topic tags have legally reviewed coverage; automated link checks and human legal review pass before production.
