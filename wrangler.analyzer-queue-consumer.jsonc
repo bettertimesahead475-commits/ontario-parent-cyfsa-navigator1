@@ -1,33 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cyfsa-analyzer-queue-consumer",
+  "name": "cyfsa-production-analyzer-queue-consumer",
   "main": "workers/analyzer-queue-consumer.ts",
   "compatibility_date": "2026-11-04",
   "queues": {
     "producers": [
-      {
-        "binding": "ANALYZER_JOBS_REQUEUE",
-        "queue": "cyfsa-analyzer-jobs"
-      }
+      { "binding": "ANALYZER_JOBS_REQUEUE", "queue": "cyfsa-analyzer-jobs" }
     ],
     "consumers": [
-      {
-        "queue": "cyfsa-analyzer-jobs",
-        "max_batch_size": 1,
-        "max_batch_timeout": 1,
-        "max_retries": 5,
-        "retry_delay": 20,
-        "dead_letter_queue": "cyfsa-analyzer-dead-letter",
-        "max_concurrency": 2
-      },
-      {
-        "queue": "cyfsa-analyzer-dead-letter",
-        "max_batch_size": 1,
-        "max_batch_timeout": 1,
-        "max_retries": 5,
-        "retry_delay": 60,
-        "max_concurrency": 1
-      }
+      { "queue": "cyfsa-analyzer-jobs", "max_batch_size": 1, "max_batch_timeout": 1, "max_retries": 5, "retry_delay": 20, "dead_letter_queue": "cyfsa-analyzer-dead-letter", "max_concurrency": 2 },
+      { "queue": "cyfsa-analyzer-dead-letter", "max_batch_size": 1, "max_batch_timeout": 1, "max_retries": 5, "retry_delay": 60, "max_concurrency": 1 }
     ]
   }
 }
