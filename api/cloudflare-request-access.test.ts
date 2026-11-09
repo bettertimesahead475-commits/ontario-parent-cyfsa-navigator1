@@ -151,4 +151,25 @@ describe('Cloudflare Request Access API (/api/request-access)', () => {
     expect(json.amount).toBe(89);
     expect(json.reused).toBe(true);
   });
+  it('fails checkout without retrying an insert without its idempotency key', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({
+      status: 'verified', uid: 'uid-123', email: 'parent@example.com', emailVerified: true,
+    });
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(Response.json([]))
+      .mockResolvedValueOnce(new Response(null, { status: 403 }));
+    vi.stubGlobal('fetch', fetcher);
+
+    const request = new Request('http://localhost/api/request-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tier: 'Basic', requestKey: 'checkout-123' }),
+    });
+    const response = await onRequestPost({ request, env: validEnv });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ code: 'PAYMENT_INSERT_FAILED' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
 });

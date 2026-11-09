@@ -218,6 +218,7 @@ export const onRequestPost = async ({
             Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
             Accept: 'application/json',
           },
+          signal: AbortSignal.timeout(5000),
         });
         if (raceRes.ok) {
           const rows = (await raceRes.json()) as any[];
@@ -242,36 +243,10 @@ export const onRequestPost = async ({
         );
       }
 
-      // Retry with minimal columns if schema has optional columns omitted
-      const fallbackPayload = {
-        plan: tier,
-        user_role: 'parent',
-        amount,
-        payment_method: 'interac_etransfer',
-        payment_email: paymentEmail,
-        reference_number: referenceNumber,
-        status: 'pending',
-        notes,
-      };
-
-      const fallbackRes = await fetch(insertUrl.toString(), {
-        method: 'POST',
-        headers: {
-          apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify(fallbackPayload),
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (!fallbackRes.ok) {
-        return Response.json(
-          { error: 'Failed to record payment request.', code: 'PAYMENT_INSERT_FAILED' },
-          { status: 500, headers: DEFAULT_HEADERS }
-        );
-      }
+      return Response.json(
+        { error: 'Failed to record payment request.', code: 'PAYMENT_INSERT_FAILED' },
+        { status: 500, headers: DEFAULT_HEADERS }
+      );
     }
 
     return Response.json(
