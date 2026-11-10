@@ -1,0 +1,13 @@
+# Cloudflare runtime checkpoint — 10 November 2026
+
+PR #127 started at 48b5c486c7ae96b37716aaa0685ca342d96faa62. Local worktree and branch remain cyfsa-parent-assessment-20261109 / fix/parent-final-assessment-20261109.
+
+The queue handler now enforces ANALYZER_ENABLED=false before primary or dead-letter work, preventing claims, report recovery, provider calls and credit changes in disabled deployments. Both disabled-delivery regressions and the existing queue suites passed: 21 tests. Assessment, professional workspace, paid-session, credit lifecycle/monthly scope and activation security passed: 39 tests. These are fixture tests, not authenticated live acceptance.
+
+Cloudflare metadata was checked directly. Account Secrets Store is empty. No named database/provider credentials were present in process/user/machine deployment environments (only presence was inspected). Existing repository workflows deploy a different staging project or run a main-only, immutable-pinned credit verification; neither provisions release secrets. Preserve their gates and pin.
+
+Preview SESSION_SECRET was securely generated and installed as an encrypted variable without exposing its value. Preview still needs STAGING_SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY and GEMINI_API_KEY. Dedicated Worker cyfsa-production-analyzer-queue-consumer needs those same three secrets for the requested database and both-provider preflight. Do not copy masked API representations. Do not request values in chat.
+
+Production queues cyfsa-analyzer-jobs and cyfsa-analyzer-dead-letter have zero consumers/producers. Pages producer ANALYZER_JOBS_QUEUE is absent. Staging consumers and the shared staging producer remain intact. Production remains 36c1313a7e18a96fc8ff3cab0afbacdcd604536c; automatic production deployments remain disabled.
+
+Next: securely provision the three existing credential names in Pages project cyfsa-navigator-git-staging / Preview and the dedicated Worker / Settings / Variables and Secrets. Keep the Worker disabled and detached. Redeploy preview, verify actual database/provider access with synthetic inputs, then perform non-owner signed-in Quick/Deep/Final generation, reopening and exact credit/retry/latency acceptance. Attach production consumer/DLQ and the intended Pages producer only after those checks. Promote explicitly only after acceptance. The renewal migration remains prepared, not applied.

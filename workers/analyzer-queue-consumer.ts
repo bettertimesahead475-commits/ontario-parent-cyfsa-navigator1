@@ -205,6 +205,12 @@ const consumer = {
     const primary = env.ANALYZER_JOBS_QUEUE_NAME || 'cyfsa-analyzer-jobs';
     const dlq = env.ANALYZER_JOBS_DLQ_NAME || 'cyfsa-analyzer-dead-letter';
     if (batch.queue !== primary && batch.queue !== dlq) throw new Error('Unexpected analyzer queue');
+    // A disabled preflight deployment must not claim jobs, recover reports, or mutate
+    // credits, including on dead-letter deliveries. Leave messages for a later run.
+    if (env.ANALYZER_ENABLED === 'false') {
+      for (const message of batch.messages) message.retry({ delaySeconds: RETRY_MAX_SECONDS });
+      return;
+    }
     for (const message of batch.messages) {
       if (batch.queue === (env.ANALYZER_JOBS_DLQ_NAME || 'cyfsa-analyzer-dead-letter')) await processDeadLetter(message, env);
       else await processJob(message, env);

@@ -29,6 +29,14 @@ function message(body: unknown = { version: 1, jobId: 'job_abcdefgh1234' }, atte
 }
 
 describe('durable analyzer queue consumer', () => {
+  it.each(['cyfsa-analyzer-jobs', 'cyfsa-analyzer-dead-letter'])('does no work on %s while disabled', async (queue) => {
+    vi.clearAllMocks();
+    const msg = message();
+    await consumer.queue({ queue, messages: [msg] }, { ANALYZER_ENABLED: 'false' });
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 900 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.claim.mockResolvedValue(job());
