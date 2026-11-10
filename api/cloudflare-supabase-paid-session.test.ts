@@ -9,6 +9,10 @@ describe('staging paid session read adapter', () => {
     expect((await readVerifiedPaidSession(env, '', sid)).status).toBe('denied');
     expect((await readVerifiedPaidSession({}, 'u1', sid)).status).toBe('unavailable');
   });
+  it('uses the existing server-only service binding when a separate read key is absent', async () => {
+    const mock = vi.fn(async (_url: string, init: RequestInit) => { expect((init.headers as any).apikey).toBe('synthetic-service'); return Response.json([row]); });
+    expect((await readVerifiedPaidSession({ STAGING_SUPABASE_URL: env.STAGING_SUPABASE_URL, STAGING_SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service' }, 'u1', sid, mock as typeof fetch)).status).toBe('verified');
+  });
   it('filters by both session ID and Firebase UID and verifies row', async () => {
     const mock = vi.fn(async (url: string) => {
       const u = new URL(url);

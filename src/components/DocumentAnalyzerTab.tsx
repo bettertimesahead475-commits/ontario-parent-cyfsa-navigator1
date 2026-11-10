@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import FinalCaseAssessment from "./FinalCaseAssessment";
 import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
@@ -3189,6 +3190,7 @@ export default function DocumentAnalyzerTab() {
   return (
     <div className="space-y-3 w-full max-w-full overflow-x-hidden break-words font-sans analyzer-reading-workspace" id="document-analyzer-tab">
       
+      <FinalCaseAssessment />
       {/* Platform Sub-Header Banner */}
       {/* Title and introduction on their own full-width row, controls below. Side by side, the controls (four groups)
           took their full width and squeezed the introduction into a ~120 px column at every desktop width. */}
