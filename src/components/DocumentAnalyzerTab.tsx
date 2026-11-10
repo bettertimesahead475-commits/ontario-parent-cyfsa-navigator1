@@ -6,6 +6,7 @@
 import FinalCaseAssessment from "./FinalCaseAssessment";
 import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
+import PaperDocumentScanner from "./PaperDocumentScanner";
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
 import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, readAnalysisResponse, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
@@ -1712,23 +1713,22 @@ export default function DocumentAnalyzerTab() {
   };
 
     // Multiple File Uploader (Supports up to 15 concurrent slots)
-  const handleMultipleFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFiles = e.target.files;
-    if (!rawFiles || rawFiles.length === 0) return;
+  const handleMultipleFilesUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files as FileList | null ?? []);
+    event.currentTarget.value = "";
+    if (files.length) void uploadCaseFiles(files);
+  };
 
-    const filesArray: File[] = Array.from(rawFiles);
-      
+  const uploadCaseFiles = async (filesArray: File[]) => {
     // Tiered Limits check
     const customFilesCount = organizedFiles.filter(f => !f.id.startsWith("preloaded-")).length;
     if (customFilesCount + filesArray.length > 20) {
       setCustomUploadError("You have reached the maximum allowed limit of 20 files.");
-      e.target.value = "";
       return;
     }
 
     if (filesArray.length > 15) {
       setCustomUploadError("Bulk analyze limit: You can upload up to 15 concurrent files in a single batch for quick analyze. Please select fewer files to upload in this batch.");
-      e.target.value = "";
       return;
     }
 
@@ -1859,7 +1859,6 @@ export default function DocumentAnalyzerTab() {
     setOrganizedFiles(prev => [...prev, ...chunkedFiles]);
     setSelectedFileId(chunkedFiles[0]?.id || null);
     setSelectedReport(null);
-    e.target.value = "";
     // Single-file uploads use full streaming and stage callbacks; batches use parallel engine
     if (chunkedFiles.length === 1) {
       await triggerSingleAnalysis(chunkedFiles[0]);
@@ -3426,6 +3425,7 @@ export default function DocumentAnalyzerTab() {
                   Supports PDF, DOCX, TXT, HEIC/HEIF, Photo, and Audio recordings • Auto-transcribed & Stored in PDF format
                 </span>
               </div>
+              <PaperDocumentScanner onUpload={uploadCaseFiles} disabled={Boolean(bulkProgress) || organizedFiles.filter(file => !file.id.startsWith("preloaded-")).length >= 20} />
             </div>
               
               {customUploadError && (
