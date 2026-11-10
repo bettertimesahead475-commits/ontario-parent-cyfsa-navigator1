@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cyfsa-production-analyzer-queue-consumer",
+  "main": "workers/analyzer-queue-consumer.ts",
+  "compatibility_date": "2026-11-09",
+  "workers_dev": false,
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": true },
+    "traces": { "enabled": true }
+  },
+  "vars": {
+    "ANALYZER_ENABLED": "false",
+    "ANALYZER_JOBS_QUEUE_NAME": "cyfsa-analyzer-jobs",
+    "ANALYZER_JOBS_DLQ_NAME": "cyfsa-analyzer-dead-letter"
+  }
+}
