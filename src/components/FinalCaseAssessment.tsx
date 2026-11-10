@@ -10,6 +10,18 @@ export default function FinalCaseAssessment() {
   const [report, setReport] = useState<AssessmentReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [newTitle, setNewTitle] = useState('');
+  const [creationId, setCreationId] = useState(() => crypto.randomUUID());
+  const [notice, setNotice] = useState('');
+  async function createMatter() {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const res = await apiFetch('/api/final-case-assessment?action=create-matter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: newTitle, requestId: creationId }) });
+      const body = await res.json(); if (!res.ok) throw new Error(body.error || 'Matter could not be created');
+      setMatters(previous => [...previous.filter(m => m.id !== body.matter.id), body.matter]); setMatterId(body.matter.id); setReport(null); setNewTitle(''); setCreationId(crypto.randomUUID()); setNotice('Matter saved. Add your source documents below.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Matter could not be created'); }
+    finally { setBusy(false); }
+  }
   async function load(id?: string, generate = false) {
     setBusy(true); setError('');
     try {
@@ -27,21 +39,23 @@ export default function FinalCaseAssessment() {
     try {
       const res = await apiFetch('/api/final-case-assessment?matterId=' + encodeURIComponent(matterId) + '&action=source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, text: await file.text() }) });
       const body = await res.json(); if (!res.ok) throw new Error(body.error || 'Source could not be saved');
-      setReport(null);
+      setReport(null); setNotice(body.reused ? 'This source document is already saved.' : 'Source document saved. Add another document or generate the assessment.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Source could not be saved'); }
     finally { setBusy(false); }
   }
   return <section className="rounded-xl border border-indigo-200 bg-white p-4 space-y-3" aria-label="Final Case Assessment">
     <button type="button" className="font-bold text-indigo-900" aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void load(); }}>Final Case Assessment</button>
     {open && <>
-      <p className="text-sm">Review all completed source documents in a saved matter. Requires active Individual Case Access. A new source set uses one of your five shared Deep Scan credits per paid month; reopening and retries add no charge.</p>
+      <p className="text-sm">Review the documents you add to this matter’s assessment. Requires active Individual Case Access. A new source set uses one of your five shared Deep Scan credits per paid month; reopening and retries add no charge.</p>
       <p className="text-sm">Educational preparation for counsel. Findings remain preliminary and require source review.</p>
       <label className="block">Your matter <select aria-label="Assessment matter" disabled={busy} value={matterId} onChange={e => { const id = e.target.value; setMatterId(id); setReport(null); if (id) void load(id); }} className="border rounded p-2 ml-2">
         <option value="">Choose a saved matter</option>{matters.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
       </select></label>
-      {!busy && !matters.length && !error && <p>No saved matters available. Create a matter in your case workspace first.</p>}
+      <div className="flex flex-wrap gap-2"><label>New matter title <input className="border rounded p-2" maxLength={200} value={newTitle} disabled={busy} onChange={e => setNewTitle(e.target.value)} /></label><button type="button" className="border rounded px-3 py-2" disabled={busy || !newTitle.trim()} onClick={() => void createMatter()}>Create matter</button></div>
+      {!busy && !matters.length && !error && <p>Create a matter above to start your assessment.</p>}
+      {notice && <p role="status">{notice}</p>}
       <label className="block text-sm">Add a text document to this matter <input type="file" accept=".txt,text/plain" disabled={busy || !matterId} onChange={e => { const file = e.target.files?.[0]; if (file) void upload(file); e.target.value = ''; }} /></label>
-      <p className="text-sm">Text documents are shown as one source page. All completed documents already saved in the matter are included.</p>
+      <p className="text-sm">Add every document you want assessed. Text documents are shown as one source page. The saved report lists exactly which sources were reviewed.</p>
       <div className="flex gap-3"><button type="button" disabled={busy || !matterId} onClick={() => void load(matterId, true)} className="rounded bg-indigo-900 text-white px-4 py-2 disabled:opacity-50">{busy ? 'Loading assessment…' : 'Generate assessment / retry'}</button>
       <button type="button" disabled={busy || !matterId} onClick={() => void load(matterId)} className="border rounded px-4 py-2">Reopen saved report</button></div>
       {error && <p role="alert">{error}. Your saved documents remain available.</p>}
