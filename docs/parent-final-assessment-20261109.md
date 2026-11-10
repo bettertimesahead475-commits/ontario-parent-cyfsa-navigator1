@@ -12,7 +12,7 @@ Final Case Assessment shares the existing Pro forensic allowance: five credits p
 
 `wrangler.production-analyzer-queue-preflight.jsonc` prepares only the dedicated production Worker, with execution disabled, no public workers.dev route, no producers, and no attached consumers. It does not modify the shared or staging Workers. Configure and verify its own database and provider bindings before enabling execution and deploying the existing production consumer configuration. Do not attach production queues on the strength of binding names or synthetic unit tests.
 
-The detached Worker was uploaded through Wrangler 4.158.0 as version `21ce8055-fa5e-452c-bdaa-6fa22b3caef8`. Remote settings confirmed execution disabled, only the three plain configuration variables, no queue bindings, workers.dev/preview URLs disabled, and logs and traces enabled. It cannot yet demonstrate its own database/provider access because those secret bindings are absent.
+The detached Worker's initial upload through Wrangler 4.158.0 was version `21ce8055-fa5e-452c-bdaa-6fa22b3caef8`. Its initial remote settings confirmed execution disabled, only the three queue/enable configuration variables, no queue bindings, workers.dev/preview URLs disabled, and logs and traces enabled. The final configuration additionally supplies the verified public Firebase/database targets. It cannot yet demonstrate its own database/provider access because those secret bindings are absent.
 
 ## Verification boundary
 
