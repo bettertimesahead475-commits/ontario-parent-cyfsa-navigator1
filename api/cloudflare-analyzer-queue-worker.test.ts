@@ -92,6 +92,7 @@ describe('durable analyzer queue consumer', () => {
     mocks.read.mockResolvedValue({ ...job(), status: 'completed' });
     const msg = message();
     await consumer.queue({ queue: 'cyfsa-staging-analyzer-dead-letter', messages: [msg] }, {
+      ANALYZER_ENABLED: 'true',
       ANALYZER_JOBS_QUEUE_NAME: 'cyfsa-staging-analyzer-jobs',
       ANALYZER_JOBS_DLQ_NAME: 'cyfsa-staging-analyzer-dead-letter',
     });
@@ -235,7 +236,7 @@ describe('durable analyzer queue consumer', () => {
   it('dispatches the dead-letter queue to its terminal handler', async () => {
     mocks.failDlq.mockResolvedValue(null);
     const msg = message();
-    await consumer.queue({ queue: 'cyfsa-analyzer-dead-letter', messages: [msg] }, {} as any);
+    await consumer.queue({ queue: 'cyfsa-analyzer-dead-letter', messages: [msg] }, { ANALYZER_ENABLED: 'true' } as any);
     expect(msg.ack).toHaveBeenCalledOnce();
   });
 });
