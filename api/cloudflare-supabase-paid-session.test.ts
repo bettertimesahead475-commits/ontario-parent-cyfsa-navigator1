@@ -36,6 +36,19 @@ describe('staging paid session read adapter', () => {
     expect((await readVerifiedPaidSession(env, 'u1', sid, mock as typeof fetch)).status).toBe('verified');
     expect(mock).toHaveBeenCalledTimes(1);
   });
+  it('denies revoked, expired, future-issued and unauthorized paid sessions', async () => {
+    const fetcher = (value: unknown) => vi.fn(async () => Response.json([value]));
+    const invalid = [
+      { ...row, revoked_at: '2026-02-01T00:00:00Z' },
+      { ...row, expires_at: '2026-02-01T00:00:00Z' },
+      { ...row, issued_at: '2999-01-01T00:00:00Z' },
+      { ...row, tier: 'Administrator' },
+      { ...row, id: '22222222-2222-4222-8222-222222222222' },
+    ];
+    for (const candidate of invalid) {
+      expect((await readVerifiedPaidSession(env, 'u1', sid, fetcher(candidate) as typeof fetch)).status).toBe('denied');
+    }
+  });
   it('fails closed on forged row, missing row, HTTP error and network failure', async () => {
     const fetcher = (value: unknown) => vi.fn(async () => Response.json(value));
     expect((await readVerifiedPaidSession(env, 'u1', sid, fetcher([{ ...row, firebase_uid: 'u2' }]) as typeof fetch)).status).toBe('denied');
