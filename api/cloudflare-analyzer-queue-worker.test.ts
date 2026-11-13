@@ -212,6 +212,18 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.ack).toHaveBeenCalledOnce();
   });
 
+  it('does not transition a DLQ job to queued when the producer binding is missing', async () => {
+    mocks.read.mockResolvedValue({ ...job(), status: 'queued', attempt_count: 1 });
+    mocks.loadReport.mockReset().mockResolvedValue(null);
+    mocks.requeueDlq.mockResolvedValue(true);
+    const msg = message();
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.requeueDlq).not.toHaveBeenCalled();
+    expect(mocks.failDlq).not.toHaveBeenCalled();
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(msg.retry).toHaveBeenCalledOnce();
+  });
+
   it('dispatches the dead-letter queue to its terminal handler', async () => {
     mocks.failDlq.mockResolvedValue(null);
     const msg = message();
