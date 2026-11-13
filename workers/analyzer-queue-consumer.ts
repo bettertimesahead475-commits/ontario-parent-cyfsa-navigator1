@@ -184,11 +184,15 @@ async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): P
       message.retry({ delaySeconds: Math.max(1, Math.min(900, Math.ceil((leaseExpiry - Date.now()) / 1000) + 5)) });
       return;
     }
-    if (current.attempt_count !== undefined && current.attempt_count < 6 && await requeueFromDeadLetter(env, jobId)) {
+    if (current.attempt_count !== undefined && current.attempt_count < 6) {
+      // Verify the producer binding before changing the durable job state.
+      // Otherwise a missing binding can strand a requeued job without a queue delivery.
       if (!env.ANALYZER_JOBS_REQUEUE) throw new Error('Primary analyzer queue producer binding is not configured.');
+      if (await requeueFromDeadLetter(env, jobId)) {
       await env.ANALYZER_JOBS_REQUEUE.send(createAnalyzerQueueMessage(jobId));
       message.ack();
       return;
+      }
     }
     const job = await failDeadLetterJob(env, jobId);
     if (job && job.status === 'failed') await releaseReservation(env, job);
