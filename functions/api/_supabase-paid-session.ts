@@ -22,7 +22,7 @@ export async function readVerifiedPaidSession(
   sessionId: string,
   fetcher: typeof fetch = fetch,
 ): Promise<SessionReadResult> {
-  if (!firebaseUid || !sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) return { status: 'denied' };
+  if (!firebaseUid || !sessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return { status: 'denied' };
   const readKey = env.STAGING_SUPABASE_READ_KEY || env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
   if (!env.STAGING_SUPABASE_URL || !readKey) return { status: 'unavailable' };
   let url: URL;
