@@ -32,7 +32,7 @@ export async function apiFetch(input: string, init?: RequestInit): Promise<Respo
   }
 
   try {
-    return await fetch(input, { ...init, headers, signal: init?.signal ?? AbortSignal.timeout(input.includes('/api/extract-text') ? 180_000 : 240_000) });
+    return await fetch(input, { ...init, headers, signal: init?.signal ?? AbortSignal.timeout(input.includes('/api/extract-text') ? 180_000 : /^\/api\/(?:deep-scan|analyze)(?:\/|$|\?)/.test(input) ? 360_000 : 240_000) });
   } catch (error: any) {
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
       throw new ApiResponseError('The request timed out. Your document is safe. Reconnect to the existing analysis before starting another.', 504, 'REQUEST_TIMEOUT', false);

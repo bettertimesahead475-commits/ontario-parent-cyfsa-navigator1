@@ -42,7 +42,9 @@ export const onRequest = async ({ request, env }: Context): Promise<Response> =>
     return Response.json({ error: 'Recursive staging API configuration.', code: 'STAGING_API_CONFIG_ERROR' }, { status: 503 });
   }
 
-  const upstream = new URL(inbound.pathname + inbound.search, origin);
+  const upstream = new URL(origin);
+  upstream.pathname = inbound.pathname;
+  upstream.search = inbound.search;
   const headers = new Headers(request.headers);
   headers.delete('host');
   headers.delete('cookie'); // Session identity uses explicit bearer/session headers.

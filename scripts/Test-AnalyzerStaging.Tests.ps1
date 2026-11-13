@@ -42,11 +42,16 @@ try {
     if (-not $case.error -and $caught) { throw $caught }
     $passed++
   }
-  foreach ($origin in @('http://cyfsa-navigator-staging.pages.dev', 'https://cyfsanavigator.com', 'https://cyfsa-navigator-staging.pages.dev:8443', 'https://cyfsa-navigator-staging.pages.dev/other')) {
+  foreach ($origin in @('http://cyfsa-navigator-staging.pages.dev', 'https://cyfsanavigator.com', 'https://cyfsa-navigator-staging.pages.dev:8443', 'https://cyfsa-navigator-staging.pages.dev/other', 'https://11e12fe5.cyfsa-navigator-git-staging.pages.dev.attacker.example', 'https://other-preview.cyfsa-navigator-git-staging.pages.dev', 'https://11e12fe5.cyfsa-navigator-git-staging.pages.dev:8443', 'https://11e12fe5.cyfsa-navigator-git-staging.pages.dev/other')) {
     $caught = $null
     try { & $runner -BaseUrl $origin -PdfPath $fixture } catch { $caught = $_.Exception.Message }
-    if ($caught -notlike '*isolated staging HTTPS*') { throw "Unsafe origin was not rejected: $origin" }
+    if ($caught -notlike '*isolated staging or pinned immutable candidate HTTPS*') { throw "Unsafe origin was not rejected: $origin" }
     $passed++
   }
+  $global:AnalyzerHarnessScenario = 'success'
+  $caught = $null
+  try { & $runner -BaseUrl 'https://11e12fe5.cyfsa-navigator-git-staging.pages.dev/' -PdfPath $fixture } catch { $caught = $_.Exception.Message }
+  if ($caught) { throw "Pinned immutable preview should be permitted: $caught" }
+  $passed++
   Write-Host "$passed offline runner regressions passed. No live/provider validation was performed."
 } finally { $env:FIREBASE_ID_TOKEN = $previousToken }

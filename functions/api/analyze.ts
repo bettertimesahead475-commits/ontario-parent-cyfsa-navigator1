@@ -519,16 +519,18 @@ export async function handleAnalyzeRequest(
 
   // Streaming SSE response
   if (wantsStream) {
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const readable = new ReadableStream<Uint8Array>({
+      start(controller) { streamController = controller; },
+      cancel() { streamController = undefined; },
+    });
     const encoder = new TextEncoder();
 
-    const sendEvent = async (event: string, data: any) => {
-      try {
-        await writer.write(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      } catch {
-        // Client disconnected
-      }
+    // A slow or disconnected reader must never hold up analysis or settlement.
+    const sendEvent = (event: string, data: unknown) => {
+      if (!streamController) return;
+      if (event === 'heartbeat' && (streamController.desiredSize ?? 0) <= 0) return;
+      streamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
     };
 
     const streamStartedAt = Date.now();
@@ -592,9 +594,8 @@ export async function handleAnalyzeRequest(
         await sendEvent('error', { requestId, error: message, code, retryable });
       } finally {
         clearInterval(heartbeat);
-        try {
-          await writer.close();
-        } catch {}
+        streamController?.close();
+        streamController = undefined;
       }
     })();
     // Keep the long-running AI operation alive after the Pages handler returns.

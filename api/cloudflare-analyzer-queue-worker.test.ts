@@ -29,6 +29,22 @@ function message(body: unknown = { version: 1, jobId: 'job_abcdefgh1234' }, atte
 }
 
 describe('durable analyzer queue consumer', () => {
+  it.each(['cyfsa-analyzer-jobs', 'cyfsa-analyzer-dead-letter'])('does no work on %s while disabled', async (queue) => {
+    vi.clearAllMocks();
+    const msg = message();
+    await consumer.queue({ queue, messages: [msg] }, { ANALYZER_ENABLED: 'false' });
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 900 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
+  });
+  it.each([undefined, '', 'TRUE', '0'])('does no work with non-enabled flag %s', async (flag) => {
+    vi.clearAllMocks();
+    const msg = message();
+    await consumer.queue({ queue: 'cyfsa-analyzer-jobs', messages: [msg] }, { ANALYZER_ENABLED: flag });
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 900 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.claim.mockResolvedValue(job());
@@ -76,6 +92,7 @@ describe('durable analyzer queue consumer', () => {
     mocks.read.mockResolvedValue({ ...job(), status: 'completed' });
     const msg = message();
     await consumer.queue({ queue: 'cyfsa-staging-analyzer-dead-letter', messages: [msg] }, {
+      ANALYZER_ENABLED: 'true',
       ANALYZER_JOBS_QUEUE_NAME: 'cyfsa-staging-analyzer-jobs',
       ANALYZER_JOBS_DLQ_NAME: 'cyfsa-staging-analyzer-dead-letter',
     });
@@ -204,10 +221,22 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.ack).toHaveBeenCalledOnce();
   });
 
+  it('does not transition a DLQ job to queued when the producer binding is missing', async () => {
+    mocks.read.mockResolvedValue({ ...job(), status: 'queued', attempt_count: 1 });
+    mocks.loadReport.mockReset().mockResolvedValue(null);
+    mocks.requeueDlq.mockResolvedValue(true);
+    const msg = message();
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.requeueDlq).not.toHaveBeenCalled();
+    expect(mocks.failDlq).not.toHaveBeenCalled();
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(msg.retry).toHaveBeenCalledOnce();
+  });
+
   it('dispatches the dead-letter queue to its terminal handler', async () => {
     mocks.failDlq.mockResolvedValue(null);
     const msg = message();
-    await consumer.queue({ queue: 'cyfsa-analyzer-dead-letter', messages: [msg] }, {} as any);
+    await consumer.queue({ queue: 'cyfsa-analyzer-dead-letter', messages: [msg] }, { ANALYZER_ENABLED: 'true' } as any);
     expect(msg.ack).toHaveBeenCalledOnce();
   });
 });

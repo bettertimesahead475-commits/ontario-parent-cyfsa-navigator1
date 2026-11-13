@@ -3,6 +3,7 @@ import { validatePaidSessionRow, type PaidSessionRow, type VerifiedSession } fro
 export type SupabaseStagingConfig = {
   STAGING_SUPABASE_URL?: string;
   STAGING_SUPABASE_READ_KEY?: string;
+  STAGING_SUPABASE_SERVICE_ROLE_KEY?: string;
 };
 
 export type SessionReadResult =
@@ -21,8 +22,9 @@ export async function readVerifiedPaidSession(
   sessionId: string,
   fetcher: typeof fetch = fetch,
 ): Promise<SessionReadResult> {
-  if (!firebaseUid || !sessionId || !/^[0-9a-f-]{36}$/i.test(sessionId)) return { status: 'denied' };
-  if (!env.STAGING_SUPABASE_URL || !env.STAGING_SUPABASE_READ_KEY) return { status: 'unavailable' };
+  if (!firebaseUid || !sessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return { status: 'denied' };
+  const readKey = env.STAGING_SUPABASE_READ_KEY || env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
+  if (!env.STAGING_SUPABASE_URL || !readKey) return { status: 'unavailable' };
   let url: URL;
   try {
     url = new URL('/rest/v1/navigator_paid_sessions', env.STAGING_SUPABASE_URL);
@@ -38,8 +40,8 @@ export async function readVerifiedPaidSession(
     const response = await fetcher(url.toString(), {
       method: 'GET',
       headers: {
-        apikey: env.STAGING_SUPABASE_READ_KEY,
-        Authorization: 'Bearer ' + env.STAGING_SUPABASE_READ_KEY,
+        apikey: readKey,
+        Authorization: 'Bearer ' + readKey,
         Accept: 'application/json',
       },
       redirect: 'error',

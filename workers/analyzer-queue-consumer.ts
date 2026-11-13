@@ -184,11 +184,15 @@ async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): P
       message.retry({ delaySeconds: Math.max(1, Math.min(900, Math.ceil((leaseExpiry - Date.now()) / 1000) + 5)) });
       return;
     }
-    if (current.attempt_count !== undefined && current.attempt_count < 6 && await requeueFromDeadLetter(env, jobId)) {
+    if (current.attempt_count !== undefined && current.attempt_count < 6) {
+      // Verify the producer binding before changing the durable job state.
+      // Otherwise a missing binding can strand a requeued job without a queue delivery.
       if (!env.ANALYZER_JOBS_REQUEUE) throw new Error('Primary analyzer queue producer binding is not configured.');
-      await env.ANALYZER_JOBS_REQUEUE.send(createAnalyzerQueueMessage(jobId));
-      message.ack();
-      return;
+      if (await requeueFromDeadLetter(env, jobId)) {
+        await env.ANALYZER_JOBS_REQUEUE.send(createAnalyzerQueueMessage(jobId));
+        message.ack();
+        return;
+      }
     }
     const job = await failDeadLetterJob(env, jobId);
     if (job && job.status === 'failed') await releaseReservation(env, job);
@@ -205,6 +209,12 @@ const consumer = {
     const primary = env.ANALYZER_JOBS_QUEUE_NAME || 'cyfsa-analyzer-jobs';
     const dlq = env.ANALYZER_JOBS_DLQ_NAME || 'cyfsa-analyzer-dead-letter';
     if (batch.queue !== primary && batch.queue !== dlq) throw new Error('Unexpected analyzer queue');
+    // An explicitly enabled deployment alone may claim jobs; preflight and missing flags must not claim jobs, recover reports, or mutate
+    // credits, including on dead-letter deliveries. Leave messages for a later run.
+    if (env.ANALYZER_ENABLED !== 'true') {
+      for (const message of batch.messages) message.retry({ delaySeconds: RETRY_MAX_SECONDS });
+      return;
+    }
     for (const message of batch.messages) {
       if (batch.queue === (env.ANALYZER_JOBS_DLQ_NAME || 'cyfsa-analyzer-dead-letter')) await processDeadLetter(message, env);
       else await processJob(message, env);

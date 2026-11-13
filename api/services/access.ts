@@ -874,6 +874,11 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
   if (findErr) throw dbFailure("database", findErr);
   if (!payment) throw Object.assign(new Error("No pending payment found for that reference number."), { statusCode: 404 });
 
+  const email = /^email:([^;\s@]+@[^;\s@]+)(?:;|$)/.exec((payment.notes || "").trim())?.[1];
+  if (!email) {
+    throw Object.assign(new Error("The payment has no valid checkout email. Review it before approving."), { statusCode: 400 });
+  }
+
   const expected = Number(payment.amount);
   if (amountReceived < expected) {
     throw Object.assign(
@@ -904,7 +909,6 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     );
   }
 
-  const email = (payment.notes || "").replace(/^email:/, "").trim();
   const tier = payment.plan as Tier;
   const code = generateAccessCode();
 
