@@ -5,7 +5,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $target = [uri]$BaseUrl
-if ($target.Scheme -ne 'https' -or -not $target.IsDefaultPort -or $target.UserInfo -or $target.Query -or $target.Fragment -or $target.AbsolutePath -ne '/' -or $target.Host -notmatch '(^|\.)cyfsa-navigator-staging\.pages\.dev$') { throw 'Only the isolated staging HTTPS Pages origin is allowed.' }
+$allowedStagingHost = $target.Host -eq 'cyfsa-navigator-staging.pages.dev'
+$allowedImmutableCandidateHost = $target.Host -eq '11e12fe5.cyfsa-navigator-git-staging.pages.dev'
+if ($target.Scheme -ne 'https' -or -not $target.IsDefaultPort -or $target.UserInfo -or $target.Query -or $target.Fragment -or $target.AbsolutePath -ne '/' -or -not ($allowedStagingHost -or $allowedImmutableCandidateHost)) { throw 'Only the isolated staging or pinned immutable candidate HTTPS Pages origin is allowed.' }
 $BaseUrl = $target.GetLeftPart([UriPartial]::Authority)
 if (-not $env:FIREBASE_ID_TOKEN) { throw 'Set FIREBASE_ID_TOKEN locally to a fresh signed-in owner Firebase ID token. Do not paste it into chat.' }
 $headers = @{ Authorization = "Bearer $env:FIREBASE_ID_TOKEN" }
