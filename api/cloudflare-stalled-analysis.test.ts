@@ -94,11 +94,15 @@ describe("Quick Review that never returns from the model", () => {
       headers: { "Content-Type": "application/json", Authorization: "Bearer mock", Accept: "text/event-stream", "X-Analysis-Id": "req_stall_1" },
       body: JSON.stringify({ documentText: DOC, mode: "fast", stream: true }),
     });
+    let background: Promise<unknown> | undefined;
     const res = await handleAnalyzeRequest(req, ENV, { rpc, generate, fetcher: storage as any }, (p) => {
-      void p;
+      background = p;
     });
     expect(res.status).toBe(200);
 
+    // A paused client does not consume the first event until the server has settled the job.
+    expect(background).toBeDefined();
+    await background;
     const out = await readSse(res, 25_000);
     expect(out.events).toContain("error");
     expect(out.closed).toBe(true);
