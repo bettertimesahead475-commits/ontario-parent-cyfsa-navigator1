@@ -15,5 +15,13 @@
     "STAGING_SUPABASE_URL": "https://nxfhvebzzobegubefcda.supabase.co/",
     "ANALYZER_JOBS_QUEUE_NAME": "cyfsa-analyzer-jobs",
     "ANALYZER_JOBS_DLQ_NAME": "cyfsa-analyzer-dead-letter"
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "ANALYZER_JOBS_REQUEUE",
+        "queue": "cyfsa-analyzer-jobs"
+      }
+    ]
   }
 }
