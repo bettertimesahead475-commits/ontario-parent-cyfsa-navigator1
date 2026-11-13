@@ -37,6 +37,14 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.ack).not.toHaveBeenCalled();
     for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
   });
+  it.each([undefined, '', 'TRUE', '0'])('does no work with non-enabled flag %s', async (flag) => {
+    vi.clearAllMocks();
+    const msg = message();
+    await consumer.queue({ queue: 'cyfsa-analyzer-jobs', messages: [msg] }, { ANALYZER_ENABLED: flag });
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 900 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.claim.mockResolvedValue(job());
