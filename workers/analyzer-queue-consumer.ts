@@ -189,9 +189,9 @@ async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): P
       // Otherwise a missing binding can strand a requeued job without a queue delivery.
       if (!env.ANALYZER_JOBS_REQUEUE) throw new Error('Primary analyzer queue producer binding is not configured.');
       if (await requeueFromDeadLetter(env, jobId)) {
-      await env.ANALYZER_JOBS_REQUEUE.send(createAnalyzerQueueMessage(jobId));
-      message.ack();
-      return;
+        await env.ANALYZER_JOBS_REQUEUE.send(createAnalyzerQueueMessage(jobId));
+        message.ack();
+        return;
       }
     }
     const job = await failDeadLetterJob(env, jobId);
