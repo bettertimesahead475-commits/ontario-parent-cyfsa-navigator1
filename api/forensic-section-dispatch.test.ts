@@ -5,6 +5,8 @@ describe("forensic section dispatch", () => {
   it("does not start a second wave after the first wave exhausts its attempts", async () => {
     const generate = vi.fn(async (_options: Parameters<Parameters<typeof runSectionedAnalysis>[0]["generate"]>[0]) => ({
       text: "{}",
+      model: "claude-opus-test",
+      durationMs: 0,
       stopReason: "end_turn",
     }));
 
