@@ -42,7 +42,7 @@ async function errorResponse(response: Response): Promise<{ code: string; error:
   const fallback = {
     code: 'ANALYSIS_FAILED',
     error: 'The analysis failed.',
-    retryable: response.status === 408 || response.status === 429 || response.status >= 500,
+    retryable: response.status === 408 || response.status === 422 || response.status === 429 || response.status >= 500,
   };
   try {
     const payload: unknown = await response.json();
