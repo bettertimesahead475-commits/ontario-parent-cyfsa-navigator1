@@ -14,6 +14,7 @@ describe("forensic section dispatch", () => {
       mode: "full",
       documentText: "Synthetic Ontario child protection affidavit.",
       primaryModel: "claude-opus-test",
+      requestId: "forensic-dispatch-test",
       deadlineAt: Date.now() + 120_000,
       generate,
     })).rejects.toThrow();
