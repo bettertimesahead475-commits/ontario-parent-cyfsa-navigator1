@@ -1,0 +1,74 @@
+name: Deploy isolated staging analyzer Worker
+on:
+  push:
+    branches:
+      - integration/navigator-release-20261108
+    paths:
+      - 'workers/**'
+      - 'functions/api/**'
+      - 'api/services/**'
+      - 'api/cloudflare-analyzer-queue-worker.test.ts'
+      - 'api/cloudflare-staging-service-reuse.test.ts'
+      - 'api/cloudflare-analyzer-model-adapter.test.ts'
+      - 'wrangler.staging-job-service.jsonc'
+      - 'wrangler.analyzer-queue-staging.jsonc'
+      - '.github/workflows/cyfsa-staging-analyzer-worker.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cyfsa-isolated-staging-analyzer-worker
+  cancel-in-progress: false
+jobs:
+  deploy:
+    name: verify and deploy staging-only Worker
+    runs-on: ubuntu-latest
+    environment: cloudflare-staging
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Type-check
+        run: npm run lint
+      - name: Focused analyzer Worker regression tests
+        run: npx vitest run api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-staging-service-reuse.test.ts api/cloudflare-analyzer-model-adapter.test.ts api/cloudflare-historical-timeout-regressions.test.ts
+      - name: Enforce isolated staging target and existing Queue names
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const worker = JSON.parse(fs.readFileSync('wrangler.staging-job-service.jsonc', 'utf8'));
+          const relay = JSON.parse(fs.readFileSync('wrangler.analyzer-queue-staging.jsonc', 'utf8'));
+          if (worker.name !== 'cyfsa-analyzer-queue-consumer' ||
+              worker.vars.STAGING_SUPABASE_URL !== 'https://nxfhvebzzobegubefcda.supabase.co/' ||
+              worker.vars.ANALYZER_ENABLED !== 'true' ||
+              worker.queues.producers?.[0]?.queue !== 'cyfsa-staging-analyzer-jobs' ||
+              relay.name !== 'cyfsa-staging-analyzer-queue-consumer' ||
+              relay.services?.[0]?.service !== worker.name ||
+              relay.queues.consumers?.[0]?.queue !== 'cyfsa-staging-analyzer-jobs' ||
+              relay.queues.consumers?.[1]?.queue !== 'cyfsa-staging-analyzer-dead-letter') {
+            throw new Error('Refusing non-isolated analyzer Worker deployment');
+          }
+          NODE
+      - name: Verify staging deployment credentials exist
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo '::error::cloudflare-staging requires CLOUDFLARE_API_TOKEN secret and CLOUDFLARE_ACCOUNT_ID variable'
+            exit 1
+          fi
+      - name: Deploy staging-only analyzer executor (preserve existing secrets)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy --config wrangler.staging-job-service.jsonc
+      - name: Deploy staging-only Queue relay
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy --config wrangler.analyzer-queue-staging.jsonc
