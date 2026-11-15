@@ -48,6 +48,7 @@ function serviceConfig(env: DurableJobEnv): { base: string; key: string } {
 async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unknown>, fetcher: typeof fetch = fetch): Promise<T> {
   const { base, key } = serviceConfig(env);
   let response: Response;
+  const start = Date.now();
   try {
     response = await fetcher(`${base}/rest/v1/rpc/${name}`, {
       method: 'POST',
@@ -56,7 +57,19 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
       redirect: 'error',
       signal: AbortSignal.timeout(8000),
     });
-  } catch {
+  } catch (error) {
+    // Structured diagnostics reveal the transport cause without recording
+    // document contents, customer identifiers, provider keys, or request URLs.
+    const diagnostic = error && typeof error === 'object'
+      ? error as { name?: string; cause?: { name?: string; code?: string } }
+      : {};
+    console.error('[DURABLE_RPC_TRANSPORT_FAILURE]', JSON.stringify({
+      rpcName: name,
+      elapsedMs: Date.now() - start,
+      exceptionClass: diagnostic.name || 'unknown',
+      causeClass: diagnostic.cause?.name || null,
+      causeCode: typeof diagnostic.cause?.code === 'string' ? diagnostic.cause.code.slice(0, 50) : null,
+    }));
     throw new DurableJobStorageError('Durable job database request failed.', true);
   }
   if (!response.ok) throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
