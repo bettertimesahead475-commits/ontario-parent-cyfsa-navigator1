@@ -8,6 +8,8 @@ vi.mock('../functions/api/_auth-check', () => ({ verifyFirebaseRequest: (...args
 vi.mock('../functions/api/_supabase-paid-session', () => ({ readVerifiedPaidSession: vi.fn() }));
 
 const ENV = {
+  // Queue-specific legacy Quick Review tests intentionally opt in. The live default is direct.
+  QUEUE_QUICK_ANALYSIS: 'true',
   ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'firebase-test', ANTHROPIC_API_KEY: 'test-key',
   STAGING_SUPABASE_URL: 'https://project.supabase.co', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'service-key',
 } as unknown as AnalyzerEnv;
