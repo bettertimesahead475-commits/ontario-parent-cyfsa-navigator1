@@ -191,7 +191,10 @@ export function createCloudflareGenerateFn(
           } finally {
             // Anthropic message_stop is the protocol terminator; do not wait for the
             // HTTP connection to close after a complete message.
-            await reader.cancel().catch(() => undefined);
+            // The provider has already sent message_stop. Some stream
+            // implementations delay cancellation indefinitely; never hold up
+            // report persistence/credit finalization waiting for cancel().
+            void reader.cancel().catch(() => undefined);
             reader.releaseLock();
           }
         } else {
