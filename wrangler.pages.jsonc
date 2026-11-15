@@ -7,7 +7,7 @@
     "producers": [
       {
         "binding": "ANALYZER_JOBS_QUEUE",
-        "queue": "cyfsa-analyzer-jobs"
+        "queue": "cyfsa-staging-analyzer-jobs"
       }
     ]
   }
