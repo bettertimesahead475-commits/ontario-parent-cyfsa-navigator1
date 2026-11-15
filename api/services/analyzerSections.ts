@@ -970,6 +970,8 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
     while (queue.length > 0) {
       const key = queue.shift();
       if (!key) break;
+      // Log section starts as well as completions so a stalled provider call is identifiable.
+      if (opts.mode === "full") console.info('[FORENSIC_SECTION_STARTED]', JSON.stringify({ section: key, elapsedMs: now() - started }));
       try {
         const { value, attempts: n } = await runOneSection(key, opts, usageByModel);
         sectionTimingsMs[key] = now() - started;
