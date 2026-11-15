@@ -377,6 +377,7 @@ export async function handleAnalyzeRequest(
   // Persist meaningful progress for reconnecting clients without blocking analysis on storage.
   let lastSavedPercent = 35;
   let lastSavedAt = 0;
+  let progressWrite: Promise<void> = Promise.resolve();
   const createJobProgressSink = (upstream?: (stage: string, percent: number, message: string) => Promise<void> | void) =>
     async (stage: string, percent: number, message: string): Promise<void> => {
       try { await upstream?.(stage, percent, message); } catch (error) {
@@ -390,11 +391,17 @@ export async function handleAnalyzeRequest(
       if (now - lastSavedAt < 2000 && bounded < 99) return;
       lastSavedPercent = bounded;
       lastSavedAt = now;
-      try {
-        await saveJobState(env, { jobId: requestId, uid, status: 'running', percent: bounded, message }, deps.fetcher || fetch);
-      } catch (error) {
-        console.warn('[ANALYZER_PROGRESS_SAVE_FAILED]', error instanceof Error ? error.name : 'error');
-      }
+      // The queue ledger already persists stage updates; the legacy recovery record is
+      // only needed by direct SSE requests. Serialize writes to avoid stale overwrites.
+      if (deps.trustedJob) return;
+      progressWrite = progressWrite.catch(() => {}).then(async () => {
+        try {
+          await saveJobState(env, { jobId: requestId, uid, status: 'running', percent: bounded, message }, deps.fetcher || fetch);
+        } catch (error) {
+          console.warn('[ANALYZER_PROGRESS_SAVE_FAILED]', error instanceof Error ? error.name : 'error');
+        }
+      });
+      await progressWrite;
     };
 
   // Execute Analysis Pipeline
