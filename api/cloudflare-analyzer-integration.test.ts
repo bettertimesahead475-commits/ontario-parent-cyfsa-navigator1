@@ -201,13 +201,15 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
       }),
     });
 
-    const response = await handleAnalyzeRequest(request, env, {
+    const queueSend = vi.fn();
+    const response = await handleAnalyzeRequest(request, { ...env, ANALYZER_JOBS_QUEUE: { send: queueSend } }, {
       rpc: mockRpc,
       generate: mockGenerate,
       fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.status).toBe(200);
+    expect(queueSend).not.toHaveBeenCalled();
     const report = await response.json();
 
     // 1. Four concurrent bounded sections executed
@@ -273,7 +275,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(releasedCalled).toBe(true);
   });
 
-  it('returns sanitized 503 RESERVATION_UNAVAILABLE with pgCode when free reservation RPC fails', async () => {
+  it('returns sanitized 503 RESERVATION_UNAVAILABLE without leaking database diagnostics when free reservation RPC fails', async () => {
     const uid = 'user_rpc_err_101';
     const requestId = 'req_rpc_err_01';
 
@@ -308,13 +310,12 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc as any });
     expect(response.status).toBe(503);
     const body = await response.json();
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       code: 'RESERVATION_UNAVAILABLE',
       error: 'Free scan reservation unavailable.',
-      status: 'unavailable',
-      httpStatus: 404,
-      pgCode: 'PGRST202',
     });
+    expect(JSON.stringify(body)).not.toContain('PGRST202');
+    expect(JSON.stringify(body)).not.toContain('schema cache');
   });
 
   it('streams progress and sections via Server-Sent Events', async () => {
@@ -625,4 +626,21 @@ it('uses configured Opus for every Deep Scan section despite a legacy Sonnet pri
   expect(response.status).toBe(503);
   expect(generate).toHaveBeenCalled();
   for (const call of generate.mock.calls) expect(call[1]).toBe('claude-opus-5-5');
+});
+
+it.each([
+  { email: 'mrpelkey@gmail.com', emailVerified: true },
+  { email: 'mr.pelkie@gmail.com', emailVerified: false },
+  { email: 'customer@example.com', emailVerified: true },
+])('does not grant owner bypass to $email verified=$emailVerified', async (identity) => {
+  mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'customer', ...identity });
+  const generate = vi.fn();
+  const rpc = vi.fn();
+  const response = await handleAnalyzeRequest(new Request('https://staging.example/api/analyze', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documentText: SAMPLE_DOC, mode: 'full', stream: false, email: 'mr.pelkie@gmail.com', owner_bypass: true }),
+  }), { ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'test', ANTHROPIC_API_KEY: 'fake' }, { generate, rpc });
+  expect(response.status).toBe(403);
+  expect(generate).not.toHaveBeenCalled();
+  expect(rpc).not.toHaveBeenCalled();
 });
