@@ -33,6 +33,27 @@ describe('durable analyzer queue producer', () => {
     verify.mockReset().mockResolvedValue({ status: 'verified', uid: 'owner_1234', emailVerified: false, email: null });
   });
 
+  it('fails a Queue-required Deep Scan before reserving or charging if Pages has no binding', async () => {
+    const rpc = vi.fn();
+    const fetchImpl = vi.fn();
+    const generate = vi.fn();
+    const req = new Request('https://navigator.test/api/deep-scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ documentText, mode: 'full' }),
+    });
+    const response = await handleDeepScanRequest(req, {
+      ...ENV, FORENSIC_REQUIRE_QUEUE: 'true',
+    }, { rpc, fetcher: fetchImpl as unknown as typeof fetch, generate });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: 'FORENSIC_QUEUE_UNAVAILABLE', retryable: true,
+    });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('stores private input and enqueues only an opaque job identifier with HTTP 202', async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'reservation_1' }));
