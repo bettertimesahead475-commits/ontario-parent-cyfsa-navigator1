@@ -10,7 +10,7 @@ export class StagingAnalyzerJobs extends WorkerEntrypoint {
   async checkDatabaseConnection() {
     const env = this.env;
     const base = 'https://nxfhvebzzobegubefcda.supabase.co';
-    if (env.STAGING_SUPABASE_URL?.replace(/\\/$/, '') !== base || env.ANALYZER_ENABLED !== 'true') {
+    if (![base, base + '/'].includes(env.STAGING_SUPABASE_URL || '') || env.ANALYZER_ENABLED !== 'true') {
       throw new Error('Unexpected staging database diagnostic target');
     }
     const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
