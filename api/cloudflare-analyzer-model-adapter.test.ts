@@ -277,6 +277,40 @@ describe('Cloudflare Anthropic Model Adapter', () => {
     expect(mockFetcher).toHaveBeenCalledOnce();
   });
 
+  it('returns a completed Anthropic report even if stream cancellation never settles', async () => {
+    const payload = [
+      'event: content_block_delta\\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"complete"}}\\n\\n',
+      'event: message_delta\\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\\n\\n',
+      'event: message_stop\\ndata: {"type":"message_stop"}\\n\\n',
+    ].join('');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode(payload)); },
+      cancel() { return new Promise<void>(() => {}); },
+    });
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        generate({
+          system: 'sys',
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+          max_tokens: 100, timeoutMs: 5000, retries: 0,
+          requestId: 'req_cancel_stall', stage: 'direct_analysis', mode: 'fast',
+        }, 'claude-sonnet-5'),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error('Completed SSE stalled in cancel()')), 750);
+        }),
+      ]);
+      expect(result.text).toBe('complete');
+      expect(result.stopReason).toBe('end_turn');
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  });
+
   it('sends stream: true in Anthropic request body', async () => {
     let capturedBody: any = null;
     const mockFetcher = vi.fn(async (_url: string, init?: RequestInit) => {
