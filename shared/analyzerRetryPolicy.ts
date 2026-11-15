@@ -72,6 +72,11 @@ export function classifyFailure(f: FailureInput): FailureDecision {
   if (f.network || code === "STREAM_INTERRUPTED" || code === "NETWORK_ERROR") {
     return { kind: "NETWORK_INTERRUPTED", action: "RECOVER_JOB", reason: "The connection was interrupted. The analysis may still be running." };
   }
+  // Cloudflare 524 means the upstream accepted the connection but failed to respond in time.
+  // The analysis may still be running or saved; never start another paid AI request blindly.
+  if (status === 524) {
+    return { kind: "NETWORK_INTERRUPTED", action: "RECOVER_JOB", reason: "The upstream timed out; check the existing analysis job before attempting another run." };
+  }
   if (status === 409 && code === "ANALYSIS_IN_PROGRESS") {
     return { kind: "ALREADY_RUNNING", action: "RECOVER_JOB", reason: "This analysis is already running on the server." };
   }

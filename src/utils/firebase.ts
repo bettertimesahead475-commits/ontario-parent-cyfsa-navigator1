@@ -1,8 +1,9 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, User, signOut } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { selectFirebaseConfig } from './firebaseConfig';
 
-const app = initializeApp(firebaseConfig);
+const app = initializeApp(selectFirebaseConfig(firebaseConfig, import.meta.env.VITE_STAGING_FIREBASE_CONFIG, typeof window === 'undefined' ? '' : window.location.hostname));
 export const auth = getAuth(app);
 
 /**

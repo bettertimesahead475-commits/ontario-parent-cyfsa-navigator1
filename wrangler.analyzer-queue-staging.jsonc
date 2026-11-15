@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cyfsa-staging-analyzer-queue-consumer",
+  "main": "workers/staging-queue-relay.ts",
+  "compatibility_date": "2026-11-04",
+  "queues": {
+    "consumers": [
+      {
+        "queue": "cyfsa-staging-analyzer-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 5,
+        "retry_delay": 20,
+        "dead_letter_queue": "cyfsa-staging-analyzer-dead-letter",
+        "max_concurrency": 2
+      },
+      {
+        "queue": "cyfsa-staging-analyzer-dead-letter",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 5,
+        "retry_delay": 60,
+        "max_concurrency": 1
+      }
+    ]
+  },
+  "services": [
+    {
+      "binding": "ANALYZER_EXECUTOR",
+      "service": "cyfsa-analyzer-queue-consumer",
+      "entrypoint": "StagingAnalyzerJobs"
+    }
+  ],
+  "workers_dev": false,
+  "preview_urls": false
+}

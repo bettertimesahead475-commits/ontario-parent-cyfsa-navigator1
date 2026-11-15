@@ -9,7 +9,7 @@
  * Silent downgrades from Opus to Sonnet are strictly forbidden.
  */
 
-import { Tier, hasForensicInDepthAccess } from "./access.js";
+import { Tier, hasForensicInDepthAccess } from "./tierTypes.js";
 import { LifecycleError } from "./lifecycleErrors.js";
 import { AnalyzerError } from "./analyzerErrors.js";
 
@@ -17,8 +17,8 @@ export const DEFAULT_QUICK_MODEL = "claude-sonnet-5";
 export const DEFAULT_FORENSIC_MODEL = "claude-opus-5";
 
 export const ANALYZER_MODELS = {
-  QUICK: process.env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL,
-  FORENSIC: process.env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL,
+  QUICK: (typeof process === 'undefined' ? undefined : process.env.ANTHROPIC_QUICK_MODEL) || DEFAULT_QUICK_MODEL,
+  FORENSIC: (typeof process === 'undefined' ? undefined : process.env.ANTHROPIC_FORENSIC_MODEL) || DEFAULT_FORENSIC_MODEL,
 } as const;
 
 export const CLAUDE_MODELS = new Set<string>([
@@ -101,6 +101,9 @@ export function buildThinkingRequestFields(
   }
   if (MODELS_REJECTING_DISABLED_THINKING.has(model)) {
     return { output_config: { effort: "low" } };
+  }
+  if (model.startsWith("claude-3-") || !CURRENT_GENERATION_MODEL.test(model)) {
+    return {};
   }
   return { thinking: { type: "disabled" } };
 }

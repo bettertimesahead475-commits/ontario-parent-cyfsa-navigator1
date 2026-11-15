@@ -1,0 +1,58 @@
+name: Build inert production analyzer Worker preflight
+on:
+  push:
+    branches:
+      - integration/navigator-release-20261108
+    paths:
+      - 'workers/analyzer-queue-consumer.ts'
+      - 'functions/api/**'
+      - 'api/services/**'
+      - 'wrangler.production-analyzer-queue-preflight.jsonc'
+      - '.github/workflows/production-analyzer-worker-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate release isolation and Forensic safety
+        run: |
+          npm run lint
+          npx vitest run api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-analyzer-queue-producer.test.ts api/cloudflare-worker-config-isolation.test.ts api/cloudflare-analyzer-model-adapter.test.ts
+      - name: Enforce no production queue activation
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync('wrangler.production-analyzer-queue-preflight.jsonc', 'utf8'));
+          if (p.name !== 'cyfsa-production-analyzer-queue-consumer' ||
+              p.vars.ANALYZER_ENABLED !== 'false' ||
+              p.queues.consumers?.length ||
+              p.queues.producers?.[0]?.queue !== 'cyfsa-analyzer-jobs') {
+            throw new Error('Production preflight is not inert; refusing bundle');
+          }
+          NODE
+      - name: Build isolated inert production Worker code
+        run: |
+          mkdir -p deploy/generated
+          npx esbuild workers/analyzer-queue-consumer.ts --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/production-analyzer-preflight.mjs
+          test -s deploy/generated/production-analyzer-preflight.mjs
+          grep -q 'ANALYZER_ENABLED' deploy/generated/production-analyzer-preflight.mjs
+      - name: Publish inert preflight code on build-only branch
+        run: |
+          git config user.name 'cyfsa-preflight-build[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          SHORT_SHA="${GITHUB_SHA:0:12}"
+          BRANCH="build/production-analyzer-preflight-${SHORT_SHA}"
+          git checkout -b "$BRANCH"
+          git add -f deploy/generated/production-analyzer-preflight.mjs
+          git commit -m "build: inert production analyzer preflight from ${SHORT_SHA}"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          echo "Inert production Worker preflight bundle: ${BRANCH}"

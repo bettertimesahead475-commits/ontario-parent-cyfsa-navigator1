@@ -1,0 +1,14 @@
+// DEPRECATED / INERT: legacy config retained only for historical reference.
+// Do not attach production or staging Queues from this file.
+// Production: wrangler.production-analyzer-queue-consumer.jsonc (fail-closed until verified).
+// Staging: wrangler.analyzer-queue-staging.jsonc (isolated relay).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cyfsa-retired-analyzer-queue-consumer",
+  "main": "workers/analyzer-queue-consumer.ts",
+  "compatibility_date": "2026-11-04",
+  "workers_dev": false,
+  "vars": {
+    "ANALYZER_ENABLED": "false"
+  }
+}

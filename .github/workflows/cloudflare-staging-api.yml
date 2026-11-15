@@ -1,0 +1,26 @@
+name: Cloudflare staging API verification
+on:
+  push:
+    branches:
+      - migration/cloudflare-staging-20261029
+  pull_request:
+    paths:
+      - 'functions/**'
+      - 'tests/cloudflare-pages-api.test.ts'
+      - '.github/workflows/cloudflare-staging-api.yml'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run lint
+      - name: Staging API tests
+        run: npx vitest run tests/cloudflare-pages-api.test.ts api/cloudflare-auth-check.test.ts api/cloudflare-supabase-reachability.test.ts api/cloudflare-entitlement-readiness.test.ts api/cloudflare-entitlement-policy.test.ts api/cloudflare-analyzer-model-adapter.test.ts api/cloudflare-analyzer-integration.test.ts api/cloudflare-status.test.ts api/cloudflare-extract-text.test.ts api/cloudflare-analyzer-usage.test.ts api/cloudflare-access-pricing.test.ts api/cloudflare-job-recovery.test.ts

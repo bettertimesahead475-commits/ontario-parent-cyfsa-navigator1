@@ -1,0 +1,35 @@
+name: Cloudflare migration compatibility checks
+on:
+  push:
+    branches:
+      - migration/cloudflare-staging-20261029
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'wrangler.jsonc'
+      - '.github/workflows/cloudflare-migration-check.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: TypeScript
+        run: npm run lint
+      - name: Automated tests
+        run: npm test
+      - name: Vite frontend build
+        run: npx vite build
+      - name: Verify generated frontend
+        run: test -s dist/index.html

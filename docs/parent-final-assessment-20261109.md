@@ -1,0 +1,25 @@
+# Parent Final Case Assessment
+
+The parent analyzer calls `/api/final-case-assessment` directly on Cloudflare Pages. It does not use professional workspace routes or owner bypass. Requests verify Firebase identity, an active Pro paid session, an active account, the matter's account ownership, its OWNER membership, and client ownership. Completion rechecks ownership and paid access. A service-only, invoker-security setup function creates a parent account, client, matter and OWNER membership atomically; a request UUID makes setup retries idempotent.
+
+GET without a matter lists the caller's matters. GET with `matterId` reopens the latest completed report. The panel can create a matter and add text documents to its assessment. Sources are immutable, checksum-verified objects under an owner-and-matter-scoped prefix in the existing private `analysis_jobs` bucket. This avoids the absent page-extraction tables and RPCs on the configured database. POST with `matterId` loads every source under that assessment prefix, generates the assessment, validates references, persists the result, and finalizes its reservation. It rejects empty sources, more than 20 documents, and input over 75,000 characters rather than silently dropping evidence. The UI explicitly lists assessment coverage; it does not claim to include documents from other workspaces automatically. Text sources use one source page and do not assert original PDF pagination.
+
+## Allowance
+
+Final Case Assessment shares the existing Pro forensic allowance: five credits per paid month, anchored by the current credit code. One new source set consumes one credit. Identity, session, matter, page IDs and source contents determine the idempotency key. Reopening does not reserve a credit. Repeated generation of the same source set reuses the saved result. Provider and initial persistence failures release the attempt's reservation. A generated result is persisted before finalization; an ambiguous finalization is recovered using the same result and key, without another provider call. The pricing table remains Planned until signed-in deployment acceptance passes.
+
+## Production consumer preparation
+
+`wrangler.production-analyzer-queue-preflight.jsonc` prepares only the dedicated production Worker, with execution disabled, no public workers.dev route, no producers, and no attached consumers. It does not modify the shared or staging Workers. Configure and verify its own database and provider bindings before enabling execution and deploying the existing production consumer configuration. Do not attach production queues on the strength of binding names or synthetic unit tests.
+
+The detached Worker's initial upload through Wrangler 4.158.0 was version `21ce8055-fa5e-452c-bdaa-6fa22b3caef8`. Its initial remote settings confirmed execution disabled, only the three queue/enable configuration variables, no queue bindings, workers.dev/preview URLs disabled, and logs and traces enabled. The final configuration additionally supplies the verified public Firebase/database targets. It cannot yet demonstrate its own database/provider access because those secret bindings are absent.
+
+## Verification boundary
+
+The route regression suite uses fictional source pages and fixture transports. It verifies generation/reopening, identity and ownership denial, expired/revoked sessions, missing sources, provider failure, invalid source references, persistence failure, concurrent duplicates, response-loss recovery, and completion-time expiry. These tests do not establish real provider access, deployed database operations, signed-in acceptance, or production readiness.
+
+The affected payment, activation, queue and bridge suites also ran with synthetic fixtures. SMTP delivery is mocked in those payment suites; inbox delivery and bank-confirmed payment matching remain separate acceptance gates.
+
+The installed paid credit RPCs also passed `scripts/sql/paid-credit-rollback-regression.sql`: duplicate reservation held one unit, repeated finalization charged once, a foreign reservation could not release a unit, failed work released its unit, retry succeeded, and the five-unit limit held. All rows used a fresh synthetic session UUID and the transaction rolled back. This proves the database RPC behavior exercised; it does not prove the deployed application's credential binding or signed-in end-to-end accounting.
+
+`scripts/sql/monthly-renewal-regression.sql` and `scripts/sql/parent-matter-setup-regression.sql` passed real PostgreSQL assertions using temporary copies of the configured database's schema, followed by rollback. The former verifies preserved paid time and monthly credit anchor, retry reuse, a second fresh code, cross-account denial, expired codes, expired sessions, and renewal after expiry. The latter verifies atomic setup, retry identity, OWNER membership, cross-account denial and suspended-account denial. The renewal SQL remains a candidate, not an applied production change. The additive parent setup function was installed; anonymous/authenticated execution is denied and service-role execution is allowed.

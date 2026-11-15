@@ -49,42 +49,29 @@ function dbFailure(label: string, error: { message?: string } | null | undefined
 }
 
 
-export type AnalyzerTier = "Basic" | "AnalyzerBasic" | "Premium" | "AnalyzerPremium";
-export type CaseAccessTier = "Pro" | "Community5" | "Community10" | "Community25";
-export type Tier = AnalyzerTier | CaseAccessTier;
+import {
+  type AnalyzerTier,
+  type CaseAccessTier,
+  type Tier,
+  TIER_PRICES,
+  ALL_TIER_PRICES,
+  isAnalyzerTier,
+  isCaseAccessTier,
+  hasCaseAccess,
+  hasAnalyzerAccess,
+  hasForensicInDepthAccess,
+} from "./tierTypes.js";
 
-export const TIER_PRICES: Record<string, number> = {
-  Basic: 19.99,
-  AnalyzerBasic: 19.99,
-  Premium: 49.99,
-  AnalyzerPremium: 49.99,
-  Pro: 149,
-  Community5: 2000,
-  Community10: 3500,
-  Community25: 7500,
+export type { AnalyzerTier, CaseAccessTier, Tier };
+export {
+  TIER_PRICES,
+  ALL_TIER_PRICES,
+  isAnalyzerTier,
+  isCaseAccessTier,
+  hasCaseAccess,
+  hasAnalyzerAccess,
+  hasForensicInDepthAccess,
 };
-
-export const ALL_TIER_PRICES: Record<string, number> = TIER_PRICES;
-
-export function isAnalyzerTier(tier: string): boolean {
-  return ["Basic", "AnalyzerBasic", "Premium", "AnalyzerPremium"].includes(tier);
-}
-
-export function isCaseAccessTier(tier: string): boolean {
-  return ["Pro", "Community5", "Community10", "Community25"].includes(tier);
-}
-
-export function hasCaseAccess(tier: string): boolean {
-  return isCaseAccessTier(tier);
-}
-
-export function hasAnalyzerAccess(tier: string): boolean {
-  return isAnalyzerTier(tier) || isCaseAccessTier(tier);
-}
-
-export function hasForensicInDepthAccess(tier: string): boolean {
-  return ["Premium", "AnalyzerPremium", "Pro", "Community5", "Community10", "Community25"].includes(tier);
-}
 
 export const PAYMENT_EMAIL = process.env.PAYMENT_EMAIL || "chris@cyfsanavigator.com";
 
@@ -887,6 +874,11 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
   if (findErr) throw dbFailure("database", findErr);
   if (!payment) throw Object.assign(new Error("No pending payment found for that reference number."), { statusCode: 404 });
 
+  const email = /^email:([^;\s@]+@[^;\s@]+)(?:;|$)/.exec((payment.notes || "").trim())?.[1];
+  if (!email) {
+    throw Object.assign(new Error("The payment has no valid checkout email. Review it before approving."), { statusCode: 400 });
+  }
+
   const expected = Number(payment.amount);
   if (amountReceived < expected) {
     throw Object.assign(
@@ -917,7 +909,6 @@ export async function approvePayment(referenceNumber: string, amountReceived: nu
     );
   }
 
-  const email = (payment.notes || "").replace(/^email:/, "").trim();
   const tier = payment.plan as Tier;
   const code = generateAccessCode();
 

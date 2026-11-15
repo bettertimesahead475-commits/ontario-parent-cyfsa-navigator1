@@ -83,6 +83,15 @@ describe('PricingTab Branding & Payment Instructions', () => {
     expect(screen.getByText(/Monthly Access • Standard Entitlement Rules/i)).toBeDefined();
   });
 
+  it('lists Final Case Assessment as planned only for Individual Case Access', () => {
+    render(<PricingTab currentTier="Basic" onChangeTier={vi.fn()} />);
+
+    const row = screen.getByRole('row', { name: /Final Case Assessment/i });
+    expect(Array.from(row.querySelectorAll('td'), cell => cell.textContent)).toEqual([
+      '—', '—', '—', 'Planned',
+    ]);
+  });
+
   it('renders community and organizational sponsorship tiers with verified limits', () => {
     render(<PricingTab currentTier="Basic" onChangeTier={vi.fn()} />);
 

@@ -860,6 +860,18 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                 <td className="py-3 px-3 text-center text-emerald-600 font-bold">✓ Full Platform</td>
               </tr>
               <tr>
+                <th scope="row" className="py-3 px-4 text-left font-semibold text-slate-900">
+                  Final Case Assessment
+                  <span className="block text-[11px] font-normal text-slate-600">
+                    Case timeline, conflicting accounts, evidence gaps, and questions for counsel
+                  </span>
+                </th>
+                <td className="py-3 px-3 text-center text-slate-500">—</td>
+                <td className="py-3 px-3 text-center text-slate-500">—</td>
+                <td className="py-3 px-3 text-center text-slate-500">—</td>
+                <td className="py-3 px-3 text-center font-semibold text-indigo-800">Planned</td>
+              </tr>
+              <tr>
                 <td className="py-3 px-4 font-semibold text-slate-900">Ontario Court Template Builders</td>
                 <td className="py-3 px-3 text-center text-slate-300">—</td>
                 <td className="py-3 px-3 text-center text-slate-300">—</td>

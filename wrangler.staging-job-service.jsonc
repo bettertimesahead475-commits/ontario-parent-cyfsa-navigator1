@@ -1,0 +1,33 @@
+{
+  "name": "cyfsa-analyzer-queue-consumer",
+  "main": "workers/staging-job-service-entrypoint.js",
+  "compatibility_date": "2026-11-04",
+  "workers_dev": false,
+  "preview_urls": false,
+  "keep_vars": true,
+  "vars": {
+    "ANALYZER_JOBS_QUEUE_NAME": "cyfsa-staging-analyzer-jobs",
+    "ANALYZER_JOBS_DLQ_NAME": "cyfsa-staging-analyzer-dead-letter",
+    "ANALYZER_ENABLED": "true",
+    "FIREBASE_PROJECT_ID": "gen-lang-client-0105737183",
+    "STAGING_SUPABASE_URL": "https://nxfhvebzzobegubefcda.supabase.co/",
+    "ANTHROPIC_QUICK_MODEL": "claude-sonnet-5-5",
+    "ANTHROPIC_FORENSIC_MODEL": "claude-opus-5-5",
+    "QUICK_ANALYSIS_BUDGET_MS": "100000",
+    "FORENSIC_ANALYSIS_BUDGET_MS": "180000"
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "ANALYZER_JOBS_REQUEUE",
+        "queue": "cyfsa-staging-analyzer-jobs"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  }
+}

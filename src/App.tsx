@@ -7,12 +7,15 @@ import React, { lazy, Suspense, useState, useEffect } from "react";
 import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener } from "./hooks/useAppReset";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Keep the home journey in the initial bundle; load feature-only views on demand.
+const CloudflareAuthDiagnostic = lazy(() => import("./components/CloudflareAuthDiagnostic"));
 const CYFSAGuideTab = lazy(() => import("./components/CYFSAGuideTab"));
 const CharterRightsTab = lazy(() => import("./components/CharterRightsTab"));
+const CASRightsLimitsTab = lazy(() => import("./components/CASRightsLimitsTab"));
 const InvestigationTab = lazy(() => import("./components/InvestigationTab"));
 const DefenseStrategiesTab = lazy(() => import("./components/DefenseStrategiesTab"));
 const FamilyCourtTab = lazy(() => import("./components/FamilyCourtTab"));
@@ -153,21 +156,37 @@ export default function App() {
     };
   }, []);
 
-  const navItems = [
-    { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" /> },
-    { name: "Family Rights", path: "/rights", icon: <Heart className="w-4 h-4" /> },
-    { name: "Charter Rights", path: "/charter-rights", icon: <Scale className="w-4 h-4" /> },
-    { name: "CAS Procedure", path: "/cyfsa-procedure", icon: <Scale className="w-4 h-4" /> },
-    { name: "Investigation Process", path: "/investigation", icon: <Clock className="w-4 h-4" /> },
-    { name: "First 5 Days", path: "/five-day-rule", icon: <Clock className="w-4 h-4" /> },
-    { name: "45-Day Plan", path: "/45-day-roadmap", icon: <ChevronRight className="w-4 h-4" /> },
-    { name: "Defense Strategies", path: "/defense-strategies", icon: <Shield className="w-4 h-4" /> },
-    { name: "Detailed CYFSA Guide", path: "/cyfsa-guide", icon: <BookOpen className="w-4 h-4" /> },
-    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" /> },
-    { name: "Forms & Case Brief", path: "/templates", icon: <FileSpreadsheet className="w-4 h-4" /> },
-    { name: "Case Workspace", path: "/case-workspace", icon: <Shield className="w-4 h-4" /> },
-    { name: "Lawyer Directory", path: "/lawyers", icon: <Users className="w-4 h-4" /> },
-    { name: "Membership & Pricing", path: "/pricing", icon: <Coins className="w-4 h-4" /> },
+  // Six primary destinations; keep existing URLs intact for bookmarks and deep links.
+  const navGroups = [
+    { name: "Start Here", path: "/", icon: <Heart className="w-4 h-4" />, children: [] },
+    { name: "Your Rights & CAS Powers", path: "/cas-powers-rights", icon: <Scale className="w-4 h-4" />, children: [
+      { name: "CAS Powers & Limits", path: "/cas-powers-rights" },
+      { name: "Family Rights", path: "/rights" },
+      { name: "Charter Rights", path: "/charter-rights" },
+      { name: "CAS Procedure", path: "/cyfsa-procedure" },
+      { name: "Investigation Process", path: "/investigation" },
+    ] },
+    { name: "Court Process", path: "/five-day-rule", icon: <Clock className="w-4 h-4" />, children: [
+      { name: "First 5 Days", path: "/five-day-rule" },
+      { name: "45-Day Plan", path: "/45-day-roadmap" },
+      { name: "Defense Strategies", path: "/defense-strategies" },
+      { name: "Detailed CYFSA Guide", path: "/cyfsa-guide" },
+      { name: "Forms & Case Brief", path: "/templates" },
+    ] },
+    { name: "Document Analyzer", path: "/document-analyzer", icon: <Sparkles className="w-4 h-4" />, children: [
+      { name: "Document Analyzer", path: "/document-analyzer" },
+      { name: "Example Analysis", path: "/analysis-example" },
+    ] },
+    { name: "My Case", path: "/case-workspace", icon: <Shield className="w-4 h-4" />, children: [
+      { name: "Case Workspace", path: "/case-workspace" },
+      { name: "Forms & Case Brief", path: "/templates" },
+    ] },
+    { name: "Resources", path: "/lawyers", icon: <BookOpen className="w-4 h-4" />, children: [
+      { name: "Lawyer Directory (paused)", path: "/lawyers" },
+      { name: "Membership & Pricing", path: "/pricing" },
+      { name: "Privacy Policy", path: "/privacy" },
+      { name: "Data Deletion", path: "/data-deletion" },
+    ] },
   ];
 
   return (
@@ -277,22 +296,25 @@ export default function App() {
         {/* Mobile Navigation Drawer Dropdown */}
         {mobileMenuOpen && (
           <div className="md:hidden bg-white border-t border-slate-200 py-3 px-4 space-y-1.5 shadow-md" id="mobile-nav-panel">
-            {navItems.map((item) => {
-              const isActive = location === item.path;
-              return (
-                <Link key={item.path} href={item.path}>
-                  <div
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs font-semibold ${
-                      isActive 
-                        ? "bg-brand-600 text-white" 
-                        : "text-slate-600 hover:bg-slate-50 bg-white border border-slate-100"
-                    }`}
-                  >
-                    {item.icon}
-                    <span>{item.name}</span>
+            {navGroups.map(group => {
+              const active = location === group.path || group.children.some(child => child.path === location);
+              return group.children.length === 0 ? (
+                <Link key={group.name} href={group.path}>
+                  <div onClick={() => setMobileMenuOpen(false)} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${active ? "bg-brand-600 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
+                    {group.icon}<span>{group.name}</span>
                   </div>
                 </Link>
+              ) : (
+                <details key={group.name} className="rounded-xl border border-slate-200 bg-white" open={active}>
+                  <summary className="cursor-pointer px-3 py-3 text-xs font-semibold text-slate-800">{group.name}</summary>
+                  <div className="px-2 pb-2 space-y-1">
+                    {group.children.map(child => (
+                      <Link key={child.path} href={child.path}>
+                        <div onClick={() => setMobileMenuOpen(false)} className={`rounded-lg px-3 py-2 text-xs ${location === child.path ? "bg-brand-100 text-brand-900 font-bold" : "text-slate-700 hover:bg-slate-50"}`}>{child.name}</div>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
               );
             })}
 
@@ -331,21 +353,24 @@ export default function App() {
       {/* Main Secondary Sub-header: Navigation Rail (Desktop) */}
       <nav className="bg-white border-b border-slate-200/80 no-print py-1.5 hidden md:block" id="desktop-routing-rail">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-2 overflow-x-auto py-1">
-            {navItems.map((item) => {
-              const isActive = location === item.path;
-              return (
-                <Link key={item.path} href={item.path}>
-                  <div
-                    className={`group px-4 py-2.5 font-display rounded-xl transition-all text-xs font-semibold uppercase tracking-wider cursor-pointer flex items-center gap-2 ${
-                      isActive
-                        ? "bg-brand-600 text-white shadow-sm shadow-brand-600/10"
-                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
-                    }`}
-                  >
-                    <span>{item.name}</span>
-                  </div>
+          <div className="flex gap-2 flex-wrap py-1">
+            {navGroups.map(group => {
+              const active = location === group.path || group.children.some(child => child.path === location);
+              return group.children.length === 0 ? (
+                <Link key={group.name} href={group.path}>
+                  <div className={`px-3 py-2.5 rounded-lg text-xs font-semibold whitespace-nowrap ${active ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{group.name}</div>
                 </Link>
+              ) : (
+                <details key={group.name} className="relative group rounded-lg">
+                  <summary className={`list-none cursor-pointer select-none px-3 py-2.5 rounded-lg text-xs font-semibold whitespace-nowrap ${active ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{group.name} <span aria-hidden="true">⌄</span></summary>
+                  <div className="absolute top-full left-0 z-[60] mt-1 min-w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                    {group.children.map(child => (
+                      <Link key={child.path} href={child.path}>
+                        <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${location === child.path ? "bg-brand-100 text-brand-900" : "text-slate-700 hover:bg-slate-50"}`}>{child.name}</div>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
               );
             })}
           </div>
@@ -353,11 +378,14 @@ export default function App() {
       </nav>
 
       {/* Primary Main Content Area container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10 pb-32 md:pb-10" id="main-frame-area">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 md:pt-6 pb-32 md:pb-6" id="main-frame-area">
+        <ErrorBoundary>
         <Suspense fallback={<div className="min-h-48" aria-busy="true" />}>
           <Switch>
+          <Route path="/cloudflare-auth-diagnostic"><CloudflareAuthDiagnostic /></Route>
           <Route path="/"><ParentJourney page="home" /></Route>
           <Route path="/rights"><ParentJourney page="rights" /></Route>
+          <Route path="/cas-powers-rights"><CASRightsLimitsTab /></Route>
           <Route path="/cyfsa-procedure"><ParentJourney page="procedure" /></Route>
           <Route path="/five-day-rule"><ParentJourney page="five-day" /></Route>
           <Route path="/45-day-roadmap"><ParentJourney page="roadmap" /></Route>
@@ -482,11 +510,12 @@ export default function App() {
 
           </Switch>
         </Suspense>
+        </ErrorBoundary>
       </main>
 
       {/* Professional Legal Footnote footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 md:py-8 pb-32 md:pb-8 mt-12 no-print" id="app-footer">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+      <footer className="bg-white border-t border-slate-200 pt-5 md:pt-6 pb-32 md:pb-6 mt-6 no-print" id="app-footer">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
           
           {/* Real-time PDF / Printexport contextual launcher block */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-slate-50 border border-slate-200 rounded-2xl" id="footer-print-actions">
@@ -593,13 +622,13 @@ export default function App() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs text-slate-500 gap-4 pt-4 border-t border-slate-100 pb-2">
             <div className="space-y-1">
               <span className="font-semibold text-slate-900 block">Ontario Parent CYFSA Navigator • Assistance & Document Analysis System</span>
-              <span className="block text-slate-500">Educational Portal only. Designed strictly for parental confidence and information sharing. S.O. 2017 Chapter 14 compliant.</span>
+              <span className="block text-slate-500">Educational information only, not legal advice. Verify current legislation, court rules and orders with qualified counsel.</span>
             </div>
 
             <div className="space-y-1 text-center sm:text-right font-sans text-xs">
-              <span className="block text-slate-600 font-bold">Jurisdiction: Ontario Court of Justice, Canada</span>
+              <span className="block text-slate-600 font-bold">Ontario child protection law · Court jurisdiction depends on the proceeding</span>
               <span className="block text-slate-500 mt-0.5">
-                Primary sources updated: Q2 2026 · <Link href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Privacy Policy</Link> · <Link href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Data Deletion</Link>
+                Check the current version of legal sources · <Link href="/privacy" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Privacy Policy</Link> · <Link href="/data-deletion" className="text-brand-600 underline hover:text-brand-800 font-sans font-semibold">Data Deletion</Link>
               </span>
             </div>
           </div>
@@ -638,8 +667,12 @@ export default function App() {
       )}
 
       {/* Stage 10 slice 8: backstop -- no event may carry an invitation token (see telemetrySanitizer.ts). */}
-      <Analytics beforeSend={sanitizeTelemetryEvent} />
-      <SpeedInsights beforeSend={sanitizeTelemetryEvent} />
+      {typeof window !== "undefined" && !window.location.hostname.includes("pages.dev") && (
+        <>
+          <Analytics beforeSend={sanitizeTelemetryEvent} />
+          <SpeedInsights beforeSend={sanitizeTelemetryEvent} />
+        </>
+      )}
     </div>
   );
 }

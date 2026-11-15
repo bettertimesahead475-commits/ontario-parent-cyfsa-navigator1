@@ -1,5 +1,7 @@
+import type { ProviderDiagnostic } from '../../shared/providerDiagnostics';
 export type AnalyzerErrorCode =
   | "UPLOAD_FAILED"
+  | "ANALYSIS_TIMED_OUT"
   | "EXTRACTION_FAILED"
   | "ACCESS_DENIED"
   | "USAGE_SERVICE_TEMPORARILY_UNAVAILABLE"
@@ -13,6 +15,7 @@ export type AnalyzerErrorCode =
   | "INTERNAL_ANALYSIS_ERROR";
 
 export class AnalyzerError extends Error {
+  public providerDiagnostic?: ProviderDiagnostic;
   public readonly statusCode: number;
   public readonly code: AnalyzerErrorCode;
   public readonly userMessage: string;
