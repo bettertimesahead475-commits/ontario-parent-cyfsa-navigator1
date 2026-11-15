@@ -3,6 +3,10 @@ import { processJob, processDeadLetter, type ConsumerEnv } from './analyzer-queu
 export type JobDisposition = { action: 'ack' } | { action: 'retry'; delaySeconds: number };
 export const STAGING_DATABASE_ORIGIN = 'https://nxfhvebzzobegubefcda.supabase.co';
 export async function executeStagingJob(env: ConsumerEnv, body: unknown, attempts: number, channel: 'primary' | 'dead-letter'): Promise<JobDisposition> {
+  // The staging RPC entrypoint bypasses consumer.queue(), so it must enforce
+  // the same fail-closed switch before any claim, credit change, or AI request.
+  // The relay retries rejected deliveries without acknowledging them.
+  if (env.ANALYZER_ENABLED !== 'true') throw new Error('Staging analyzer execution is disabled');
   if (new URL(env.STAGING_SUPABASE_URL || 'https://unconfigured.invalid').origin !== STAGING_DATABASE_ORIGIN) throw new Error('Staging database isolation check failed');
   if (!env.ANTHROPIC_API_KEY || !env.STAGING_SUPABASE_SERVICE_ROLE_KEY) throw new Error('Staging execution credentials missing');
   if (env.ANALYZER_JOBS_QUEUE_NAME !== 'cyfsa-staging-analyzer-jobs' || env.ANALYZER_JOBS_DLQ_NAME !== 'cyfsa-staging-analyzer-dead-letter') throw new Error('Staging queue isolation check failed');
