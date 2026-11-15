@@ -54,7 +54,7 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
       method: 'POST',
       headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(args),
-      redirect: 'error',
+      redirect: 'manual',
       signal: AbortSignal.timeout(8000),
     });
   } catch (error) {
@@ -107,7 +107,7 @@ export async function saveDurableInput(env: DurableJobEnv, key: string, input: u
       method: 'POST',
       headers: { ...storageHeaders(env), 'x-upsert': 'false' },
       body: JSON.stringify(input),
-      redirect: 'error',
+      redirect: 'manual',
       signal: AbortSignal.timeout(10000),
     });
   } catch {
@@ -120,7 +120,7 @@ export async function loadDurableInput(env: DurableJobEnv, key: string, fetcher:
   let response: Response;
   try {
     response = await fetcher(storageUrl(env, key, true), {
-      headers: storageHeaders(env), redirect: 'error', signal: AbortSignal.timeout(10000),
+      headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(10000),
     });
   } catch {
     throw new DurableJobStorageError('Stored document input could not be loaded.', true);
@@ -177,7 +177,7 @@ export async function requeueFromDeadLetter(env: DurableJobEnv, jobId: string, f
 export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch): Promise<Record<string, unknown> | null> {
   let response: Response;
   try {
-    response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'error', signal: AbortSignal.timeout(8000) });
+    response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(8000) });
   } catch { throw new DurableJobStorageError('Saved analysis report could not be loaded.', true); }
   if (response.status === 404) return null;
   if (!response.ok) throw new DurableJobStorageError('Saved analysis report could not be loaded.', response.status >= 500 || response.status === 429, response.status);
