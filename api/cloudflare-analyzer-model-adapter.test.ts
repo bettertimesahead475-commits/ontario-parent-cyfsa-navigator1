@@ -205,6 +205,112 @@ describe('Cloudflare Anthropic Model Adapter', () => {
     expect(capturedBody.output_config).toEqual({ effort: 'low' });
   });
 
+  it('handles Anthropic CRLF event separators split between network chunks', async () => {
+    const payload = [
+      'event: content_block_delta\r\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"verified"}}\r\n\r\n',
+      'event: message_delta\r\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\r\n\r\n',
+      'event: message_stop\r\ndata: {"type":"message_stop"}\r\n\r\n',
+    ].join('');
+    const bytes = new TextEncoder().encode(payload);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        // One byte per chunk forces \r and \n to be delivered separately.
+        for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+        controller.close();
+      },
+    });
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    const result = await generate({
+      system: 'sys',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      max_tokens: 100,
+      timeoutMs: 5000,
+      retries: 0,
+      requestId: 'req_crlf_sse',
+      stage: 'direct_analysis',
+      mode: 'fast',
+    }, 'claude-sonnet-5');
+    expect(result.text).toBe('verified');
+    expect(result.stopReason).toBe('end_turn');
+  });
+
+  it('rejects streamed results without Anthropic message_stop', async () => {
+    const body = [
+      'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n',
+    ].join('');
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    await expect(generate({
+      system: 'sys',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      max_tokens: 100,
+      timeoutMs: 5000,
+      retries: 0,
+      requestId: 'req_partial_sse',
+      stage: 'direct_analysis',
+      mode: 'fast',
+    }, 'claude-sonnet-5')).rejects.toThrow(/stream ended before the analysis completed/);
+  });
+
+  it('rejects oversized unterminated SSE events before buffering indefinitely', async () => {
+    const oversized = 'event: content_block_delta\ndata: ' + 'x'.repeat(1_048_577);
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(oversized, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    await expect(generate({
+      system: 'sys',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      max_tokens: 100,
+      timeoutMs: 5000,
+      retries: 0,
+      requestId: 'req_oversized_event',
+      stage: 'direct_analysis',
+      mode: 'fast',
+    }, 'claude-sonnet-5')).rejects.toMatchObject({ code: 'AI_RESPONSE_INVALID' });
+    expect(mockFetcher).toHaveBeenCalledOnce();
+  });
+
+  it('returns a completed Anthropic report even if stream cancellation never settles', async () => {
+    const payload = [
+      'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"complete"}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ].join('');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode(payload)); },
+      cancel() { return new Promise<void>(() => {}); },
+    });
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        generate({
+          system: 'sys',
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+          max_tokens: 100, timeoutMs: 5000, retries: 0,
+          requestId: 'req_cancel_stall', stage: 'direct_analysis', mode: 'fast',
+        }, 'claude-sonnet-5'),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error('Completed SSE stalled in cancel()')), 750);
+        }),
+      ]);
+      expect(result.text).toBe('complete');
+      expect(result.stopReason).toBe('end_turn');
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  });
+
   it('sends stream: true in Anthropic request body', async () => {
     let capturedBody: any = null;
     const mockFetcher = vi.fn(async (_url: string, init?: RequestInit) => {

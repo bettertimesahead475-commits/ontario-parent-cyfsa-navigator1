@@ -29,6 +29,22 @@ function message(body: unknown = { version: 1, jobId: 'job_abcdefgh1234' }, atte
 }
 
 describe('durable analyzer queue consumer', () => {
+  it.each(['cyfsa-analyzer-jobs', 'cyfsa-analyzer-dead-letter'])('does no work on %s while disabled', async (queue) => {
+    vi.clearAllMocks();
+    const msg = message();
+    await consumer.queue({ queue, messages: [msg] }, { ANALYZER_ENABLED: 'false' });
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 900 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
+  });
+  it.each([undefined, '', 'TRUE', '0'])('does no work with non-enabled flag %s', async (flag) => {
+    vi.clearAllMocks();
+    const msg = message();
+    await consumer.queue({ queue: 'cyfsa-analyzer-jobs', messages: [msg] }, { ANALYZER_ENABLED: flag });
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 900 });
+    expect(msg.ack).not.toHaveBeenCalled();
+    for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.claim.mockResolvedValue(job());
@@ -76,6 +92,7 @@ describe('durable analyzer queue consumer', () => {
     mocks.read.mockResolvedValue({ ...job(), status: 'completed' });
     const msg = message();
     await consumer.queue({ queue: 'cyfsa-staging-analyzer-dead-letter', messages: [msg] }, {
+      ANALYZER_ENABLED: 'true',
       ANALYZER_JOBS_QUEUE_NAME: 'cyfsa-staging-analyzer-jobs',
       ANALYZER_JOBS_DLQ_NAME: 'cyfsa-staging-analyzer-dead-letter',
     });
@@ -161,6 +178,38 @@ describe('durable analyzer queue consumer', () => {
     expect(retry.ack).toHaveBeenCalledOnce();
   });
 
+  it('acknowledges malformed dead-letter messages without database access', async () => {
+    const msg = message(null);
+    await processDeadLetter(msg, {} as any);
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.failDlq).not.toHaveBeenCalled();
+  });
+
+  it('retries a non-JSON 503 analyzer failure without persisting upstream details', async () => {
+    mocks.handle.mockResolvedValueOnce(new Response('<html>internal gateway exception</html>', { status: 503 }));
+    const msg = message(undefined, 2);
+    await processJob(msg, {} as any);
+    expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      status: 'queued', errorMessage: 'The analysis failed.', retryable: true,
+    }));
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: retryDelay(2) });
+    expect(msg.ack).not.toHaveBeenCalled();
+  });
+
+  it('fails and releases a non-JSON 400 analyzer job rather than retrying forever', async () => {
+    mocks.handle.mockResolvedValueOnce(new Response('invalid document payload', { status: 400 }));
+    const msg = message();
+    await processJob(msg, {} as any);
+    expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      status: 'failed', errorMessage: 'The analysis failed.', retryable: false,
+    }));
+    expect(mocks.releaseFree).toHaveBeenCalledOnce();
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+  });
+
   it('marks exhausted jobs failed and releases their reserved credit from the dead-letter consumer', async () => {
     mocks.failDlq.mockResolvedValue({ ...job(), status: 'failed' });
     const msg = message();
@@ -180,6 +229,32 @@ describe('durable analyzer queue consumer', () => {
     expect(mocks.completeRecovered).toHaveBeenCalledWith(expect.anything(), 'job_abcdefgh1234');
     expect(mocks.failDlq).not.toHaveBeenCalled();
     expect(msg.ack).toHaveBeenCalledOnce();
+  });
+
+  it('acknowledges recovery when another Worker completes the stored report first', async () => {
+    mocks.read.mockResolvedValueOnce({ ...job(), status: 'queued', attempt_count: 6 })
+      .mockResolvedValueOnce({ ...job(), status: 'completed', attempt_count: 6 });
+    mocks.loadReport.mockReset().mockResolvedValue({ fileSummary: 'Saved report' });
+    mocks.completeRecovered.mockResolvedValue(false);
+    const msg = message();
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.finalizeFree).toHaveBeenCalledOnce();
+    expect(mocks.completeRecovered).toHaveBeenCalledOnce();
+    expect(mocks.read).toHaveBeenCalledTimes(2);
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+  });
+
+  it('retries when stored report completion is still unconfirmed after concurrent update', async () => {
+    mocks.read.mockResolvedValue({ ...job(), status: 'queued', attempt_count: 6 });
+    mocks.loadReport.mockReset().mockResolvedValue({ fileSummary: 'Saved report' });
+    mocks.completeRecovered.mockResolvedValue(false);
+    const msg = message(undefined, 2);
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.finalizeFree).toHaveBeenCalledOnce();
+    expect(mocks.read).toHaveBeenCalledTimes(2);
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: retryDelay(2) });
   });
 
   it('waits for an active Worker lease instead of failing the job from the DLQ', async () => {
@@ -204,10 +279,47 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.ack).toHaveBeenCalledOnce();
   });
 
-  it('dispatches the dead-letter queue to its terminal handler', async () => {
-    mocks.failDlq.mockResolvedValue(null);
+  it('does not transition a DLQ job to queued when the producer binding is missing', async () => {
+    mocks.read.mockResolvedValue({ ...job(), status: 'queued', attempt_count: 1 });
+    mocks.loadReport.mockReset().mockResolvedValue(null);
+    mocks.requeueDlq.mockResolvedValue(true);
     const msg = message();
-    await consumer.queue({ queue: 'cyfsa-analyzer-dead-letter', messages: [msg] }, {} as any);
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.requeueDlq).not.toHaveBeenCalled();
+    expect(mocks.failDlq).not.toHaveBeenCalled();
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(msg.retry).toHaveBeenCalledOnce();
+  });
+
+  it('does not acknowledge a dead-letter message if terminal failure was not persisted', async () => {
+    mocks.failDlq.mockResolvedValue(null);
+    mocks.read.mockResolvedValue({ ...job(), status: 'queued', attempt_count: 6 });
+    const msg = message();
+    await consumer.queue({ queue: 'cyfsa-analyzer-dead-letter', messages: [msg] }, { ANALYZER_ENABLED: 'true' } as any);
+    expect(mocks.failDlq).toHaveBeenCalledOnce();
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(msg.retry).toHaveBeenCalledOnce();
+  });
+
+  it('acknowledges a concurrent completion when dead-letter failure cannot be applied', async () => {
+    mocks.failDlq.mockResolvedValue(null);
+    mocks.read.mockResolvedValueOnce({ ...job(), status: 'queued', attempt_count: 6 })
+      .mockResolvedValueOnce({ ...job(), status: 'completed', attempt_count: 6 });
+    const msg = message();
+    await processDeadLetter(msg, {} as any);
     expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+    expect(mocks.releaseFree).not.toHaveBeenCalled();
+  });
+
+  it('releases reserved credit before acknowledging a concurrent terminal failure', async () => {
+    mocks.failDlq.mockResolvedValue(null);
+    mocks.read.mockResolvedValueOnce({ ...job(), status: 'queued', attempt_count: 6 })
+      .mockResolvedValueOnce({ ...job(), status: 'failed', attempt_count: 6 });
+    const msg = message();
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.releaseFree).toHaveBeenCalledOnce();
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
   });
 });

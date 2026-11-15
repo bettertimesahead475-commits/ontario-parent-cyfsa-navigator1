@@ -57,7 +57,7 @@ export function createStagingCreditRpc(env: StagingRpcEnv, fetcher: typeof fetch
           Accept: 'application/json',
         },
         body: JSON.stringify(args),
-        redirect: 'error',
+        redirect: 'manual',
         signal: AbortSignal.timeout(5000),
       });
     } catch (fetchErr: any) {

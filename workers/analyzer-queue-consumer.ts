@@ -38,8 +38,25 @@ const RETRY_BASE_SECONDS = 20;
 const RETRY_MAX_SECONDS = 900;
 const retryDelay = (attempts: number): number => Math.min(RETRY_MAX_SECONDS, RETRY_BASE_SECONDS * 2 ** Math.min(10, Math.max(0, attempts - 1)));
 
-function errorResponse(response: Response): Promise<{ code: string; error: string; retryable: boolean }> {
-  return response.json().catch(() => ({ code: 'ANALYSIS_FAILED', error: 'The analysis failed.', retryable: true }));
+async function errorResponse(response: Response): Promise<{ code: string; error: string; retryable: boolean }> {
+  const fallback = {
+    code: 'ANALYSIS_FAILED',
+    error: 'The analysis failed.',
+    retryable: response.status === 408 || response.status === 429 || response.status >= 500,
+  };
+  try {
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== 'object') return fallback;
+    const data = payload as Record<string, unknown>;
+    return {
+      code: typeof data.code === 'string' ? data.code : fallback.code,
+      // Never trust arbitrary upstream error text for durable user-visible status.
+      error: fallback.error,
+      retryable: typeof data.retryable === 'boolean' ? data.retryable : fallback.retryable,
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 async function releaseReservation(env: ConsumerEnv, job: DurableJobRecord): Promise<void> {
@@ -87,7 +104,17 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
   const token = crypto.randomUUID();
   let job: DurableJobRecord | null;
   try { job = await claimDurableJob(env, parsed.jobId, token, 240); }
-  catch {
+  catch (error) {
+    // Log only a stable error class/status; never job text, uid, URL, or keys.
+    // A silent claim failure otherwise looks like a healthy Queue that never drains.
+    const detail = error && typeof error === 'object'
+      ? error as { name?: string; status?: number; retryable?: boolean }
+      : {};
+    console.error('[ANALYZER_CLAIM_FAILED]', JSON.stringify({
+      errorClass: detail.name || 'unknown',
+      httpStatus: typeof detail.status === 'number' ? detail.status : null,
+      retryable: detail.retryable ?? true,
+    }));
     message.retry({ delaySeconds: retryDelay(message.attempts) });
     return;
   }
@@ -167,31 +194,68 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
 }
 
 async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): Promise<void> {
+  // Poison messages have no valid job ID to recover. Retrying them indefinitely
+  // would block the DLQ and generate repeated invocations without useful work.
+  let jobId: string;
   try {
-    const { jobId } = parseAnalyzerQueueMessage(message.body);
+    jobId = parseAnalyzerQueueMessage(message.body).jobId;
+  } catch {
+    console.error('[ANALYZER_DLQ_INVALID_MESSAGE]');
+    message.ack();
+    return;
+  }
+  try {
     const current = await readDurableJob(env, jobId);
     if (!current) { message.ack(); return; }
     if (current.status === 'completed') { message.ack(); return; }
     if (current.status === 'failed') { await releaseReservation(env, current); message.ack(); return; }
     const report = await loadPersistedReport(env, jobId);
-    if (report && await finalizeReservation(env, current) && await completeRecoveredJob(env, jobId)) {
-      message.ack();
-      return;
+    if (report) {
+      if (!await finalizeReservation(env, current)) {
+        throw new Error('Persisted report credit finalization is not yet confirmed.');
+      }
+      if (await completeRecoveredJob(env, jobId)) {
+        message.ack();
+        return;
+      }
+      // A second Worker can complete the same persisted report between our
+      // read and the completion RPC. Verify that outcome before retrying.
+      const latest = await readDurableJob(env, jobId);
+      if (latest?.status === 'completed') {
+        message.ack();
+        return;
+      }
+      throw new Error('Persisted report completion is not yet confirmed.');
     }
-    if (report) throw new Error('Persisted report credit finalization is not yet confirmed.');
     const leaseExpiry = current.lease_expires_at ? Date.parse(current.lease_expires_at) : 0;
     if (current.status === 'running' && Number.isFinite(leaseExpiry) && leaseExpiry > Date.now()) {
       message.retry({ delaySeconds: Math.max(1, Math.min(900, Math.ceil((leaseExpiry - Date.now()) / 1000) + 5)) });
       return;
     }
-    if (current.attempt_count !== undefined && current.attempt_count < 6 && await requeueFromDeadLetter(env, jobId)) {
+    if (current.attempt_count !== undefined && current.attempt_count < 6) {
+      // Verify the producer binding before changing the durable job state.
+      // Otherwise a missing binding can strand a requeued job without a queue delivery.
       if (!env.ANALYZER_JOBS_REQUEUE) throw new Error('Primary analyzer queue producer binding is not configured.');
-      await env.ANALYZER_JOBS_REQUEUE.send(createAnalyzerQueueMessage(jobId));
-      message.ack();
-      return;
+      if (await requeueFromDeadLetter(env, jobId)) {
+        await env.ANALYZER_JOBS_REQUEUE.send(createAnalyzerQueueMessage(jobId));
+        message.ack();
+        return;
+      }
     }
     const job = await failDeadLetterJob(env, jobId);
-    if (job && job.status === 'failed') await releaseReservation(env, job);
+    if (job?.status === 'failed') {
+      await releaseReservation(env, job);
+    } else {
+      // A missing or conflicting terminal transition is not success. Another
+      // worker may have completed/failed the job concurrently; re-read before
+      // deciding whether to acknowledge this dead-letter delivery.
+      const latest = await readDurableJob(env, jobId);
+      if (latest?.status === 'failed') {
+        await releaseReservation(env, latest);
+      } else if (latest?.status !== 'completed' && latest !== null) {
+        throw new Error('Dead-letter job was not terminally settled.');
+      }
+    }
   } catch (error) {
     console.error('[ANALYZER_DLQ_FINALIZATION_FAILED]', error instanceof Error ? error.name : 'unknown');
     message.retry({ delaySeconds: retryDelay(message.attempts) });
@@ -205,6 +269,12 @@ const consumer = {
     const primary = env.ANALYZER_JOBS_QUEUE_NAME || 'cyfsa-analyzer-jobs';
     const dlq = env.ANALYZER_JOBS_DLQ_NAME || 'cyfsa-analyzer-dead-letter';
     if (batch.queue !== primary && batch.queue !== dlq) throw new Error('Unexpected analyzer queue');
+    // An explicitly enabled deployment alone may claim jobs; preflight and missing flags must not claim jobs, recover reports, or mutate
+    // credits, including on dead-letter deliveries. Leave messages for a later run.
+    if (env.ANALYZER_ENABLED !== 'true') {
+      for (const message of batch.messages) message.retry({ delaySeconds: RETRY_MAX_SECONDS });
+      return;
+    }
     for (const message of batch.messages) {
       if (batch.queue === (env.ANALYZER_JOBS_DLQ_NAME || 'cyfsa-analyzer-dead-letter')) await processDeadLetter(message, env);
       else await processJob(message, env);

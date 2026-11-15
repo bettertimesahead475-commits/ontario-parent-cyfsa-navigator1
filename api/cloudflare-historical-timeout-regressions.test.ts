@@ -87,6 +87,7 @@ describe('Historical Timeout Fixes Regression Suite', () => {
         'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"{\\"documentTitle\\":\\"Verified Audit\\","}}\n\n',
         'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"\\"score\\":88}"}}\n\n',
         'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":90}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
       ];
 
       const encoder = new TextEncoder();

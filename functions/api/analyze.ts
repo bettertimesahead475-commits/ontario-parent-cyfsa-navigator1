@@ -78,6 +78,9 @@ export interface AnalyzerEnv {
   QUICK_ANALYSIS_BUDGET_MS?: string;
   FORENSIC_ANALYSIS_BUDGET_MS?: string;
   DIRECT_ANALYZER_DISABLED?: string;
+  FORENSIC_REQUIRE_QUEUE?: string;
+  // Keep the already-working direct Quick Review path unless explicitly opted in.
+  QUEUE_QUICK_ANALYSIS?: string;
   ANALYZER_JOBS_QUEUE?: AnalyzerQueueBinding;
 }
 
@@ -194,6 +197,17 @@ export async function handleAnalyzeRequest(
   const acceptHeader = request.headers.get('accept') || '';
   const wantsStream = body?.stream !== false && acceptHeader.includes('text/event-stream');
 
+  // On a Queue-required deployment, never silently fall back to an HTTP-long
+  // forensic run when the Pages producer binding is missing. This check runs
+  // before reserving paid credits, preventing a stranded paid analysis.
+  if (isForensic && env.FORENSIC_REQUIRE_QUEUE === 'true' && !env.ANALYZER_JOBS_QUEUE && !deps.trustedJob) {
+    return Response.json(
+      { error: 'Forensic processing is temporarily unavailable. No analysis credits were reserved.',
+        code: 'FORENSIC_QUEUE_UNAVAILABLE', retryable: true },
+      { status: 503, headers: DEFAULT_HEADERS }
+    );
+  }
+
   // Authenticate user via Firebase JWT
   const authFetcher = deps.fetcher || fetch;
   const identity = deps.trustedJob
@@ -271,20 +285,18 @@ export async function handleAnalyzeRequest(
       );
     }
     if (reservation.status !== 'reserved' || !reservation.reservation_id) {
-      const sanitizedError: Record<string, any> = {
+      // PostgreSQL diagnostics can expose schema details and internal queries.
+      // Keep diagnostic context server-side; clients receive a stable, minimal error.
+      console.error('[FREE_SCAN_RESERVATION_UNAVAILABLE]', JSON.stringify({
+        status: reservation.status,
+        httpStatus: reservation.httpStatus,
+        pgCode: reservation.pgCode,
+      }));
+
+      return Response.json({
         error: 'Free scan reservation unavailable.',
         code: 'RESERVATION_UNAVAILABLE',
-        status: reservation.status,
-      };
-      if (reservation.httpStatus) sanitizedError.httpStatus = reservation.httpStatus;
-      if (reservation.pgCode) sanitizedError.pgCode = reservation.pgCode;
-      if (reservation.pgMessage) sanitizedError.pgMessage = reservation.pgMessage;
-      if (reservation.pgDetails) sanitizedError.pgDetails = reservation.pgDetails;
-      if (reservation.pgHint) sanitizedError.pgHint = reservation.pgHint;
-
-      console.error('[FREE_SCAN_RESERVATION_UNAVAILABLE]', JSON.stringify(sanitizedError));
-
-      return Response.json(sanitizedError, {
+      }, {
         status: reservation.status === 'denied' ? 403 : 503,
         headers: DEFAULT_HEADERS,
       });
@@ -292,9 +304,12 @@ export async function handleAnalyzeRequest(
     reservationId = reservation.reservation_id;
   }
 
-  // Queue mode returns quickly and lets a separate Worker process the job. The credit reservation above is
-  // retained across retries. Only the opaque job identifier is published to Cloudflare Queues.
-  if (!deps.trustedJob && env.ANALYZER_JOBS_QUEUE) {
+  // Forensic scans use durable Queue processing; keep Quick Review on its
+  // existing fast direct path unless an operator explicitly opts into queuing
+  // Quick Review. Binding a production Queue must not silently change the
+  // already-proven Quick Review latency or credit lifecycle.
+  const shouldQueue = isForensic || env.QUEUE_QUICK_ANALYSIS === 'true';
+  if (!deps.trustedJob && env.ANALYZER_JOBS_QUEUE && shouldQueue) {
     const inputKey = `inputs/${requestId}.json`;
     const job: Omit<DurableJobRecord, 'status'> = {
       job_id: requestId,
@@ -519,16 +534,18 @@ export async function handleAnalyzeRequest(
 
   // Streaming SSE response
   if (wantsStream) {
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const readable = new ReadableStream<Uint8Array>({
+      start(controller) { streamController = controller; },
+      cancel() { streamController = undefined; },
+    });
     const encoder = new TextEncoder();
 
-    const sendEvent = async (event: string, data: any) => {
-      try {
-        await writer.write(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      } catch {
-        // Client disconnected
-      }
+    // A slow or disconnected reader must never hold up analysis or settlement.
+    const sendEvent = (event: string, data: unknown) => {
+      if (!streamController) return;
+      if (event === 'heartbeat' && (streamController.desiredSize ?? 0) <= 0) return;
+      streamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
     };
 
     const streamStartedAt = Date.now();
@@ -592,9 +609,8 @@ export async function handleAnalyzeRequest(
         await sendEvent('error', { requestId, error: message, code, retryable });
       } finally {
         clearInterval(heartbeat);
-        try {
-          await writer.close();
-        } catch {}
+        streamController?.close();
+        streamController = undefined;
       }
     })();
     // Keep the long-running AI operation alive after the Pages handler returns.
