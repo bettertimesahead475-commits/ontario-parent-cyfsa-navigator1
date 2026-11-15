@@ -48,18 +48,92 @@ function serviceConfig(env: DurableJobEnv): { base: string; key: string } {
 async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unknown>, fetcher: typeof fetch = fetch): Promise<T> {
   const { base, key } = serviceConfig(env);
   let response: Response;
+  const start = Date.now();
   try {
     response = await fetcher(`${base}/rest/v1/rpc/${name}`, {
       method: 'POST',
       headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(args),
-      redirect: 'error',
+      redirect: 'manual',
       signal: AbortSignal.timeout(8000),
     });
-  } catch {
+  } catch (error) {
+    // Structured diagnostics reveal the transport cause without recording
+    // document contents, customer identifiers, provider keys, or request URLs.
+    const diagnostic = error && typeof error === 'object'
+      ? error as { name?: string; cause?: { name?: string; code?: string } }
+      : {};
+    console.error('[DURABLE_RPC_TRANSPORT_FAILURE]', JSON.stringify({
+      rpcName: name,
+      elapsedMs: Date.now() - start,
+      exceptionClass: diagnostic.name || 'unknown',
+      causeClass: diagnostic.cause?.name || null,
+      causeCode: typeof diagnostic.cause?.code === 'string' ? diagnostic.cause.code.slice(0, 50) : null,
+    }));
     throw new DurableJobStorageError('Durable job database request failed.', true);
   }
-  if (!response.ok) throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
+  if (!response.ok) {
+    // Log only the SQLSTATE/PostgREST code, never response message, request
+    // arguments, document text, user identity, or authentication headers.
+    let pgCode: string | null = null;
+    let errorClass: string = 'UNKNOWN';
+    try {
+      const error: unknown = await response.json();
+      if (error && typeof error === 'object') {
+        const data = error as { code?: unknown; message?: unknown; error?: unknown };
+        if (typeof data.code === 'string' && /^[A-Za-z0-9]{1,20}$/.test(data.code)) pgCode = data.code;
+        // Classify known gateway errors without logging arbitrary upstream
+        // text, URLs, tokens, request arguments, or user data.
+        const message = [data.message, data.error].filter(x => typeof x === 'string').join(' ');
+        if (/invalid api key/i.test(message)) errorClass = 'INVALID_API_KEY';
+        else if (/jwt|bearer token/i.test(message)) errorClass = 'JWT_INVALID';
+        else if (/unauthorized|permission denied/i.test(message)) errorClass = 'AUTHORIZATION';
+        else if (pgCode) errorClass = 'POSTGRES_ERROR';
+        else errorClass = 'GATEWAY_ERROR';
+      }
+    } catch {
+      errorClass = 'NON_JSON_RESPONSE';
+    }
+    // Inspect only non-secret JWT claims. Report boolean comparisons, never
+    // the JWT, project reference, role string, or request URL. This distinguishes
+    // an old Worker secret from a broken database without rotating anything.
+    let serviceRoleClaim: boolean | null = null;
+    let projectClaimMatches: boolean | null = null;
+    let tokenExpired: boolean | null = null;
+    try {
+      const segment = key.split('.')[1];
+      const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/'))) as {
+        role?: unknown; ref?: unknown; exp?: unknown;
+      };
+      if (typeof payload.role === 'string') serviceRoleClaim = payload.role === 'service_role';
+      if (typeof payload.ref === 'string') {
+        projectClaimMatches = payload.ref === new URL(base).hostname.split('.')[0];
+      }
+      if (typeof payload.exp === 'number') tokenExpired = payload.exp <= Date.now() / 1000;
+    } catch { /* A modern opaque key or malformed token has no JWT claims. */ }
+    let responseHostMatches: boolean | null = null;
+    try {
+      if (response.url) responseHostMatches = new URL(response.url).hostname === new URL(base).hostname;
+    } catch { /* No response URL available. */ }
+    console.error('[DURABLE_RPC_HTTP_REJECTED]', JSON.stringify({
+      rpcName: name,
+      httpStatus: response.status,
+      pgCode,
+      errorClass,
+      contentType: (response.headers.get('content-type') || '').split(';')[0].slice(0, 48),
+      credentialFormat: key.startsWith('eyJ') ? 'legacy_jwt' : key.startsWith('sb_secret_') ? 'secret_api_key' : 'other',
+      responseType: response.type,
+      statusText: response.statusText.slice(0, 48),
+      headerNames: ['server', 'cf-ray', 'content-length', 'x-kong-response-latency', 'sb-gateway-version']
+        .filter(header => response.headers.has(header)),
+      hasResponseUrl: Boolean(response.url),
+      responseHostMatches,
+      serviceRoleClaim,
+      projectClaimMatches,
+      tokenExpired,
+    }));
+    throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
+  }
   return await response.json() as T;
 }
 
@@ -94,7 +168,7 @@ export async function saveDurableInput(env: DurableJobEnv, key: string, input: u
       method: 'POST',
       headers: { ...storageHeaders(env), 'x-upsert': 'false' },
       body: JSON.stringify(input),
-      redirect: 'error',
+      redirect: 'manual',
       signal: AbortSignal.timeout(10000),
     });
   } catch {
@@ -107,7 +181,7 @@ export async function loadDurableInput(env: DurableJobEnv, key: string, fetcher:
   let response: Response;
   try {
     response = await fetcher(storageUrl(env, key, true), {
-      headers: storageHeaders(env), redirect: 'error', signal: AbortSignal.timeout(10000),
+      headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(10000),
     });
   } catch {
     throw new DurableJobStorageError('Stored document input could not be loaded.', true);
@@ -164,7 +238,7 @@ export async function requeueFromDeadLetter(env: DurableJobEnv, jobId: string, f
 export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch): Promise<Record<string, unknown> | null> {
   let response: Response;
   try {
-    response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'error', signal: AbortSignal.timeout(8000) });
+    response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(8000) });
   } catch { throw new DurableJobStorageError('Saved analysis report could not be loaded.', true); }
   if (response.status === 404) return null;
   if (!response.ok) throw new DurableJobStorageError('Saved analysis report could not be loaded.', response.status >= 500 || response.status === 429, response.status);
