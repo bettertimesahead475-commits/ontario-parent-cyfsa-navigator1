@@ -178,6 +178,38 @@ describe('durable analyzer queue consumer', () => {
     expect(retry.ack).toHaveBeenCalledOnce();
   });
 
+  it('acknowledges malformed dead-letter messages without database access', async () => {
+    const msg = message(null);
+    await processDeadLetter(msg, {} as any);
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.failDlq).not.toHaveBeenCalled();
+  });
+
+  it('retries a non-JSON 503 analyzer failure without persisting upstream details', async () => {
+    mocks.handle.mockResolvedValueOnce(new Response('<html>internal gateway exception</html>', { status: 503 }));
+    const msg = message(undefined, 2);
+    await processJob(msg, {} as any);
+    expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      status: 'queued', errorMessage: 'The analysis failed.', retryable: true,
+    }));
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: retryDelay(2) });
+    expect(msg.ack).not.toHaveBeenCalled();
+  });
+
+  it('fails and releases a non-JSON 400 analyzer job rather than retrying forever', async () => {
+    mocks.handle.mockResolvedValueOnce(new Response('invalid document payload', { status: 400 }));
+    const msg = message();
+    await processJob(msg, {} as any);
+    expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      status: 'failed', errorMessage: 'The analysis failed.', retryable: false,
+    }));
+    expect(mocks.releaseFree).toHaveBeenCalledOnce();
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+  });
+
   it('marks exhausted jobs failed and releases their reserved credit from the dead-letter consumer', async () => {
     mocks.failDlq.mockResolvedValue({ ...job(), status: 'failed' });
     const msg = message();
