@@ -24,7 +24,10 @@ export async function readVerifiedPaidSession(
 ): Promise<SessionReadResult> {
   if (!firebaseUid || !sessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return { status: 'denied' };
   const readKey = env.STAGING_SUPABASE_READ_KEY || env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
-  if (!env.STAGING_SUPABASE_URL || !readKey) return { status: 'unavailable' };
+  if (!env.STAGING_SUPABASE_URL || !readKey) {
+    console.warn('[paid_session_read] missing runtime configuration');
+    return { status: 'unavailable' };
+  }
   let url: URL;
   try {
     url = new URL('/rest/v1/navigator_paid_sessions', env.STAGING_SUPABASE_URL);
@@ -47,14 +50,18 @@ export async function readVerifiedPaidSession(
       redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) return { status: 'unavailable' };
+    if (!response.ok) {
+      console.warn('[paid_session_read] upstream rejected request', { status: response.status });
+      return { status: 'unavailable' };
+    }
     const rows: unknown = await response.json();
     if (!Array.isArray(rows) || rows.length > 1) return { status: 'unavailable' };
     if (rows.length === 0) return { status: 'denied' };
     const row = rows[0] as PaidSessionRow;
     const session = validatePaidSessionRow(row, firebaseUid, sessionId);
     return session ? { status: 'verified', session } : { status: 'denied' };
-  } catch {
+  } catch (error) {
+    console.warn('[paid_session_read] request or response failed', { errorType: error instanceof Error ? error.name : 'unknown' });
     return { status: 'unavailable' };
   }
 }
