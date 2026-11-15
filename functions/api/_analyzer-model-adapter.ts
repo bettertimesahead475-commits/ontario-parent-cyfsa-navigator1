@@ -140,12 +140,13 @@ export function createCloudflareGenerateFn(
           while (!receivedMessageStop) {
             const { done, value } = await bounded(reader.read());
             if (done) break;
-            streamBuf += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-            const events = streamBuf.split('\n\n');
+            // Parse CRLF at buffer level: CR and LF may arrive in separate network chunks.
+            streamBuf += decoder.decode(value, { stream: true });
+            const events = streamBuf.split(/\r?\n\r?\n/);
             streamBuf = events.pop() || '';
 
             for (const rawEvent of events) {
-              const lines = rawEvent.split('\n');
+              const lines = rawEvent.split(/\r?\n/);
               for (const line of lines) {
                 const trimmed = line.trim();
                 if (trimmed.startsWith('data:')) {
