@@ -6,6 +6,7 @@ on:
     paths:
       - 'workers/analyzer-queue-consumer.ts'
       - 'workers/staging-job-service.ts'
+      - 'workers/staging-job-service-entrypoint.js'
       - 'functions/api/_durable-analysis-jobs.ts'
       - 'functions/api/_supabase-paid-session.ts'
       - 'functions/api/_staging-credit-rpc.ts'
