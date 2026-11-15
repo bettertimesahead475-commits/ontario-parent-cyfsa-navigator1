@@ -258,6 +258,25 @@ describe('Cloudflare Anthropic Model Adapter', () => {
     }, 'claude-sonnet-5')).rejects.toThrow(/stream ended before the analysis completed/);
   });
 
+  it('rejects oversized unterminated SSE events before buffering indefinitely', async () => {
+    const oversized = 'event: content_block_delta\ndata: ' + 'x'.repeat(1_048_577);
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(oversized, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    await expect(generate({
+      system: 'sys',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      max_tokens: 100,
+      timeoutMs: 5000,
+      retries: 0,
+      requestId: 'req_oversized_event',
+      stage: 'direct_analysis',
+      mode: 'fast',
+    }, 'claude-sonnet-5')).rejects.toMatchObject({ code: 'AI_RESPONSE_INVALID' });
+    expect(mockFetcher).toHaveBeenCalledOnce();
+  });
+
   it('sends stream: true in Anthropic request body', async () => {
     let capturedBody: any = null;
     const mockFetcher = vi.fn(async (_url: string, init?: RequestInit) => {
