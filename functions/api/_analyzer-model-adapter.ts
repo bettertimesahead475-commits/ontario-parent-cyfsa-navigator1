@@ -173,7 +173,9 @@ export function createCloudflareGenerateFn(
               }
             }
           }
-          if ((!receivedMessageStop && !stopReason) || !text.trim()) {
+          // A stop reason alone does not prove that the streamed response finished.
+          // Never persist or charge for an interrupted or token-truncated report.
+          if (!receivedMessageStop || !text.trim() || stopReason === 'max_tokens') {
             throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', true);
           }
           } finally {
@@ -192,6 +194,10 @@ export function createCloudflareGenerateFn(
           inputTokens = data.usage?.input_tokens ?? 0;
           outputTokens = data.usage?.output_tokens ?? 0;
           stopReason = data.stop_reason ?? undefined;
+        }
+
+        if (stopReason === 'max_tokens' || !text.trim()) {
+          throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an incomplete analysis. Nothing was charged.', true);
         }
 
         return {
