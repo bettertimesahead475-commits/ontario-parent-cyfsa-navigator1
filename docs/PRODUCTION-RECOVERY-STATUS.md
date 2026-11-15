@@ -1,3 +1,13 @@
+# Live paid-session lookup trace — November 15, 2026
+
+Authenticated synthetic Quick Review and Deep Scan both returned 503 SESSION_INVALID. A live Pages tail confirmed the read-only GET to the configured nxfhvebzzobegufcda project at /rest/v1/navigator_paid_sessions returned HTTP 400, non-JSON, with no db/PostgREST error code or sb-request-id. The staging table has RLS enabled and the service role has SELECT and BYPASSRLS. Supabase edge logs showed no corresponding paid-session REST request.
+
+Commit c7117441b08459e4e04634cd29536369f0aeeaf2 added sanitized response classification. Commit a84ece81a5bcaa20516106fb8632ad987565b48b trims the configured key, sends opaque keys in apikey only, preserves legacy JWT headers, and logs only a key-format classification. Preview https://af84d91e.cyfsa-navigator-git-staging.pages.dev deployed successfully. GitHub checks at time of checkpoint: Cloudflare staging API verification 43763818117: success; Cloudflare migration compatibility checks 43763818139: success; CI 43763818167: success.
+
+The fresh live trace classified the effective key as unrecognized after trimming: neither a supported opaque prefix nor a JWT-shaped value. The Preview metadata lists only STAGING_SUPABASE_SERVICE_ROLE_KEY for privileged access, with no read-key override. The 400 response occurred before any successful paid-session lookup, credit reservation, queue enqueue or provider work. The available Supabase connector exposes publishable keys only, so a privileged staging key could not be installed or independently tested with available access.
+
+Next action: securely install a valid project-matched backend key from nxfhvebzzobegufcda in the Cloudflare Pages Preview binding STAGING_SUPABASE_SERVICE_ROLE_KEY. Verify the staging Consumer has a valid matching key before Queue acceptance. Redeploy and rerun signed-in synthetic acceptance. Keep production unchanged.
+
 # Staging recovery continuation — November 15, 2026
 
 - The synthetic user has only a password provider. Native Firebase sign-in in gen-lang-client-0105737183 returned PASSWORD_LOGIN_DISABLED.
