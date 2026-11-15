@@ -4,6 +4,11 @@ on:
     branches:
       - integration/navigator-release-20261108
     paths:
+      - 'workers/analyzer-queue-consumer.ts'
+      - 'workers/staging-job-service.ts'
+      - 'functions/api/_durable-analysis-jobs.ts'
+      - 'functions/api/_analyzer-model-adapter.ts'
+      - 'api/services/analyzerSections.ts'
       - '.github/workflows/staging-analyzer-bundle-export.yml'
   workflow_dispatch:
 permissions:
