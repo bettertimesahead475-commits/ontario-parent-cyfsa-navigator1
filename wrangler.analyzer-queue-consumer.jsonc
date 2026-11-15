@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cyfsa-production-analyzer-queue-consumer",
+  "name": "cyfsa-staging-analyzer-queue-consumer",
   "main": "workers/analyzer-queue-consumer.ts",
   "compatibility_date": "2026-11-04",
   "queues": {
