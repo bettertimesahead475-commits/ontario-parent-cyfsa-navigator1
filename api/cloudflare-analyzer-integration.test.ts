@@ -273,7 +273,7 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(releasedCalled).toBe(true);
   });
 
-  it('returns sanitized 503 RESERVATION_UNAVAILABLE with pgCode when free reservation RPC fails', async () => {
+  it('returns sanitized 503 RESERVATION_UNAVAILABLE without leaking database diagnostics when free reservation RPC fails', async () => {
     const uid = 'user_rpc_err_101';
     const requestId = 'req_rpc_err_01';
 
@@ -308,13 +308,12 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc as any });
     expect(response.status).toBe(503);
     const body = await response.json();
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       code: 'RESERVATION_UNAVAILABLE',
       error: 'Free scan reservation unavailable.',
-      status: 'unavailable',
-      httpStatus: 404,
-      pgCode: 'PGRST202',
     });
+    expect(JSON.stringify(body)).not.toContain('PGRST202');
+    expect(JSON.stringify(body)).not.toContain('schema cache');
   });
 
   it('streams progress and sections via Server-Sent Events', async () => {
