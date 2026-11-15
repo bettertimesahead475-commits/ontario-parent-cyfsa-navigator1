@@ -104,7 +104,17 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
   const token = crypto.randomUUID();
   let job: DurableJobRecord | null;
   try { job = await claimDurableJob(env, parsed.jobId, token, 240); }
-  catch {
+  catch (error) {
+    // Log only a stable error class/status; never job text, uid, URL, or keys.
+    // A silent claim failure otherwise looks like a healthy Queue that never drains.
+    const detail = error && typeof error === 'object'
+      ? error as { name?: string; status?: number; retryable?: boolean }
+      : {};
+    console.error('[ANALYZER_CLAIM_FAILED]', JSON.stringify({
+      errorClass: detail.name || 'unknown',
+      httpStatus: typeof detail.status === 'number' ? detail.status : null,
+      retryable: detail.retryable ?? true,
+    }));
     message.retry({ delaySeconds: retryDelay(message.attempts) });
     return;
   }
