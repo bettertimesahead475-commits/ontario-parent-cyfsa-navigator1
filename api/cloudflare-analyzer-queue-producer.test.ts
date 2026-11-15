@@ -68,6 +68,11 @@ describe('durable analyzer queue producer', () => {
     const storagePost = fetchImpl.mock.calls.find(([url, init]) => String(url).includes('/storage/v1/object/') && init?.method === 'POST');
     expect(storagePost?.[1]?.body).toContain(documentText);
     expect(storagePost?.[0]).toContain('/analysis_jobs/inputs/job_producer_1234.json');
+    for (const [url, init] of fetchImpl.mock.calls) {
+      if (String(url).includes('/rpc/analyzer_create_job') || String(url).includes('/storage/v1/object/')) {
+        expect(init?.redirect).toBe('manual');
+      }
+    }
   });
 
   it('enqueues an entitled Premium Deep Scan as full mode without calling Opus on Pages', async () => {
