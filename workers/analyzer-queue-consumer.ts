@@ -200,11 +200,23 @@ async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): P
     if (current.status === 'completed') { message.ack(); return; }
     if (current.status === 'failed') { await releaseReservation(env, current); message.ack(); return; }
     const report = await loadPersistedReport(env, jobId);
-    if (report && await finalizeReservation(env, current) && await completeRecoveredJob(env, jobId)) {
-      message.ack();
-      return;
+    if (report) {
+      if (!await finalizeReservation(env, current)) {
+        throw new Error('Persisted report credit finalization is not yet confirmed.');
+      }
+      if (await completeRecoveredJob(env, jobId)) {
+        message.ack();
+        return;
+      }
+      // A second Worker can complete the same persisted report between our
+      // read and the completion RPC. Verify that outcome before retrying.
+      const latest = await readDurableJob(env, jobId);
+      if (latest?.status === 'completed') {
+        message.ack();
+        return;
+      }
+      throw new Error('Persisted report completion is not yet confirmed.');
     }
-    if (report) throw new Error('Persisted report credit finalization is not yet confirmed.');
     const leaseExpiry = current.lease_expires_at ? Date.parse(current.lease_expires_at) : 0;
     if (current.status === 'running' && Number.isFinite(leaseExpiry) && leaseExpiry > Date.now()) {
       message.retry({ delaySeconds: Math.max(1, Math.min(900, Math.ceil((leaseExpiry - Date.now()) / 1000) + 5)) });
