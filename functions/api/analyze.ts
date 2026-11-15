@@ -79,6 +79,8 @@ export interface AnalyzerEnv {
   FORENSIC_ANALYSIS_BUDGET_MS?: string;
   DIRECT_ANALYZER_DISABLED?: string;
   FORENSIC_REQUIRE_QUEUE?: string;
+  // Keep the already-working direct Quick Review path unless explicitly opted in.
+  QUEUE_QUICK_ANALYSIS?: string;
   ANALYZER_JOBS_QUEUE?: AnalyzerQueueBinding;
 }
 
@@ -302,9 +304,12 @@ export async function handleAnalyzeRequest(
     reservationId = reservation.reservation_id;
   }
 
-  // Queue mode returns quickly and lets a separate Worker process the job. The credit reservation above is
-  // retained across retries. Only the opaque job identifier is published to Cloudflare Queues.
-  if (!deps.trustedJob && env.ANALYZER_JOBS_QUEUE) {
+  // Forensic scans use durable Queue processing; keep Quick Review on its
+  // existing fast direct path unless an operator explicitly opts into queuing
+  // Quick Review. Binding a production Queue must not silently change the
+  // already-proven Quick Review latency or credit lifecycle.
+  const shouldQueue = isForensic || env.QUEUE_QUICK_ANALYSIS === 'true';
+  if (!deps.trustedJob && env.ANALYZER_JOBS_QUEUE && shouldQueue) {
     const inputKey = `inputs/${requestId}.json`;
     const job: Omit<DurableJobRecord, 'status'> = {
       job_id: requestId,
