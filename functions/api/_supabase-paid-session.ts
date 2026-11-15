@@ -44,7 +44,7 @@ export async function readVerifiedPaidSession(
         Authorization: 'Bearer ' + readKey,
         Accept: 'application/json',
       },
-      redirect: 'error',
+      redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return { status: 'unavailable' };
