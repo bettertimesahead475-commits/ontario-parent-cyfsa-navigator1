@@ -101,6 +101,11 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
       errorClass,
       contentType: (response.headers.get('content-type') || '').split(';')[0].slice(0, 48),
       credentialFormat: key.startsWith('eyJ') ? 'legacy_jwt' : key.startsWith('sb_secret_') ? 'secret_api_key' : 'other',
+      responseType: response.type,
+      statusText: response.statusText.slice(0, 48),
+      headerNames: ['server', 'cf-ray', 'content-length', 'x-kong-response-latency', 'sb-gateway-version']
+        .filter(header => response.headers.has(header)),
+      hasResponseUrl: Boolean(response.url),
     }));
     throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
   }
