@@ -231,6 +231,32 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.ack).toHaveBeenCalledOnce();
   });
 
+  it('acknowledges recovery when another Worker completes the stored report first', async () => {
+    mocks.read.mockResolvedValueOnce({ ...job(), status: 'queued', attempt_count: 6 })
+      .mockResolvedValueOnce({ ...job(), status: 'completed', attempt_count: 6 });
+    mocks.loadReport.mockReset().mockResolvedValue({ fileSummary: 'Saved report' });
+    mocks.completeRecovered.mockResolvedValue(false);
+    const msg = message();
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.finalizeFree).toHaveBeenCalledOnce();
+    expect(mocks.completeRecovered).toHaveBeenCalledOnce();
+    expect(mocks.read).toHaveBeenCalledTimes(2);
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+  });
+
+  it('retries when stored report completion is still unconfirmed after concurrent update', async () => {
+    mocks.read.mockResolvedValue({ ...job(), status: 'queued', attempt_count: 6 });
+    mocks.loadReport.mockReset().mockResolvedValue({ fileSummary: 'Saved report' });
+    mocks.completeRecovered.mockResolvedValue(false);
+    const msg = message(undefined, 2);
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.finalizeFree).toHaveBeenCalledOnce();
+    expect(mocks.read).toHaveBeenCalledTimes(2);
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: retryDelay(2) });
+  });
+
   it('waits for an active Worker lease instead of failing the job from the DLQ', async () => {
     const expiresAt = new Date(Date.now() + 45_000).toISOString();
     mocks.read.mockResolvedValue({ ...job(), lease_expires_at: expiresAt, attempt_count: 1 });
