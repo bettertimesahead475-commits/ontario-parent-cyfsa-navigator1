@@ -23,7 +23,7 @@ export async function readVerifiedPaidSession(
   fetcher: typeof fetch = fetch,
 ): Promise<SessionReadResult> {
   if (!firebaseUid || !sessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return { status: 'denied' };
-  const readKey = env.STAGING_SUPABASE_READ_KEY || env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
+  const readKey = (env.STAGING_SUPABASE_READ_KEY || env.STAGING_SUPABASE_SERVICE_ROLE_KEY)?.trim();
   if (!env.STAGING_SUPABASE_URL || !readKey) {
     console.warn('[paid_session_read] missing runtime configuration');
     return { status: 'unavailable' };
@@ -40,11 +40,12 @@ export async function readVerifiedPaidSession(
     return { status: 'unavailable' };
   }
   try {
+    const opaqueKey = readKey.startsWith('sb_secret_') || readKey.startsWith('sb_publishable_');
     const response = await fetcher(url.toString(), {
       method: 'GET',
       headers: {
         apikey: readKey,
-        Authorization: 'Bearer ' + readKey,
+        ...(opaqueKey ? {} : { Authorization: 'Bearer ' + readKey }),
         Accept: 'application/json',
       },
       redirect: 'manual',
@@ -58,6 +59,7 @@ export async function readVerifiedPaidSession(
       const code = typeof error?.code === 'string' && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code) ? error.code : null;
       console.warn('[paid_session_read] upstream rejected request', {
         status: response.status,
+        keyFormat: opaqueKey ? 'opaque' : readKey.split('.').length === 3 ? 'jwt-shaped' : 'unrecognized',
         code,
         json: contentType === 'application/json',
         supabaseRequestIdPresent: response.headers.has('sb-request-id'),
