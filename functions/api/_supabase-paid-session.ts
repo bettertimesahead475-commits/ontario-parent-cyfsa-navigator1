@@ -51,7 +51,17 @@ export async function readVerifiedPaidSession(
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) {
-      console.warn('[paid_session_read] upstream rejected request', { status: response.status });
+      const contentType = response.headers.get('content-type')?.split(';')[0];
+      const error = contentType === 'application/json'
+        ? await response.json().catch(() => null) as { code?: unknown } | null
+        : null;
+      const code = typeof error?.code === 'string' && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code) ? error.code : null;
+      console.warn('[paid_session_read] upstream rejected request', {
+        status: response.status,
+        code,
+        json: contentType === 'application/json',
+        supabaseRequestIdPresent: response.headers.has('sb-request-id'),
+      });
       return { status: 'unavailable' };
     }
     const rows: unknown = await response.json();
