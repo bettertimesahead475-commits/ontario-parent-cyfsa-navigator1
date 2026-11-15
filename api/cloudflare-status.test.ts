@@ -21,6 +21,7 @@ describe('Cloudflare Staging Health & Readiness Endpoint (/api/_status)', () => 
       runtime: 'cloudflare-pages-functions',
       environment: 'staging',
       analyzerReady: false,
+      forensicQueueReady: false,
     });
     // Never leaks keys or diagnostics to public
     expect(json.diagnostics).toBeUndefined();
@@ -57,10 +58,27 @@ describe('Cloudflare Staging Health & Readiness Endpoint (/api/_status)', () => 
       supabaseRpcKey: 'configured',
       anthropicApi: 'configured',
       directAnalyzer: 'active',
+      analyzerJobQueue: 'missing',
     });
     // Ensure no secret values are returned in response
     expect(JSON.stringify(json)).not.toContain('admin-secret-token-xyz');
     expect(JSON.stringify(json)).not.toContain('key-present');
+  });
+
+  it('reports Forensic Queue readiness only when the Pages producer binding exists', async () => {
+    const env: StatusEnv = {
+      ANALYZER_ENABLED: 'true',
+      FIREBASE_PROJECT_ID: 'gen-lang-client-0105737183',
+      STAGING_SUPABASE_URL: 'https://nxfhvebzzobegubefcda.supabase.co',
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: 'fake',
+      ANTHROPIC_API_KEY: 'fake',
+      ANALYZER_JOBS_QUEUE: { send: async () => undefined },
+    };
+    const request = new Request('https://preview.example/api/status');
+    const response = await onRequestGet({ request, env });
+    expect(await response.json()).toMatchObject({ analyzerReady: true, forensicQueueReady: true });
+    const unbound = await onRequestGet({ request, env: { ...env, ANALYZER_JOBS_QUEUE: undefined } });
+    expect(await unbound.json()).toMatchObject({ analyzerReady: true, forensicQueueReady: false });
   });
 
   it('reports missing dependencies cleanly when some keys are unconfigured', async () => {
@@ -92,6 +110,7 @@ describe('Cloudflare Staging Health & Readiness Endpoint (/api/_status)', () => 
       supabaseRpcKey: 'missing',
       anthropicApi: 'missing',
       directAnalyzer: 'active',
+      analyzerJobQueue: 'missing',
     });
   });
 });
