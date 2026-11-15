@@ -72,7 +72,24 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
     }));
     throw new DurableJobStorageError('Durable job database request failed.', true);
   }
-  if (!response.ok) throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
+  if (!response.ok) {
+    // Log only the SQLSTATE/PostgREST code, never response message, request
+    // arguments, document text, user identity, or authentication headers.
+    let pgCode: string | null = null;
+    try {
+      const error: unknown = await response.json();
+      if (error && typeof error === 'object') {
+        const code = (error as { code?: unknown }).code;
+        if (typeof code === 'string' && /^[A-Za-z0-9]{1,20}$/.test(code)) pgCode = code;
+      }
+    } catch { /* Non-JSON errors remain status-only. */ }
+    console.error('[DURABLE_RPC_HTTP_REJECTED]', JSON.stringify({
+      rpcName: name,
+      httpStatus: response.status,
+      pgCode,
+    }));
+    throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
+  }
   return await response.json() as T;
 }
 
