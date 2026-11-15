@@ -38,8 +38,25 @@ const RETRY_BASE_SECONDS = 20;
 const RETRY_MAX_SECONDS = 900;
 const retryDelay = (attempts: number): number => Math.min(RETRY_MAX_SECONDS, RETRY_BASE_SECONDS * 2 ** Math.min(10, Math.max(0, attempts - 1)));
 
-function errorResponse(response: Response): Promise<{ code: string; error: string; retryable: boolean }> {
-  return response.json().catch(() => ({ code: 'ANALYSIS_FAILED', error: 'The analysis failed.', retryable: true }));
+async function errorResponse(response: Response): Promise<{ code: string; error: string; retryable: boolean }> {
+  const fallback = {
+    code: 'ANALYSIS_FAILED',
+    error: 'The analysis failed.',
+    retryable: response.status === 408 || response.status === 429 || response.status >= 500,
+  };
+  try {
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== 'object') return fallback;
+    const data = payload as Record<string, unknown>;
+    return {
+      code: typeof data.code === 'string' ? data.code : fallback.code,
+      // Never trust arbitrary upstream error text for durable user-visible status.
+      error: fallback.error,
+      retryable: typeof data.retryable === 'boolean' ? data.retryable : fallback.retryable,
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 async function releaseReservation(env: ConsumerEnv, job: DurableJobRecord): Promise<void> {
