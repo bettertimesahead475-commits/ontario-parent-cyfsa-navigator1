@@ -201,13 +201,15 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
       }),
     });
 
-    const response = await handleAnalyzeRequest(request, env, {
+    const queueSend = vi.fn();
+    const response = await handleAnalyzeRequest(request, { ...env, ANALYZER_JOBS_QUEUE: { send: queueSend } }, {
       rpc: mockRpc,
       generate: mockGenerate,
       fetcher: successfulJobStorageWrite(),
     });
 
     expect(response.status).toBe(200);
+    expect(queueSend).not.toHaveBeenCalled();
     const report = await response.json();
 
     // 1. Four concurrent bounded sections executed
