@@ -5,6 +5,7 @@ import relay from '../workers/staging-queue-relay';
 import { executeStagingJob } from '../workers/staging-job-service';
 const body = { version: 1 as const, jobId: 'job_staging_test_123' };
 const env = {
+  ANALYZER_ENABLED: 'true',
   STAGING_SUPABASE_URL: 'https://nxfhvebzzobegubefcda.supabase.co/', ANTHROPIC_API_KEY: 'fake', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'fake',
   ANALYZER_JOBS_QUEUE_NAME: 'cyfsa-staging-analyzer-jobs', ANALYZER_JOBS_DLQ_NAME: 'cyfsa-staging-analyzer-dead-letter',
 };
@@ -15,6 +16,12 @@ describe('private staging job service', () => {
     await expect(executeStagingJob(env, body, 1, 'primary')).resolves.toEqual({ action: 'ack' });
     await expect(executeStagingJob(env, body, 2, 'dead-letter')).resolves.toEqual({ action: 'retry', delaySeconds: 45 });
     expect(calls.job.mock.calls[0][0].body).toEqual(body);
+  });
+  it.each([undefined, '', 'false', 'TRUE'])('refuses RPC job execution with disabled flag %s', async (flag) => {
+    await expect(executeStagingJob({ ...env, ANALYZER_ENABLED: flag }, body, 1, 'primary')).rejects.toThrow('disabled');
+    await expect(executeStagingJob({ ...env, ANALYZER_ENABLED: flag }, body, 1, 'dead-letter')).rejects.toThrow('disabled');
+    expect(calls.job).not.toHaveBeenCalled();
+    expect(calls.dlq).not.toHaveBeenCalled();
   });
   it('refuses another database before any job operation', async () => {
     await expect(executeStagingJob({ ...env, STAGING_SUPABASE_URL: 'https://production.example' }, body, 1, 'primary')).rejects.toThrow('isolation');
