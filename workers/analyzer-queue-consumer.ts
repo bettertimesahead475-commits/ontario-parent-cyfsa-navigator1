@@ -221,7 +221,19 @@ async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): P
       }
     }
     const job = await failDeadLetterJob(env, jobId);
-    if (job && job.status === 'failed') await releaseReservation(env, job);
+    if (job?.status === 'failed') {
+      await releaseReservation(env, job);
+    } else {
+      // A missing or conflicting terminal transition is not success. Another
+      // worker may have completed/failed the job concurrently; re-read before
+      // deciding whether to acknowledge this dead-letter delivery.
+      const latest = await readDurableJob(env, jobId);
+      if (latest?.status === 'failed') {
+        await releaseReservation(env, latest);
+      } else if (latest?.status !== 'completed' && latest !== null) {
+        throw new Error('Dead-letter job was not terminally settled.');
+      }
+    }
   } catch (error) {
     console.error('[ANALYZER_DLQ_FINALIZATION_FAILED]', error instanceof Error ? error.name : 'unknown');
     message.retry({ delaySeconds: retryDelay(message.attempts) });
