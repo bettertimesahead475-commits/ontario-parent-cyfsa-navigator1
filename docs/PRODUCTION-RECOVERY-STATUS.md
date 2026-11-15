@@ -1,3 +1,11 @@
+# Staging acceptance update — November 15, 2026
+
+The active recovery branch is genspark/forensic-analyzer-recovery at a8396848c9bf247683e106973c2fd58a6b53cbe2. Cloudflare immutable preview https://75415549.cyfsa-navigator-git-staging.pages.dev is deployed, and CI 43757945143, staging API verification 43757945132 and migration compatibility 43757945158 passed. Preview is configured for the staging queue and Firebase project gen-lang-client-0105737183.
+
+The existing isolated Firebase identity signed in to its own project. The exact candidate returned HTTP 401 before job submission because its configured Firebase project differs. The existing Admin SDK session could read the designated synthetic user in the trusted project and locate the Firebase signer. createCustomToken failed with auth/insufficient-permission during signing. The needed permission for remote custom-token signing is iam.serviceAccounts.signBlob on the Firebase signer. An equivalent way to unblock acceptance is an authorized synthetic session issued by the trusted Firebase project via an already enabled provider. Check that the synthetic staging entitlement is active before submission.
+
+No signed-in Deep Scan or Quick Review job was submitted, and no report, timing, or credit evidence was produced. No production promotion or auth settings change was made. Continue with signed-in synthetic queue, provider, persistence, recovery, and credit acceptance before considering promotion.
+
 # Deep Scan recovery — November 13, 2026
 
 - Release branch integration/navigator-release-20261108 advanced from c6ed2c0127071ccf3699ef30f72f802bbc161568 to 3d5c52aa884442a231baffc6b8fa3bc062db4113.
