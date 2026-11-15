@@ -374,36 +374,6 @@ export async function handleAnalyzeRequest(
   // The job exists from this point on, so a refreshed or reconnected browser sees it as running (not missing).
   await saveJobState(env, { jobId: requestId, uid, status: 'running', percent: 35, message: 'Analysis started.' }, deps.fetcher || fetch);
 
-  // Persist meaningful progress for reconnecting clients without blocking analysis on storage.
-  let lastSavedPercent = 35;
-  let lastSavedAt = 0;
-  let progressWrite: Promise<void> = Promise.resolve();
-  const createJobProgressSink = (upstream?: (stage: string, percent: number, message: string) => Promise<void> | void) =>
-    async (stage: string, percent: number, message: string): Promise<void> => {
-      try { await upstream?.(stage, percent, message); } catch (error) {
-        // Durable queue progress failures must propagate so the lease is not silently lost.
-        if (deps.trustedJob) throw error;
-      }
-      if (!Number.isFinite(percent)) return;
-      const bounded = Math.min(99, Math.max(35, Math.floor(percent)));
-      if (bounded <= lastSavedPercent) return;
-      const now = Date.now();
-      if (now - lastSavedAt < 2000 && bounded < 99) return;
-      lastSavedPercent = bounded;
-      lastSavedAt = now;
-      // The queue ledger already persists stage updates; the legacy recovery record is
-      // only needed by direct SSE requests. Serialize writes to avoid stale overwrites.
-      if (deps.trustedJob) return;
-      progressWrite = progressWrite.catch(() => {}).then(async () => {
-        try {
-          await saveJobState(env, { jobId: requestId, uid, status: 'running', percent: bounded, message }, deps.fetcher || fetch);
-        } catch (error) {
-          console.warn('[ANALYZER_PROGRESS_SAVE_FAILED]', error instanceof Error ? error.name : 'error');
-        }
-      });
-      await progressWrite;
-    };
-
   // Execute Analysis Pipeline
   const executeAnalysis = async (
     onProgress?: (stage: string, percent: number, message: string) => Promise<void> | void,
@@ -599,10 +569,10 @@ export async function handleAnalyzeRequest(
         // step ignores its timeout. Without this ceiling the browser stays at its last percentage with no error and no result.
         const report = await withHardDeadline(
           executeAnalysis(
-            createJobProgressSink(async (stage, percent, message) => {
+            async (stage, percent, message) => {
               stageLog('progress', { progressStage: stage, percent });
               await sendEvent('stage', { requestId, stage, percent, message });
-            }),
+            },
             async (key, value) => {
               await sendEvent('section', { requestId, section: key, ...value });
             }
@@ -661,7 +631,7 @@ export async function handleAnalyzeRequest(
   // Synchronous JSON response
   try {
     const report = await withHardDeadline(
-      executeAnalysis(createJobProgressSink(deps.trustedJob?.onProgress)),
+      executeAnalysis(deps.trustedJob?.onProgress),
       analysisBudgetMs + HARD_DEADLINE_GRACE_MS,
       () => new AnalyzerError('ANALYSIS_TIMED_OUT', 504, 'The analysis did not finish in time. Your document is safe. Please retry.', true)
     );
