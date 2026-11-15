@@ -265,10 +265,35 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.retry).toHaveBeenCalledOnce();
   });
 
-  it('dispatches the dead-letter queue to its terminal handler', async () => {
+  it('does not acknowledge a dead-letter message if terminal failure was not persisted', async () => {
     mocks.failDlq.mockResolvedValue(null);
+    mocks.read.mockResolvedValue({ ...job(), status: 'queued', attempt_count: 6 });
     const msg = message();
     await consumer.queue({ queue: 'cyfsa-analyzer-dead-letter', messages: [msg] }, { ANALYZER_ENABLED: 'true' } as any);
+    expect(mocks.failDlq).toHaveBeenCalledOnce();
+    expect(msg.ack).not.toHaveBeenCalled();
+    expect(msg.retry).toHaveBeenCalledOnce();
+  });
+
+  it('acknowledges a concurrent completion when dead-letter failure cannot be applied', async () => {
+    mocks.failDlq.mockResolvedValue(null);
+    mocks.read.mockResolvedValueOnce({ ...job(), status: 'queued', attempt_count: 6 })
+      .mockResolvedValueOnce({ ...job(), status: 'completed', attempt_count: 6 });
+    const msg = message();
+    await processDeadLetter(msg, {} as any);
     expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+    expect(mocks.releaseFree).not.toHaveBeenCalled();
+  });
+
+  it('releases reserved credit before acknowledging a concurrent terminal failure', async () => {
+    mocks.failDlq.mockResolvedValue(null);
+    mocks.read.mockResolvedValueOnce({ ...job(), status: 'queued', attempt_count: 6 })
+      .mockResolvedValueOnce({ ...job(), status: 'failed', attempt_count: 6 });
+    const msg = message();
+    await processDeadLetter(msg, {} as any);
+    expect(mocks.releaseFree).toHaveBeenCalledOnce();
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
   });
 });
