@@ -279,9 +279,9 @@ describe('Cloudflare Anthropic Model Adapter', () => {
 
   it('returns a completed Anthropic report even if stream cancellation never settles', async () => {
     const payload = [
-      'event: content_block_delta\\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"complete"}}\\n\\n',
-      'event: message_delta\\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\\n\\n',
-      'event: message_stop\\ndata: {"type":"message_stop"}\\n\\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"complete"}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
     ].join('');
     const stream = new ReadableStream<Uint8Array>({
       start(controller) { controller.enqueue(new TextEncoder().encode(payload)); },
