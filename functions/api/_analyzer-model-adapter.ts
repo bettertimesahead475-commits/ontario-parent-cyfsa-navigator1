@@ -175,7 +175,7 @@ export function createCloudflareGenerateFn(
           }
           // A stop reason alone does not prove that the streamed response finished.
           // Never persist or charge for an interrupted or token-truncated report.
-          if (!receivedMessageStop || !text.trim() || stopReason === 'max_tokens') {
+          if (!receivedMessageStop || !text.trim() || (stopReason !== 'end_turn' && stopReason !== 'stop_sequence')) {
             throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', true);
           }
           } finally {
@@ -196,7 +196,7 @@ export function createCloudflareGenerateFn(
           stopReason = data.stop_reason ?? undefined;
         }
 
-        if (stopReason === 'max_tokens' || !text.trim()) {
+        if (!text.trim() || (stopReason !== 'end_turn' && stopReason !== 'stop_sequence')) {
           throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an incomplete analysis. Nothing was charged.', true);
         }
 
