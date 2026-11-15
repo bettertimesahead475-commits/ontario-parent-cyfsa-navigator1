@@ -7,6 +7,8 @@ on:
       - 'workers/analyzer-queue-consumer.ts'
       - 'workers/staging-job-service.ts'
       - 'functions/api/_durable-analysis-jobs.ts'
+      - 'functions/api/_supabase-paid-session.ts'
+      - 'functions/api/_staging-credit-rpc.ts'
       - 'functions/api/_analyzer-model-adapter.ts'
       - 'api/services/analyzerSections.ts'
       - '.github/workflows/staging-analyzer-bundle-export.yml'
