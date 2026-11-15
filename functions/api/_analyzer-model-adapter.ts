@@ -1,3 +1,4 @@
+import { providerDiagnostic } from '../../shared/providerDiagnostics';
 /**
  * Cloudflare Worker / Pages Functions Anthropic AI Model Execution Adapter.
  *
@@ -105,17 +106,22 @@ export function createCloudflareGenerateFn(
           const status = response.status;
           const errorText = rawBody;
 
-          logAnalyzerDiagnostic(`provider HTTP ${status}`, new Error(errorText));
+          const diagnostic = providerDiagnostic(status, errorText);
+          console.warn(JSON.stringify({ tag: '[ANTHROPIC_REJECTED]', model: wireModel, ...diagnostic }));
+          const rejected = (error: AnalyzerError): never => { error.providerDiagnostic = diagnostic; throw error; };
           if (status === 429) {
-            throw new AnalyzerError('AI_RATE_LIMITED', 429, 'The AI service is busy right now. Please wait a moment and try again. Nothing was charged.', true);
+            rejected(new AnalyzerError('AI_RATE_LIMITED', 429, 'The AI service is busy right now. Please wait a moment and try again. Nothing was charged.', true));
           }
           if (status >= 500 && status < 600) {
-            throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI analysis engine is temporarily unavailable. Please try again shortly. Nothing was charged.', true);
+            rejected(new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI analysis engine is temporarily unavailable. Please try again shortly. Nothing was charged.', true));
+          }
+          if (status === 400 && !errorText.trim() && apiKey.trim().length < 24) {
+            rejected(new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis provider credentials are not configured correctly. Nothing was charged.', false));
           }
           if (status === 400) {
-            throw new AnalyzerError('AI_REQUEST_REJECTED', 400, 'The AI service could not process this request. Nothing was charged. Please try again or contact support.', false);
+            rejected(new AnalyzerError('AI_REQUEST_REJECTED', 400, 'The AI service could not process this request. Nothing was charged. Please try again or contact support.', false));
           }
-          throw new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is not available right now because of a configuration problem on our side. Nothing was charged.', false);
+          rejected(new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is not available right now because of a configuration problem on our side. Nothing was charged.', false));
         }
 
         let text = '';
@@ -134,12 +140,22 @@ export function createCloudflareGenerateFn(
           while (!receivedMessageStop) {
             const { done, value } = await bounded(reader.read());
             if (done) break;
-            streamBuf += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-            const events = streamBuf.split('\n\n');
+            // Parse CRLF at buffer level: CR and LF may arrive in separate network chunks.
+            streamBuf += decoder.decode(value, { stream: true });
+            const events = streamBuf.split(/\r?\n\r?\n/);
             streamBuf = events.pop() || '';
+            // A malformed SSE stream without event separators must not grow a
+            // Worker buffer indefinitely and exhaust memory with document data.
+            const MAX_SSE_EVENT_CHARS = 1_048_576;
+            if (streamBuf.length > MAX_SSE_EVENT_CHARS) {
+              throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider sent an oversized streaming event. Nothing was charged.', true);
+            }
 
             for (const rawEvent of events) {
-              const lines = rawEvent.split('\n');
+              if (rawEvent.length > MAX_SSE_EVENT_CHARS) {
+                throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider sent an oversized streaming event. Nothing was charged.', true);
+              }
+              const lines = rawEvent.split(/\r?\n/);
               for (const line of lines) {
                 const trimmed = line.trim();
                 if (trimmed.startsWith('data:')) {
@@ -167,13 +183,18 @@ export function createCloudflareGenerateFn(
               }
             }
           }
-          if ((!receivedMessageStop && !stopReason) || !text.trim()) {
+          // A stop reason alone does not prove that the streamed response finished.
+          // Never persist or charge for an interrupted or token-truncated report.
+          if (!receivedMessageStop || !text.trim() || (stopReason !== 'end_turn' && stopReason !== 'stop_sequence')) {
             throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', true);
           }
           } finally {
             // Anthropic message_stop is the protocol terminator; do not wait for the
             // HTTP connection to close after a complete message.
-            await reader.cancel().catch(() => undefined);
+            // The provider has already sent message_stop. Some stream
+            // implementations delay cancellation indefinitely; never hold up
+            // report persistence/credit finalization waiting for cancel().
+            void reader.cancel().catch(() => undefined);
             reader.releaseLock();
           }
         } else {
@@ -186,6 +207,10 @@ export function createCloudflareGenerateFn(
           inputTokens = data.usage?.input_tokens ?? 0;
           outputTokens = data.usage?.output_tokens ?? 0;
           stopReason = data.stop_reason ?? undefined;
+        }
+
+        if (!text.trim() || (stopReason !== 'end_turn' && stopReason !== 'stop_sequence')) {
+          throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an incomplete analysis. Nothing was charged.', true);
         }
 
         return {
