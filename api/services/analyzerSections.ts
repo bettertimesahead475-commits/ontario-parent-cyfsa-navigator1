@@ -974,10 +974,13 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
         const { value, attempts: n } = await runOneSection(key, opts, usageByModel);
         sectionTimingsMs[key] = now() - started;
         attempts[key] = n;
+        // Timing metadata only: never log document text, prompts, findings, or identities.
+        if (opts.mode === "full") console.info('[FORENSIC_SECTION_COMPLETED]', JSON.stringify({ section: key, elapsedMs: sectionTimingsMs[key], attempts: n }));
         Object.assign(report, value);
         completed++;
         await opts.onSectionComplete?.(key, value, completed, totalCount);
       } catch (err) {
+        if (opts.mode === "full") console.error('[FORENSIC_SECTION_FAILED]', JSON.stringify({ section: key, elapsedMs: now() - started, errorClass: err instanceof Error ? err.name : 'unknown' }));
         outcomes.push(err);
       }
     }
