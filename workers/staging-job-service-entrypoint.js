@@ -15,13 +15,12 @@ export class StagingAnalyzerJobs extends WorkerEntrypoint {
     }
     const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
     if (!key) throw new Error('Staging secret binding missing');
-    const probe = async (path, withAuth, method = 'GET', body) => {
+    const probe = async (path, authMode, method = 'GET', body) => {
       try {
+        const credential = authMode === 'trimmed' ? key.trim() : key;
         const headers = { Accept: 'application/json' };
-        if (withAuth) {
-          headers.apikey = key;
-          headers.Authorization = 'Bearer ' + key;
-        }
+        if (['both', 'apikey', 'trimmed'].includes(authMode)) headers.apikey = credential;
+        if (['both', 'bearer', 'trimmed'].includes(authMode)) headers.Authorization = 'Bearer ' + credential;
         if (method === 'POST') headers['Content-Type'] = 'application/json';
         const response = await fetch(base + path, {
           method, headers, ...(body ? { body: JSON.stringify(body) } : {}),
@@ -37,12 +36,15 @@ export class StagingAnalyzerJobs extends WorkerEntrypoint {
         return { transportError: error instanceof Error ? error.name : 'unknown' };
       }
     };
-    const [unauthenticated, authenticated, rpc] = await Promise.all([
-      probe('/rest/v1/', false),
-      probe('/rest/v1/', true),
-      probe('/rest/v1/rpc/analyzer_get_job', true, 'POST', { p_job_id: 'probe_nonexistent_staging_job_20261115' }),
+    const [unauthenticated, apiKeyOnly, bearerOnly, authenticated, trimmed, rpc] = await Promise.all([
+      probe('/rest/v1/', 'none'),
+      probe('/rest/v1/', 'apikey'),
+      probe('/rest/v1/', 'bearer'),
+      probe('/rest/v1/', 'both'),
+      probe('/rest/v1/', 'trimmed'),
+      probe('/rest/v1/rpc/analyzer_get_job', 'both', 'POST', { p_job_id: 'probe_nonexistent_staging_job_20261115' }),
     ]);
-    return { unauthenticated, authenticated, rpc };
+    return { keyTrimChanges: key !== key.trim(), unauthenticated, apiKeyOnly, bearerOnly, authenticated, trimmed, rpc };
   }
 
   async processJob(body, attempts, channel) { return executeStagingJob(this.env, body, attempts, channel); }
