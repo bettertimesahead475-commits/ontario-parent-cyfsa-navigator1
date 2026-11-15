@@ -19,6 +19,7 @@ export interface StatusEnv {
   SESSION_SECRET?: string;
   PAYMENT_EMAIL?: string;
   DIRECT_ANALYZER_DISABLED?: string;
+  ANALYZER_JOBS_QUEUE?: { send(message: unknown): Promise<unknown> };
 }
 
 const DEFAULT_HEADERS = {
@@ -56,6 +57,7 @@ export const onRequestGet = async ({
   const hasGeminiKey = formatStatus(env.GEMINI_API_KEY);
   const hasSessionSecret = formatStatus(env.SESSION_SECRET);
   const isDirectAnalyzerActive = env.DIRECT_ANALYZER_DISABLED !== 'true';
+  const hasQueueProducer = typeof env.ANALYZER_JOBS_QUEUE?.send === 'function';
 
   const isLiveReady =
     isAnalyzerEnabled &&
@@ -84,12 +86,14 @@ export const onRequestGet = async ({
         environment: 'staging',
         analyzerEnabled: isAnalyzerEnabled,
         liveAnalysisReady: isLiveReady,
+        forensicQueueReady: isLiveReady && hasQueueProducer,
         diagnostics: {
           firebaseAuth: hasFirebase,
           supabaseStaging: hasSupabaseUrl,
           supabaseRpcKey: hasSupabaseKey,
           anthropicApi: hasAnthropicKey,
           directAnalyzer: isDirectAnalyzerActive ? 'active' : 'disabled',
+          analyzerJobQueue: hasQueueProducer ? 'configured' : 'missing',
         },
         extendedDetails: {
           geminiOcrApi: hasGeminiKey,
@@ -108,6 +112,7 @@ export const onRequestGet = async ({
       runtime: 'cloudflare-pages-functions',
       environment: 'staging',
       analyzerReady: isLiveReady,
+      forensicQueueReady: isLiveReady && hasQueueProducer,
     },
     { status: 200, headers: DEFAULT_HEADERS }
   );
