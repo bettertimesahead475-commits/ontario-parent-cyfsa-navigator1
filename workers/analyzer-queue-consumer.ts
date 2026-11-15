@@ -184,8 +184,17 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
 }
 
 async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): Promise<void> {
+  // Poison messages have no valid job ID to recover. Retrying them indefinitely
+  // would block the DLQ and generate repeated invocations without useful work.
+  let jobId: string;
   try {
-    const { jobId } = parseAnalyzerQueueMessage(message.body);
+    jobId = parseAnalyzerQueueMessage(message.body).jobId;
+  } catch {
+    console.error('[ANALYZER_DLQ_INVALID_MESSAGE]');
+    message.ack();
+    return;
+  }
+  try {
     const current = await readDurableJob(env, jobId);
     if (!current) { message.ack(); return; }
     if (current.status === 'completed') { message.ack(); return; }
