@@ -23,7 +23,7 @@ describe('staging paid session read adapter', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
   it('uses the existing server-only service binding when a separate read key is absent', async () => {
-    const mock = vi.fn(async (_url: string, init: RequestInit) => { expect((init.headers as any).apikey).toBe('synthetic-service'); return Response.json([row]); });
+    const mock = vi.fn(async (_url: string, init: RequestInit) => { expect((init.headers as any).apikey).toBe('synthetic-service'); expect(init.redirect).toBe('manual'); return Response.json([row]); });
     expect((await readVerifiedPaidSession({ STAGING_SUPABASE_URL: env.STAGING_SUPABASE_URL, STAGING_SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service' }, 'u1', sid, mock as typeof fetch)).status).toBe('verified');
   });
   it('filters by both session ID and Firebase UID and verifies row', async () => {
