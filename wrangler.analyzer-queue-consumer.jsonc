@@ -1,15 +1,14 @@
+// DEPRECATED / INERT: legacy config retained only for historical reference.
+// Do not attach production or staging Queues from this file.
+// Production: wrangler.production-analyzer-queue-consumer.jsonc (fail-closed until verified).
+// Staging: wrangler.analyzer-queue-staging.jsonc (isolated relay).
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cyfsa-staging-analyzer-queue-consumer",
+  "name": "cyfsa-retired-analyzer-queue-consumer",
   "main": "workers/analyzer-queue-consumer.ts",
   "compatibility_date": "2026-11-04",
-  "queues": {
-    "producers": [
-      { "binding": "ANALYZER_JOBS_REQUEUE", "queue": "cyfsa-analyzer-jobs" }
-    ],
-    "consumers": [
-      { "queue": "cyfsa-analyzer-jobs", "max_batch_size": 1, "max_batch_timeout": 1, "max_retries": 5, "retry_delay": 20, "dead_letter_queue": "cyfsa-analyzer-dead-letter", "max_concurrency": 2 },
-      { "queue": "cyfsa-analyzer-dead-letter", "max_batch_size": 1, "max_batch_timeout": 1, "max_retries": 5, "retry_delay": 60, "max_concurrency": 1 }
-    ]
+  "workers_dev": false,
+  "vars": {
+    "ANALYZER_ENABLED": "false"
   }
 }
