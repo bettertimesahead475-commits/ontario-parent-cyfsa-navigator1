@@ -76,17 +76,31 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
     // Log only the SQLSTATE/PostgREST code, never response message, request
     // arguments, document text, user identity, or authentication headers.
     let pgCode: string | null = null;
+    let errorClass: string = 'UNKNOWN';
     try {
       const error: unknown = await response.json();
       if (error && typeof error === 'object') {
-        const code = (error as { code?: unknown }).code;
-        if (typeof code === 'string' && /^[A-Za-z0-9]{1,20}$/.test(code)) pgCode = code;
+        const data = error as { code?: unknown; message?: unknown; error?: unknown };
+        if (typeof data.code === 'string' && /^[A-Za-z0-9]{1,20}$/.test(data.code)) pgCode = data.code;
+        // Classify known gateway errors without logging arbitrary upstream
+        // text, URLs, tokens, request arguments, or user data.
+        const message = [data.message, data.error].filter(x => typeof x === 'string').join(' ');
+        if (/invalid api key/i.test(message)) errorClass = 'INVALID_API_KEY';
+        else if (/jwt|bearer token/i.test(message)) errorClass = 'JWT_INVALID';
+        else if (/unauthorized|permission denied/i.test(message)) errorClass = 'AUTHORIZATION';
+        else if (pgCode) errorClass = 'POSTGRES_ERROR';
+        else errorClass = 'GATEWAY_ERROR';
       }
-    } catch { /* Non-JSON errors remain status-only. */ }
+    } catch {
+      errorClass = 'NON_JSON_RESPONSE';
+    }
     console.error('[DURABLE_RPC_HTTP_REJECTED]', JSON.stringify({
       rpcName: name,
       httpStatus: response.status,
       pgCode,
+      errorClass,
+      contentType: (response.headers.get('content-type') || '').split(';')[0].slice(0, 48),
+      credentialFormat: key.startsWith('eyJ') ? 'legacy_jwt' : key.startsWith('sb_secret_') ? 'secret_api_key' : 'other',
     }));
     throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
   }
