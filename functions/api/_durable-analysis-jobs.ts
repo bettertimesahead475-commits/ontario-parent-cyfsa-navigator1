@@ -94,6 +94,27 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
     } catch {
       errorClass = 'NON_JSON_RESPONSE';
     }
+    // Inspect only non-secret JWT claims. Report boolean comparisons, never
+    // the JWT, project reference, role string, or request URL. This distinguishes
+    // an old Worker secret from a broken database without rotating anything.
+    let serviceRoleClaim: boolean | null = null;
+    let projectClaimMatches: boolean | null = null;
+    let tokenExpired: boolean | null = null;
+    try {
+      const segment = key.split('.')[1];
+      const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/'))) as {
+        role?: unknown; ref?: unknown; exp?: unknown;
+      };
+      if (typeof payload.role === 'string') serviceRoleClaim = payload.role === 'service_role';
+      if (typeof payload.ref === 'string') {
+        projectClaimMatches = payload.ref === new URL(base).hostname.split('.')[0];
+      }
+      if (typeof payload.exp === 'number') tokenExpired = payload.exp <= Date.now() / 1000;
+    } catch { /* A modern opaque key or malformed token has no JWT claims. */ }
+    let responseHostMatches: boolean | null = null;
+    try {
+      if (response.url) responseHostMatches = new URL(response.url).hostname === new URL(base).hostname;
+    } catch { /* No response URL available. */ }
     console.error('[DURABLE_RPC_HTTP_REJECTED]', JSON.stringify({
       rpcName: name,
       httpStatus: response.status,
@@ -106,6 +127,10 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
       headerNames: ['server', 'cf-ray', 'content-length', 'x-kong-response-latency', 'sb-gateway-version']
         .filter(header => response.headers.has(header)),
       hasResponseUrl: Boolean(response.url),
+      responseHostMatches,
+      serviceRoleClaim,
+      projectClaimMatches,
+      tokenExpired,
     }));
     throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
   }
