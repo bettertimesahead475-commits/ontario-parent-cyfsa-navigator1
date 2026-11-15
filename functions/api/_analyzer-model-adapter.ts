@@ -144,8 +144,17 @@ export function createCloudflareGenerateFn(
             streamBuf += decoder.decode(value, { stream: true });
             const events = streamBuf.split(/\r?\n\r?\n/);
             streamBuf = events.pop() || '';
+            // A malformed SSE stream without event separators must not grow a
+            // Worker buffer indefinitely and exhaust memory with document data.
+            const MAX_SSE_EVENT_CHARS = 1_048_576;
+            if (streamBuf.length > MAX_SSE_EVENT_CHARS) {
+              throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider sent an oversized streaming event. Nothing was charged.', true);
+            }
 
             for (const rawEvent of events) {
+              if (rawEvent.length > MAX_SSE_EVENT_CHARS) {
+                throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider sent an oversized streaming event. Nothing was charged.', true);
+              }
               const lines = rawEvent.split(/\r?\n/);
               for (const line of lines) {
                 const trimmed = line.trim();
