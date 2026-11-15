@@ -7,6 +7,7 @@ describe('staging credit RPC transport', () => {
   it('calls only allowlisted RPC names with server credentials', async () => {
     const fetcher = vi.fn(async (_url: string, options: RequestInit) => {
       expect(options.method).toBe('POST');
+      expect(options.redirect).toBe('manual');
       expect((options.headers as Record<string, string>).Authorization).toBe('Bearer test-secret');
       return Response.json({ status: 'consumed' });
     });
