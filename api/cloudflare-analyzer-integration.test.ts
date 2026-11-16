@@ -544,6 +544,34 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
     expect(releasedCalls).toContain('free_release_scan');
   });
 
+  it('releases the reservation when the provider account has insufficient credit', async () => {
+    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_provider_billing_failure' });
+    const rpc = vi.fn(async (name: string) => {
+      if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_provider_billing' };
+      return { status: 'released' };
+    });
+    const fetcher = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).startsWith('https://api.anthropic.com/')) {
+        return Response.json({
+          type: 'error',
+          error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' },
+        }, { status: 400 });
+      }
+      return Response.json({});
+    });
+    const request = new Request('https://staging.example/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer mock_token' },
+      body: JSON.stringify({ documentText: SAMPLE_DOC, mode: 'fast', stream: false }),
+    });
+
+    const response = await handleAnalyzeRequest(request, env, { rpc, fetcher });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'AI_PROVIDER_CONFIGURATION_ERROR', retryable: false });
+    expect(rpc.mock.calls.map(([name]) => name)).toContain('free_release_scan');
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('free_finalize_scan');
+  });
+
   it('rejects oversized documents for Quick Review with explicit 400 AI_REQUEST_REJECTED without calling provider', async () => {
     mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_free_oversized' });
     const mockRpc = vi.fn(async (name: string) => {
