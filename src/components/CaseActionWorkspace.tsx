@@ -9,6 +9,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiFetch, safeReadJson } from "../utils/api";
+import { readExistingCaseInventory, type ExistingCaseInventory } from "../utils/existingCaseInventory";
 import {
   CheckCircle2,
   Clock,
@@ -198,6 +199,14 @@ interface CaseActionWorkspaceProps {
 }
 
 export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorkspaceProps) {
+  const [existingInventory, setExistingInventory] = useState<ExistingCaseInventory | null>(null);
+  useEffect(() => {
+    const refresh = () => setExistingInventory(readExistingCaseInventory());
+    refresh();
+    window.addEventListener("storage", refresh);
+    window.addEventListener("focus", refresh);
+    return () => { window.removeEventListener("storage", refresh); window.removeEventListener("focus", refresh); };
+  }, []);
   const [matters, setMatters] = useState<{ id: string; title: string }[]>([]);
   const [matterId, setMatterId] = useState<string>(initialMatterId || "");
   const [manualMatterInput, setManualMatterInput] = useState<string>("");
@@ -772,6 +781,22 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
           </div>
         )}
       </div>
+
+      {/* Read-only zero-credit inventory of the existing analyzer vault. */}
+      {existingInventory && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4" aria-label="Previously saved documents">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+            <h2 className="font-bold text-slate-900 flex items-center gap-2"><FolderPlus className="w-5 h-5" /> Existing documents — automatically found</h2>
+            <p className="text-sm text-slate-600 mt-1">Read-only inventory from this signed-in account's browser. No uploads, scans, AI calls or credits used. These documents are not yet synced to the selected cloud case.</p>
+            <p className="text-sm font-semibold mt-2">{existingInventory.documents.length} saved documents · {existingInventory.quickReviewCount} Quick Reviews · {existingInventory.deepScanCount} Deep Scans</p>
+            {existingInventory.legacyDataPresent && <p className="text-sm text-amber-800 mt-2">Older unassigned browser data also exists. It has not been copied into your account for privacy.</p>}
+            {existingInventory.warnings.map((warning, i) => <p key={i} className="text-sm text-amber-800 mt-2">{warning}</p>)}
+            {existingInventory.documents.length > 0 && <ul className="mt-3 max-h-64 overflow-y-auto divide-y divide-slate-100">
+              {existingInventory.documents.map(doc => <li key={doc.id} className="py-2 text-sm flex flex-wrap gap-2 justify-between"><span className="break-all">{doc.name} <span className="text-slate-500">({doc.category})</span></span><span className="text-slate-600">{doc.hasQuickReview ? "Quick saved" : "No Quick"} · {doc.hasDeepScan ? "Deep saved" : "No Deep"}</span></li>)}
+            </ul>}
+          </div>
+        </section>
+      )}
 
       {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
