@@ -26,6 +26,7 @@ import {
   attachEvidenceLink,
   unlinkEvidenceLink,
 } from './services/caseActionWorkspace.js';
+import { exportRequirements } from './services/caseworkExport.js';
 import { extractAnalyzerRequirements } from './services/analyzerRequirementExtractor.js';
 
 export function registerCaseActionWorkspaceRoutes(app: Express) {
@@ -69,6 +70,8 @@ export function registerCaseActionWorkspaceRoutes(app: Express) {
   app.post('/api/matters/:matterId/case-actions/analyzer-extract', authenticated((r, u) => {
     return extractAnalyzerRequirements(u, r.params.matterId, r.body);
   }));
+
+  app.get('/api/matters/:matterId/case-actions/export', authenticated((r, u) => exportRequirements(u, r.params.matterId)));
 
   // Requirements
   app.get('/api/matters/:matterId/case-actions/requirements', authenticated((r, u) => {

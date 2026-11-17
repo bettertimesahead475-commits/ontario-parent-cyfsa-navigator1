@@ -102,7 +102,7 @@ export async function requireMatterAccess(db: any, accountId: string, matterId: 
     .eq('account_id', accountId)
     .single();
 
-  if (error || !member) {
+  if (error || !member || !['OWNER', 'REVIEWER'].includes(member.role)) {
     throw new LifecycleError(403, 'UNAUTHORIZED', 'You do not have access to this matter.');
   }
 
@@ -129,17 +129,20 @@ export function calculateIsOverdue(dueAt: string | null | undefined, completionS
 /**
  * Logs safe audit events into navigator_events.
  */
-async function logAuditEvent(db: any, matterId: string, accountId: string, eventType: string, payload: Record<string, any>) {
+export async function logAuditEvent(db: any, matterId: string, accountId: string, eventType: string, payload: Record<string, any>) {
   try {
-    await db.from('navigator_events').insert({
+    const { error } = await db.from('navigator_events').insert({
       matter_id: matterId,
       actor_account_id: accountId,
       event_type: eventType,
       payload,
       created_at: new Date().toISOString(),
     });
-  } catch (e) {
-    console.warn(`[CaseActionWorkspace] Audit event warning (${eventType}):`, e);
+    if (error) throw new Error('Audit unavailable');
+    return true;
+  } catch {
+    console.warn(`[CaseActionWorkspace] Audit event could not be recorded (${eventType})`);
+    return false;
   }
 }
 
@@ -234,8 +237,8 @@ export async function createRequirement(firebaseUid: string, matterId: string, i
 
   // Validate cross-matter source document version if supplied
   if (input.sourceDocumentVersionId) {
-    const { data: ver } = await db.from('navigator_document_versions').select('document_id, matter_id').eq('id', input.sourceDocumentVersionId).single();
-    if (!ver || ver.matter_id !== matterId || (input.sourceDocumentId && ver.document_id !== input.sourceDocumentId)) {
+    const { data: ver } = await db.from('navigator_document_versions').select('document_id').eq('id', input.sourceDocumentVersionId).single();
+    if (!ver || !input.sourceDocumentId || ver.document_id !== input.sourceDocumentId) {
       throw new LifecycleError(400, 'INVALID_REFERENCE', 'Source document version does not belong to this document/matter');
     }
   }
@@ -309,8 +312,8 @@ export async function updateRequirement(firebaseUid: string, matterId: string, r
 
   // Lawyer/Professional specific notes
   if (updates.lawyerNotes !== undefined) {
-    if (!access.isReviewer && !access.isOwner) {
-      throw new LifecycleError(403, 'UNAUTHORIZED', 'Only authorized reviewers or matter owners can add professional notes');
+    if (!access.isReviewer) {
+      throw new LifecycleError(403, 'UNAUTHORIZED', 'Only authorized reviewers can add professional notes');
     }
     patch.lawyer_notes = updates.lawyerNotes;
     if (access.isReviewer) patch.verified_by_lawyer_at = new Date().toISOString();
@@ -325,6 +328,14 @@ export async function updateRequirement(firebaseUid: string, matterId: string, r
     .single();
 
   if (error) throw new LifecycleError(500, 'DB_ERROR', `Failed to update requirement: ${error.message}`);
+
+  const changedFields = Object.keys(patch).filter(key => !['updated_at', 'updated_by_account_id'].includes(key));
+  if (changedFields.length > 0) {
+    await logAuditEvent(db, matterId, account.id, 'CASE_REQUIREMENT_UPDATED', {
+      requirementId, changedFields,
+      ...(updates.reviewState !== undefined ? { priorReviewState: existing.review_state, reviewState: updates.reviewState } : {}),
+    });
+  }
 
   if (updates.authorityType && updates.authorityType !== existing.authority_type) {
     await logAuditEvent(db, matterId, account.id, 'CASE_REQUIREMENT_AUTHORITY_CHANGED', {
@@ -358,7 +369,7 @@ export async function setRequirementDispute(firebaseUid: string, matterId: strin
   if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
 
   const db = getSupabase();
-  await requireMatterAccess(db, account.id, matterId);
+  const access = await requireMatterAccess(db, account.id, matterId);
 
   const patch = {
     dispute_state: 'DISPUTED' as DisputeState,
@@ -383,7 +394,8 @@ export async function setRequirementDispute(firebaseUid: string, matterId: strin
     disputeType,
   });
 
-  return data;
+  const { lawyer_notes, ...rest } = data;
+  return access.isReviewer ? data : rest;
 }
 
 export async function resolveRequirementDispute(firebaseUid: string, matterId: string, requirementId: string, resolutionNote?: string | null) {
@@ -394,7 +406,7 @@ export async function resolveRequirementDispute(firebaseUid: string, matterId: s
   if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
 
   const db = getSupabase();
-  await requireMatterAccess(db, account.id, matterId);
+  const access = await requireMatterAccess(db, account.id, matterId);
 
   const patch = {
     dispute_state: 'RESOLVED' as DisputeState,
@@ -415,7 +427,8 @@ export async function resolveRequirementDispute(firebaseUid: string, matterId: s
 
   await logAuditEvent(db, matterId, account.id, 'CASE_REQUIREMENT_DISPUTE_RESOLVED', { requirementId });
 
-  return data;
+  const { lawyer_notes, ...rest } = data;
+  return access.isReviewer ? data : rest;
 }
 
 // ---------------------------------------------------------------------------
@@ -590,8 +603,8 @@ export async function attachEvidenceLink(firebaseUid: string, matterId: string, 
 
   // Validate cross-matter document version if supplied
   if (input.documentVersionId) {
-    const { data: ver } = await db.from('navigator_document_versions').select('document_id, matter_id').eq('id', input.documentVersionId).single();
-    if (!ver || ver.matter_id !== matterId || (input.documentId && ver.document_id !== input.documentId)) {
+    const { data: ver } = await db.from('navigator_document_versions').select('document_id').eq('id', input.documentVersionId).single();
+    if (!ver || !input.documentId || ver.document_id !== input.documentId) {
       throw new LifecycleError(400, 'INVALID_REFERENCE', 'Document version does not belong to this document/matter');
     }
   }
@@ -614,7 +627,7 @@ export async function attachEvidenceLink(firebaseUid: string, matterId: string, 
 
   // Automatically promote completion_state to IN_PROGRESS if currently NOT_STARTED
   if (req.completion_state === 'NOT_STARTED') {
-    await db.from('navigator_case_requirements').update({ completion_state: 'IN_PROGRESS' }).eq('id', requirementId);
+    await db.from('navigator_case_requirements').update({ completion_state: 'IN_PROGRESS' }).eq('id', requirementId).eq('matter_id', matterId);
   }
 
   await logAuditEvent(db, matterId, account.id, 'CASE_EVIDENCE_LINKED', { linkId: data.id, requirementId });

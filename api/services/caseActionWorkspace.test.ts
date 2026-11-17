@@ -6,6 +6,7 @@
  * Covers requirements, actions, evidence links, state transitions, authorization, matter isolation, and audit events.
  */
 
+import { exportRequirements, formatRequirementsReport } from './caseworkExport.js';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
   createRequirement,
@@ -90,11 +91,14 @@ function resetMockStore() {
   mockDb = {
     from: (table: string) => {
       const filters: { col: string; val: any }[] = [];
+      let rangeFrom = 0;
+      let rangeTo = Infinity;
       let sortCol: string | null = null;
       let sortAsc = true;
 
       const queryBuilder: any = {
         select: () => queryBuilder,
+        range: (from: number, to: number) => {rangeFrom = from; rangeTo = to; return queryBuilder;},
         eq: (col: string, val: any) => {
           filters.push({ col, val });
           return queryBuilder;
@@ -193,7 +197,7 @@ function resetMockStore() {
           if (sortCol) {
             res.sort((a, b) => (sortAsc ? (a[sortCol!] > b[sortCol!] ? 1 : -1) : (a[sortCol!] < b[sortCol!] ? 1 : -1)));
           }
-          resolve({ data: res.map((x) => ({ ...x })), error: null });
+          resolve({ data: res.slice(rangeFrom, rangeTo + 1).map((x) => ({ ...x })), count: res.length, error: null });
         },
       };
       return queryBuilder;
@@ -466,5 +470,56 @@ describe('Post-Launch Case-Action Workspace Services (Batch 1)', () => {
       const parentList = await listRequirements('uid-owner-a', MATTER_A_ID);
       expect((parentList[0] as any).lawyer_notes).toBeUndefined();
     });
+  });
+});
+
+describe('Casework privacy and source-backed exports', () => {
+  beforeEach(resetMockStore);
+  it('removes professional notes from both dispute responses for a parent', async () => {
+    const req = await createRequirement('uid-reviewer-a', MATTER_A_ID, {title: 'Private review', authorityType: 'CAS_REQUESTED', lawyerNotes: 'PRIVATE'});
+    expect((await setRequirementDispute('uid-owner-a', MATTER_A_ID, req.id, 'FACTUALLY_INACCURATE')).lawyer_notes).toBeUndefined();
+    expect((await resolveRequirementDispute('uid-owner-a', MATTER_A_ID, req.id)).lawyer_notes).toBeUndefined();
+    expect((await getRequirement('uid-reviewer-a', MATTER_A_ID, req.id)).lawyer_notes).toBe('PRIVATE');
+  });
+  it('does not allow a parent to overwrite professional notes', async () => {
+    const req = await createRequirement('uid-reviewer-a', MATTER_A_ID, {title: 'Private review', authorityType: 'CAS_REQUESTED', lawyerNotes: 'PRIVATE'});
+    await expect(updateRequirement('uid-owner-a', MATTER_A_ID, req.id, {lawyerNotes: 'Changed'})).rejects.toMatchObject({statusCode: 403});
+  });
+  it('rejects unknown membership roles', async () => {
+    mockMatterMembers.push({matter_id: MATTER_A_ID, account_id: 'acc-unrelated', role: 'VIEWER'});
+    await expect(listRequirements('uid-unrelated', MATTER_A_ID)).rejects.toMatchObject({statusCode: 403});
+  });
+  it('exports source references, review/dispute states, actions and evidence without private notes or other matters', async () => {
+    const req = await createRequirement('uid-reviewer-a', MATTER_A_ID, {title: 'Attend course', authorityType: 'CAS_REQUESTED', reviewState: 'PROPOSED', sourceDocumentId: DOC_A1_ID, sourcePageNumber: 2, sourceExactQuote: 'Please attend the course.', lawyerNotes: 'SECRET LEGAL NOTE'});
+    await createRequirement('uid-owner-b', MATTER_B_ID, {title: 'OTHER MATTER PRIVATE', authorityType: 'COURT_ORDERED'});
+    await createAction('uid-owner-a', MATTER_A_ID, req.id, {title: 'Contact provider'});
+    await attachEvidenceLink('uid-owner-a', MATTER_A_ID, req.id, {title: 'Email receipt', evidenceType: 'CORRESPONDENCE_EMAIL_TEXT', documentId: DOC_A1_ID});
+    const result = await exportRequirements('uid-owner-a', MATTER_A_ID);
+    expect(result.requirementCount).toBe(1);
+    expect(result.evidenceLinkCount).toBe(1);
+    for (const text of ['CAS_REQUESTED', 'PROPOSED', DOC_A1_ID, 'Page: 2', 'Please attend the course.', 'Contact provider', 'Email receipt']) expect(result.text).toContain(text);
+    expect(result.text).not.toContain('SECRET LEGAL NOTE');
+    expect(result.text).not.toContain('OTHER MATTER PRIVATE');
+    expect(mockEvents.some(e => e.event_type === 'CASEWORK_EXPORT_GENERATED')).toBe(true);
+    await expect(exportRequirements('uid-owner-b', MATTER_A_ID)).rejects.toMatchObject({statusCode: 403});
+  });
+  it('exports beyond the default API row limit without silent truncation', async () => {
+    mockRequirements = Array.from({length: 1201}, (_, n) => ({id: `req-${String(n).padStart(4, '0')}`, matter_id: MATTER_A_ID, title: `Item ${n}`, authority_type: 'PARENT_CREATED', review_state: 'CONFIRMED'}));
+    const report = await exportRequirements('uid-owner-a', MATTER_A_ID);
+    expect(report.requirementCount).toBe(1201);
+    expect(report.text).toContain('Item 1200');
+  });
+  it('labels missing source coordinates and deadlines explicitly', () => {
+    const text = formatRequirementsReport(MATTER_A_ID, [{id: 'r', title: 'Unknown', due_at: 'invalid'}], [], [], []);
+    expect(text).toContain('Uncertain / not recorded');
+    expect(text).toContain('No document linked');
+    expect(text).toContain('not a certified court document');
+  });
+  it('records reviewed and edited field names without copying sensitive notes into history', async () => {
+    const req = await createRequirement('uid-owner-a', MATTER_A_ID, {title: 'Review me', authorityType: 'PARENT_CREATED', reviewState: 'PROPOSED'});
+    await confirmRequirement('uid-owner-a', MATTER_A_ID, req.id);
+    const event = mockEvents.find(e => e.event_type === 'CASE_REQUIREMENT_UPDATED');
+    expect(event.payload.changedFields).toContain('review_state');
+    expect(event.payload.reviewState).toBe('CONFIRMED');
   });
 });

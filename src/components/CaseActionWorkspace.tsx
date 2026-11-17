@@ -239,7 +239,6 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
   const [extractDocId, setExtractDocId] = useState("");
   const [extractDocVersionId, setExtractDocVersionId] = useState("");
   const [extractCandidatesJson, setExtractCandidatesJson] = useState("");
-  const [extractDocText, setExtractDocText] = useState("");
 
   const [newActionTitle, setNewActionTitle] = useState("");
   const [newActionDueAt, setNewActionDueAt] = useState("");
@@ -408,6 +407,7 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
     if (extractCandidatesJson.trim()) {
       try {
         parsedCandidates = JSON.parse(extractCandidatesJson.trim());
+        if (!Array.isArray(parsedCandidates)) throw new Error("Expected an array");
       } catch (e) {
         setError("Invalid candidate JSON format.");
         return;
@@ -423,17 +423,15 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
         body: JSON.stringify({
           documentId: extractDocId.trim(),
           documentVersionId: extractDocVersionId.trim() || null,
-          documentText: extractDocText.trim() || null,
           candidates: parsedCandidates.length > 0 ? parsedCandidates : undefined,
         }),
       });
       const data = await safeReadJson(res);
-      setNotice(`Extraction complete: ${data.extractedCount} proposed item(s) created. (${data.skippedDuplicates} duplicate(s) skipped)`);
+      setNotice(`Import complete: ${data.extractedCount} proposed item(s) saved, ${data.skippedDuplicates} duplicate(s) skipped, ${data.rejectedCandidates || 0} item(s) could not be verified. ${data.notice || ""}`);
       setShowExtractModal(false);
       setExtractDocId("");
       setExtractDocVersionId("");
       setExtractCandidatesJson("");
-      setExtractDocText("");
       await fetchRequirements();
     } catch (err: any) {
       setError(err.message || "Failed to extract candidates from document.");
@@ -626,6 +624,27 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
     }
   };
 
+  const handleExport = async () => {
+    if (!matterId) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await apiFetch(`/api/matters/${encodeURIComponent(matterId)}/case-actions/export`);
+      const data = await safeReadJson(response);
+      const url = URL.createObjectURL(new Blob([data.text], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = data.filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice(`Exported ${data.requirementCount} requirements and ${data.evidenceLinkCount} evidence links. Review proposed and disputed items before relying on this draft. ${data.historyRecorded ? "" : "The export could not be added to case history."}`);
+    } catch (err: any) {
+      setError(err.message || "The report could not be exported. Please retry.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Derived Groups for Tabs
   const activeRequirements = requirements.filter((r) => r.review_state !== "ARCHIVED" && r.review_state !== "REJECTED");
   const urgentRequirements = activeRequirements.filter((r) => r.isOverdue || r.review_state === "PROPOSED" || r.dispute_state === "DISPUTED");
@@ -650,6 +669,10 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
 
             {/* Matter Switcher & Action Controls */}
             <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={handleExport} disabled={!matterId || saving}
+                className="min-h-[44px] px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold disabled:opacity-50 focus:ring-2 focus:ring-brand-500">
+                Export requirements
+              </button>
               <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
                 <label htmlFor="matter-selector" className="text-xs font-semibold text-slate-600 pl-2">
                   Case Matter:
@@ -688,7 +711,7 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
                 className="min-h-[44px] px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold text-xs rounded-xl flex items-center gap-2 shadow-xs transition-colors focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
               >
                 <FileCheck className="w-4 h-4" />
-                <span>Scan Document</span>
+                <span>Import saved findings</span>
               </button>
 
               <button
@@ -1507,7 +1530,7 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h2 id="extract-modal-title" className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <FileCheck className="w-5 h-5 text-indigo-600" />
-                <span>Scan Document for Action Items</span>
+                <span>Import saved action items</span>
               </h2>
               <button onClick={() => setShowExtractModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -1528,32 +1551,24 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Document Version ID (Optional)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Document Version ID *</label>
                 <input
                   type="text"
-                  placeholder="Optional version UUID"
+                  required
+                  placeholder="Stored document version UUID"
                   value={extractDocVersionId}
                   onChange={(e) => setExtractDocVersionId(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 text-xs font-mono rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Source Document Text (Optional Verification)</label>
-                <textarea
-                  rows={2}
-                  placeholder="Raw document text for quote containment verification..."
-                  value={extractDocText}
-                  onChange={(e) => setExtractDocText(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 text-xs rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                />
-              </div>
+              <p className="text-xs text-slate-600">Quotations are checked against the saved document version and page. This import does not run a new analysis.</p>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Candidate Items JSON (Optional)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Saved candidate items (JSON)</label>
                 <textarea
                   rows={3}
-                  placeholder='[{"title":"Complete screening","proposedAuthorityType":"CAS_REQUESTED","sourcePageNumber":1,"sourceExactQuote":"CAS worker requested..."}]'
+                  placeholder='[{"title":"Complete screening","sourceDocumentId":"document UUID above","sourcePageNumber":1,"sourceExactQuote":"CAS worker requested...","proposedAuthorityType":"CAS_REQUESTED"}]'
                   value={extractCandidatesJson}
                   onChange={(e) => setExtractCandidatesJson(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 text-xs font-mono rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
@@ -1573,7 +1588,7 @@ export default function CaseActionWorkspace({ initialMatterId }: CaseActionWorks
                   disabled={saving}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl disabled:opacity-50"
                 >
-                  {saving ? "Extracting..." : "Run Extraction"}
+                  {saving ? "Importing..." : "Import findings"}
                 </button>
               </div>
             </form>
