@@ -23,8 +23,11 @@ export async function readVerifiedPaidSession(
   fetcher: typeof fetch = fetch,
 ): Promise<SessionReadResult> {
   if (!firebaseUid || !sessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return { status: 'denied' };
-  const readKey = env.STAGING_SUPABASE_READ_KEY || env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
-  if (!env.STAGING_SUPABASE_URL || !readKey) return { status: 'unavailable' };
+  const readKey = (env.STAGING_SUPABASE_READ_KEY || env.STAGING_SUPABASE_SERVICE_ROLE_KEY)?.trim();
+  if (!env.STAGING_SUPABASE_URL || !readKey) {
+    console.warn('[paid_session_read] missing runtime configuration');
+    return { status: 'unavailable' };
+  }
   let url: URL;
   try {
     url = new URL('/rest/v1/navigator_paid_sessions', env.STAGING_SUPABASE_URL);
@@ -37,24 +40,40 @@ export async function readVerifiedPaidSession(
     return { status: 'unavailable' };
   }
   try {
+    const opaqueKey = readKey.startsWith('sb_secret_') || readKey.startsWith('sb_publishable_');
     const response = await fetcher(url.toString(), {
       method: 'GET',
       headers: {
         apikey: readKey,
-        Authorization: 'Bearer ' + readKey,
+        ...(opaqueKey ? {} : { Authorization: 'Bearer ' + readKey }),
         Accept: 'application/json',
       },
       redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) return { status: 'unavailable' };
+    if (!response.ok) {
+      const contentType = response.headers.get('content-type')?.split(';')[0];
+      const error = contentType === 'application/json'
+        ? await response.json().catch(() => null) as { code?: unknown } | null
+        : null;
+      const code = typeof error?.code === 'string' && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code) ? error.code : null;
+      console.warn('[paid_session_read] upstream rejected request', {
+        status: response.status,
+        keyFormat: opaqueKey ? 'opaque' : readKey.split('.').length === 3 ? 'jwt-shaped' : 'unrecognized',
+        code,
+        json: contentType === 'application/json',
+        supabaseRequestIdPresent: response.headers.has('sb-request-id'),
+      });
+      return { status: 'unavailable' };
+    }
     const rows: unknown = await response.json();
     if (!Array.isArray(rows) || rows.length > 1) return { status: 'unavailable' };
     if (rows.length === 0) return { status: 'denied' };
     const row = rows[0] as PaidSessionRow;
     const session = validatePaidSessionRow(row, firebaseUid, sessionId);
     return session ? { status: 'verified', session } : { status: 'denied' };
-  } catch {
+  } catch (error) {
+    console.warn('[paid_session_read] request or response failed', { errorType: error instanceof Error ? error.name : 'unknown' });
     return { status: 'unavailable' };
   }
 }

@@ -900,7 +900,7 @@ export async function runOneSection(
           messages: [{ role: "user", content: [{ type: "text", text: buildSectionPrompt(key, opts.mode, opts.documentText, retryNote) }] }],
           max_tokens: spec.maxTokens[opts.mode],
           timeoutMs,
-          retries: 1, // retries are handled here, inside the deadline, not stacked in the client
+          retries: opts.mode === "full" ? 0 : 1, // Forensic retries are owned by the section loop.
           requestId: opts.requestId,
           stage: `section:${key}`,
           mode: opts.mode,
@@ -967,17 +967,22 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   const queue = [...keys];
   const outcomes: any[] = [];
   const workers = Array.from({ length: concurrency }, async () => {
-    while (queue.length > 0) {
+    while (queue.length > 0 && (opts.mode !== "full" || outcomes.length === 0)) {
       const key = queue.shift();
       if (!key) break;
+      // Log section starts as well as completions so a stalled provider call is identifiable.
+      if (opts.mode === "full") console.info('[FORENSIC_SECTION_STARTED]', JSON.stringify({ section: key, elapsedMs: now() - started }));
       try {
         const { value, attempts: n } = await runOneSection(key, opts, usageByModel);
         sectionTimingsMs[key] = now() - started;
         attempts[key] = n;
+        // Timing metadata only: never log document text, prompts, findings, or identities.
+        if (opts.mode === "full") console.info('[FORENSIC_SECTION_COMPLETED]', JSON.stringify({ section: key, elapsedMs: sectionTimingsMs[key], attempts: n }));
         Object.assign(report, value);
         completed++;
         await opts.onSectionComplete?.(key, value, completed, totalCount);
       } catch (err) {
+        if (opts.mode === "full") console.error('[FORENSIC_SECTION_FAILED]', JSON.stringify({ section: key, elapsedMs: now() - started, errorClass: err instanceof Error ? err.name : 'unknown' }));
         outcomes.push(err);
       }
     }
@@ -1143,7 +1148,7 @@ async function runForensicVerification(
           messages: [{ role: "user", content: [{ type: "text", text: buildVerificationPrompt(report, opts.documentText) }] }],
           max_tokens: 4000,
           timeoutMs: Math.min(90_000, remaining - 3_000),
-          retries: 1,
+          retries: 0,
           requestId: opts.requestId,
           stage: "forensic_verification",
           mode: "full",
