@@ -17,6 +17,7 @@
  * 7. Cross-matter protection (validates document and document version belong to the matter).
  */
 
+import { createHash } from 'node:crypto';
 import { getSupabase } from './access.js';
 import { findAccount } from './accounts.js';
 import { LifecycleError, requireUuid } from './lifecycleErrors.js';
@@ -26,7 +27,6 @@ import {
   calculateIsOverdue,
   type AuthorityType,
   type ProvenanceType,
-  type CaseRequirementInput,
 } from './caseActionWorkspace.js';
 
 export interface AnalyzerCandidateInput {
@@ -77,8 +77,12 @@ export function parseExplicitDueDate(dueDateStr?: string | null): string | null 
 
   // Accept only unambiguous ISO dates. Date.parse accepts vague English dates,
   // which could silently turn a model guess into a court deadline.
-  if (!/^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2}))?$/.test(trimmed)) return null;
-  const dateOnly = /^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed);
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(trimmed)) return null;
+  const calendarDate = trimmed.slice(0, 10);
+  const calendarTime = Date.parse(calendarDate + 'T00:00:00.000Z');
+  if (!Number.isFinite(calendarTime) || new Date(calendarTime).toISOString().slice(0, 10) !== calendarDate) return null;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(trimmed);
+  if (!dateOnly && (+trimmed.slice(11, 13) > 23 || +trimmed.slice(14, 16) > 59 || +trimmed.slice(17, 19) > 59)) return null;
   const parsed = Date.parse(dateOnly ? trimmed + 'T00:00:00.000Z' : trimmed);
   if (!Number.isFinite(parsed)) return null;
   const iso = new Date(parsed).toISOString();
@@ -131,7 +135,7 @@ export async function extractAnalyzerRequirements(
   }
 
   const documentId = requireUuid(payload.documentId, 'documentId');
-  const documentVersionId = payload.documentVersionId ? requireUuid(payload.documentVersionId, 'documentVersionId') : null;
+  const documentVersionId = requireUuid(payload.documentVersionId, 'documentVersionId');
 
   const account = await findAccount(firebaseUid);
   if (!account) throw new LifecycleError(401, 'UNAUTHORIZED', 'Account not found');
@@ -142,7 +146,7 @@ export async function extractAnalyzerRequirements(
   // 1. Cross-matter document protection
   const { data: doc, error: docErr } = await db
     .from('navigator_documents')
-    .select('id, matter_id, title, name, filename')
+    .select('id, matter_id, display_name')
     .eq('id', documentId)
     .single();
 
@@ -154,71 +158,87 @@ export async function extractAnalyzerRequirements(
   if (documentVersionId) {
     const { data: ver, error: verErr } = await db
       .from('navigator_document_versions')
-      .select('id, document_id, matter_id')
+      .select('id, document_id')
       .eq('id', documentVersionId)
       .single();
 
-    if (verErr || !ver || ver.matter_id !== matterId || ver.document_id !== documentId) {
+    if (verErr || !ver || ver.document_id !== documentId) {
       throw new LifecycleError(400, 'INVALID_REFERENCE', 'Document version does not belong to this document/matter');
     }
   }
 
   const candidatesInput = payload.candidates;
   if (!Array.isArray(candidatesInput) || candidatesInput.length === 0) {
-    return { extractedCount: 0, items: [], skippedDuplicates: 0, notice: 'No actionable candidates found in document payload.' };
+    return { extractedCount: 0, items: [], skippedDuplicates: 0, rejectedCandidates: 0, auditRecorded: true, notice: 'No actionable candidates found in document payload.' };
+  }
+  if (candidatesInput.length > 500) {
+    throw new LifecycleError(400, 'INVALID_INPUT', 'Import at most 500 findings at a time.');
   }
 
-  // 3. Query existing requirements for deduplication
-  const { data: existingReqs } = await db
-    .from('navigator_case_requirements')
-    .select('id, title, authority_type, source_document_id, source_page_number, source_exact_quote')
-    .eq('matter_id', matterId);
+  // Browser-supplied documentText is never authoritative. Page text is immutable
+  // for the exact stored version already validated through its parent document.
+  const { data: pages, error: pagesError } = await db
+    .from('navigator_document_pages')
+    .select('page_number, text')
+    .eq('document_version_id', documentVersionId);
+  if (pagesError || !Array.isArray(pages) || pages.length === 0) {
+    throw new LifecycleError(503, 'SOURCE_UNAVAILABLE', 'Stored source pages are unavailable. Save the source version before retrying this import. No new analysis is needed.');
+  }
 
+  const { data: existingReqs, error: existingError } = await db
+    .from('navigator_case_requirements')
+    .select('id, title, source_document_id, source_document_version_id, source_page_number, source_exact_quote')
+    .eq('matter_id', matterId);
+  if (existingError) throw new LifecycleError(503, 'IMPORT_UNAVAILABLE', 'Could not check previous imports. Retry without analyzing again.');
   const existingList = existingReqs || [];
 
   const insertedItems: any[] = [];
   let skippedDuplicates = 0;
+  let rejectedCandidates = 0;
 
   for (const candidate of candidatesInput) {
     // Validate required title
-    if (!candidate || typeof candidate.title !== 'string' || !candidate.title.trim()) {
+    if (!candidate || typeof candidate.title !== 'string' || !candidate.title.trim() || candidate.title.length > 500) {
+      rejectedCandidates++;
       continue; // Reject malformed candidates
     }
 
     // Provenance requirement: Must have document reference and valid quote/page
     const exactQuote = typeof candidate.sourceExactQuote === 'string' ? candidate.sourceExactQuote.trim() : null;
-    const pageNum = typeof candidate.sourcePageNumber === 'number' && candidate.sourcePageNumber > 0 ? candidate.sourcePageNumber : null;
-
-    // A page number by itself does not establish what the source says.
-    // Require a quotation verified against the document text before creating a proposal.
-    if (!exactQuote || !payload.documentText || !verifyQuoteInDocumentText(payload.documentText, exactQuote)) {
+    const pageNum = Number.isSafeInteger(candidate.sourcePageNumber) && candidate.sourcePageNumber! > 0 ? candidate.sourcePageNumber! : null;
+    const sourcePage = pages.find((page: any) => page.page_number === pageNum);
+    if (candidate.sourceDocumentId !== documentId ||
+        (candidate.sourceDocumentVersionId && candidate.sourceDocumentVersionId !== documentVersionId) ||
+        !exactQuote || exactQuote.length > 2000 || !sourcePage ||
+        !verifyQuoteInDocumentText(sourcePage.text, exactQuote)) {
+      rejectedCandidates++;
       continue;
     }
 
     // Check confidence threshold if provided
-    if (typeof candidate.confidence === 'number' && candidate.confidence < 0.5) {
-      continue; // Omit low confidence candidate
+    if (candidate.confidence != null && (typeof candidate.confidence !== 'number' || !Number.isFinite(candidate.confidence) || candidate.confidence < 0.5 || candidate.confidence > 1)) {
+      rejectedCandidates++;
+      continue; // Omit invalid or low confidence candidate
     }
 
     const titleTrimmed = candidate.title.trim();
-    const authorityType = sanitizeAuthorityType(candidate.proposedAuthorityType, exactQuote || candidate.description || '');
-    const dueAt = parseExplicitDueDate(candidate.explicitDueDate);
+    const authorityType = sanitizeAuthorityType(candidate.proposedAuthorityType, `${doc.display_name || ''} ${exactQuote}`);
+    // A syntactically valid model date is still a guess unless its ISO date
+    // appears in the verified quotation. Human review can set other deadlines.
+    const parsedDueAt = parseExplicitDueDate(candidate.explicitDueDate);
+    const dueAt = parsedDueAt && exactQuote.includes(candidate.explicitDueDate!.trim()) ? parsedDueAt : null;
 
     // Deduplication Check
     const normQuoteCandidate = exactQuote ? normalizeQuoteWhitespace(exactQuote) : '';
     const normTitleCandidate = normalizeQuoteWhitespace(titleTrimmed).toLowerCase();
 
-    const isDuplicate = existingList.some((ex: any) => {
-      if (ex.source_document_id === documentId) {
-        if (ex.source_exact_quote && normQuoteCandidate && normalizeQuoteWhitespace(ex.source_exact_quote) === normQuoteCandidate) {
-          return true;
-        }
-      }
-      if (normalizeQuoteWhitespace(ex.title || '').toLowerCase() === normTitleCandidate && ex.authority_type === authorityType) {
-        return true;
-      }
-      return false;
-    });
+    const isDuplicate = existingList.some((ex: any) =>
+      ex.source_document_id === documentId &&
+      ex.source_document_version_id === documentVersionId &&
+      ex.source_page_number === pageNum &&
+      normalizeQuoteWhitespace(ex.source_exact_quote || '') === normQuoteCandidate &&
+      normalizeQuoteWhitespace(ex.title || '').toLowerCase() === normTitleCandidate
+    );
 
     if (isDuplicate) {
       skippedDuplicates++;
@@ -226,9 +246,12 @@ export async function extractAnalyzerRequirements(
     }
 
     const newRow = {
+      // The primary key provides atomic retry/concurrent-import deduplication.
+      // Never upsert: a retry must not overwrite a parent's review or correction.
+      id: analyzerRequirementId(matterId, documentId, documentVersionId, pageNum!, exactQuote, titleTrimmed),
       matter_id: matterId,
       title: titleTrimmed,
-      description: candidate.description ? candidate.description.trim().slice(0, 2000) : null,
+      description: typeof candidate.description === 'string' ? candidate.description.trim().slice(0, 2000) : null,
       authority_type: authorityType,
       review_state: 'PROPOSED' as const, // CRITICAL SAFETY INVARIANT: Always PROPOSED
       completion_state: 'NOT_STARTED' as const,
@@ -239,8 +262,8 @@ export async function extractAnalyzerRequirements(
       source_document_version_id: documentVersionId,
       source_page_number: pageNum,
       source_exact_quote: exactQuote ? exactQuote.slice(0, 2000) : null,
-      source_author_or_speaker: candidate.sourceAuthorOrSpeaker ? candidate.sourceAuthorOrSpeaker.trim().slice(0, 500) : null,
-      source_event_date: candidate.sourceEventDate ? candidate.sourceEventDate.trim() : null,
+      source_author_or_speaker: typeof candidate.sourceAuthorOrSpeaker === 'string' && verifyQuoteInDocumentText(sourcePage.text, candidate.sourceAuthorOrSpeaker) ? candidate.sourceAuthorOrSpeaker.trim().slice(0, 500) : null,
+      source_event_date: parseExplicitDueDate(candidate.sourceEventDate)?.slice(0, 10) && exactQuote.includes(candidate.sourceEventDate!.trim().slice(0, 10)) ? candidate.sourceEventDate!.trim().slice(0, 10) : null,
       lawyer_notes: null,
       created_by_account_id: account.id,
       updated_by_account_id: account.id,
@@ -253,8 +276,12 @@ export async function extractAnalyzerRequirements(
       .single();
 
     if (insertErr) {
-      console.warn('[AnalyzerExtractor] Insert candidate error:', insertErr);
-      continue;
+      if (insertErr.code === '23505') {
+        skippedDuplicates++;
+        continue;
+      }
+      // Earlier inserts are durable. Stable IDs make a partial retry safe.
+      throw new LifecycleError(503, 'IMPORT_INCOMPLETE', 'Some findings could not be saved. Retry this import without analyzing again.');
     }
 
     // Add to existing list for deduplication within the same batch
@@ -268,10 +295,11 @@ export async function extractAnalyzerRequirements(
     });
   }
 
+  let auditRecorded = insertedItems.length === 0;
   // Audit event logging
   if (insertedItems.length > 0) {
     try {
-      await db.from('navigator_events').insert({
+      const { error: auditError } = await db.from('navigator_events').insert({
         matter_id: matterId,
         actor_account_id: account.id,
         event_type: 'CASE_REQUIREMENTS_ANALYZER_EXTRACTED',
@@ -283,8 +311,10 @@ export async function extractAnalyzerRequirements(
         },
         created_at: new Date().toISOString(),
       });
-    } catch (e) {
-      console.warn('[AnalyzerExtractor] Audit event warning:', e);
+      if (auditError) throw new Error('Audit unavailable');
+      auditRecorded = true;
+    } catch {
+      console.warn('[AnalyzerExtractor] Audit event could not be recorded');
     }
   }
 
@@ -292,5 +322,17 @@ export async function extractAnalyzerRequirements(
     extractedCount: insertedItems.length,
     items: insertedItems,
     skippedDuplicates,
+    rejectedCandidates,
+    auditRecorded,
+    ...(!auditRecorded ? { notice: 'Findings were saved, but case history could not be recorded.' } : {}),
   };
+}
+
+/** Version and location are part of identity; similarly titled claims stay separate. */
+export function analyzerRequirementId(matterId: string, documentId: string, versionId: string, page: number, quote: string, title: string): string {
+  const digest = createHash('sha256').update(JSON.stringify([
+    'casework-requirement-v1', matterId, documentId, versionId, page,
+    normalizeQuoteWhitespace(quote), normalizeQuoteWhitespace(title).toLowerCase(),
+  ])).digest('hex');
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
