@@ -121,7 +121,9 @@ export function calculateIsOverdue(dueAt: string | null | undefined, completionS
   if (completionState === 'COMPLETED' || completionState === 'SUPERSEDED' || completionState === 'NOT_APPLICABLE') {
     return false;
   }
-  return new Date(dueAt).getTime() < Date.now();
+  const deadline = new Date(dueAt).getTime();
+  // Invalid or unverified dates must never be shown to parents as overdue.
+  return Number.isFinite(deadline) && deadline < Date.now();
 }
 
 /**
