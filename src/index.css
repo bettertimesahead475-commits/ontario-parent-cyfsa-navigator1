@@ -6,25 +6,27 @@
   --font-display: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
-  /* Clean, professional brand colors (Slate/Blue) */
-  --color-brand-50: #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-700: #1d4ed8;
-  --color-brand-800: #1e40af;
-  --color-brand-900: #1e3a8a;
-  --color-brand-950: #172554;
+  /* CYFSA shield palette: warm ivory, antique gold and deep legal navy. */
+  --color-brand-50: #fffaf0;
+  --color-brand-100: #fdf0d4;
+  --color-brand-200: #f5dfab;
+  --color-brand-300: #e9c77c;
+  --color-brand-400: #d9a944;
+  --color-brand-500: #b98724;
+  --color-brand-600: #163f6a;
+  --color-brand-700: #123457;
+  --color-brand-800: #0d2948;
+  --color-brand-900: #09203b;
+  --color-brand-950: #071629;
+  --color-shield-gold: #b98724;
+  --color-shield-ivory: #fffaf0;
 }
 
 html, body, #root {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f8fafc;
+  background-color: #fffaf0;
   color: #0f172a;
   overflow-x: hidden;
 }
@@ -131,3 +133,8 @@ code, pre, kbd, samp, .font-code, .code-font {
     max-width: none;
   }
 }
+
+/* Shield brand accents. Keep semantic danger/success colors unchanged. */
+:root { --shield-gold: #b98724; --shield-navy: #123457; --shield-ivory: #fffaf0; }
+::selection { background: #e9c77c; color: #09203b; }
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline-color: var(--shield-gold); }
