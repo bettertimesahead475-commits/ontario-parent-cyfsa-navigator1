@@ -195,11 +195,11 @@ export default function App() {
       {/* Top Professional Header Bar */}
       <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20">
+          <div className="flex justify-between items-center min-h-20 py-2">
             
             {/* Left Brand Area */}
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
+              <div className="w-14 h-14 md:w-16 md:h-16 shrink-0 rounded-2xl bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 p-[1.5px] shadow-sm">
                 <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center overflow-hidden">
                   <img src="/logo.webp" alt="CYFSA Navigator logo" width="256" height="239" className="w-full h-full object-cover" />
                 </div>
