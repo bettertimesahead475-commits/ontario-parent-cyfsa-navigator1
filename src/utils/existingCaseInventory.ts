@@ -25,9 +25,11 @@ export function readExistingCaseInventory(storage: Pick<Storage, "getItem"> = lo
   if (!key || !deepKey) return { documents: [], quickReviewCount: 0, deepScanCount: 0, legacyDataPresent, warnings: ["Sign in to load your own saved case documents."] };
   const progress = parseObject(storage.getItem(key));
   const deep = parseObject(storage.getItem(deepKey));
+  const quickKey = getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS");
+  const quickSaved = quickKey ? parseObject(storage.getItem(quickKey)) : null;
   if (storage.getItem(key) && !progress) warnings.push("Saved analyzer progress could not be read.");
   const files = Array.isArray(progress?.organizedFiles) ? progress.organizedFiles : [];
-  const quick = progress?.quickReviewSnapshots && typeof progress.quickReviewSnapshots === "object" ? progress.quickReviewSnapshots : {};
+  const quick = { ...(quickSaved || {}), ...((progress?.quickReviewSnapshots && typeof progress.quickReviewSnapshots === "object") ? progress.quickReviewSnapshots : {}) };
   const deepReports = { ...(deep || {}), ...((progress?.deepScanReports && typeof progress.deepScanReports === "object") ? progress.deepScanReports : {}) };
   const seen = new Set<string>();
   const documents = files.flatMap((file: any) => {
@@ -37,8 +39,8 @@ export function readExistingCaseInventory(storage: Pick<Storage, "getItem"> = lo
       id: file.id,
       name: String(file.name || file.fileName || file.title || "Untitled document"),
       category: String(file.category || "Uncategorized"),
-      hasQuickReview: !!(quick[file.id] || file.analysisReport),
-      hasDeepScan: !!deepReports[file.id],
+      hasQuickReview: !!(quick[file.id] || (file.analysisReport && !(/forensic|deep.scan/i.test(String(file.analysisReport?.reportType || file.analysisReport?.mode || ""))))),
+      hasDeepScan: !!(deepReports[file.id] || (file.analysisReport && /forensic|deep.scan/i.test(String(file.analysisReport?.reportType || file.analysisReport?.mode || "")))),
     }];
   });
   return {
