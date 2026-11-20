@@ -3099,6 +3099,10 @@ n${tabFile.content || "Empty content"}\n--- END FILE CONTEXT: "${tabFile.name}" 
   // making "Deep Scan" a near-duplicate of the first pass rather than an actual
   // second, deeper look. It now receives that prior report and is explicitly told
   // not to restate what it already found, but to dig into what it missed.
+  // Vercel maxDuration for this function is 300 s (vercel.json). The scan must stop itself first, with
+  // 30 s left to save the job and finalize the credit. Sections that finish later are discarded.
+  // DEEP_SCAN_DEADLINE_MS exists so tests can shorten the bound; production uses the default.
+  const DEEP_SCAN_DEADLINE_MS = Number(process.env.DEEP_SCAN_DEADLINE_MS) > 0 ? Number(process.env.DEEP_SCAN_DEADLINE_MS) : 270_000;
   app.post("/api/deep-scan", async (req: Request, res: Response) => {
     // Owner access is based exclusively on a server-verified Firebase identity.
     // Never trust a request body email or an arbitrary client-supplied admin header.
@@ -3335,10 +3339,18 @@ OUTPUT — return strictly this JSON schema, nothing else:
       };
       // One bounded retry per section, only for truncated or malformed output. A section that
       // already succeeded is never regenerated, and transport retries stay in generateContentWithFallback.
-      const sectionResults = await Promise.all(forensicSections.map(async (keys, index) => {
+      // Each section runs in parallel. Completed sections are recorded on the job so a reloaded page shows
+      // real progress. The whole scan is bounded by DEEP_SCAN_DEADLINE_MS, which is below the function's
+      // maxDuration: a scan that would be killed by the platform instead fails here, so the job is marked
+      // failed and the credit reservation is released.
+      const sectionTotal = forensicSections.length;
+      let sectionsDone = 0;
+      const sectionWork = Promise.all(forensicSections.map(async (keys, index) => {
+        let value: Record<string, unknown> | null = null;
         for (let attempt = 1; ; attempt++) {
           try {
-            return await generateForensicSection(keys, index, attempt);
+            value = await generateForensicSection(keys, index, attempt);
+            break;
           } catch (error) {
             const retryable = error instanceof AnalyzerError && error.code === "AI_RESPONSE_INVALID" &&
               error.userMessage !== ANALYSIS_REFUSAL_MESSAGE;
@@ -3348,7 +3360,32 @@ OUTPUT — return strictly this JSON schema, nothing else:
             });
           }
         }
+        sectionsDone++;
+        // Only a job still running may take progress; a scan already failed at its deadline must not revive.
+        if (getAnalysisJob(analysisRequestId)?.status === "analyzing") {
+          await recordAnalysisJobSection(analysisRequestId, `section_${index + 1}`, value, {
+            stage: "reviewing_evidence",
+            percent: 30 + Math.round((60 * sectionsDone) / sectionTotal),
+            message: `Completed ${sectionsDone} of ${sectionTotal} forensic review sections`,
+            total: sectionTotal,
+          }).catch(() => {});
+        }
+        return value;
       }));
+      let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+      const sectionDeadline = new Promise<never>((_resolve, reject) => {
+        deadlineTimer = setTimeout(() => reject(new AnalyzerError(
+          "AI_PROVIDER_TEMPORARILY_UNAVAILABLE", 503,
+          "The deep scan ran longer than the server time limit, so it was stopped. Your document is safe and no analysis credit was consumed. Please retry.",
+          true
+        )), DEEP_SCAN_DEADLINE_MS);
+      });
+      let sectionResults: Record<string, unknown>[];
+      try {
+        sectionResults = await Promise.race([sectionWork, sectionDeadline]);
+      } finally {
+        clearTimeout(deadlineTimer);
+      }
       const report: any = Object.assign({}, ...sectionResults, {
         disclaimer: "This document is generated for informational/educational purposes only. It does not constitute legal advice or representation. Please consult a lawyer licensed by the Law Society of Ontario, or contact Legal Aid Ontario, before relying on any conclusion in this report."
       });
