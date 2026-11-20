@@ -77,8 +77,8 @@ export function parseExplicitDueDate(dueDateStr?: string | null): string | null 
 
   // Accept only unambiguous ISO dates. Date.parse accepts vague English dates,
   // which could silently turn a model guess into a court deadline.
-  if (!/^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2}))?$/.test(trimmed)) return null;
-  const dateOnly = /^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed);
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(trimmed)) return null;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(trimmed);
   const parsed = Date.parse(dateOnly ? trimmed + 'T00:00:00.000Z' : trimmed);
   if (!Number.isFinite(parsed)) return null;
   const iso = new Date(parsed).toISOString();
