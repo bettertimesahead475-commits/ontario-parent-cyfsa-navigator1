@@ -175,7 +175,16 @@ export function providerFailure(
       "The AI service is experiencing rate limits. Please wait a moment before retrying - your document is safe.",
       true
     );
-  } else if (isAuth || isNotFound || isCredits) {
+  } else if (isCredits) {
+    // The AI provider account is out of funds. This is an operator problem, not a parent error, so the
+    // message says so plainly instead of implying the parent's document or request was at fault.
+    resultError = new AnalyzerError(
+      "AI_PROVIDER_CONFIGURATION_ERROR",
+      503,
+      "This analysis cannot run right now because the AI service account needs attention. Your document is safe, nothing was charged to your analyses, and this attempt was not counted. Please try again later.",
+      false
+    );
+  } else if (isAuth || isNotFound) {
     resultError = new AnalyzerError(
       "AI_PROVIDER_CONFIGURATION_ERROR",
       503,

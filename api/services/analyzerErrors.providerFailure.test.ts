@@ -82,6 +82,10 @@ describe("provider error classification (SDK error shape)", () => {
   it("classifies insufficient credits and rate limits distinctly", () => {
     const credits = providerFailure(new APIError(400, "Your credit balance is too low to access the API."), "claude");
     expect(credits.code).toBe("AI_PROVIDER_CONFIGURATION_ERROR");
+    expect(credits.retryable).toBe(false);
+    expect(credits.userMessage).toMatch(/nothing was charged/i);
+    expect(credits.userMessage).toMatch(/AI service account needs attention/i);
+    expect(credits.userMessage).not.toMatch(/configuration problem/i);
 
     const limited = providerFailure(new APIError(429, "rate limited"), "claude");
     expect(limited.code).toBe("AI_RATE_LIMITED");

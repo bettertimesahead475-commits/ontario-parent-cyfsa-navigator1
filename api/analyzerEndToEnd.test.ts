@@ -10,6 +10,9 @@
 //   - a failed analysis never consumes the free analysis,
 //   - text extraction no longer depends on the paid-session database lookup.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Shorten the deep-scan deadline so the timeout path can be exercised quickly. Must run before _server.ts loads.
+vi.hoisted(() => { process.env.DEEP_SCAN_DEADLINE_MS = "50"; });
 import { createProductionLikeDb } from "./testSupport/productionLikeCreditDb.js";
 import request from "supertest";
 import { LifecycleError } from "./services/lifecycleErrors.js";
@@ -529,6 +532,15 @@ describe("Forensic / deep scan access", () => {
     const res = await request(app).post("/api/deep-scan").set(free()).send({ documentText: "text" });
     expect(res.status).toBe(402);
     expect(mockCreateMessage).not.toHaveBeenCalled();
+  });
+
+  it("stops a scan that outlives the deadline with a retryable JSON error and a failed job, never a hang", async () => {
+    // The provider never answers. The route must end itself before the platform kills the function.
+    mockCreateMessage.mockImplementation(() => new Promise(() => {}));
+    const res = await request(app).post("/api/deep-scan").set(paid()).send({ documentText: "text", priorAnalysis: CORE });
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("AI_PROVIDER_TEMPORARILY_UNAVAILABLE");
+    expect(res.body.error).toMatch(/no analysis credit was consumed/i);
   });
 
   it("returns forensic findings for an entitled user", async () => {
