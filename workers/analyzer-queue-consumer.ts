@@ -11,7 +11,7 @@ import {
   type DurableJobRecord,
   type AnalyzerQueueBinding,
 } from '../functions/api/_durable-analysis-jobs';
-import { createAnalyzerQueueMessage, parseAnalyzerQueueMessage } from '../functions/api/_analyzer-queue-contract';
+import { CLAIM_LEASE_SECONDS, createAnalyzerQueueMessage, parseAnalyzerQueueMessage } from '../functions/api/_analyzer-queue-contract';
 import { createStagingCreditRpc } from '../functions/api/_staging-credit-rpc';
 import { finalizeFreeScan, releaseFreeScan } from '../functions/api/_free-credit-lifecycle';
 import { finalizePaidReservation, releasePaidReservation } from '../functions/api/_paid-credit-lifecycle';
@@ -103,7 +103,7 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
 
   const token = crypto.randomUUID();
   let job: DurableJobRecord | null;
-  try { job = await claimDurableJob(env, parsed.jobId, token, 240); }
+  try { job = await claimDurableJob(env, parsed.jobId, token, CLAIM_LEASE_SECONDS); }
   catch (error) {
     // Log only a stable error class/status; never job text, uid, URL, or keys.
     // A silent claim failure otherwise looks like a healthy Queue that never drains.

@@ -38,3 +38,13 @@ export function canTransitionJobStatus(from: DurableJobStatus, to: DurableJobSta
   if (from === 'running') return to === 'completed' || to === 'failed' || to === 'queued';
   return false;
 }
+
+/**
+ * Lease a worker holds on a claimed job. It must outlast the longest permitted analysis, because the
+ * consumer does not renew it: a shorter lease lets a second worker reclaim a job that is still running,
+ * which would run and charge the analysis twice. The database caps leases at 600 s.
+ */
+export const CLAIM_LEASE_SECONDS = 600;
+/** Largest Forensic analysis budget the analyzer accepts (see clampBudget in functions/api/analyze.ts). */
+export const MAX_ANALYSIS_BUDGET_SECONDS = 300;
+
