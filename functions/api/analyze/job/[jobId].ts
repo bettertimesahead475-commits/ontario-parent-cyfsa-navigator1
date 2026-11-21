@@ -7,6 +7,7 @@
 import { verifyFirebaseRequest } from '../../_auth-check';
 import { effectiveJob, jobObjectUrl, secretEquals } from '../../_analysis-jobs';
 import { loadPersistedReport, readDurableJob } from '../../_durable-analysis-jobs';
+import { expireStaleQueuedJob, isStaleQueuedJob } from '../../_queued-job-expiry';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -68,10 +69,17 @@ export const onRequestGet = async ({
   // remains in the private Storage bucket and is fetched only after checking the owner's UID.
   if (env?.STAGING_SUPABASE_URL && env?.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
     try {
-      const job = await readDurableJob(env, jobId);
-      if (job) {
+      const stored = await readDurableJob(env, jobId);
+      if (stored) {
+        let job = stored;
         if (!isAdmin && job.owner_uid !== callerUid) {
           return Response.json({ error: "Access denied. You cannot access another user's analysis job.", code: 'FORBIDDEN' }, { status: 403, headers: DEFAULT_HEADERS });
+        }
+        // A job no worker started within the bound is failed here, so the parent is not left polling forever.
+        // Only a job still queued is changed; a claimed or completed job is reported as it is.
+        if (job.status === 'queued' && isStaleQueuedJob(job)) {
+          const expired = await expireStaleQueuedJob(env, job);
+          if (expired) job = expired;
         }
         if (job.status === 'completed') {
           const report = await loadPersistedReport(env, jobId);

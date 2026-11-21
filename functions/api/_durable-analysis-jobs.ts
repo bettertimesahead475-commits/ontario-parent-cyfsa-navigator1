@@ -21,6 +21,7 @@ export interface DurableJobRecord {
   owner_bypass: boolean;
   worker_token?: string;
   attempt_count?: number;
+  created_at?: string | null;
   lease_expires_at?: string | null;
   error_code?: string | null;
   error_message?: string | null;
@@ -219,11 +220,21 @@ export async function updateDurableJob(
   }, fetcher);
 }
 
-export async function failDeadLetterJob(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch): Promise<DurableJobRecord | null> {
+export async function failDeadLetterJob(
+  env: DurableJobEnv,
+  jobId: string,
+  fetcher: typeof fetch = fetch,
+  failure: { code: string; message: string } = {
+    code: 'ANALYZER_RETRIES_EXHAUSTED',
+    message: 'The analysis could not be completed after multiple attempts. Your document remains available; you can retry it.',
+  },
+): Promise<DurableJobRecord | null> {
+  // The RPC only moves a queued job, or a running job whose lease has expired, to failed.
+  // A job a live consumer has claimed is returned unchanged, so this cannot race a healthy run.
   return await rpc<DurableJobRecord | null>(env, 'analyzer_fail_dead_letter', {
     p_job_id: jobId,
-    p_error_code: 'ANALYZER_RETRIES_EXHAUSTED',
-    p_error_message: 'The analysis could not be completed after multiple attempts. Your document remains available; you can retry it.',
+    p_error_code: failure.code,
+    p_error_message: failure.message,
   }, fetcher);
 }
 
