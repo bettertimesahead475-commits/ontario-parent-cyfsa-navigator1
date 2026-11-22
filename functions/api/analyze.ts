@@ -18,7 +18,7 @@ import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { saveCompletedJob, saveJobState } from './_analysis-jobs';
-import { createDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
+import { createDurableJob, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
@@ -320,8 +320,10 @@ export async function handleAnalyzeRequest(
       reservation_id: reservationId,
       owner_bypass: isOwner,
     };
+    let jobCreated = false;
     try {
       await createDurableJob(env, job, authFetcher);
+      jobCreated = true;
       await saveDurableInput(env, inputKey, { documentText, fileName: typeof body?.documentName === 'string' ? body.documentName : undefined }, authFetcher);
       await env.ANALYZER_JOBS_QUEUE.send(createAnalyzerQueueMessage(requestId));
       return Response.json({
@@ -331,12 +333,31 @@ export async function handleAnalyzeRequest(
         stream: wantsStream ? 'poll' : undefined,
       }, { status: 202, headers: DEFAULT_HEADERS });
     } catch {
+      if (!jobCreated) {
+        // The browser reuses one analysis id for every retry of a click. If that id already has a
+        // job owned by this caller, the insert failed only because the job exists: point the caller
+        // at it. Never mark someone else's (or this caller's earlier) queued job as failed.
+        // A failed existing job falls through: its own reservation was already settled, and any fresh
+        // reservation taken by this request is released below.
+        const existing = await readDurableJob(env, requestId, authFetcher).catch(() => null);
+        if (existing && existing.owner_uid === uid && existing.status !== 'failed') {
+          const completed = existing.status === 'completed';
+          return Response.json({
+            error: completed ? 'This analysis already finished.' : 'This analysis is already running. Results will display shortly.',
+            code: completed ? 'ANALYSIS_ALREADY_COMPLETED' : 'ANALYSIS_IN_PROGRESS',
+            jobId: requestId,
+            statusUrl: `/api/analyze/job/${encodeURIComponent(requestId)}`,
+          }, { status: 409, headers: DEFAULT_HEADERS });
+        }
+      }
       // This request id is now a terminal failed job, and its reservation is released below.
       // The user can start a fresh request; silently retrying the same id would be rejected as a duplicate.
       const retryable = false;
-      try {
-        await updateDurableJob(env, { jobId: requestId, status: 'failed', errorCode: 'ANALYSIS_ENQUEUE_FAILED', errorMessage: 'The analysis could not be placed in the queue. Please retry.', retryable }, authFetcher);
-      } catch { /* The producer still releases its reservation below. */ }
+      if (jobCreated) {
+        try {
+          await updateDurableJob(env, { jobId: requestId, status: 'failed', errorCode: 'ANALYSIS_ENQUEUE_FAILED', errorMessage: 'The analysis could not be placed in the queue. Please retry.', retryable }, authFetcher);
+        } catch { /* The producer still releases its reservation below. */ }
+      }
       if (!isOwner && reservationId) {
         try {
           if (sessionId) await releasePaidReservation(sessionId, requestId, reservationId, rpc);

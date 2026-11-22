@@ -147,6 +147,67 @@ describe('durable analyzer queue producer', () => {
     expect(rpc.mock.calls.map(([name]) => name)).toContain('free_release_scan');
   });
 
+  describe('duplicate analysis id (browser retry of the same click)', () => {
+    function duplicateFetcher(existing: Record<string, unknown> | null) {
+      return vi.fn(async (url: string) => {
+        if (url.includes('/rpc/analyzer_create_job')) return Response.json({ code: '23505', message: 'duplicate key' }, { status: 409 });
+        if (url.includes('/rpc/analyzer_get_job')) return Response.json(existing);
+        if (url.includes('/rpc/analyzer_update_job')) return Response.json(true);
+        return Response.json({ status: 'released' });
+      }) as unknown as ReturnType<typeof vi.fn>;
+    }
+    function ownerForensic(id: string) {
+      verify.mockResolvedValueOnce({ status: 'verified', uid: 'owner_1234', emailVerified: true, email: 'mr.pelkie@gmail.com' });
+      return new Request('https://navigator.test/api/deep-scan', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer firebase-token', 'Content-Type': 'application/json', 'X-Analysis-Id': id },
+        body: JSON.stringify({ documentText, mode: 'full', stream: false }),
+      });
+    }
+
+    it('points the caller at its existing queued job instead of failing it', async () => {
+      // Regression: the producer marked the existing queued job failed (token-less queued -> failed).
+      const id = 'job_owner_retry_123';
+      const send = vi.fn();
+      const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'owner_1234', status: 'queued', mode: 'full' });
+      const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv,
+        { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: 'ANALYSIS_IN_PROGRESS', jobId: id, statusUrl: '/api/analyze/job/' + id });
+      expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/rpc/analyzer_update_job'))).toBe(false);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('sends the caller to recover an existing completed report', async () => {
+      const id = 'job_owner_done_1234';
+      const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'owner_1234', status: 'completed', mode: 'full' });
+      const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
+        { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: 'ANALYSIS_ALREADY_COMPLETED', jobId: id });
+    });
+
+    it('never touches a job with the same id owned by someone else', async () => {
+      const id = 'job_foreign_dupe_12';
+      const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'someone_else', status: 'queued', mode: 'full' });
+      const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
+        { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
+      expect(res.status).toBe(503);
+      expect(await res.json()).toMatchObject({ code: 'ANALYSIS_ENQUEUE_FAILED' });
+      expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/rpc/analyzer_update_job'))).toBe(false);
+    });
+
+    it('releases a fresh reservation when the existing job with that id already failed', async () => {
+      const id = 'job_failed_dupe_123';
+      const rpc = vi.fn(async (name: string) => name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'reservation_2' } : { status: 'released' });
+      const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'owner_1234', status: 'failed', mode: 'fast' });
+      const res = await handleAnalyzeRequest(request(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
+        { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+      expect(res.status).toBe(503);
+      expect(rpc.mock.calls.map(([name]) => name)).toContain('free_release_scan');
+    });
+  });
+
   it('fails closed when private Storage rejects the input write and never enqueues', async () => {
     const send = vi.fn();
     const rpc = vi.fn(async (name: string) => name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'reservation_1' } : { status: 'released' });
