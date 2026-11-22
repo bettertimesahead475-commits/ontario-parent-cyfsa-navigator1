@@ -432,7 +432,13 @@ export async function handleAnalyzeRequest(
           await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent, message);
         },
         onVerificationStart: () => {
-          void onProgress?.('verifying_findings', 88, 'Independent Claude Opus verification of high-impact findings...');
+          // Fire-and-forget progress. In the queue Worker this writes the job ledger and can reject
+          // (for example after a lost lease); never leave that as an unhandled rejection.
+          void Promise.resolve()
+            .then(() => onProgress?.('verifying_findings', 88, 'Independent Claude Opus verification of high-impact findings...'))
+            .catch((error: unknown) => {
+              console.warn('[FORENSIC_VERIFICATION_PROGRESS_FAILED]', error instanceof Error ? error.name : 'unknown');
+            });
         },
       });
       console.info('[analyzer_latency]', JSON.stringify({ path: 'sectioned', elapsedMs: Date.now() - sectionedStartedAt, outcome: 'success' }));
