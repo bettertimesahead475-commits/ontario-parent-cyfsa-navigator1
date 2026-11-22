@@ -23,7 +23,13 @@ export async function readVerifiedPaidSession(
   fetcher: typeof fetch = fetch,
 ): Promise<SessionReadResult> {
   if (!firebaseUid || !sessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return { status: 'denied' };
-  const readKey = (env.STAGING_SUPABASE_READ_KEY || env.STAGING_SUPABASE_SERVICE_ROLE_KEY)?.trim();
+  // navigator_paid_sessions has RLS with zero policies and grants SELECT only to service_role
+  // (create_navigator_paid_sessions.sql). A separate non-service read key is therefore always
+  // rejected, which surfaced to paid users as SESSION_INVALID before any credit was reserved.
+  // Prefer the service-role credential that the credit reservation RPC immediately after this
+  // lookup already requires, so the lookup cannot fail where the rest of the paid flow succeeds.
+  const serviceKey = env.STAGING_SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const readKey = serviceKey || env.STAGING_SUPABASE_READ_KEY?.trim();
   if (!env.STAGING_SUPABASE_URL || !readKey) {
     console.warn('[paid_session_read] missing runtime configuration');
     return { status: 'unavailable' };
@@ -41,11 +47,14 @@ export async function readVerifiedPaidSession(
   }
   try {
     const opaqueKey = readKey.startsWith('sb_secret_') || readKey.startsWith('sb_publishable_');
+    // The service-role key uses exactly the header pair the working credit RPC transport sends
+    // (_staging-credit-rpc.ts). Only the legacy read-key fallback omits Bearer for opaque keys.
+    const sendBearer = Boolean(serviceKey) || !opaqueKey;
     const response = await fetcher(url.toString(), {
       method: 'GET',
       headers: {
         apikey: readKey,
-        ...(opaqueKey ? {} : { Authorization: 'Bearer ' + readKey }),
+        ...(sendBearer ? { Authorization: 'Bearer ' + readKey } : {}),
         Accept: 'application/json',
       },
       redirect: 'manual',
@@ -59,6 +68,7 @@ export async function readVerifiedPaidSession(
       const code = typeof error?.code === 'string' && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code) ? error.code : null;
       console.warn('[paid_session_read] upstream rejected request', {
         status: response.status,
+        credential: serviceKey ? 'service_role' : 'read_key',
         keyFormat: opaqueKey ? 'opaque' : readKey.split('.').length === 3 ? 'jwt-shaped' : 'unrecognized',
         code,
         json: contentType === 'application/json',

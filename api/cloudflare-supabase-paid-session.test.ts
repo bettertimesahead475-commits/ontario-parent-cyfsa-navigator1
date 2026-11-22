@@ -26,6 +26,44 @@ describe('staging paid session read adapter', () => {
     const mock = vi.fn(async (_url: string, init: RequestInit) => { expect((init.headers as any).apikey).toBe('synthetic-service'); expect(init.redirect).toBe('manual'); return Response.json([row]); });
     expect((await readVerifiedPaidSession({ STAGING_SUPABASE_URL: env.STAGING_SUPABASE_URL, STAGING_SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service' }, 'u1', sid, mock as typeof fetch)).status).toBe('verified');
   });
+  it('prefers the service-role key over a separate read key, because only service_role may read paid sessions', async () => {
+    // Regression: a configured non-service read key was tried first. The table grants SELECT only to
+    // service_role, so every paid Forensic request failed as SESSION_INVALID before reserving credit.
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const headers = init.headers as Record<string, string>;
+      expect(headers.apikey).toBe('synthetic-service');
+      expect(headers.Authorization).toBe('Bearer synthetic-service');
+      return Response.json([row]);
+    });
+    const both = { ...env, STAGING_SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service' };
+    expect((await readVerifiedPaidSession(both, 'u1', sid, mock as typeof fetch)).status).toBe('verified');
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+  it('sends the service-role key with the same apikey and Bearer pair as the credit RPC, even when opaque', async () => {
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const headers = init.headers as Record<string, string>;
+      expect(headers.apikey).toBe('sb_secret_synthetic');
+      expect(headers.Authorization).toBe('Bearer sb_secret_synthetic');
+      return Response.json([row]);
+    });
+    const opaqueService = { STAGING_SUPABASE_URL: env.STAGING_SUPABASE_URL, STAGING_SUPABASE_SERVICE_ROLE_KEY: '  sb_secret_synthetic  ' };
+    expect((await readVerifiedPaidSession(opaqueService, 'u1', sid, mock as typeof fetch)).status).toBe('verified');
+  });
+  it('keeps omitting Bearer for an opaque read key when no service-role key is configured', async () => {
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const headers = init.headers as Record<string, string>;
+      expect(headers.apikey).toBe('sb_secret_readonly');
+      expect(headers.Authorization).toBeUndefined();
+      return Response.json([row]);
+    });
+    const readOnly = { STAGING_SUPABASE_URL: env.STAGING_SUPABASE_URL, STAGING_SUPABASE_READ_KEY: 'sb_secret_readonly' };
+    expect((await readVerifiedPaidSession(readOnly, 'u1', sid, mock as typeof fetch)).status).toBe('verified');
+  });
+  it('reports a rejected lookup as unavailable (503), never as a denied session', async () => {
+    const both = { ...env, STAGING_SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service' };
+    const rejected = vi.fn(async () => Response.json({ code: '42501', message: 'permission denied' }, { status: 401 }));
+    expect((await readVerifiedPaidSession(both, 'u1', sid, rejected as typeof fetch)).status).toBe('unavailable');
+  });
   it('filters by both session ID and Firebase UID and verifies row', async () => {
     const mock = vi.fn(async (url: string) => {
       const u = new URL(url);
