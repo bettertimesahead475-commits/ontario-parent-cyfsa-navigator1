@@ -138,6 +138,20 @@ describe('Analyzer Requirement Extractor (Batch 3)', () => {
       expect(parseExplicitDueDate(null)).toBeNull();
     });
 
+    it('parseExplicitDueDate accepts only unambiguous, real ISO dates', () => {
+      // Regression: a double-escaped regex literal (\\d) once rejected every valid date.
+      expect(parseExplicitDueDate('2026-10-15')).toBe('2026-10-15T00:00:00.000Z');
+      expect(parseExplicitDueDate('2026-10-15T17:00:00Z')).toBe('2026-10-15T17:00:00.000Z');
+      expect(parseExplicitDueDate('2026-10-15T13:00:00-04:00')).toBe('2026-10-15T17:00:00.000Z');
+      // Vague or locale-dependent English dates must never become deadlines.
+      expect(parseExplicitDueDate('October 15, 2026')).toBeNull();
+      expect(parseExplicitDueDate('10/11/2026')).toBeNull();
+      expect(parseExplicitDueDate('next Friday')).toBeNull();
+      // Impossible calendar dates must not roll over into a different real date.
+      expect(parseExplicitDueDate('2026-02-30')).toBeNull();
+      expect(parseExplicitDueDate('2026-13-01')).toBeNull();
+    });
+
     it('verifyQuoteInDocumentText correctly verifies exact or normalized quotes', () => {
       const docText = 'The parent shall attend a 6-week parenting course starting October 1.';
       expect(verifyQuoteInDocumentText(docText, 'attend a 6-week parenting course')).toBe(true);
