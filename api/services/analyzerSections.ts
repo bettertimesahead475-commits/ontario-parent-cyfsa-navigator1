@@ -61,6 +61,8 @@ export type GenerateFn = (
     mode?: "fast" | "full";
     enableThinking?: boolean;
     thinkingBudget?: number;
+    /** Return a complete response that stopped at max_tokens (stopReason "max_tokens") instead of throwing. */
+    allowTruncated?: boolean;
   },
   model: string
 ) => Promise<GenerateResult>;
@@ -901,6 +903,7 @@ export async function runOneSection(
           max_tokens: spec.maxTokens[opts.mode],
           timeoutMs,
           retries: opts.mode === "full" ? 0 : 1, // Forensic retries are owned by the section loop.
+          allowTruncated: true, // A max_tokens stop is retried below with a shorter-answer instruction.
           requestId: opts.requestId,
           stage: `section:${key}`,
           mode: opts.mode,
@@ -1153,6 +1156,7 @@ async function runForensicVerification(
           max_tokens: 4000,
           timeoutMs: Math.min(90_000, remaining - 3_000),
           retries: 0,
+          allowTruncated: true, // Verification treats a max_tokens stop as incomplete and retries.
           requestId: opts.requestId,
           stage: "forensic_verification",
           mode: "full",

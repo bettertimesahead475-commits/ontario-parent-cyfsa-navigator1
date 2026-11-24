@@ -200,7 +200,9 @@ describe('Cloudflare Anthropic Model Adapter', () => {
     );
 
     expect(capturedBody.model).toBe('claude-sonnet-5-5');
-    expect(capturedBody.max_tokens).toBe(4096);
+    // Thinking cannot be disabled on this model and its tokens count toward max_tokens, so the
+    // requested visible-output limit gets fixed thinking headroom (production guidance-section regression).
+    expect(capturedBody.max_tokens).toBe(4096 + 8000);
     expect(capturedBody.thinking).toBeUndefined();
     expect(capturedBody.output_config).toEqual({ effort: 'low' });
   });

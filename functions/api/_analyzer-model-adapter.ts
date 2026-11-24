@@ -8,7 +8,19 @@ import { apiKeyHygiene, normalizeApiKey } from './_supabase-key';
  */
 
 import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyzerErrors';
-import { requireApprovedModel, resolveAnthropicWireModel, buildThinkingRequestFields } from '../../api/services/analyzerModels';
+import { requireApprovedModel, resolveAnthropicWireModel, buildThinkingRequestFields, MODELS_REJECTING_DISABLED_THINKING } from '../../api/services/analyzerModels';
+
+/**
+ * On models whose thinking cannot be disabled, thinking tokens count toward max_tokens. Requested
+ * limits were sized for visible JSON only, so thinking could exhaust them (production: the Forensic
+ * guidance section hit its 4,000-token limit on both attempts). max_tokens is a ceiling, not a
+ * charge: only generated tokens are billed.
+ */
+export const ALWAYS_ON_THINKING_HEADROOM_TOKENS = 8_000;
+export function effectiveMaxTokens(model: string, requested: number | undefined): number {
+  const base = requested || 8192;
+  return MODELS_REJECTING_DISABLED_THINKING.has(model) ? Math.min(64_000, base + ALWAYS_ON_THINKING_HEADROOM_TOKENS) : base;
+}
 import type { GenerateFn, GenerateResult } from '../../api/services/analyzerSections';
 
 export interface ModelAdapterEnv {
@@ -70,7 +82,7 @@ export function createCloudflareGenerateFn(
         const thinkingFields = buildThinkingRequestFields(wireModel, Boolean((options as any).enableThinking), (options as any).thinkingBudget);
         const requestBody: Record<string, unknown> = {
           model: wireModel,
-          max_tokens: options.max_tokens || 8192,
+          max_tokens: effectiveMaxTokens(wireModel, options.max_tokens),
           stream: true,
           system: options.system,
           messages: options.messages.map((m) => ({
@@ -193,7 +205,11 @@ export function createCloudflareGenerateFn(
           }
           // A stop reason alone does not prove that the streamed response finished.
           // Never persist or charge for an interrupted or token-truncated report.
-          if (!receivedMessageStop || !text.trim() || (stopReason !== 'end_turn' && stopReason !== 'stop_sequence')) {
+          // A complete message that stopped at max_tokens is returned to callers that handle it (they
+          // retry with a shorter-answer instruction); everyone else still gets an error.
+          const truncatedButComplete = receivedMessageStop && stopReason === 'max_tokens' && Boolean(options.allowTruncated);
+          if (!truncatedButComplete && (!receivedMessageStop || !text.trim() || (stopReason !== 'end_turn' && stopReason !== 'stop_sequence'))) {
+            if (receivedMessageStop && stopReason === 'max_tokens') console.warn(JSON.stringify({ tag: '[ANTHROPIC_MAX_TOKENS]', model: wireModel, outputTokens }));
             throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider stream ended before the analysis completed. Nothing was charged.', true);
           }
           } finally {
@@ -217,7 +233,7 @@ export function createCloudflareGenerateFn(
           stopReason = data.stop_reason ?? undefined;
         }
 
-        if (!text.trim() || (stopReason !== 'end_turn' && stopReason !== 'stop_sequence')) {
+        if (!(stopReason === 'max_tokens' && options.allowTruncated) && (!text.trim() || (stopReason !== 'end_turn' && stopReason !== 'stop_sequence'))) {
           throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an incomplete analysis. Nothing was charged.', true);
         }
 
