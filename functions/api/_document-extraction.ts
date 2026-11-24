@@ -271,9 +271,16 @@ async function readPdfTextLayer(bytes: Uint8Array, proxyGetter = getDocumentProx
     if (err?.name === 'PasswordException' || /password/i.test(String(err?.message))) {
       throw new ExtractionError(422, 'PDF_ENCRYPTED', 'This PDF is password-protected. Remove the password and upload it again.');
     }
+    // Classify without logging the message itself, which can echo document content.
+    // PDFJS_UNRESOLVED is what an incompatible Functions bundle produces (Cloudflare's default
+    // wrangler 3.114 bundling breaks unpdf; the repo pins wrangler 4 so Pages builds use it).
+    const message = String(err?.message ?? '');
     console.error(JSON.stringify({
       tag: '[EXTRACT_DIAGNOSTIC]',
       stage: 'PDF_TEXT_LAYER_OPEN_FAILED',
+      errorName: typeof err?.name === 'string' ? err.name.slice(0, 40) : 'unknown',
+      errorClass: /PDF\.js could not be resolved/i.test(message) ? 'PDFJS_UNRESOLVED'
+        : /Invalid PDF|structure|xref/i.test(message) ? 'PDF_STRUCTURE' : 'OTHER',
     }));
     return [];
   }

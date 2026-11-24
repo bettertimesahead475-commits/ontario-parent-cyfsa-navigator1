@@ -1,4 +1,5 @@
 import { ANALYSIS_JOBS_BUCKET } from './_analysis-jobs';
+import { normalizeSupabaseKey, supabaseKeyHygiene } from './_supabase-key';
 import type { AnalyzerQueueMessage } from './_analyzer-queue-contract';
 
 export interface DurableJobEnv {
@@ -37,11 +38,11 @@ export class DurableJobStorageError extends Error {
 }
 
 function serviceConfig(env: DurableJobEnv): { base: string; key: string } {
-  if (!env.STAGING_SUPABASE_URL || !env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+  const key = normalizeSupabaseKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
+  if (!env.STAGING_SUPABASE_URL || !key) {
     throw new DurableJobStorageError('Durable job database is not configured.', false);
   }
   const base = env.STAGING_SUPABASE_URL.replace(/\/$/, '');
-  const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
   return { base, key };
 }
 
@@ -131,6 +132,9 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
       serviceRoleClaim,
       projectClaimMatches,
       tokenExpired,
+      // Booleans only: whether the configured secret carried removable padding, and whether
+      // invalid header bytes remain after trimming (which trimming cannot fix).
+      configuredKey: supabaseKeyHygiene(env.STAGING_SUPABASE_SERVICE_ROLE_KEY),
     }));
     throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
   }

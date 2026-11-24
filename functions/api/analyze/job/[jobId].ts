@@ -6,7 +6,8 @@
  */
 import { verifyFirebaseRequest } from '../../_auth-check';
 import { effectiveJob, jobObjectUrl, secretEquals } from '../../_analysis-jobs';
-import { loadPersistedReport, readDurableJob } from '../../_durable-analysis-jobs';
+import { DurableJobStorageError, loadPersistedReport, readDurableJob } from '../../_durable-analysis-jobs';
+import { apiKeyHygiene, normalizeApiKey } from '../../_supabase-key';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -88,8 +89,25 @@ export const onRequestGet = async ({
         }
         return Response.json({ jobId, status: job.status, currentStage: job.stage || job.status, percent: Math.min(99, Math.max(0, job.progress ?? (job.status === 'queued' ? 10 : 35))), message: job.status === 'queued' ? 'Waiting for an analyzer worker.' : 'Analysis is running.' }, { status: 200, headers: DEFAULT_HEADERS });
       }
-    } catch {
-      return Response.json({ error: 'Analysis status is temporarily unavailable.', code: 'JOB_STATUS_UNAVAILABLE', retryable: true }, { status: 503, headers: DEFAULT_HEADERS });
+    } catch (error) {
+      // Previously silent. Log the failure class and non-secret facts about the configured key only:
+      // never the job id, user id, key material, URL or upstream text.
+      const storage = error instanceof DurableJobStorageError ? error : null;
+      const notConfigured = Boolean(storage && /not configured/i.test(storage.message));
+      const hygiene = apiKeyHygiene(env?.STAGING_SUPABASE_SERVICE_ROLE_KEY);
+      console.error('[JOB_STATUS_UNAVAILABLE]', JSON.stringify({
+        errorClass: error instanceof Error ? error.name : 'unknown',
+        storageStatus: storage?.status ?? null,
+        storageRetryable: storage?.retryable ?? null,
+        notConfigured,
+        configuredKey: { present: Boolean(env?.STAGING_SUPABASE_SERVICE_ROLE_KEY), usableLength: normalizeApiKey(env?.STAGING_SUPABASE_SERVICE_ROLE_KEY)?.length ?? 0, ...hygiene },
+      }));
+      // A missing or unusable credential will not fix itself by polling; tell the client to stop.
+      const retryable = !notConfigured && (storage?.retryable ?? true);
+      return Response.json(
+        { error: 'Analysis status is temporarily unavailable.', code: notConfigured ? 'JOB_STATUS_NOT_CONFIGURED' : 'JOB_STATUS_UNAVAILABLE', retryable },
+        { status: 503, headers: DEFAULT_HEADERS },
+      );
     }
   }
 

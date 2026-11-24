@@ -77,13 +77,18 @@ export function parseExplicitDueDate(dueDateStr?: string | null): string | null 
 
   // Accept only unambiguous ISO dates. Date.parse accepts vague English dates,
   // which could silently turn a model guess into a court deadline.
-  if (!/^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?(?:Z|[+-]\\d{2}:\\d{2}))?$/.test(trimmed)) return null;
-  const dateOnly = /^\\d{4}-\\d{2}-\\d{2}$/.test(trimmed);
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(trimmed)) return null;
+  // Reject impossible calendar dates and clock times before parsing, for timestamps as well as
+  // date-only values: Date.parse can roll 2026-02-30 over into March, inventing a real deadline.
+  const [, y, mo, d, h, mi, s] = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2}))?/.exec(trimmed)!;
+  const year = Number(y), month = Number(mo), day = Number(d);
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) return null;
+  if (h !== undefined && (Number(h) > 23 || Number(mi) > 59 || Number(s) > 59)) return null;
+  const dateOnly = h === undefined;
   const parsed = Date.parse(dateOnly ? trimmed + 'T00:00:00.000Z' : trimmed);
   if (!Number.isFinite(parsed)) return null;
-  const iso = new Date(parsed).toISOString();
-  if (dateOnly && iso.slice(0, 10) !== trimmed) return null;
-  return iso;
+  return new Date(parsed).toISOString();
 }
 
 /**

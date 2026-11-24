@@ -8,6 +8,8 @@
  * without exposing secrets.
  */
 
+import { normalizeApiKey } from './_supabase-key';
+
 export interface StatusEnv {
   ANALYZER_ENABLED?: string;
   ADMIN_SECRET?: string;
@@ -42,6 +44,21 @@ function formatStatus(val?: string): 'configured' | 'missing' {
   return 'configured';
 }
 
+/**
+ * A provider key that is present but cannot work (for example a one-character placeholder) used to
+ * be reported as "configured", so a broken environment advertised analyzerReady:true. Check only the
+ * documented public format of each key after removing paste damage; never the value itself.
+ */
+type KeyStatus = 'configured' | 'missing' | 'unusable';
+function providerKeyStatus(raw: string | undefined, kind: 'supabase' | 'anthropic' | 'gemini'): KeyStatus {
+  if (!raw || !raw.trim()) return 'missing';
+  const key = normalizeApiKey(raw) ?? '';
+  const usable = kind === 'anthropic' ? /^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key)
+    : kind === 'gemini' ? /^AIza[A-Za-z0-9_-]{35}$/.test(key)
+    : /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(key) && key.length > 100 || /^sb_secret_[A-Za-z0-9_-]{20,}$/.test(key);
+  return usable ? 'configured' : 'unusable';
+}
+
 export const onRequestGet = async ({
   request,
   env,
@@ -52,9 +69,13 @@ export const onRequestGet = async ({
   const isAnalyzerEnabled = env.ANALYZER_ENABLED === 'true';
   const hasFirebase = formatStatus(env.FIREBASE_PROJECT_ID);
   const hasSupabaseUrl = formatStatus(env.STAGING_SUPABASE_URL);
-  const hasSupabaseKey = formatStatus(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
-  const hasAnthropicKey = formatStatus(env.ANTHROPIC_API_KEY);
-  const hasGeminiKey = formatStatus(env.GEMINI_API_KEY);
+  const hasSupabaseKey = providerKeyStatus(env.STAGING_SUPABASE_SERVICE_ROLE_KEY, 'supabase');
+  const hasAnthropicKey = providerKeyStatus(env.ANTHROPIC_API_KEY, 'anthropic');
+  const hasGeminiKey = providerKeyStatus(env.GEMINI_API_KEY, 'gemini');
+  const unusable = ([['STAGING_SUPABASE_SERVICE_ROLE_KEY', hasSupabaseKey], ['ANTHROPIC_API_KEY', hasAnthropicKey], ['GEMINI_API_KEY', hasGeminiKey]] as const)
+    .filter(([, status]) => status === 'unusable').map(([name]) => name);
+  // Secret NAMES only, server-side. The public response stays minimal.
+  if (unusable.length) console.warn('[CONFIG_SECRET_UNUSABLE]', JSON.stringify({ secrets: unusable }));
   const hasSessionSecret = formatStatus(env.SESSION_SECRET);
   const isDirectAnalyzerActive = env.DIRECT_ANALYZER_DISABLED !== 'true';
   const hasQueueProducer = typeof env.ANALYZER_JOBS_QUEUE?.send === 'function';
