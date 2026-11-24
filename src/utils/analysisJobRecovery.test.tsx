@@ -134,3 +134,43 @@ describe("readAnalysisEventStream", () => {
     expect(report.documentTitle).toBe("T");
   });
 });
+
+describe("job status polling stop and backoff rules", () => {
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+  it("stops immediately on a non-retryable server error instead of polling until the wait limit", async () => {
+    // Regression: a 503 marked retryable:false was polled every 3 s for six minutes.
+    const fetcher = vi.fn(async () => json(503, { code: "JOB_STATUS_NOT_CONFIGURED", retryable: false }));
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1, fetcher }).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect(err.code).toBe("JOB_STATUS_NOT_CONFIGURED");
+    expect(err.retryable).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops immediately on a client error such as 405", async () => {
+    const fetcher = vi.fn(async () => json(405, { code: "METHOD_NOT_ALLOWED" }));
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1, fetcher }).catch((e) => e);
+    expect(err.code).toBe("METHOD_NOT_ALLOWED");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries transient failures a bounded number of times with growing delays, then ends retryable", async () => {
+    const times: number[] = [];
+    const fetcher = vi.fn(async () => { times.push(Date.now()); return json(503, { code: "JOB_STATUS_UNAVAILABLE", retryable: true }); });
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 10, maxWaitMs: 60_000, fetcher }).catch((e) => e);
+    expect(err.code).toBe("JOB_STATUS_UNAVAILABLE");
+    expect(err.retryable).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(6);
+    const gaps = times.slice(1).map((t, i) => t - times[i]);
+    expect(gaps[gaps.length - 1]).toBeGreaterThan(gaps[0]);
+  });
+
+  it("recovers after a transient failure and returns the real outcome", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(json(503, { code: "JOB_STATUS_UNAVAILABLE", retryable: true }))
+      .mockResolvedValueOnce(json(200, { jobId: "req_1_abc", status: "completed", report: { documentTitle: "Done" } }));
+    const outcome = await pollAnalysisJob("req_1_abc", { intervalMs: 1, fetcher });
+    expect(outcome).toEqual({ status: "completed", report: { documentTitle: "Done" } });
+  });
+});

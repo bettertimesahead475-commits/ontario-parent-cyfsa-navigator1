@@ -289,7 +289,15 @@ export async function pollAnalysisJob(
   const started = Date.now();
   let notFoundCount = 0;
   let networkFailures = 0;
+  let transientFailures = 0;
+  let quietPolls = 0;
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // Exponential backoff with jitter, capped, and never past the overall wait limit.
+  const backoff = (attempt: number, capMs: number) => {
+    const base = Math.min(capMs, intervalMs * 2 ** Math.max(0, attempt - 1));
+    const jittered = base * (0.8 + Math.random() * 0.4);
+    return Math.max(1, Math.min(jittered, maxWaitMs - (Date.now() - started)));
+  };
 
   while (true) {
     if (options.isCancelled?.()) throw new ApiResponseError("Cancelled.", 0, "CANCELLED", false);
@@ -314,7 +322,7 @@ export async function pollAnalysisJob(
           true
         );
       }
-      await sleep(intervalMs);
+      await sleep(backoff(networkFailures, 30_000));
       continue;
     }
     if (res.status === 401) {
@@ -326,15 +334,38 @@ export async function pollAnalysisJob(
     if (res.status === 404) {
       // The record may not be written yet right after the request starts; then it truly does not exist.
       notFoundCount++;
+      transientFailures = 0;
       // A 404/pending result is normal while Cloudflare has not yet saved
       // the completed job. Never infer failure or start a new analysis here.
-      await sleep(intervalMs);
+      await sleep(backoff(++quietPolls, 15_000));
       continue;
     }
     if (!res.ok) {
-      await sleep(intervalMs);
+      const failure = (await res.json().catch(() => null)) as { code?: unknown; error?: unknown; retryable?: unknown } | null;
+      const code = typeof failure?.code === "string" ? failure.code : `HTTP_${res.status}`;
+      const transientStatus = res.status === 408 || res.status === 429 || res.status >= 500;
+      // The server said retrying cannot help (for example a missing server credential), or the request
+      // itself is wrong: stop now instead of polling until the wait limit.
+      if (failure?.retryable === false || !transientStatus) {
+        throw new ApiResponseError(
+          "We can't check this analysis right now. Your document is safe. Please try again later or contact support.",
+          res.status,
+          code,
+          false
+        );
+      }
+      if (++transientFailures >= 6) {
+        throw new ApiResponseError(
+          "We couldn't confirm whether this analysis finished because the status service is unavailable. Your document is safe. Reconnect to this analysis shortly.",
+          res.status,
+          code,
+          true
+        );
+      }
+      await sleep(backoff(transientFailures, 30_000));
       continue;
     }
+    transientFailures = 0;
     const job = (await res.json().catch(() => null)) as AnalysisJobSnapshot | null;
     if (job?.status === "completed" && job.report) return { status: "completed", report: job.report };
     if (job?.status === "failed" || job?.status === "timed_out") {
@@ -351,6 +382,7 @@ export async function pollAnalysisJob(
     } else if (job) {
       options.onProgress?.(job);
     }
-    await sleep(intervalMs);
+    // Ease off gradually while a job runs (capped at 8 s so completion is noticed promptly).
+    await sleep(backoff(++quietPolls, 8_000));
   }
 }
