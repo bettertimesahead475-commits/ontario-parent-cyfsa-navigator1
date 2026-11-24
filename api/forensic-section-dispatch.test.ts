@@ -26,10 +26,17 @@ describe("forensic section dispatch", () => {
     const calls = generate.mock.calls.map(([options]) => options);
     const perStage = new Map<string, number>();
     for (const c of calls) perStage.set(c.stage!, (perStage.get(c.stage!) ?? 0) + 1);
-    expect(perStage.size).toBe(6);
+    expect(perStage.size).toBe(3); // default Forensic concurrency 3; no new section starts after a failure
     expect([...perStage.values()].every((n) => n <= 2)).toBe(true);
     expect(calls.every((options) => options.retries === 0)).toBe(true);
     expect(calls.some((options) => options.stage === "forensic_verification")).toBe(false);
+  });
+
+  it("dispatches Forensic longest-first with the verification inputs leading, three at a time", async () => {
+    const order: string[] = [];
+    const generate = vi.fn(async (options: GenParams) => { order.push(options.stage!); return ok(options.stage!); });
+    await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "order-test", deadlineAt: Date.now() + 60_000, generate });
+    expect(order.slice(0, 3)).toEqual(["section:redFlags", "section:guidance", "section:thresholds"]);
   });
 
   it("honours an explicit concurrency cap", async () => {
@@ -48,7 +55,7 @@ describe("forensic section dispatch", () => {
       finishedAt[options.stage!] = Date.now() - t0;
       return ok(options.stage!);
     });
-    const run = await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "overlap-test", deadlineAt: Date.now() + 120_000, generate });
+    const run = await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "overlap-test", deadlineAt: Date.now() + 120_000, generate, maxConcurrency: 6 });
     const sectionStarts = Object.entries(startedAt).filter(([k]) => k.startsWith("section:")).map(([, v]) => v);
     expect(Math.max(...sectionStarts)).toBeLessThan(40); // no second wave
     expect(startedAt.forensic_verification).toBeLessThan(finishedAt["section:guidance"]); // overlapped

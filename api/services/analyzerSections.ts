@@ -973,8 +973,16 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   // All sections are independent, so they start together (at most 6 calls for one document). The
   // previous limit of 3 forced a second wave: in production the fourth Quick section waited for a
   // slot and Forensic ran two waves, adding ~40-60 s with no quality benefit.
-  const concurrency = Math.min(Math.max(1, opts.maxConcurrency ?? keys.length), keys.length, 6);
-  const queue = [...keys];
+  // Measured in production: Quick (4 streams in parallel) used 791 ms CPU and finished in 36 s; Forensic
+  // with 6 parallel streams was stopped by Cloudflare at ~1 s CPU ("exceededCpu"). Forensic's critical path
+  // is redFlags (~88 s) + verification (~31 s) regardless of concurrency, so it keeps the proven limit of 3
+  // and dispatches the longest sections first (verification inputs redFlags and thresholds lead).
+  const defaultConcurrency = opts.mode === "full" ? 3 : keys.length;
+  const concurrency = Math.min(Math.max(1, opts.maxConcurrency ?? defaultConcurrency), keys.length, 6);
+  const FORENSIC_DISPATCH_ORDER: SectionKey[] = ["redFlags", "guidance", "thresholds", "timeline", "overview", "chronology"];
+  const queue = opts.mode === "full"
+    ? [...keys].sort((a, b) => (FORENSIC_DISPATCH_ORDER.indexOf(a) + 1 || 99) - (FORENSIC_DISPATCH_ORDER.indexOf(b) + 1 || 99))
+    : [...keys];
   const outcomes: any[] = [];
 
   // Dependency-aware verification: it reads only redFlags and thresholdAnalysis, so it starts as soon
