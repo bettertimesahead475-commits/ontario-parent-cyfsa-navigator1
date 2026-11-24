@@ -914,6 +914,7 @@ export async function runOneSection(
       // The raw provider message is logged (redacted) and never placed in customer text.
       logAnalyzerDiagnostic(`section ${key} attempt ${attempt}`, err);
       lastProblem = "the AI service did not return a usable response";
+      console.warn('[ANALYZER_SECTION_RETRY]', JSON.stringify({ section: key, mode: opts.mode, attempt, reason: 'provider_error' }));
       if (attempt === 1) await new Promise((r) => setTimeout(r, 750 + Math.floor(Math.random() * 500)));
       continue;
     }
@@ -922,6 +923,7 @@ export async function runOneSection(
 
     if (result.stopReason === "max_tokens") {
       lastProblem = "the response was incomplete - it hit its length limit before finishing";
+      console.warn('[ANALYZER_SECTION_RETRY]', JSON.stringify({ section: key, mode: opts.mode, attempt, reason: 'max_tokens', outputTokens: result.usage?.output_tokens ?? null }));
       retryNote =
         "Your previous answer was cut off because it was too long. Stay strictly within the LIMITS: fewer items and shorter sentences.";
       continue;
@@ -929,12 +931,14 @@ export async function runOneSection(
     const parsed = parseJsonObject(result.text);
     if (!parsed) {
       lastProblem = "the response was not a valid JSON object";
+      console.warn('[ANALYZER_SECTION_RETRY]', JSON.stringify({ section: key, mode: opts.mode, attempt, reason: 'invalid_json' }));
       retryNote = "Your previous answer was not one valid JSON object. Return only the JSON object, with no other text.";
       continue;
     }
     const checked = spec.validate(parsed, opts.mode);
     if (checked.ok === true) return { value: checked.value, attempts: attempt };
     lastProblem = (checked as { ok: false; problems: string[] }).problems.join("; ");
+    console.warn('[ANALYZER_SECTION_RETRY]', JSON.stringify({ section: key, mode: opts.mode, attempt, reason: 'validation', problemCount: (checked as { ok: false; problems: string[] }).problems.length }));
     retryNote = `Your previous answer failed validation: ${lastProblem}. Fix these problems and return the complete section.`;
   }
   // A provider failure (rate limit, outage, timeout) keeps its own classification so the parent
@@ -971,18 +975,18 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
       const key = queue.shift();
       if (!key) break;
       // Log section starts as well as completions so a stalled provider call is identifiable.
-      if (opts.mode === "full") console.info('[FORENSIC_SECTION_STARTED]', JSON.stringify({ section: key, elapsedMs: now() - started }));
+      console.info(opts.mode === "full" ? '[FORENSIC_SECTION_STARTED]' : '[QUICK_SECTION_STARTED]', JSON.stringify({ section: key, elapsedMs: now() - started }));
       try {
         const { value, attempts: n } = await runOneSection(key, opts, usageByModel);
         sectionTimingsMs[key] = now() - started;
         attempts[key] = n;
         // Timing metadata only: never log document text, prompts, findings, or identities.
-        if (opts.mode === "full") console.info('[FORENSIC_SECTION_COMPLETED]', JSON.stringify({ section: key, elapsedMs: sectionTimingsMs[key], attempts: n }));
+        console.info(opts.mode === "full" ? '[FORENSIC_SECTION_COMPLETED]' : '[QUICK_SECTION_COMPLETED]', JSON.stringify({ section: key, elapsedMs: sectionTimingsMs[key], attempts: n }));
         Object.assign(report, value);
         completed++;
         await opts.onSectionComplete?.(key, value, completed, totalCount);
       } catch (err) {
-        if (opts.mode === "full") console.error('[FORENSIC_SECTION_FAILED]', JSON.stringify({ section: key, elapsedMs: now() - started, errorClass: err instanceof Error ? err.name : 'unknown' }));
+        console.error(opts.mode === "full" ? '[FORENSIC_SECTION_FAILED]' : '[QUICK_SECTION_FAILED]', JSON.stringify({ section: key, elapsedMs: now() - started, errorClass: err instanceof Error ? err.name : 'unknown' }));
         outcomes.push(err);
       }
     }

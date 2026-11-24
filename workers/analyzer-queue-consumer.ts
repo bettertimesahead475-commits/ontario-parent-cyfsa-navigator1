@@ -176,7 +176,17 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
   } catch (error) {
     const retryable = !(error && typeof error === 'object' && 'retryable' in error && (error as { retryable: unknown }).retryable === false);
     const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: unknown }).code) : 'ANALYZER_QUEUE_FAILURE';
-    const safeMessage = 'The analysis could not be completed. The worker will retry it when possible.';
+    // Previously silent. Class, code, storage status and attempt only: no job text, uid, URL or keys.
+    console.error('[ANALYZER_JOB_FAILED]', JSON.stringify({
+      code,
+      errorClass: error instanceof Error ? error.name : 'unknown',
+      storageStatus: error && typeof error === 'object' && 'status' in error && typeof (error as { status: unknown }).status === 'number' ? (error as { status: number }).status : null,
+      retryable,
+      deliveryAttempt: message.attempts,
+    }));
+    const safeMessage = retryable
+      ? 'The analysis could not be completed. The worker will retry it when possible.'
+      : 'The analysis could not be completed. Your document is safe and no credit was used. Please start it again.';
     try {
       if (retryable) {
         await persistJobUpdate(env, { jobId: job.job_id, workerToken: token, status: 'queued', errorCode: code, errorMessage: safeMessage, retryable: true });

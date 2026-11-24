@@ -141,6 +141,27 @@ async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unk
   return await response.json() as T;
 }
 
+/**
+ * Supabase Storage answers every error with HTTP 400 and puts the real status in the JSON body
+ * (statusCode "404" for a missing object, "403" for access denied, "409" for an existing object).
+ * Treating the transport status alone as authoritative turned "no saved report yet" into a permanent
+ * failure that killed every new queued job at its first step. Body text is never logged or returned.
+ */
+export async function storageEffectiveStatus(response: Response): Promise<number> {
+  if (response.ok || response.status !== 400) return response.status;
+  try {
+    const body = await response.clone().json() as { statusCode?: unknown; code?: unknown };
+    const inner = Number(body?.statusCode);
+    if (Number.isInteger(inner) && inner >= 400 && inner <= 599) return inner;
+    if (body?.code === 'NoSuchKey') return 404;
+  } catch { /* Not JSON: keep the transport status. */ }
+  return response.status;
+}
+
+function storageRetryable(status: number): boolean {
+  return status >= 500 || status === 429 || status === 408;
+}
+
 function storageUrl(env: DurableJobEnv, key: string, read = false): string {
   const { base } = serviceConfig(env);
   const encodedKey = key.split('/').map(encodeURIComponent).join('/');
@@ -178,7 +199,7 @@ export async function saveDurableInput(env: DurableJobEnv, key: string, input: u
   } catch {
     throw new DurableJobStorageError('Document input could not be saved securely.', true);
   }
-  if (!response.ok) throw new DurableJobStorageError('Document input could not be saved securely.', response.status >= 500 || response.status === 429, response.status);
+  if (!response.ok) { const status = await storageEffectiveStatus(response); throw new DurableJobStorageError('Document input could not be saved securely.', storageRetryable(status), status); }
 }
 
 export async function loadDurableInput(env: DurableJobEnv, key: string, fetcher: typeof fetch = fetch): Promise<{ documentText: string; fileName?: string }> {
@@ -190,7 +211,7 @@ export async function loadDurableInput(env: DurableJobEnv, key: string, fetcher:
   } catch {
     throw new DurableJobStorageError('Stored document input could not be loaded.', true);
   }
-  if (!response.ok) throw new DurableJobStorageError('Stored document input could not be loaded.', response.status >= 500 || response.status === 429, response.status);
+  if (!response.ok) { const status = await storageEffectiveStatus(response); throw new DurableJobStorageError('Stored document input could not be loaded.', storageRetryable(status), status); }
   const value = await response.json() as { documentText?: unknown; fileName?: unknown };
   if (typeof value.documentText !== 'string' || !value.documentText.trim()) throw new DurableJobStorageError('Stored document input is invalid.', false, 422);
   return { documentText: value.documentText, ...(typeof value.fileName === 'string' ? { fileName: value.fileName } : {}) };
@@ -244,8 +265,10 @@ export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fet
   try {
     response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(8000) });
   } catch { throw new DurableJobStorageError('Saved analysis report could not be loaded.', true); }
-  if (response.status === 404) return null;
-  if (!response.ok) throw new DurableJobStorageError('Saved analysis report could not be loaded.', response.status >= 500 || response.status === 429, response.status);
+  // A new job has no report yet. Supabase Storage reports that as HTTP 400 with statusCode "404".
+  const status = await storageEffectiveStatus(response);
+  if (status === 404) return null;
+  if (!response.ok) throw new DurableJobStorageError('Saved analysis report could not be loaded.', storageRetryable(status), status);
   const stored = await response.json() as { status?: string; report?: unknown };
   return stored.status === 'completed' && stored.report && typeof stored.report === 'object'
     ? stored.report as Record<string, unknown>
