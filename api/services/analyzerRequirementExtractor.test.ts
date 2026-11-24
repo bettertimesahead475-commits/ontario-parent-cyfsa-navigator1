@@ -150,6 +150,11 @@ describe('Analyzer Requirement Extractor (Batch 3)', () => {
       // Impossible calendar dates must not roll over into a different real date.
       expect(parseExplicitDueDate('2026-02-30')).toBeNull();
       expect(parseExplicitDueDate('2026-13-01')).toBeNull();
+      expect(parseExplicitDueDate('2026-02-30T17:00:00Z')).toBeNull();
+      expect(parseExplicitDueDate('2026-04-31T09:00:00-04:00')).toBeNull();
+      expect(parseExplicitDueDate('2026-10-15T24:00:00Z')).toBeNull();
+      expect(parseExplicitDueDate('2026-10-15T23:61:00Z')).toBeNull();
+      expect(parseExplicitDueDate('2028-02-29T12:00:00Z')).toBe('2028-02-29T12:00:00.000Z');
     });
 
     it('verifyQuoteInDocumentText correctly verifies exact or normalized quotes', () => {

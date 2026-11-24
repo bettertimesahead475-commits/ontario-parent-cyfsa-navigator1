@@ -18,7 +18,7 @@ import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { saveCompletedJob, saveJobState } from './_analysis-jobs';
-import { createDurableJob, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
+import { createDurableJob, DurableJobStorageError, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
@@ -332,15 +332,27 @@ export async function handleAnalyzeRequest(
         statusUrl: `/api/analyze/job/${encodeURIComponent(requestId)}`,
         stream: wantsStream ? 'poll' : undefined,
       }, { status: 202, headers: DEFAULT_HEADERS });
-    } catch {
-      if (!jobCreated) {
-        // The browser reuses one analysis id for every retry of a click. If that id already has a
-        // job owned by this caller, the insert failed only because the job exists: point the caller
-        // at it. Never mark someone else's (or this caller's earlier) queued job as failed.
-        // A failed existing job falls through: its own reservation was already settled, and any fresh
-        // reservation taken by this request is released below.
+    } catch (enqueueError) {
+      const releaseFreshReservation = async () => {
+        if (isOwner || !reservationId) return;
+        try {
+          if (sessionId) await releasePaidReservation(sessionId, requestId, reservationId, rpc);
+          else await releaseFreeScan(uid, requestId, reservationId, rpc);
+        } catch (releaseError) { console.error('[ANALYZER_ENQUEUE_RELEASE_FAILED]', releaseError instanceof Error ? releaseError.name : 'error'); }
+      };
+      // Only a confirmed unique violation (PostgREST HTTP 409) proves the row existed before this
+      // request. A timeout or undecodable reply may mean this request's own insert committed, and
+      // that row has no saved input or queue delivery, so it must not be reported as running.
+      const duplicateInsert = !jobCreated && enqueueError instanceof DurableJobStorageError && enqueueError.status === 409;
+      if (duplicateInsert) {
+        // The browser reuses one analysis id for every retry of a click. Point the caller at their
+        // existing job; never mark someone else's (or this caller's earlier) job as failed.
+        // A failed existing job falls through: its own reservation was already settled.
         const existing = await readDurableJob(env, requestId, authFetcher).catch(() => null);
         if (existing && existing.owner_uid === uid && existing.status !== 'failed') {
+          // A reservation taken by this request (for example under a different paid session) is not
+          // the one the existing job will settle, so release it now.
+          if (existing.reservation_id !== reservationId) await releaseFreshReservation();
           const completed = existing.status === 'completed';
           return Response.json({
             error: completed ? 'This analysis already finished.' : 'This analysis is already running. Results will display shortly.',
@@ -353,17 +365,14 @@ export async function handleAnalyzeRequest(
       // This request id is now a terminal failed job, and its reservation is released below.
       // The user can start a fresh request; silently retrying the same id would be rejected as a duplicate.
       const retryable = false;
-      if (jobCreated) {
+      if (!duplicateInsert) {
+        // Covers a confirmed insert and an unconfirmed one that may have committed. A pre-existing
+        // row would have produced a 409 and is never touched here.
         try {
           await updateDurableJob(env, { jobId: requestId, status: 'failed', errorCode: 'ANALYSIS_ENQUEUE_FAILED', errorMessage: 'The analysis could not be placed in the queue. Please retry.', retryable }, authFetcher);
         } catch { /* The producer still releases its reservation below. */ }
       }
-      if (!isOwner && reservationId) {
-        try {
-          if (sessionId) await releasePaidReservation(sessionId, requestId, reservationId, rpc);
-          else await releaseFreeScan(uid, requestId, reservationId, rpc);
-        } catch (releaseError) { console.error('[ANALYZER_ENQUEUE_RELEASE_FAILED]', releaseError instanceof Error ? releaseError.name : 'error'); }
-      }
+      await releaseFreshReservation();
       return Response.json({
         error: 'The analysis could not be queued. Your reserved credit was released when possible.',
         code: 'ANALYSIS_ENQUEUE_FAILED',

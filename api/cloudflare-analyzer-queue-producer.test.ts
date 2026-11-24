@@ -197,6 +197,44 @@ describe('durable analyzer queue producer', () => {
       expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/rpc/analyzer_update_job'))).toBe(false);
     });
 
+    it('treats an unconfirmed insert as this request\'s own job: fails it and never reports it as running', async () => {
+      // The insert may have committed even though its reply was lost; that row has no input or delivery.
+      const id = 'job_ambiguous_ins1';
+      const send = vi.fn();
+      const fetchImpl = vi.fn(async (url: string) => {
+        if (url.includes('/rpc/analyzer_create_job')) return new Response('upstream timeout', { status: 504 });
+        if (url.includes('/rpc/analyzer_get_job')) return Response.json({ job_id: id, owner_uid: 'owner_1234', status: 'queued', mode: 'full' });
+        if (url.includes('/rpc/analyzer_update_job')) return Response.json(true);
+        return Response.json({ status: 'released' });
+      }) as unknown as ReturnType<typeof vi.fn>;
+      const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv,
+        { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
+      expect(res.status).toBe(503);
+      expect(await res.json()).toMatchObject({ code: 'ANALYSIS_ENQUEUE_FAILED' });
+      const update = fetchImpl.mock.calls.find(([url]) => String(url).includes('/rpc/analyzer_update_job'));
+      expect(JSON.parse(update?.[1]?.body)).toMatchObject({ p_job_id: id, p_status: 'failed', p_worker_token: null });
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('releases a reservation this request took when the existing job settles a different one', async () => {
+      // Same analysis id under a different paid session: reservations are scoped by session, jobs are not.
+      const id = 'job_other_session1';
+      vi.mocked(readVerifiedPaidSession).mockResolvedValueOnce({ status: 'verified', session: {
+        sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', ownerUid: 'owner_1234', tier: 'Premium', issuedAt: '2026-11-01T00:00:00Z', expiresAt: '2099-01-01T00:00:00Z',
+      } });
+      const rpc = vi.fn(async (name: string) => name === 'paid_reserve_credit' ? { status: 'reserved', reservation_id: 'fresh_res' } : { status: 'released' });
+      const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'owner_1234', status: 'running', mode: 'full', reservation_id: 'original_res' });
+      const req = new Request('https://navigator.test/api/deep-scan', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer firebase-token', 'Content-Type': 'application/json', 'X-Analysis-Id': id },
+        body: JSON.stringify({ documentText, mode: 'full', stream: false, sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
+      });
+      const res = await handleDeepScanRequest(req, { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
+        { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+      expect(res.status).toBe(409);
+      expect(rpc).toHaveBeenCalledWith('paid_release_credit', expect.objectContaining({ p_reservation_id: 'fresh_res' }));
+    });
+
     it('releases a fresh reservation when the existing job with that id already failed', async () => {
       const id = 'job_failed_dupe_123';
       const rpc = vi.fn(async (name: string) => name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'reservation_2' } : { status: 'released' });
