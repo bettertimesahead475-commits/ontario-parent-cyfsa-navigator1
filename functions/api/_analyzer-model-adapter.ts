@@ -1,4 +1,5 @@
 import { providerDiagnostic } from '../../shared/providerDiagnostics';
+import { apiKeyHygiene, normalizeApiKey } from './_supabase-key';
 /**
  * Cloudflare Worker / Pages Functions Anthropic AI Model Execution Adapter.
  *
@@ -20,8 +21,10 @@ export function createCloudflareGenerateFn(
   fetcher: typeof fetch = fetch
 ): GenerateFn {
   return async (options, model): Promise<GenerateResult> => {
-    const apiKey = env.ANTHROPIC_API_KEY;
-    if (!apiKey || !apiKey.trim()) {
+    // Remove paste damage (line breaks, NBSP, BOM, zero-width characters) that Cloudflare's edge
+    // rejects with an empty HTTP 400 before the request reaches Anthropic.
+    const apiKey = normalizeApiKey(env.ANTHROPIC_API_KEY) ?? '';
+    if (!apiKey) {
       throw new AnalyzerError(
         'AI_PROVIDER_CONFIGURATION_ERROR',
         500,
@@ -107,7 +110,9 @@ export function createCloudflareGenerateFn(
           const errorText = rawBody;
 
           const diagnostic = providerDiagnostic(status, errorText);
-          console.warn(JSON.stringify({ tag: '[ANTHROPIC_REJECTED]', model: wireModel, ...diagnostic }));
+          // Non-secret key facts only: usable length, expected sk-ant- prefix, and removed-character counts.
+          console.warn(JSON.stringify({ tag: '[ANTHROPIC_REJECTED]', model: wireModel, ...diagnostic,
+            configuredKey: { ...apiKeyHygiene(env.ANTHROPIC_API_KEY), usableLength: apiKey.length, expectedPrefix: apiKey.startsWith('sk-ant-') } }));
           const rejected = (error: AnalyzerError): never => { error.providerDiagnostic = diagnostic; throw error; };
           if (diagnostic.category === 'INSUFFICIENT_PROVIDER_CREDIT' || diagnostic.category === 'BILLING_REQUIRED') {
             rejected(new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is temporarily unavailable due to provider billing. Nothing was charged. Please contact support.', false));
@@ -118,7 +123,7 @@ export function createCloudflareGenerateFn(
           if (status >= 500 && status < 600) {
             rejected(new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI analysis engine is temporarily unavailable. Please try again shortly. Nothing was charged.', true));
           }
-          if (status === 400 && !errorText.trim() && apiKey.trim().length < 24) {
+          if (status === 400 && !errorText.trim() && apiKey.length < 24) {
             rejected(new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis provider credentials are not configured correctly. Nothing was charged.', false));
           }
           if (status === 400) {

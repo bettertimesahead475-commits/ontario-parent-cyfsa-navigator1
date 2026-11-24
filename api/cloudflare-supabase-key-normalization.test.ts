@@ -72,3 +72,15 @@ describe('Supabase service key normalization (staging executor HTTP 400 regressi
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
+
+describe('Anthropic key normalization', () => {
+  it('sends a cleaned x-api-key when the secret carries invisible characters', async () => {
+    const { createCloudflareGenerateFn } = await import('../functions/api/_analyzer-model-adapter');
+    const key = 'sk-ant-api03-' + 'a'.repeat(80);
+    const lf = String.fromCharCode(10), zwsp = String.fromCharCode(0x200b);
+    const fetcher = vi.fn(async () => Response.json({ content: [{ type: 'text', text: '{}' }], usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: 'end_turn' }));
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: zwsp + key.slice(0, 30) + lf + key.slice(30) + lf }, fetcher as unknown as typeof fetch);
+    await generate({ system: 's', messages: [{ role: 'user', content: [{ type: 'text', text: 'synthetic' }] }], max_tokens: 10, timeoutMs: 5000 } as any, 'claude-sonnet-5');
+    expect((fetcher.mock.calls[0] as any)[1].headers['x-api-key']).toBe(key);
+  });
+});
