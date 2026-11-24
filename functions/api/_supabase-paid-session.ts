@@ -1,4 +1,5 @@
 import { validatePaidSessionRow, type PaidSessionRow, type VerifiedSession } from './_paid-session-validation';
+import { normalizeSupabaseKey } from './_supabase-key';
 
 export type SupabaseStagingConfig = {
   STAGING_SUPABASE_URL?: string;
@@ -28,8 +29,8 @@ export async function readVerifiedPaidSession(
   // rejected, which surfaced to paid users as SESSION_INVALID before any credit was reserved.
   // Prefer the service-role credential that the credit reservation RPC immediately after this
   // lookup already requires, so the lookup cannot fail where the rest of the paid flow succeeds.
-  const serviceKey = env.STAGING_SUPABASE_SERVICE_ROLE_KEY?.trim();
-  const readKey = serviceKey || env.STAGING_SUPABASE_READ_KEY?.trim();
+  const serviceKey = normalizeSupabaseKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
+  const readKey = serviceKey || normalizeSupabaseKey(env.STAGING_SUPABASE_READ_KEY);
   if (!env.STAGING_SUPABASE_URL || !readKey) {
     console.warn('[paid_session_read] missing runtime configuration');
     return { status: 'unavailable' };
