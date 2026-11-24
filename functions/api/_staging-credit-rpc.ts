@@ -3,7 +3,9 @@
  * browser bundles or responses. The caller must have already authenticated
  * the Firebase UID and verified the paid session's database ownership.
  */
-export type StagingRpcEnv = { STAGING_SUPABASE_URL?: string; STAGING_SUPABASE_SERVICE_ROLE_KEY?: string };
+import { normalizeSupabaseKey } from './_supabase-key';
+
+export type StagingRpcEnv ={ STAGING_SUPABASE_URL?: string; STAGING_SUPABASE_SERVICE_ROLE_KEY?: string };
 
 export class StagingRpcError extends Error {
   readonly rpcName: string;
@@ -42,7 +44,8 @@ export function createStagingCreditRpc(env: StagingRpcEnv, fetcher: typeof fetch
     if (!['paid_reserve_credit', 'paid_finalize_credit', 'paid_release_credit', 'free_reserve_scan', 'free_finalize_scan', 'free_release_scan'].includes(name)) {
       throw new Error('Unsupported credit RPC');
     }
-    if (!env.STAGING_SUPABASE_URL || !env.STAGING_SUPABASE_SERVICE_ROLE_KEY) throw new Error('Staging RPC not configured');
+    const serviceKey = normalizeSupabaseKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
+    if (!env.STAGING_SUPABASE_URL || !serviceKey) throw new Error('Staging RPC not configured');
     const url = new URL('/rest/v1/rpc/' + name, env.STAGING_SUPABASE_URL);
     if (url.protocol !== 'https:') throw new Error('HTTPS required');
 
@@ -51,8 +54,8 @@ export function createStagingCreditRpc(env: StagingRpcEnv, fetcher: typeof fetch
       response = await fetcher(url.toString(), {
         method: 'POST',
         headers: {
-          apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: 'Bearer ' + env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
+          apikey: serviceKey,
+          Authorization: 'Bearer ' + serviceKey,
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },

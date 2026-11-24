@@ -6,6 +6,8 @@
  * which does not exist, so every save failed and was ignored (fetch does not throw on 404), and no report could be
  * recovered after a refresh. A failed save is now logged (job id and status only, never report content).
  */
+import { normalizeSupabaseKey } from './_supabase-key';
+
 export const ANALYSIS_JOBS_BUCKET = 'analysis_jobs';
 
 export interface JobStoreEnv {
@@ -33,8 +35,8 @@ export async function saveJobState(
   job: { jobId: string; uid: string } & JobState,
   fetcher: typeof fetch = fetch
 ): Promise<boolean> {
-  if (!env.STAGING_SUPABASE_URL || !env.STAGING_SUPABASE_SERVICE_ROLE_KEY) return false;
-  const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
+  const key = normalizeSupabaseKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
+  if (!env.STAGING_SUPABASE_URL || !key) return false;
   const body: Record<string, unknown> = { jobId: job.jobId, uid: job.uid, status: job.status, updatedAt: Date.now() };
   if (job.status === 'running') Object.assign(body, { currentStage: 'running', percent: job.percent, message: job.message });
   if (job.status === 'completed') Object.assign(body, { currentStage: 'complete', percent: 100, report: job.report });
