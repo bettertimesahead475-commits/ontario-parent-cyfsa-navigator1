@@ -531,7 +531,7 @@ const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
     title: "Preparation guidance and questions for counsel",
     stage: "preparing_report",
     fields: ["whatToVerify", "whatToAskALawyer", "whatIsMissing", "lawyerCaseBrief"],
-    maxTokens: { fast: 3500, full: 4000 },
+    maxTokens: { fast: 3500, full: 7000 }, // Forensic guidance hit 4,000 on Opus 5 in production (both attempts).
     limits: () => "Each list: 3-5 items. Each item: at most 3 sentences.",
     validate: (raw) => validateGuidance(raw),
   },
@@ -859,6 +859,8 @@ export interface SectionRunOptions {
   now?: () => number;
   targetSections?: SectionKey[];
   initialSections?: Record<string, any>;
+  /** Upper bound on concurrent section calls (default: all sections, at most 6). */
+  maxConcurrency?: number;
 }
 
 export interface SectionRunResult {
@@ -968,11 +970,30 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   let completed = Object.keys(opts.initialSections || {}).length;
   const totalCount = keys.length + completed;
 
-  // Run with bounded concurrency (max 3 concurrent section calls) to prevent token rate-limit
-  // bursts, socket drops, and latency spikes across Claude stream connections.
-  const concurrency = Math.min(3, keys.length);
+  // All sections are independent, so they start together (at most 6 calls for one document). The
+  // previous limit of 3 forced a second wave: in production the fourth Quick section waited for a
+  // slot and Forensic ran two waves, adding ~40-60 s with no quality benefit.
+  const concurrency = Math.min(Math.max(1, opts.maxConcurrency ?? keys.length), keys.length, 6);
   const queue = [...keys];
   const outcomes: any[] = [];
+
+  // Dependency-aware verification: it reads only redFlags and thresholdAnalysis, so it starts as soon
+  // as both exist instead of after every section. It works on a guarded copy; the final report is
+  // guarded the same deterministic way and then receives the verified copies.
+  const wantsVerification = opts.mode === "full" && Boolean(opts.verificationModel);
+  const verificationInputs = new Set(["redFlags", "thresholds"]);
+  let verificationTask: Promise<{ result: Record<string, any>; subset: Record<string, any> }> | null = null;
+  const maybeStartVerification = () => {
+    if (!wantsVerification || verificationTask || outcomes.length > 0) return;
+    if (![...verificationInputs].every((k) => k in sectionTimingsMs || k in (opts.initialSections || {}))) return;
+    const subset: Record<string, any> = structuredClone({ redFlags: report.redFlags, thresholdAnalysis: report.thresholdAnalysis });
+    applyReportGuards(subset, opts.documentText);
+    delete subset.complianceMatrix;
+    opts.onVerificationStart?.();
+    console.info('[FORENSIC_VERIFICATION_STARTED]', JSON.stringify({ elapsedMs: now() - started }));
+    verificationTask = runForensicVerification(subset, opts, usageByModel).then((result) => ({ result, subset }));
+  };
+
   const workers = Array.from({ length: concurrency }, async () => {
     while (queue.length > 0 && (opts.mode !== "full" || outcomes.length === 0)) {
       const key = queue.shift();
@@ -987,6 +1008,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
         console.info(opts.mode === "full" ? '[FORENSIC_SECTION_COMPLETED]' : '[QUICK_SECTION_COMPLETED]', JSON.stringify({ section: key, elapsedMs: sectionTimingsMs[key], attempts: n }));
         Object.assign(report, value);
         completed++;
+        maybeStartVerification();
         await opts.onSectionComplete?.(key, value, completed, totalCount);
       } catch (err) {
         console.error(opts.mode === "full" ? '[FORENSIC_SECTION_FAILED]' : '[QUICK_SECTION_FAILED]', JSON.stringify({ section: key, elapsedMs: now() - started, errorClass: err instanceof Error ? err.name : 'unknown' }));
@@ -996,13 +1018,23 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   });
   await Promise.all(workers);
   const failure = outcomes.find((o) => o != null);
-  if (failure) throw failure;
+  if (failure) {
+    // Never leave an in-flight verification dangling; its outcome is discarded with the failed run.
+    if (verificationTask) await (verificationTask as Promise<unknown>).catch(() => undefined);
+    throw failure;
+  }
 
   applyReportGuards(report, opts.documentText);
 
-  if (opts.mode === "full" && opts.verificationModel) {
-    opts.onVerificationStart?.();
-    report.forensicVerification = await runForensicVerification(report, opts, usageByModel);
+  if (wantsVerification) {
+    maybeStartVerification(); // Covers inputs supplied through initialSections.
+    const { result, subset } = await verificationTask!;
+    // Same raw sections + deterministic guards => identical guarded values, now with verification marks.
+    report.redFlags = subset.redFlags;
+    report.thresholdAnalysis = subset.thresholdAnalysis;
+    if (subset.auditTrail) report.auditTrail = { ...(report.auditTrail || {}), ...subset.auditTrail };
+    report.forensicVerification = result;
+    console.info('[FORENSIC_VERIFICATION_COMPLETED]', JSON.stringify({ elapsedMs: now() - started, status: result?.status }));
   }
 
   return { report, usageByModel, sectionTimingsMs, attempts };
