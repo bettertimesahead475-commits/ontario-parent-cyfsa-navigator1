@@ -38,11 +38,11 @@ const RETRY_BASE_SECONDS = 20;
 const RETRY_MAX_SECONDS = 900;
 const retryDelay = (attempts: number): number => Math.min(RETRY_MAX_SECONDS, RETRY_BASE_SECONDS * 2 ** Math.min(10, Math.max(0, attempts - 1)));
 
-async function errorResponse(response: Response): Promise<{ code: string; error: string; retryable: boolean }> {
+export async function errorResponse(response: Response): Promise<{ code: string; error: string; retryable: boolean }> {
   const fallback = {
     code: 'ANALYSIS_FAILED',
     error: 'The analysis failed.',
-    retryable: response.status === 408 || response.status === 429 || response.status >= 500,
+    retryable: response.status === 408 || response.status === 422 || response.status === 429 || response.status >= 500,
   };
   try {
     const payload: unknown = await response.json();

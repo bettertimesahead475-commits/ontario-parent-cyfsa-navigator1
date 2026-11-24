@@ -75,15 +75,20 @@ export function parseExplicitDueDate(dueDateStr?: string | null): string | null 
     return null;
   }
 
-  const parsed = Date.parse(trimmed);
+  // Accept only unambiguous ISO dates. Date.parse accepts vague English dates,
+  // which could silently turn a model guess into a court deadline.
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?$/.test(trimmed)) return null;
+  // Reject impossible calendar dates and clock times before parsing, for timestamps as well as
+  // date-only values: Date.parse can roll 2026-02-30 over into March, inventing a real deadline.
+  const [, y, mo, d, h, mi, s] = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2}))?/.exec(trimmed)!;
+  const year = Number(y), month = Number(mo), day = Number(d);
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day) return null;
+  if (h !== undefined && (Number(h) > 23 || Number(mi) > 59 || Number(s) > 59)) return null;
+  const dateOnly = h === undefined;
+  const parsed = Date.parse(dateOnly ? trimmed + 'T00:00:00.000Z' : trimmed);
   if (!Number.isFinite(parsed)) return null;
-
-  try {
-    const iso = new Date(parsed).toISOString();
-    return iso;
-  } catch {
-    return null;
-  }
+  return new Date(parsed).toISOString();
 }
 
 /**
@@ -104,7 +109,7 @@ export function verifyQuoteInDocumentText(sourceText: string, quote: string): bo
  */
 export function sanitizeAuthorityType(proposedType?: AuthorityType | null, sourceTextSample?: string): AuthorityType {
   if (!proposedType || !VALID_AUTHORITY_TYPES.includes(proposedType)) {
-    return 'CAS_REQUESTED';
+    return 'NAVIGATOR_SUGGESTED';
   }
 
   // Legal Safety Invariant: CAS worker requests or correspondence cannot be COURT_ORDERED or STATUTORY_REGULATORY
@@ -189,23 +194,15 @@ export async function extractAnalyzerRequirements(
     const exactQuote = typeof candidate.sourceExactQuote === 'string' ? candidate.sourceExactQuote.trim() : null;
     const pageNum = typeof candidate.sourcePageNumber === 'number' && candidate.sourcePageNumber > 0 ? candidate.sourcePageNumber : null;
 
-    // Require provenance anchoring
-    if (!exactQuote && !pageNum) {
-      continue; // Omit unanchored candidates
+    // A page number by itself does not establish what the source says.
+    // Require a quotation verified against the document text before creating a proposal.
+    if (!exactQuote || !payload.documentText || !verifyQuoteInDocumentText(payload.documentText, exactQuote)) {
+      continue;
     }
 
     // Check confidence threshold if provided
     if (typeof candidate.confidence === 'number' && candidate.confidence < 0.5) {
       continue; // Omit low confidence candidate
-    }
-
-    // Verify source quote against text if document text provided
-    if (payload.documentText && exactQuote) {
-      const verified = verifyQuoteInDocumentText(payload.documentText, exactQuote);
-      if (!verified) {
-        // Source quote failed containment check -> reject AI paraphrase
-        continue;
-      }
     }
 
     const titleTrimmed = candidate.title.trim();

@@ -5,6 +5,8 @@
  * explicitly configures a trusted backend origin. Never set it to the Pages URL
  * itself (recursive proxy), and do not point it at production for write testing.
  */
+import { nativeRouteMethods } from './_native-api-routes';
+
 interface Env {
   STAGING_API_ORIGIN?: string;
 }
@@ -13,11 +15,23 @@ interface Context {
   env: Env;
 }
 export const onRequest = async ({ request, env }: Context): Promise<Response> => {
+  // A native Pages Function owns this path but has no handler for this method (for example a GET
+  // or a CORS preflight to the POST-only /api/extract-text). Report that precisely and never proxy
+  // it. No CORS headers are added: the API is same-origin only.
+  const nativeMethods = nativeRouteMethods(new URL(request.url).pathname);
+  if (nativeMethods && !nativeMethods.includes('ALL') && !nativeMethods.includes(request.method.toUpperCase())) {
+    return Response.json(
+      { error: `This endpoint does not accept ${request.method} requests.`, code: 'METHOD_NOT_ALLOWED', allowed: nativeMethods, retryable: false },
+      { status: 405, headers: { 'Cache-Control': 'no-store', Allow: nativeMethods.join(', ') } },
+    );
+  }
+
   const originValue = env.STAGING_API_ORIGIN;
   if (!originValue) {
+    // Fail closed: there is no native handler and the optional staging bridge is disabled.
     return Response.json(
-      { error: 'Cloudflare staging API is not yet configured.', code: 'STAGING_API_UNAVAILABLE', retryable: false },
-      { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      { error: 'No API route matches this request.', code: 'API_ROUTE_NOT_FOUND', retryable: false },
+      { status: 404, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 

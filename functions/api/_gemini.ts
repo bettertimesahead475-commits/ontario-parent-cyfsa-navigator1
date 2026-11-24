@@ -1,4 +1,5 @@
 import { providerDiagnostic, type ProviderDiagnostic } from '../../shared/providerDiagnostics';
+import { apiKeyHygiene, normalizeApiKey } from './_supabase-key';
 /**
  * Gemini REST access for Cloudflare Pages Functions: one place for model routing, the request, and error
  * classification, so a model change is one environment variable, not edits to several hard-coded URLs.
@@ -129,7 +130,7 @@ async function generateGeminiAttempt(
   body: Record<string, unknown>,
   opts: { timeoutMs: number; fetcher?: typeof fetch; signal: AbortSignal }
 ): Promise<GeminiCallResult> {
-  const key = env.GEMINI_API_KEY?.trim();
+  const key = normalizeApiKey(env.GEMINI_API_KEY);
   if (!key) throw new GeminiError('NOT_CONFIGURED');
   const fetcher = opts.fetcher ?? fetch;
   let res: Response;
@@ -151,7 +152,10 @@ async function generateGeminiAttempt(
     const kind = res.status === 400 && !text.trim() && key.length < 24 ? 'NOT_CONFIGURED' : classifyGeminiStatus(res.status, text);
     // Never log the provider message: it may echo document contents or credentials.
     console.error(JSON.stringify({ tag: '[GEMINI_REJECTED]', model, httpStatus: res.status, providerStatus, kind,
-      reason: /no pages|zero pages/i.test(text) ? 'PDF_NO_PAGES' : /encrypted|password/i.test(text) ? 'PDF_ENCRYPTED' : /mime|inline.data|inlineData/i.test(text) ? 'INPUT_FORMAT' : kind }));
+      reason: /no pages|zero pages/i.test(text) ? 'PDF_NO_PAGES' : /encrypted|password/i.test(text) ? 'PDF_ENCRYPTED' : /mime|inline.data|inlineData/i.test(text) ? 'INPUT_FORMAT' : kind,
+      // Non-secret facts about the configured key (Gemini keys are 39 visible characters starting "AIza").
+      configuredKey: { ...apiKeyHygiene(env.GEMINI_API_KEY), usableLength: key.length, expectedPrefix: key.startsWith('AIza') },
+      emptyBody: !text.trim() }));
     throw new GeminiError(kind, Number.isFinite(retry) && retry > 0 ? retry : null, providerDiagnostic(res.status, text));
   }
   let json: any;
@@ -182,7 +186,7 @@ async function generateGeminiAttempt(
 
 /** The models the configured key can call with generateContent (for the admin check). */
 export async function listGeminiModels(env: GeminiEnv, fetcher: typeof fetch = fetch): Promise<string[]> {
-  const key = env.GEMINI_API_KEY?.trim();
+  const key = normalizeApiKey(env.GEMINI_API_KEY);
   if (!key) throw new GeminiError('NOT_CONFIGURED');
   const out: string[] = [];
   let pageToken = '';

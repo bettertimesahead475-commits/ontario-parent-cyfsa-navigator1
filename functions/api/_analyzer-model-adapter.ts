@@ -109,6 +109,9 @@ export function createCloudflareGenerateFn(
           const diagnostic = providerDiagnostic(status, errorText);
           console.warn(JSON.stringify({ tag: '[ANTHROPIC_REJECTED]', model: wireModel, ...diagnostic }));
           const rejected = (error: AnalyzerError): never => { error.providerDiagnostic = diagnostic; throw error; };
+          if (diagnostic.category === 'INSUFFICIENT_PROVIDER_CREDIT' || diagnostic.category === 'BILLING_REQUIRED') {
+            rejected(new AnalyzerError('AI_PROVIDER_CONFIGURATION_ERROR', 503, 'The analysis service is temporarily unavailable due to provider billing. Nothing was charged. Please contact support.', false));
+          }
           if (status === 429) {
             rejected(new AnalyzerError('AI_RATE_LIMITED', 429, 'The AI service is busy right now. Please wait a moment and try again. Nothing was charged.', true));
           }

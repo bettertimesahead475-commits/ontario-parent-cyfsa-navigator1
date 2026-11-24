@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { onRequestGet, type StatusEnv } from '../functions/api/_status';
 
 describe('Cloudflare Staging Health & Readiness Endpoint (/api/_status)', () => {
@@ -7,8 +7,8 @@ describe('Cloudflare Staging Health & Readiness Endpoint (/api/_status)', () => 
     const env: StatusEnv = {
       ANALYZER_ENABLED: 'false',
       STAGING_SUPABASE_URL: 'https://nxfhvebzzobegubefcda.supabase.co',
-      STAGING_SUPABASE_SERVICE_ROLE_KEY: 'secret-key-123',
-      ANTHROPIC_API_KEY: 'anthropic-secret-456',
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwic3ludGhldGljIjp0cnVlfQ.c3ludGhldGljLXNpZ25hdHVyZS1mb3ItdGVzdHM',
+      ANTHROPIC_API_KEY: 'sk-ant-synthetic0000000000000000000000',
     };
 
     const response = await onRequestGet({ request, env });
@@ -42,8 +42,8 @@ describe('Cloudflare Staging Health & Readiness Endpoint (/api/_status)', () => 
       ANALYZER_ENABLED: 'true',
       FIREBASE_PROJECT_ID: 'gen-lang-client-0105737183',
       STAGING_SUPABASE_URL: 'https://nxfhvebzzobegubefcda.supabase.co',
-      STAGING_SUPABASE_SERVICE_ROLE_KEY: 'key-present',
-      ANTHROPIC_API_KEY: 'key-present',
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwic3ludGhldGljIjp0cnVlfQ.c3ludGhldGljLXNpZ25hdHVyZS1mb3ItdGVzdHM',
+      ANTHROPIC_API_KEY: 'sk-ant-synthetic0000000000000000000000',
     };
 
     const response = await onRequestGet({ request, env });
@@ -70,8 +70,8 @@ describe('Cloudflare Staging Health & Readiness Endpoint (/api/_status)', () => 
       ANALYZER_ENABLED: 'true',
       FIREBASE_PROJECT_ID: 'gen-lang-client-0105737183',
       STAGING_SUPABASE_URL: 'https://nxfhvebzzobegubefcda.supabase.co',
-      STAGING_SUPABASE_SERVICE_ROLE_KEY: 'fake',
-      ANTHROPIC_API_KEY: 'fake',
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwic3ludGhldGljIjp0cnVlfQ.c3ludGhldGljLXNpZ25hdHVyZS1mb3ItdGVzdHM',
+      ANTHROPIC_API_KEY: 'sk-ant-synthetic0000000000000000000000',
       ANALYZER_JOBS_QUEUE: { send: async () => undefined },
     };
     const request = new Request('https://preview.example/api/status');
@@ -124,7 +124,7 @@ describe('GET /api/status route', () => {
 
   it('gives the binding matrix only to the admin secret, and never secret values', async () => {
     const { onRequestGet } = await import('../functions/api/_status');
-    const env = { ADMIN_SECRET: 'admin-secret-value', ANTHROPIC_API_KEY: 'sk-real-key', FIREBASE_PROJECT_ID: 'p' } as any;
+    const env = { ADMIN_SECRET: 'admin-secret-value', ANTHROPIC_API_KEY: 'sk-ant-synthetic0000000000000000000000', FIREBASE_PROJECT_ID: 'p' } as any;
     const pub = await onRequestGet({ request: new Request('https://s/api/status'), env });
     const pubText = await pub.text();
     expect(pubText).not.toMatch(/diagnostics|sk-real-key|admin-secret-value/);
@@ -134,5 +134,29 @@ describe('GET /api/status route', () => {
     const adminText = await admin.text();
     expect(adminText).toMatch(/"anthropicApi":"configured"/);
     expect(adminText).not.toMatch(/sk-real-key|admin-secret-value/);
+  });
+});
+
+describe('status readiness rejects unusable provider keys', () => {
+  it('does not report analyzerReady when a secret is a placeholder, and logs only the secret name', async () => {
+    // Regression: the preview environment held a one-character service-role key and a short Gemini key,
+    // yet /api/status reported analyzerReady:true.
+    const { onRequestGet } = await import('../functions/api/_status');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const placeholder = String.fromCharCode(0x2022);
+    const env = {
+      ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'p', STAGING_SUPABASE_URL: 'https://synthetic.supabase.co',
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: placeholder, ANTHROPIC_API_KEY: 'sk-ant-synthetic0000000000000000000000', GEMINI_API_KEY: 'short',
+    } as any;
+    const res = await onRequestGet({ request: new Request('https://x.pages.dev/api/status'), env });
+    const body = await res.json() as any;
+    expect(body.analyzerReady).toBe(false);
+    expect(JSON.stringify(body)).not.toMatch(/SERVICE_ROLE|GEMINI|ANTHROPIC/);
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(logged).toContain('STAGING_SUPABASE_SERVICE_ROLE_KEY');
+    expect(logged).toContain('GEMINI_API_KEY');
+    expect(logged).not.toContain('ANTHROPIC_API_KEY');
+    expect(logged).not.toContain(placeholder);
+    warn.mockRestore();
   });
 });
