@@ -34,3 +34,7 @@ export function supabaseKeyHygiene(raw: string | undefined | null): {
     removedWhitespaceOnly: removed.every((c) => /[\s\u200B-\u200D\u2060\uFEFF]/.test(c)),
   };
 }
+
+/** The same rules apply to any provider API key carried in a header (for example the Gemini key). */
+export const normalizeApiKey = normalizeSupabaseKey;
+export const apiKeyHygiene = supabaseKeyHygiene;
