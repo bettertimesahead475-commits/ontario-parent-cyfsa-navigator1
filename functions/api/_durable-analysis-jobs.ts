@@ -260,7 +260,28 @@ export async function requeueFromDeadLetter(env: DurableJobEnv, jobId: string, f
   return await rpc<boolean>(env, 'analyzer_requeue_from_dlq', { p_job_id: jobId }, fetcher);
 }
 
-export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch): Promise<Record<string, unknown> | null> {
+/**
+ * True when an analysis id is already used by another user's job-ledger row or saved Storage object. Checked before the direct path writes `<id>.json` with upsert, so one
+ * user can never overwrite another user's report. Storage/ledger outages fail open (logged): ids are random
+ * and the later write would fail in the same outage.
+ */
+export async function jobOwnerConflict(env: DurableJobEnv, jobId: string, uid: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const job = await readDurableJob(env, jobId, fetcher);
+    if (job && typeof job.owner_uid === 'string' && job.owner_uid !== uid) return true;
+  } catch { console.warn('[JOB_OWNER_CHECK_SKIPPED]', JSON.stringify({ source: 'ledger' })); }
+  try {
+    const response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(5000) });
+    const status = await storageEffectiveStatus(response);
+    if (status === 404) return false;
+    if (!response.ok) { console.warn('[JOB_OWNER_CHECK_SKIPPED]', JSON.stringify({ source: 'storage', status })); return false; }
+    const stored = await response.json().catch(() => null) as { uid?: unknown } | null;
+    // Only a record that names a different owner is a conflict (other object families use reserved prefixes).
+    return typeof stored?.uid === 'string' && stored.uid !== uid;
+  } catch { console.warn('[JOB_OWNER_CHECK_SKIPPED]', JSON.stringify({ source: 'storage' })); return false; }
+}
+
+export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch, expectedOwnerUid?: string): Promise<Record<string, unknown> | null> {
   let response: Response;
   try {
     response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(8000) });
@@ -269,7 +290,12 @@ export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fet
   const status = await storageEffectiveStatus(response);
   if (status === 404) return null;
   if (!response.ok) throw new DurableJobStorageError('Saved analysis report could not be loaded.', storageRetryable(status), status);
-  const stored = await response.json() as { status?: string; report?: unknown };
+  const stored = await response.json() as { status?: string; report?: unknown; uid?: unknown };
+  // A report saved by anyone other than the job owner is never shown to the owner or used to finalize credit.
+  if (expectedOwnerUid !== undefined && stored.uid !== expectedOwnerUid) {
+    console.warn('[PERSISTED_REPORT_OWNER_MISMATCH]', JSON.stringify({ hasUid: typeof stored.uid === 'string' }));
+    return null;
+  }
   return stored.status === 'completed' && stored.report && typeof stored.report === 'object'
     ? stored.report as Record<string, unknown>
     : null;

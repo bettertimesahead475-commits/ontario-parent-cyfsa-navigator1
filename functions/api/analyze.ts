@@ -18,8 +18,14 @@ import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { saveCompletedJob, saveJobState } from './_analysis-jobs';
-import { createDurableJob, DurableJobStorageError, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
+import { createDurableJob, DurableJobStorageError, jobOwnerConflict, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
+
+/** Server-generated analysis id in the client format, from a cryptographic random source. */
+function serverAnalysisId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return `req_${Date.now()}_${[...bytes].map((x) => (x % 36).toString(36)).join('')}`;
+}
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
 import { DEFAULT_QUICK_MODEL, DEFAULT_FORENSIC_MODEL } from '../../api/services/analyzerModels';
@@ -190,9 +196,11 @@ export async function handleAnalyzeRequest(
   const rawSession = body?.sessionId || request.headers.get('x-ps-session') || request.headers.get('x-session-id');
   const sessionId = deps.trustedJob ? deps.trustedJob.session_id : extractSessionId(rawSession);
   const rawRequestId = request.headers.get('X-Analysis-Id') || body?.analysisId || '';
-  const requestId = /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId)
+  // Ids double as Storage keys. Reserved prefixes of other object families (assessment_*) are never
+  // accepted from a client, and ids owned by another user are refused below (jobOwnerConflict).
+  const requestId = deps.trustedJob
     ? rawRequestId
-    : `req_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    : /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId) && !/^assessment/i.test(rawRequestId) ? rawRequestId : serverAnalysisId();
 
   const acceptHeader = request.headers.get('accept') || '';
   const wantsStream = body?.stream !== false && acceptHeader.includes('text/event-stream');
@@ -221,6 +229,16 @@ export async function handleAnalyzeRequest(
     );
   }
   const uid = identity.uid;
+
+  // An analysis id is also a Storage key that is written with upsert. Refuse ids already owned by someone
+  // else before reserving any credit, so no user can overwrite or adopt another user's report.
+  if (!deps.trustedJob && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY
+      && await jobOwnerConflict(env, requestId, uid, authFetcher)) {
+    return Response.json(
+      { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },
+      { status: 409, headers: DEFAULT_HEADERS },
+    );
+  }
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
   // No client-supplied role, email or session can grant this entitlement.
   const isOwner = deps.trustedJob ? deps.trustedJob.owner_bypass : identity.emailVerified && identity.email?.trim().toLowerCase() === 'mr.pelkie@gmail.com';

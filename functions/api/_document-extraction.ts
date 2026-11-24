@@ -23,6 +23,7 @@ import { GeminiError, generateGemini, resolveGeminiModel, type GeminiEnv } from 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PDF_PAGES = 200;
 export const MAX_OCR_PAGES = 30;
+export const DOCX_MAX_PART_BYTES = 50 * 1024 * 1024;
 const OCR_CONCURRENCY = 3;
 const OCR_PAGE_TIMEOUT_MS = 60_000;
 const EXTRACTION_TIMEOUT_MS = 120_000;
@@ -250,13 +251,20 @@ export function docxToText(xml: string): string {
 function extractDocx(bytes: Uint8Array): string {
   let files: Record<string, Uint8Array>;
   try {
-    files = unzipSync(bytes, { filter: (f) => f.name === 'word/document.xml' || f.name === '[Content_Types].xml' });
-  } catch {
+    // Reject oversized parts by their declared size BEFORE inflating them: a small deflated file can
+    // expand to gigabytes and exhaust the isolate's memory (decompression bomb).
+    files = unzipSync(bytes, { filter: (f) => {
+      if (f.name !== 'word/document.xml' && f.name !== '[Content_Types].xml') return false;
+      if (f.originalSize > DOCX_MAX_PART_BYTES) throw new ExtractionError(413, 'FILE_TOO_LARGE', 'This Word document is too large to read.');
+      return true;
+    } });
+  } catch (err) {
+    if (err instanceof ExtractionError) throw err;
     throw new ExtractionError(422, 'DOCX_MALFORMED', 'This Word document appears to be damaged and could not be read.');
   }
   const doc = files['word/document.xml'];
   if (!doc) throw new ExtractionError(422, 'DOCX_MALFORMED', 'This file is not a Word document (.docx) or is damaged.');
-  if (doc.length > 50 * 1024 * 1024) throw new ExtractionError(413, 'FILE_TOO_LARGE', 'This Word document is too large to read.');
+  if (doc.length > DOCX_MAX_PART_BYTES) throw new ExtractionError(413, 'FILE_TOO_LARGE', 'This Word document is too large to read.');
   return docxToText(strFromU8(doc));
 }
 

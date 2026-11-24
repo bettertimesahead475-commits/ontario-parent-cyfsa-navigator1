@@ -131,7 +131,7 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
   }
 
   try {
-    const recoveredReport = await loadPersistedReport(env, job.job_id);
+    const recoveredReport = await loadPersistedReport(env, job.job_id, fetch, job.owner_uid);
     if (recoveredReport) {
       if (!await finalizeReservation(env, job)) throw Object.assign(new Error('Credit finalization is not yet confirmed.'), { retryable: true, code: 'CREDIT_FINALIZATION_UNAVAILABLE' });
       await persistJobUpdate(env, { jobId: job.job_id, workerToken: token, status: 'completed', progress: 100, stage: 'complete' });
@@ -169,7 +169,7 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
 
     // The shared handler has durably stored the complete report, but deferred credit finalization.
     // Re-delivery after a crash detects that report above and only repeats the idempotent finalizer.
-    if (!await loadPersistedReport(env, job.job_id)) throw Object.assign(new Error('Completed report was not persisted.'), { retryable: true, code: 'ANALYSIS_PERSISTENCE_FAILED' });
+    if (!await loadPersistedReport(env, job.job_id, fetch, job.owner_uid)) throw Object.assign(new Error('Completed report was not persisted.'), { retryable: true, code: 'ANALYSIS_PERSISTENCE_FAILED' });
     if (!await finalizeReservation(env, job)) throw Object.assign(new Error('Credit finalization is not yet confirmed.'), { retryable: true, code: 'CREDIT_FINALIZATION_UNAVAILABLE' });
     await persistJobUpdate(env, { jobId: job.job_id, workerToken: token, status: 'completed', progress: 100, stage: 'complete' });
     message.ack();
@@ -219,7 +219,7 @@ async function processDeadLetter(message: QueueMessageLike, env: ConsumerEnv): P
     if (!current) { message.ack(); return; }
     if (current.status === 'completed') { message.ack(); return; }
     if (current.status === 'failed') { await releaseReservation(env, current); message.ack(); return; }
-    const report = await loadPersistedReport(env, jobId);
+    const report = await loadPersistedReport(env, jobId, fetch, current.owner_uid);
     if (report) {
       if (!await finalizeReservation(env, current)) {
         throw new Error('Persisted report credit finalization is not yet confirmed.');

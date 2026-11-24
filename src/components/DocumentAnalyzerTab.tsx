@@ -3242,7 +3242,7 @@ export default function DocumentAnalyzerTab() {
                 {/* Action tabs switcher & Session persistence */}
         <div className="flex flex-wrap gap-3 items-stretch sm:items-center min-w-0">
           {/* Analysis Mode Selector */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
+          <div className="flex min-w-0 max-w-full items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
             <span className="text-[10px] text-slate-500 font-sans pl-1 shrink-0 flex items-center gap-1 font-bold uppercase tracking-wider">
               Analysis Mode
             </span>
@@ -3253,7 +3253,7 @@ export default function DocumentAnalyzerTab() {
                 setAnalysisMode(nextMode);
                 setClaudeModel(nextMode === "full" ? "claude-3-opus-20240229" : "claude-sonnet-5");
               }}
-              className="text-[10px] font-sans bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors font-medium"
+              className="min-w-0 max-w-full truncate text-[10px] font-sans bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors font-medium"
               aria-label="Analysis Mode"
             >
               <option value="fast">Quick Document Review (Core Audit)</option>

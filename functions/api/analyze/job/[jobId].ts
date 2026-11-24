@@ -75,7 +75,7 @@ export const onRequestGet = async ({
           return Response.json({ error: "Access denied. You cannot access another user's analysis job.", code: 'FORBIDDEN' }, { status: 403, headers: DEFAULT_HEADERS });
         }
         if (job.status === 'completed') {
-          const report = await loadPersistedReport(env, jobId);
+          const report = await loadPersistedReport(env, jobId, fetch, job.owner_uid);
           if (!report) return Response.json({ error: 'The saved report is temporarily unavailable.', code: 'ANALYSIS_PERSISTENCE_FAILED', retryable: true }, { status: 503, headers: DEFAULT_HEADERS });
           return Response.json({ jobId, status: 'completed', percent: 100, currentStage: 'complete', report }, { status: 200, headers: DEFAULT_HEADERS });
         }

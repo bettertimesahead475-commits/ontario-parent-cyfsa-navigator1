@@ -192,8 +192,11 @@ describe('durable analyzer queue producer', () => {
       const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'someone_else', status: 'queued', mode: 'full' });
       const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
         { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
-      expect(res.status).toBe(503);
-      expect(await res.json()).toMatchObject({ code: 'ANALYSIS_ENQUEUE_FAILED' });
+      // Refused up front (security review): the id belongs to another user, so no credit is reserved,
+      // no job is created, and the other user's job is never modified.
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: 'ANALYSIS_ID_CONFLICT', retryable: false });
+      expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/rpc/analyzer_create_job'))).toBe(false);
       expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/rpc/analyzer_update_job'))).toBe(false);
     });
 
