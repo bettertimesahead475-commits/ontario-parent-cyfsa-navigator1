@@ -4,6 +4,7 @@
  */
 
 import FinalCaseAssessment from "./FinalCaseAssessment";
+import { finishPrintWindow } from "../utils/printWindow";
 import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
 import PaperDocumentScanner from "./PaperDocumentScanner";
@@ -2747,6 +2748,7 @@ export default function DocumentAnalyzerTab() {
       });
       printWindow.document.write(fullHtml);
       printWindow.document.close();
+      finishPrintWindow(printWindow);
       return;
     } else if (activeTab === "organizer" && reportForExport) {
       title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || displayFileName || "Report")}`;
@@ -3100,7 +3102,7 @@ export default function DocumentAnalyzerTab() {
           ${sharedStyle}
         </head>
         <body>
-          <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
+          <button class="no-print-btn" data-print-button>Print / Save as PDF</button>
 
           ${redactionNotice}
           ${bodyContent}
@@ -3112,18 +3114,13 @@ export default function DocumentAnalyzerTab() {
           <div class="footer-signature">
             Statute entries in this report were not checked against the official text. Confirm them on e-Laws or with counsel. • Saved dynamically via OPA PDF Legal Desk.
           </div>
-
-          <script>
-            setTimeout(() => {
-              window.print();
-            }, 600);
-          </script>
         </body>
       </html>
     `;
 
     printWindow.document.write(htmlContent);
     printWindow.document.close();
+    finishPrintWindow(printWindow);
   };
 
   // Mount file select trigger shortcut to window scope
@@ -3930,11 +3927,11 @@ export default function DocumentAnalyzerTab() {
                                         <div class="margin-line"></div>
                                         <pre>${escapeHtml(redactionEnabled ? "The document text is not included in a redacted copy." : activeSelectedFile.content)}</pre>
                                       </div>
-                                      <script>window.print();</script>
                                     </body>
                                   </html>
                                 `);
                                 printWindow.document.close();
+                                finishPrintWindow(printWindow);
                               } else if (redactionEnabled) {
                                 alert("Your browser blocked the print window. Allow pop-ups to print the redacted copy.");
                               } else {

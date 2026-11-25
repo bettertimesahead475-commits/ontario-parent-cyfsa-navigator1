@@ -1,3 +1,4 @@
+import { finishPrintWindow } from "./printWindow";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -45,7 +46,7 @@ export function printBrandedDocument(title: string, bodyHtml: string) {
         <style>${LETTERHEAD_STYLES}</style>
       </head>
       <body>
-        <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
+        <button class="no-print-btn" data-print-button>Print / Save as PDF</button>
         <div class="header-container">
           <span class="platform-label">CYFSA Navigator</span>
           <div class="title-main">${title}</div>
@@ -62,4 +63,5 @@ export function printBrandedDocument(title: string, bodyHtml: string) {
 
   printWindow.document.write(htmlContent);
   printWindow.document.close();
+  finishPrintWindow(printWindow, { autoPrint: false }); // This export has always printed only on request.
 }

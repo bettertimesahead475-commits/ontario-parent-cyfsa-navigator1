@@ -1,5 +1,8 @@
-# Content Security Policy in REPORT-ONLY mode: violations are reported to /api/csp-report and nothing is
-# blocked. Promote to Content-Security-Policy only after the reports show Firebase/Google sign-in, uploads,
-# OCR, analysis and exports produce no legitimate violations.
+# ENFORCED Content Security Policy. 'unsafe-eval' is required only by the lazily loaded heic2any HEIC converter
+# (its compiled libheif builds functions from strings); remove it once HEIC conversion moves server-side.
+# The REPORT-ONLY policy below is the same policy without 'unsafe-eval', so any other string evaluation is still
+# reported to /api/csp-report. Verified with signed-in browsing, extraction, export print windows and the
+# Google sign-in popup before enforcement; the only page-load eval report came from a browser extension.
 /*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' https://static.cloudflareinsights.com https://apis.google.com https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: data:; connect-src 'self' https://cloudflareinsights.com https://*.googleapis.com https://apis.google.com https://www.google.com; frame-src 'self' https://gen-lang-client-0105737183.firebaseapp.com https://accounts.google.com https://apis.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report
   Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com https://apis.google.com https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: data:; connect-src 'self' https://cloudflareinsights.com https://*.googleapis.com https://apis.google.com https://www.google.com; frame-src 'self' https://gen-lang-client-0105737183.firebaseapp.com https://accounts.google.com https://apis.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report

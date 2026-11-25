@@ -423,7 +423,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
     <body>
       <div class="no-print-bar">
         <span>CYFSA Navigator — Professional Legal Audit PDF Suite</span>
-        <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
+        <button class="print-btn" data-print-button>Print / Save as PDF</button>
       </div>
 
       <!-- 1. COVER PAGE & CASE IDENTIFICATION -->
@@ -823,11 +823,6 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
         <p><strong>Audit Methodology:</strong> Multi-pass forensic document review utilizing Claude Sonnet for primary extraction and Claude Opus for adversarial secondary verification. Quotations are verified for verbatim matches against uploaded plaintext. Citations are verified against Ontario e-Laws consolidations.</p>
         <p>CYFSA Navigator • Ontario Child Welfare File Organizer & Case Assistant • Confidential Legal Preparation Document</p>
       </footer>
-      <script>
-        setTimeout(() => {
-          window.print();
-        }, 600);
-      </script>
     </body>
     </html>
   `;

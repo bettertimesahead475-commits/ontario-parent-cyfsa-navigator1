@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { finishPrintWindow } from "../utils/printWindow";
 import { CYFSA_TOPICS } from "../data";
 import { CYFSATopic } from "../types";
 import { BookOpen, Scale, AlertTriangle, ShieldCheck, CheckSquare, Info, ChevronRight, HelpCircle, FileText, Search, Lock, UploadCloud } from "lucide-react";
@@ -279,7 +280,7 @@ export default function CYFSAGuideTab() {
           </style>
         </head>
         <body>
-          <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
+          <button class="no-print-btn" data-print-button>Print / Save as PDF</button>
 
           <div class="header-container">
             <span class="platform-label">CYFSA Navigator • Case Education Library</span>
@@ -362,18 +363,13 @@ export default function CYFSAGuideTab() {
           <div class="footer-signature">
             Primary sources verified current through Q2 2026 • Saved dynamically via OPA PDF Legal Desk.
           </div>
-
-          <script>
-            setTimeout(() => {
-              window.print();
-            }, 600);
-          </script>
         </body>
       </html>
     `;
 
     printWindow.document.write(htmlContent);
     printWindow.document.close();
+    finishPrintWindow(printWindow);
   };
 
   const categories = ["All", "Removal", "Protection Grounds", "Worker Authority", "Rights", "Evidence Rules", "Timelines", "Indigenous Rights"];
