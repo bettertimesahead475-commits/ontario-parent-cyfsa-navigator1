@@ -37,6 +37,7 @@ synthetic documents only. Results in `results/`.
 | Date | Item | Cost (USD, approx.) | Running total of $5.00 |
 |---|---|---|---|
 | 2026-11 | Staging and production Quick/Forensic acceptance runs and diagnostics (multiple) | ≈ 4.60 | ≈ 4.60 |
+| 2026-11-25 | OCR timing run (1 scanned page, Gemini) | ≈ 0.001 | ≈ 4.60 |
 | | **Remaining** | | **≈ 0.40** |
 
 Other agents have a $0 inference budget. Paid tests waiting for budget: Final Case Assessment live run;
