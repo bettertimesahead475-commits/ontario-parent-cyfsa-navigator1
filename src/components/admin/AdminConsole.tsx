@@ -144,6 +144,10 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
 
   const paymentActions = (p: any) => <>
     {p.status === "pending" && <ActionButton label="Approve" onClick={() => approve(p)} />}
+    {p.status === "approved" && p.accessStatus === "code_issued" && p.bankSettlementStatus !== "refunded" &&
+      <ActionButton label="Reissue code" onClick={() => act(`Issue a new access code for ${p.referenceNumber}? Any unused earlier code stops working.`, "payments/reissue-code", { referenceNumber: p.referenceNumber }, {
+        reason: true, after: (r) => `New access code for ${r.customerEmail}: ${r.accessCode} (expires ${when(r.expiresAt)}). Send it now: it is shown only once.`,
+      })} />}
     {p.status === "approved" && p.bankSettlementStatus !== "bank_confirmed" && p.bankSettlementStatus !== "refunded" &&
       <ActionButton label="Bank confirmed" onClick={() => act(`Mark ${p.referenceNumber} as received in the bank account?`, "payments/confirm-bank", { referenceNumber: p.referenceNumber })} />}
     {p.bankSettlementStatus !== "missing_or_disputed" && p.bankSettlementStatus !== "refunded" &&

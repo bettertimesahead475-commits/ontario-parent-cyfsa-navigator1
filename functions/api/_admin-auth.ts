@@ -37,9 +37,10 @@ export async function requireAdmin(
   if (identity.status === 'unavailable') return { response: adminError('AUTH_UNAVAILABLE', 503, 'Sign-in verification is temporarily unavailable.') };
   if (identity.status !== 'verified') return { response: adminError('AUTH_REQUIRED', 401, 'Sign in with an administrator account.') };
   const email = identity.email?.trim().toLowerCase() || '';
-  const uids = list(env.ADMIN_UIDS);
+  // Firebase uids are case-sensitive: compare exactly.
+  const uids = (env.ADMIN_UIDS || '').split(',').map((v) => v.trim()).filter(Boolean);
   const allowed = identity.emailVerified && email !== '' && adminEmails(env).includes(email)
-    && (uids.length === 0 || uids.includes(identity.uid.toLowerCase()));
+    && (uids.length === 0 || uids.includes(identity.uid));
   if (!allowed) {
     // No email or uid in logs: only that a signed-in non-administrator was refused.
     console.warn('[ADMIN_ACCESS_DENIED]', JSON.stringify({ path: new URL(request.url).pathname, emailVerified: identity.emailVerified }));

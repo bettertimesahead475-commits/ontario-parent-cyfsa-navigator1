@@ -53,11 +53,16 @@ function fakeSupabase(seed: Record<string, Row[]>) {
     const table = url.pathname.replace('/rest/v1/', '');
     const rows = tables[table];
     if (!rows) return Response.json({ code: '42P01' }, { status: 404 });
-    const filters = [...url.searchParams.entries()].filter(([k]) => !['select', 'order', 'limit', 'or'].includes(k));
+    const filters = [...url.searchParams.entries()].filter(([k]) => !['select', 'order', 'limit', 'offset', 'or'].includes(k));
     const orExpr = url.searchParams.get('or');
     const match = (r: Row) => filters.every(([c, e]) => test(r, c, e))
       && (!orExpr || orExpr.slice(1, -1).split(',').some((part) => { const [c, ...rest] = part.split('.'); return test(r, c, rest.join('.')); }));
-    if (method === 'GET') return Response.json(rows.filter(match).map((r) => ({ ...r })));
+    if (method === 'GET') {
+      // Like Supabase: never more than 1,000 rows per response, whatever limit asks for.
+      const offset = Number(url.searchParams.get('offset') || 0);
+      const limit = Math.min(1000, Number(url.searchParams.get('limit') || 1000));
+      return Response.json(rows.filter(match).slice(offset, offset + limit).map((r) => ({ ...r })));
+    }
     if (method === 'PATCH') {
       const hit = rows.filter(match);
       hit.forEach((r) => Object.assign(r, body));
@@ -367,5 +372,133 @@ describe('admin helpers', () => {
     const older = auditObjectName({ at: '2026-11-01T00:00:00.000Z', action: 'dispute', target: 'PS-ABCDE' }, 'n1');
     const names = [name, older].sort().reverse();
     expect(settlementByReference(names).get('PS-ABCDE')).toEqual({ status: 'bank_confirmed', at: '2026-11-25T10:15:00.123Z' });
+  });
+});
+
+describe('independent review findings (fc8b31c) stay fixed', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 2));
+
+  it('#1 a suspension cannot be "restored" after a refund revoked the entitlement', async () => {
+    const db = fakeSupabase(seed());
+    expect((await call(db, 'payments/suspend', { method: 'POST', body: { sessionId: S1, reason: 'Chargeback check' } })).status).toBe(200);
+    await tick();
+    const refund = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'Customer request' } });
+    expect(refund.body.sessionsRevoked).toBe(1);
+    await tick();
+    const restore = await call(db, 'payments/restore', { method: 'POST', body: { sessionId: S1 } });
+    expect(restore.status).toBe(409);
+    expect(restore.body.code).toBe('REVOKED_AFTER_SUSPENSION');
+    expect(db.tables.navigator_paid_sessions[0].revoked_at).not.toBeNull();
+  });
+
+  it('#2 refunding a monthly renewal takes back 30 days; refunding the original keeps paid renewals', async () => {
+    const db = fakeSupabase(seed());
+    db.tables.navigator_paid_sessions[0] = { ...db.tables.navigator_paid_sessions[0], tier: 'Pro', expires_at: '2027-01-01T00:00:00.000Z' };
+    db.tables.access_codes[0].redeemed_session_id = S1;
+    db.tables.access_codes.push({ id: crypto.randomUUID(), email: 'a_b@x.com', tier: 'Pro', reference_number: 'PS-RENEW1', used_at: '2026-12-01T00:00:00Z', expires_at: '2026-12-15T00:00:00Z', redeemed_session_id: S1 });
+    db.tables.payments.push({ reference_number: 'PS-RENEW1', plan: 'Pro', amount: 29, status: 'approved', notes: 'email:a_b@x.com;uid:uidA00001' });
+    const renewal = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-RENEW1', reason: 'Renewal refund' } });
+    expect(renewal.body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0 });
+    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-12-02T00:00:00.000Z', revoked_at: null });
+    const original = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'First month refund' } });
+    expect(original.body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0 });
+    expect(db.tables.navigator_paid_sessions[0].revoked_at).toBeNull();
+  });
+
+  it('#3 a reference shared by two payments is refused instead of acting on an arbitrary row', async () => {
+    const db = fakeSupabase(seed());
+    db.tables.payments.push({ reference_number: 'PS-AAAAA', plan: 'Basic', amount: 49, status: 'pending', notes: 'email:other@x.com;uid:uidC00001' });
+    const attempts: Array<[string, Record<string, unknown>]> = [
+      ['payments/approve', { referenceNumber: 'PS-AAAAA', amountReceived: 129 }],
+      ['payments/refund', { referenceNumber: 'PS-AAAAA', reason: 'xyz' }],
+      ['payments/confirm-bank', { referenceNumber: 'PS-AAAAA' }],
+    ];
+    for (const [path, body] of attempts) expect((await call(db, path, { method: 'POST', body })).body.code).toBe('DUPLICATE_REFERENCE');
+    expect((await call(db, 'customers?q=PS-AAAAA')).body.code).toBe('DUPLICATE_REFERENCE');
+    expect(db.tables.payments.filter((p) => p.reference_number === 'PS-AAAAA').every((p) => p.status === 'pending')).toBe(true);
+    expect(db.tables.access_codes).toHaveLength(1);
+  });
+
+  it('#4 revenue totals cover every payment past the 1,000-row response cap', async () => {
+    const db = fakeSupabase(seed());
+    for (let i = 0; i < 1500; i++) db.tables.payments.push({ reference_number: `PS-T${String(i).padStart(5, '0')}`, plan: 'Basic', amount: 1, status: 'approved', approved_at: '2026-11-03T00:00:00Z' });
+    const revenue = await call(db, 'revenue');
+    expect(revenue.body.totals.approvedAmount).toBe(1549);
+    expect(revenue.body.truncated).toBe(false);
+  });
+
+  it('#5 a refund whose record cannot be written changes nothing', async () => {
+    const db = fakeSupabase(seed());
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      (init.method === 'POST' && String(input).includes('/storage/v1/object/analysis_jobs/')) ? new Response('{}', { status: 500 }) : original(input, init));
+    const r = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'Customer request' } });
+    expect(r.status).toBe(503);
+    expect(db.tables.payments[0].status).toBe('pending');
+    expect(db.tables.navigator_paid_sessions[0].revoked_at).toBeNull();
+  });
+
+  it('#6 a refunded payment cannot change settlement or be refunded twice', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    await tick();
+    for (const path of ['payments/confirm-bank', 'payments/reset-settlement']) {
+      expect((await call(db, path, { method: 'POST', body: { referenceNumber: 'PS-BBBBB' } })).body.code).toBe('PAYMENT_REFUNDED');
+    }
+    expect((await call(db, 'payments/dispute', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'later' } })).body.code).toBe('PAYMENT_REFUNDED');
+    expect((await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'again' } })).body.code).toBe('ALREADY_REFUNDED');
+    expect((await call(db, 'revenue')).body.totals.refundedAmount).toBe(49);
+  });
+
+  it('#6b an interrupted refund is resumed (access revoked) rather than refused', async () => {
+    const db = fakeSupabase(seed());
+    const original = db.fetcher.getMockImplementation()!;
+    let failSessions = true;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      (failSessions && init.method === 'PATCH' && String(input).includes('/navigator_paid_sessions')) ? Response.json({ code: 'XX000' }, { status: 500 }) : original(input, init));
+    expect((await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'Customer request' } })).status).toBe(502);
+    expect(db.tables.navigator_paid_sessions[0].revoked_at).toBeNull();
+    failSessions = false;
+    const resumed = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'Customer request' } });
+    expect(resumed.body).toMatchObject({ success: true, resumed: true, sessionsRevoked: 1 });
+    expect((await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'Customer request' } })).body.code).toBe('ALREADY_REFUNDED');
+  });
+
+  it('#7 an approved payment whose code was never delivered gets a new code; a redeemed one does not', async () => {
+    const db = fakeSupabase(seed());
+    expect((await call(db, 'payments/reissue-code', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'Lost email' } })).body.code).toBe('PAYMENT_NOT_APPROVED');
+    const oldId = crypto.randomUUID();
+    db.tables.access_codes.push({ id: oldId, email: 'axb@x.com', tier: 'Basic', reference_number: 'PS-BBBBB', used_at: null, expires_at: '2026-12-01T00:00:00Z' });
+    const r = await call(db, 'payments/reissue-code', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Lost email' } });
+    expect(r.body.accessCode).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect(db.tables.access_codes.find((c) => c.id === oldId)!.expires_at).toBe(NOW.toISOString());
+    expect(db.tables.access_codes.filter((c) => c.reference_number === 'PS-BBBBB')).toHaveLength(2);
+    db.tables.payments[0].status = 'approved';
+    expect((await call(db, 'payments/reissue-code', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'x y z' } })).body.code).toBe('CODE_ALREADY_REDEEMED');
+  });
+
+  it('#8 ADMIN_UIDS is compared case-sensitively', async () => {
+    const owner = vi.fn(async () => ({ status: 'verified', uid: 'AbCdEf123', email: 'mr.pelkie@gmail.com', emailVerified: true }));
+    expect('response' in (await requireAdmin(req('session'), { ...env, ADMIN_UIDS: 'abcdef123' }, owner as any))).toBe(true);
+    expect('admin' in (await requireAdmin(req('session'), { ...env, ADMIN_UIDS: 'AbCdEf123' }, owner as any))).toBe(true);
+  });
+
+  it('#9 each payment shows the entitlement its own code created, not the newest of the same package', async () => {
+    const db = fakeSupabase(seed());
+    const S3 = '44444444-4444-4444-8444-444444444444';
+    db.tables.navigator_paid_sessions.unshift({ id: S3, firebase_uid: 'uidA00001', tier: 'Premium', issued_at: '2026-11-20T00:00:00Z', expires_at: '2027-11-20T00:00:00Z', revoked_at: null, access_code_id: null });
+    const overview = await call(db, 'payments/overview');
+    expect(overview.body.payments.find((p: any) => p.referenceNumber === 'PS-AAAAA').sessionId).toBe(S1);
+    expect(overview.body.payments.find((p: any) => p.referenceNumber === 'PS-BBBBB').sessionId).toBeNull();
+  });
+
+  it('#10 credits are not restored while a reservation that returns them itself is still open', async () => {
+    const db = fakeSupabase(seed());
+    db.tables.free_usage.push({ uid: `paid_res_${S1}_abcdef`, email: 'reservation:reserved', analyses_used: 3 });
+    const r = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, reason: 'Failed analysis' } });
+    expect(r.body.code).toBe('RESERVATION_PENDING');
+    expect(db.tables.free_usage[0].analyses_used).toBe(3);
+    db.tables.free_usage.at(-1)!.email = 'reservation:consumed';
+    expect((await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, reason: 'Failed analysis' } })).body.creditsRestored).toBe(1);
   });
 });
