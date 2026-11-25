@@ -167,10 +167,57 @@ export const SETTLEMENT_ACTIONS: Record<string, string> = {
 /** Latest bank-settlement state per payment reference, derived from the (newest-first) audit names. */
 export function settlementByReference(namesNewestFirst: string[]): Map<string, { status: string; at: string }> {
   const result = new Map<string, { status: string; at: string }>();
+  // A refund is final: once any refund record exists it wins over every other settlement record, including one that
+  // raced in after it (a confirm-bank that passed its own check just before the refund was written).
+  for (const name of namesNewestFirst) {
+    const parsed = parseAuditObjectName(name);
+    if (parsed?.action === "refund" && !result.has(parsed.target)) result.set(parsed.target, { status: "refunded", at: parsed.at });
+  }
   for (const name of namesNewestFirst) {
     const parsed = parseAuditObjectName(name);
     if (!parsed || !SETTLEMENT_ACTIONS[parsed.action] || result.has(parsed.target)) continue;
     result.set(parsed.target, { status: SETTLEMENT_ACTIONS[parsed.action], at: parsed.at });
   }
   return result;
+}
+
+/**
+ * Create-once lock object (Storage refuses to overwrite with x-upsert false). Returns true for the single caller that
+ * created it, false when it already exists. Used where a step must run at most once (refund shortening, code reissue).
+ */
+export async function acquireOnce(env: AdminStoreEnv, name: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+  const { base, key } = config(env);
+  const response = await fetcher(`${base}/storage/v1/object/${AUDIT_BUCKET}/admin-locks/${encodeURIComponent(safeSegment(name, 120))}.json`, {
+    method: "POST",
+    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", "x-upsert": "false" },
+    body: JSON.stringify({ at: new Date().toISOString() }),
+    redirect: "manual",
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+  if (response?.ok) return true;
+  if (response) {
+    // Storage reports "already exists" as 409, or as 400 with statusCode "409" in the body.
+    const body = await response.json().catch(() => null) as { statusCode?: unknown } | null;
+    if (response.status === 409 || String(body?.statusCode) === "409") return false;
+  }
+  throw new AdminStoreError("ADMIN_LOCK_UNAVAILABLE", 503, "The operation could not be coordinated. Nothing was changed.");
+}
+
+/** One PostgREST page plus the exact total row count of the query (Prefer: count=exact → Content-Range). */
+export async function restPage<T>(env: AdminStoreEnv, path: string, fetcher: typeof fetch = fetch): Promise<{ rows: T[]; total: number | null }> {
+  const { base, key } = config(env);
+  const response = await fetcher(`${base}/rest/v1/${path}`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: "application/json", Prefer: "count=exact" },
+    redirect: "manual",
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+  if (!response) throw new AdminStoreError("ADMIN_STORE_UNAVAILABLE", 503, "The database did not respond.");
+  if (!response.ok) {
+    // Reuse rest() error mapping by repeating the request through it.
+    return { rows: await rest<T[]>(env, path, {}, fetcher), total: null };
+  }
+  const range = response.headers.get("content-range") || "";
+  const total = range.includes("/") ? Number(range.slice(range.lastIndexOf("/") + 1)) : NaN;
+  const text = await response.text();
+  return { rows: (text ? JSON.parse(text) : []) as T[], total: Number.isFinite(total) ? total : null };
 }

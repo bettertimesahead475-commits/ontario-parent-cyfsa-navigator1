@@ -9,7 +9,7 @@ beforeAll(() => {
   const guarded = (async (input: RequestInfo | URL, init?: RequestInit) => {
     let host = '';
     try { host = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).hostname; } catch { /* relative URL */ }
-    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+    if (host && !['localhost', '127.0.0.1', '[::1]', '::1'].includes(host)) {
       throw new TypeError(`fetch failed: external network is disabled in tests (${host})`);
     }
     return real(input, init);

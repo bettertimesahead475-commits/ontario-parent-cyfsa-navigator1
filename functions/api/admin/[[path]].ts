@@ -11,7 +11,7 @@
 import { requireAdmin, adminError, ADMIN_HEADERS, type AdminAuthEnv, type AdminIdentity } from '../_admin-auth';
 import {
   rest, restOptional, appendAudit, listAuditNames, readAuditEvent, parseAuditObjectName, settlementByReference, safeSegment,
-  AdminStoreError, type AdminStoreEnv,
+  AdminStoreError, acquireOnce, restPage, type AdminStoreEnv,
 } from '../_admin-store';
 import { LIMITS } from '../_paid-credit-reservation';
 import { monthlyCreditScope } from '../_monthly-credit-scope';
@@ -152,13 +152,18 @@ function paymentFilter(p: Payment): string {
  * says, so totals computed from one response would silently cover only part of the data. `path` must have an order.
  */
 async function restAll<T>(env: AdminEnv, path: string, fetcher: typeof fetch, max = 20000): Promise<{ rows: T[]; truncated: boolean }> {
+  // `path` must order by a unique key, so offset pages neither overlap nor skip. The exact total (Content-Range) is
+  // the stop condition, which also works if the project's row cap is lower than 1,000; a mismatch is reported.
   const rows: T[] = [];
-  for (let offset = 0; offset < max; offset += 1000) {
-    const page = await rest<T[]>(env, `${path}&limit=1000&offset=${offset}`, {}, fetcher);
-    rows.push(...page);
-    if (page.length < 1000) return { rows, truncated: false };
+  let total: number | null = null;
+  for (let offset = 0; offset < max; ) {
+    const page = await restPage<T>(env, `${path}&limit=1000&offset=${offset}`, fetcher);
+    if (total === null) total = page.total;
+    rows.push(...page.rows);
+    offset += page.rows.length;
+    if (page.rows.length === 0 || (total !== null ? rows.length >= total : page.rows.length < 1000)) break;
   }
-  return { rows, truncated: true };
+  return { rows, truncated: total !== null ? rows.length !== total : rows.length >= max };
 }
 
 /** Latest settlement state of one payment, from the audit trail. */
@@ -213,7 +218,10 @@ async function paymentsOverview(env: AdminEnv, fetcher: typeof fetch, now: Date)
     payments: payments.map((p) => {
       const base = publicPayment(p, settlement.get(safeSegment(String(p.reference_number || ''))));
       // Linked through the payment's own access code, never by uid and package (a customer can buy a package twice).
-      const session = codes.filter((c) => c.reference_number === p.reference_number).map((c) => sessionOfCode(c, sessions)).find(Boolean);
+      const duplicated = payments.filter((x) => x.reference_number === p.reference_number).length > 1;
+      const session = duplicated ? undefined : codes
+        .filter((c) => c.reference_number === p.reference_number && (c.email || '').toLowerCase() === base.customerEmail)
+        .map((c) => sessionOfCode(c, sessions)).find(Boolean);
       const s = session ? publicSession(session, counters, now) : null;
       return { ...base, sessionId: s?.sessionId ?? null, accessStatus: s?.accessStatus ?? (p.status === 'approved' ? 'code_issued' : p.status === 'rejected' ? 'rejected' : 'pending'),
         creditsGranted: s?.creditsGranted ?? null, creditsConsumed: s?.creditsConsumed ?? 0, creditsRemaining: s?.creditsRemaining ?? null, lastActivity: s?.lastActivity ?? null };
@@ -271,7 +279,7 @@ async function customerDetail(env: AdminEnv, q: string, fetcher: typeof fetch, n
 async function usageSummary(env: AdminEnv, fetcher: typeof fetch, now: Date) {
   const since = new Date(now.getTime() - 7 * 86400000).toISOString();
   const { rows: jobs, truncated } = await restAll<{ mode: string; status: string; error_code: string | null; created_at: string; completed_at: string | null; owner_bypass: boolean }>(
-    env, `analyzer_jobs?select=mode,status,error_code,created_at,completed_at,owner_bypass&created_at=gte.${enc(since)}&order=created_at.asc`, fetcher);
+    env, `analyzer_jobs?select=job_id,mode,status,error_code,created_at,completed_at,owner_bypass&created_at=gte.${enc(since)}&order=created_at.asc,job_id.asc`, fetcher);
   const byMode: Record<string, { total: number; completed: number; failed: number; running: number; queued: number; avgSeconds: number | null; ownerRuns: number }> = {};
   const failures: Record<string, number> = {};
   const day = new Date(now.getTime() - 86400000).toISOString();
@@ -296,7 +304,12 @@ async function usageSummary(env: AdminEnv, fetcher: typeof fetch, now: Date) {
 
 async function revenueSummary(env: AdminEnv, fetcher: typeof fetch) {
   const [{ rows: payments, truncated }, auditNames, summary] = await Promise.all([
-    restAll<Payment>(env, 'payments?select=reference_number,plan,amount,status,submitted_at,approved_at&order=reference_number.asc', fetcher),
+    restAll<Payment>(env, 'payments?select=reference_number,plan,amount,status,submitted_at,approved_at&order=id.asc', fetcher).catch((error) => {
+      if (error instanceof AdminStoreError && error.code === 'ADMIN_SCHEMA_UNAVAILABLE') {
+        return restAll<Payment>(env, 'payments?select=reference_number,plan,amount,status,submitted_at,approved_at&order=submitted_at.asc,reference_number.asc', fetcher);
+      }
+      throw error;
+    }),
     listAuditNames(env, 5000, fetcher).catch(() => [] as string[]),
     restOptional<Record<string, unknown>[]>(env, 'navigator_payment_summary?select=*', [], fetcher),
   ]);
@@ -408,7 +421,11 @@ async function reissueCode(env: AdminEnv, admin: AdminIdentity, body: Record<str
   if (payment.status !== 'approved') return adminError('PAYMENT_NOT_APPROVED', 409, 'Only an approved payment can have its code reissued.');
   if (await settlementOf(env, reference, fetcher) === 'refunded') return adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded.');
   const { email } = parsePaymentNotes(payment.notes);
-  if (!email) return adminError('PAYMENT_INCOMPLETE', 422, 'This payment request has no customer email.');
+  if (!email || !LIMITS[String(payment.plan)]) return adminError('PAYMENT_INCOMPLETE', 422, 'This payment request has no customer email or a package that cannot be activated.');
+  // One reissue per reference per minute: two administrators acting together cannot leave two working codes.
+  if (!(await acquireOnce(env, `reissue__${reference}__${now.toISOString().slice(0, 16).replace(/[-:T]/g, '')}`, fetcher))) {
+    return adminError('REISSUE_IN_PROGRESS', 409, 'A code for this payment was just reissued. Wait a minute and check before trying again.');
+  }
   const codes = await rest<AccessCode[]>(env, `access_codes?select=id,used_at&reference_number=eq.${enc(reference)}&limit=50`, {}, fetcher);
   if (codes.some((c) => c.used_at)) return adminError('CODE_ALREADY_REDEEMED', 409, 'This payment\'s code was already redeemed; the customer has access.');
   if (!(await audit(env, admin, 'reissue-code', reference, reason, { plan: payment.plan, previousCodes: codes.length }, fetcher))) {
@@ -416,6 +433,9 @@ async function reissueCode(env: AdminEnv, admin: AdminIdentity, body: Record<str
   }
   // Retire the old code(s) first, so at most one unused code exists afterwards.
   await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' }, fetcher);
+  // The customer may have redeemed the old code between the first read and the expiry; then they have access already.
+  const after = await rest<AccessCode[]>(env, `access_codes?select=id,used_at&reference_number=eq.${enc(reference)}&used_at=not.is.null&limit=1`, {}, fetcher);
+  if (after.length) return adminError('CODE_ALREADY_REDEEMED', 409, 'The customer redeemed the earlier code just now; no new code was issued.');
   const issued = await issueCode(env, payment, email, amountOf(payment.amount), fetcher, now);
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt,
     note: 'Send this code to the customer now. It is shown once; earlier unused codes for this payment no longer work.' });
@@ -448,7 +468,7 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
   if (!payment) return adminError('PAYMENT_NOT_FOUND', 404, 'No payment request has that reference number.');
   const names = await listAuditNames(env, 5000, fetcher);
   const target = safeSegment(reference);
-  const recorded = settlementByReference(names).get(target)?.status === 'refunded';
+  const recorded = names.some((n) => { const p = parseAuditObjectName(n); return p?.target === target && p.action === 'refund'; });
   const applied = names.some((n) => { const p = parseAuditObjectName(n); return p?.target === target && p.action === 'refund-applied'; });
   if (recorded && applied) return adminError('ALREADY_REFUNDED', 409, 'This payment is already recorded as refunded.');
 
@@ -458,6 +478,10 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
   if (!recorded && !(await audit(env, admin, 'refund', reference, reason, { amount: amountOf(payment.amount), plan: payment.plan, revokeAccess }, fetcher))) {
     return adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund could not be recorded. Nothing was changed.');
   }
+
+  // Exactly one request ever holds this lock. Only that request may take back renewal days (not idempotent); a retry,
+  // a resumed refund or a concurrent duplicate repeats only the idempotent steps.
+  const firstApplication = await acquireOnce(env, `refund__${reference}`, fetcher);
 
   const stamp = now.toISOString();
   let rejected = false; let codesExpired = 0; let sessionsRevoked = 0; let sessionsShortened = 0; let shorteningsForReview = 0; const revokedSessionIds: string[] = [];
@@ -480,8 +504,8 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
       const renewals = (await rest<CodeLink[]>(env, `access_codes?select=id&redeemed_session_id=eq.${session.id}&used_at=not.is.null&limit=50`, {}, fetcher))
         .filter((c) => c.id !== session.access_code_id);
       const isRenewal = session.access_code_id !== code.id;
-      if ((isRenewal || renewals.length > 0) && session.expires_at && recorded) {
-        // Resuming an interrupted refund: shortening is not idempotent, so it is left for manual review.
+      if ((isRenewal || renewals.length > 0) && session.expires_at && !firstApplication) {
+        // Not the first application of this refund: shortening is not idempotent, so it is left for manual review.
         shorteningsForReview++;
       } else if ((isRenewal || renewals.length > 0) && session.expires_at) {
         const shortened = new Date(Date.parse(session.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
@@ -496,8 +520,8 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
     }
   }
   const result = { paymentRejected: rejected, codesExpired, sessionsRevoked, sessionsShortened, shorteningsForReview, resumed: recorded };
-  await audit(env, admin, 'refund-applied', reference, null, { ...result, revokedSessionIds }, fetcher);
-  return ok({ success: true, referenceNumber: reference, amount: amountOf(payment.amount), ...result, auditRecorded: true,
+  const auditRecorded = await audit(env, admin, 'refund-applied', reference, null, { ...result, revokedSessionIds }, fetcher);
+  return ok({ success: true, referenceNumber: reference, amount: amountOf(payment.amount), ...result, auditRecorded,
     note: 'Recorded only. Return the funds to the customer by Interac e-Transfer; this application never moves money.' });
 }
 
@@ -518,20 +542,28 @@ async function suspendOrRestore(env: AdminEnv, admin: AdminIdentity, action: 'su
     if (!rows.length) return adminError('SESSION_NOT_ACTIVE', 409, 'That entitlement was suspended or revoked at the same moment.');
     return ok({ success: true, sessionId, status: 'suspended', auditRecorded: true });
   }
-  // Only the console's own suspension can be lifted: the newest suspend/restore record must be a suspension, and the
-  // entitlement must still carry exactly that suspension's revocation time (a later refund or revocation replaces it).
+  // Only the console's own suspension can be lifted: the entitlement's CURRENT revocation time must equal the
+  // revokedAt of one of this console's suspension records. A refund or any other revocation writes a different time,
+  // and a suspension that lost a race (its PATCH matched nothing) never matches, so it cannot block a later restore.
+  const session = await sessionById(env, sessionId, fetcher);
+  if (!session?.revoked_at) return adminError('SESSION_NOT_SUSPENDED', 409, 'That entitlement is not suspended.');
+  const current = Date.parse(session.revoked_at);
   const names = await listAuditNames(env, 5000, fetcher);
-  const lastName = names.find((n) => { const p = parseAuditObjectName(n); return !!p && p.target === safeSegment(sessionId) && (p.action === 'suspend' || p.action === 'restore'); });
-  const last = lastName ? parseAuditObjectName(lastName) : null;
-  if (!last || last.action !== 'suspend') return adminError('NOT_ADMIN_SUSPENDED', 409, 'Only an entitlement suspended from this console can be restored here.');
-  const event = await readAuditEvent(env, lastName!, fetcher);
-  const revokedAt = typeof event?.details?.revokedAt === 'string' ? event.details.revokedAt : null;
-  if (!revokedAt) return adminError('NOT_ADMIN_SUSPENDED', 409, 'The suspension record could not be read. Try again.');
+  const suspendNames = names.filter((n) => { const p = parseAuditObjectName(n); return !!p && p.target === safeSegment(session.id) && p.action === 'suspend'; }).slice(0, 10);
+  let lastName: string | null = null;
+  let last: { at: string } | null = null;
+  let revokedAt: string | null = null;
+  for (const n of suspendNames) {
+    const e = await readAuditEvent(env, n, fetcher);
+    const value = typeof e?.details?.revokedAt === 'string' ? e.details.revokedAt : null;
+    if (value && Date.parse(value) === current) { lastName = n; last = parseAuditObjectName(n); revokedAt = session.revoked_at; break; }
+  }
+  if (!lastName || !last || !revokedAt) return adminError('NOT_ADMIN_SUSPENDED', 409, 'Only an entitlement suspended from this console can be restored here.');
   // A refund that revoked this entitlement after the suspension is final, even if its timestamp happens to match.
   const laterRefunds = names.filter((n) => { const p = parseAuditObjectName(n); return !!p && p.action === 'refund-applied' && p.at >= last.at; });
   for (const n of laterRefunds.slice(0, 20)) {
     const e = await readAuditEvent(env, n, fetcher);
-    if (Array.isArray(e?.details?.revokedSessionIds) && (e!.details.revokedSessionIds as unknown[]).includes(sessionId)) {
+    if (Array.isArray(e?.details?.revokedSessionIds) && (e!.details.revokedSessionIds as unknown[]).includes(session.id)) {
       return adminError('REVOKED_AFTER_SUSPENSION', 409, 'This entitlement was revoked by a refund after the suspension and cannot be restored here.');
     }
   }
@@ -564,7 +596,7 @@ async function restoreCredits(env: AdminEnv, admin: AdminIdentity, body: Record<
   if (!counter) return adminError('CREDITS_NOT_COUNTED', 409, 'This package has no counted credits to restore in the current period.');
   // An unreleased reservation is returned to the counter automatically (on failure, or by reconciliation within
   // 15 minutes of the next analysis). Restoring now would return that credit twice.
-  const live = await rest<Counter[]>(env, `free_usage?select=uid&uid=like.${enc(`paid_res_${sessionId}_*`)}&email=like.${enc('reservation:reserved*')}&limit=1`, {}, fetcher);
+  const live = await rest<Counter[]>(env, `free_usage?select=uid&uid=like.${enc(`paid_res_${session.id}_*`)}&email=like.${enc('reservation:reserved*')}&limit=1`, {}, fetcher);
   if (live.length) return adminError('RESERVATION_PENDING', 409, 'An analysis on this entitlement still holds a credit reservation, which is returned automatically if it fails. Try again later.');
   const rows = await rest<Counter[]>(env, `free_usage?select=uid,analyses_used&uid=eq.${enc(counter.uid)}&limit=1`, {}, fetcher);
   const used = Math.max(0, Number(rows[0]?.analyses_used ?? 0));
