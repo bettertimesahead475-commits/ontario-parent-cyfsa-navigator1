@@ -13,6 +13,7 @@ export const RATE_LIMITS = {
   analyze: { limit: 8, windowMs: 60_000 },
   activateCode: { limit: 6, windowMs: 10 * 60_000 },
   requestAccess: { limit: 5, windowMs: 10 * 60_000 },
+  adminWrite: { limit: 30, windowMs: 60_000 },
 } satisfies Record<string, RateLimitRule>;
 
 const MAX_TRACKED_KEYS = 5_000;

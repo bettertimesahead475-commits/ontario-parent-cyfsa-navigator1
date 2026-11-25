@@ -33,9 +33,7 @@ const ParentChatBot = lazy(() => import("./components/ParentChatBot"));
 const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyDrawer"));
 const PricingTab = lazy(() => import("./components/PricingTab"));
 // Admin-only Marketing Agent console; intentionally omitted from public navigation.
-const MarketingAgentTab = lazy(() => import("./components/admin/MarketingAgentTab"));
-const SystemHealthTab = lazy(() => import("./components/admin/SystemHealthTab"));
-const PaymentMonitoringTab = lazy(() => import("./components/admin/PaymentMonitoringTab"));
+const AdminConsole = lazy(() => import("./components/admin/AdminConsole"));
 const EvidenceReviewWorkspace = lazy(() => import("./components/EvidenceReviewWorkspace"));
 const ProfessionalWorkspace = lazy(() => import("./components/ProfessionalWorkspace"));
 const AcceptInvitation = lazy(() => import("./components/AcceptInvitation"));
@@ -449,21 +447,21 @@ export default function App() {
             <PublicProfileTab />
           </Route>
 
-          {/* Admin-only Marketing Agent console. */}
-          <Route path="/admin/marketing">
-            <MarketingAgentTab />
+          {/* Administrator console: Firebase-verified administrators only (enforced by /api/admin on the server). */}
+          <Route path="/admin/payments">
+            <RequireAuth><AdminConsole initialSection="payments" /></RequireAuth>
           </Route>
-
-          {/* Admin-only System Observability & Monitoring console. */}
           <Route path="/admin/system-health">
-            <SystemHealthTab />
+            <RequireAuth><AdminConsole initialSection="overview" /></RequireAuth>
           </Route>
           <Route path="/admin/monitoring">
-            <SystemHealthTab />
+            <RequireAuth><AdminConsole initialSection="overview" /></RequireAuth>
           </Route>
-          {/* Admin-only Payment & Customer Usage Observability console. */}
-          <Route path="/admin/payments">
-            <PaymentMonitoringTab />
+          <Route path="/admin/marketing">
+            <RequireAuth><AdminConsole /></RequireAuth>
+          </Route>
+          <Route path="/admin">
+            <RequireAuth><AdminConsole /></RequireAuth>
           </Route>
 
           <Route path="/signup">

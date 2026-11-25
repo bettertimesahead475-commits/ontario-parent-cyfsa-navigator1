@@ -59,13 +59,11 @@ function providerKeyStatus(raw: string | undefined, kind: 'supabase' | 'anthropi
   return usable ? 'configured' : 'unusable';
 }
 
-export const onRequestGet = async ({
-  request,
-  env,
-}: {
-  request: Request;
-  env: StatusEnv;
-}): Promise<Response> => {
+export const onRequestGet = async ({ request, env }: { request: Request; env: StatusEnv }): Promise<Response> =>
+  statusResponse(request, env, false);
+
+/** `verifiedAdmin` is true only when the caller already passed requireAdmin (a Firebase administrator). */
+export async function statusResponse(request: Request, env: StatusEnv, verifiedAdmin: boolean): Promise<Response> {
   const isAnalyzerEnabled = env.ANALYZER_ENABLED === 'true';
   const hasFirebase = formatStatus(env.FIREBASE_PROJECT_ID);
   const hasSupabaseUrl = formatStatus(env.STAGING_SUPABASE_URL);
@@ -93,9 +91,9 @@ export const onRequestGet = async ({
   const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
 
   const configuredAdminSecret = env.ADMIN_SECRET?.trim();
-  const isAdmin =
+  const isAdmin = verifiedAdmin || (
     Boolean(configuredAdminSecret) &&
-    (constantTimeEqual(adminSecretHeader, configuredAdminSecret!) || constantTimeEqual(bearerToken, configuredAdminSecret!));
+    (constantTimeEqual(adminSecretHeader, configuredAdminSecret!) || constantTimeEqual(bearerToken, configuredAdminSecret!)));
 
   // Authorized Admin Diagnostic Response
   if (isAdmin) {
@@ -137,4 +135,4 @@ export const onRequestGet = async ({
     },
     { status: 200, headers: DEFAULT_HEADERS }
   );
-};
+}
