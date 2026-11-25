@@ -103,6 +103,30 @@ export const onRequestPost = async ({
   const normalizedEmail = email.toLowerCase().trim();
   const normalizedCode = code.toUpperCase().trim();
 
+  // An access code is bound to the purchase email. The typed email alone proves nothing, so a code redeemed
+  // by an account whose verified Google email is different must also present the purchase's payment
+  // reference number (shown when access was requested and used in the e-transfer memo).
+  const signedInEmail = identity.emailVerified ? identity.email?.toLowerCase().trim() : null;
+  if (signedInEmail !== normalizedEmail) {
+    const reference = typeof body?.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
+    if (!reference) {
+      return Response.json(
+        { error: 'This code was purchased with a different email than the one you are signed in with. Enter the payment reference number from your access request to confirm the purchase is yours.', code: 'PURCHASE_REFERENCE_REQUIRED' },
+        { status: 403, headers: DEFAULT_HEADERS },
+      );
+    }
+    const purchase = await readCodePurchase(env, normalizedCode);
+    if (purchase === 'unavailable') {
+      return Response.json({ error: 'Activation service temporarily unavailable. Please try again.', code: 'NETWORK_TIMEOUT' }, { status: 503, headers: DEFAULT_HEADERS });
+    }
+    const ok = purchase !== null
+      && (purchase.email ?? '').toLowerCase().trim() === normalizedEmail
+      && typeof purchase.reference_number === 'string'
+      && constantTimeEqual(purchase.reference_number.trim().toUpperCase(), reference);
+    // Same answer as an unknown code: never reveal which part did not match.
+    if (!ok) return Response.json({ error: 'Invalid email or code.' }, { status: 401, headers: DEFAULT_HEADERS });
+  }
+
   // ATOMIC RPC: Call PostgreSQL stored procedure redeem_access_code_atomic
   const rpcUrl = new URL('/rest/v1/rpc/redeem_access_code_atomic', env.STAGING_SUPABASE_URL);
 
@@ -179,3 +203,29 @@ export const onRequestPost = async ({
     );
   }
 };
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return diff === 0;
+}
+
+/** Reads only the purchase email and reference for a code, by the same SHA-256 hash the redemption RPC uses. */
+async function readCodePurchase(env: Env, normalizedCode: string): Promise<{ email: string | null; reference_number: string | null } | null | 'unavailable'> {
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalizedCode));
+    const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const url = new URL('/rest/v1/access_codes', env.STAGING_SUPABASE_URL);
+    url.searchParams.set('select', 'email,reference_number');
+    url.searchParams.set('code_hash', 'eq.' + hash);
+    url.searchParams.set('limit', '1');
+    const key = normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '';
+    const res = await fetch(url.toString(), { headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return 'unavailable';
+    const rows = await res.json() as Array<{ email: string | null; reference_number: string | null }>;
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+  } catch {
+    return 'unavailable';
+  }
+}
