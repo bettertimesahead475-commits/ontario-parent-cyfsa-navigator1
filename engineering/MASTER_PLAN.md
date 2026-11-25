@@ -23,8 +23,9 @@ customer records or confidential documents.
 - Automatic production deployments are **disabled** (`production_deployments_enabled=false`). Every branch gets a
   preview deployment only. Preview environments have placeholder secrets, so preview APIs cannot reach the
   database or AI providers: previews are for visual and frontend verification only.
-- 2026-11-25 release: production deployment `a67747aa` → commit `1fa52d1` (admin backend). Previous: `7d57b59b`.
-- Rollback targets (Pages deployments → commit): `a67747aa`→`1fa52d1` (current), `7d57b59b`→`b141293`, `74f3fe5d`→`0e0808e`,
+- 2026-11-25 releases: `a67747aa` → `1fa52d1` (admin backend); `d5f2a3c9` → `cf67d8c` (Vercel analytics removed, npm audit fix,
+  prompt-injection fix). Executor Worker `cyfsa-analyzer-queue-consumer` version `4cd2181f` (previous `d26c3faa`).
+- Rollback targets (Pages deployments → commit): `d5f2a3c9`→`cf67d8c` (current), `a67747aa`→`1fa52d1`, `7d57b59b`→`b141293`, `74f3fe5d`→`0e0808e`,
   `d1805da1`→`99eeaf3`, `88c60f30`→`b9a1232`, `d8da2cd1`→`69750af`, `e62bcbbd`→`a84ece8`.
   Rollback: Cloudflare dashboard → Pages → Deployments → "Rollback to this deployment", or
   `POST /accounts/{acct}/pages/projects/cyfsa-navigator-git-staging/deployments/{id}/rollback`.

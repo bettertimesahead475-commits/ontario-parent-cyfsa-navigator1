@@ -20,7 +20,7 @@ Evidence must be reproducible (test name, command, deployment id, or harness out
 | AN-2 | Analyzer | Forensic Deep Scan: all six sections, verification, persistence, reopen, 75–100 s | Verified complete (single sample) | production queued run 99.4 s executor / 110.5 s browser; more samples blocked by B-1 |
 | AN-3 | Analyzer | Final Case Assessment end-to-end | Externally blocked | B-1 (budget) |
 | AN-4 | Analyzer | Prompt-injection resistance (document tags neutralized; untrusted-data instruction) | Verified complete | `forensic-section-dispatch`, security-hardening tests |
-| AN-5 | Analyzer | Synthetic evaluation set with false-positive/negative, quote and citation accuracy metrics | In progress | |
+| AN-5 | Analyzer | Synthetic evaluation of deterministic safeguards: quote and citation false acceptance/rejection, injection, unsupported-finding handling | Verified complete (deterministic layer) | `eval/analyzer-guards`: 26 quote + 15 citation + 5 injection cases, 0 FP / 0 FN enforced. Model-output accuracy evaluation needs paid runs (B-1) |
 | EX-1 | Extraction | Native PDF, scanned PDF, DOCX, TXT, PNG, HEIC extract on production | Verified complete | harness `extract-only.mjs` results 2026-11-25 |
 | PDF-1 | Exports | Forensic export produces a real PDF with headings, verbatim quotes, citations, no mojibake | Verified complete | `pdf-export-check.mjs` (CDP printToPDF + text parse) |
 | PDF-2 | Exports | Quick, guide and template exports verified the same way | In progress (Antigravity) | |

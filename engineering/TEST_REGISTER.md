@@ -14,6 +14,7 @@ npx tsc --noEmit -p .                                         # type check
 | Date | Commit | Result | Notes |
 |---|---|---|---|
 | 2026-11-25 | b141293 (production) | 4,230 passed / 478 skipped | tsc clean |
+| 2026-11-25 | a7c6b47 (eval, injection fix) | 4,281 passed / 0 failed / 478 skipped | vitest now also runs src/**/*.test.ts and eval/** |
 | 2026-11-25 | c82e971 (review fixes, network guard) | 4,265 passed / 0 failed / 478 skipped | tsc clean; no test reaches an external host |
 | 2026-11-25 | fc8b31c (admin) | 4,252 passed / 2 failed / 478 skipped; both failures pass in isolation with and without the change | flaky under full-suite load (T-15) |
 

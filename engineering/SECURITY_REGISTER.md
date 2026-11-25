@@ -20,6 +20,9 @@ No regulatory compliance is claimed without independent verification.
 | S-11 | Med | Payment references were 5 random characters with no unique index (collision ≈1.7% at 1,000 payments) | Fixed for new references (8 chars); admin refuses duplicates | unique index needs a migration (owner approval) |
 | S-12 | Med | Tests sent requests to the real production Supabase project (fake key) | Fixed | `tests/setup/no-external-network.ts` |
 | S-14 | Info | Live CSP check: "unsafe-eval" console message comes from a browser extension content script, not the site; page records 0 violations | Verified | `csp-eval-trace.mjs` 2026-11-25 |
+| S-15 | Med | Prompt-injection: a document tag with a line break inside (`<
+/document
+>`) survived neutralization and could close the document block | Fixed a7c6b47; deployed (Pages d5f2a3c9, executor 4cd2181f) | found by `eval/analyzer-guards` |
 | S-13 | Info | Frontend bundle contains no Supabase URL or key; all database access is server-side with the service key | Verified | production bundle scan 2026-11-25 |
 
 ## S-RL: persistent rate-limiting options (no provisioning without owner approval)

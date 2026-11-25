@@ -12,7 +12,7 @@ Status: todo · doing · review · done · blocked. One owner per task. Pick the
 | T-05 | P1 | Persistent rate limiting options with exact costs | Claude | todo | Owner | → SECURITY_REGISTER S-RL, B-3 |
 | T-06 | P1 | Queue dead-letter verification and stuck-job recovery | Claude | done | | DLQ live with relay consumer; max_retries 5; worker DLQ tests |
 | T-07 | P1 | Database audit (RLS, indexes, constraints) read-only; prepare reversible migrations | Claude | todo | | no production DDL without approval |
-| T-08 | P1 | Synthetic analyzer evaluation set and metrics harness (mocked provider) | Claude | todo | | |
+| T-08 | P1 | Synthetic analyzer evaluation set and metrics harness (mocked provider) | Claude | done | | eval/analyzer-guards; found S-15 |
 | T-09 | P1 | Alerting on failed jobs / health on existing infrastructure | Claude | todo | | no paid services |
 | T-10 | P1 | Visual-regression baselines for all public pages (desktop + mobile) | Antigravity | todo | Owner | against production `7d57b59b` |
 | T-11 | P1 | PDF export verification: Quick, guide, templates (real PDF bytes, text inspected) | Antigravity | todo | Owner | reuse approach of harness `pdf-export-check.mjs` |

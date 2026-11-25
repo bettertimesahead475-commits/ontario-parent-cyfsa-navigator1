@@ -4,8 +4,8 @@ Last updated: 2026-11-25 by Claude.
 
 ## State
 
-- Production: deployment `a67747aa` / commit `1fa52d1` (admin backend), live-verified 2026-11-25. Rollback: `7d57b59b`.
-- `engineering/claude-backend` ahead of production by 002ba9a (remove dead Vercel analytics; npm audit fix): ship with the next release.
+- Production: deployment `d5f2a3c9` / commit `cf67d8c`, live-verified 2026-11-25 (admin console 200s, no Vercel script errors).
+  Rollback: `a67747aa`. Executor Worker version `4cd2181f` (rollback `d26c3faa`: `npx wrangler rollback d26c3faa-22fd-4a9a-b546-173291575b4d --config wrangler.staging-job-service.jsonc`).
 - `engineering/integration` = baseline + these control documents.
 - Inference budget remaining ≈ $0.40 (no paid runs today).
 
