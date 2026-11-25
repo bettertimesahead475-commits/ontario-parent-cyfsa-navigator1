@@ -14,6 +14,7 @@ npx tsc --noEmit -p .                                         # type check
 | Date | Commit | Result | Notes |
 |---|---|---|---|
 | 2026-11-25 | b141293 (production) | 4,230 passed / 478 skipped | tsc clean |
+| 2026-11-25 | c82e971 (review fixes, network guard) | 4,265 passed / 0 failed / 478 skipped | tsc clean; no test reaches an external host |
 | 2026-11-25 | fc8b31c (admin) | 4,252 passed / 2 failed / 478 skipped; both failures pass in isolation with and without the change | flaky under full-suite load (T-15) |
 
 ## Known flaky tests (T-15)
@@ -21,7 +22,8 @@ npx tsc --noEmit -p .                                         # type check
 - `api/cloudflare-analysis-jobs.test.ts` › "never writes provider text into the stored record"
 - `api/cloudflare-analyzer-integration.test.ts` › "rejects paid request when database session is invalid or revoked"
 
-Symptom: elapsed times of ~9,000 s and `ECONNRESET` in logs under full-suite load.
+Symptom: elapsed times of ~9,000 s and `ECONNRESET` in logs under full-suite load. Cause: unmocked requests to the real
+Supabase host. Fixed by 105a47b (no ownership lookup for server ids) and the external-network guard (c82e971).
 
 ## Live acceptance harness (outside the repo)
 

@@ -8,4 +8,5 @@
 | B-4 | Preview environment secrets are placeholders | Functional (non-visual) testing on preview deployments | Approve separate test secrets for the preview environment (no new project needed) | 2026-11-25 |
 | B-5 | CodeRabbit and SonarQube are not configured on the repository | Independent static analysis | Install/authorize the GitHub apps (free tiers exist for public repos; check repo visibility) | 2026-11-25 |
 | B-6 | Production database schema lacks `credit_audit_ledger`, settlement and suspension columns (migrations pending approval) | Database-native audit table (worked around with append-only Storage audit objects) | Approve `supabase/migrations_pending_approval/paid_payments_columns_minimal.sql` or a new audit-table migration | 2026-11-25 |
-| B-7 | `git push` from the agent shell may need interactive credentials | Publishing engineering branches to GitHub | Run the push commands listed in `SESSION_HANDOFF.md` if the agent push fails | 2026-11-25 |
+| B-7 | (resolved 2026-11-25) agent shell can push | — | — | 2026-11-25 |
+| B-8 | No read access to the live database schema (catalog, RLS policies, indexes) | Database audit DB-1 beyond repository migrations | Read-only SQL access (Supabase SQL editor export of `pg_policies`, `pg_indexes`, table definitions) | 2026-11-25 |

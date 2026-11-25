@@ -18,4 +18,5 @@ Status: todo · doing · review · done · blocked. One owner per task. Pick the
 | T-12 | P1 | Accessibility audit (axe) of key pages; fix violations without visual change | Antigravity | todo | | |
 | T-13 | P2 | Admin console usability/accessibility pass | Antigravity | todo | Claude | API contract fixed in API_CONTRACTS.md; edits via request |
 | T-14 | P1 | Adversarial tests: authz bypass, IDOR on jobs/reports, upload abuse, prompt injection | Codex | todo | Owner | findings → engineering/security/ |
+| T-16 | P1 | Unique index on payments.reference_number (reversible migration, owner approval) | Claude | todo | review S-11 | |
 | T-15 | P2 | Flaky tests under full-suite load: `cloudflare-analysis-jobs` "never writes provider text…", `cloudflare-analyzer-integration` "rejects paid request when … revoked" | Claude | todo | | pass in isolation; see TEST_REGISTER |

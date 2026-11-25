@@ -16,7 +16,10 @@ No regulatory compliance is claimed without independent verification.
 | S-07 | Med | Prompt injection via document text | Mitigated | tag neutralization + untrusted-data instruction; Codex to test (T-14) |
 | S-08 | Low | Postgres error messages/details logged | Fixed | credit RPC logs codes only |
 | S-09 | Info | `/api/status` and `/api/analyze/job/:id` and `admin/gemini-models` still accept server-side `ADMIN_SECRET` header for operator tooling | Open (decide) | not browser-stored; remove once operators use the console |
-| S-10 | — | Independent review of admin API | In progress | reviewer subagent; Codex T-14 |
+| S-10 | — | Independent review of admin API (fc8b31c): no authz bypass, no PostgREST filter injection, no XSS; 10 findings (4 medium, 6 low) | Fixed in c82e971; re-review running | reviewer subagent 2026-11-25; regression tests `api/cloudflare-admin-api.test.ts` › "independent review findings" |
+| S-11 | Med | Payment references were 5 random characters with no unique index (collision ≈1.7% at 1,000 payments) | Fixed for new references (8 chars); admin refuses duplicates | unique index needs a migration (owner approval) |
+| S-12 | Med | Tests sent requests to the real production Supabase project (fake key) | Fixed | `tests/setup/no-external-network.ts` |
+| S-13 | Info | Frontend bundle contains no Supabase URL or key; all database access is server-side with the service key | Verified | production bundle scan 2026-11-25 |
 
 ## S-RL: persistent rate-limiting options (no provisioning without owner approval)
 
