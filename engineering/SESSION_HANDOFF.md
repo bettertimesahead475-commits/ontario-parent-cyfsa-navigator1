@@ -4,8 +4,8 @@ Last updated: 2026-11-25 by Claude.
 
 ## State
 
-- Production: deployment `d5f2a3c9` / commit `cf67d8c`, live-verified 2026-11-25 (admin console 200s, no Vercel script errors).
-  Rollback: `a67747aa`. Executor Worker version `4cd2181f` (rollback `d26c3faa`: `npx wrangler rollback d26c3faa-22fd-4a9a-b546-173291575b4d --config wrangler.staging-job-service.jsonc`).
+- Production: deployment `7c144cf7` / commit `be46ad7` (concurrency fixes), smoke-verified 2026-11-25. Rollback: `d5f2a3c9`.
+  Executor Worker `d030585d` (rollback: `npx wrangler rollback 4cd2181f-d7de-46a2-a523-61f6b4984052 --config wrangler.staging-job-service.jsonc`).
 - `engineering/integration` = baseline + these control documents.
 - Inference budget remaining ≈ $0.40 (no paid runs today).
 

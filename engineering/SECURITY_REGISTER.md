@@ -23,6 +23,8 @@ No regulatory compliance is claimed without independent verification.
 | S-15 | Med | Prompt-injection: a document tag with a line break inside (`<
 /document
 >`) survived neutralization and could close the document block | Fixed a7c6b47; deployed (Pages d5f2a3c9, executor 4cd2181f) | found by `eval/analyzer-guards` |
+| S-16 | High | Concurrency review: queued job older than the 15-min reservation TTL stuck forever; lost finalize reply overwrote a saved report; failed queued job could never be retried; noop release looped; re-review: paid Retry under <id>-rN never shown | Fixed ed48eac, e5875a5; deployed 7c144cf7 + executor d030585d | two independent reviews; regression tests fail on prior code |
+| S-17 | Med | Reconcile releases the reservation of a still-queued job (root cause of S-16 #1); review findings 5 and 6 (own stale marker; scope none re-claim) | Prepared migration `reconcile_skip_live_analyzer_jobs.sql` (+down, index), owner approval needed | until applied, such a job is delivered uncharged |
 | S-13 | Info | Frontend bundle contains no Supabase URL or key; all database access is server-side with the service key | Verified | production bundle scan 2026-11-25 |
 
 ## S-RL: persistent rate-limiting options (no provisioning without owner approval)
