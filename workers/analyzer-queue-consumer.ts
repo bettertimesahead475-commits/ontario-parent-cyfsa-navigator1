@@ -70,13 +70,25 @@ async function releaseReservation(env: ConsumerEnv, job: DurableJobRecord): Prom
   }
 }
 
+/**
+ * Charges the reservation for a delivered report. Returns true when the report may be delivered: the credit was
+ * consumed, or it had already been returned to the customer ('released'/'missing': a reservation of a job that waited
+ * longer than the 15-minute reservation TTL can be released by a later reservation in the same account). In that case
+ * the saved report is delivered without charge; retrying could never succeed and would leave the job waiting forever.
+ * Returns false only when the outcome is unknown (transient), so the delivery is retried.
+ */
 async function finalizeReservation(env: ConsumerEnv, job: DurableJobRecord): Promise<boolean> {
   if (job.owner_bypass) return true;
   const rpc = createStagingCreditRpc(env);
   const result = job.session_id
     ? await finalizePaidReservation(job.session_id, job.job_id, rpc)
     : await finalizeFreeScan(job.owner_uid, job.job_id, rpc);
-  return result.status === 'consumed';
+  if (result.status === 'consumed') return true;
+  if (result.status === 'released' || result.status === 'missing') {
+    console.warn('[ANALYZER_DELIVERED_UNCHARGED]', JSON.stringify({ jobId: job.job_id, paid: Boolean(job.session_id), reservation: result.status }));
+    return true;
+  }
+  return false;
 }
 
 async function markPermanentFailure(env: ConsumerEnv, job: DurableJobRecord, workerToken: string, code: string, message: string): Promise<void> {

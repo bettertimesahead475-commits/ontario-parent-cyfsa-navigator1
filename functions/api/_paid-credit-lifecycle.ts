@@ -31,6 +31,9 @@ export async function releasePaidReservation(
       p_session: sessionId, p_request: requestId,
       p_reservation_id: reservationId, p_now: now.toISOString(),
     });
+    // paid_release_credit answers 'noop' when this reservation is already settled (released earlier or consumed).
+    // That is final, not a transient failure: treating it as unavailable made duplicate deliveries retry forever.
+    if (result.status === 'noop') return { status: 'missing' };
     if (result.status === 'released' || result.status === 'consumed' || result.status === 'missing') {
       return { status: result.status };
     }

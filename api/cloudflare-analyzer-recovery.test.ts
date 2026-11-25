@@ -261,3 +261,53 @@ describe('Cloudflare Analyzer Intelligent Truncation Recovery Pipeline', () => {
     expect(mockGenerate).toHaveBeenCalledTimes(5);
   });
 });
+
+// Concurrency review 2026-11-25, finding 2: a saved report must never be lost because the charge reply was lost.
+describe('credit finalization after the report is saved', () => {
+  const env: any = {
+    ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'test-project', ANTHROPIC_API_KEY: 'test-anthropic-key',
+    STAGING_SUPABASE_URL: 'https://test-project.supabase.co', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'service-role-test-key',
+  };
+  const generate = vi.fn(async () => ({ text: VALID_COMPLETE_REPORT_JSON, stopReason: 'end_turn', model: 'claude-sonnet-5', durationMs: 5, usage: { input_tokens: 1, output_tokens: 1 } }));
+  async function run(finalizeAnswers: string[]) {
+    mockAuthVerification.mockResolvedValueOnce({ status: 'verified', uid: 'user_finalize_test' });
+    const calls: string[] = [];
+    const answers = [...finalizeAnswers];
+    const rpc = vi.fn(async (name: string) => {
+      calls.push(name);
+      if (name === 'free_reserve_scan') return { status: 'reserved', reservation_id: 'res_fin_01' };
+      if (name === 'free_finalize_scan') { const a = answers.shift() ?? 'unavailable'; if (a === 'throw') throw new Error('reply lost'); return { status: a }; }
+      return { status: 'released' };
+    });
+    const writes: string[] = [];
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/storage/v1/object/analysis_jobs/') && init?.body) { try { writes.push(JSON.parse(String(init.body)).status); } catch { /* binary */ } }
+      return new Response('{}', { status: 200 });
+    });
+    const response = await handleAnalyzeRequest(new Request('https://staging.example/api/analyze', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer t', 'X-Analysis-Id': 'req_finalize_' + finalizeAnswers.join('_') },
+      body: JSON.stringify({ documentText: SAMPLE_DOC, mode: 'fast', stream: false }),
+    }), env, { rpc: rpc as any, generate: generate as any, fetcher: fetcher as any });
+    return { response, calls, writes };
+  }
+
+  it('retries an unknown finalize outcome and delivers the report once it is consumed', async () => {
+    const { response, calls } = await run(['throw', 'consumed']);
+    expect(response.status).toBe(200);
+    expect(calls.filter((c) => c === 'free_finalize_scan')).toHaveLength(2);
+    expect(calls).not.toContain('free_release_scan');
+  });
+
+  it('delivers the saved report (never releases, never overwrites it with failed) when the charge stays unconfirmed', async () => {
+    const { response, calls, writes } = await run(['throw', 'throw', 'throw']);
+    expect(response.status).toBe(200);
+    expect(calls).not.toContain('free_release_scan');
+    expect(writes).not.toContain('failed');
+  });
+
+  it('delivers uncharged when the reservation had already been returned', async () => {
+    const { response, calls } = await run(['released']);
+    expect(response.status).toBe(200);
+    expect(calls.filter((c) => c === 'free_finalize_scan')).toHaveLength(1);
+  });
+});

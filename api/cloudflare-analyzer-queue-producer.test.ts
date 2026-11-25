@@ -258,3 +258,52 @@ describe('durable analyzer queue producer', () => {
     expect(rpc.mock.calls.map(([name]) => name)).toContain('free_release_scan');
   });
 });
+
+// Concurrency review 2026-11-25, finding 3: a Retry of a document whose queued job failed.
+describe('Retry after a failed queued job', () => {
+  beforeEach(() => {
+    verify.mockReset().mockResolvedValue({ status: 'verified', uid: 'owner_1234', emailVerified: false, email: null });
+  });
+  function ledger(rows: Record<string, { owner_uid: string; status: string } | null>) {
+    return vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (url.includes('/rpc/analyzer_get_job')) return Response.json(rows[body.p_job_id] ? { job_id: body.p_job_id, ...rows[body.p_job_id] } : null);
+      if (url.includes('/rpc/analyzer_create_job')) return rows[body.p_job_id] ? Response.json({ code: '23505' }, { status: 409 }) : Response.json({ job_id: body.p_job_id });
+      if (url.includes('/storage/v1/object/')) return new Response('', { status: url.includes('/authenticated/') ? 400 : 200 });
+      return Response.json({ status: 'released' });
+    }) as unknown as ReturnType<typeof vi.fn>;
+  }
+
+  it('continues under the next attempt id: reservation, job and polled id all use it', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const rpc = vi.fn(async (_n: string, _a: Record<string, unknown>) => ({ status: 'reserved', reservation_id: 'reservation_r1' }));
+    const fetchImpl = ledger({ job_producer_1234: { owner_uid: 'owner_1234', status: 'failed' } });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+    const body = await response.json();
+    expect(response.status).toBe(202);
+    expect(body).toMatchObject({ jobId: 'job_producer_1234-r1', statusUrl: '/api/analyze/job/job_producer_1234-r1' });
+    expect(send).toHaveBeenCalledWith({ version: 1, jobId: 'job_producer_1234-r1' });
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_request: 'job_producer_1234-r1' });
+  });
+
+  it('follows a later attempt that is still running, and never touches rows of another user', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'reservation_x' }));
+    const fetchImpl = ledger({
+      job_producer_1234: { owner_uid: 'owner_1234', status: 'failed' },
+      'job_producer_1234-r1': { owner_uid: 'someone_else', status: 'queued' },
+      'job_producer_1234-r2': { owner_uid: 'owner_1234', status: 'running' },
+    });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+    expect((rpc.mock.calls as unknown as Array<[string, Record<string, unknown>]>)[0]?.[1]).toMatchObject({ p_request: 'job_producer_1234-r2' });
+    expect(response.status).not.toBe(202); // the live attempt is followed, not started again
+  });
+
+  it('keeps the original id when the existing job is not failed', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'reservation_1' }));
+    const fetchImpl = ledger({});
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+    expect((await response.json()).jobId).toBe('job_producer_1234');
+  });
+});

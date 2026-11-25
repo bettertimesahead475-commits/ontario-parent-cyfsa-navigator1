@@ -281,6 +281,29 @@ export async function jobOwnerConflict(env: DurableJobEnv, jobId: string, uid: s
   } catch { console.warn('[JOB_OWNER_CHECK_SKIPPED]', JSON.stringify({ source: 'storage' })); return false; }
 }
 
+/**
+ * The id a new attempt should use. The browser reuses one analysis id for every Retry of a document (so an uncertain
+ * outcome is never charged twice), but a queued job that ended 'failed' keeps its ledger row and can never run again
+ * under that id. Such a Retry continues under `<id>-r<n>`: the first attempt id with no row, or one that is still
+ * live (which the duplicate-insert path then follows). Read errors and rows of other users keep the original id, so
+ * the existing duplicate handling decides. Max 5 further attempts per document.
+ */
+export async function nextAttemptId(env: DurableJobEnv, jobId: string, uid: string, fetcher: typeof fetch = fetch): Promise<string> {
+  try {
+    const base = await readDurableJob(env, jobId, fetcher);
+    if (!base || base.status !== 'failed' || base.owner_uid !== uid) return jobId;
+    const stem = jobId.slice(0, 124);
+    for (let n = 1; n <= 5; n++) {
+      const candidate = `${stem}-r${n}`;
+      const row = await readDurableJob(env, candidate, fetcher);
+      if (!row) return candidate;
+      if (row.owner_uid !== uid) continue;
+      if (row.status !== 'failed') return candidate;
+    }
+  } catch { /* keep the original id */ }
+  return jobId;
+}
+
 export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch, expectedOwnerUid?: string): Promise<Record<string, unknown> | null> {
   let response: Response;
   try {
