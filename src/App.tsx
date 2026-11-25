@@ -8,8 +8,6 @@ import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener } from "./hooks/useAppReset";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Keep the home journey in the initial bundle; load feature-only views on demand.
 const CloudflareAuthDiagnostic = lazy(() => import("./components/CloudflareAuthDiagnostic"));
@@ -42,7 +40,6 @@ const DataDeletionPage = lazy(() => import("./components/DataDeletionPage"));
 const CaseActionWorkspace = lazy(() => import("./components/CaseActionWorkspace"));
 const RequireAuth = lazy(() => import("./components/RequireAuth"));
 const MigrationNotice = lazy(() => import("./components/MigrationNotice"));
-import { sanitizeTelemetryEvent } from "./utils/telemetrySanitizer";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { auth, signOutOfAccount } from "./utils/firebase";
 
@@ -664,13 +661,6 @@ export default function App() {
         </Suspense>
       )}
 
-      {/* Stage 10 slice 8: backstop -- no event may carry an invitation token (see telemetrySanitizer.ts). */}
-      {typeof window !== "undefined" && !window.location.hostname.includes("pages.dev") && (
-        <>
-          <Analytics beforeSend={sanitizeTelemetryEvent} />
-          <SpeedInsights beforeSend={sanitizeTelemetryEvent} />
-        </>
-      )}
     </div>
   );
 }
