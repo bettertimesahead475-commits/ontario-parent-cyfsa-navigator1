@@ -9,7 +9,7 @@ Status: todo · doing · review · done · blocked. One owner per task. Pick the
 | T-03 | P0 | Admin console without browser-stored secrets | Claude | review | Owner | `src/components/admin/AdminConsole.tsx` |
 | T-04 | P0 | Deploy admin to production; live 401/403/admin checks with the owner account | Claude | todo | | after review fixes |
 | T-05 | P1 | Persistent rate limiting options with exact costs | Claude | todo | Owner | → SECURITY_REGISTER S-RL, B-3 |
-| T-06 | P1 | Queue dead-letter verification and stuck-job recovery | Claude | todo | | |
+| T-06 | P1 | Queue dead-letter verification and stuck-job recovery | Claude | done | | DLQ live with relay consumer; max_retries 5; worker DLQ tests |
 | T-07 | P1 | Database audit (RLS, indexes, constraints) read-only; prepare reversible migrations | Claude | todo | | no production DDL without approval |
 | T-08 | P1 | Synthetic analyzer evaluation set and metrics harness (mocked provider) | Claude | todo | | |
 | T-09 | P1 | Alerting on failed jobs / health on existing infrastructure | Claude | todo | | no paid services |
@@ -19,4 +19,4 @@ Status: todo · doing · review · done · blocked. One owner per task. Pick the
 | T-13 | P2 | Admin console usability/accessibility pass | Antigravity | todo | Claude | API contract fixed in API_CONTRACTS.md; edits via request |
 | T-14 | P1 | Adversarial tests: authz bypass, IDOR on jobs/reports, upload abuse, prompt injection | Codex | todo | Owner | findings → engineering/security/ |
 | T-16 | P1 | Unique index on payments.reference_number (reversible migration, owner approval) | Claude | todo | review S-11 | |
-| T-15 | P2 | Flaky tests under full-suite load: `cloudflare-analysis-jobs` "never writes provider text…", `cloudflare-analyzer-integration` "rejects paid request when … revoked" | Claude | todo | | pass in isolation; see TEST_REGISTER |
+| T-15 | P2 | Flaky tests under full-suite load | Claude | done | | cause: unmocked real-network calls; fixed 105a47b + c82e971 |

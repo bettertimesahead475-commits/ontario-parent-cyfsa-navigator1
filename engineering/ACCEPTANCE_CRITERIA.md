@@ -10,7 +10,7 @@ Evidence must be reproducible (test name, command, deployment id, or harness out
 | A-2 | Architecture | Every native route's methods match the route map | Verified complete | `api/cloudflare-native-api-routes.test.ts` |
 | BE-1 | Backend | Duplicate submissions do not double-charge or double-run | Verified complete | analyze `ANALYSIS_IN_PROGRESS` / `409 ANALYSIS_ID_CONFLICT` tests; credit RPC advisory locks |
 | BE-2 | Backend | Queue failures release reservations and surface retryable errors | Verified complete | `cloudflare-queue-producer`, `cloudflare-job-recovery` tests; production queued Forensic run 2026-11-25 |
-| BE-3 | Backend | Dead-letter handling for poison queue messages | In progress | consumer retries bounded; DLQ binding not yet verified |
+| BE-3 | Backend | Dead-letter handling for poison queue messages | Verified complete | live queue list: DLQ has the relay consumer; max_retries 5 with exponential backoff; worker DLQ tests |
 | AD-1 | Admin | Admin authorization = verified Firebase administrator; no browser-stored secret | Implemented, awaiting verification | 23 API + 3 UI tests; live production check pending deploy |
 | AD-2 | Admin | Unauthorized (401) and non-admin (403) requests read no data | Implemented, awaiting verification | tests assert zero database calls |
 | AD-3 | Admin | Customer lookup returns only the exact customer | Implemented, awaiting verification | isolation test with LIKE-wildcard collision |
