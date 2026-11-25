@@ -21,3 +21,10 @@ describe('Cloudflare paid credit lifecycle', () => {
     expect((await finalizePaidReservation('s1', 'r1', async () => ({ status: 'unknown' }))).status).toBe('unavailable');
   });
 });
+
+describe('paid release of an already-settled reservation (concurrency review finding 4)', () => {
+  it('treats the database noop answer as settled, not as a transient failure', async () => {
+    const result = await releasePaidReservation('11111111-1111-4111-8111-111111111111', 'request_12345678', 'marker', async () => ({ status: 'noop' }));
+    expect(result.status).toBe('missing');
+  });
+});

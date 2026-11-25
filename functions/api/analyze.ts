@@ -19,7 +19,7 @@ import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { saveCompletedJob, saveJobState } from './_analysis-jobs';
-import { createDurableJob, DurableJobStorageError, jobOwnerConflict, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
+import { createDurableJob, DurableJobStorageError, jobOwnerConflict, nextAttemptId, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
 
 /** Server-generated analysis id in the client format, from a cryptographic random source. */
@@ -200,7 +200,7 @@ export async function handleAnalyzeRequest(
   // Ids double as Storage keys. Reserved prefixes of other object families (assessment_*) are never
   // accepted from a client, and ids owned by another user are refused below (jobOwnerConflict).
   const clientSuppliedId = !deps.trustedJob && /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId) && !/^assessment/i.test(rawRequestId);
-  const requestId = deps.trustedJob ? rawRequestId : clientSuppliedId ? rawRequestId : serverAnalysisId();
+  let requestId = deps.trustedJob ? rawRequestId : clientSuppliedId ? rawRequestId : serverAnalysisId();
 
   const acceptHeader = request.headers.get('accept') || '';
   const wantsStream = body?.stream !== false && acceptHeader.includes('text/event-stream');
@@ -244,6 +244,20 @@ export async function handleAnalyzeRequest(
       { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },
       { status: 409, headers: DEFAULT_HEADERS },
     );
+  }
+  // A Retry of a document whose queued job failed continues under the next attempt id (before any credit is
+  // reserved, so the reservation, the job and the polled id all agree). The response carries the id to poll.
+  if (clientSuppliedId && env.ANALYZER_JOBS_QUEUE && (isForensic || env.QUEUE_QUICK_ANALYSIS === 'true')
+      && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    const attemptId = await nextAttemptId(env, requestId, uid, authFetcher);
+    // The attempt id is also a Storage key: apply the same ownership check to it.
+    if (attemptId !== requestId && await jobOwnerConflict(env, attemptId, uid, authFetcher)) {
+      return Response.json(
+        { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },
+        { status: 409, headers: DEFAULT_HEADERS },
+      );
+    }
+    requestId = attemptId;
   }
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
   // No client-supplied role, email or session can grant this entitlement.
@@ -376,7 +390,9 @@ export async function handleAnalyzeRequest(
         if (existing && existing.owner_uid === uid && existing.status !== 'failed') {
           // A reservation taken by this request (for example under a different paid session) is not
           // the one the existing job will settle, so release it now.
-          if (existing.reservation_id !== reservationId) await releaseFreshReservation();
+          // A completed job never settles a reservation again, so one re-claimed by this request (same marker id) is
+          // released too; otherwise it would be held until a reconcile 15 minutes later.
+          if (existing.status === 'completed' || existing.reservation_id !== reservationId) await releaseFreshReservation();
           const completed = existing.status === 'completed';
           return Response.json({
             error: completed ? 'This analysis already finished.' : 'This analysis is already running. Results will display shortly.',
@@ -558,16 +574,25 @@ export async function handleAnalyzeRequest(
   };
 
   // Helper to finalize credits
+  // Runs only after the completed report is saved. Finalization is idempotent, so an unknown outcome (a lost reply)
+  // is retried. A reservation already returned to the customer (released/missing) is not an error: the saved report is
+  // delivered uncharged. Returns false only when the outcome stays unknown; callers still deliver the saved report and
+  // never release the credit or overwrite the report, because the credit may already be consumed.
   const finalize = async (): Promise<boolean> => {
     if (deps.trustedJob) return true; // the queue consumer finalizes after persisting and reconciling the report
     if (isOwner) return true;
-    if (sessionId) {
-      const res = await finalizePaidReservation(sessionId, requestId, rpc);
-      return res.status === 'consumed';
-    } else {
-      const res = await finalizeFreeScan(uid, requestId, rpc);
-      return res.status === 'consumed';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((resolve) => setTimeout(resolve, 300 * 3 ** (attempt - 1)));
+      const res = sessionId ? await finalizePaidReservation(sessionId, requestId, rpc) : await finalizeFreeScan(uid, requestId, rpc);
+      if (res.status === 'consumed') return true;
+      if (res.status === 'released' || res.status === 'missing') {
+        console.warn('[ANALYZER_DELIVERED_UNCHARGED]', JSON.stringify({ paid: Boolean(sessionId), reservation: res.status }));
+        return true;
+      }
+      if (res.status !== 'unavailable') break;
     }
+    console.error('[ANALYZER_FINALIZE_UNCONFIRMED]', JSON.stringify({ paid: Boolean(sessionId) }));
+    return false;
   };
 
   // Helper to release credits on error
@@ -653,11 +678,8 @@ export async function handleAnalyzeRequest(
         stageLog('persisted');
 
         // Only consume the reserved credit after a recoverable report exists.
-        const finalized = await finalize();
-        if (!finalized) {
-          throw new AnalyzerError('ANALYSIS_PERSISTENCE_FAILED', 503, 'Credit finalization failed. Result cannot be delivered.', false);
-        }
-        stageLog('finalized');
+        // The report is saved: deliver it even if the charge could not be confirmed (see finalize()).
+        stageLog((await finalize()) ? 'finalized' : 'finalize_unconfirmed');
 
         // The report itself is sent unchanged, so the saved and streamed shapes stay identical.
         await sendEvent('complete', report);
@@ -703,14 +725,8 @@ export async function handleAnalyzeRequest(
       () => new AnalyzerError('ANALYSIS_TIMED_OUT', 504, 'The analysis did not finish in time. Your document is safe. Please retry.', true)
     );
     await persistBeforeFinalization(report);
-    const finalized = await finalize();
-    if (!finalized) {
-      await release();
-      return Response.json(
-        { error: 'Credit finalization failed.', code: 'CREDIT_FINALIZATION_FAILED' },
-        { status: 503, headers: DEFAULT_HEADERS }
-      );
-    }
+    // The report is saved: deliver it even if the charge could not be confirmed (see finalize()).
+    await finalize();
     return Response.json(report, { status: 200, headers: DEFAULT_HEADERS });
   } catch (err: any) {
     await release();

@@ -322,4 +322,32 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.ack).toHaveBeenCalledOnce();
     expect(msg.retry).not.toHaveBeenCalled();
   });
+
+  // Concurrency review 2026-11-25, finding 1: a reservation released by the 15-minute reconcile while the job waited.
+  it.each(['released', 'missing'])('delivers a persisted report uncharged when its reservation was already %s, instead of retrying forever', async (status) => {
+    mocks.loadReport.mockReset().mockResolvedValue({ fileSummary: 'Saved report' });
+    mocks.finalizePaid.mockResolvedValue({ status });
+    mocks.read.mockResolvedValue({ ...job('full'), session_id: '11111111-1111-4111-8111-111111111111' });
+    mocks.claim.mockResolvedValue({ ...job('full'), session_id: '11111111-1111-4111-8111-111111111111' });
+    const msg = message();
+    await processJob(msg, {} as any);
+    expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ status: 'completed' }));
+    expect(msg.ack).toHaveBeenCalledOnce();
+    expect(msg.retry).not.toHaveBeenCalled();
+    mocks.completeRecovered.mockResolvedValue(true);
+    mocks.read.mockResolvedValue({ ...job('full'), status: 'queued', session_id: '11111111-1111-4111-8111-111111111111' });
+    const dlq = message();
+    await processDeadLetter(dlq, {} as any);
+    expect(mocks.completeRecovered).toHaveBeenCalled();
+    expect(dlq.ack).toHaveBeenCalledOnce();
+  });
+
+  it('still retries when the charge outcome is unknown (transient)', async () => {
+    mocks.loadReport.mockReset().mockResolvedValue({ fileSummary: 'Saved report' });
+    mocks.finalizeFree.mockResolvedValue({ status: 'unavailable' });
+    const msg = message();
+    await processJob(msg, {} as any);
+    expect(msg.retry).toHaveBeenCalledOnce();
+    expect(msg.ack).not.toHaveBeenCalled();
+  });
 });
