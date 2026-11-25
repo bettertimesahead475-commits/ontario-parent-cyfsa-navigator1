@@ -4,9 +4,8 @@ Last updated: 2026-11-25 by Claude.
 
 ## State
 
-- Production: deployment `7d57b59b` / commit `b141293` (tag `baseline/prod-20261125-b141293`). Unchanged today.
-- `engineering/claude-backend` = baseline + fc8b31c (Firebase-authorized admin API and console). Not deployed yet.
-  An independent security review of fc8b31c is running; fix confirmed findings, then T-04 (deploy + live checks).
+- Production: deployment `a67747aa` / commit `1fa52d1` (admin backend), live-verified 2026-11-25. Rollback: `7d57b59b`.
+- `engineering/claude-backend` ahead of production by 002ba9a (remove dead Vercel analytics; npm audit fix): ship with the next release.
 - `engineering/integration` = baseline + these control documents.
 - Inference budget remaining ≈ $0.40 (no paid runs today).
 
