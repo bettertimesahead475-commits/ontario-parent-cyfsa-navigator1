@@ -199,9 +199,8 @@ export async function handleAnalyzeRequest(
   const rawRequestId = request.headers.get('X-Analysis-Id') || body?.analysisId || '';
   // Ids double as Storage keys. Reserved prefixes of other object families (assessment_*) are never
   // accepted from a client, and ids owned by another user are refused below (jobOwnerConflict).
-  const requestId = deps.trustedJob
-    ? rawRequestId
-    : /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId) && !/^assessment/i.test(rawRequestId) ? rawRequestId : serverAnalysisId();
+  const clientSuppliedId = !deps.trustedJob && /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId) && !/^assessment/i.test(rawRequestId);
+  const requestId = deps.trustedJob ? rawRequestId : clientSuppliedId ? rawRequestId : serverAnalysisId();
 
   const acceptHeader = request.headers.get('accept') || '';
   const wantsStream = body?.stream !== false && acceptHeader.includes('text/event-stream');
@@ -237,8 +236,9 @@ export async function handleAnalyzeRequest(
   }
 
   // An analysis id is also a Storage key that is written with upsert. Refuse ids already owned by someone
-  // else before reserving any credit, so no user can overwrite or adopt another user's report.
-  if (!deps.trustedJob && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY
+  // else before reserving any credit, so no user can overwrite or adopt another user's report. A fresh
+  // server-generated id (crypto-random) cannot collide, so it skips the two database reads.
+  if (clientSuppliedId && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY
       && await jobOwnerConflict(env, requestId, uid, authFetcher)) {
     return Response.json(
       { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },

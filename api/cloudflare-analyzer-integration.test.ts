@@ -460,10 +460,14 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
       }),
     });
 
+    const networkSpy = vi.spyOn(globalThis, "fetch");
     const response = await handleAnalyzeRequest(request, env);
     expect(response.status).toBe(403);
     const json = await response.json();
     expect(json.code).toBe('SESSION_INVALID');
+    // No client analysis id: the fresh server id needs no ownership lookup, so nothing reaches the database.
+    expect(networkSpy).not.toHaveBeenCalled();
+    networkSpy.mockRestore();
   });
 
   it('returns 402 CREDIT_LIMIT_REACHED when paid quota is exhausted', async () => {
