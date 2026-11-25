@@ -32,7 +32,7 @@ Evidence must be reproducible (test name, command, deployment id, or harness out
 | DB-1 | Database | RLS/ownership/index audit (read-only) with reversible migrations prepared | In progress | |
 | INF-1 | Infrastructure | Health endpoint, admin monitoring (DB latency, stuck jobs, failures) | Verified complete | `/api/health` 200; `/api/admin/monitoring/status` 200 live |
 | INF-2 | Infrastructure | Release safeguards: automatic production promotion disabled; documented rollback | Verified complete | `production_deployments_enabled=false`; `MASTER_PLAN.md` rollback list |
-| INF-3 | Infrastructure | Alerting on failures | In progress | |
+| INF-3 | Infrastructure | Alerting on failures | Externally blocked | detection live (admin monitoring); delivery channel needs owner choice (B-9, S-AL) |
 | PERF-1 | Performance | OCR extraction < 5 s for ordinary documents | In progress | measure from harness timings |
 | COM-1 | Commercial | Live purchase → approve → redeem → consume → refund with a non-owner account | Externally blocked | B-2 |
 | FE-1 | Frontend | Visual regression baselines; no unintended visual change | In progress (Antigravity) | |

@@ -38,3 +38,17 @@ Prices from Cloudflare/Supabase public pricing as known on 2026-11-25; confirm o
 
 Recommendation: Option 2 (no cost, uses existing database, exact per-account limits) for analyze /
 activate-code / request-access, plus Option 1's free rule as IP-level backstop for extract-text.
+
+## S-AL: alerting options for failed/stuck analyses and outages (no provisioning without owner approval)
+
+Detection already exists: `/api/admin/monitoring/status` (stuck jobs, recent failures, database reachability) and
+`/api/admin/jobs?status=failed`. What is missing is delivery to a person.
+
+| Option | How | Recurring cost | Owner action needed |
+|---|---|---|---|
+| 1. Cloudflare Health Check / Notifications | Notification on Pages deployment failure; uptime check on `/api/health` | Pages deployment notifications: free. Health Checks: Pro plan or higher | Enable in dashboard; choose email recipient |
+| 2. Cron-triggered check in the existing executor Worker + Cloudflare Email Routing `send_email` | Every 15 min: query failed/stuck jobs, email a summary to a verified address | $0 (cron triggers and Email Routing are free) | Enable Email Routing on cyfsanavigator.com (adds MX/TXT records; conflicts with any existing mail provider on that domain) and verify the destination address |
+| 3. External uptime monitor (e.g. a free-tier HTTP monitor) on `/api/health` | Third-party pings | $0 on free tiers | Create the account; it only sees public health status |
+
+Recommendation: Option 1 for deployments (free, no code) plus Option 3 for uptime; Option 2 if the domain has
+no other mail service.
