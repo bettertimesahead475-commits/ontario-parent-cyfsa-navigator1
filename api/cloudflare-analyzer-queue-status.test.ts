@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ verify: vi.fn(), read: vi.fn(), report: vi.fn() }));
+const mocks = vi.hoisted(() => ({ verify: vi.fn(), read: vi.fn(), report: vi.fn(), latest: vi.fn() }));
 vi.mock('../functions/api/_auth-check', () => ({ verifyFirebaseRequest: (...args: unknown[]) => mocks.verify(...args) }));
-vi.mock('../functions/api/_durable-analysis-jobs', () => ({ readDurableJob: mocks.read, loadPersistedReport: mocks.report }));
+vi.mock('../functions/api/_durable-analysis-jobs', () => ({ readDurableJob: mocks.read, loadPersistedReport: mocks.report, latestOwnAttempt: mocks.latest }));
 
 import { onRequestGet } from '../functions/api/analyze/job/[jobId]';
 
@@ -32,5 +32,25 @@ describe('durable analysis status endpoint', () => {
     const response = await onRequestGet({ request: request(), env, params: { jobId: 'job_status_1234' } });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: 'completed', report: { documentTitle: 'Recovered report' } });
+  });
+
+  // Concurrency re-review N1: the browser keeps polling the original id after a lost 202 or a reload.
+  it('reports the retry attempt of the owner when the original job failed', async () => {
+    mocks.verify.mockResolvedValueOnce({ status: 'verified', uid: 'owner_user' });
+    mocks.read.mockResolvedValueOnce({ job_id: 'job_status_1234', owner_uid: 'owner_user', status: 'failed' });
+    mocks.latest.mockResolvedValueOnce({ job_id: 'job_status_1234-r1', owner_uid: 'owner_user', status: 'completed' });
+    mocks.report.mockResolvedValueOnce({ documentTitle: 'Retry report' });
+    const response = await onRequestGet({ request: request(), env, params: { jobId: 'job_status_1234' } });
+    expect(await response.json()).toMatchObject({ status: 'completed', report: { documentTitle: 'Retry report' } });
+    expect(mocks.latest).toHaveBeenCalledWith(env, 'job_status_1234', 'owner_user');
+    expect(mocks.report).toHaveBeenLastCalledWith(env, 'job_status_1234-r1', expect.anything(), 'owner_user');
+  });
+
+  it('still reports the failure when there is no retry attempt', async () => {
+    mocks.verify.mockResolvedValueOnce({ status: 'verified', uid: 'owner_user' });
+    mocks.read.mockResolvedValueOnce({ job_id: 'job_status_1234', owner_uid: 'owner_user', status: 'failed', error_code: 'ANALYZER_RETRIES_EXHAUSTED' });
+    mocks.latest.mockResolvedValueOnce(null);
+    const body = await (await onRequestGet({ request: request(), env, params: { jobId: 'job_status_1234' } })).json();
+    expect(body).toMatchObject({ status: 'failed', error: { code: 'ANALYZER_RETRIES_EXHAUSTED' } });
   });
 });

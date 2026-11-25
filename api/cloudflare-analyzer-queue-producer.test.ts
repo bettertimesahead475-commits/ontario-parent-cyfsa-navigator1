@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleAnalyzeRequest, type AnalyzerEnv } from '../functions/api/analyze';
 import { handleDeepScanRequest } from '../functions/api/deep-scan';
 import { readVerifiedPaidSession } from '../functions/api/_supabase-paid-session';
+import { latestOwnAttempt } from '../functions/api/_durable-analysis-jobs';
 
 const verify = vi.fn();
 vi.mock('../functions/api/_auth-check', () => ({ verifyFirebaseRequest: (...args: unknown[]) => verify(...args) }));
@@ -305,5 +306,52 @@ describe('Retry after a failed queued job', () => {
     const fetchImpl = ledger({});
     const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetchImpl as unknown as typeof fetch });
     expect((await response.json()).jobId).toBe('job_producer_1234');
+  });
+});
+
+describe('Retry after a failed queued job (re-review)', () => {
+  beforeEach(() => {
+    verify.mockReset().mockResolvedValue({ status: 'verified', uid: 'owner_1234', emailVerified: false, email: null });
+  });
+  function world(rows: Record<string, { owner_uid: string; status: string; reservation_id?: string } | null>, storageOwners: Record<string, string> = {}) {
+    return vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body && typeof init.body === 'string' && init.body.startsWith('{') ? JSON.parse(init.body) : {};
+      if (url.includes('/rpc/analyzer_get_job')) return Response.json(rows[body.p_job_id] ? { job_id: body.p_job_id, ...rows[body.p_job_id] } : null);
+      if (url.includes('/rpc/analyzer_create_job')) return rows[body.p_job_id] ? Response.json({ code: '23505' }, { status: 409 }) : Response.json({ job_id: body.p_job_id });
+      if (url.includes('/storage/v1/object/authenticated/')) {
+        const key = decodeURIComponent(url.split('/analysis_jobs/')[1]).replace(/.json$/, '');
+        return storageOwners[key] ? Response.json({ uid: storageOwners[key] }) : Response.json({ statusCode: '404' }, { status: 400 });
+      }
+      if (url.includes('/storage/v1/object/')) return new Response('', { status: 200 });
+      return Response.json({ status: 'released' });
+    });
+  }
+
+  it('releases a reservation re-claimed by a Retry that finds the job already completed', async () => {
+    const rpc = vi.fn(async (name: string) => (name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'same_marker' } : { status: 'released' }));
+    const fetchImpl = world({ job_producer_1234: { owner_uid: 'owner_1234', status: 'completed', reservation_id: 'same_marker' } });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv, { rpc: rpc as any, fetcher: fetchImpl as unknown as typeof fetch });
+    expect((await response.json()).code).toBe('ANALYSIS_ALREADY_COMPLETED');
+    expect(rpc.mock.calls.map(([n]) => n)).toContain('free_release_scan');
+  });
+
+  it('refuses an attempt id whose stored object belongs to another user', async () => {
+    const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'r' }));
+    const fetchImpl = world({ job_producer_1234: { owner_uid: 'owner_1234', status: 'failed' } }, { 'job_producer_1234-r1': 'someone_else' });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv, { rpc: rpc as any, fetcher: fetchImpl as unknown as typeof fetch });
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('ANALYSIS_ID_CONFLICT');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('latestOwnAttempt returns the newest attempt of the owner only', async () => {
+    const fetchImpl = world({
+      'job_producer_1234-r1': { owner_uid: 'owner_1234', status: 'failed' },
+      'job_producer_1234-r2': { owner_uid: 'someone_else', status: 'running' },
+      'job_producer_1234-r3': { owner_uid: 'owner_1234', status: 'running' },
+    });
+    const attempt = await latestOwnAttempt(ENV as any, 'job_producer_1234', 'owner_1234', fetchImpl as unknown as typeof fetch);
+    expect(attempt?.job_id).toBe('job_producer_1234-r3');
+    expect(await latestOwnAttempt(ENV as any, 'job_producer_1234', 'nobody', fetchImpl as unknown as typeof fetch)).toBeNull();
   });
 });

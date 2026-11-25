@@ -6,7 +6,7 @@
  */
 import { verifyFirebaseRequest } from '../../_auth-check';
 import { effectiveJob, jobObjectUrl, secretEquals } from '../../_analysis-jobs';
-import { DurableJobStorageError, loadPersistedReport, readDurableJob } from '../../_durable-analysis-jobs';
+import { DurableJobStorageError, latestOwnAttempt, loadPersistedReport, readDurableJob } from '../../_durable-analysis-jobs';
 import { apiKeyHygiene, normalizeApiKey } from '../../_supabase-key';
 
 const DEFAULT_HEADERS = {
@@ -69,13 +69,19 @@ export const onRequestGet = async ({
   // remains in the private Storage bucket and is fetched only after checking the owner's UID.
   if (env?.STAGING_SUPABASE_URL && env?.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
     try {
-      const job = await readDurableJob(env, jobId);
+      let job = await readDurableJob(env, jobId);
       if (job) {
         if (!isAdmin && job.owner_uid !== callerUid) {
           return Response.json({ error: "Access denied. You cannot access another user's analysis job.", code: 'FORBIDDEN' }, { status: 403, headers: DEFAULT_HEADERS });
         }
+        // A failed job may have been retried under <id>-rN (the browser keeps polling the original id after a lost
+        // reply or a reload): report the owner's newest attempt instead, so a paid retry's result is shown.
+        if (job.status === 'failed') {
+          const attempt = await latestOwnAttempt(env, jobId, job.owner_uid).catch(() => null);
+          if (attempt) job = attempt;
+        }
         if (job.status === 'completed') {
-          const report = await loadPersistedReport(env, jobId, fetch, job.owner_uid);
+          const report = await loadPersistedReport(env, job.job_id, fetch, job.owner_uid);
           if (!report) return Response.json({ error: 'The saved report is temporarily unavailable.', code: 'ANALYSIS_PERSISTENCE_FAILED', retryable: true }, { status: 503, headers: DEFAULT_HEADERS });
           return Response.json({ jobId, status: 'completed', percent: 100, currentStage: 'complete', report }, { status: 200, headers: DEFAULT_HEADERS });
         }

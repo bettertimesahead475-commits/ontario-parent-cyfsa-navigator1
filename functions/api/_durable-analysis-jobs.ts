@@ -304,6 +304,22 @@ export async function nextAttemptId(env: DurableJobEnv, jobId: string, uid: stri
   return jobId;
 }
 
+/**
+ * For a status read of an id whose job failed: the caller's newest later attempt (<id>-r1..r5, see nextAttemptId), so a
+ * browser that still polls the original id (lost 202 reply, page reload) follows the Retry it started. Returns null
+ * when there is no later attempt of this owner.
+ */
+export async function latestOwnAttempt(env: DurableJobEnv, jobId: string, ownerUid: string, fetcher: typeof fetch = fetch): Promise<DurableJobRecord | null> {
+  const stem = jobId.slice(0, 124);
+  let latest: DurableJobRecord | null = null;
+  for (let n = 1; n <= 5; n++) {
+    const row = await readDurableJob(env, `${stem}-r${n}`, fetcher);
+    if (!row) break;
+    if (row.owner_uid === ownerUid) latest = row;
+  }
+  return latest;
+}
+
 export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch, expectedOwnerUid?: string): Promise<Record<string, unknown> | null> {
   let response: Response;
   try {

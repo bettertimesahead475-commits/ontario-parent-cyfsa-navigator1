@@ -17,8 +17,9 @@
 -- If either differs, do not apply; re-derive this file from the production definition.
 --
 -- Rollback: reconcile_skip_live_analyzer_jobs.down.sql (restores the repository versions). No data changes.
--- Index: analyzer_jobs has no index on reservation_id; the lookup runs only for stale markers of one account
--- (a handful of rows), so none is added.
+-- Bound: only jobs updated in the last 2 hours keep their credit. A job stuck in queued/running (a Pages request
+-- that died between creating the job and queueing it, or exhausted dead-letter retries) is still reconciled.
+-- Index: run the CREATE INDEX at the end of this file on its own first (CONCURRENTLY cannot run in a transaction).
 -- ============================================================================
 
 begin;
@@ -40,6 +41,7 @@ begin
        and not exists (
          select 1 from public.analyzer_jobs j
           where j.reservation_id = free_usage.uid and j.status in ('queued', 'running')
+            and j.updated_at > p_now - interval '2 hours'
        )
      for update
   loop
@@ -67,6 +69,7 @@ begin
        and not exists (
          select 1 from public.analyzer_jobs j
           where j.reservation_id = free_usage.uid and j.status in ('queued', 'running')
+            and j.updated_at > p_now - interval '2 hours'
        )
      for update
   loop
@@ -86,3 +89,8 @@ commit;
 --  * Finding 5: paid_reserve_credit never re-claims the caller's OWN stale marker (free_reserve_scan does, after the TTL).
 --  * Finding 6: for scope 'none' (unlimited Quick on monthly plans) a same-id request after the 60 s claim window is
 --    re-reserved while the first run may still be going. Treat a live reserved marker as in_progress until the TTL.
+
+-- Run FIRST, on its own (not inside a transaction): supports the NOT EXISTS lookup without a table scan.
+-- create index concurrently if not exists analyzer_jobs_live_reservation_idx
+--   on public.analyzer_jobs (reservation_id) where status in ('queued', 'running');
+-- Rollback: drop index concurrently if exists public.analyzer_jobs_live_reservation_idx;

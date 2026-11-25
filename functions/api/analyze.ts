@@ -249,7 +249,15 @@ export async function handleAnalyzeRequest(
   // reserved, so the reservation, the job and the polled id all agree). The response carries the id to poll.
   if (clientSuppliedId && env.ANALYZER_JOBS_QUEUE && (isForensic || env.QUEUE_QUICK_ANALYSIS === 'true')
       && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
-    requestId = await nextAttemptId(env, requestId, uid, authFetcher);
+    const attemptId = await nextAttemptId(env, requestId, uid, authFetcher);
+    // The attempt id is also a Storage key: apply the same ownership check to it.
+    if (attemptId !== requestId && await jobOwnerConflict(env, attemptId, uid, authFetcher)) {
+      return Response.json(
+        { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },
+        { status: 409, headers: DEFAULT_HEADERS },
+      );
+    }
+    requestId = attemptId;
   }
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
   // No client-supplied role, email or session can grant this entitlement.
@@ -382,7 +390,9 @@ export async function handleAnalyzeRequest(
         if (existing && existing.owner_uid === uid && existing.status !== 'failed') {
           // A reservation taken by this request (for example under a different paid session) is not
           // the one the existing job will settle, so release it now.
-          if (existing.reservation_id !== reservationId) await releaseFreshReservation();
+          // A completed job never settles a reservation again, so one re-claimed by this request (same marker id) is
+          // released too; otherwise it would be held until a reconcile 15 minutes later.
+          if (existing.status === 'completed' || existing.reservation_id !== reservationId) await releaseFreshReservation();
           const completed = existing.status === 'completed';
           return Response.json({
             error: completed ? 'This analysis already finished.' : 'This analysis is already running. Results will display shortly.',
