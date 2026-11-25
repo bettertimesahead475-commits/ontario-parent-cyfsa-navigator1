@@ -16,12 +16,14 @@ function pathOf(value: unknown): string {
   try { return new URL(value).pathname.slice(0, 80); } catch { return 'unknown'; }
 }
 
-export function summarizeCspReport(payload: unknown): Array<{ directive: string; blocked: string; page: string }> {
+export function summarizeCspReport(payload: unknown): Array<{ directive: string; blocked: string; page: string; source: string }> {
   const items = Array.isArray(payload) ? payload.map((r) => (r && typeof r === 'object' ? (r as any).body : null)) : [(payload as any)?.['csp-report']];
   return items.filter(Boolean).slice(0, 10).map((r: any) => ({
     directive: String(r.effectiveDirective ?? r['effective-directive'] ?? r['violated-directive'] ?? 'unknown').split(' ')[0].slice(0, 40),
     blocked: originOf(r.blockedURL ?? r['blocked-uri']),
     page: pathOf(r.documentURL ?? r['document-uri']),
+    // Origin of the script that triggered the violation (e.g. which library evaluates strings), never its path.
+    source: originOf(r.sourceFile ?? r['source-file']),
   }));
 }
 

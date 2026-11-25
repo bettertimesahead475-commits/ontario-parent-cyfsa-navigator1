@@ -5,8 +5,9 @@ describe('CSP report-only endpoint', () => {
   it('logs only directive, blocked origin and page path for both report formats', () => {
     const legacy = { 'csp-report': { 'document-uri': 'https://cyfsanavigator.com/document-analyzer?case=SECRET', 'violated-directive': 'script-src-elem', 'blocked-uri': 'https://evil.example/x.js?token=abc' } };
     const modern = [{ type: 'csp-violation', body: { documentURL: 'https://cyfsanavigator.com/pricing', effectiveDirective: 'connect-src', blockedURL: 'https://api.example.com/v1/data?q=1' } }];
-    expect(summarizeCspReport(legacy)).toEqual([{ directive: 'script-src-elem', blocked: 'https://evil.example', page: '/document-analyzer' }]);
-    expect(summarizeCspReport(modern)).toEqual([{ directive: 'connect-src', blocked: 'https://api.example.com', page: '/pricing' }]);
+    expect(summarizeCspReport(legacy)).toEqual([{ directive: 'script-src-elem', blocked: 'https://evil.example', page: '/document-analyzer', source: 'none' }]);
+    expect(summarizeCspReport(modern)).toEqual([{ directive: 'connect-src', blocked: 'https://api.example.com', page: '/pricing', source: 'none' }]);
+    expect(summarizeCspReport([{ body: { effectiveDirective: 'script-src', blockedURL: 'eval', sourceFile: 'https://apis.google.com/js/api.js?onload=x' } }])[0].source).toBe('https://apis.google.com');
     expect(summarizeCspReport({ 'csp-report': { 'blocked-uri': 'inline', 'violated-directive': 'style-src' } })[0].blocked).toBe('inline');
   });
 
