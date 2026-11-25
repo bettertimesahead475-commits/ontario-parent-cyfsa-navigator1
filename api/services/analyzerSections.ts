@@ -574,8 +574,9 @@ export function sectionTitle(key: string): string {
  */
 export function neutralizeDocumentTags(text: string): string {
   // Built with RegExp and fromCharCode so the source stays plain ASCII. Matches <document>, </document>,
-  // and spaced variants; the angle brackets become single guillemets so the tag no longer parses.
-  const tag = new RegExp("<[ \\t]*/?[ \\t]*document[ \\t]*>", "gi");
+  // and variants with spaces, tabs or line breaks inside the tag (found by eval/analyzer-guards); the angle brackets
+  // become single guillemets so the tag no longer parses.
+  const tag = new RegExp("<\\s*/?\\s*document\\s*>", "gi");
   const open = String.fromCharCode(0x2039), close = String.fromCharCode(0x203a);
   return text.replace(tag, (m) => open + m.slice(1, -1) + close);
 }
