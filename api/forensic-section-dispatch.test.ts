@@ -76,3 +76,12 @@ describe("forensic section dispatch", () => {
     expect(generate.mock.calls.some(([o]) => o.stage === "forensic_verification")).toBe(true);
   });
 });
+
+describe("targeted Forensic re-runs (independent review finding 3)", () => {
+  it("still verifies, via the full report, when the run does not include both verification inputs", async () => {
+    const generate = vi.fn(async (options: GenParams) => ok(options.stage!));
+    const run = await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "targeted-test", deadlineAt: Date.now() + 60_000, generate, targetSections: ["guidance", "timeline"] });
+    expect(run.report.forensicVerification).toBeDefined();
+    expect(generate.mock.calls.map(([o]) => o.stage)).toEqual(expect.arrayContaining(["section:guidance", "section:timeline"]));
+  });
+});

@@ -1,4 +1,5 @@
 import { verifyFirebaseRequest } from './_auth-check';
+import { normalizeApiKey } from './_supabase-key';
 import { readVerifiedPaidSession } from './_supabase-paid-session';
 import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reservation';
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
@@ -68,7 +69,7 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
     if (paid.status === 'unavailable') throw new AssessmentError(503, 'ENTITLEMENT_UNAVAILABLE');
     if (paid.status !== 'verified' || paid.session.tier !== 'Pro') throw new AssessmentError(403, 'INDIVIDUAL_CASE_ACCESS_REQUIRED');
     if (!env.STAGING_SUPABASE_URL || !env.STAGING_SUPABASE_SERVICE_ROLE_KEY) throw new AssessmentError(503, 'STORAGE_UNAVAILABLE');
-    const key = env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
+    const key = (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '');
     const headers = { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' };
     const url = new URL(request.url);
     if (request.method === 'POST' && url.searchParams.get('action') === 'create-matter') {

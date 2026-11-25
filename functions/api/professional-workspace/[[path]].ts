@@ -1,4 +1,5 @@
 import { verifyFirebaseRequest } from '../_auth-check';
+import { normalizeApiKey } from '../_supabase-key';
 
 interface Env { FIREBASE_PROJECT_ID?: string; STAGING_SUPABASE_URL?: string; STAGING_SUPABASE_SERVICE_ROLE_KEY?: string }
 interface Dependencies { fetcher?: typeof fetch; authenticate?: typeof verifyFirebaseRequest }
@@ -14,7 +15,7 @@ export async function handleProfessionalWorkspace(request: Request, env: Env, de
     if (request.method !== 'GET') throw new WorkspaceError(405, 'METHOD_NOT_ALLOWED');
     if (!env.STAGING_SUPABASE_URL || !env.STAGING_SUPABASE_SERVICE_ROLE_KEY) throw new WorkspaceError(503, 'REVIEW_DATABASE_UNAVAILABLE');
     const fetcher = deps.fetcher || fetch;
-    const headers = { apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + env.STAGING_SUPABASE_SERVICE_ROLE_KEY };
+    const headers = { apikey: (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? ''), Authorization: 'Bearer ' + (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '') };
     async function query(table: string, filters: Record<string, string>, count = false) {
       const url = new URL('/rest/v1/' + table, env.STAGING_SUPABASE_URL);
       for (const [key, value] of Object.entries(filters)) url.searchParams.set(key, value);

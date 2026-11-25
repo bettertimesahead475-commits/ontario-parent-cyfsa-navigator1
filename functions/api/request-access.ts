@@ -5,6 +5,8 @@
  * Creates an e-transfer payment request and human-typeable reference code.
  */
 import { verifyFirebaseRequest } from './_auth-check';
+import { normalizeApiKey } from './_supabase-key';
+import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -95,6 +97,10 @@ export const onRequestPost = async ({
       { status: 401, headers: DEFAULT_HEADERS }
     );
   }
+  {
+    const retryAfter = rateLimitRetryAfter('requestAccess', rateLimitSubject(request, identity.uid), RATE_LIMITS.requestAccess);
+    if (retryAfter) return rateLimitedResponse(retryAfter);
+  }
 
   if (!identity.emailVerified || !identity.email) {
     return Response.json(
@@ -136,8 +142,8 @@ export const onRequestPost = async ({
 
       const existingRes = await fetch(checkUrl.toString(), {
         headers: {
-          apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? ''),
+          Authorization: `Bearer ${(normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '')}`,
           Accept: 'application/json',
         },
         signal: AbortSignal.timeout(5000),
@@ -194,8 +200,8 @@ export const onRequestPost = async ({
     const insertRes = await fetch(insertUrl.toString(), {
       method: 'POST',
       headers: {
-        apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? ''),
+        Authorization: `Bearer ${(normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '')}`,
         'Content-Type': 'application/json',
         Prefer: 'return=minimal',
       },
@@ -214,8 +220,8 @@ export const onRequestPost = async ({
 
         const raceRes = await fetch(checkUrl.toString(), {
           headers: {
-            apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
-            Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
+            apikey: (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? ''),
+            Authorization: `Bearer ${(normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '')}`,
             Accept: 'application/json',
           },
           signal: AbortSignal.timeout(5000),

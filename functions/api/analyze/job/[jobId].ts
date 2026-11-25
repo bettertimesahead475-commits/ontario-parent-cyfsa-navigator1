@@ -113,7 +113,7 @@ export const onRequestGet = async ({
 
   // 2. Fetch durable job from Supabase Storage if configured
   const supabaseUrl = env?.STAGING_SUPABASE_URL;
-  const supabaseKey = env?.STAGING_SUPABASE_SERVICE_ROLE_KEY || env?.STAGING_SUPABASE_READ_KEY;
+  const supabaseKey = normalizeApiKey(env?.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? normalizeApiKey(env?.STAGING_SUPABASE_READ_KEY);
   if (supabaseUrl && supabaseKey) {
     try {
       const res = await fetch(jobObjectUrl(supabaseUrl, jobId, 'read'), {

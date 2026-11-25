@@ -10,6 +10,7 @@
  */
 
 import { verifyFirebaseRequest } from './_auth-check';
+import { normalizeApiKey } from './_supabase-key';
 import { FREE_SCAN_LIMIT } from './_free-credit-reservation';
 import { monthlyCreditScope } from './_monthly-credit-scope';
 import { LIMITS } from './_paid-credit-reservation';
@@ -36,7 +37,7 @@ export async function readCounter(env: UsageEnv, key: string, fetcher: typeof fe
     url.searchParams.set('uid', `eq.${key}`);
     url.searchParams.set('select', 'analyses_used');
     const res = await fetcher(url.toString(), {
-      headers: { apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`, Accept: 'application/json' },
+      headers: { apikey: (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? ''), Authorization: `Bearer ${(normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '')}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;

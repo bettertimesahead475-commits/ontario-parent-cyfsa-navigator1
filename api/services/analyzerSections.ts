@@ -1007,7 +1007,8 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   let verificationTask: Promise<{ result: Record<string, any>; subset: Record<string, any> }> | null = null;
   const maybeStartVerification = () => {
     if (!wantsVerification || verificationTask || outcomes.length > 0) return;
-    if (![...verificationInputs].every((k) => k in sectionTimingsMs || k in (opts.initialSections || {}))) return;
+    const have = (k: string) => k in sectionTimingsMs || (k === "redFlags" ? report.redFlags !== undefined && "redFlags" in (opts.initialSections || {}) : report.thresholdAnalysis !== undefined && "thresholdAnalysis" in (opts.initialSections || {}));
+    if (![...verificationInputs].every(have)) return;
     const subset: Record<string, any> = structuredClone({ redFlags: report.redFlags, thresholdAnalysis: report.thresholdAnalysis });
     applyReportGuards(subset, opts.documentText);
     delete subset.complianceMatrix;
@@ -1050,7 +1051,14 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
 
   if (wantsVerification) {
     maybeStartVerification(); // Covers inputs supplied through initialSections.
-    const { result, subset } = await verificationTask!;
+    if (!verificationTask) {
+      // This run did not include both verification inputs (targeted re-runs): verify the guarded full
+      // report, as before early verification existed.
+      opts.onVerificationStart?.();
+      report.forensicVerification = await runForensicVerification(report, opts, usageByModel);
+      return { report, usageByModel, sectionTimingsMs, attempts };
+    }
+    const { result, subset } = await (verificationTask as Promise<{ result: Record<string, any>; subset: Record<string, any> }>);
     // Same raw sections + deterministic guards => identical guarded values, now with verification marks.
     report.redFlags = subset.redFlags;
     report.thresholdAnalysis = subset.thresholdAnalysis;

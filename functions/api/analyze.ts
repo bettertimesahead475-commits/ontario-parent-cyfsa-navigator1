@@ -12,6 +12,7 @@
  */
 
 import { verifyFirebaseRequest } from './_auth-check';
+import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
 import { readVerifiedPaidSession } from './_supabase-paid-session';
 import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reservation';
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
@@ -229,6 +230,11 @@ export async function handleAnalyzeRequest(
     );
   }
   const uid = identity.uid;
+
+  if (!deps.trustedJob) {
+    const retryAfter = rateLimitRetryAfter('analyze', rateLimitSubject(request, uid), RATE_LIMITS.analyze);
+    if (retryAfter) return rateLimitedResponse(retryAfter);
+  }
 
   // An analysis id is also a Storage key that is written with upsert. Refuse ids already owned by someone
   // else before reserving any credit, so no user can overwrite or adopt another user's report.
@@ -463,6 +469,8 @@ export async function handleAnalyzeRequest(
     } else {
       // Forensic In-Depth mode: multi-pass sectioned pipeline with Opus verification
       const sectionedStartedAt = Date.now();
+      // Verification can start while sections are still running; progress must never go backwards.
+      let verificationStarted = false;
       await onProgress?.('reviewing_evidence', 35, 'Analyzing document across evidence sections...');
       run = await runSectionedAnalysis({
         mode,
@@ -474,12 +482,17 @@ export async function handleAnalyzeRequest(
         requestId,
         onSectionComplete: async (key, value, completed, total) => {
           const span = 50;
-          const percent = 35 + Math.round((completed / total) * span);
+          const sectionPercent = 35 + Math.round((completed / total) * span);
           const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
           await onSection?.(key, value);
-          await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent, message);
+          if (verificationStarted) {
+            await onProgress?.('verifying_findings', Math.max(88, sectionPercent), message);
+          } else {
+            await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', sectionPercent, message);
+          }
         },
         onVerificationStart: () => {
+          verificationStarted = true;
           // Fire-and-forget progress. In the queue Worker this writes the job ledger and can reject
           // (for example after a lost lease); never leave that as an unhandled rejection.
           void Promise.resolve()

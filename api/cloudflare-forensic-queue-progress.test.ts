@@ -70,10 +70,11 @@ describe('queued Forensic progress reporting', () => {
     const stages: string[] = [];
     // A plain function, not vi.fn: a spy attaches its own handler to returned promises,
     // which would hide the unhandled rejection this test exists to detect.
-    const onProgress = async (stage: string) => {
+    const onProgress = async (stage: string, _percent?: number, message?: string) => {
       stages.push(stage);
-      // Simulates the job ledger refusing the write, e.g. after a lost lease.
-      if (stage === 'verifying_findings') throw Object.assign(new Error('Job state could not be persisted.'), { retryable: true });
+      // Simulates the job ledger refusing the fire-and-forget verification-start write (the first one).
+      // Later awaited section writes succeed, as they must for the run to continue.
+      if (stage === 'verifying_findings' && /^Independent/.test(message ?? '')) throw Object.assign(new Error('Job state could not be persisted.'), { retryable: true });
     };
     const fetcher = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
     const request = new Request('https://analyzer-queue.internal/api/analyze', {
@@ -101,5 +102,27 @@ describe('queued Forensic progress reporting', () => {
     expect(report.forensicVerification?.status).toBe('completed');
     expect(stages).toContain('verifying_findings');
     expect(rejections).toEqual([]);
+  });
+});
+
+describe('queued Forensic progress ordering (independent review finding 2)', () => {
+  it('never reports progress going backwards after early verification starts', async () => {
+    const delays: Record<string, number> = { 'section:guidance': 60, 'section:timeline': 40, 'section:overview': 30, 'section:chronology': 50 };
+    const slowGenerate: GenerateFn = async (options: any) => {
+      await new Promise((r) => setTimeout(r, delays[options.stage] ?? 5));
+      return { text: JSON.stringify(SECTIONS[options.stage] ?? {}), usage: { input_tokens: 1, output_tokens: 1 }, model: 'm', durationMs: 1, stopReason: 'end_turn' };
+    };
+    const seen: Array<{ stage: string; percent: number }> = [];
+    const onProgress = async (stage: string, percent: number) => { seen.push({ stage, percent }); };
+    const fetcher = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    const request = new Request('https://analyzer-queue.internal/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Analysis-Id': 'req_1791000000000_monotonic1' }, body: JSON.stringify({ documentText: DOC, mode: 'full', stream: false }) });
+    const res = await handleAnalyzeRequest(request, env, { generate: slowGenerate, fetcher, rpc: vi.fn(), trustedJob: { owner_uid: 'o', session_id: null, reservation_id: null, owner_bypass: true, workerToken: 't', onProgress } });
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 20));
+    const percents = seen.map((s) => s.percent);
+    for (let i = 1; i < percents.length; i++) expect(percents[i]).toBeGreaterThanOrEqual(percents[i - 1]);
+    const firstVerify = seen.findIndex((s) => s.stage === 'verifying_findings');
+    expect(firstVerify).toBeGreaterThan(-1);
+    expect(seen.slice(firstVerify).some((s) => s.stage === 'reviewing_evidence')).toBe(false);
   });
 });

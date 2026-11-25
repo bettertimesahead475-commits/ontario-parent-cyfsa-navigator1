@@ -14,6 +14,7 @@ export const NATIVE_API_ROUTES: Record<string, readonly string[]> = {
   '/api/admin/gemini-models': ['GET'],
   '/api/analyze': ['POST'],
   '/api/analyzer-usage': ['GET'],
+  '/api/csp-report': ['POST'],
   '/api/deep-scan': ['POST'],
   '/api/extract-text': ['POST'],
   '/api/final-case-assessment': ['ALL'],

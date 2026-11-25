@@ -5,6 +5,7 @@
  * Transcribes parent audio recording/memo with Gemini (model: GEMINI_AUDIO_MODEL, see ./_gemini.ts).
  */
 import { verifyFirebaseRequest } from './_auth-check';
+import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
 import { GEMINI_ERROR_RESPONSE, GeminiError, generateGemini, resolveGeminiModel, type GeminiEnv } from './_gemini';
 
 const DEFAULT_HEADERS = {
@@ -43,6 +44,10 @@ export const onRequestPost = async ({
       { error: 'Sign in to transcribe audio recordings.', code: 'SIGN_IN_REQUIRED' },
       { status: authResult.status === 'unavailable' ? 503 : 401, headers: DEFAULT_HEADERS }
     );
+  }
+  {
+    const retryAfter = rateLimitRetryAfter('transcribe', rateLimitSubject(request, authResult.uid), RATE_LIMITS.transcribe);
+    if (retryAfter) return rateLimitedResponse(retryAfter);
   }
 
   let body: any;

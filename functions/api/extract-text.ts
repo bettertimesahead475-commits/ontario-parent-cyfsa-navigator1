@@ -10,6 +10,7 @@
  */
 
 import { verifyFirebaseRequest } from './_auth-check';
+import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
 import { ExtractionError, MAX_FILE_BYTES, extractDocument } from './_document-extraction';
 import { GEMINI_ERROR_RESPONSE, GeminiError, type GeminiEnv } from './_gemini';
 
@@ -34,6 +35,10 @@ export async function handleExtractRequest(
   if (identity.status !== 'verified') {
     const status = identity.status === 'unavailable' ? 503 : 401;
     return Response.json({ error: 'Please sign in to use the Document Analyzer.', code: 'SIGN_IN_REQUIRED' }, { status, headers: DEFAULT_HEADERS });
+  }
+  {
+    const retryAfter = rateLimitRetryAfter('extractText', rateLimitSubject(request, identity.uid), RATE_LIMITS.extractText);
+    if (retryAfter) return rateLimitedResponse(retryAfter);
   }
 
   const declaredLength = Number(request.headers.get('content-length'));

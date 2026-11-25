@@ -9,6 +9,8 @@
  * Fails closed if the atomic RPC is unavailable (no unsafe REST multi-step fallback).
  */
 import { verifyFirebaseRequest } from './_auth-check';
+import { normalizeApiKey } from './_supabase-key';
+import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -79,6 +81,10 @@ export const onRequestPost = async ({
       { status: 401, headers: DEFAULT_HEADERS }
     );
   }
+  {
+    const retryAfter = rateLimitRetryAfter('activateCode', rateLimitSubject(request, identity.uid), RATE_LIMITS.activateCode);
+    if (retryAfter) return rateLimitedResponse(retryAfter);
+  }
 
   if (!env.SESSION_SECRET) {
     return Response.json(
@@ -104,8 +110,8 @@ export const onRequestPost = async ({
     const rpcRes = await fetch(rpcUrl.toString(), {
       method: 'POST',
       headers: {
-        apikey: env.STAGING_SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? ''),
+        Authorization: `Bearer ${(normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '')}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
