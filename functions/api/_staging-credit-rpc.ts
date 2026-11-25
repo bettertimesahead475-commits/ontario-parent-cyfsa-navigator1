@@ -26,7 +26,7 @@ export class StagingRpcError extends Error {
     const summary = [
       `Staging credit RPC ${params.rpcName} failed (HTTP ${params.httpStatus})`,
       params.pgCode ? `[${params.pgCode}]` : null,
-      params.pgMessage || null,
+      // The Postgres message stays on pgMessage only: error summaries are logged and must not echo key values.
     ].filter(Boolean).join(' ');
     super(summary);
     this.name = 'StagingRpcError';
@@ -67,7 +67,7 @@ export function createStagingCreditRpc(env: StagingRpcEnv, fetcher: typeof fetch
       console.error(JSON.stringify({
         tag: '[STAGING_RPC_NETWORK_ERROR]',
         rpc: name,
-        error: fetchErr?.message || String(fetchErr),
+        errorName: fetchErr?.name || 'unknown',
       }));
       throw new StagingRpcError({
         rpcName: name,
@@ -98,9 +98,7 @@ export function createStagingCreditRpc(env: StagingRpcEnv, fetcher: typeof fetch
         rpc: name,
         httpStatus: response.status,
         pgCode,
-        pgMessage,
-        pgDetails,
-        pgHint,
+        hasDetail: Boolean(pgMessage || pgDetails || pgHint),
       }));
       throw new StagingRpcError({
         rpcName: name,
@@ -119,7 +117,7 @@ export function createStagingCreditRpc(env: StagingRpcEnv, fetcher: typeof fetch
       console.error(JSON.stringify({
         tag: '[STAGING_RPC_JSON_PARSE_ERROR]',
         rpc: name,
-        error: parseErr?.message || String(parseErr),
+        errorName: parseErr?.name || 'unknown',
       }));
       throw new StagingRpcError({
         rpcName: name,

@@ -382,7 +382,7 @@ export async function pollAnalysisJob(
     } else if (job) {
       options.onProgress?.(job);
     }
-    // Ease off gradually while a job runs (capped at 8 s so completion is noticed promptly).
-    await sleep(backoff(++quietPolls, 8_000));
+    // Ease off gradually while a job runs (capped at 5 s so completion is noticed promptly; measured queued Forensic: 99.4 s on the executor vs 110.5 s seen by the browser with an 8 s cap).
+    await sleep(backoff(++quietPolls, 5_000));
   }
 }

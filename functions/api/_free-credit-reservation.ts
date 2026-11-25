@@ -68,9 +68,8 @@ export async function reserveFreeScan(
       tag: '[FREE_RESERVE_SCAN_RPC_ERROR]',
       httpStatus,
       pgCode,
-      pgMessage,
-      pgDetails,
-      pgHint,
+      // Postgres message/details/hint can echo key values (uids, request ids): kept in memory, never logged.
+      hasDetail: Boolean(pgMessage || pgDetails || pgHint),
     }));
 
     return {
