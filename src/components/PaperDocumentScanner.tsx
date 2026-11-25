@@ -4,13 +4,18 @@ const MAX_PAGES = 30; // Matches the analyzer's per-document OCR page limit.
 const MAX_BYTES = 20 * 1024 * 1024;
 
 async function pageJpeg(file: File): Promise<ArrayBuffer> {
-  let source: Blob = file;
-  if (/\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]$/.test(file.type)) {
-    const convert = (await import('heic2any')).default;
-    const result = await convert({ blob: file, toType: 'image/jpeg', quality: 0.9 });
-    source = Array.isArray(result) ? result[0] : result;
+  // HEIC/HEIF is decoded by the browser itself where supported (Safari). Elsewhere the page cannot be built into
+  // the scanned PDF, so the user is pointed to the main upload, which OCRs HEIC on the server. (The former
+  // in-browser converter required 'unsafe-eval' in the Content Security Policy.)
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch (err) {
+    if (/\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]$/.test(file.type)) {
+      throw new Error('This browser cannot open HEIC photos for scanning. Upload the photo with "Upload document" instead (HEIC is supported there), or take the picture with the scanner camera.');
+    }
+    throw err;
   }
-  const bitmap = await createImageBitmap(source);
   try {
     const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');

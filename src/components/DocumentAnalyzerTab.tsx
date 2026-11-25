@@ -1754,25 +1754,9 @@ export default function DocumentAnalyzerTab() {
         : "";
       let finalMimeType = f.type || inferredMimeType || "application/octet-stream";
 
-      let processedFile: File | Blob = f;
-      const isHEIC = nameL.endsWith(".heic") || nameL.endsWith(".heif") || f.type === "image/heic" || f.type === "image/heif";
-
-      if (isHEIC) {
-        try {
-          const heic2any = (await import("heic2any")).default;
-          const convertedBlob = await heic2any({
-            blob: f,
-            toType: "image/jpeg",
-            quality: 0.8
-          });
-          const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-          processedFile = singleBlob;
-          finalName = f.name.replace(/\.(heic|heif)$/i, ".jpg");
-          finalMimeType = "image/jpeg";
-        } catch (err: any) {
-          console.error("HEIC conversion failed:", err);
-        }
-      }
+      // HEIC/HEIF photos are sent as uploaded: the server recognises them and OCRs them natively. (The former
+      // in-browser converter required 'unsafe-eval' in the Content Security Policy.)
+      const processedFile: File | Blob = f;
 
       const isAudio = finalMimeType.startsWith("audio/") || 
                       nameL.endsWith(".mp3") || 

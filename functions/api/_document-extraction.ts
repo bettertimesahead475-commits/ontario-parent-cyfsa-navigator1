@@ -113,6 +113,12 @@ export function detectType(bytes: Uint8Array): { type: DetectedType | 'ole' | 'u
   if (startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) && startsWith(bytes, [0x57, 0x45, 0x42, 0x50], 8)) return { type: 'image', imageMime: 'image/webp' };
   if (startsWith(bytes, [0x47, 0x49, 0x46, 0x38])) return { type: 'image', imageMime: 'image/gif' };
   if (startsWith(bytes, [0x49, 0x49, 0x2a, 0x00]) || startsWith(bytes, [0x4d, 0x4d, 0x00, 0x2a])) return { type: 'image', imageMime: 'image/tiff' };
+  // HEIC/HEIF (ISO BMFF 'ftyp' box at offset 4). Gemini OCRs these natively, so phone photos need no conversion.
+  if (startsWith(bytes, [0x66, 0x74, 0x79, 0x70], 4)) {
+    const brand = String.fromCharCode(...bytes.slice(8, 12));
+    if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis'].includes(brand)) return { type: 'image', imageMime: 'image/heic' };
+    if (['mif1', 'msf1', 'heif'].includes(brand)) return { type: 'image', imageMime: 'image/heif' };
+  }
   // Plain text: valid UTF-8 with no NUL bytes in the sample.
   const sample = bytes.subarray(0, Math.min(8192, bytes.length));
   if (!sample.includes(0)) {
@@ -130,13 +136,13 @@ export function detectType(bytes: Uint8Array): { type: DetectedType | 'ole' | 'u
 const DECLARED: Record<DetectedType, RegExp> = {
   pdf: /^application\/(pdf|x-pdf)$/,
   docx: /^application\/(vnd\.openxmlformats-officedocument\.wordprocessingml\.document|docx)$/,
-  image: /^image\/(png|jpe?g|webp|gif|tiff)$/,
+  image: /^image\/(png|jpe?g|webp|gif|tiff|heic|heif)$/,
   text: /^text\/(plain|markdown|csv)$/,
 };
 const EXTENSIONS: Record<DetectedType, RegExp> = {
   pdf: /\.pdf$/i,
   docx: /\.docx$/i,
-  image: /\.(png|jpe?g|webp|gif|tiff?)$/i,
+  image: /\.(png|jpe?g|webp|gif|tiff?|heic|heif)$/i,
   text: /\.(txt|md|csv|text)$/i,
 };
 
