@@ -113,7 +113,7 @@ describe('Cloudflare Request Access API (/api/request-access)', () => {
     const res = await onRequestPost({ request: req, env: validEnv });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.referenceNumber).toMatch(/^PS-[A-Z0-9]{5}$/);
+    expect(json.referenceNumber).toMatch(/^PS-[A-Z0-9]{8}$/);
     expect(json.amount).toBe(129);
     expect(json.payTo).toBe('pay@cyfsanavigator.com');
     expect(json.reused).toBe(false);

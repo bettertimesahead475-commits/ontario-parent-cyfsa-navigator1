@@ -8,6 +8,6 @@ export default defineConfig({
     hookTimeout: 45000,
     teardownTimeout: 45000,
     maxWorkers: 2,
-    setupFiles: ['tests/setup/reset-rate-limits.ts'],
+    setupFiles: ['tests/setup/reset-rate-limits.ts', 'tests/setup/no-external-network.ts'],
   },
 });

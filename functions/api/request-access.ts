@@ -37,8 +37,10 @@ const TIER_PRICES: Record<string, number> = {
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+// 8 characters from a 32-character alphabet (no modulo bias: 256 % 32 == 0), about 1.1e12 values. The former
+// 5 characters (33.5M values) made duplicate references likely at a few thousand payments; there is no unique index.
 function generateReferenceNumber(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(5));
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
   let code = '';
   for (let i = 0; i < bytes.length; i++) {
     code += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
