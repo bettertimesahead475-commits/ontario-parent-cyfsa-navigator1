@@ -21,6 +21,7 @@ import { getSupabase } from './access.js';
 import { findAccount } from './accounts.js';
 import { LifecycleError, requireUuid } from './lifecycleErrors.js';
 import { normalizeQuoteWhitespace } from './pageSources.js';
+import { containsQuoteOnWordBoundaries } from '../../shared/quoteVerification.js';
 import {
   requireMatterAccess,
   calculateIsOverdue,
@@ -97,10 +98,9 @@ export function parseExplicitDueDate(dueDateStr?: string | null): string | null 
  */
 export function verifyQuoteInDocumentText(sourceText: string, quote: string): boolean {
   if (!sourceText || !quote) return false;
-  const normSource = normalizeQuoteWhitespace(sourceText);
   const normQuote = normalizeQuoteWhitespace(quote);
   if (!normQuote) return false;
-  return normSource.includes(normQuote);
+  return containsQuoteOnWordBoundaries(normalizeQuoteWhitespace(sourceText), normQuote);
 }
 
 /**
