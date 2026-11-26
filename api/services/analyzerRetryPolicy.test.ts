@@ -1,5 +1,5 @@
 // Regression tests for shared/analyzerRetryPolicy.ts: the one decision every analysis path uses.
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ANALYSIS_JOB_ID_PATTERN,
   classifyFailure,
@@ -24,14 +24,8 @@ describe("analysis ids", () => {
     expect(ANALYSIS_JOB_ID_PATTERN.source).toBe("^req_\\d{10,16}_[a-z0-9]{4,24}$");
   });
 
-  it("pads a degenerate random source rather than producing an id the server would reject", () => {
-    const id = newAnalysisJobId(1_700_000_000_000, () => 0.5);
-    expect(isAnalysisJobId(id)).toBe(true);
-  });
-
-  it("a degenerate random source that yields nothing still terminates with a valid id", () => {
-    const id = newAnalysisJobId(1_700_000_000_000, () => 0);
-    expect(isAnalysisJobId(id)).toBe(true);
+  it("a random source that yields too little entropy fails closed instead of padding", () => {
+    expect(() => newAnalysisJobId(1_700_000_000_000, () => 0)).toThrow(/too little entropy/);
   });
 
   it("rejects ids the server would replace", () => {
@@ -138,13 +132,80 @@ describe("hardening from the 2026-11-25 reviews", () => {
     spy.mockRestore();
   });
 
-  it("an oversized proposition is not evaluated (bounded time), never reported as supported", async () => {
-    const { evaluatePropositionSupport, MAX_PROPOSITION_CHARS } = await import("../../shared/legalVerificationPipeline");
+  it("a long repeated-citation text is checked in bounded time", async () => {
+    const { evaluatePropositionSupport, MAX_PROPOSITION_WINDOWS } = await import("../../shared/legalVerificationPipeline");
     const attack = "s 102 ".repeat(8000);
     const t0 = Date.now();
-    const r = evaluatePropositionSupport("CYFSA:102(1)", attack);
-    expect(Date.now() - t0).toBeLessThan(50);
+    evaluatePropositionSupport("CYFSA:102(1)", attack);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    const huge = "s 102 ".repeat(100000);
+    const t1 = Date.now();
+    const r = evaluatePropositionSupport("CYFSA:102(1)", huge);
+    expect(Date.now() - t1).toBeLessThan(2000);
     expect(r.support).toBe("NOT_EVALUATED");
-    expect(attack.length).toBeGreaterThan(MAX_PROPOSITION_CHARS);
+    expect(r.reason).toMatch(/too long/);
+    expect(MAX_PROPOSITION_WINDOWS).toBeGreaterThan(0);
+  });
+
+  it("a contradiction at the end of a long text is still reported (never skipped)", async () => {
+    const { evaluatePropositionSupport } = await import("../../shared/legalVerificationPipeline");
+    const long = "The worker reviewed the file. ".repeat(400) + " The CFSRB may overturn a court order.";
+    expect(long.length).toBeGreaterThan(4000);
+    expect(evaluatePropositionSupport("CYFSA:119", long).support).toBe("CONTRADICTED_BY_STATUTE");
+  });
+});
+
+describe("identifier generation fails closed (no predictable fallback)", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("cryptoRandom throws when Web Crypto is unavailable, and never returns Math.random values", async () => {
+    const { cryptoRandom } = await import("../../shared/analyzerRetryPolicy");
+    const mathSpy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    vi.stubGlobal("crypto", undefined);
+    expect(() => cryptoRandom()).toThrow(/Web Crypto is unavailable/);
+    expect(mathSpy).not.toHaveBeenCalled();
+    mathSpy.mockRestore();
+  });
+
+  it("cryptoRandom throws when crypto exists but getRandomValues is missing", async () => {
+    const { cryptoRandom } = await import("../../shared/analyzerRetryPolicy");
+    vi.stubGlobal("crypto", {});
+    expect(() => cryptoRandom()).toThrow(/Web Crypto is unavailable/);
+  });
+
+  it("newAnalysisJobId refuses to create an id when Web Crypto is unavailable", async () => {
+    const { newAnalysisJobId } = await import("../../shared/analyzerRetryPolicy");
+    vi.stubGlobal("crypto", undefined);
+    expect(() => newAnalysisJobId()).toThrow(/Web Crypto is unavailable/);
+  });
+
+  it("newAnalysisJobId refuses to pad a low-entropy source with a fixed string", async () => {
+    const { newAnalysisJobId } = await import("../../shared/analyzerRetryPolicy");
+    expect(() => newAnalysisJobId(1, () => 0)).toThrow(/too little entropy/);
+  });
+
+  it("a produced id has the server format with a random part of 8 to 12 characters", async () => {
+    const { newAnalysisJobId, ANALYSIS_JOB_ID_PATTERN } = await import("../../shared/analyzerRetryPolicy");
+    const id = newAnalysisJobId(1_700_000_000_000);
+    expect(id).not.toMatch(/xxxx/);
+    expect(id).toMatch(ANALYSIS_JOB_ID_PATTERN);
+  });
+});
+
+describe("server-generated analysis ids use the same secure source", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("generateAnalysisJobId returns a valid server-format id", async () => {
+    const { generateAnalysisJobId } = await import("./analyzerStreaming");
+    expect(generateAnalysisJobId()).toMatch(/^req_\d{10,16}_[a-z0-9]{8,12}$/);
+  });
+
+  it("generateAnalysisJobId fails closed when Web Crypto is unavailable", async () => {
+    const { generateAnalysisJobId } = await import("./analyzerStreaming");
+    const mathSpy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    vi.stubGlobal("crypto", undefined);
+    expect(() => generateAnalysisJobId()).toThrow(/Web Crypto is unavailable/);
+    expect(mathSpy).not.toHaveBeenCalled();
+    mathSpy.mockRestore();
   });
 });

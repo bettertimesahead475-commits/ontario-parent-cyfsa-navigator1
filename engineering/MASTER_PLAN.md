@@ -57,6 +57,21 @@ customer records or confidential documents.
 7. Performance measurement and confirmed-bottleneck optimization.
 8. Final acceptance dossier.
 
+## Permanent infrastructure directive (2026-11-26)
+
+- Cloudflare is the only production and staging platform (Pages project `cyfsa-navigator-git-staging`; production
+  domain https://cyfsanavigator.com). Vercel is obsolete and not authorized: no repair, reactivation, funding,
+  configuration or deployment through it.
+- Vercel integrations are disconnected only after verification. Verification status (2026-11-26):
+  - `vercel.json` defines three cron jobs: `/api/admin/check-payments` (every 2 min), `/api/admin/marketing/run-scheduler`
+    (every 5 min), `/api/admin/monitoring/run` (every 10 min).
+  - Those routes exist only in `api/_server.ts` (Express, Vercel-only). The Cloudflare admin function
+    `functions/api/admin/[[path]].ts` has no `check-payments` or `run-scheduler` route, and no Cloudflare wrangler config
+    declares cron triggers. `monitoring/run` exists on Cloudflare only as an authenticated POST.
+  - **Result: NOT verified as replaced. Do not disconnect the Vercel crons until a Cloudflare trigger runs each job.**
+- Preserve Cloudflare Pages, Workers, Queues, bindings, secrets, domains, CI protections, and the Supabase and Firebase
+  integrations.
+
 ## Non-negotiable constraints
 
 - No website redesign. Branding, colours, typography, layout, navigation, pricing and report presentation are preserved.

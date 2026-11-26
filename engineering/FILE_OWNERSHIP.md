@@ -33,3 +33,33 @@ More specific rows win over less specific ones.
   (frontend) fixes them.
 - Antigravity does not change API request/response shapes. Contract changes go through `API_CONTRACTS.md`.
 - Visible changes are limited to defect fixes, accessibility requirements and explicitly authorized features.
+
+## Worktree and commit rules (added 2026-11-26)
+
+Cause of the bundling in `847c4e0`: the primary checkout (`ontario-parent-cyfsa-navigator1`) is the only checkout of
+`engineering/claude-backend`, and several agent sessions wrote into it at once. One session committed files another
+session had left uncommitted in the same working tree (`analyzerRetryPolicy.ts`, `legalVerificationPipeline.ts`, an
+`AdminConsole.tsx` line). Within the 35 minutes after that commit, the branch gained 8 more commits from concurrent
+sessions. Nothing in git prevented it.
+
+1. **One writer per worktree.** Each session edits only in its own worktree on its own branch, never in the primary
+   checkout. Create one with `git worktree add -b engineering/<name> <path> <base>`. The primary checkout is read-only
+   for agents; it is updated only by merges that a control-document owner records.
+2. **Commit only what you wrote.** Stage by explicit path (`git add <file> ...`), never `git add -A`, `git add .` or
+   `git commit -a`. Before committing, `git diff --cached --stat` must list only files in your task's ownership.
+3. **Check the scope before you commit.** Every commit touching files outside your ownership must name the owner in its
+   message and be reviewed by that owner (review worktree branches are reviewed before merge).
+4. **Shared control documents** (`engineering/*.md`) are edited on the branch of the session that owns them; other
+   agents propose edits through their handoff files.
+5. **Before reading a file you intend to change**, run `git status` in your own worktree. If the file changed on disk
+   that you did not change, stop and record it in your handoff instead of overwriting or committing it.
+
+## Current worktrees (2026-11-26)
+
+| Worktree | Branch | Owner |
+|---|---|---|
+| `ontario-parent-cyfsa-navigator1` (primary) | `engineering/claude-backend` | Claude (merge point only) |
+| `cyfsa-worktrees/claude-review` | `engineering/claude-review` | Claude (review and fixes for 847c4e0) |
+| `cyfsa-worktrees/antigravity-frontend` | `engineering/antigravity-frontend` | Antigravity |
+| `cyfsa-worktrees/codex-security` | `engineering/codex-security` | Codex |
+| `cyfsa-worktrees/integration` | `engineering/integration` | Merge target for promotions |
