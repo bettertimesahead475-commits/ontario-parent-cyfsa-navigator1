@@ -26,6 +26,8 @@ function request(id = 'job_producer_1234') {
 function fetcher(options: { storageStatus?: number } = {}) {
   return vi.fn(async (url: string) => {
     if (url.includes('/rpc/analyzer_create_job')) return Response.json({ job_id: 'job_producer_1234' });
+    // Ownership pre-check read of a fresh id: Supabase Storage reports a missing object as 400 with an inner 404.
+    if (url.includes('/storage/v1/object/authenticated/')) return new Response(JSON.stringify({ statusCode: '404', error: 'not_found', message: 'Object not found' }), { status: 400 });
     if (url.includes('/storage/v1/object/')) return new Response('', { status: options.storageStatus || 200 });
     return Response.json({ status: 'released' });
   }) as unknown as typeof fetch;
@@ -270,7 +272,7 @@ describe('Retry after a failed queued job', () => {
       const body = init?.body ? JSON.parse(String(init.body)) : {};
       if (url.includes('/rpc/analyzer_get_job')) return Response.json(rows[body.p_job_id] ? { job_id: body.p_job_id, ...rows[body.p_job_id] } : null);
       if (url.includes('/rpc/analyzer_create_job')) return rows[body.p_job_id] ? Response.json({ code: '23505' }, { status: 409 }) : Response.json({ job_id: body.p_job_id });
-      if (url.includes('/storage/v1/object/')) return new Response('', { status: url.includes('/authenticated/') ? 400 : 200 });
+      if (url.includes('/storage/v1/object/')) return url.includes('/authenticated/') ? new Response(JSON.stringify({ statusCode: '404', error: 'not_found', message: 'Object not found' }), { status: 400 }) : new Response('', { status: 200 });
       return Response.json({ status: 'released' });
     }) as unknown as ReturnType<typeof vi.fn>;
   }
