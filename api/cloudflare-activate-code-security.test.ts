@@ -30,7 +30,8 @@ describe("POST /api/activate-code (Cloudflare)", () => {
     vi.stubGlobal("fetch", f);
     const r = await post({ code: " abcd-efgh ", email: " P@Example.test ", uid: "attacker-uid", p_firebase_uid: "attacker-uid" });
     expect(r.status).toBe(200);
-    const sent = JSON.parse((f.mock.calls[0] as any)[1].body);
+    const rpcCall = f.mock.calls.find((c: any) => String(c[0]).includes("redeem_access_code_atomic")) as any;
+    const sent = JSON.parse(rpcCall[1].body);
     expect(sent).toEqual({ p_firebase_uid: "verified-uid", p_code: "ABCD-EFGH", p_email: "p@example.test" });
     const body = await r.json();
     expect(body).toMatchObject({ success: true, tier: "Pro" });
@@ -56,9 +57,13 @@ describe("POST /api/activate-code (Cloudflare)", () => {
   it("fails closed when the database function is missing or errors", async () => {
     // The signed-in verified email matches the code email, so these tests exercise RPC error handling only.
     verify.mockResolvedValue({ status: "verified", uid: "u", email: "p@example.test", emailVerified: true });
-    vi.stubGlobal("fetch", rpc({ message: "Could not find the function" }, 404));
+    // The purchase lookup succeeds (bound to the signed-in email); only the redemption function fails.
+    const rpcOnly = (payload: unknown, status: number) => vi.fn(async (url: string) => String(url).includes("/rest/v1/access_codes")
+      ? new Response(JSON.stringify([{ email: "p@example.test", reference_number: "PS-TESTREF1" }]), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", rpcOnly({ message: "Could not find the function" }, 404));
     expect((await post({ code: "ABCD-EFGH", email: "p@example.test" })).status).toBe(503);
-    vi.stubGlobal("fetch", rpc({ message: "simulated failure", code: "P0001" }, 400));
+    vi.stubGlobal("fetch", rpcOnly({ message: "simulated failure", code: "P0001" }, 400));
     const r = await post({ code: "ABCD-EFGH", email: "p@example.test" });
     expect(r.status).toBe(500);
     expect(await r.text()).not.toContain("simulated failure");
@@ -74,11 +79,12 @@ describe("access code purchase binding (security review finding 4)", () => {
   });
   const calledRpc = (f: ReturnType<typeof vi.fn>) => f.mock.calls.some(([u]) => String(u).includes("redeem_access_code_atomic"));
 
-  it("redeems directly when the verified sign-in email matches the code email", async () => {
+  it("redeems without a reference when the verified sign-in email matches the code email (ownership is still read first)", async () => {
     verify.mockResolvedValue({ status: "verified", uid: "u1", email: "buyer@example.test", emailVerified: true });
-    const f = route([]); vi.stubGlobal("fetch", f);
+    const f = route([{ email: "buyer@example.test", reference_number: "CYF-7K2M" }]); vi.stubGlobal("fetch", f);
     expect((await post({ code: "ABCD-EFGH", email: "buyer@example.test" })).status).toBe(200);
-    expect(f.mock.calls.some(([u]) => String(u).includes("/rest/v1/access_codes"))).toBe(false);
+    expect(f.mock.calls.some(([u]) => String(u).includes("/rest/v1/access_codes"))).toBe(true);
+    expect(calledRpc(f)).toBe(true);
   });
 
   it("asks for the payment reference when the code email differs from the signed-in email", async () => {
@@ -109,8 +115,9 @@ describe("access code purchase binding (security review finding 4)", () => {
 
   it("treats an unverified sign-in email as different, and fails closed if the purchase lookup is down", async () => {
     verify.mockResolvedValue({ status: "verified", uid: "u1", email: "buyer@example.test", emailVerified: false });
+    // Ownership is read first, so an outage fails closed (503) whether or not a reference was sent.
     const down = route({}, 503); vi.stubGlobal("fetch", down);
-    expect((await post({ code: "ABCD-EFGH", email: "buyer@example.test" })).status).toBe(403);
+    expect((await post({ code: "ABCD-EFGH", email: "buyer@example.test" })).status).toBe(503);
     const r = await post({ code: "ABCD-EFGH", email: "buyer@example.test", referenceNumber: "CYF-7K2M" });
     expect(r.status).toBe(503);
     expect(calledRpc(down)).toBe(false);

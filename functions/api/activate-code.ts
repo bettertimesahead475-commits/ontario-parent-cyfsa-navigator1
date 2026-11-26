@@ -109,24 +109,43 @@ export const onRequestPost = async ({
   // by an account whose verified Google email is different must also present the purchase's payment
   // reference number (shown when access was requested and used in the e-transfer memo).
   const signedInEmail = identity.emailVerified ? identity.email?.toLowerCase().trim() : null;
-  if (signedInEmail !== normalizedEmail) {
-    const reference = typeof body?.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
-    if (!reference) {
-      return Response.json(
-        { error: 'This code was purchased with a different email than the one you are signed in with. Enter the payment reference number from your access request to confirm the purchase is yours.', code: 'PURCHASE_REFERENCE_REQUIRED' },
-        { status: 403, headers: DEFAULT_HEADERS },
-      );
+  const reference = typeof body?.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
+  const referenceRequired = () => Response.json(
+    { error: 'This code was purchased with a different email than the one you are signed in with. Enter the payment reference number from your access request to confirm the purchase is yours.', code: 'PURCHASE_REFERENCE_REQUIRED' },
+    { status: 403, headers: DEFAULT_HEADERS },
+  );
+  // Same answer as an unknown code: never reveal which part did not match.
+  const invalid = () => Response.json({ error: 'Invalid email or code.' }, { status: 401, headers: DEFAULT_HEADERS });
+
+  // Ownership is decided here, server-side, before the atomic redemption:
+  // - a code bound to an email is redeemable only with that email; from a differently signed-in account the
+  //   purchase's payment reference must also be presented;
+  // - a paid code tied to a payment but not (yet) bound to an email (legacy / manual issuance) is customer-specific:
+  //   it needs the matching payment reference AND a verified signed-in email, which redemption then binds to it;
+  // - a code with neither email nor payment reference is a transferable promotional code.
+  // An unknown code goes to the RPC, which answers it the same way as before.
+  const purchase = await readCodePurchase(env, normalizedCode);
+  if (purchase === 'unavailable') {
+    return Response.json({ error: 'Activation service temporarily unavailable. Please try again.', code: 'NETWORK_TIMEOUT' }, { status: 503, headers: DEFAULT_HEADERS });
+  }
+  if (purchase) {
+    const boundEmail = (purchase.email ?? '').toLowerCase().trim();
+    const purchaseReference = typeof purchase.reference_number === 'string' ? purchase.reference_number.trim().toUpperCase() : '';
+    const referenceMatches = purchaseReference !== '' && reference !== '' && constantTimeEqual(purchaseReference, reference);
+    if (boundEmail) {
+      if (signedInEmail !== normalizedEmail) {
+        if (!reference) return referenceRequired();
+        if (boundEmail !== normalizedEmail || !referenceMatches) return invalid();
+      } else if (boundEmail !== normalizedEmail) {
+        return invalid();
+      }
+    } else if (purchaseReference) {
+      if (!signedInEmail || signedInEmail !== normalizedEmail) return invalid();
+      if (!reference) return referenceRequired();
+      if (!referenceMatches) return invalid();
     }
-    const purchase = await readCodePurchase(env, normalizedCode);
-    if (purchase === 'unavailable') {
-      return Response.json({ error: 'Activation service temporarily unavailable. Please try again.', code: 'NETWORK_TIMEOUT' }, { status: 503, headers: DEFAULT_HEADERS });
-    }
-    const ok = purchase !== null
-      && (purchase.email ?? '').toLowerCase().trim() === normalizedEmail
-      && typeof purchase.reference_number === 'string'
-      && constantTimeEqual(purchase.reference_number.trim().toUpperCase(), reference);
-    // Same answer as an unknown code: never reveal which part did not match.
-    if (!ok) return Response.json({ error: 'Invalid email or code.' }, { status: 401, headers: DEFAULT_HEADERS });
+  } else if (signedInEmail !== normalizedEmail && !reference) {
+    return referenceRequired();
   }
 
   // ATOMIC RPC: Call PostgreSQL stored procedure redeem_access_code_atomic
