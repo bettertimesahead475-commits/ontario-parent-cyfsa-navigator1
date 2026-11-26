@@ -126,8 +126,18 @@ export async function appendAudit(env: AdminStoreEnv, event: Omit<AuditEvent, 'a
 
 /** Lists audit object names, newest first (up to `limit`, paging the Storage list API). */
 export async function listAuditNames(env: AdminStoreEnv, limit = 1000, fetcher: typeof fetch = fetch): Promise<string[]> {
+  return (await listAuditNamesWithCompleteness(env, limit, fetcher)).names;
+}
+
+/**
+ * Audit object names (newest first) and whether the listing was read to its end. `exhausted` is decided on the RAW
+ * page sizes: entries that are not audit records (folder placeholders, stray files) are skipped but still count
+ * toward a full page, so they cannot make a cut-off listing look complete. A non-array page is an error.
+ */
+export async function listAuditNamesWithCompleteness(env: AdminStoreEnv, limit = 1000, fetcher: typeof fetch = fetch): Promise<{ names: string[]; exhausted: boolean }> {
   const { base, key } = config(env);
   const names: string[] = [];
+  let exhausted = false;
   for (let offset = 0; offset < limit; offset += 1000) {
     const pageSize = Math.min(1000, limit - offset);
     const response = await fetcher(`${base}/storage/v1/object/list/${AUDIT_BUCKET}`, {
@@ -138,12 +148,21 @@ export async function listAuditNames(env: AdminStoreEnv, limit = 1000, fetcher: 
       signal: AbortSignal.timeout(8000),
     }).catch(() => null);
     if (!response || !response.ok) throw new AdminStoreError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The administrator audit log could not be read.');
-    const page = await response.json() as Array<{ name?: unknown }>;
-    const valid = (Array.isArray(page) ? page : []).map((o) => o?.name).filter((n): n is string => typeof n === 'string' && parseAuditObjectName(n) !== null);
+    const page = await response.json().catch(() => null) as Array<{ name?: unknown }> | null;
+    if (!Array.isArray(page)) throw new AdminStoreError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The administrator audit log could not be read.');
+    const valid = page.map((o) => o?.name).filter((n): n is string => typeof n === 'string' && parseAuditObjectName(n) !== null);
     names.push(...valid);
-    if (!Array.isArray(page) || page.length < pageSize) break;
+    if (page.length < pageSize) { exhausted = true; break; }
   }
-  return names.sort(byCodeUnit).reverse();
+  return { names: names.sort(byCodeUnit).reverse(), exhausted };
+}
+
+/** Like listAuditNames, but refuses (503) when the listing could not be read completely: for decisions that need the
+ * whole history (has this payment been refunded? which suspension is current?). */
+export async function listAllAuditNames(env: AdminStoreEnv, limit: number, fetcher: typeof fetch = fetch): Promise<string[]> {
+  const { names, exhausted } = await listAuditNamesWithCompleteness(env, limit, fetcher);
+  if (!exhausted) throw new AdminStoreError('ADMIN_AUDIT_TRUNCATED', 503, 'The administrator audit log is larger than can be read safely; this action was not taken.');
+  return names;
 }
 
 export async function readAuditEvent(env: AdminStoreEnv, name: string, fetcher: typeof fetch = fetch): Promise<AuditEvent | null> {

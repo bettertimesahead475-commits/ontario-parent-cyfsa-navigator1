@@ -219,6 +219,7 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
         <button type="submit" className="rounded bg-brand-900 px-3 py-2 text-sm font-semibold text-white" disabled={busy}>Search</button>
       </form>
       {customer && <div className="space-y-3 text-sm">
+        <ReportingWarnings warnings={customer.reporting?.warnings} />
         <p>Email: <strong>{customer.identity.email ?? "—"}</strong> · Firebase uid: <code className="text-xs">{customer.identity.firebaseUid ?? "—"}</code>
           {customer.freeUsage && <> · Free analyses used: {customer.freeUsage.analysesUsed}</>}</p>
         <h3 className="font-semibold">Entitlements</h3>
