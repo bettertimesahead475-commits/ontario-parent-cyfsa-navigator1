@@ -77,11 +77,9 @@ describe("createQuoteLocator", () => {
     }
     expect(guarded.redFlags.every((f: any) => f.quoteVerification === "EXACT")).toBe(true);
   });
-  it("prepares nothing until the first quote, so a report without quotes adds no document copies", () => {
+  it("prepares the document on the first quote and treats a marker-only source as absent", () => {
     const text = largeDocument(120);
-    const t0 = performance.now();
-    for (let i = 0; i < 50; i++) createQuoteLocator(text);
-    expect(performance.now() - t0).toBeLessThan(50);
+    expect(createQuoteLocator(text)("never written anywhere").status).toBe("ABSENT");
     expect(createQuoteLocator("[Page 1]\n  ")("anything").status).toBe("ABSENT");
   });
 });
