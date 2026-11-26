@@ -15,6 +15,82 @@ function decodeSegment(segment: string): Record<string, unknown> {
   return JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='))) as Record<string, unknown>;
 }
 
+// ---------------------------------------------------------------- Google signing-key cache
+//
+// Google publishes the Firebase token signing keys with Cache-Control: max-age. They were fetched on every
+// authenticated request (one external round trip each, and every request failed during a Google blip). The key set
+// is now cached per isolate for its max-age (bounded), imported keys are reused, concurrent misses share one fetch,
+// and an unknown key id (rotation) triggers at most one refresh per minute. Verification itself is unchanged:
+// RS256 signature, kid, audience, issuer, expiry, issued-at and auth_time are all still checked on every request.
+
+type GoogleJwk = JsonWebKey & { kid?: string; alg?: string; use?: string };
+type KeySet = { keys: GoogleJwk[]; expiresAt: number; imported: Map<string, Promise<CryptoKey>> };
+
+export const JWKS_MIN_TTL_MS = 60_000;
+export const JWKS_MAX_TTL_MS = 6 * 3600_000;
+const JWKS_DEFAULT_TTL_MS = 5 * 60_000;
+const UNKNOWN_KID_REFRESH_INTERVAL_MS = 60_000;
+
+let cachedKeySet: KeySet | null = null;
+let inflightKeySet: Promise<KeySet> | null = null;
+let lastUnknownKidRefresh = 0;
+export const jwksStats = { fetches: 0 };
+
+/** For tests only. */
+export function resetJwksCacheForTests(): void {
+  cachedKeySet = null; inflightKeySet = null; lastUnknownKidRefresh = 0; jwksStats.fetches = 0;
+}
+
+function maxAgeMs(cacheControl: string | null): number {
+  const m = /(?:^|,)\s*max-age\s*=\s*(\d+)/i.exec(cacheControl || '');
+  const ms = m ? Number(m[1]) * 1000 : JWKS_DEFAULT_TTL_MS;
+  return Math.min(JWKS_MAX_TTL_MS, Math.max(JWKS_MIN_TTL_MS, ms));
+}
+
+function fetchKeySet(): Promise<KeySet> {
+  if (inflightKeySet) return inflightKeySet;
+  inflightKeySet = (async () => {
+    jwksStats.fetches++;
+    const response = await fetch(jwksUrl, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error('JWKS unavailable');
+    const body = await response.json() as { keys?: GoogleJwk[] };
+    if (!Array.isArray(body.keys) || body.keys.length === 0) throw new Error('JWKS empty');
+    const set: KeySet = { keys: body.keys, expiresAt: Date.now() + maxAgeMs(response.headers.get('cache-control')), imported: new Map() };
+    cachedKeySet = set;
+    return set;
+  })().finally(() => { inflightKeySet = null; });
+  return inflightKeySet;
+}
+
+async function currentKeySet(): Promise<KeySet> {
+  if (cachedKeySet && Date.now() < cachedKeySet.expiresAt) return cachedKeySet;
+  return fetchKeySet(); // an expired set is never used: a failed refresh is an outage (503), not a stale accept
+}
+
+function findJwk(set: KeySet, kid: string): GoogleJwk | undefined {
+  return set.keys.find(key => key.kid === kid && key.kty === 'RSA' && key.use === 'sig' && (!key.alg || key.alg === 'RS256'));
+}
+
+/** The verification key for `kid`, or null when Google does not publish it. Throws when keys are unavailable. */
+async function signingKey(kid: string): Promise<CryptoKey | null> {
+  let set = await currentKeySet();
+  let jwk = findJwk(set, kid);
+  if (!jwk && Date.now() - lastUnknownKidRefresh >= UNKNOWN_KID_REFRESH_INTERVAL_MS) {
+    // Possibly a newly rotated key: refresh once. Bounded, so forged key ids cannot amplify into Google fetches.
+    lastUnknownKidRefresh = Date.now();
+    set = await fetchKeySet();
+    jwk = findJwk(set, kid);
+  }
+  if (!jwk) return null;
+  let imported = set.imported.get(kid);
+  if (!imported) {
+    imported = crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+    set.imported.set(kid, imported);
+    imported.catch(() => set.imported.delete(kid));
+  }
+  return imported;
+}
+
 function signatureBytes(segment: string): Uint8Array {
   const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
   return Uint8Array.from(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')), c => c.charCodeAt(0));
@@ -65,12 +141,15 @@ export const onRequestGet = async ({ request, env }: Context): Promise<Response>
       typeof claims.auth_time !== 'number' || claims.auth_time > now
     ) return json('INVALID_FIREBASE_TOKEN', 401);
 
-    const keysResponse = await fetch(jwksUrl, { headers: { Accept: 'application/json' } });
-    if (!keysResponse.ok) return json('AUTH_KEY_SERVICE_UNAVAILABLE', 503);
-    const keys = await keysResponse.json() as { keys?: Array<JsonWebKey & { kid?: string; alg?: string; use?: string }> };
-    const jwk = keys.keys?.find(key => key.kid === header.kid && key.kty === 'RSA' && key.use === 'sig' && (!key.alg || key.alg === 'RS256'));
-    if (!jwk) return json('INVALID_FIREBASE_TOKEN', 401);
-    const publicKey = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+    let publicKey: CryptoKey | null;
+    try {
+      publicKey = await signingKey(header.kid);
+    } catch {
+      // Google's key service could not be reached and no unexpired key set is cached: the token cannot be verified.
+      // Never accept it unverified, and never call a valid sign-in invalid: report a temporary outage.
+      return json('AUTH_KEY_SERVICE_UNAVAILABLE', 503);
+    }
+    if (!publicKey) return json('INVALID_FIREBASE_TOKEN', 401);
     const valid = await crypto.subtle.verify(
       'RSASSA-PKCS1-v1_5', publicKey, signatureBytes(encodedSignature),
       new TextEncoder().encode(encodedHeader + '.' + encodedPayload),
