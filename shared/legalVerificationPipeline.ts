@@ -1894,6 +1894,35 @@ const isIsoDateString = (v: unknown): v is string =>
  */
 export const MAX_PROPOSITION_CHARS = 4000;
 
+/** Longest text evaluated in one window; the clause-level patterns are quadratic on long runs with no sentence break. */
+export const MAX_PROPOSITION_WINDOWS = 50;
+const PROPOSITION_WINDOW_OVERLAP = 400;
+
+/**
+ * Splits long text into sentence-aligned windows of at most MAX_PROPOSITION_CHARS. Consecutive windows overlap, so a
+ * pattern that straddles a boundary is still seen whole by one window. Never truncates: every part of the text is
+ * covered by at least one window.
+ */
+function propositionWindows(text: string): string[] {
+  const windows: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + MAX_PROPOSITION_CHARS, text.length);
+    if (end < text.length) {
+      const floor = start + Math.floor(MAX_PROPOSITION_CHARS / 2);
+      let cut = -1;
+      for (let i = end; i > floor; i--) {
+        if (/[.;!?\n]/.test(text[i - 1]) || text[i] === " ") { cut = i; break; }
+      }
+      if (cut > 0) end = cut;
+    }
+    windows.push(text.slice(start, end));
+    if (end >= text.length) break;
+    start = Math.max(end - PROPOSITION_WINDOW_OVERLAP, start + 1);
+  }
+  return windows;
+}
+
 export function evaluatePropositionSupport(
   sectionOrAuthorityKey: string,
   propositionText: string | null | undefined
@@ -1905,13 +1934,28 @@ export function evaluatePropositionSupport(
   if (!prop) {
     return { support: "NOT_EVALUATED", reason: null };
   }
-  // The clause-level proposition patterns below are quadratic on a long run of repeated citations with no sentence
-  // break. A proposition is one or two sentences of model output; anything far longer is not evaluated (a neutral
-  // outcome that never claims support) rather than truncated, which could cut a contradiction off its end.
-  if (prop.length > MAX_PROPOSITION_CHARS) {
-    return { support: "NOT_EVALUATED", reason: `The proposition is longer than ${MAX_PROPOSITION_CHARS} characters and was not evaluated.` };
+  if (prop.length <= MAX_PROPOSITION_CHARS) return evaluateBoundedProposition(sectionOrAuthorityKey, prop);
+  // Long text (for example a whole document checked without a separate proposition) is evaluated window by window,
+  // never skipped: a misapplied or contradicted statement anywhere in it must still be reported. Any flagged window
+  // wins. Beyond MAX_PROPOSITION_WINDOWS the text is too long to check in bounded time, so the result is an explicit
+  // NOT_EVALUATED with a reason; it never claims support.
+  const windows = propositionWindows(prop);
+  if (windows.length > MAX_PROPOSITION_WINDOWS) {
+    return { support: "NOT_EVALUATED", reason: `The text (${prop.length} characters) is too long to evaluate in full and was not checked for this proposition.` };
   }
+  let first: { support: PropositionSupportStatus; reason: string | null } | null = null;
+  for (const w of windows) {
+    const r = evaluateBoundedProposition(sectionOrAuthorityKey, w);
+    if (r.support === "IRRELEVANT_OR_MISAPPLIED" || r.support === "CONTRADICTED_BY_STATUTE") return r;
+    first ??= r;
+  }
+  return first ?? { support: "NOT_EVALUATED", reason: null };
+}
 
+function evaluateBoundedProposition(
+  sectionOrAuthorityKey: string,
+  prop: string
+): { support: PropositionSupportStatus; reason: string | null } {
   if (UNIVERSAL_FUNDING_CONTRADICTION_PATTERN.test(prop)) {
     return {
       support: "CONTRADICTED_BY_STATUTE",
