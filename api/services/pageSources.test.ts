@@ -1,4 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
+import {tjArrayContents} from "./pageSources.js";
 import {PDFDocument} from 'pdf-lib';
 import {decodeSource,extractPages,verifyQuote,validateEvidence,validateQuoteCoordinates,normalizeQuoteWhitespace,SOURCE_SYSTEM,hash} from './pageSources.js';
 
@@ -119,5 +120,24 @@ describe('untrusted evidence contract',()=>{
    expect(pages[0].extractionMethod).toBe('gemini-page-ocr');
    expect(pages[0].text).toBe('OCR Extracted Content from Scanned Affidavit Page');
    expect(ocr).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('tjArrayContents (S8786 linear rewrite of the TJ-array pattern)', () => {
+  const old = (block: string) => [...block.matchAll(/\[([\s\S]*?)\]\s*TJ/g)].map((m) => m[1]);
+  it('returns the same TJ array contents as the former pattern', () => {
+    for (const b of ['[(Hello) -20 (World)] TJ', '[(a)]TJ [(b)]\nTJ', '[(x)] Tj [(y)] TJ', '[[(n)]] TJ', '[(a)] ] TJ', '[(unclosed', '] TJ [', '[]TJ']) expect(tjArrayContents(b), b).toEqual(old(b));
+    const alphabet = ['[', ']', ' ', '\n', 'T', 'J', 'TJ', '(a)'];
+    let seed = 11;
+    for (let i = 0; i < 10_000; i++) {
+      let b = '';
+      for (let j = 0; j < 10; j++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; b += alphabet[seed % alphabet.length]; }
+      expect(tjArrayContents(b), JSON.stringify(b)).toEqual(old(b));
+    }
+  });
+  it('is linear on 25,000 "[]" pairs with no TJ (quadratic for the former pattern)', () => {
+    const t0 = performance.now();
+    expect(tjArrayContents('[]'.repeat(25_000))).toEqual([]);
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });
