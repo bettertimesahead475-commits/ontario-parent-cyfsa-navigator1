@@ -296,7 +296,7 @@ function readJobStatus(
     inFlightJobReads.set(fetcher, reads);
   }
   const existing = reads.get(jobId);
-  if (existing) return existing;
+  if (existing !== undefined) return existing;
   const read = (async () => {
     const res = await fetcher(`/api/analyze/job/${encodeURIComponent(jobId)}`, { signal: AbortSignal.timeout(timeoutMs) });
     const body = res.status === 404 ? null : await res.json().catch(() => null);
