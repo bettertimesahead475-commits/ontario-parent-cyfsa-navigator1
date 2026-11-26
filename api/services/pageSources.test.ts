@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {tjArrayContents} from "./pageSources.js";
+import {tjArrayContents, pdfTextObjects} from "./pageSources.js";
 import {PDFDocument} from 'pdf-lib';
 import {decodeSource,extractPages,verifyQuote,validateEvidence,validateQuoteCoordinates,normalizeQuoteWhitespace,SOURCE_SYSTEM,hash} from './pageSources.js';
 
@@ -139,5 +139,24 @@ describe('tjArrayContents (S8786 linear rewrite of the TJ-array pattern)', () =>
     const t0 = performance.now();
     expect(tjArrayContents('[]'.repeat(25_000))).toEqual([]);
     expect(performance.now() - t0).toBeLessThan(100);
+  });
+});
+
+describe("pdfTextObjects (linear replacement for /BT([\s\S]*?)ET/g)", () => {
+  const legacy = (s: string) => [...s.matchAll(/BT([\s\S]*?)ET/g)].map((m) => m[1]);
+  it("returns exactly what the former regex returned", () => {
+    const samples = ["", "BT", "ET", "BTET", "BT (a) Tj ET", "xBT 1 ET yBT 2 ETz", "BT BT a ET ET", "BTxETBTyETBT", "BET", "BTE T ET", "q BT /F1 12 Tf (Hi) Tj ET Q BT [(A) 3 (B)] TJ ET"];
+    for (let i = 0; i < 2000; i++) {
+      let t = "";
+      for (let k = 0; k < 20; k++) t += ["B", "T", "E", " ", "x", "BT", "ET"][Math.floor(Math.random() * 7)];
+      samples.push(t);
+    }
+    for (const s of samples) expect(pdfTextObjects(s)).toEqual(legacy(s));
+  });
+  it("stays linear on a crafted stream with many BT and no ET", () => {
+    const attack = "BT ".repeat(60000);
+    const t0 = Date.now();
+    expect(pdfTextObjects(attack)).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(100);
   });
 });

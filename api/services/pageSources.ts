@@ -85,6 +85,25 @@ export function tjArrayContents(block: string): string[] {
 }
 
 /**
+ * Bodies of the PDF text objects ("BT" ... "ET") in a content stream, exactly as the former lazy BT...ET regex
+ * returned them, in linear time. The regex rescanned to the end of the stream for every "BT" without a later "ET"
+ * (quadratic on a crafted PDF); once no "ET" follows a "BT", none follows any later "BT" either, so the scan stops.
+ */
+export function pdfTextObjects(stream: string): string[] {
+  const out: string[] = [];
+  let pos = 0;
+  for (;;) {
+    const begin = stream.indexOf("BT", pos);
+    if (begin < 0) break;
+    const end = stream.indexOf("ET", begin + 2);
+    if (end < 0) break;
+    out.push(stream.slice(begin + 2, end));
+    pos = end + 2;
+  }
+  return out;
+}
+
+/**
  * Extracts plain text streams directly from PDF content streams (BT...ET).
  * Fast, deterministic (<5ms per page), completely offline and free of OCR costs.
  */
@@ -103,11 +122,7 @@ export function extractTextFromPdfPage(page: any, doc: PDFDocument): string {
         raw = zlib.inflateSync(raw);
       } catch {}
       const str = raw.toString('latin1');
-      const btRegex = /BT([\s\S]*?)ET/g;
-      let btMatch: RegExpExecArray | null;
-
-      while ((btMatch = btRegex.exec(str)) !== null) {
-        const block = btMatch[1];
+      for (const block of pdfTextObjects(str)) {
         const tjRegex = /(\((?:[^()\\]|\\.)*\)|<[0-9a-fA-F\s]+>)\s*(?:Tj|'|")/g;
         let tjMatch: RegExpExecArray | null;
         while ((tjMatch = tjRegex.exec(block)) !== null) {
