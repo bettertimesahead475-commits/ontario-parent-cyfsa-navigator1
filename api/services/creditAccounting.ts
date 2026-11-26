@@ -410,10 +410,11 @@ export async function suspendSession(params: {
   sessionId: string;
   reason: string;
   adminEmail?: string;
-}): Promise<boolean> {
+}): Promise<void> {
   const { sessionId, reason } = params;
   const db = safeGetDb();
-  if (!db || typeof db.from !== "function") return true;
+  // Never report an administrative change that did not happen.
+  if (!db || typeof db.from !== "function") throw Object.assign(new Error("Database unavailable; nothing was changed."), { statusCode: 503 });
   const now = new Date().toISOString();
 
   const { error } = await db
@@ -446,15 +447,15 @@ export async function suspendSession(params: {
     });
   } catch {}
 
-  return true;
 }
 
 /**
  * Administrative control: restores access after investigation.
  */
-export async function restoreSession(sessionId: string): Promise<boolean> {
+export async function restoreSession(sessionId: string): Promise<void> {
   const db = safeGetDb();
-  if (!db || typeof db.from !== "function") return true;
+  // Never report an administrative change that did not happen.
+  if (!db || typeof db.from !== "function") throw Object.assign(new Error("Database unavailable; nothing was changed."), { statusCode: 503 });
 
   const { error } = await db
     .from("navigator_paid_sessions")
@@ -480,5 +481,4 @@ export async function restoreSession(sessionId: string): Promise<boolean> {
     });
   } catch {}
 
-  return true;
 }

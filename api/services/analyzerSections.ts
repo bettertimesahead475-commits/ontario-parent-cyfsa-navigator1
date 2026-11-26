@@ -1007,7 +1007,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   const verificationInputs = new Set(["redFlags", "thresholds"]);
   let verificationTask: Promise<{ result: Record<string, any>; subset: Record<string, any> }> | null = null;
   const maybeStartVerification = () => {
-    if (!wantsVerification || verificationTask || outcomes.length > 0) return;
+    if (!wantsVerification || verificationTask !== null || outcomes.length > 0) return;
     const have = (k: string) => k in sectionTimingsMs || (k === "redFlags" ? report.redFlags !== undefined && "redFlags" in (opts.initialSections || {}) : report.thresholdAnalysis !== undefined && "thresholdAnalysis" in (opts.initialSections || {}));
     if (![...verificationInputs].every(have)) return;
     const subset: Record<string, any> = structuredClone({ redFlags: report.redFlags, thresholdAnalysis: report.thresholdAnalysis });
@@ -1044,7 +1044,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   const failure = outcomes.find((o) => o != null);
   if (failure) {
     // Never leave an in-flight verification dangling; its outcome is discarded with the failed run.
-    if (verificationTask) await (verificationTask as Promise<unknown>).catch(() => undefined);
+    if (verificationTask !== null) await (verificationTask as Promise<unknown>).catch(() => undefined);
     throw failure;
   }
 
@@ -1052,7 +1052,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
 
   if (wantsVerification) {
     maybeStartVerification(); // Covers inputs supplied through initialSections.
-    if (!verificationTask) {
+    if (verificationTask === null) {
       // This run did not include both verification inputs (targeted re-runs): verify the guarded full
       // report, as before early verification existed.
       opts.onVerificationStart?.();
