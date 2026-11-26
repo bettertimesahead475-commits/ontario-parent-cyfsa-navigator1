@@ -36,6 +36,7 @@ import {
   VERIFICATION_STATUS,
 } from "../../shared/quoteVerification.js";
 import { buildComplianceMatrixFromReport } from "../../shared/complianceMatrixEngine.js";
+import { extractFencedBlock } from "../../shared/linearText.js";
 
 export { isVerbatimQuoteStatus };
 
@@ -151,7 +152,9 @@ export function toStrList(v: unknown, max: number, altKeys?: unknown[]): string[
     if (res.length > 0) return res;
   }
   if (typeof v === 'string' && v.trim()) {
-    const lines = v.split(/\r?\n|[•\-]\s+|\d+\.\s+/).map((s) => s.trim()).filter(Boolean);
+    // (?<!\d): a numbered-item marker starts only where a digit run starts, which is where it always matched anyway
+    // (no separator ends in a digit); without it a long digit run was rescanned from every one of its positions.
+    const lines = v.split(/\r?\n|[•\-]\s+|(?<!\d)\d+\.\s+/).map((s) => s.trim()).filter(Boolean);
     if (lines.length > 0) return lines.slice(0, max);
     return [v.trim()];
   }
@@ -576,7 +579,9 @@ export function neutralizeDocumentTags(text: string): string {
   // Built with RegExp and fromCharCode so the source stays plain ASCII. Matches <document>, </document>,
   // and variants with spaces, tabs or line breaks inside the tag (found by eval/analyzer-guards); the angle brackets
   // become single guillemets so the tag no longer parses.
-  const tag = new RegExp("<\\s*/?\\s*document\\s*>", "gi");
+  // The slash is grouped with the whitespace after it, so the two whitespace runs can never compete for the same
+  // characters ("<\s*/?\s*" backtracked quadratically on "<" followed by a long run of whitespace).
+  const tag = new RegExp("<\\s*(?:/\\s*)?document\\s*>", "gi");
   const open = String.fromCharCode(0x2039), close = String.fromCharCode(0x203a);
   return text.replace(tag, (m) => open + m.slice(1, -1) + close);
 }
@@ -652,8 +657,9 @@ export function parseJsonLenient(text: string): any {
 export function parseJsonObject(text: string): any | null {
   if (!text) return null;
   let t = text.trim();
-  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced) t = fenced[1].trim();
+  // Linear equivalent of /```(?:json)?\s*([\s\S]*?)```/i, which backtracked polynomially on an unclosed fence.
+  const fenced = extractFencedBlock(t, { ignoreCase: true });
+  if (fenced !== null) t = fenced.trim();
   const start = t.indexOf("{");
   if (start < 0) return null;
   let depth = 0;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { repairTruncatedJsonObject } from "./directAnalyzer.js";
 import {
   buildDirectAnalysisPrompt,
   DIRECT_ANALYSIS_MAX_CHARS,
@@ -300,5 +301,21 @@ describe("runDirectAnalysis", () => {
         requestId: "req_fatal_err",
       })
     ).rejects.toThrow("Invalid API key");
+  });
+});
+
+// SonarCloud S8786: the fence pattern in repairTruncatedJsonObject now goes through shared extractFencedBlock
+// (allowUnterminated), which is pinned against the original pattern in api/services/linearText.test.ts.
+describe("repairTruncatedJsonObject fence handling", () => {
+  it("reads closed, unclosed and JSON-tagged fences as before", () => {
+    expect(repairTruncatedJsonObject('```json\n{"a": 1}\n```')).toEqual({ a: 1 });
+    expect(repairTruncatedJsonObject('```JSON\n{"a": [1, 2')).toEqual({ a: [1, 2] });
+    expect(repairTruncatedJsonObject('{"b": "x"}')).toEqual({ b: "x" });
+  });
+
+  it("is linear on an unclosed fence followed by 50,000 spaces", () => {
+    const t0 = performance.now();
+    expect(repairTruncatedJsonObject("```" + " ".repeat(50_000))).toBeNull();
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });

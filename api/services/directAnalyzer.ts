@@ -11,6 +11,7 @@
 
 import { AnalyzerError, logAnalyzerDiagnostic } from "./analyzerErrors.js";
 import { ANALYZER_SYSTEM_PROMPT, FIELD_SCHEMAS } from "./analyzerPrompts.js";
+import { extractFencedBlock } from "../../shared/linearText.js";
 import {
   applyReportGuards,
   CHRONOLOGY_SCHEMA,
@@ -304,8 +305,8 @@ export interface SalvagedDirectSections {
 export function repairTruncatedJsonObject(text: string): Record<string, any> | null {
   if (!text) return null;
   let t = text.trim();
-  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/i);
-  if (fenced) t = fenced[1].trim();
+  const fenced = extractFencedBlock(t, { ignoreCase: true, allowUnterminated: true });
+  if (fenced !== null) t = fenced.trim();
   const start = t.indexOf("{");
   if (start < 0) return null;
   t = t.slice(start);
