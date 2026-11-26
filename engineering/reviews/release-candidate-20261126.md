@@ -188,3 +188,14 @@ used on 2026-11-25. Verify its availability before the release (it is listed as 
 4. Staging preview variables and the choice of database for the preview (owner decision).
 5. Owner approval of the $1.20 phase A spend (no paid inference has been run).
 6. Owner approval to deploy after 1–5.
+
+---
+
+## Update: release pull request and property-based differential (2026-11-26, final round)
+
+- Release pull request: **#146** (base `migration/cloudflare-staging-20261029`, the production branch at `be46ad7`; head `release/candidate-20261126`). Opening or updating it runs CI only; it does not deploy. Its description states that merge and deployment follow passing checks and the owner's approval.
+- Current code head: `e2cebbf`. CI #889 (pull_request synchronize) was in progress when this record was written; CI #888 passed on an earlier head. The run for `e2cebbf` must be read from the Actions page before any merge decision.
+- Historical oracle: `tests/devin/fixtures/quoteVerificationIntegration.ts` restored byte-identical to its first committed version (`f86cdbe`, sha1 2623d03b…). It is no longer edited.
+- Differential test is now property-based (32,000 seeded cases): (1) prepared and direct locators agree; (2) no quotation that the oracle did not find is verified; (3) every verified-to-unverified change is explained by a documented rule, checked independently against the source: hyphen compound, negating word, contraction, soft-hyphen word join. An ambiguity resolved by a documented rule is reported when the verified span is clean.
+- Matcher fixes in `e2cebbf`: a negating word counts only when it is a real word (an em dash mapped to "-" is not a hyphen for the negation scan); a quotation whose only occurrence follows a negating word is ABSENT, and one that also has a valid occurrence is AMBIGUOUS.
+- Known open items: browser acceptance with mocked inference (not run; scope given to Devin); Cloudflare support case (not submitted; the Cloudflare dashboard did not load in the browser); preview variables for staging (owner steps in `engineering/incidents/staging-preview-configuration-2026-11-26.md`); live acceptance spend (not authorized).
