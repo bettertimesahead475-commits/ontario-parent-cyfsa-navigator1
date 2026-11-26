@@ -10,6 +10,12 @@ vi.mock('../functions/api/_analysis-jobs', () => ({
   saveJobState: () => mockSaveJobState(),
 }));
 
+// The analysis-id ownership pre-check is covered by tests/devin/job-owner-conflict-fail-closed.test.ts.
+vi.mock('../functions/api/_durable-analysis-jobs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../functions/api/_durable-analysis-jobs')>()),
+  jobOwnership: vi.fn(async () => 'clear'),
+}));
+
 const mockAuthVerification = vi.fn();
 const mockSessionRead = vi.fn();
 
