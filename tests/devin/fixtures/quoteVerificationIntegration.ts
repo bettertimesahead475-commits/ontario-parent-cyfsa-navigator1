@@ -1,7 +1,5 @@
-// Oracle: shared/quoteVerification.ts at eaca5cf (engineering/integration, with DEVIN-P2-01), plus DEVIN-P2-01b
-// (soft hyphens and zero-width marks skipped at match edges, combining marks, U+2018/U+201B/U+02BC apostrophes). The
-// unwrapQuote body is restored to the be46ad7 regex, which gives the same result, because shared/linearText is not on
-// this branch.
+// Oracle: shared/quoteVerification.ts at eaca5cf (engineering/integration, with DEVIN-P2-01). Only the unwrapQuote
+// body is restored to the be46ad7 regex, which gives the same result, because shared/linearText is not on this branch.
 /**
  * Quotation location and display rules for analyzer reports. Pure, so the server and the UI use the same definitions.
  *
@@ -102,41 +100,18 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
   return { chars, starts, ends };
 }
 
-const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
-const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC\uFF07]$/u;
-const HYPHEN = /^[-\u2010\u2011]$/u;
-const LETTER = /[\p{L}\p{M}]/u;
-
-/** Words whose omission inverts the meaning of the words that follow them. */
-const NEGATORS = new Set(["not", "no", "nor", "never", "without", "non"]);
-
-/** The whole word immediately before index i (over spaces and hyphens, lowercased), or empty when there is none. */
-function precedingWord(chars: string[], i: number): string {
-  let j = i;
-  while (j >= 0 && (/\s/u.test(chars[j]) || HYPHEN.test(chars[j]))) j--;
-  const end = j;
-  while (j >= 0 && LETTER.test(chars[j])) j--;
-  return chars.slice(j + 1, end + 1).join("").toLowerCase();
-}
-
-/** First index from i, moving by step, that is not a soft hyphen or zero-width mark. */
-function skipDropped(chars: string[], i: number, step: 1 | -1): number {
-  while (i >= 0 && i < chars.length && DROPPED.has(chars[i])) i += step;
-  return i;
-}
+const WORD_CHAR = /[\p{L}\p{N}]/u;
 
 /**
  * Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous.
  * A match must not start or end inside a word: "true that he struck" is not a quotation of "untrue that he struck".
  */
-function occurrences(haystack: string[], needle: string[], sourceChar?: (i: number) => string | undefined): number[] {
+function occurrences(haystack: string[], needle: string[]): number[] {
   if (needle.length === 0) return [];
   const h = haystack.join("");
   const n = needle.join("");
-  const boundedStart = WORD_CHAR.test(needle[skipDropped(needle, 0, 1)] ?? "");
-  const boundedEnd = WORD_CHAR.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
-  const startsWithLetter = LETTER.test(needle[skipDropped(needle, 0, 1)] ?? "");
-  const endsWithLetter = LETTER.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
+  const boundedStart = WORD_CHAR.test(needle[0]);
+  const boundedEnd = WORD_CHAR.test(needle[needle.length - 1]);
   const hits: number[] = [];
   let index = 0;
   let scanned = 0;
@@ -144,25 +119,14 @@ function occurrences(haystack: string[], needle: string[], sourceChar?: (i: numb
   while (at >= 0 && hits.length < 2) {
     index += Array.from(h.slice(scanned, at)).length;
     scanned = at;
-    const beforeAt = skipDropped(haystack, index - 1, -1);
-    const before = haystack[beforeAt];
-    const afterAt = skipDropped(haystack, index + needle.length, 1);
-    const after = haystack[afterAt];
-    const tAt = skipDropped(haystack, afterAt + 1, 1);
-    // A hyphen between two letters joins one compound word: "violent" is not a quotation of "non-violent".
-    // Only a real hyphen between letters joins a compound: a dash mapped to "-" for variant matching, or a list
-    // separator such as "1-Child", still ends a word.
-    const cutsCompoundStart = startsWithLetter && HYPHEN.test(sourceChar ? sourceChar(beforeAt) ?? "" : before ?? "") &&
-      LETTER.test(haystack[skipDropped(haystack, beforeAt - 1, -1)] ?? "");
-    const cutsCompoundEnd = endsWithLetter && HYPHEN.test(sourceChar ? sourceChar(afterAt) ?? "" : after ?? "") &&
-      LETTER.test(haystack[skipDropped(haystack, afterAt + 1, 1)] ?? "");
-    const cutsWordStart = boundedStart && before !== undefined && (WORD_CHAR.test(before) || cutsCompoundStart);
+    const before = haystack[index - 1];
+    const after = haystack[index + needle.length];
+    const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
     // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
-    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[tAt] ?? "") &&
-      !WORD_CHAR.test(haystack[skipDropped(haystack, tAt + 1, 1)] ?? "");
-    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction || cutsCompoundEnd);
-    const cutsNegation = startsWithLetter && NEGATORS.has(precedingWord(haystack, beforeAt));
-    if (!cutsWordStart && !cutsWordEnd && !cutsNegation) hits.push(index);
+    const cutsContraction = (after === "'" || after === "\u2019") && /^t$/i.test(haystack[index + needle.length + 1] ?? "") &&
+      !WORD_CHAR.test(haystack[index + needle.length + 2] ?? "");
+    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
+    if (!cutsWordStart && !cutsWordEnd) hits.push(index);
     at = h.indexOf(n, at + 1);
   }
   return hits;
@@ -245,7 +209,7 @@ export function locateQuote(source: string, quote: string): QuoteLocation {
 
   const vs = canonicalize(body, "variant");
   const vq = canonicalize(q, "variant");
-  const vHits = occurrences(vs.chars, vq.chars, (i) => bodyCp[vs.starts[i]]);
+  const vHits = occurrences(vs.chars, vq.chars);
   if (vHits.length === 1) {
     const h = vHits[0];
     return found("CASE_OR_PUNCTUATION_VARIANT", vs.starts[h], vs.ends[h + vq.chars.length - 1]);

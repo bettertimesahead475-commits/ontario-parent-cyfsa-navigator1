@@ -122,6 +122,7 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
   const startsWithLetter = LETTER.test(needle[skipDropped(needle, 0, 1)] ?? "");
   const endsWithLetter = LETTER.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
   const hits: number[] = [];
+  let negatedOccurrence = false;
   let index = 0;
   let scanned = 0;
   let at = h.indexOf(n);
@@ -148,11 +149,19 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
     // A quotation that starts right after a negating word ("Not guilty" -> "guilty", "No evidence" -> "evidence", or
     // "non - violent" split by OCR) drops the negation. It is not a faithful quotation, so the match is not counted;
     // the finding is then reported as not located (unverified), never silently removed.
-    const cutsNegation = startsWithLetter && NEGATORS.has(precedingWord(haystack, beforeAt));
+    const cutsNegation = startsWithLetter && NEGATORS.has(precedingWord(haystack, beforeAt, sourceChar));
     const splitsCharacter = splitsSurrogatePair(h, at) || splitsSurrogatePair(h, at + n.length);
-    if (!cutsWordStart && !cutsWordEnd && !cutsNegation && !splitsCharacter) hits.push(index);
+    if (!cutsWordStart && !cutsWordEnd && !splitsCharacter) {
+      // An occurrence that follows a negating word is not a valid match, but it is still an occurrence of the words:
+      // see below, where it makes a single valid match ambiguous instead of unique.
+      if (cutsNegation) negatedOccurrence = true;
+      else hits.push(index);
+    }
     at = h.indexOf(n, at + 1);
   }
+  // One valid match plus a negated occurrence: the quotation is not located uniquely, so it is ambiguous and cannot verify.
+  // A negated occurrence alone is not located at all (no valid hit).
+  if (negatedOccurrence && hits.length === 1) hits.push(hits[0]);
   return hits;
 }
 
@@ -169,9 +178,12 @@ const NEGATORS = new Set(["not", "no", "nor", "never", "without", "non"]);
  * The whole word immediately before index i (scanning back over spaces and hyphens, lowercased), or "" when there is
  * none. Used to see whether a quotation starts right after a negating word.
  */
-function precedingWord(chars: string[], i: number): string {
+function precedingWord(chars: string[], i: number, sourceChar?: (i: number) => string | undefined): string {
+  // Only a real hyphen (in the source text) continues a negated word. An em dash mapped to "-" for variant matching is
+  // a separator, not a hyphen: "non- — CAFÉ" must not make "CAFÉ" the object of "non".
+  const realHyphen = (k: number) => HYPHEN.test(sourceChar ? sourceChar(k) ?? "" : chars[k] ?? "");
   let j = i;
-  while (j >= 0 && (/\s/u.test(chars[j]) || HYPHEN.test(chars[j]))) j--;
+  while (j >= 0 && (/\s/u.test(chars[j]) || realHyphen(j))) j--;
   const end = j;
   while (j >= 0 && LETTER.test(chars[j])) j--;
   return chars.slice(j + 1, end + 1).join("").toLowerCase();
