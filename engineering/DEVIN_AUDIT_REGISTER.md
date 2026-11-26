@@ -27,3 +27,8 @@ Scope: independent audit per the CYFSA Navigator principal-engineering directive
 - Live Supabase RLS/RPC verification (no isolated DB; production holds real customers).
 - Paid inference / analyzer quality on real models (budget reserved).
 - UI-driven multi-tab / network-interruption testing.
+
+## Phase two (analyzer accuracy + test effectiveness)
+See `engineering/DEVIN_PHASE2_AUDIT_REGISTER.md` (findings P2-01..04, 19 targeted mutations) and
+`engineering/handoffs/devin-phase2-2026-11-25.md`. Measured after phase two: `vitest run` 283 files / 4339 tests passed,
+`tsc --noEmit` exit 0.

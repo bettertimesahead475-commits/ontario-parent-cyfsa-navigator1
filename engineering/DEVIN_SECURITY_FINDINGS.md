@@ -34,3 +34,13 @@ Independent audit by Devin (Cognition AI), branch `engineering/devin-independent
 - **DEVIN-OBS-01:** `redeem_access_code_atomic` only enforces email when `access_codes.email` is set; `activate-code.ts` skips the purchase-reference check when the typed email equals the signed-in email. An unbound code (legacy / manually issued) is a bearer token. Confirm all issuance paths bind an email.
 - **DEVIN-OBS-02:** `_auth-check.ts` fetches Google JWKS per request; a Google blip returns 503 for every authenticated call. Cache keys per `Cache-Control`.
 - **DEVIN-OBS-03:** already tracked as S-05 / T-xx (persistent rate limiting).
+
+## Phase two (branch `engineering/devin-phase-two-audit`)
+Full details, reproductions and mutation results: `engineering/DEVIN_PHASE2_AUDIT_REGISTER.md`.
+
+| ID | Severity | Status | Area | Summary |
+|---|---|---|---|---|
+| DEVIN-P2-01 | Medium | Fixed (PR #138) | Quotation verification | Quotes matched inside words or clipped from "n't", so negated wording showed as word-for-word |
+| DEVIN-P2-02 | Medium | Fixed (PR #138) | Citation verification | Fused/unparsed pinpoints dropped, so fabricated sections showed as internal-reference matches |
+| DEVIN-P2-03 | Low | Fixed (PR #138) | Red-flag severity | Single-CRITICAL rule ran before quote verification |
+| DEVIN-P2-04 | Low | Open | Page-evidence quotes | `pageSources.verifyQuote` + pending SQL `navigator_quote_hits` share the P2-01 behaviour |

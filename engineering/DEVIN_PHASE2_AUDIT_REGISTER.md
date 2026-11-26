@@ -1,7 +1,7 @@
 # Devin Phase-Two Audit Register (analyzer accuracy + test effectiveness)
 
-Branch `engineering/devin-phase-two-audit` from `engineering/integration` @ `3ad1c8c`. Kept separate from the phase-one
-`DEVIN_*` registers (PR #137) to avoid add/add conflicts; fold into them once #137 is integrated.
+Branch `engineering/devin-phase-two-audit` from `engineering/integration` @ `3ad1c8c`. Phase-one registers (`DEVIN_*`, PR #137,
+merged) carry summary rows pointing here.
 Synthetic documents and mocked model output only. No production, database, deployment or paid inference.
 
 ## Findings
