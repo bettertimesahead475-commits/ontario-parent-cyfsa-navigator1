@@ -1,6 +1,6 @@
 /**
  * DEVIN-PERF-01 differential test. The production implementation (be46ad7 shared/quoteVerification.ts, kept verbatim in
- * fixtures/quoteVerificationBaseline.ts as the oracle) is compared with the prepared locator on deterministic synthetic
+ * fixtures/quoteVerificationProduction.ts as the oracle) is compared with the prepared locator on deterministic synthetic
  * inputs: Unicode punctuation, soft hyphens, zero-width marks, astral emoji, NBSP and ideographic spaces, page markers
  * that a quotation may cross, and case or punctuation variants. Seeded, so every run checks the same 32,000 cases.
  * Synthetic text only.

@@ -998,9 +998,9 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   // and dispatches the longest sections first (verification inputs redFlags and thresholds lead).
   const defaultConcurrency = opts.mode === "full" ? 3 : keys.length;
   const concurrency = Math.min(Math.max(1, opts.maxConcurrency ?? defaultConcurrency), keys.length, 6);
-  // Chronology is dispatched right after redFlags: it is the section most likely to need a retry, and it previously
-  // started last, when the execution budget was nearly spent.
-  const FORENSIC_DISPATCH_ORDER: SectionKey[] = ["redFlags", "chronology", "guidance", "thresholds", "timeline", "overview"];
+  // redFlags and thresholds stay in the first wave: verification reads both and starts as soon as both finish. Chronology
+  // now starts before guidance and overview (it previously started last, when the execution budget was nearly spent).
+  const FORENSIC_DISPATCH_ORDER: SectionKey[] = ["redFlags", "thresholds", "chronology", "guidance", "timeline", "overview"];
   const queue = opts.mode === "full"
     ? [...keys].sort((a, b) => (FORENSIC_DISPATCH_ORDER.indexOf(a) + 1 || 99) - (FORENSIC_DISPATCH_ORDER.indexOf(b) + 1 || 99))
     : [...keys];
