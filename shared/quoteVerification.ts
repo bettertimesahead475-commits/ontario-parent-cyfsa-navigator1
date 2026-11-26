@@ -120,7 +120,10 @@ function occurrences(haystack: string[], needle: string[]): number[] {
     const before = haystack[index - 1];
     const after = haystack[index + needle.length];
     const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
-    const cutsWordEnd = boundedEnd && after !== undefined && WORD_CHAR.test(after);
+    // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
+    const cutsContraction = (after === "'" || after === "\u2019") && /^t$/i.test(haystack[index + needle.length + 1] ?? "") &&
+      !WORD_CHAR.test(haystack[index + needle.length + 2] ?? "");
+    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
     if (!cutsWordStart && !cutsWordEnd) hits.push(index);
     at = h.indexOf(n, at + 1);
   }

@@ -86,4 +86,13 @@ describe('DEVIN-P2-02 citation pinpoints are parsed whole', () => {
   it('a genuine bundled citation is still matched', () => {
     expect(classifyCitation('CYFSA ss. 74(2) and 125(1)').status).toBe('INTERNAL_REFERENCE_MATCH');
   });
+  it('does not verify a quotation clipped from a "n\'t" negation', () => {
+    const doc = 'I cannot attend on Monday. I can\u2019t attend on Tuesday either.';
+    expect(locateQuote(doc, 'I can').status).not.toBe('EXACT');
+    expect(locateQuote("She won't sign the plan.", 'She wo').status).not.toBe('EXACT');
+    expect(locateQuote("The child's sister was present.", "The child").status).toBe('EXACT');
+  });
+  it('verifies provisions joined by an unspaced conjunction', () => {
+    expect(citedSections('CYFSA s. 74(2)and s. 125(1)')).toEqual(['74(2)', '125(1)']);
+  });
 });
