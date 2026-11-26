@@ -228,3 +228,75 @@ model a pre-extracted, page-cited date list) and document metadata.
 | $5 | S1: 2 Forensic at concurrency 3 vs 6 on staging (about $2.50); 4 Quick (about $0.90); 2 Final Case Assessment (about $0.60); 1 Forensic repeat for polling end-to-end | CPU/memory at 6 on a real Worker; PERF-01 CPU effect; 1 s completion detection end-to-end; first real Final Case Assessment timing |
 | $10 | $5 set + S2: 4 Forensic with document-prefix caching vs 4 without would exceed it, so 2 + 2 (about $5) | measured cache-hit rate, time-to-first-token and cost delta on Forensic |
 | $20 | $10 set + S3/S4: pipelined verification vs single pass on 3 synthetic labelled documents (about $4) and Sonnet vs Opus Forensic sections on the same 3 (about $5) | whether pipelining or a faster model keeps findings, citations and verification verdicts equal; numbers too small for statistics, enough to decide whether a larger study is worthwhile |
+
+## 7. Phase three (authorized 2026-11-26 10:13)
+
+### 7.1 Memory (DEVIN-PERF-04, implemented)
+
+Where the memory went (MEASURED, Node 22, 200-page synthetic document, 819,851 characters, 25 red flags, mocked
+inference through the real adapter):
+
+| Run | Smallest `--max-old-space-size` that completes |
+|---|---|
+| Zero red flags (no quote checks), concurrency 3 | 24 MB |
+| 25 red flags, `eaca5cf` (before PERF-01), concurrency 3 | 80 MB (64 fails) |
+| 25 red flags, PERF-01 locator, concurrency 3 | 80 MB (76 fails) |
+| 25 red flags, compact locator, concurrency 3 | 24 MB |
+| 25 red flags, compact locator, concurrency 6 | 32 MB (24 fails) |
+
+The quote checks were essentially the whole excess: everything else in the run (prompts, six SSE streams, section
+results, verification) fits in the 24 MB floor. The earlier "135 MB" figure was V8 heap including garbage not yet
+collected, not live memory.
+
+Retained memory of one prepared locator on the 200-page document, measured after forced GC as heap plus
+ArrayBuffers: **55.0 MB before, 14.9 MB after**. Cause: one JavaScript string per character (`Array.from`), three
+number arrays per canonical form, and a number array mapping every character to its source offset. Now: the
+canonical strings, `Int32Array` span maps (8 bytes per character), a sparse table of removed page markers and a
+table of astral characters. Matching rules are unchanged: `tests/devin/quote-locator-differential.test.ts` (32,000
+cases against the `eaca5cf` oracle) and a separate 32,000-case fuzz report 0 mismatches. Lone UTF-16 surrogates are
+preserved (String.fromCharCode, not TextDecoder).
+
+Node versus Worker: `--max-old-space-size` limits only V8 old space; ArrayBuffers (about 13 MB of the 14.9 MB here),
+young generation and the code of the bundle are extra, and Workers use pointer compression (pointer arrays take
+half the space). PROJECTED Worker peak for this run: well under 90 MB, but **not measured**: Cloudflare reports
+isolate memory only for real Worker runs (budget item 1 below). The 200-page limit and all evidence are unchanged.
+
+Not changed, because they were not material after the fix: AI response buffers (about 24 KB per section),
+retained section results, JSON serialization (the prompt string, JSON body and encoded bytes are about three
+copies of the document per in-flight call, about 2.5 MB each at 200 pages).
+
+### 7.2 Completion polling under load (PROJECTED from code, not load-tested)
+
+Per poll of `/api/analyze/job/:id` while running: one Firebase token check (keys cached, CPU only), one PostgREST
+read of the job ledger; the report is read from Storage only once, on completion. The endpoint has no rate limit,
+so 1 s polling cannot trip one. At 1 s: about 100 reads per Forensic run and 35 per Quick run (was about 25 and 10
+at the old cap). 100 customers analysing at once: about 100 requests per second to the endpoint and 100 simple
+indexed reads per second on Supabase. Recommended for Claude: a per-account limit of a few requests per second on
+this endpoint to bound abusive clients, and a load test on staging before release.
+
+### 7.3 Report cache
+
+Pending migration now has a 30-day eligibility check (`expires_at <= completed_at + 30 days`), a rollback script
+(`rollback_navigator_report_cache.sql`, safe at any time because the table is only an index), and PostgreSQL tests
+(`tests/devin/report-cache-migration.pg.test.ts`, 6 passed on local PostgreSQL 14): one row per owner and key,
+no anon/authenticated access, owner-scoped forget, purge removes only expired or deleted index rows, and clean
+rollback and re-apply. Expiry never deletes the saved report. Still needed from Claude before wiring:
+`ANALYZER_VERSION`, `PROMPT_VERSION` and a legal-reference version constant, `REPORT_CACHE_SECRET`, and the
+retention decision.
+
+### 7.4 Consolidated $20 paid-testing plan (not spent; ordered by value per dollar)
+
+Estimates use repository `MODEL_PRICING` and a 10,000-token document (Quick about $0.22, Forensic about $1.25, Final
+Case Assessment about $0.30); a 200-page document costs about 10× more input.
+
+| # | Test | Approx. cost | Decides |
+|---|---|---|---|
+| 1 | Staging Forensic on a synthetic 200-page document, concurrency 3, read Worker CPU and memory | $3.00 | Whether the memory fix holds on a real Worker (release blocker) |
+| 2 | One Quick, one Forensic, one Final Case Assessment on a 10-page synthetic document, browser timing with 1 s polling | $1.80 | Real end-to-end timings for all three analyzers |
+| 3 | Forensic with document-prefix caching, 2 runs (cold, warm) | $2.20 | Real cache-hit rate, time to first token and cost delta |
+| 4 | Pipelined second review vs single pass, same 2 synthetic labelled documents | $4.50 | Whether earlier verification keeps every verdict |
+| 5 | Sonnet vs Opus for Forensic sections on the same 2 documents | $4.00 | Whether a faster model is worth a larger accuracy study |
+| 6 | Accuracy regression: rerun the adversarial corpus cases that need a real model (5 Quick) | $1.10 | No regression from PERF-01..04 on real output |
+| 7 | Staging Forensic at concurrency 6, once | $1.25 | Closes the `exceededCpu` question |
+| | Reserve for one retry | $2.15 | |
+| | **Total** | **$20.00** | |
