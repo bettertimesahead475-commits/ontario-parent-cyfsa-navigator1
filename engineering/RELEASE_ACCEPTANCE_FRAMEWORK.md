@@ -27,7 +27,7 @@ A `FAILED` requirement fixed on an unmerged branch stays `FAILED` for the candid
 
 | # | Run | Command |
 |---|---|---|
-| R1 | Install from lockfile | `npm ci` (Node from `.nvmrc`) |
+| R1 | Install from lockfile without lifecycle scripts | `npm ci --ignore-scripts` (Node from `.nvmrc`; see `CLAUDE.md`) |
 | R2 | Type check | `npx tsc --noEmit -p .` |
 | R3 | Full unit/integration suite | `NODE_OPTIONS=--no-experimental-webstorage npx vitest run` |
 | R4 | PostgreSQL suites against a disposable local cluster (never staging/production) | `CREDIT_PG_URL=… NAVIGATOR_PG_TEST_ADMIN_URL=… NODE_OPTIONS=--no-experimental-webstorage npx vitest run $(ls api/services/*.pg.test.ts api/*.pg.test.ts)` |
