@@ -1,6 +1,7 @@
 import { computeFingerprint } from './m2a-deterministic.js';
 import { M2CClaim, M2CAttribution } from './m2c-claims.js';
 import { M2DRelationship } from './m2d-relationships.js';
+import { byCodeUnit } from "./codeUnitOrder";
 
 export const M2E_ALGORITHM_VERSION = '1.0.1';
 
@@ -80,13 +81,13 @@ export function computeFindingFingerprint(
   provenance: FindingProvenance
 ): string {
   const sortedProv = {
-    claimIds: [...(provenance.claimIds || [])].sort(),
-    eventIds: [...(provenance.eventIds || [])].sort(),
-    relationshipIds: [...(provenance.relationshipIds || [])].sort(),
-    attributionIds: [...(provenance.attributionIds || [])].sort(),
-    sourceIds: [...(provenance.sourceIds || [])].sort(),
-    actorIds: [...(provenance.actorIds || [])].sort(),
-    locationIds: [...(provenance.locationIds || [])].sort(),
+    claimIds: [...(provenance.claimIds || [])].sort(byCodeUnit),
+    eventIds: [...(provenance.eventIds || [])].sort(byCodeUnit),
+    relationshipIds: [...(provenance.relationshipIds || [])].sort(byCodeUnit),
+    attributionIds: [...(provenance.attributionIds || [])].sort(byCodeUnit),
+    sourceIds: [...(provenance.sourceIds || [])].sort(byCodeUnit),
+    actorIds: [...(provenance.actorIds || [])].sort(byCodeUnit),
+    locationIds: [...(provenance.locationIds || [])].sort(byCodeUnit),
     semanticFingerprints: provenance.semanticFingerprints || {}
   };
 
@@ -292,14 +293,14 @@ export function generateEvidenceGaps(matterId: string, ctx: M2EContext): M2EFind
           'HIGH',
           'Unresolved conflict between claims ' + rel.claimAId + ' and ' + rel.claimBId,
           'The available record does not currently contain a source resolving this conflict.',
-          { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(), semanticFingerprints }
+          { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(byCodeUnit), semanticFingerprints }
         ));
         
         findings.push(createUnansweredQuestion(
           matterId,
           'HIGH',
           'Claims ' + rel.claimAId + ' and ' + rel.claimBId + ' contain an unresolved contradiction. Is there an independent source in the available case record that resolves which account is supported?',
-          { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(), semanticFingerprints }
+          { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(byCodeUnit), semanticFingerprints }
         ));
       }
     }
@@ -312,7 +313,7 @@ export function generateEvidenceGaps(matterId: string, ctx: M2EContext): M2EFind
           'MEDIUM',
           'Actor inconsistency requires resolution',
           'Actor identity or role is material to a structured claim/event and remains unresolved or ambiguous.',
-          { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(), semanticFingerprints }
+          { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(byCodeUnit), semanticFingerprints }
         ));
     }
 
@@ -324,7 +325,7 @@ export function generateEvidenceGaps(matterId: string, ctx: M2EContext): M2EFind
           'MEDIUM',
           'Location inconsistency requires resolution',
           'Location is material to the structured event/claim and remains unresolved or ambiguous.',
-          { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(), semanticFingerprints }
+          { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(byCodeUnit), semanticFingerprints }
         ));
     }
 
@@ -352,7 +353,7 @@ export function generateEvidenceGaps(matterId: string, ctx: M2EContext): M2EFind
                 'HIGH',
                 'Quality review required for support relationship ' + rel.id,
                 reason,
-                { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(), semanticFingerprints }
+                { relationshipIds: [rel.id], claimIds: [rel.claimAId, rel.claimBId].sort(byCodeUnit), semanticFingerprints }
             ));
         }
     }

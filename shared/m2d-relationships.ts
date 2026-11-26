@@ -1,5 +1,6 @@
 import { computeFingerprint } from './m2a-deterministic.js';
 import { M2CClaim, M2CAttribution, M2CEvolution, resolveRootLineages, EvolutionType } from './m2c-claims.js';
+import { byCodeUnit } from "./codeUnitOrder";
 
 export const RELATIONSHIP_TYPES = [
   'DIRECT_CONTRADICTION',
@@ -140,7 +141,7 @@ export function computeRelationshipFingerprint(
     depB = claimASemanticFingerprint;
   }
 
-  const sortedDims = [...dimensions].sort();
+  const sortedDims = [...dimensions].sort(byCodeUnit);
 
   return computeFingerprint([{ id: 'algorithmVersion', version: M2D_RELATIONSHIP_ALGORITHM_VERSION }], {
     relationshipType,

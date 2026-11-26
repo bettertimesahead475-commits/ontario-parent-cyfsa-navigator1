@@ -9,6 +9,7 @@
  * and two administrators acting at once can never overwrite each other's record.
  */
 import { normalizeSupabaseKey } from './_supabase-key';
+import { byCodeUnit } from "../../shared/codeUnitOrder";
 
 export type AdminStoreEnv = { STAGING_SUPABASE_URL?: string; STAGING_SUPABASE_SERVICE_ROLE_KEY?: string };
 export const AUDIT_BUCKET = 'analysis_jobs';
@@ -142,7 +143,7 @@ export async function listAuditNames(env: AdminStoreEnv, limit = 1000, fetcher: 
     names.push(...valid);
     if (!Array.isArray(page) || page.length < pageSize) break;
   }
-  return names.sort().reverse();
+  return names.sort(byCodeUnit).reverse();
 }
 
 export async function readAuditEvent(env: AdminStoreEnv, name: string, fetcher: typeof fetch = fetch): Promise<AuditEvent | null> {
@@ -217,7 +218,7 @@ export async function restPage<T>(env: AdminStoreEnv, path: string, fetcher: typ
     return { rows: await rest<T[]>(env, path, {}, fetcher), total: null };
   }
   const range = response.headers.get("content-range") || "";
-  const total = range.includes("/") ? Number(range.slice(range.lastIndexOf("/") + 1)) : NaN;
+  const total = range.includes("/") ? Number(range.slice(range.lastIndexOf("/") + 1)) : Number.NaN;
   const text = await response.text();
   return { rows: (text ? JSON.parse(text) : []) as T[], total: Number.isFinite(total) ? total : null };
 }

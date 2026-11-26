@@ -155,13 +155,13 @@ export const onRequestPost = async ({
         const rows = (await existingRes.json()) as any[];
         if (Array.isArray(rows) && rows.length > 0) {
           const row = rows[0];
-          const existingAmount = typeof row.amount === 'number' ? row.amount : parseFloat(row.amount);
+          const existingAmount = typeof row.amount === 'number' ? row.amount : Number.parseFloat(row.amount);
           return Response.json(
             {
               referenceNumber: row.reference_number,
-              amount: isNaN(existingAmount) ? amount : existingAmount,
+              amount: Number.isNaN(existingAmount) ? amount : existingAmount,
               payTo: paymentEmail,
-              instructions: getInstructions(row.reference_number, isNaN(existingAmount) ? amount : existingAmount, paymentEmail),
+              instructions: getInstructions(row.reference_number, Number.isNaN(existingAmount) ? amount : existingAmount, paymentEmail),
               reused: true,
             },
             { status: 200, headers: DEFAULT_HEADERS }
@@ -232,13 +232,13 @@ export const onRequestPost = async ({
           const rows = (await raceRes.json()) as any[];
           if (Array.isArray(rows) && rows.length > 0) {
             const row = rows[0];
-            const existingAmount = typeof row.amount === 'number' ? row.amount : parseFloat(row.amount);
+            const existingAmount = typeof row.amount === 'number' ? row.amount : Number.parseFloat(row.amount);
             return Response.json(
               {
                 referenceNumber: row.reference_number,
-                amount: isNaN(existingAmount) ? amount : existingAmount,
+                amount: Number.isNaN(existingAmount) ? amount : existingAmount,
                 payTo: paymentEmail,
-                instructions: getInstructions(row.reference_number, isNaN(existingAmount) ? amount : existingAmount, paymentEmail),
+                instructions: getInstructions(row.reference_number, Number.isNaN(existingAmount) ? amount : existingAmount, paymentEmail),
                 reused: true,
               },
               { status: 200, headers: DEFAULT_HEADERS }

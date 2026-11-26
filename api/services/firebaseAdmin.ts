@@ -102,7 +102,7 @@ export async function verifyFirebaseTokenViaGoogleTokenInfo(
     if (!data.sub || !data.exp) return null;
 
     const exp = Number(data.exp);
-    if (isNaN(exp) || exp < Math.floor(Date.now() / 1000)) return null;
+    if (Number.isNaN(exp) || exp < Math.floor(Date.now() / 1000)) return null;
 
     // Verify audience matches our Google OAuth / Firebase client
     const expectedAudParts = ["100892974326", "gen-lang-client-0105737183"];

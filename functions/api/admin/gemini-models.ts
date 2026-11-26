@@ -6,6 +6,7 @@
  * documentation. Returns model names only: never the key or any provider error text.
  */
 import { GeminiError, listGeminiModels, resolveGeminiModel, type GeminiEnv } from '../_gemini';
+import { byCodeUnit } from "../../../shared/codeUnitOrder";
 
 interface Env extends GeminiEnv {
   ADMIN_SECRET?: string;
@@ -39,7 +40,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
         audioModel,
         audioModelAvailable: available.includes(audioModel),
         audioModelSource: env.GEMINI_AUDIO_MODEL?.trim() ? 'GEMINI_AUDIO_MODEL' : 'default',
-        availableModels: available.filter((m) => /^gemini-/.test(m)).sort(),
+        availableModels: available.filter((m) => /^gemini-/.test(m)).sort(byCodeUnit),
       },
       { status: 200, headers: HEADERS }
     );

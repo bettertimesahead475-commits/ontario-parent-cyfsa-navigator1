@@ -26,16 +26,16 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Type-check and focused forensic tests
         run: |
           npm run lint
-          npx vitest run api/cloudflare-deep-scan.test.ts api/cloudflare-analyzer-queue-producer.test.ts api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-staging-service-reuse.test.ts api/cloudflare-analyzer-model-adapter.test.ts
+          npx --no-install vitest run api/cloudflare-deep-scan.test.ts api/cloudflare-analyzer-queue-producer.test.ts api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-staging-service-reuse.test.ts api/cloudflare-analyzer-model-adapter.test.ts
       - name: Build staging-only Cloudflare Worker modules
         run: |
           mkdir -p deploy/generated
-          npx esbuild workers/staging-job-service-entrypoint.js --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/staging-analyzer-executor.mjs
-          npx esbuild workers/staging-queue-relay.ts --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/staging-analyzer-relay.mjs
+          npx --no-install esbuild workers/staging-job-service-entrypoint.js --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/staging-analyzer-executor.mjs
+          npx --no-install esbuild workers/staging-queue-relay.ts --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/staging-analyzer-relay.mjs
           test -s deploy/generated/staging-analyzer-executor.mjs
           test -s deploy/generated/staging-analyzer-relay.mjs
       - name: Publish reproducible bundles on isolated build branch

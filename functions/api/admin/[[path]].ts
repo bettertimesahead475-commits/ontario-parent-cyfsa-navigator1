@@ -379,7 +379,7 @@ async function issueCode(env: AdminEnv, payment: Payment, email: string, amount:
 
 async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
   const reference = typeof body.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
-  const received = typeof body.amountReceived === 'number' ? body.amountReceived : NaN;
+  const received = typeof body.amountReceived === 'number' ? body.amountReceived : Number.NaN;
   if (!REFERENCE.test(reference) || !Number.isFinite(received) || received <= 0 || received > 100000) return adminError('INVALID_REQUEST', 400, 'referenceNumber and amountReceived are required.');
   const payment = await paymentByReference(env, reference, fetcher);
   if (!payment) return adminError('PAYMENT_NOT_FOUND', 404, 'No payment request has that reference number.');
@@ -586,7 +586,7 @@ async function revokeAccessCode(env: AdminEnv, admin: AdminIdentity, body: Recor
 
 async function restoreCredits(env: AdminEnv, admin: AdminIdentity, body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
-  const credits = typeof body.credits === 'number' ? body.credits : NaN;
+  const credits = typeof body.credits === 'number' ? body.credits : Number.NaN;
   if (!UUID.test(sessionId) || !Number.isInteger(credits) || credits < 1 || credits > 25) return adminError('INVALID_REQUEST', 400, 'sessionId and a whole number of credits (1-25) are required.');
   const reason = reasonOf(body, true);
   if (reason instanceof Response) return reason;

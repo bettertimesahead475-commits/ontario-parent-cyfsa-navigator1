@@ -572,7 +572,7 @@ const app = express();
 // Trust reverse proxy (needed for Cloud Run containers and rate limiting headers)
 app.set("trust proxy", 1);
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3000;
 
 // Security features
 app.use(helmet({
@@ -2771,7 +2771,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     if (!job) {
       const match = jobId.match(/^req_(\d+)_/);
       if (match) {
-        const reqTs = parseInt(match[1], 10);
+        const reqTs = Number.parseInt(match[1], 10);
         if (Date.now() - reqTs < 90000) {
           // Honest grace response: no job record exists yet, so report "pending" with no
           // invented stage or percent. (This previously returned a fabricated

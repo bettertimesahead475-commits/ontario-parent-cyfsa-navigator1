@@ -38,7 +38,7 @@ function decodePdfString(token: string): string {
   if (token.startsWith('(') && token.endsWith(')')) {
     const raw = token.slice(1, -1);
     return raw
-      .replace(/\\([0-7]{1,3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+      .replace(/\\([0-7]{1,3})/g, (_, oct) => String.fromCharCode(Number.parseInt(oct, 8)))
       .replace(/\\n/g, '\n')
       .replace(/\\r/g, '\r')
       .replace(/\\t/g, '\t')

@@ -43,7 +43,7 @@ export interface ChronologyProjection {
 function validateIso(value: string | null): void {
     if (!value) return;
     const t = Date.parse(value);
-    if (isNaN(t)) throw new Error(`Invalid date string: ${value}`);
+    if (Number.isNaN(t)) throw new Error(`Invalid date string: ${value}`);
 }
 
 export function compareChronologyEvents(a: EventTiming, b: EventTiming): TemporalComparison {
@@ -69,7 +69,7 @@ export function compareChronologyEvents(a: EventTiming, b: EventTiming): Tempora
     let bLower = b.date_lower_bound ? Date.parse(b.date_lower_bound) : -Infinity;
     let bUpper = b.date_upper_bound ? Date.parse(b.date_upper_bound) : Infinity;
 
-    if (isNaN(aLower) || isNaN(aUpper) || isNaN(bLower) || isNaN(bUpper)) {
+    if (Number.isNaN(aLower) || Number.isNaN(aUpper) || Number.isNaN(bLower) || Number.isNaN(bUpper)) {
         throw new Error('NaN timestamp resulted from date parsing');
     }
 

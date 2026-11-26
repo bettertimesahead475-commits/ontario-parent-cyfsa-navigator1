@@ -22,11 +22,11 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Validate release isolation and Forensic safety
         run: |
           npm run lint
-          npx vitest run api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-analyzer-queue-producer.test.ts api/cloudflare-worker-config-isolation.test.ts api/cloudflare-analyzer-model-adapter.test.ts
+          npx --no-install vitest run api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-analyzer-queue-producer.test.ts api/cloudflare-worker-config-isolation.test.ts api/cloudflare-analyzer-model-adapter.test.ts
       - name: Enforce no production queue activation
         run: |
           node - <<'NODE'
@@ -42,7 +42,7 @@ jobs:
       - name: Build isolated inert production Worker code
         run: |
           mkdir -p deploy/generated
-          npx esbuild workers/analyzer-queue-consumer.ts --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/production-analyzer-preflight.mjs
+          npx --no-install esbuild workers/analyzer-queue-consumer.ts --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/production-analyzer-preflight.mjs
           test -s deploy/generated/production-analyzer-preflight.mjs
           grep -q 'ANALYZER_ENABLED' deploy/generated/production-analyzer-preflight.mjs
       - name: Publish inert preflight code on build-only branch

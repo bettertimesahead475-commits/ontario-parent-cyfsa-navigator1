@@ -551,7 +551,7 @@ export async function handleAnalyzeRequest(
             description: rf.explanation,
             severity: rf.severity,
             evidenceQuotes: rf.phraseDetected ? [rf.phraseDetected] : [],
-            pageNumber: rf.locationInDocument ? parseInt(rf.locationInDocument.match(/\d+/)?.[0] || '1', 10) : 1,
+            pageNumber: rf.locationInDocument ? Number.parseInt(rf.locationInDocument.match(/\d+/)?.[0] || '1', 10) : 1,
             paragraphReference: rf.locationInDocument,
           })),
           contradictions: (report.contradictions || []).map((c: any) => ({

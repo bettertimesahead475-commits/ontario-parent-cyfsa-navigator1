@@ -24,12 +24,12 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: TypeScript
         run: npm run lint
       - name: Automated tests
         run: npm test
       - name: Vite frontend build
-        run: npx vite build
+        run: npx --no-install vite build
       - name: Verify generated frontend
         run: test -s dist/index.html
