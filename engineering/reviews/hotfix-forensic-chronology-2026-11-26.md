@@ -1,66 +1,74 @@
-# Production hotfix candidate: Forensic chronology and quotation performance (2026-11-26)
+# Production hotfix candidate: Forensic chronology, quotation performance, browser job polling (2026-11-26)
 
-Status: **prepared, reviewed by one independent subagent (see below), NOT deployed.** Deployment needs owner approval and a
-controlled acceptance run.
+Status: **candidate prepared and reviewed once by an independent subagent; NOT yet reviewed by Devin; NOT deployed.**
+Deployment needs Devin's independent review, controlled acceptance, and the owner's approval.
 
 ## Base and branch
 
-- Production commit (verified from Cloudflare Pages): `be46ad7`, deployment `7c144cf7`.
-- Rollback deployment (preserved): `d5f2a3c9`, commit `cf67d8c`.
-- Hotfix branch: `hotfix/forensic-chronology-20261126` (pushed), head `9c75884`, based on `be46ad7`.
-- Not included: `engineering/integration`, report caching (`e940ef4`, `fa136fe`), database migrations, PR #142's
-  compact locator (`508946c`), and all other unfinished work.
+- Production (verified from Cloudflare Pages): `be46ad7`, deployment `7c144cf7`.
+- Rollback (preserved): `d5f2a3c9`, commit `cf67d8c`.
+- Hotfix branch: `hotfix/forensic-chronology-20261126` (pushed), head `8156f96`, based on `be46ad7`.
+- Excluded: integration work, report caching (`e940ef4`, `fa136fe`), migrations, PR #142's compact locator (`508946c`),
+  and the DEVIN-P2-01 word-boundary rule (`77cc009`, `cfacd3a`).
 
 ## Changes
 
-| Change | Where | Behaviour change |
+| Change | Where | Behaviour |
 |---|---|---|
-| Forensic chronology output ceiling 5,000 → 8,000 tokens | `api/services/analyzerSections.ts` (chronology spec, full mode) | Quick unchanged (3,500). Cost rises only when a response actually uses the extra tokens (billed per generated token). |
-| Forensic dispatch: chronology starts right after redFlags | `api/services/analyzerSections.ts` (`FORENSIC_DISPATCH_ORDER`) | Chronology now starts earlier; overview starts later |
-| PR #141 quotation locator (performance), adapted to production matching rules | `shared/quoteVerification.ts` | None intended: matches production on 32,000 synthetic cases (`api/services/quoteLocatorProductionDifferential.test.ts`) |
-| Regression tests | `api/hotfix-chronology.test.ts`, `api/forensic-section-dispatch.test.ts` (one expectation updated for the new order) | — |
+| Forensic chronology output ceiling 5,000 → 8,000 | `api/services/analyzerSections.ts` | Quick unchanged (3,500). |
+| Dispatch: `redFlags, thresholds, chronology, guidance, timeline, overview` | `api/services/analyzerSections.ts` | Chronology starts in wave 1 instead of last. Verification inputs stay first. |
+| Browser job polling waits 30 minutes (was 6) | `src/utils/api.ts` (`pollAnalysisJob`) | A job still running after 6 minutes keeps being followed, instead of "couldn't confirm". A job that never completes still ends with `RECOVERY_TIMEOUT` after 30 minutes. |
+| PR #141 quotation locator, adapted to production matching | `shared/quoteVerification.ts` (`d344037`) | None intended. Equivalent to production on 32,000 synthetic cases. |
+| Regression tests | `api/hotfix-chronology.test.ts`, `api/services/quoteLocatorProductionDifferential.test.ts`, `src/utils/analysisJobLongRun.test.tsx`, `api/forensic-section-dispatch.test.ts` (expectation updated) | — |
 
-**Deliberately excluded from the hotfix:** the word-boundary quotation rule (DEVIN-P2-01, `77cc009`). It is on the integration
-branch and changes which quotations verify. It is a separate, reviewed release decision for the owner.
+The frontend change touches only the polling constant. No JSX, styling, copy or layout changed, so the site's appearance is unchanged.
 
-## Verified (mocked inference only; no paid run)
+## Verified (mocked network and inference only; no paid run)
 
-- Full `vitest run` on the hotfix branch: 279 test files passed, 13 skipped, 4,305 tests passed. The 13 skipped files are
-  PostgreSQL-gated or environment-gated, as on production (see `engineering/SKIPPED_TESTS.md` on the integration branch).
 - `tsc --noEmit -p .`: passes.
-- Chronology regression tests: 8,000-token request; a cut-off response is never accepted; a retry after a cut-off uses the
-  shorter-answer instruction; dispatch order.
+- Full `vitest run` on the hotfix branch: 280 test files passed, 13 skipped, 4,307 tests passed.
+- The new polling test fails when the old 6-minute limit is passed explicitly, and passes with the 30-minute default. So it
+  reproduces the browser stop.
+- The cut-off protection is unchanged (read at `runOneSection`; no truncated section is merged).
+
+## Independent review (subagent, same model family; not Devin)
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| 1 | Blocker | `tests/devin/quote-locator-performance.test.ts` does not run on the production base, and two of its assertions encode the word-boundary rule that the hotfix excludes | **Fixed**: file removed from the hotfix |
+| 2 | Important | Moving thresholds out of wave 1 could delay verification and make the 30-second verification minimum more likely to skip it | **Fixed**: thresholds kept in wave 1, chronology second |
+| 3 | Important (cost) | Worst case per chronology is 2 attempts × 8,000 = 16,000 output tokens, up from 10,000 (+60%). If the Forensic model name is one of the models in `MODELS_REJECTING_DISABLED_THINKING`, the adapter raises the ceiling to 16,000 per attempt | **Open, owner decision.** Output is billed per generated token, so cost only rises when the extra tokens are used |
+| 4 | Nit | A test name described the old order | Fixed |
+| 5 | Nit | A regex assertion could never fail | Fixed (asserts chronology length) |
+| 6 | Nit | A fixture comment named the wrong file | Fixed |
+
+Reviewer's checks with no defect: production matching equivalence (the ASCII fast paths and page attribution), the Quick
+path, dispatch completeness (no section dropped), the cut-off path (never merged), and the adapter's truncation handling.
+
+Reviewer on PR #142: **exclude**. It changes matching semantics (word-boundary and surrogate rules) and is stacked on
+unrelated commits. Its differential test compares against the pre-PR code, not production. It should be a separate change
+after the owner decides the word-boundary rule.
 
 ## Not verified
 
-- **Devin's root cause** (chronology exceeded 5,000 output tokens and retries exhausted the 180 s budget) is reported from
-  Cloudflare telemetry that this session cannot see. The code path that makes it possible is confirmed on `be46ad7`
-  (`analyzerSections.ts`: chronology full-mode ceiling 5,000; a cut-off response triggers a retry at the same ceiling). The
-  claim itself is not independently verified.
-- **Effective ceiling:** for models where thinking cannot be disabled, `functions/api/_analyzer-model-adapter.ts` adds 8,000
-  headroom tokens. Which model produced the cut-off is not in any record available here.
-- **CPU termination at 280 ms reported CPU:** not reproduced. The reported figure may be a per-section counter. The
-  synchronous guard pass (per-finding canonicalization of the whole document, removed by the PR #141 locator) is a plausible
-  CPU cost, but it is not proven to be the cause.
-- **Efficiency without loss:** not implemented. The chronology prompt is unchanged, because any prompt change could alter
-  dates, attribution or contradictions and must be validated against live output first.
-- **Completed-section preservation on job retry:** not implemented. Production keeps no partial sections across a job
-  retry, so a failed run restarts all sections. Storing partial sections changes the job-storage path and belongs in the next
-  release.
-
-## Independent review
-
-- Reviewer: one fresh subagent of the same model family (not a different vendor). Its findings are recorded below when
-  received. Devin's independent adversarial review of this branch is still required before the owner approves deployment.
+- **Devin's root cause** (chronology exceeded its output limit and retries exhausted the 180-second budget) comes from
+  Cloudflare telemetry this session cannot see. The code path is confirmed on `be46ad7`. The cut-off model was not identified.
+- **The 280 ms CPU termination:** not reproduced.
+- **Efficiency without loss of content:** not implemented. Any prompt change needs live validation first.
+- **Completed-section preservation on job retry:** not implemented. Production restarts all sections on a job retry.
+  This needs job-storage changes and belongs in the next release.
 
 ## Rollback
 
 1. Production stays on `7c144cf7` until approval.
-2. If the hotfix is deployed and fails acceptance, roll back to `d5f2a3c9` (the recorded rollback target) with the same Pages
-   rollback procedure used on 2026-11-25. Record the deployment id in `SESSION_HANDOFF.md`.
+2. If deployed and acceptance fails, roll back to `d5f2a3c9` with the Pages rollback used on 2026-11-25. Record the
+   deployment id in `SESSION_HANDOFF.md`.
 
-## Live acceptance (requires owner approval for spend)
+## Remaining before deployment
 
-See `engineering/demo/LIVE_ACCEPTANCE_PROCEDURE.md`. The $4.80 plan referenced by the owner is not reproduced here: the
-per-run estimates on record are Quick $0.05–0.10 and Forensic $0.25–0.45. Devin must provide the $4.80 breakdown before
-approval.
+1. Devin's independent review and adversarial test of `hotfix/forensic-chronology-20261126` (request in
+   `engineering/handoffs/devin-hotfix-review-request-2026-11-26.md`).
+2. Owner decision on the chronology worst-case cost (finding 3).
+3. Controlled live acceptance on synthetic documents, with owner-approved spend. Devin's $4.80 plan must be reconciled with
+   the per-run estimates on record (Quick $0.05–0.10, Forensic $0.25–0.45).
+4. Owner approval to deploy.
