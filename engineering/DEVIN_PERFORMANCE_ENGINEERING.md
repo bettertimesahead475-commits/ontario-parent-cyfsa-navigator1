@@ -94,3 +94,137 @@ the studies in B, C, D or I.
 
 - Guard and stage timings: `npx tsx /home/ubuntu/audit/perf/stage-bench.mts` (script contents recorded in the PR).
 - Equivalence: `tests/devin/quote-locator-performance.test.ts`; differential fuzz script recorded in the PR.
+
+## 6. Phase two (authorized 2026-11-26 09:55)
+
+### 6.1 Six concurrent Forensic sections — controlled test (MEASURED, mocked inference)
+
+Harness: a full Forensic run (`runSectionedAnalysis`, mode `full`) through the **real** Anthropic adapter with a
+synthetic SSE stream (6,000 output tokens per section, 25 red flags, 2 s per section, no network), on documents of
+5, 50 and 200 pages, at concurrency 3 and 6, before (`eaca5cf`) and after this branch; 2 samples each. Results: section 6.5.
+
+Finding: total CPU per run is the sum of the same work whatever the concurrency, and wall-clock time is the same
+at 3 and 6 because verification waits for red flags either way (`redFlags` → verification is the critical path;
+production commit `68c98e8` recorded the same). Raising concurrency to 6 is therefore **not implemented**: it gives
+no measured latency gain and the production `exceededCpu` at 6 is unexplained by CPU totals here. The
+remaining hypothesis (peak memory or CPU bursts while six streams decode at once on a Worker) can only be checked
+on staging (budget item S1).
+
+### 6.2 Completion detection (DEVIN-PERF-02, implemented)
+
+`pollAnalysisJob` now polls every `ACTIVE_JOB_POLL_MS` = 1 s (±10% jitter) while the job is running, instead of
+backing off to a 5 s cap; pending/404 and error paths keep their backoff and every termination rule (sign-in, other
+account, non-retryable, wait limit, cancel). Concurrent pollers of one job share one in-flight request.
+Expected browser saving: up to 5 s per queued analysis, about 2.5 s on average (PROJECTED from the 5 s cap).
+Request volume: about 1 status read per second per active analysis (about 100 for a 100 s Forensic run; Workers
+paid plan includes 10 M requests per month).
+
+SSE for the queued path: a Pages Function cannot be notified when the queue consumer writes the job record
+without a Durable Object, so an SSE endpoint would poll storage server-side at the same rate and hold a connection
+open for the whole run. Polling at 1 s gives the same latency with no new infrastructure. A Durable Object per job
+(push on write) is the only design that beats it, and it is a new Cloudflare component needing Claude's review.
+
+### 6.3 Progressive delivery
+
+The server already writes each validated section to the job record (`onSection` → job `sections`,
+`sectionsTotal`) and streams `section` events on the direct path. The browser does not render them before
+completion. Rendering is Antigravity's UI. Rule for that work: show a section only after deterministic guards
+(quote location, citation checks) and label red flags and thresholds "awaiting independent review" until
+verification completes; the final report replaces them. No server change is required.
+
+### 6.4 Report cache (DEVIN-PERF-03, implemented as library + pending migration; not wired)
+
+`functions/api/_report-cache.ts` and `supabase/migrations_pending_approval/create_navigator_report_cache.sql`.
+- Fingerprint: HMAC-SHA256 (server secret, at least 32 characters) over owner + text (line endings and NFC
+  normalized only). The same document in two accounts gives unrelated fingerprints.
+- Key: HMAC over key version, owner, fingerprint, mode, analyzer version, prompt version, primary and
+  verification model, legal reference version and effective date. Any change is a miss.
+- Policy (`evaluateCacheEntry`): owner match, key match, key version, not deleted, not expired, completed.
+- A hit is returned as `delivery.source = "previously_completed"` with the original job id and completion time,
+  `creditsCharged: 0`. It is never presented as a new analysis.
+- Table stores no document text or report content (it points to the existing private `analysis_jobs` object), RLS
+  on with no anon/authenticated access, owner-forget and expiry-purge functions.
+- Before wiring: the codebase has no analyzer or prompt version constants; Claude must add them (bumped on every
+  prompt or pipeline change), add `REPORT_CACHE_SECRET`, approve the migration, and decide retention.
+- Expected effect (PROJECTED): a repeat of an identical document returns in one owner-scoped database read plus
+  one storage read, under 1 s, with no AI cost.
+
+### 6.5 Measured results
+
+MEASURED in Node 22 on the development VM (not a Worker), 25 red flags per report (one in three quotes absent),
+2 s mocked generation per section, 2 samples per cell (range shown). Heap growth is V8 heap including garbage not
+yet collected, so it is an upper indication, not the Worker's 128 MB isolate measurement.
+
+| Tree | Pages | Concurrency | Wall ms | CPU ms | Peak heap growth MB |
+|---|---|---|---|---|---|
+| eaca5cf | 5 | 3 | 4212–4216 | 513–540 | 24–27 |
+| eaca5cf | 5 | 6 | 4196–4203 | 518–537 | 30–37 |
+| eaca5cf | 50 | 3 | 6086–6442 | 2540–2951 | 44–101 |
+| eaca5cf | 50 | 6 | 6503–6799 | 3008–3368 | 75–114 |
+| eaca5cf | 200 | 3 | 12068–13168 | 8746–9949 | 247–260 |
+| eaca5cf | 200 | 6 | 11835–12049 | 8602–8803 | 89–93 |
+| this branch | 5 | 3 | 4119–4165 | 495–562 | 13 |
+| this branch | 5 | 6 | 4094–4098 | 445–458 | 18 |
+| this branch | 50 | 3 | 4347–4403 | 685–754 | 48 |
+| this branch | 50 | 6 | 4358–4379 | 762–770 | 54–56 |
+| this branch | 200 | 3 | 5132–5206 | 1521–1571 | 135–136 |
+| this branch | 200 | 6 | 5018–5062 | 1415–1473 | 80–142 |
+
+Reading:
+- Concurrency 6 does not shorten the run at any size (verification waits for red flags), and total CPU is the
+  same at 3 and 6 within sample noise.
+- This branch cuts end-of-run CPU by 73–84% on 50–200 page documents and removes 2–7 s of wall time there.
+- A 200-page document still needs about 1.5 s CPU and its heap reached about 135 MB in Node; on a Worker that is
+  close to or over the memory limit. Forensic accepts PDFs up to `MAX_PDF_PAGES` = 200 (Quick is capped at
+  75,000 characters), so a large Forensic document can reach this today. Recommended for Claude: one staging
+  Forensic run on a synthetic 200-page document (budget item S1) to read the real isolate memory.
+- A run with zero red flags (the first matrix, not tabled) showed this branch allocating document copies with no
+  quotes to check; the locator now prepares nothing until the first quote (commit `c8055fb`).
+- Decision: keep Forensic at concurrency 3. Re-test 6 only on staging (S1) if a reason other than latency appears.
+
+### 6.6 Pipelined and parallel verification (design; mocked)
+
+Today: verification is one call over all red flags and thresholds after both sections finish (production: red
+flags about 88 s, then verification about 31 s). Pipelining: verify red flags in batches of about 5 as they
+complete in the stream, with a final cross-finding pass that sees every finding (needed for duplicates, the
+one-CRITICAL rule and contradictions). Critical path becomes red flags + one small batch + final pass
+(PROJECTED about 88 + 8 + 10 s instead of 88 + 31 s). It needs incremental JSON parsing of the red-flag stream and
+an accuracy comparison against single-pass verification (budget item S2). Parallel verification of independent
+batches is safe only with the final cross-finding pass; without it, cross-finding checks would be lost.
+
+### 6.7 Splitting the longest stage
+
+Red flags could be generated by page range (each shard sees its pages plus a shared document summary), merged,
+de-duplicated by quote location, then guarded and verified as today. Risks: cross-page reasoning
+(contradictions, chronology) is lost unless chronology stays a whole-document section, which it does today.
+Critical path would become the slowest shard (PROJECTED about 30–45 s for 3 shards). Requires a paid accuracy
+study (S3).
+
+### 6.8 Prompt caching and cost (PROJECTED, repository `MODEL_PRICING`, 10,000-token document)
+
+| Analyzer | Approx. cost now | With document-prefix caching |
+|---|---|---|
+| Quick (Sonnet, 4 sections) | about $0.22 | +$0.02 if all 4 start together (4 cache writes at 1.25×); about −$0.05 if one section starts first, but the other 3 then start about 1–2 s later |
+| Forensic (Opus, 6 sections + verification) | about $1.25 | about −$0.14 (3 writes + 4 reads instead of 7 full inputs) and faster time-to-first-token for wave 2 and verification |
+| Final Case Assessment (Opus, 1 call) | about $0.30 | none (single call) |
+
+Cache-hit savings are 90% of the cached input; a cache miss costs 25% more than no caching. Caching requires the
+adapter to stop joining content blocks into one string and verification to share the exact document prefix.
+
+### 6.9 Faster models
+
+Repository pricing: Sonnet 5 $2/$10, Opus 5 $5/$25, Haiku 5.5 $0.10/$0.50 per million input/output tokens.
+Time to first token, throughput, accuracy and structured-output reliability for this workload have not been
+measured and cannot be without paid runs; no model was changed. Context capacity and concurrency limits come from
+the provider account and were not checked. Deterministic work already done in code (no AI): quote location, citation
+parsing and verification, historical-law effective dates, severity ceilings, Evidence Strength Index arithmetic,
+compliance matrix. Candidates to move from AI to code next: date extraction and chronology candidates (offer the
+model a pre-extracted, page-cited date list) and document metadata.
+
+### 6.10 Staged paid-testing budget (not spent)
+
+| Allocation | Runs (approx.) | Verifies |
+|---|---|---|
+| $5 | S1: 2 Forensic at concurrency 3 vs 6 on staging (about $2.50); 4 Quick (about $0.90); 2 Final Case Assessment (about $0.60); 1 Forensic repeat for polling end-to-end | CPU/memory at 6 on a real Worker; PERF-01 CPU effect; 1 s completion detection end-to-end; first real Final Case Assessment timing |
+| $10 | $5 set + S2: 4 Forensic with document-prefix caching vs 4 without would exceed it, so 2 + 2 (about $5) | measured cache-hit rate, time-to-first-token and cost delta on Forensic |
+| $20 | $10 set + S3/S4: pipelined verification vs single pass on 3 synthetic labelled documents (about $4) and Sonnet vs Opus Forensic sections on the same 3 (about $5) | whether pipelining or a faster model keeps findings, citations and verification verdicts equal; numbers too small for statistics, enough to decide whether a larger study is worthwhile |
