@@ -155,3 +155,36 @@ used on 2026-11-25. Verify its availability before the release (it is listed as 
 2. Confirm the production database (`qboidsfpjuxeqtfotryj` versus the staging binding).
 3. Authorize deployment after the blockers are resolved.
 4. Decide whether the 200-page stress test (phase B, $3.00) is needed for the demonstration.
+
+---
+
+## Update: final accuracy round (2026-11-26)
+
+### Identifiers
+- Candidate head: `c044c35` (documentation on top of `ba9c029`). Code head for review: `ba9c029`.
+- PR #145 integrated as merge `4e514d2` (CI #887 green on its head `289e92d`, which the merge contains; the merge differs only by the handoff file).
+- Production unchanged: `7c144cf7` (`be46ad7`). Rollback `d5f2a3c9` (`cf67d8c`), still listed as Production.
+
+### Quotation accuracy
+- PR #145 (`289e92d`): hyphen compounds only when a real hyphen joins two letters; full-width apostrophe U+FF07; Unicode hyphens U+2010/U+2011. Verified by the adversarial suite.
+- `ba9c029`: a quotation starting right after a negating word (not, no, nor, never, without, non) is not counted. "guilty" from "Not guilty", "evidence was found" from "No evidence was found", OCR-split "non - violent" and "non-<newline>violent" are reported NOT_LOCATED (kept, unverified). Whole negated quotations still verify.
+- Adversarial suite: 27 cases (`api/services/quotationAdversarial.test.ts`). Before `ba9c029`, 4 of 27 failed; after, 27 of 27 pass. Legitimate-quotation cases pass.
+- Known limitation: a quotation that starts or ends inside a hyphenated compound is not verified (intended, the safe direction).
+
+### Database evidence (Devin, local PostgreSQL 14)
+- 11 PostgreSQL-gated files, 370 of 370 tests passed (credit reservation, finalize, release, matter access). Reported by Devin in `engineering/reviews/devin-release-qualification-20261126.md` (PR #145 branch). Commit of that run: requested in the handoff. CI run #887 (on `289e92d`) also completed successfully with the PostgreSQL service container.
+- No migration applied. No production database or binding changed.
+
+### Cloudflare CPU incident
+- Request `6a0ca69881503da9a2838b6383a71921`. Support case drafted at `engineering/incidents/cloudflare-support-case-6a0ca698-draft.md`. Not submitted by Claude. Cause NOT established.
+
+### Staging preview
+- Preview `a0ef44c4`: analyzerReady false, forensicQueueReady false. Missing plain variables on Preview: ANALYZER_ENABLED, FIREBASE_PROJECT_ID, STAGING_SUPABASE_URL (and the queue producer, unverified). Owner steps and a database-choice decision are in `engineering/incidents/staging-preview-configuration-2026-11-26.md`.
+
+### Still open before live acceptance or deployment
+1. CI run on `ba9c029` (needs a pull request; requested from Devin).
+2. Devin's independent final recommendation (requested in `engineering/handoffs/devin-final-acceptance-request-2026-11-26.md`).
+3. Browser acceptance with mocked inference (refresh, navigation, network interruption, duplicate prevention, report persistence, PDF export): requested from Devin; not yet run.
+4. Staging preview variables and the choice of database for the preview (owner decision).
+5. Owner approval of the $1.20 phase A spend (no paid inference has been run).
+6. Owner approval to deploy after 1–5.
