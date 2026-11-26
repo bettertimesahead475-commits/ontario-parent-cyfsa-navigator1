@@ -6,6 +6,8 @@
 4. No new paid resources, no pricing change, no secret changes; `public/_headers` CSP unchanged or reviewed.
 5. Record the current production deployment id as the rollback target.
 6. Merge into the production branch `migration/cloudflare-staging-20261029`; push.
+6b. Wait until no preview build is active or queued: the account builds one at a time, and a POST while the queue is
+   busy returns `304` and creates nothing.
 7. Create the deployment manually (automatic production deployments are disabled):
    `POST /accounts/{acct}/pages/projects/cyfsa-navigator-git-staging/deployments` with `branch=migration/cloudflare-staging-20261029`.
 8. Wait for `latest_stage = deploy: success`. Confirm `canonical_deployment` id and commit hash.

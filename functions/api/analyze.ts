@@ -19,7 +19,7 @@ import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { saveCompletedJob, saveJobState } from './_analysis-jobs';
-import { createDurableJob, DurableJobStorageError, jobOwnerConflict, nextAttemptId, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
+import { createDurableJob, DurableJobStorageError, jobOwnership, nextAttemptId, type JobOwnership, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
 
 /** Server-generated analysis id in the client format, from a cryptographic random source. */
@@ -198,7 +198,7 @@ export async function handleAnalyzeRequest(
   const sessionId = deps.trustedJob ? deps.trustedJob.session_id : extractSessionId(rawSession);
   const rawRequestId = request.headers.get('X-Analysis-Id') || body?.analysisId || '';
   // Ids double as Storage keys. Reserved prefixes of other object families (assessment_*) are never
-  // accepted from a client, and ids owned by another user are refused below (jobOwnerConflict).
+  // accepted from a client, and ids owned by another user are refused below (jobOwnership).
   const clientSuppliedId = !deps.trustedJob && /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId) && !/^assessment/i.test(rawRequestId);
   let requestId = deps.trustedJob ? rawRequestId : clientSuppliedId ? rawRequestId : serverAnalysisId();
 
@@ -238,12 +238,13 @@ export async function handleAnalyzeRequest(
   // An analysis id is also a Storage key that is written with upsert. Refuse ids already owned by someone
   // else before reserving any credit, so no user can overwrite or adopt another user's report. A fresh
   // server-generated id (crypto-random) cannot collide, so it skips the two database reads.
-  if (clientSuppliedId && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY
-      && await jobOwnerConflict(env, requestId, uid, authFetcher)) {
-    return Response.json(
-      { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },
-      { status: 409, headers: DEFAULT_HEADERS },
-    );
+  const ownershipRefusal = (ownership: JobOwnership): Response | null => ownership === 'clear' ? null
+    : ownership === 'conflict'
+      ? Response.json({ error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false }, { status: 409, headers: DEFAULT_HEADERS })
+      : Response.json({ error: 'The analysis service is temporarily unavailable. Please try again in a moment - your document is safe.', code: 'OWNERSHIP_CHECK_UNAVAILABLE', retryable: true }, { status: 503, headers: DEFAULT_HEADERS });
+  if (clientSuppliedId && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    const refusal = ownershipRefusal(await jobOwnership(env, requestId, uid, authFetcher));
+    if (refusal) return refusal;
   }
   // A Retry of a document whose queued job failed continues under the next attempt id (before any credit is
   // reserved, so the reservation, the job and the polled id all agree). The response carries the id to poll.
@@ -251,12 +252,8 @@ export async function handleAnalyzeRequest(
       && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
     const attemptId = await nextAttemptId(env, requestId, uid, authFetcher);
     // The attempt id is also a Storage key: apply the same ownership check to it.
-    if (attemptId !== requestId && await jobOwnerConflict(env, attemptId, uid, authFetcher)) {
-      return Response.json(
-        { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },
-        { status: 409, headers: DEFAULT_HEADERS },
-      );
-    }
+    const refusal = attemptId !== requestId ? ownershipRefusal(await jobOwnership(env, attemptId, uid, authFetcher)) : null;
+    if (refusal) return refusal;
     requestId = attemptId;
   }
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.

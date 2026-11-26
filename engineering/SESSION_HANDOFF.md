@@ -4,9 +4,8 @@ Last updated: 2026-11-25 by Claude.
 
 ## State
 
-- Production: deployment `7d57b59b` / commit `b141293` (tag `baseline/prod-20261125-b141293`). Unchanged today.
-- `engineering/claude-backend` = baseline + fc8b31c (Firebase-authorized admin API and console). Not deployed yet.
-  An independent security review of fc8b31c is running; fix confirmed findings, then T-04 (deploy + live checks).
+- Production: deployment `7c144cf7` / commit `be46ad7` (concurrency fixes), smoke-verified 2026-11-25. Rollback: `d5f2a3c9`.
+  Executor Worker `d030585d` (rollback: `npx wrangler rollback 4cd2181f-d7de-46a2-a523-61f6b4984052 --config wrangler.staging-job-service.jsonc`).
 - `engineering/integration` = baseline + these control documents.
 - Inference budget remaining ≈ $0.40 (no paid runs today).
 
