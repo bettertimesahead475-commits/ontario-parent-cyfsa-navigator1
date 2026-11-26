@@ -355,7 +355,7 @@ function extractFirstMatchingSpan(
   };
 }
 
-function extractDatesForStandard7(
+export function extractDatesForStandard7(
   sourceText: string,
   explicitDates?: Standard7DeadlineInput,
 ): Standard7DeadlineInput {
@@ -364,20 +364,22 @@ function extractDatesForStandard7(
   }
 
   const text = sourceText || "";
+  // "\s*(?:(?:on|:)\s*)?" matches the same text as the former "\s*(?:on|:)?\s*", whose two adjacent \s* could split
+  // one whitespace run every possible way (quadratic on a keyword followed by a long run of spaces in the document).
   const transferMatch =
-    /(?:transfer(?:red)?\s+to\s+ongoing(?:\s+services?)?|case\s+transfer(?:\s+date)?)\s*(?:on|:)?\s*(\d{4}-\d{2}-\d{2})/i.exec(
+    /(?:transfer(?:red)?\s+to\s+ongoing(?:\s+services?)?|case\s+transfer(?:\s+date)?)\s*(?:(?:on|:)\s*)?(\d{4}-\d{2}-\d{2})/i.exec(
       text,
     );
   const investigationCompletionMatch =
-    /(?:investigation\s+(?:completed|completion|concluded|disposition))\s*(?:on|:)?\s*(\d{4}-\d{2}-\d{2})/i.exec(
+    /(?:investigation\s+(?:completed|completion|concluded|disposition))\s*(?:(?:on|:)\s*)?(\d{4}-\d{2}-\d{2})/i.exec(
       text,
     );
   const servicePlanMatch =
-    /(?:initial\s+service\s+plan|service\s+plan\s+(?:completed|signed|approved))\s*(?:on|:)?\s*(\d{4}-\d{2}-\d{2})/i.exec(
+    /(?:initial\s+service\s+plan|service\s+plan\s+(?:completed|signed|approved))\s*(?:(?:on|:)\s*)?(\d{4}-\d{2}-\d{2})/i.exec(
       text,
     );
   const removalMatch =
-    /(?:apprehended|removed\s+from\s+care|removal\s+date)\s*(?:on|:)?\s*(\d{4}-\d{2}-\d{2})/i.exec(
+    /(?:apprehended|removed\s+from\s+care|removal\s+date)\s*(?:(?:on|:)\s*)?(\d{4}-\d{2}-\d{2})/i.exec(
       text,
     );
 
@@ -459,8 +461,9 @@ export function evaluateParentAssistanceNeed15Questions(params: {
     /\b(?:attended|completed|participat(?:ed|ing)|engaged\s+in|enrolled|waitlisted)\b/i.test(text);
   const hasDeclinedMention =
     /\b(?:declined|refused\s+service|did\s+not\s+attend)\b/i.test(text);
+  // "\s*(?:-\s*)?" is the former "\s*-?\s*" without two adjacent \s* competing for the same spaces.
   const hasFollowUpMention =
-    /\b(?:follow(?:ed)?\s*-?\s*up|collateral\s+check|adjusted\s+plan|updated\s+service\s+plan)\b/i.test(
+    /\b(?:follow(?:ed)?\s*(?:-\s*)?up|collateral\s+check|adjusted\s+plan|updated\s+service\s+plan)\b/i.test(
       text,
     );
   const hasKinshipMention =

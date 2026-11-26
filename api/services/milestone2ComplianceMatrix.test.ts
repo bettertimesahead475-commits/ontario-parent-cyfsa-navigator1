@@ -18,6 +18,7 @@ import {
   buildComplianceMatrixFromReport,
   enforceMissingDocumentNeutralityGuard,
   evaluateParentAssistanceNeed15Questions,
+  extractDatesForStandard7,
   getMilestone2KnowledgeBaseInventorySummary,
   VALID_COMPLIANCE_STATUSES,
   VALID_PARENT_ASSISTANCE_STATUSES,
@@ -498,5 +499,66 @@ describe("Milestone 2: Verified Ontario Legal Intelligence System", () => {
       expect(report.complianceMatrix.matrixVersion).toBe("2.0.0");
       expect(report.complianceMatrix.items.length).toBe(5);
     });
+  });
+});
+
+// SonarCloud S8786: "\s*(?:on|:)?\s*" and "\s*-?\s*" became "\s*(?:(?:on|:)\s*)?" and "\s*(?:-\s*)?" (same strings, no
+// two whitespace runs competing for the same spaces). These run on uploaded document text.
+describe("Standard 7 date extraction and follow-up detection stay linear on long whitespace runs", () => {
+  it("extracts the same dates for every keyword/separator form", () => {
+    const dates = extractDatesForStandard7(
+      "Investigation completed on 2026-01-05. Case transfer date: 2026-01-10. Transferred to ongoing services 2026-01-11. " +
+        "Initial service plan  :  2026-02-01. Apprehended on2026-01-02.",
+    );
+    expect(dates).toEqual({
+      investigationCompletionDate: "2026-01-05",
+      caseTransferDate: "2026-01-10",
+      servicePlanCompletionDate: "2026-02-01",
+      removalDate: "2026-01-02",
+    });
+    expect(extractDatesForStandard7("Removal date\n\n  ON  2025-12-31")).toMatchObject({ removalDate: "2025-12-31" });
+    expect(extractDatesForStandard7("Service plan signed onto 2026-02-01; removed from care on : 2026-01-01")).toEqual({
+      investigationCompletionDate: null,
+      caseTransferDate: null,
+      servicePlanCompletionDate: null,
+      removalDate: null,
+    });
+    // Explicit dates still win.
+    const explicit = { investigationCompletionDate: "2026-01-01", caseTransferDate: null, servicePlanCompletionDate: null, removalDate: null };
+    expect(extractDatesForStandard7("Apprehended on 2026-03-03", explicit)).toBe(explicit);
+  });
+
+  it("detects follow-up with or without a hyphen and spacing", () => {
+    const followUp = (sourceText: string) =>
+      evaluateParentAssistanceNeed15Questions({
+        needId: "T",
+        identifiedNeedTitle: "Counselling",
+        domain: "B3_MENTAL_HEALTH_AND_ADDICTIONS",
+        sourceText,
+        legalForceClassification: "STANDARDS_BASED",
+        relevantPatterns: [/counselling/i],
+      }).coexistingStatuses.includes("FOLLOW_UP_DOCUMENTED");
+    for (const s of ["Worker did a follow-up call.", "followed up", "follow  -  up", "followup", "Follow\n-\nup", "collateral check done"]) expect(followUp(s), s).toBe(true);
+    for (const s of ["follow -- up", "follow the plan", "followers upset"]) expect(followUp(s), s).toBe(false);
+  });
+
+  it("finishes in well under 100 ms on 50,000 spaces after each keyword (the old patterns took seconds)", () => {
+    const spaces = " ".repeat(50_000);
+    for (const keyword of ["Removal date", "Investigation completed", "Initial service plan", "Case transfer", "Transferred to ongoing"]) {
+      const t0 = performance.now();
+      const dates = extractDatesForStandard7(`${keyword}${spaces}x`);
+      expect(performance.now() - t0, keyword).toBeLessThan(100);
+      expect(Object.values(dates).every((v) => v === null)).toBe(true);
+    }
+    const t0 = performance.now();
+    evaluateParentAssistanceNeed15Questions({
+      needId: "T",
+      identifiedNeedTitle: "Counselling",
+      domain: "B3_MENTAL_HEALTH_AND_ADDICTIONS",
+      sourceText: `follow${spaces}x`,
+      legalForceClassification: "STANDARDS_BASED",
+      relevantPatterns: [/counselling/i],
+    });
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });
