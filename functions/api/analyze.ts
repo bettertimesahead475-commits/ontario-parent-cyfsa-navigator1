@@ -18,7 +18,7 @@ import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reserv
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
-import { saveCompletedJob, saveJobState } from './_analysis-jobs';
+import { claimJobRecord, saveCompletedJob, saveJobState } from './_analysis-jobs';
 import { createDurableJob, DurableJobStorageError, jobOwnership, nextAttemptId, type JobOwnership, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
 
@@ -255,6 +255,15 @@ export async function handleAnalyzeRequest(
     const refusal = attemptId !== requestId ? ownershipRefusal(await jobOwnership(env, attemptId, uid, authFetcher)) : null;
     if (refusal) return refusal;
     requestId = attemptId;
+  }
+  // Direct (non-queued) path: claim "<id>.json" create-once before any credit is reserved. The ownership read above
+  // cannot stop two accounts racing for the same never-used id (both read "absent"); exactly one create succeeds.
+  // The queued path gets the same guarantee from the job ledger's unique insert.
+  const queuedPath = Boolean(env.ANALYZER_JOBS_QUEUE) && (isForensic || env.QUEUE_QUICK_ANALYSIS === 'true');
+  if (clientSuppliedId && !queuedPath && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    const claim = await claimJobRecord(env, requestId, uid, authFetcher);
+    const refusal = ownershipRefusal(claim === 'claimed' ? 'clear' : claim);
+    if (refusal) return refusal;
   }
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
   // No client-supplied role, email or session can grant this entitlement.

@@ -8,6 +8,8 @@ const mockSaveJobState = vi.fn(async () => true);
 vi.mock('../functions/api/_analysis-jobs', () => ({
   saveCompletedJob: () => mockSaveCompletedJob(),
   saveJobState: () => mockSaveJobState(),
+  // The create-once id claim is covered by api/analysis-id-ownership.test.ts.
+  claimJobRecord: vi.fn(async () => 'claimed'),
 }));
 
 // The analysis-id ownership pre-check is covered by tests/devin/job-owner-conflict-fail-closed.test.ts.

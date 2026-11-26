@@ -102,3 +102,66 @@ describe('/api/analyze refuses before reserving credit, calling the AI or writin
     expect(r.rpc).not.toHaveBeenCalled();
   });
 });
+
+describe('create-once claim of the direct-path job record (T-20 / review finding 7)', () => {
+  async function claim(store: Map<string, string>, uid: string, opts: { writeStatus?: number; readFails?: boolean } = {}) {
+    const { claimJobRecord } = await import('../functions/api/_analysis-jobs');
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const key = url.split('/analysis_jobs/')[1];
+      if (url.includes('/authenticated/')) {
+        if (opts.readFails) return new Response('x', { status: 503 });
+        return store.has(key) ? new Response(store.get(key)!, { status: 200 }) : new Response('{"statusCode":"404"}', { status: 400 });
+      }
+      if (opts.writeStatus) return new Response('{}', { status: opts.writeStatus });
+      const headers = new Headers(init?.headers as HeadersInit);
+      // Like Storage (unique object name in the database): the existence check and the create are one atomic step.
+      if (store.has(key) && headers.get('x-upsert') !== 'true') return new Response('{"statusCode":"409","error":"Duplicate"}', { status: 400 });
+      store.set(key, String(init?.body));
+      await new Promise((r) => setTimeout(r, 1)); // response latency, so the two requests overlap
+      return Response.json({ Key: key });
+    }) as unknown as typeof fetch;
+    return claimJobRecord(env as any, ID, uid, fetcher);
+  }
+
+  it('two accounts racing for the same new id: exactly one claims it, the other is refused', async () => {
+    const store = new Map<string, string>();
+    const results = await Promise.all([claim(store, 'user_a'), claim(store, 'user_b')]);
+    expect([...results].sort()).toEqual(['claimed', 'conflict']);
+  });
+
+  it('the owner re-claiming its own record (retry) succeeds; owner-less or foreign records are refused', async () => {
+    const store = new Map<string, string>([[`${ID}.json`, JSON.stringify({ uid: 'user_a' })]]);
+    expect(await claim(store, 'user_a')).toBe('claimed');
+    expect(await claim(store, 'user_b')).toBe('conflict');
+    expect(await claim(new Map([[`${ID}.json`, '{}']]), 'user_a')).toBe('conflict');
+    expect(await claim(new Map([[`${ID}.json`, 'not json']]), 'user_a')).toBe('conflict');
+  });
+
+  it('fails closed when the claim or the re-read cannot be completed', async () => {
+    expect(await claim(new Map(), 'user_a', { writeStatus: 500 })).toBe('unavailable');
+    expect(await claim(new Map([[`${ID}.json`, JSON.stringify({ uid: 'user_a' })]]), 'user_a', { readFails: true })).toBe('unavailable');
+  });
+
+  it('/api/analyze refuses the losing account before any credit, AI call or report write', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/rpc/analyzer_get_job')) return Response.json(null);
+      // The ownership read saw nothing, but another account's create landed first.
+      if (url.includes('/authenticated/')) return fetcher.mock.calls.filter(([u]) => String(u).includes('/authenticated/')).length === 1 ? NOT_FOUND() : Response.json({ uid: 'user_b' });
+      if (url.includes('/storage/v1/object/')) return new Response('{"statusCode":"409"}', { status: 400 });
+      return Response.json({});
+    }) as unknown as typeof fetch & ReturnType<typeof vi.fn>;
+    const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'r1' }));
+    const generate = vi.fn();
+    const response = await handleAnalyzeRequest(new Request('https://navigator.test/api/analyze', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json', 'X-Analysis-Id': ID, Accept: 'application/json', 'x-test-uid': 'user_a' },
+      body: JSON.stringify({ documentText: 'Synthetic CAS file note. '.repeat(40), mode: 'fast', stream: false }),
+    }), env, { rpc, fetcher, generate } as never);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('ANALYSIS_ID_CONFLICT');
+    expect(rpc).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+});
