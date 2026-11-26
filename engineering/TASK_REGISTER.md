@@ -22,7 +22,7 @@ Status: todo · doing · review · done · blocked. One owner per task. Pick the
 | T-18 | P2 | Upload-limit error box in DocumentAnalyzerTab (line ~3412) lacks role="alert": screen readers do not announce "maximum allowed limit of 20 files" | Antigravity | todo | Claude | accessibility; no visual change |
 | T-19 | P3 | Owner workspace holds 20 synthetic harness files; remove them (owner decision) so uploads can be re-measured | Owner | todo | Claude | |
 | T-16 | P1 | Unique index on payments.reference_number (reversible migration, owner approval) | Claude | todo | review S-11 | |
-| T-20 | P2 | Direct-path create-once claim of `<id>.json` before credit reservation (S-19) | Claude | todo | review | release reservation on every abort path |
+| T-20 | P2 | Direct-path create-once claim of `<id>.json` before credit reservation (S-19) | Claude | review | review | 8606a0b; claim precedes reservation, so no credit to release on refusal |
 | T-21 | P1 | SonarCloud frontend findings: 68× S6853 form labels, 20× S6848 non-native interactive elements, ~35× S9383 floating promises (src/**, public/sw.js), S2245 PricingTab Math.random, 9× S8786 regexes in src/**, formRegistry sort | Antigravity | todo | Claude | list: engineering/sonar/FINDINGS.md; preserve visuals |
 | T-22 | P1 | Frontend unit coverage 35.6 % (src/components) | Antigravity | todo | Claude | backend ≥ 85 % |
 | T-23 | P2 | Remove obsolete Vercel commit statuses (3 projects, "Account is blocked") — repository/Vercel settings | Owner | todo | Devin | B-11 |
