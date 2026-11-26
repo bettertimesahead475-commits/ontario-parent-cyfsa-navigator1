@@ -37,3 +37,48 @@ describe("supabaseDiagnostics", () => {
     expect(desc.kind).toBe("AUTH");
   });
 });
+
+describe("'Caused by' extraction (S8786 linear rewrite)", () => {
+  // The former pattern, kept here as the reference the rewrite must agree with.
+  const OLD = /Caused by: ([^\n]*?)(?: \(([A-Z0-9_]+)\))?\s*(?:\n|$)/;
+  const cause = (details: string) => {
+    const d = describeSupabaseFailure({ message: "TypeError: fetch failed", details });
+    return { code: d.causeCode, message: d.causeMessage };
+  };
+  const expected = (details: string) => {
+    const m = details.match(OLD)!;
+    return { code: m[2] ?? null, message: m[1] };
+  };
+
+  it("keeps the message and code of the first 'Caused by' line exactly as before", () => {
+    const samples = [
+      "TypeError: fetch failed\n\nCaused by: Error: getaddrinfo ENOTFOUND x.supabase.co (ENOTFOUND)\n    at stack",
+      "Caused by: Error: connect ECONNREFUSED 127.0.0.1:443 (ECONNREFUSED)   \r\nstack",
+      "Caused by: Error: socket hang up",
+      "Caused by: Error: weird (lower_case)\n",
+      "Caused by: Error: (A) (B_2)  ",
+      "Caused by: (CODE)",
+      "Caused by:  (CODE)\nCaused by: second (X)",
+      "Caused by: Error: x (CODE) trailing\n",
+      "Caused by:    \n",
+    ];
+    for (const s of samples) expect(cause(s), JSON.stringify(s)).toEqual(expected(s));
+    expect(cause(samples[0])).toEqual({ code: "ENOTFOUND", message: "Error: getaddrinfo ENOTFOUND x.supabase.co" });
+  });
+
+  it("agrees with the former pattern on random 'Caused by' lines", () => {
+    const parts = ["Error:", " ", "  ", "\t", "\r", "\n", "(", ")", " (", "CODE", "E_1", "x", "y z"];
+    let seed = 5;
+    for (let i = 0; i < 5000; i++) {
+      let s = "Caused by: ";
+      for (let j = 0; j < 7; j++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; s += parts[seed % parts.length]; }
+      expect(cause(s), JSON.stringify(s)).toEqual(expected(s));
+    }
+  });
+
+  it("is linear on a 'Caused by' line holding 50,000 spaces", () => {
+    const t0 = performance.now();
+    cause("Caused by: " + " ".repeat(50_000) + "x");
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+});

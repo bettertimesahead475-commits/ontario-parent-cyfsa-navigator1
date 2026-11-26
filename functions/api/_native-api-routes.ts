@@ -7,6 +7,8 @@
  * api/cloudflare-native-api-routes.test.ts keeps this in sync with the exports in functions/api.
  * 'ALL' means the module exports a method-independent onRequest.
  */
+import { trimCharacters } from '../../shared/linearText';
+
 export const NATIVE_API_ROUTES: Record<string, readonly string[]> = {
   '/api/access-pricing': ['GET'],
   '/api/activate-code': ['POST'],
@@ -27,7 +29,8 @@ export const NATIVE_API_ROUTES: Record<string, readonly string[]> = {
 
 /** Allowed methods for a native route path (ignoring a trailing slash), or null when not native. */
 export function nativeRouteMethods(pathname: string): readonly string[] | null {
-  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  // trimCharacters: linear equivalent of .replace(/\/+$/, ''), which rescanned every run of slashes in the path.
+  const normalized = pathname.length > 1 ? trimCharacters(pathname, '/', { end: true }) : pathname;
   if (/^\/api\/analyze\/job\/[^/]+$/.test(normalized)) return ['GET'];
   return NATIVE_API_ROUTES[normalized] ?? null;
 }

@@ -17,6 +17,7 @@ import { LIMITS } from '../_paid-credit-reservation';
 import { monthlyCreditScope } from '../_monthly-credit-scope';
 import { statusResponse, type StatusEnv } from '../_status';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitedResponse } from '../_rate-limit';
+import { trimCharacters } from '../../../shared/linearText';
 
 export type AdminEnv = AdminAuthEnv & AdminStoreEnv & StatusEnv;
 type Context = { request: Request; env: AdminEnv };
@@ -618,7 +619,8 @@ export async function handleAdminRequest(request: Request, env: AdminEnv, deps: 
   const fetcher = deps.fetcher ?? fetch;
   const now = deps.now?.() ?? new Date();
   const url = new URL(request.url);
-  const route = url.pathname.replace(/^\/api\/admin\/?/, '').replace(/\/+$/, '');
+  // trimCharacters: linear equivalent of .replace(/\/+$/, ''), which rescanned every run of slashes in the path.
+  const route = trimCharacters(url.pathname.replace(/^\/api\/admin\/?/, ''), '/', { end: true });
   const method = request.method.toUpperCase();
   const known = GET_ROUTES.includes(route) || POST_ROUTES.includes(route);
   if (!known) return adminError('API_ROUTE_NOT_FOUND', 404, 'No administrator endpoint matches this request.');
