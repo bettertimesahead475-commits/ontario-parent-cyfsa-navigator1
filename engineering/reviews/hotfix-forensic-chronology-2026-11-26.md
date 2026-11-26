@@ -37,7 +37,7 @@ The frontend change touches only the polling constant. No JSX, styling, copy or 
 |---|---|---|---|
 | 1 | Blocker | `tests/devin/quote-locator-performance.test.ts` does not run on the production base, and two of its assertions encode the word-boundary rule that the hotfix excludes | **Fixed**: file removed from the hotfix |
 | 2 | Important | Moving thresholds out of wave 1 could delay verification and make the 30-second verification minimum more likely to skip it | **Fixed**: thresholds kept in wave 1, chronology second |
-| 3 | Important (cost) | Worst case per chronology is 2 attempts × 8,000 = 16,000 output tokens, up from 10,000 (+60%). If the Forensic model name is one of the models in `MODELS_REJECTING_DISABLED_THINKING`, the adapter raises the ceiling to 16,000 per attempt | **Open, owner decision.** Output is billed per generated token, so cost only rises when the extra tokens are used |
+| 3 | Important (cost) | Worst case per chronology is 2 attempts × 8,000 = 16,000 output tokens, up from 10,000 (+60%). If the Forensic model name is one of the models in `MODELS_REJECTING_DISABLED_THINKING`, the adapter raises the ceiling to 16,000 per attempt | **Approved by the owner (2026-11-26, "Approve cost").** Approval covers this cost increase only, not deployment or any live spend. Output is billed per generated token, so cost only rises when the extra tokens are used |
 | 4 | Nit | A test name described the old order | Fixed |
 | 5 | Nit | A regex assertion could never fail | Fixed (asserts chronology length) |
 | 6 | Nit | A fixture comment named the wrong file | Fixed |
@@ -68,7 +68,7 @@ after the owner decides the word-boundary rule.
 
 1. Devin's independent review and adversarial test of `hotfix/forensic-chronology-20261126` (request in
    `engineering/handoffs/devin-hotfix-review-request-2026-11-26.md`).
-2. Owner decision on the chronology worst-case cost (finding 3).
+2. ~~Owner decision on the chronology worst-case cost (finding 3).~~ Approved by the owner on 2026-11-26.
 3. Controlled live acceptance on synthetic documents, with owner-approved spend. Devin's $4.80 plan must be reconciled with
    the per-run estimates on record (Quick $0.05–0.10, Forensic $0.25–0.45).
 4. Owner approval to deploy.
