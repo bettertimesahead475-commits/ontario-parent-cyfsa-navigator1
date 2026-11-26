@@ -94,5 +94,7 @@ describe('DEVIN-P2-02 citation pinpoints are parsed whole', () => {
   });
   it('verifies provisions joined by an unspaced conjunction', () => {
     expect(citedSections('CYFSA s. 74(2)and s. 125(1)')).toEqual(['74(2)', '125(1)']);
+    expect(classifyCitation('CYFSA s. 74(2)(a)to (z)').status).not.toBe('INTERNAL_REFERENCE_MATCH');
+    expect(classifyCitation('CYFSA s. 74(2)and (zz)').status).not.toBe('INTERNAL_REFERENCE_MATCH');
   });
 });
