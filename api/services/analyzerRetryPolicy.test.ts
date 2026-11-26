@@ -1,5 +1,5 @@
 // Regression tests for shared/analyzerRetryPolicy.ts: the one decision every analysis path uses.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ANALYSIS_JOB_ID_PATTERN,
   classifyFailure,
@@ -124,5 +124,27 @@ describe("attempt budgets and waits", () => {
     expect(retryWaitMs("TRANSIENT_SERVER", 1)).toBeLessThan(retryWaitMs("TRANSIENT_SERVER", 3));
     expect(retryWaitMs("RATE_LIMITED", 1)).toBeGreaterThanOrEqual(30000);
     expect(retryWaitMs("PERMANENT", 1)).toBe(0);
+  });
+});
+
+describe("hardening from the 2026-11-25 reviews", () => {
+  it("default analysis ids use the cryptographic generator and keep the accepted format", async () => {
+    const { newAnalysisJobId, cryptoRandom } = await import("../../shared/analyzerRetryPolicy");
+    const spy = vi.spyOn(globalThis.crypto, "getRandomValues");
+    const id = newAnalysisJobId();
+    expect(spy).toHaveBeenCalled();
+    expect(id).toMatch(/^req_\d{10,16}_[a-z0-9]{8,12}$/);
+    for (let i = 0; i < 1000; i++) { const r = cryptoRandom(); expect(r >= 0 && r < 1).toBe(true); }
+    spy.mockRestore();
+  });
+
+  it("an oversized proposition is not evaluated (bounded time), never reported as supported", async () => {
+    const { evaluatePropositionSupport, MAX_PROPOSITION_CHARS } = await import("../../shared/legalVerificationPipeline");
+    const attack = "s 102 ".repeat(8000);
+    const t0 = Date.now();
+    const r = evaluatePropositionSupport("CYFSA:102(1)", attack);
+    expect(Date.now() - t0).toBeLessThan(50);
+    expect(r.support).toBe("NOT_EVALUATED");
+    expect(attack.length).toBeGreaterThan(MAX_PROPOSITION_CHARS);
   });
 });

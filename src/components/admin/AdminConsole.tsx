@@ -203,7 +203,7 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
         <Table head={["Mode", "Total", "Completed", "Failed", "Running", "Queued", "Avg s", "Owner runs"]} rows={Object.entries(u.byMode).map(([k, v]: [string, any]) => [k, v.total, v.completed, v.failed, v.running, v.queued, v.avgSeconds ?? "—", v.ownerRuns])} />
         <p className="mt-2 text-xs text-slate-600">Failures by code: {Object.entries(u.failuresByCode).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}</p>
       </> : <p className="text-sm">Loading…</p>}</Card>
-      <Card title="Packages">{rv?.byPlan ? <Table head={["Package", "Approved", "Amount", "Pending"]} rows={rv.byPlan.map((r: any) => [r.plan, r.approved, money(r.approvedAmount), r.pending])} /> : <p className="text-sm">Loading…</p>}</Card>
+      <Card title="Packages">{rv?.byPlan ? <><ReportingWarnings warnings={rv.reporting?.warnings} /><Table head={["Package", "Approved", "Amount", "Pending"]} rows={rv.byPlan.map((r: any) => [r.plan, r.approved, money(r.approvedAmount), r.pending])} /></> : <p className="text-sm">Loading…</p>}</Card>
     </div>}
 
     {section === "payments" && <Card title="Payments and entitlements">{data.payments ? <><ReportingWarnings warnings={data.payments.reporting?.warnings} /><Table

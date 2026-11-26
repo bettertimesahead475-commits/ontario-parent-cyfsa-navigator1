@@ -1892,6 +1892,8 @@ const isIsoDateString = (v: unknown): v is string =>
  * Evaluates whether a cited authority supports, is misapplied to, or is contradicted by statute
  * with respect to a given legal proposition.
  */
+export const MAX_PROPOSITION_CHARS = 4000;
+
 export function evaluatePropositionSupport(
   sectionOrAuthorityKey: string,
   propositionText: string | null | undefined
@@ -1902,6 +1904,12 @@ export function evaluatePropositionSupport(
   const prop = (propositionText || "").trim();
   if (!prop) {
     return { support: "NOT_EVALUATED", reason: null };
+  }
+  // The clause-level proposition patterns below are quadratic on a long run of repeated citations with no sentence
+  // break. A proposition is one or two sentences of model output; anything far longer is not evaluated (a neutral
+  // outcome that never claims support) rather than truncated, which could cut a contradiction off its end.
+  if (prop.length > MAX_PROPOSITION_CHARS) {
+    return { support: "NOT_EVALUATED", reason: `The proposition is longer than ${MAX_PROPOSITION_CHARS} characters and was not evaluated.` };
   }
 
   if (UNIVERSAL_FUNDING_CONTRADICTION_PATTERN.test(prop)) {

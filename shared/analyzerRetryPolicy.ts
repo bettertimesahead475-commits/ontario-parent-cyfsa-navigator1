@@ -20,7 +20,14 @@ export function isAnalysisJobId(id: unknown): id is string {
  * A new analysis id in the server's format. The random part is always at least 8 characters, so the id is never rejected
  * and silently replaced (which would defeat the retry protection).
  */
-export function newAnalysisJobId(now: number = Date.now(), random: () => number = Math.random): string {
+/** Uniform [0, 1) from the platform's cryptographic generator (analysis ids are Storage keys; they must not be predictable). */
+export function cryptoRandom(): number {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c?.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0] / 0x1_0000_0000;
+  return Math.random();
+}
+
+export function newAnalysisJobId(now: number = Date.now(), random: () => number = cryptoRandom): string {
   let token = "";
   // Bounded, so a degenerate random source cannot loop forever; the fallback still yields a valid id.
   for (let i = 0; i < 16 && token.length < 8; i++) token += random().toString(36).slice(2);
