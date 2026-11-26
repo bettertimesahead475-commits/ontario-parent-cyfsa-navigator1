@@ -34,6 +34,10 @@ describe("hyphenated compounds and full-width apostrophes (release candidate 202
     expect(locateQuote("Visit 2 - the child was calm.", "the child was calm.").status).toBe("EXACT");
     expect(locateQuote("Visit 2 -the child was calm.", "the child was calm.").status).toBe("EXACT");
     expect(locateQuote("I can\uFF07t attend.", "I can\uFF07t attend.").status).toBe("EXACT");
+    expect(locateQuote("He left\u2014The child was calm.", "the child was calm.").status).toBe("CASE_OR_PUNCTUATION_VARIANT");
+    expect(locateQuote("He left\u2013the child was calm.", "THE CHILD WAS CALM.").status).toBe("CASE_OR_PUNCTUATION_VARIANT");
+    expect(locateQuote("1-Child was calm.", "Child was calm.").status).toBe("EXACT");
+    expect(locateQuote("Page 3-The worker left.", "The worker left.").status).toBe("EXACT");
   });
 });
 
