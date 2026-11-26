@@ -32,7 +32,17 @@ async function adminPost<T = any>(path: string, payload: Record<string, unknown>
   return body as T;
 }
 
-const money = (n: unknown) => typeof n === "number" ? `$${n.toFixed(2)}` : "—";
+// null = the server could not establish this figure (shown as unavailable, never as $0.00).
+const money = (n: unknown) => typeof n === "number" ? `$${n.toFixed(2)}` : n === null ? "unavailable" : "—";
+
+/** Server-reported reporting gaps. Financial figures are never presented as complete while any warning exists. */
+function ReportingWarnings({ warnings }: { warnings?: string[] }) {
+  if (!warnings?.length) return null;
+  return <div role="alert" className="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+    <strong>Figures incomplete.</strong>
+    <ul className="list-disc pl-4">{warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+  </div>;
+}
 const when = (s: unknown) => typeof s === "string" && s ? new Date(s).toLocaleString() : "—";
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
@@ -183,11 +193,11 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
         <li>Stuck jobs: {m.stuckJobs.length}; recent failures: {m.recentFailures.length}</li>
         {m.status?.diagnostics && <li className="text-xs text-slate-600">{Object.entries(m.status.diagnostics).map(([k, v]) => `${k}: ${v}`).join(" · ")}</li>}
       </ul> : <p className="text-sm">Loading…</p>}</Card>
-      <Card title="Revenue (CAD)">{rv ? <ul className="space-y-1 text-sm">
+      <Card title="Revenue (CAD)">{rv ? <><ReportingWarnings warnings={rv.reporting?.warnings} /><ul className="space-y-1 text-sm">
         <li>Approved: {money(rv.totals.approvedAmount)} · Refunded: {money(rv.totals.refundedAmount)} · Net: <strong>{money(rv.totals.netAmount)}</strong></li>
         <li>Bank confirmed: {money(rv.totals.bankConfirmedAmount)} · Disputed: {money(rv.totals.disputedAmount)} · Pending requests: {money(rv.totals.pendingAmount)}</li>
         <li className="pt-2"><Table head={["Month", "Approved", "Amount", "Refunded"]} rows={rv.byMonth.slice(0, 12).map((r: any) => [r.month, r.approved, money(r.approvedAmount), money(r.refundedAmount)])} /></li>
-      </ul> : <p className="text-sm">Loading…</p>}</Card>
+      </ul></> : <p className="text-sm">Loading…</p>}</Card>
       <Card title="Usage (last 7 days)">{u ? <>
         <p className="mb-2 text-sm">Jobs in the last 24 hours: {u.jobsLast24h}</p>
         <Table head={["Mode", "Total", "Completed", "Failed", "Running", "Queued", "Avg s", "Owner runs"]} rows={Object.entries(u.byMode).map(([k, v]: [string, any]) => [k, v.total, v.completed, v.failed, v.running, v.queued, v.avgSeconds ?? "—", v.ownerRuns])} />
@@ -196,11 +206,11 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
       <Card title="Packages">{rv?.byPlan ? <Table head={["Package", "Approved", "Amount", "Pending"]} rows={rv.byPlan.map((r: any) => [r.plan, r.approved, money(r.approvedAmount), r.pending])} /> : <p className="text-sm">Loading…</p>}</Card>
     </div>}
 
-    {section === "payments" && <Card title="Payments and entitlements">{data.payments ? <Table
+    {section === "payments" && <Card title="Payments and entitlements">{data.payments ? <><ReportingWarnings warnings={data.payments.reporting?.warnings} /><Table
       head={["Reference", "Customer", "Package", "Amount", "Submitted", "Status", "Bank", "Access", "Credits", "Actions"]}
       rows={data.payments.payments.map((p: any) => [p.referenceNumber, p.customerEmail ?? "—", p.package, money(p.amount), when(p.submittedAt), p.status, p.bankSettlementStatus, p.accessStatus,
         p.creditsGranted != null ? `${p.creditsConsumed}/${p.creditsGranted}` : "—",
-        <span key="a">{paymentActions(p)}{p.sessionId && sessionActions({ sessionId: p.sessionId, accessStatus: p.accessStatus, creditsConsumed: p.creditsConsumed })}</span>])} /> : <p className="text-sm">Loading…</p>}</Card>}
+        <span key="a">{paymentActions(p)}{p.sessionId && sessionActions({ sessionId: p.sessionId, accessStatus: p.accessStatus, creditsConsumed: p.creditsConsumed })}</span>])} /></> : <p className="text-sm">Loading…</p>}</Card>}
 
     {section === "customers" && <Card title="Customer lookup">
       <form className="mb-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void searchCustomer(); }}>

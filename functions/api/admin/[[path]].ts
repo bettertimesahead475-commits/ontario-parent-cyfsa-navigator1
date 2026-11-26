@@ -58,11 +58,39 @@ function publicCode(c: AccessCode) {
     state: c.used_at ? 'redeemed' : c.expires_at && Date.parse(c.expires_at) <= Date.now() ? 'expired' : 'unused' };
 }
 
-function publicPayment(p: Payment, settlement?: { status: string; at: string }) {
+function publicPayment(p: Payment, settlements: Settlements) {
   const { email, uid } = parsePaymentNotes(p.notes);
+  const settlement = settlements.byReference.get(safeSegment(String(p.reference_number || '')));
   return { referenceNumber: p.reference_number ?? null, customerEmail: email, firebaseUid: (p.firebase_uid as string) || uid,
     package: p.plan ?? null, amount: amountOf(p.amount), status: p.status ?? null, submittedAt: p.submitted_at ?? null,
-    approvedAt: p.approved_at ?? null, bankSettlementStatus: settlement?.status ?? 'pending_settlement', settlementUpdatedAt: settlement?.at ?? null };
+    approvedAt: p.approved_at ?? null,
+    // 'unknown' (never 'pending_settlement') when the settlement records could not be read completely.
+    bankSettlementStatus: settlement?.status ?? (settlements.complete ? 'pending_settlement' : 'unknown'),
+    settlementUpdatedAt: settlement?.at ?? null };
+}
+
+/**
+ * Bank-settlement and refund state per payment reference, read from the administrator audit trail (the production
+ * schema has no settlement or refund column; see BLOCKERS B-6). `complete` is false when the trail could not be read
+ * or was cut off at the read limit: callers must then report the affected figures as unavailable, never as zero.
+ */
+type Settlements = { byReference: Map<string, { status: string; at: string }>; names: string[]; available: boolean; truncated: boolean; complete: boolean };
+const SETTLEMENT_READ_LIMIT = 5000;
+async function readSettlements(env: AdminEnv, fetcher: typeof fetch): Promise<Settlements> {
+  try {
+    const names = await listAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher);
+    const truncated = names.length >= SETTLEMENT_READ_LIMIT;
+    return { byReference: settlementByReference(names), names, available: true, truncated, complete: !truncated };
+  } catch {
+    console.error('[ADMIN_SETTLEMENT_UNAVAILABLE]');
+    return { byReference: new Map(), names: [], available: false, truncated: false, complete: false };
+  }
+}
+
+function settlementWarnings(s: Settlements): string[] {
+  if (!s.available) return ['Refund and bank-settlement records could not be read. Refunds, net revenue and settlement totals are unavailable; do not rely on the figures shown as complete.'];
+  if (s.truncated) return [`Refund and bank-settlement records exceed ${SETTLEMENT_READ_LIMIT} entries and were not read completely. Refund and settlement figures are unavailable.`];
+  return [];
 }
 
 /** The credit counter that paid_reserve_credit charges for this session today (null: unlimited / not counted). */
@@ -203,21 +231,21 @@ async function sha256Hex(text: string): Promise<string> {
 // ---------------------------------------------------------------- read endpoints
 
 async function paymentsOverview(env: AdminEnv, fetcher: typeof fetch, now: Date) {
-  const [payments, sessions, auditNames] = await Promise.all([
+  const [payments, sessions, settlements] = await Promise.all([
     rest<Payment[]>(env, 'payments?select=*&order=submitted_at.desc.nullslast&limit=200', {}, fetcher),
     rest<Session[]>(env, 'navigator_paid_sessions?select=*&order=issued_at.desc&limit=1000', {}, fetcher),
-    listAuditNames(env, 2000, fetcher).catch(() => [] as string[]),
+    readSettlements(env, fetcher),
   ]);
   const references = [...new Set(payments.map((p) => String(p.reference_number || '')).filter((r) => REFERENCE.test(r)))];
   const codes: CodeLink[] = [];
   for (let i = 0; i < references.length; i += 100) {
     codes.push(...await rest<CodeLink[]>(env, `access_codes?select=*&reference_number=in.(${references.slice(i, i + 100).join(',')})&limit=1000`, {}, fetcher));
   }
-  const settlement = settlementByReference(auditNames);
   const counters = await countersFor(env, sessions.map((s) => s.id), fetcher);
   return {
+    reporting: { settlementAvailable: settlements.complete, warnings: settlementWarnings(settlements) },
     payments: payments.map((p) => {
-      const base = publicPayment(p, settlement.get(safeSegment(String(p.reference_number || ''))));
+      const base = publicPayment(p, settlements);
       // Linked through the payment's own access code, never by uid and package (a customer can buy a package twice).
       const duplicated = payments.filter((x) => x.reference_number === p.reference_number).length > 1;
       const session = duplicated ? undefined : codes
@@ -255,20 +283,21 @@ async function customerDetail(env: AdminEnv, q: string, fetcher: typeof fetch, n
   if (!email) email = payments.map((p) => parsePaymentNotes(p.notes).email).find(Boolean) ?? null;
   if (!uid) uid = payments.map((p) => (p.firebase_uid as string) || parsePaymentNotes(p.notes).uid).find(Boolean) ?? null;
 
-  const [sessions, codes, jobs, freeUsage, auditNames] = await Promise.all([
+  const [sessions, codes, jobs, freeUsage, settlements] = await Promise.all([
     uid ? rest<Session[]>(env, `navigator_paid_sessions?select=*&firebase_uid=eq.${enc(uid)}&order=issued_at.desc&limit=50`, {}, fetcher) : Promise.resolve([] as Session[]),
     email ? rest<AccessCode[]>(env, `access_codes?select=*&email=eq.${enc(email)}&limit=50`, {}, fetcher) : Promise.resolve([] as AccessCode[]),
     uid ? rest<Record<string, unknown>[]>(env, `analyzer_jobs?select=job_id,mode,status,stage,progress,error_code,retryable,attempt_count,created_at,updated_at,completed_at,session_id&owner_uid=eq.${enc(uid)}&order=created_at.desc&limit=50`, {}, fetcher) : Promise.resolve([]),
     uid ? rest<Counter[]>(env, `free_usage?select=uid,analyses_used,last_analysis_at&uid=eq.${enc(uid)}&limit=1`, {}, fetcher) : Promise.resolve([] as Counter[]),
-    listAuditNames(env, 2000, fetcher).catch(() => [] as string[]),
+    readSettlements(env, fetcher),
   ]);
   const ownSessions = sessions.filter((s) => s.firebase_uid === uid);
   const counters = await countersFor(env, ownSessions.map((s) => s.id), fetcher);
-  const settlement = settlementByReference(auditNames);
+  const auditNames = settlements.names;
   const targets = new Set([...ownSessions.map((s) => safeSegment(s.id)), ...payments.map((p) => safeSegment(String(p.reference_number || ''))), ...codes.map((c) => safeSegment(String(c.id || '')))]);
   return {
     identity: { email, firebaseUid: uid },
-    payments: payments.map((p) => publicPayment(p, settlement.get(safeSegment(String(p.reference_number || ''))))),
+    reporting: { settlementAvailable: settlements.complete, warnings: settlementWarnings(settlements) },
+    payments: payments.map((p) => publicPayment(p, settlements)),
     sessions: ownSessions.map((s) => publicSession(s, counters, now)),
     accessCodes: codes.filter((c) => (c.email || '').toLowerCase() === email).map(publicCode),
     jobs,
@@ -304,17 +333,22 @@ async function usageSummary(env: AdminEnv, fetcher: typeof fetch, now: Date) {
 }
 
 async function revenueSummary(env: AdminEnv, fetcher: typeof fetch) {
-  const [{ rows: payments, truncated }, auditNames, summary] = await Promise.all([
+  const [{ rows: payments, truncated }, settlements, summary] = await Promise.all([
     restAll<Payment>(env, 'payments?select=reference_number,plan,amount,status,submitted_at,approved_at&order=id.asc', fetcher).catch((error) => {
       if (error instanceof AdminStoreError && error.code === 'ADMIN_SCHEMA_UNAVAILABLE') {
         return restAll<Payment>(env, 'payments?select=reference_number,plan,amount,status,submitted_at,approved_at&order=submitted_at.asc,reference_number.asc', fetcher);
       }
       throw error;
     }),
-    listAuditNames(env, 5000, fetcher).catch(() => [] as string[]),
+    readSettlements(env, fetcher),
     restOptional<Record<string, unknown>[]>(env, 'navigator_payment_summary?select=*', [], fetcher),
   ]);
-  const settlement = settlementByReference(auditNames);
+  const settlement = settlements.byReference;
+  // References shared by more than one payment (possible with the former 5-character references): their settlement
+  // records cannot be attributed to one payment.
+  const referenceCounts = new Map<string, number>();
+  for (const p of payments) if (p.reference_number) referenceCounts.set(String(p.reference_number), (referenceCounts.get(String(p.reference_number)) || 0) + 1);
+  const duplicateReferences = [...referenceCounts.entries()].filter(([, n]) => n > 1).map(([ref]) => ref);
   const months: Record<string, { approved: number; approvedAmount: number; refundedAmount: number }> = {};
   const plans: Record<string, { approved: number; approvedAmount: number; pending: number }> = {};
   let pendingAmount = 0; let approvedAmount = 0; let refundedAmount = 0; let bankConfirmedAmount = 0; let disputedAmount = 0;
@@ -335,11 +369,23 @@ async function revenueSummary(env: AdminEnv, fetcher: typeof fetch) {
     if (state === 'missing_or_disputed') disputedAmount += amount;
   }
   const round = (n: number) => Math.round(n * 100) / 100;
+  // Payment totals come from the payment rows themselves (authoritative); settlement-derived totals only when the
+  // settlement records were read completely and can be attributed. Unavailable figures are null, never zero.
+  const paymentsComplete = !truncated;
+  const settlementKnown = settlements.complete && duplicateReferences.length === 0;
+  const fromPayments = (n: number) => (paymentsComplete ? round(n) : null);
+  const fromSettlements = (n: number) => (paymentsComplete && settlementKnown ? round(n) : null);
+  const warnings = [
+    ...(paymentsComplete ? [] : ['Not every payment record could be read. Totals are unavailable.']),
+    ...settlementWarnings(settlements),
+    ...(duplicateReferences.length ? [`${duplicateReferences.length} payment reference(s) are shared by more than one payment (${duplicateReferences.slice(0, 5).join(', ')}). Their refunds and settlements cannot be attributed; refund and settlement totals are unavailable until resolved.`] : []),
+  ];
   return {
     currency: 'CAD',
-    totals: { approvedAmount: round(approvedAmount), refundedAmount: round(refundedAmount), netAmount: round(approvedAmount - refundedAmount),
-      bankConfirmedAmount: round(bankConfirmedAmount), disputedAmount: round(disputedAmount), pendingAmount: round(pendingAmount) },
-    byMonth: Object.entries(months).sort(([a], [b]) => b.localeCompare(a)).map(([month, v]) => ({ month, ...v, approvedAmount: round(v.approvedAmount), refundedAmount: round(v.refundedAmount) })),
+    reporting: { complete: warnings.length === 0, paymentsComplete, settlementAvailable: settlements.complete, duplicateReferences: duplicateReferences.length, warnings },
+    totals: { approvedAmount: fromPayments(approvedAmount), refundedAmount: fromSettlements(refundedAmount), netAmount: fromSettlements(approvedAmount - refundedAmount),
+      bankConfirmedAmount: fromSettlements(bankConfirmedAmount), disputedAmount: fromSettlements(disputedAmount), pendingAmount: fromPayments(pendingAmount) },
+    byMonth: Object.entries(months).sort(([a], [b]) => b.localeCompare(a)).map(([month, v]) => ({ month, ...v, approvedAmount: round(v.approvedAmount), refundedAmount: settlementKnown ? round(v.refundedAmount) : null })),
     byPlan: Object.entries(plans).map(([plan, v]) => ({ plan, ...v, approvedAmount: round(v.approvedAmount) })),
     tierSummary: summary.available ? summary.data : null,
     truncated,

@@ -607,3 +607,73 @@ describe('independent re-review findings (c82e971) stay fixed', () => {
     expect(db.tables.navigator_paid_sessions[0].revoked_at).toBeNull();
   });
 });
+
+describe('financial reporting integrity (DEVIN-FIN-01)', () => {
+  const failStorageList = (db: ReturnType<typeof fakeSupabase>, status = 503) => {
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      String(input).includes('/storage/v1/object/list/') ? new Response('{}', { status }) : original(input, init));
+  };
+
+  it('complete data: totals are reported and marked complete', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting).toMatchObject({ complete: true, settlementAvailable: true, warnings: [] });
+    expect(r.body.totals).toMatchObject({ approvedAmount: 49, refundedAmount: 49, netAmount: 0, pendingAmount: 129 });
+  });
+
+  it('audit log unreadable: refunds/net/settlement are unavailable (null), never silently zero', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    failStorageList(db);
+    const r = await call(db, 'revenue');
+    expect(r.status).toBe(200);
+    expect(r.body.reporting.complete).toBe(false);
+    expect(r.body.reporting.settlementAvailable).toBe(false);
+    expect(r.body.reporting.warnings.join(' ')).toMatch(/could not be read/);
+    // Payment-row totals are still authoritative; refund-derived figures are not presented.
+    expect(r.body.totals).toMatchObject({ approvedAmount: 49, pendingAmount: 129, refundedAmount: null, netAmount: null, bankConfirmedAmount: null, disputedAmount: null });
+    expect(r.body.byMonth.every((m: any) => m.refundedAmount === null)).toBe(true);
+  });
+
+  it('audit log unreadable: overview and customer lookup show settlement "unknown", not "pending_settlement"', async () => {
+    const db = fakeSupabase(seed());
+    failStorageList(db);
+    const overview = await call(db, 'payments/overview');
+    expect(overview.body.reporting.settlementAvailable).toBe(false);
+    expect(overview.body.payments.every((p: any) => p.bankSettlementStatus === 'unknown')).toBe(true);
+    const customer = await call(db, 'customers?q=PS-BBBBB');
+    expect(customer.body.reporting.settlementAvailable).toBe(false);
+    expect(customer.body.payments[0].bankSettlementStatus).toBe('unknown');
+  });
+
+  it('settlement actions refuse to proceed when the audit log is unreadable (no blind second refund)', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    failStorageList(db);
+    const again = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    expect(again.status).toBe(503);
+  });
+
+  it('duplicate payment references: refund/settlement totals unavailable with a warning', async () => {
+    const db = fakeSupabase(seed());
+    db.tables.payments.push({ reference_number: 'PS-BBBBB', plan: 'Basic', amount: 49, status: 'approved', notes: 'email:other@x.com;uid:uidC00001' });
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting).toMatchObject({ complete: false, duplicateReferences: 1 });
+    expect(r.body.totals.approvedAmount).toBe(98);
+    expect(r.body.totals.refundedAmount).toBeNull();
+    expect(r.body.reporting.warnings.join(' ')).toMatch(/PS-BBBBB/);
+  });
+
+  it('payments read fails part-way: the request fails rather than reporting partial totals', async () => {
+    const db = fakeSupabase(seed());
+    for (let i = 0; i < 1500; i++) db.tables.payments.push({ reference_number: `PS-T${String(i).padStart(5, '0')}`, plan: 'Basic', amount: 1, status: 'approved' });
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      String(input).includes('/rest/v1/payments') && String(input).includes('offset=1000') ? new Response('{}', { status: 500 }) : original(input, init));
+    const r = await call(db, 'revenue');
+    expect(r.status).toBeGreaterThanOrEqual(500);
+    expect(r.body.totals).toBeUndefined();
+  });
+});

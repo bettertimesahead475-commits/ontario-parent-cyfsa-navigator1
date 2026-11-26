@@ -43,3 +43,28 @@ describe("AdminConsole", () => {
     for (const [, init] of apiFetch.mock.calls) expect(JSON.stringify(init ?? {})).not.toMatch(/admin-secret/i);
   });
 });
+
+describe("AdminConsole financial reporting (DEVIN-FIN-01)", () => {
+  beforeEach(() => { apiFetch.mockReset(); });
+  it("shows a warning and 'unavailable' (never $0.00) when refunds cannot be established", async () => {
+    apiFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith("/session")) return json(200, { admin: true, email: "owner@example.com" });
+      if (url.endsWith("/monitoring/status")) return json(200, { healthy: true, checkedAt: "2026-11-25T00:00:00Z", status: {}, database: { reachable: true, latencyMs: 1 }, stuckJobs: [], recentFailures: [] });
+      if (url.endsWith("/usage")) return json(200, { jobsLast24h: 0, byMode: {}, failuresByCode: {} });
+      if (url.endsWith("/revenue")) return json(200, {
+        reporting: { complete: false, warnings: ["Refund and bank-settlement records could not be read."] },
+        totals: { approvedAmount: 49, refundedAmount: null, netAmount: null, bankConfirmedAmount: null, disputedAmount: null, pendingAmount: 0 },
+        byMonth: [{ month: "2026-11", approved: 1, approvedAmount: 49, refundedAmount: null }], byPlan: [],
+      });
+      return json(404, {});
+    });
+    const { container, findByText } = render(<AdminConsole />);
+    expect(await findByText("Figures incomplete.")).toBeTruthy();
+    const text = container.textContent || "";
+    expect(text).toMatch(/records could not be read/);
+    expect(text).toContain("Refunded: unavailable");
+    expect(text).toContain("Net: unavailable");
+    expect(text).not.toMatch(/Refunded: \$0\.00|Net: \$0\.00|Bank confirmed: \$0\.00/);
+    expect(text).toContain("Approved: $49.00"); // authoritative payment total still shown
+  });
+});
