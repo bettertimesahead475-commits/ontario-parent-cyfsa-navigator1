@@ -16,6 +16,16 @@ vi.mock("../functions/api/_auth-check", () => ({
   onRequestGet: vi.fn(),
 }));
 vi.mock("../functions/api/_supabase-paid-session", () => ({ readVerifiedPaidSession: vi.fn() }));
+// Ownership of client-supplied analysis ids is covered by api/analysis-id-ownership.test.ts; stubbed here.
+vi.mock("../functions/api/_durable-analysis-jobs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../functions/api/_durable-analysis-jobs")>()),
+  jobOwnership: vi.fn(async () => "clear"),
+}));
+// The create-once id claim is covered by api/analysis-id-ownership.test.ts; stubbed here.
+vi.mock("../functions/api/_analysis-jobs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../functions/api/_analysis-jobs")>()),
+  claimJobRecord: vi.fn(async () => "claimed"),
+}));
 
 const DOC = "AFFIDAVIT. On October 12, 2026 the Society opened an investigation. The worker attended on October 14, 2026.";
 

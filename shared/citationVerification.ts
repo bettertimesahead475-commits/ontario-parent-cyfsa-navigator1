@@ -251,15 +251,27 @@ export function isVerifiedCyfsaSection(sectionKey: string): boolean {
  */
 export function citedSections(text: string): string[] {
   const out: string[] = [];
-  const listPattern =
-    /\b(?:s|ss|sec|secs|section|sections|subs?|subsections?|clause|clauses)\.?\s*((?:(?:\d{1,3}(?:\.\d+)?(?:\(\d+(?:\.\d+)?\))*(?:\([a-z](?:\.\d+)?\))*(?:\s*,\s*(?:para|paragraph)s?\.?\s*\d+(?:\.\d+)?)?|\(\d+(?:\.\d+)?\)(?:\([a-z](?:\.\d+)?\))*)(?:\s*(?:,|;|and|or|&|to|-|–)\s*)?)+)/gi;
+  const item = String.raw`(?:\d+(?:\.\d+)?(?:\(\d+(?:\.\d+)?\))*(?:\([a-z](?:\.\d+)?\))*(?:\s*,\s*(?:para|paragraph)s?\.?\s*\d+(?:\.\d+)?)?|\(\d+(?:\.\d+)?\)(?:\([a-z](?:\.\d+)?\))*)`;
+  const separator = String.raw`\s*(?:,|;|and|or|&|to|-|–)\s*`;
+  // Items must be separated, and a pinpoint must end where the citation does: "s. 1003" is not "100" and "3", and
+  // "74(2)(zz)" is not "74(2)". Any character fused onto the last item is kept so the key cannot verify.
+  const listPattern = new RegExp(
+    String.raw`\b(?:s|ss|sec|secs|section|sections|subs?|subsections?|clause|clauses)\.?\s*(${item}(?:${separator}${item})*)([\p{L}\p{N}(][^\s,;]*)?`,
+    "giu"
+  );
 
   for (const m of text.matchAll(listPattern)) {
     const rawSegment = m[1];
+    // A bare conjunction directly followed by another section keyword ("74(2)and s. 125(1)") joins the next
+    // citation; anything else fused on ("74(2)(a)to (z)") stays fused so the key cannot verify.
+    const joinsNext = /^(?:and|or)$/i.test(m[2] || "") &&
+      /^\s+(?:s|ss|sec|secs|section|sections|subs?|subsections?|clause|clauses)\.?\s*\d/i.test(text.slice((m.index ?? 0) + m[0].length));
+    const fused = joinsNext ? "" : m[2] || "";
+    const before = out.length;
 
     // Expand explicit subsection ranges like "74(2)-(4)" or "74(2)–(4)"
     const expandedSegment = rawSegment.replace(
-      /(\d{1,3}(?:\.\d+)?)\((\d+)\)\s*(?:-|–|to)\s*\((\d+)\)/gi,
+      /(\d+(?:\.\d+)?)\((\d+)\)\s*(?:-|–|to)\s*\((\d+)\)/gi,
       (_match, sec, startSub, endSub) => {
         const sNum = Number(startSub);
         const eNum = Number(endSub);
@@ -276,7 +288,7 @@ export function citedSections(text: string): string[] {
 
     let base = "";
     const itemRegex =
-      /(\d{1,3}(?:\.\d+)?)((?:\(\d+(?:\.\d+)?\))*)((?:\([a-z](?:\.\d+)?\))*)(?:\s*,\s*(?:para|paragraph)s?\.?\s*(\d+(?:\.\d+)?))?|\((\d+(?:\.\d+)?)\)((?:\([a-z](?:\.\d+)?\))*)/gi;
+      /(\d+(?:\.\d+)?)((?:\(\d+(?:\.\d+)?\))*)((?:\([a-z](?:\.\d+)?\))*)(?:\s*,\s*(?:para|paragraph)s?\.?\s*(\d+(?:\.\d+)?))?|\((\d+(?:\.\d+)?)\)((?:\([a-z](?:\.\d+)?\))*)/gi;
 
     for (const item of expandedSegment.matchAll(itemRegex)) {
       if (item[1]) {
@@ -290,6 +302,7 @@ export function citedSections(text: string): string[] {
         out.push(`${base}(${item[5]})${clauses}`);
       }
     }
+    if (fused && out.length > before) out[out.length - 1] += fused;
   }
   return out;
 }

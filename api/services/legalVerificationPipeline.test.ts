@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   resolveLegalAuthority,
   classifyStatutoryCitation,
+  evaluatePropositionSupport,
   VERIFIED_STATUTORY_PROVISIONS,
 } from "../../shared/legalVerificationPipeline";
 
@@ -383,5 +384,72 @@ describe("Authoritative Legal Citation Verification Pipeline", () => {
         expect(misapplied24.propositionSupport).toBe("IRRELEVANT_OR_MISAPPLIED");
       });
     });
+  });
+});
+
+// SonarCloud S8786: the proposition patterns' "CYFSA\s*,?\s*" and "\s*X?\s*" runs became "CYFSA\s*(?:,\s*)?" and
+// "\s*(?:X\s*)?" (same strings matched; see the note above normalizeClauseAbbreviations). These cases were checked
+// against the previous implementation and pin its results; the timing test proves the rewrite is linear.
+describe("Proposition patterns after the S8786 whitespace rewrite", () => {
+  const PINNED: Array<[string, string, string]> = [
+    ["102","The court made a 102 supervision order.","IRRELEVANT_OR_MISAPPLIED"],
+    ["102","The order was a supervision order (CYFSA,  s 102(1)) for six months.","IRRELEVANT_OR_MISAPPLIED"],
+    ["102","It was a supervision order under the CYFSA ,  section 102(1) of the Act.","IRRELEVANT_OR_MISAPPLIED"],
+    ["102","Under CYFSA, s. 102(1), the court may make a supervision order instead of a custody order.","IRRELEVANT_OR_MISAPPLIED"],
+    ["102","Under CYFSA   s. 102(1), the court may grant a custody order instead of a supervision order under s. 101(1), para. 1.","SUPPORTED"],
+    ["102","CYFSA,\ns. 102 governs a supervision order.","IRRELEVANT_OR_MISAPPLIED"],
+    ["102","CYFSA s. 102(1) authorizes a custody order and the parent may seek access.","SUPPORTED"],
+    ["81(1)","The worker apprehended the child without a warrant under CYFSA,  s. 81(1).","IRRELEVANT_OR_MISAPPLIED"],
+    ["81(1)","Under CYFSA , s. 81(1) a worker may apprehend a child without a warrant.","IRRELEVANT_OR_MISAPPLIED"],
+    ["81(1)","CYFSA s. 81(1) authorizes the society to apply to court to determine whether a child is in need of protection.","SUPPORTED"],
+    ["81(1)","Under CYFSA s. 81(1), the society applied, and under CYFSA, s. 81(7) the worker apprehended without a warrant.","SUPPORTED"],
+    ["81(2)","The child was removed without a warrant pursuant to the CYFSA,  s. 81(2).","IRRELEVANT_OR_MISAPPLIED"],
+    ["81(2)","Under CYFSA, s. 81(2) a worker may apprehend a child without a warrant.","IRRELEVANT_OR_MISAPPLIED"],
+    ["81(2)","CYFSA s. 81(2) governs a warrant to apprehend issued by a justice of the peace.","SUPPORTED"],
+    ["81(7)","A warrant to apprehend under CYFSA ,s. 81(7) was issued.","IRRELEVANT_OR_MISAPPLIED"],
+    ["81(7)","Under CYFSA,  s. 81(7) a justice of the peace may issue a warrant to apprehend.","IRRELEVANT_OR_MISAPPLIED"],
+    ["81(7)","CYFSA s. 81(7) permits warrantless apprehension where there is substantial risk.","SUPPORTED"],
+    ["88","The 30-day adjournment limit under CYFSA, s. 88 was exceeded.","IRRELEVANT_OR_MISAPPLIED"],
+    ["88","The 30 days adjournment   under the CYFSA s. 88 applies.","IRRELEVANT_OR_MISAPPLIED"],
+    ["88","Under CYFSA,  s. 88 the court shall not adjourn for more than 30 days.","IRRELEVANT_OR_MISAPPLIED"],
+    ["88","The 10-day initial hearing deadline under the CYFSA, s. 88 was missed.","CONTRADICTED_BY_STATUTE"],
+    ["88","The 10-day initial hearing deadline  per  CYFSA s. 88 was missed.","CONTRADICTED_BY_STATUTE"],
+    ["88","CYFSA, s. 88 requires that the matter be heard within 10 days.","CONTRADICTED_BY_STATUTE"],
+    ["88","CYFSA s. 88 requires the matter to be brought before a court within five days.","SUPPORTED"],
+    ["94(1)","The 5-day post-apprehension hearing deadline under CYFSA, s. 94(1) was missed.","IRRELEVANT_OR_MISAPPLIED"],
+    ["94(1)","The five days hearing  rule   in the CYFSA s. 94(1) applies.","IRRELEVANT_OR_MISAPPLIED"],
+    ["94(1)","Under CYFSA,  s. 94(1) the hearing must take place within 5 days.","IRRELEVANT_OR_MISAPPLIED"],
+    ["94(1)","The 45-day adjournment limit under CYFSA, s. 94(1) applies.","CONTRADICTED_BY_STATUTE"],
+    ["94(1)","The 45-day statutory adjournment cap  CYFSA s. 94(1) applies.","CONTRADICTED_BY_STATUTE"],
+    ["94(1)","Under CYFSA, s. 94(1) the court may adjourn a hearing for up to 60 days without consent.","CONTRADICTED_BY_STATUTE"],
+    ["94(1)","CYFSA s. 94(1) prohibits adjourning a hearing for more than 30 days without consent.","SUPPORTED"],
+    ["94(5)","The 5-day hearing deadline under CYFSA, s. 94(5) was missed.","IRRELEVANT_OR_MISAPPLIED"],
+    ["94(5)","The 30 days adjournment  limit  governed by the CYFSA ,  s. 94(5) applies.","IRRELEVANT_OR_MISAPPLIED"],
+    ["94(5)","The 5-day initial hearing CYFSA s 94(5).","IRRELEVANT_OR_MISAPPLIED"],
+    ["94(5)","CYFSA s. 94(5) requires the court to consider placement with a relative before temporary society custody.","SUPPORTED"],
+  ];
+
+  it.each(PINNED)("%s: %s -> %s", (key, proposition, expected) => {
+    expect(evaluatePropositionSupport(key, proposition).support).toBe(expected);
+  });
+
+  it("evaluates 50,000-space adversarial propositions in well under 100 ms (the old patterns took seconds to minutes)", () => {
+    const spaces = " ".repeat(50_000);
+    const attacks = [
+      `CYFSA${spaces}x`,
+      `30-day adjournment limit${spaces}x`,
+      `5 days post-apprehension${spaces}x`,
+      `5-day hearing${spaces}x`,
+      `7-day initial hearing deadline${spaces}x`,
+      `45-day adjournment limit${spaces}x`,
+      `supervision order (CYFSA${spaces}x`,
+    ];
+    for (const key of ["102", "81(1)", "81(2)", "81(7)", "88", "94(1)", "94(5)"]) {
+      for (const attack of attacks) {
+        const t0 = performance.now();
+        evaluatePropositionSupport(key, attack);
+        expect(performance.now() - t0, `${key} / ${attack.slice(0, 30)}`).toBeLessThan(100);
+      }
+    }
   });
 });

@@ -48,7 +48,9 @@ describe('Cloudflare Activate Code API - Atomic RPC Only (/api/activate-code)', 
       emailVerified: true,
     });
 
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('Function not found', { status: 404 })));
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('/rest/v1/access_codes')
+      ? Response.json([{ email: 'parent@example.com', reference_number: 'PS-TESTREF1' }])
+      : new Response('Function not found', { status: 404 })));
 
     const req = new Request('http://localhost/api/activate-code', {
       method: 'POST',
@@ -72,6 +74,8 @@ describe('Cloudflare Activate Code API - Atomic RPC Only (/api/activate-code)', 
     const testCode = 'ABCD-1234-WXYZ';
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      // Purchase record of the code: bound to the redeeming parent's email.
+      if (url.includes('/rest/v1/access_codes')) return Response.json([{ email: 'parent@example.com', reference_number: 'PS-TESTREF1' }]);
       if (url.includes('/rest/v1/rpc/redeem_access_code_atomic')) {
         return Response.json({
           status: 'activated',
@@ -109,6 +113,8 @@ describe('Cloudflare Activate Code API - Atomic RPC Only (/api/activate-code)', 
     const testCode = 'ABCD-1234-WXYZ';
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      // Purchase record of the code: bound to the redeeming parent's email.
+      if (url.includes('/rest/v1/access_codes')) return Response.json([{ email: 'parent@example.com', reference_number: 'PS-TESTREF1' }]);
       if (url.includes('/rest/v1/rpc/redeem_access_code_atomic')) {
         return Response.json({
           status: 'reused',
@@ -143,6 +149,8 @@ describe('Cloudflare Activate Code API - Atomic RPC Only (/api/activate-code)', 
     });
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      // Purchase record of the code: bound to the redeeming parent's email.
+      if (url.includes('/rest/v1/access_codes')) return Response.json([{ email: 'parent@example.com', reference_number: 'PS-TESTREF1' }]);
       if (url.includes('/rest/v1/rpc/redeem_access_code_atomic')) {
         return Response.json({
           status: 'consumed',
@@ -173,6 +181,8 @@ describe('Cloudflare Activate Code API - Atomic RPC Only (/api/activate-code)', 
     });
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      // Purchase record of the code: bound to the redeeming parent's email.
+      if (url.includes('/rest/v1/access_codes')) return Response.json([{ email: 'parent@example.com', reference_number: 'PS-TESTREF1' }]);
       if (url.includes('/rest/v1/rpc/redeem_access_code_atomic')) {
         return Response.json({
           status: 'expired',

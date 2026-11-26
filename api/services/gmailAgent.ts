@@ -341,7 +341,7 @@ export async function scanForPayments(): Promise<ScanResult> {
       }
 
       const referenceNumber = refMatch[0];
-      const amount = parseFloat(amountMatch[1]);
+      const amount = Number.parseFloat(amountMatch[1]);
 
       // SECURITY FIX (Phase 1.5 remediation, AUDIT.md Finding H-4): this used to call
       // approvePayment(referenceNumber, amount) directly here - the only "verification" a

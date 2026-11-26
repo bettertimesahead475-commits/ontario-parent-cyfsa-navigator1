@@ -19,6 +19,8 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { PDFDocument } from 'pdf-lib';
 import { getDocumentProxy } from 'unpdf';
 import { GeminiError, generateGemini, resolveGeminiModel, type GeminiEnv } from './_gemini';
+// stripSpacesBeforeNewlines: linear equivalent of .replace(/[ \t]+\n/g, '\n'), which was quadratic on long space runs.
+import { stripSpacesBeforeNewlines } from '../../shared/linearText';
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PDF_PAGES = 200;
@@ -164,10 +166,69 @@ const letters = (s: string) => (s.match(/[\p{L}\p{N}]/gu) || []).length;
 const XML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 function decodeXml(s: string): string {
   return s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (_, e: string) =>
-    e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)) : XML_ENTITIES[e.toLowerCase()]
+    e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? Number.parseInt(e.slice(2), 16) : Number.parseInt(e.slice(1), 10)) : XML_ENTITIES[e.toLowerCase()]
   );
 }
 const attr = (attrs: string, name: string) => new RegExp(`${name}="([^"]*)"`).exec(attrs)?.[1] ?? null;
+
+const isAsciiAlpha = (c: number) => (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+// [\w.\-]
+const isXmlNameChar = (c: number) => isAsciiAlpha(c) || (c >= 48 && c <= 57) || c === 95 || c === 46 || c === 45;
+
+export type XmlToken =
+  | { kind: 'text'; text: string }
+  | { kind: 'tag'; slash: string; ns: string | undefined; name: string; attrs: string; selfSlash: string };
+
+/**
+ * Splits XML into tags and character data. Produces exactly the matches of the former
+ *   /<(\/?)([A-Za-z][\w.\-]*:)?([A-Za-z][\w.\-]*)([^>]*?)(\/?)>|([^<]+)/g
+ * (groups 1-5 as slash/ns/name/attrs/selfSlash, group 6 as text), including skipping a "<" that does not start a
+ * tag. That pattern rescanned to the end of the input from every "<" with no later ">", and backtracked through the
+ * name, so a crafted document.xml made it quadratic. Here every character is visited a bounded number of times.
+ */
+export function xmlTokens(xml: string): XmlToken[] {
+  const tokens: XmlToken[] = [];
+  const lastGt = xml.lastIndexOf('>');
+  let i = 0;
+  while (i < xml.length) {
+    if (xml.charCodeAt(i) !== 60 /* < */) {
+      let end = xml.indexOf('<', i);
+      if (end < 0) end = xml.length;
+      tokens.push({ kind: 'text', text: xml.slice(i, end) });
+      i = end;
+      continue;
+    }
+    let p = i + 1;
+    let slash = '';
+    if (xml.charCodeAt(p) === 47 /* / */) {
+      slash = '/';
+      p++;
+    }
+    let runEnd = p + 1;
+    if (isAsciiAlpha(xml.charCodeAt(p))) while (runEnd < xml.length && isXmlNameChar(xml.charCodeAt(runEnd))) runEnd++;
+    // Not a tag unless a name starts here and a ">" follows it (names cannot contain ">"); the "<" is then skipped.
+    if (!isAsciiAlpha(xml.charCodeAt(p)) || runEnd > lastGt) {
+      i++;
+      continue;
+    }
+    const gt = xml.indexOf('>', runEnd);
+    let ns: string | undefined;
+    let nameStart = p;
+    let nameEnd = runEnd;
+    // The optional "prefix:" group only matches when a name follows the colon; otherwise it is not used.
+    if (xml.charCodeAt(runEnd) === 58 /* : */ && isAsciiAlpha(xml.charCodeAt(runEnd + 1))) {
+      ns = xml.slice(p, runEnd + 1);
+      nameStart = runEnd + 1;
+      nameEnd = nameStart + 1;
+      while (nameEnd < xml.length && isXmlNameChar(xml.charCodeAt(nameEnd))) nameEnd++;
+    }
+    // The lazy attribute group stops at the first ">", leaving a "/" right before it to the self-closing group.
+    const selfSlash = gt - 1 >= nameEnd && xml.charCodeAt(gt - 1) === 47 ? '/' : '';
+    tokens.push({ kind: 'tag', slash, ns, name: xml.slice(nameStart, nameEnd), attrs: xml.slice(nameEnd, gt - selfSlash.length), selfSlash });
+    i = gt + 1;
+  }
+  return tokens;
+}
 
 /**
  * Walks word/document.xml in order. This tokenizes decompressed, well-formed XML (tags and character data), which
@@ -186,7 +247,7 @@ export function docxToText(xml: string): string {
 
   const flushPara = () => {
     if (!para) return;
-    let text = para.join('').replace(/[ \t]+\n/g, '\n').trim();
+    let text = stripSpacesBeforeNewlines(para.join('')).trim();
     para = null;
     if (!text) return;
     if (headingLevel) text = `${'#'.repeat(Math.min(headingLevel, 6))} ${text}`;
@@ -195,19 +256,17 @@ export function docxToText(xml: string): string {
     else out.push(text);
   };
 
-  const re = /<(\/?)([A-Za-z][\w.\-]*:)?([A-Za-z][\w.\-]*)([^>]*?)(\/?)>|([^<]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) {
-    if (m[6] !== undefined) {
-      if (inText && para) para.push(decodeXml(m[6]));
+  for (const m of xmlTokens(xml)) {
+    if (m.kind === 'text') {
+      if (inText && para) para.push(decodeXml(m.text));
       continue;
     }
-    const closing = m[1] === '/';
-    const selfClosing = m[5] === '/' || /\/\s*$/.test(m[4]);
-    const ns = m[2] ?? '';
-    const name = m[3];
+    const closing = m.slash === '/';
+    const selfClosing = m.selfSlash === '/' || /\/\s*$/.test(m.attrs);
+    const ns = m.ns ?? '';
+    const name = m.name;
     if (ns !== 'w:') continue;
-    const attrs = m[4];
+    const attrs = m.attrs;
     if (name === 'p') {
       if (closing) flushPara();
       else {
@@ -316,7 +375,7 @@ async function readPdfTextLayer(bytes: Uint8Array, proxyGetter = getDocumentProx
             text += item.str;
             if (item.hasEOL) text += '\n';
           }
-          pageText = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+          pageText = stripSpacesBeforeNewlines(text).replace(/\n{3,}/g, '\n\n').trim();
         } finally {
           page.cleanup?.();
         }

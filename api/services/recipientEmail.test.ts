@@ -36,3 +36,21 @@ describe('canonicalRecipientEmail', () => {
     expect(canonicalRecipientEmail('   ' + 'x'.repeat(250) + '@b.c   ')).toBe('x'.repeat(250) + '@b.c');
   });
 });
+
+describe('edge-whitespace trim (S8786 linear rewrite)', () => {
+  it('trims only space and codes 9-13 at the edges, exactly as the former pattern did', () => {
+    const old = (s: string) => s.replace(/^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g, '');
+    for (const s of [' \t\n\v\f\rA@b.c\r\n ', ' a@b.c', 'a@b.c ', 'a  @b.c', '\v\va@b.c']) {
+      const v = old(s);
+      expect(canonicalRecipientEmail(s), JSON.stringify(s)).toBe(canonicalRecipientEmail(v));
+    }
+    expect(canonicalRecipientEmail(' \t\n\v\f\rA@B.C\r\n ')).toBe('a@b.c');
+    expect(canonicalRecipientEmail(' a@b.c')).toBeNull();
+  });
+
+  it('is linear on 50,000 internal spaces', () => {
+    const t0 = performance.now();
+    expect(canonicalRecipientEmail('a' + ' '.repeat(50_000) + '@b.c')).toBeNull();
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+});

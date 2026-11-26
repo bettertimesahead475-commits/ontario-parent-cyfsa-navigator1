@@ -4,8 +4,24 @@
 //   node scripts/check-staging-results.mjs staging-results.json
 
 import { readFileSync } from "node:fs";
+import path from "node:path";
 
 const file = process.argv[2];
+
+// Values read from the report are written to the CI log. A line break or "::" in a test title could otherwise
+// start a GitHub Actions workflow command; neutralise both and bound the length.
+function safe(value) {
+  const oneLine = String(value).split(String.fromCharCode(13)).join(" ").split(String.fromCharCode(10)).join(" ");
+  return oneLine.split("::").join(": :").slice(0, 300);
+}
+
+// The report must be a JSON file inside the working directory.
+function reportPath(candidate) {
+  const resolved = path.resolve(candidate);
+  const root = path.resolve(".") + path.sep;
+  if (!resolved.startsWith(root) || path.extname(resolved) !== ".json") fail("the report must be a .json file inside the working directory");
+  return resolved;
+}
 const expected = Number(process.env.EXPECTED_SCENARIO_COUNT ?? "6");
 
 function fail(message) {
@@ -17,18 +33,19 @@ if (!file) fail("usage: check-staging-results.mjs <vitest-json-report>");
 
 let report;
 try {
-  report = JSON.parse(readFileSync(file, "utf8"));
+  report = JSON.parse(readFileSync(reportPath(file), "utf8"));
 } catch (err) {
-  fail(`could not read the vitest JSON report at ${file}: ${err.message}`);
+  fail(`could not read the vitest JSON report at ${safe(file)}: ${safe(err.message)}`);
 }
 
-const total = report.numTotalTests ?? 0;
-const passed = report.numPassedTests ?? 0;
-const failed = report.numFailedTests ?? 0;
-const pending = (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0);
+const count = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const total = count(report.numTotalTests);
+const passed = count(report.numPassedTests);
+const failed = count(report.numFailedTests);
+const pending = count(report.numPendingTests) + count(report.numTodoTests);
 
 const executed = (report.testResults ?? []).flatMap((file) => file.assertionResults ?? []);
-const names = executed.map((t) => `${t.status}: ${t.title}`);
+const names = executed.map((t) => `${safe(t.status)}: ${safe(t.title)}`);
 console.log(names.join("\n"));
 
 if (failed > 0) fail(`${failed} staging scenario(s) failed.`);

@@ -150,9 +150,9 @@ export const onRequestGet = async ({
   // 3. Grace response for recently initiated jobs (req_<timestamp>_...)
   const match = jobId.match(/^req_(\d+)_/);
   if (match) {
-    const reqTs = parseInt(match[1], 10);
+    const reqTs = Number.parseInt(match[1], 10);
     const now = Date.now();
-    if (!isNaN(reqTs) && now - reqTs < 90000 && now - reqTs >= 0) {
+    if (!Number.isNaN(reqTs) && now - reqTs < 90000 && now - reqTs >= 0) {
       return Response.json(
         {
           jobId,

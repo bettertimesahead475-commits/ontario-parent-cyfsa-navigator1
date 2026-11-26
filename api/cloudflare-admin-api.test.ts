@@ -37,8 +37,10 @@ function fakeSupabase(seed: Record<string, Row[]>) {
     calls.push({ method, url: url.toString(), body });
     expect(init.headers.apikey).toBe(SERVICE_KEY);
     if (url.pathname.startsWith('/storage/v1/object/list/')) {
-      const names = [...storage.keys()].filter((k) => k.startsWith(body.prefix + '/')).map((k) => ({ name: k.slice(body.prefix.length + 1) }));
-      return Response.json(names);
+      // Like Supabase Storage: one folder level, sorted by name (desc here), paged by limit/offset.
+      const names = [...storage.keys()].filter((k) => k.startsWith(body.prefix + '/')).map((k) => k.slice(body.prefix.length + 1)).sort().reverse();
+      const offset = Number(body.offset || 0); const limit = Number(body.limit || 100);
+      return Response.json(names.slice(offset, offset + limit).map((name) => ({ name })));
     }
     if (url.pathname.startsWith('/storage/v1/object/authenticated/')) {
       const key = decodeURIComponent(url.pathname.split('/analysis_jobs/')[1]);
@@ -605,5 +607,161 @@ describe('independent re-review findings (c82e971) stay fixed', () => {
     const restored = await call(db, 'payments/restore', { method: 'POST', body: { sessionId: S1 } });
     expect(restored.status).toBe(200);
     expect(db.tables.navigator_paid_sessions[0].revoked_at).toBeNull();
+  });
+});
+
+describe('financial reporting integrity (DEVIN-FIN-01)', () => {
+  const failStorageList = (db: ReturnType<typeof fakeSupabase>, status = 503) => {
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      String(input).includes('/storage/v1/object/list/') ? new Response('{}', { status }) : original(input, init));
+  };
+
+  it('complete data: totals are reported and marked complete', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting).toMatchObject({ complete: true, settlementAvailable: true, warnings: [] });
+    expect(r.body.totals).toMatchObject({ approvedAmount: 49, refundedAmount: 49, netAmount: 0, pendingAmount: 129 });
+  });
+
+  it('audit log unreadable: refunds/net/settlement are unavailable (null), never silently zero', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    failStorageList(db);
+    const r = await call(db, 'revenue');
+    expect(r.status).toBe(200);
+    expect(r.body.reporting.complete).toBe(false);
+    expect(r.body.reporting.settlementAvailable).toBe(false);
+    expect(r.body.reporting.warnings.join(' ')).toMatch(/could not be read/);
+    // Payment-row totals are still authoritative; refund-derived figures are not presented.
+    expect(r.body.totals).toMatchObject({ approvedAmount: 49, pendingAmount: 129, refundedAmount: null, netAmount: null, bankConfirmedAmount: null, disputedAmount: null });
+    expect(r.body.byMonth.every((m: any) => m.refundedAmount === null)).toBe(true);
+  });
+
+  it('audit log unreadable: overview and customer lookup show settlement "unknown", not "pending_settlement"', async () => {
+    const db = fakeSupabase(seed());
+    failStorageList(db);
+    const overview = await call(db, 'payments/overview');
+    expect(overview.body.reporting.settlementAvailable).toBe(false);
+    expect(overview.body.payments.every((p: any) => p.bankSettlementStatus === 'unknown')).toBe(true);
+    const customer = await call(db, 'customers?q=PS-BBBBB');
+    expect(customer.body.reporting.settlementAvailable).toBe(false);
+    expect(customer.body.payments[0].bankSettlementStatus).toBe('unknown');
+  });
+
+  it('settlement actions refuse to proceed when the audit log is unreadable (no blind second refund)', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    failStorageList(db);
+    const again = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    expect(again.status).toBe(503);
+  });
+
+  it('duplicate payment references: refund/settlement totals unavailable with a warning', async () => {
+    const db = fakeSupabase(seed());
+    db.tables.payments.push({ reference_number: 'PS-BBBBB', plan: 'Basic', amount: 49, status: 'approved', notes: 'email:other@x.com;uid:uidC00001' });
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting).toMatchObject({ complete: false, duplicateReferences: 1 });
+    expect(r.body.totals.approvedAmount).toBe(98);
+    expect(r.body.totals.refundedAmount).toBeNull();
+    expect(r.body.reporting.warnings.join(' ')).toMatch(/PS-BBBBB/);
+  });
+
+  it('payments read fails part-way: the request fails rather than reporting partial totals', async () => {
+    const db = fakeSupabase(seed());
+    for (let i = 0; i < 1500; i++) db.tables.payments.push({ reference_number: `PS-T${String(i).padStart(5, '0')}`, plan: 'Basic', amount: 1, status: 'approved' });
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      String(input).includes('/rest/v1/payments') && String(input).includes('offset=1000') ? new Response('{}', { status: 500 }) : original(input, init));
+    const r = await call(db, 'revenue');
+    expect(r.status).toBeGreaterThanOrEqual(500);
+    expect(r.body.totals).toBeUndefined();
+  });
+});
+
+describe('financial reporting integrity — independent review follow-ups', () => {
+  const fill = (db: ReturnType<typeof fakeSupabase>, n: number) => {
+    for (let i = 0; i < n; i++) db.storage.set(`admin-audit/${auditObjectName({ at: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(), action: 'note', target: `X${i}` }, `n${i}`)}`, '{}');
+  };
+
+  it('#1 a non-audit entry cannot make a cut-off audit listing look complete', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    fill(db, 20_000); // the read limit; with the placeholder, the raw listing is longer than can be read
+    db.storage.set('admin-audit/zzzz-.emptyFolderPlaceholder', '');
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting.settlementAvailable).toBe(false);
+    expect(r.body.totals.refundedAmount).toBeNull();
+  });
+
+  it('#1 a refund/settlement decision refuses (503) when the history cannot be read completely', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
+    fill(db, 20_100);
+    expect((await call(db, 'payments/confirm-bank', { method: 'POST', body: { referenceNumber: 'PS-BBBBB' } })).status).toBe(503);
+    expect((await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'again' } })).status).toBe(503);
+  });
+
+  it('warns from 80 % of the audit read limit while figures are still complete', async () => {
+    const db = fakeSupabase(seed());
+    fill(db, 16_100);
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting.settlementAvailable).toBe(true);
+    expect(r.body.totals.refundedAmount).toBe(0);
+    expect(r.body.reporting.warnings.join(' ')).toMatch(/per-payment indexing/);
+  });
+
+  it('#1 a malformed (non-array) listing is an outage, not an empty history', async () => {
+    const db = fakeSupabase(seed());
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      String(input).includes('/storage/v1/object/list/') ? Response.json({ unexpected: true }) : original(input, init));
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting.settlementAvailable).toBe(false);
+    expect(r.body.totals.refundedAmount).toBeNull();
+  });
+
+  it('#2 monthly and package breakdowns are unavailable when the payment read is incomplete', async () => {
+    const db = fakeSupabase(seed());
+    for (let i = 0; i < 1200; i++) db.tables.payments.push({ reference_number: `PS-T${String(i).padStart(5, '0')}`, plan: 'Basic', amount: 1, status: 'approved', approved_at: '2026-11-03T00:00:00Z' });
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      const res = await original(input, init);
+      if (!String(input).includes('/rest/v1/payments')) return res;
+      // Report a larger total than can be read: the read is incomplete.
+      const headers = new Headers(res.headers);
+      if (headers.get('Content-Range')) headers.set('Content-Range', headers.get('Content-Range')!.replace(/\/\d+$/, '/999999'));
+      return new Response(await res.text(), { status: res.status, headers });
+    });
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting.paymentsComplete).toBe(false);
+    for (const m of r.body.byMonth) expect([m.approved, m.approvedAmount, m.refundedAmount]).toEqual([null, null, null]);
+    for (const p of r.body.byPlan) expect([p.approved, p.approvedAmount, p.pending]).toEqual([null, null, null]);
+  });
+
+  it('#3 payments sharing a reference show settlement "unknown" in the overview, with a warning', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/confirm-bank', { method: 'POST', body: { referenceNumber: 'PS-BBBBB' } });
+    db.tables.payments.push({ reference_number: 'PS-BBBBB', plan: 'Basic', amount: 49, status: 'approved', notes: 'email:other@x.com;uid:uidC00001' });
+    const o = await call(db, 'payments/overview');
+    const shared = o.body.payments.filter((p: any) => p.referenceNumber === 'PS-BBBBB');
+    expect(shared).toHaveLength(2);
+    for (const p of shared) expect(p.bankSettlementStatus).toBe('unknown');
+    expect(o.body.reporting.warnings.join(' ')).toMatch(/shared by more than one payment/);
+  });
+});
+
+describe('shared references detected across the whole payments table (re-review residual)', () => {
+  it('customer lookup by email marks a reference shared with another customer as unknown, with a warning', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/confirm-bank', { method: 'POST', body: { referenceNumber: 'PS-BBBBB' } });
+    // Another customer's legacy payment reuses the same reference (not visible in this customer's rows).
+    db.tables.payments.push({ reference_number: 'PS-BBBBB', plan: 'Basic', amount: 49, status: 'approved', notes: 'email:other@x.com;uid:uidC00001' });
+    const c = await call(db, 'customers?q=' + encodeURIComponent('axb@x.com'));
+    expect(c.status).toBe(200);
+    expect(c.body.payments.map((p: any) => p.referenceNumber)).toEqual(['PS-BBBBB']);
+    expect(c.body.payments[0].bankSettlementStatus).toBe('unknown');
+    expect(c.body.reporting.warnings.join(' ')).toMatch(/also used by another payment/);
   });
 });

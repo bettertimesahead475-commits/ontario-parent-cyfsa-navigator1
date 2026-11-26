@@ -56,6 +56,45 @@ export async function saveJobState(
   }
 }
 
+/**
+ * Claims `<jobId>.json` for `uid` with a create-once write (x-upsert: false), so two accounts racing for the same
+ * never-used id cannot both proceed: exactly one create succeeds. If the object already exists it is re-read: the
+ * caller's own record (a retry) is 'claimed'; any other owner, or an owner-less/unreadable record, is 'conflict'.
+ * Every failure to establish the outcome is 'unavailable' (fail closed).
+ */
+export async function claimJobRecord(
+  env: JobStoreEnv,
+  jobId: string,
+  uid: string,
+  fetcher: typeof fetch = fetch,
+): Promise<'claimed' | 'conflict' | 'unavailable'> {
+  const key = normalizeSupabaseKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
+  if (!env.STAGING_SUPABASE_URL || !key) return 'unavailable';
+  try {
+    const res = await fetcher(jobObjectUrl(env.STAGING_SUPABASE_URL, jobId, 'write'), {
+      method: 'POST',
+      headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'x-upsert': 'false' },
+      body: JSON.stringify({ jobId, uid, status: 'running', currentStage: 'running', percent: 5, message: 'Analysis starting.', updatedAt: Date.now() }),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) return 'claimed';
+    // Supabase Storage reports "already exists" as 409, or as 400 with statusCode "409" in the body.
+    const body = await res.json().catch(() => null) as { statusCode?: unknown } | null;
+    if (res.status !== 409 && String(body?.statusCode) !== '409') return 'unavailable';
+    const existing = await fetcher(jobObjectUrl(env.STAGING_SUPABASE_URL, jobId, 'read'), {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!existing.ok) return 'unavailable';
+    const record = await existing.json().catch(() => null) as { uid?: unknown } | null;
+    return typeof record?.uid === 'string' && record.uid !== '' && record.uid === uid ? 'claimed' : 'conflict';
+  } catch {
+    return 'unavailable';
+  }
+}
+
 /** Saves a completed job. Kept for existing callers. */
 export async function saveCompletedJob(
   env: JobStoreEnv,

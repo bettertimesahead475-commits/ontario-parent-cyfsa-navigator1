@@ -38,7 +38,7 @@ function decodePdfString(token: string): string {
   if (token.startsWith('(') && token.endsWith(')')) {
     const raw = token.slice(1, -1);
     return raw
-      .replace(/\\([0-7]{1,3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+      .replace(/\\([0-7]{1,3})/g, (_, oct) => String.fromCharCode(Number.parseInt(oct, 8)))
       .replace(/\\n/g, '\n')
       .replace(/\\r/g, '\r')
       .replace(/\\t/g, '\t')
@@ -54,6 +54,53 @@ function decodePdfString(token: string): string {
     return Buffer.from(padded, 'hex').toString('utf8');
   }
   return '';
+}
+
+/**
+ * The contents of each `[ ... ] TJ` text array in a content-stream block, in order: the same captures as the former
+ * /\[([\s\S]*?)\]\s*TJ/g. That pattern rescanned to the end of the block from every "[" when no "] TJ" followed,
+ * which is quadratic on a crafted (untrusted) PDF; this makes one pass.
+ */
+export function tjArrayContents(block: string): string[] {
+  const out: string[] = [];
+  let pos = 0;
+  for (;;) {
+    const open = block.indexOf('[', pos);
+    if (open < 0) break;
+    let close = -1;
+    for (let r = block.indexOf(']', open + 1); r >= 0; r = block.indexOf(']', r + 1)) {
+      let j = r + 1;
+      while (j < block.length && /\s/.test(block[j])) j++;
+      if (block.startsWith('TJ', j)) {
+        close = r;
+        pos = j + 2;
+        break;
+      }
+    }
+    // No "] TJ" after this "[" means there is none after any later "[" either.
+    if (close < 0) break;
+    out.push(block.slice(open + 1, close));
+  }
+  return out;
+}
+
+/**
+ * Bodies of the PDF text objects ("BT" ... "ET") in a content stream, exactly as the former lazy BT...ET regex
+ * returned them, in linear time. The regex rescanned to the end of the stream for every "BT" without a later "ET"
+ * (quadratic on a crafted PDF); once no "ET" follows a "BT", none follows any later "BT" either, so the scan stops.
+ */
+export function pdfTextObjects(stream: string): string[] {
+  const out: string[] = [];
+  let pos = 0;
+  for (;;) {
+    const begin = stream.indexOf("BT", pos);
+    if (begin < 0) break;
+    const end = stream.indexOf("ET", begin + 2);
+    if (end < 0) break;
+    out.push(stream.slice(begin + 2, end));
+    pos = end + 2;
+  }
+  return out;
 }
 
 /**
@@ -75,20 +122,13 @@ export function extractTextFromPdfPage(page: any, doc: PDFDocument): string {
         raw = zlib.inflateSync(raw);
       } catch {}
       const str = raw.toString('latin1');
-      const btRegex = /BT([\s\S]*?)ET/g;
-      let btMatch: RegExpExecArray | null;
-
-      while ((btMatch = btRegex.exec(str)) !== null) {
-        const block = btMatch[1];
+      for (const block of pdfTextObjects(str)) {
         const tjRegex = /(\((?:[^()\\]|\\.)*\)|<[0-9a-fA-F\s]+>)\s*(?:Tj|'|")/g;
         let tjMatch: RegExpExecArray | null;
         while ((tjMatch = tjRegex.exec(block)) !== null) {
           pageText += decodePdfString(tjMatch[1]) + ' ';
         }
-        const tjArrRegex = /\[([\s\S]*?)\]\s*TJ/g;
-        let arrMatch: RegExpExecArray | null;
-        while ((arrMatch = tjArrRegex.exec(block)) !== null) {
-          const arrContent = arrMatch[1];
+        for (const arrContent of tjArrayContents(block)) {
           const itemRegex = /(\((?:[^()\\]|\\.)*\)|<[0-9a-fA-F\s]+>)/g;
           let itemMatch: RegExpExecArray | null;
           while ((itemMatch = itemRegex.exec(arrContent)) !== null) {
@@ -237,7 +277,25 @@ function normalized(source:string) {
 }
 /** Zero-based Unicode code-point offsets, end exclusive; duplicate matches are not silently selected. */
 export function verifyQuote(source:string, quote:string) {
-  const find=(s:string[],q:string[])=>{const hits:number[]=[],haystack=s.join(''),needle=q.join('');let at=haystack.indexOf(needle);while(at>=0&&hits.length<2){hits.push(Array.from(haystack.slice(0,at)).length);at=haystack.indexOf(needle,at+1);}return hits;};
+  // Same rule as shared/quoteVerification.ts (DEVIN-P2-01/P2-04): a match may not start or end inside a word, and may
+  // not stop just before "'t" (cutting "can't" to "can" drops the negation).
+  const WORD=/[\p{L}\p{N}]/u;
+  const find=(s:string[],q:string[])=>{
+    const hits:number[]=[],haystack=s.join(''),needle=q.join('');
+    if(!q.length)return hits;
+    const boundedStart=WORD.test(q[0]),boundedEnd=WORD.test(q[q.length-1]);
+    let index=0,scanned=0,at=haystack.indexOf(needle);
+    while(at>=0&&hits.length<2){
+      index+=Array.from(haystack.slice(scanned,at)).length;scanned=at;
+      const before=s[index-1],after=s[index+q.length];
+      const cutsStart=boundedStart&&before!==undefined&&WORD.test(before);
+      const contraction=(after==="'"||after==="’")&&/^t$/i.test(s[index+q.length+1]??"")&&!WORD.test(s[index+q.length+2]??"");
+      const cutsEnd=boundedEnd&&after!==undefined&&(WORD.test(after)||contraction);
+      if(!cutsStart&&!cutsEnd)hits.push(index);
+      at=haystack.indexOf(needle,at+1);
+    }
+    return hits;
+  };
   if(!normalizeQuoteWhitespace(quote))return {status:'ABSENT',start:null,end:null} as const;
   const original=Array.from(source), proposed=Array.from(quote), exact=find(original,proposed);
   if(exact.length===1)return {status:'EXACT',start:exact[0],end:exact[0]+proposed.length} as const;

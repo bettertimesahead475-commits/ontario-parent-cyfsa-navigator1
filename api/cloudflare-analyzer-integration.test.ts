@@ -2,6 +2,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { handleAnalyzeRequest, type AnalyzerEnv } from '../functions/api/analyze';
 import type { GenerateFn } from './services/analyzerSections';
 
+// Ownership of client-supplied analysis ids is covered exhaustively by api/analysis-id-ownership.test.ts; this suite
+// exercises later stages, so the pre-check is stubbed to "clear" (its mocks do not model the job ledger).
+vi.mock("../functions/api/_durable-analysis-jobs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../functions/api/_durable-analysis-jobs")>()),
+  jobOwnership: vi.fn(async () => "clear"),
+}));
+// The create-once id claim is covered by api/analysis-id-ownership.test.ts; stubbed here.
+vi.mock("../functions/api/_analysis-jobs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../functions/api/_analysis-jobs")>()),
+  claimJobRecord: vi.fn(async () => "claimed"),
+}));
+
+
 const mockAuthVerification = vi.fn();
 const mockSessionRead = vi.fn();
 const successfulJobStorageWrite = () => vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
@@ -307,7 +320,11 @@ describe('Cloudflare Direct-First Analyzer Staging Integration', () => {
       }),
     });
 
-    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc as any });
+    // A fresh id passes the ownership pre-check (no ledger row, Storage 404), so the reservation failure is what is observed.
+    const freshIdFetcher = vi.fn(async (url: string) => url.includes('/rpc/analyzer_get_job')
+      ? Response.json(null)
+      : new Response(JSON.stringify({ statusCode: '404', error: 'not_found', message: 'Object not found' }), { status: 400 })) as unknown as typeof fetch;
+    const response = await handleAnalyzeRequest(request, env, { rpc: mockRpc as any, fetcher: freshIdFetcher });
     expect(response.status).toBe(503);
     const body = await response.json();
     expect(body).toEqual({

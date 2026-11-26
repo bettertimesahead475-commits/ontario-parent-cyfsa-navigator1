@@ -24,8 +24,9 @@ customer records or confidential documents.
   preview deployment only. Preview environments have placeholder secrets, so preview APIs cannot reach the
   database or AI providers: previews are for visual and frontend verification only.
 - 2026-11-25 releases: `a67747aa` → `1fa52d1` (admin backend); `d5f2a3c9` → `cf67d8c` (Vercel analytics removed, npm audit fix,
-  prompt-injection fix). Executor Worker `cyfsa-analyzer-queue-consumer` version `4cd2181f` (previous `d26c3faa`).
-- Rollback targets (Pages deployments → commit): `d5f2a3c9`→`cf67d8c` (current), `a67747aa`→`1fa52d1`, `7d57b59b`→`b141293`, `74f3fe5d`→`0e0808e`,
+  prompt-injection fix); `7c144cf7` → `be46ad7` (concurrency fixes). Executor Worker `cyfsa-analyzer-queue-consumer`
+  version `d030585d` (previous `4cd2181f`, `d26c3faa`).
+- Rollback targets (Pages deployments → commit): `7c144cf7`→`be46ad7` (current), `d5f2a3c9`→`cf67d8c`, `a67747aa`→`1fa52d1`, `7d57b59b`→`b141293`, `74f3fe5d`→`0e0808e`,
   `d1805da1`→`99eeaf3`, `88c60f30`→`b9a1232`, `d8da2cd1`→`69750af`, `e62bcbbd`→`a84ece8`.
   Rollback: Cloudflare dashboard → Pages → Deployments → "Rollback to this deployment", or
   `POST /accounts/{acct}/pages/projects/cyfsa-navigator-git-staging/deployments/{id}/rollback`.
@@ -55,6 +56,21 @@ customer records or confidential documents.
 6. Infrastructure: monitoring, health checks, alerting on existing infrastructure, release gates.
 7. Performance measurement and confirmed-bottleneck optimization.
 8. Final acceptance dossier.
+
+## Permanent infrastructure directive (2026-11-26)
+
+- Cloudflare is the only production and staging platform (Pages project `cyfsa-navigator-git-staging`; production
+  domain https://cyfsanavigator.com). Vercel is obsolete and not authorized: no repair, reactivation, funding,
+  configuration or deployment through it.
+- Vercel integrations are disconnected only after verification. Verification status (2026-11-26):
+  - `vercel.json` defines three cron jobs: `/api/admin/check-payments` (every 2 min), `/api/admin/marketing/run-scheduler`
+    (every 5 min), `/api/admin/monitoring/run` (every 10 min).
+  - Those routes exist only in `api/_server.ts` (Express, Vercel-only). The Cloudflare admin function
+    `functions/api/admin/[[path]].ts` has no `check-payments` or `run-scheduler` route, and no Cloudflare wrangler config
+    declares cron triggers. `monitoring/run` exists on Cloudflare only as an authenticated POST.
+  - **Result: NOT verified as replaced. Do not disconnect the Vercel crons until a Cloudflare trigger runs each job.**
+- Preserve Cloudflare Pages, Workers, Queues, bindings, secrets, domains, CI protections, and the Supabase and Firebase
+  integrations.
 
 ## Non-negotiable constraints
 

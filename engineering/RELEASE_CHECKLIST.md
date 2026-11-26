@@ -1,5 +1,9 @@
 # Release Checklist (production promotion; Claude only)
 
+0. Infrastructure directive (2026-11-26, permanent): the only deployment platform is Cloudflare. Vercel is obsolete;
+   nothing is deployed, configured or funded through it. Confirm the target is the Cloudflare Pages project
+   `cyfsa-navigator-git-staging` and that no step relies on `vercel.json` (its cron jobs have no Cloudflare replacement
+   yet; see `MASTER_PLAN.md` blocker list).
 1. Source is `engineering/integration`; every merged workstream has a handoff with review and test evidence.
 2. `npx tsc --noEmit -p .` clean; full vitest suite passes (known flakes re-run in isolation and recorded).
 3. Security-relevant changes have an independent review recorded in `SECURITY_REGISTER.md`.

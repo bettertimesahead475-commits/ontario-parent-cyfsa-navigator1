@@ -9,7 +9,7 @@ const b64 = (f: string) => fs.readFileSync(path.join(FIX, f)).toString("base64")
 const verify = vi.fn();
 vi.mock("../functions/api/_auth-check", () => ({ verifyFirebaseRequest: (...a: unknown[]) => verify(...a) }));
 const { handleExtractRequest } = await import("../functions/api/extract-text");
-const { extractDocument, docxToText } = await import("../functions/api/_document-extraction");
+const { extractDocument, docxToText, xmlTokens } = await import("../functions/api/_document-extraction");
 const { classifyGeminiStatus, resolveGeminiModel, DEFAULT_GEMINI_OCR_MODEL } = await import("../functions/api/_gemini");
 
 const ENV = { FIREBASE_PROJECT_ID: "p", GEMINI_API_KEY: "test-key-not-real" };
@@ -392,5 +392,57 @@ describe("PDF extraction recovery and resilience (Issue #116)", () => {
 
     loadSpy.mockRestore();
     consoleSpy.mockRestore();
+  });
+});
+
+// SonarCloud S8786: the DOCX tokenizer regex and the "[ \t]+\n" cleanup were replaced by linear code. The tokenizer is
+// compared token-for-token with the regex it replaced, then both are timed on crafted (untrusted) document.xml.
+describe("DOCX XML tokenizer (S8786 linear rewrite)", () => {
+  const OLD = /<(\/?)([A-Za-z][\w.\-]*:)?([A-Za-z][\w.\-]*)([^>]*?)(\/?)>|([^<]+)/g;
+  const oldTokens = (xml: string) =>
+    [...xml.matchAll(OLD)].map((m) =>
+      m[6] !== undefined ? { kind: "text", text: m[6] } : { kind: "tag", slash: m[1], ns: m[2], name: m[3], attrs: m[4], selfSlash: m[5] },
+    );
+
+  it("produces exactly the matches of the former pattern", () => {
+    const samples = [
+      '<w:p w:rsidR="00"><w:r><w:t xml:space="preserve">Hi &amp; bye</w:t></w:r><w:br/><w:tab /></w:p>',
+      "<w:1bad>text</w:1bad>",
+      "a < b > c",
+      "<a<b>",
+      "</>x<//y>",
+      "<w:t>unclosed <w:r",
+      "<x:y:z/>",
+      "<a/ >",
+      "<a /",
+      "plain",
+      "",
+    ];
+    for (const s of samples) expect(xmlTokens(s), s).toEqual(oldTokens(s));
+    const alphabet = ["<", ">", "/", ":", "w", "p", "1", ".", "-", " ", "=", '"', "t", "x"];
+    let seed = 3;
+    for (let i = 0; i < 20_000; i++) {
+      let s = "";
+      for (let j = 0; j < 12; j++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; s += alphabet[seed % alphabet.length]; }
+      expect(xmlTokens(s), JSON.stringify(s)).toEqual(oldTokens(s));
+    }
+  });
+
+  it("tokenizes 25,000 unclosed '<a' and a 50,000-letter unclosed name in well under 100 ms", () => {
+    for (const attack of ["<a".repeat(25_000), "<" + "a".repeat(50_000)]) {
+      const t0 = performance.now();
+      xmlTokens(attack);
+      docxToText(attack);
+      expect(performance.now() - t0).toBeLessThan(100);
+    }
+  });
+
+  it("drops spaces and tabs before a line break inside a paragraph, and is linear on long space runs", () => {
+    const xml = "<w:p><w:r><w:t>one  </w:t></w:r><w:br/><w:r><w:t>\ttwo</w:t></w:r></w:p>";
+    expect(docxToText(xml)).toBe("one\n\ttwo");
+    const spaces = "<w:p><w:r><w:t>a" + " ".repeat(50_000) + "b</w:t></w:r></w:p>";
+    const t0 = performance.now();
+    expect(docxToText(spaces)).toBe("a" + " ".repeat(50_000) + "b");
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });

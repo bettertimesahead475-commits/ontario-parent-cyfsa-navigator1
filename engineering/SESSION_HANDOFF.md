@@ -1,11 +1,15 @@
 # Session Handoff (read first after any restart)
 
-Last updated: 2026-11-25 by Claude.
+Last updated: 2026-11-26 by Claude (backend); see `engineering/handoffs/claude-2026-11-26.md`.
 
 ## State
 
-- Production: deployment `d5f2a3c9` / commit `cf67d8c`, live-verified 2026-11-25 (admin console 200s, no Vercel script errors).
-  Rollback: `a67747aa`. Executor Worker version `4cd2181f` (rollback `d26c3faa`: `npx wrangler rollback d26c3faa-22fd-4a9a-b546-173291575b4d --config wrangler.staging-job-service.jsonc`).
+- 2026-11-26: review branch `engineering/claude-review` (c38d59a, 3781275) holds the 847c4e0 corrections and the
+  pending quote-hit SQL fix. Not merged, not pushed. Commit isolation: `FILE_OWNERSHIP.md` ("Worktree and commit rules").
+  Skipped-test register: `engineering/SKIPPED_TESTS.md`.
+
+- Production: deployment `7c144cf7` / commit `be46ad7` (concurrency fixes), smoke-verified 2026-11-25. Rollback: `d5f2a3c9`.
+  Executor Worker `d030585d` (rollback: `npx wrangler rollback 4cd2181f-d7de-46a2-a523-61f6b4984052 --config wrangler.staging-job-service.jsonc`).
 - `engineering/integration` = baseline + these control documents.
 - Inference budget remaining ≈ $0.40 (no paid runs today).
 

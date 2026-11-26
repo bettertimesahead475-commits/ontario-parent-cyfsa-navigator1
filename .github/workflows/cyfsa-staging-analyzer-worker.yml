@@ -29,13 +29,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Type-check
         run: npm run lint
       - name: Focused analyzer Worker regression tests
-        run: npx vitest run api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-staging-service-reuse.test.ts api/cloudflare-analyzer-model-adapter.test.ts api/cloudflare-historical-timeout-regressions.test.ts
+        run: npx --no-install vitest run api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-staging-service-reuse.test.ts api/cloudflare-analyzer-model-adapter.test.ts api/cloudflare-historical-timeout-regressions.test.ts
       - name: Enforce isolated staging target and existing Queue names
         run: |
           node - <<'NODE'
@@ -66,9 +66,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4 deploy --config wrangler.staging-job-service.jsonc
+        run: npx --no-install wrangler deploy --config wrangler.staging-job-service.jsonc
       - name: Deploy staging-only Queue relay
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4 deploy --config wrangler.analyzer-queue-staging.jsonc
+        run: npx --no-install wrangler deploy --config wrangler.analyzer-queue-staging.jsonc

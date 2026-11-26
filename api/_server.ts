@@ -92,6 +92,7 @@ import { PROVIDER_ATTEMPTS, SECTION_ATTEMPTS, TRANSIENT_HTTP_STATUSES } from "..
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
+import { extractFencedBlock, SIMPLE_EMAIL_SHAPE } from "../shared/linearText.js";
 import { monitoringRouter } from "./services/monitoring/routes.js";
 
 dotenv.config();
@@ -488,10 +489,11 @@ function extractJson(text: string): any {
     return parseJsonLenient(trimmed);
   } catch { /* fall through to next strategy */ }
 
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (fenceMatch) {
+  // Linear equivalent of /```(?:json)?\s*([\s\S]*?)\s*```/, which backtracked polynomially on an unclosed fence.
+  const fenced = extractFencedBlock(trimmed, { trimTrailingWhitespace: true });
+  if (fenced !== null) {
     try {
-      return parseJsonLenient(fenceMatch[1].trim());
+      return parseJsonLenient(fenced.trim());
     } catch { /* fenced block itself wasn't valid/complete JSON — keep trying */ }
   }
 
@@ -572,7 +574,7 @@ const app = express();
 // Trust reverse proxy (needed for Cloud Run containers and rate limiting headers)
 app.set("trust proxy", 1);
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3000;
 
 // Security features
 app.use(helmet({
@@ -2374,7 +2376,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
         if (isDocx) {
           try {
-            console.log(`[Dual Pass] Extracting text from DOCX: ${fileName || mime}`);
+            console.log("[Dual Pass] Extracting text from DOCX"); // the file name is personal data; never logged
             const buf = Buffer.from(base64Data, "base64");
             extractedText = extractTextFromDocx(buf);
             console.log(`[Dual Pass] DOCX extracted ${extractedText.length} characters successfully.`);
@@ -2383,7 +2385,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           }
         } else if (mime === "application/pdf" || mime.startsWith("image/")) {
           try {
-            console.log(`[Dual Pass] Using Gemini for text/OCR extraction on mime: ${mime}`);
+            console.log("[Dual Pass] Using Gemini for text/OCR extraction on mime:", String(mime).replace(/[^w.+/-]/g, "").slice(0, 80));
             extractedText = await extractTextWithGeminiBase64(base64Data, mime);
             console.log(`[Dual Pass] Gemini extracted ${extractedText.length} characters successfully.`);
           } catch (e) {
@@ -2771,7 +2773,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
     if (!job) {
       const match = jobId.match(/^req_(\d+)_/);
       if (match) {
-        const reqTs = parseInt(match[1], 10);
+        const reqTs = Number.parseInt(match[1], 10);
         if (Date.now() - reqTs < 90000) {
           // Honest grace response: no job record exists yet, so report "pending" with no
           // invented stage or percent. (This previously returned a fabricated
@@ -3624,7 +3626,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         return res.status(413).json({ error: "Audio recording is too large to transcribe." });
       }
 
-      console.log("[Voice Transcription] Transcribing audio with mimeType:", mimeType);
+      console.log("[Voice Transcription] Transcribing audio with mimeType:", String(mimeType).replace(/[^w.+/;=-]/g, "").slice(0, 80));
 
       // Gemini handles audio transcription; Claude handles text analysis.
       const transcribedText = (await transcribeAudioWithGemini(audioData, mimeType || "audio/webm")).trim();
@@ -3663,7 +3665,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       if (!parentName || typeof parentName !== "string") {
         return res.status(400).json({ error: "`parentName` is required." });
       }
-      if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      if (!email || typeof email !== "string" || !SIMPLE_EMAIL_SHAPE.test(email)) {
         return res.status(400).json({ error: "A valid `email` is required." });
       }
       if (!lawyerId) {
@@ -3673,7 +3675,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         return res.status(400).json({ error: "Consent to share your details with the selected lawyer is required." });
       }
 
-      const referenceNum = "LI-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+      const referenceNum = "LI-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
       const safeEmail = stripHeaderChars(email);
 
       const intakeRecord = {
@@ -3776,7 +3778,10 @@ async function setupViteAndStart() {
 }
 
 if (!process.env.VERCEL) {
-  setupViteAndStart();
+  setupViteAndStart().catch((err) => {
+    console.error("[STARTUP_FAILED]", err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
 }
 
 export default app;

@@ -4,6 +4,19 @@ import { AnalyzerError } from "./services/analyzerErrors";
 import { effectiveJob, RUNNING_JOB_STALE_MS, saveJobState } from "../functions/api/_analysis-jobs";
 import type { GenerateFn } from "./services/analyzerSections";
 
+// Ownership of client-supplied analysis ids is covered exhaustively by api/analysis-id-ownership.test.ts; this suite
+// exercises later stages, so the pre-check is stubbed to "clear" (its mocks do not model the job ledger).
+vi.mock("../functions/api/_durable-analysis-jobs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../functions/api/_durable-analysis-jobs")>()),
+  jobOwnership: vi.fn(async () => "clear"),
+}));
+// The create-once id claim is covered by api/analysis-id-ownership.test.ts; stubbed here.
+vi.mock("../functions/api/_analysis-jobs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../functions/api/_analysis-jobs")>()),
+  claimJobRecord: vi.fn(async () => "claimed"),
+}));
+
+
 const mockAuthVerification = vi.fn();
 vi.mock("../functions/api/_auth-check", () => ({
   verifyFirebaseRequest: (req: Request, env: any) => mockAuthVerification(req, env),

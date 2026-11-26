@@ -18,9 +18,14 @@ import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reserv
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
 import { reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
-import { saveCompletedJob, saveJobState } from './_analysis-jobs';
-import { createDurableJob, DurableJobStorageError, jobOwnerConflict, nextAttemptId, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
+import { claimJobRecord, saveCompletedJob, saveJobState } from './_analysis-jobs';
+import { createDurableJob, DurableJobStorageError, jobOwnership, nextAttemptId, type JobOwnership, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
+
+/** The queued job's report object is held by another account (or its ownership could not be established). */
+class OwnershipClaimRefused extends Error {
+  constructor(readonly outcome: 'conflict' | 'unavailable') { super('analysis id claim refused'); }
+}
 
 /** Server-generated analysis id in the client format, from a cryptographic random source. */
 function serverAnalysisId(): string {
@@ -198,7 +203,7 @@ export async function handleAnalyzeRequest(
   const sessionId = deps.trustedJob ? deps.trustedJob.session_id : extractSessionId(rawSession);
   const rawRequestId = request.headers.get('X-Analysis-Id') || body?.analysisId || '';
   // Ids double as Storage keys. Reserved prefixes of other object families (assessment_*) are never
-  // accepted from a client, and ids owned by another user are refused below (jobOwnerConflict).
+  // accepted from a client, and ids owned by another user are refused below (jobOwnership).
   const clientSuppliedId = !deps.trustedJob && /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId) && !/^assessment/i.test(rawRequestId);
   let requestId = deps.trustedJob ? rawRequestId : clientSuppliedId ? rawRequestId : serverAnalysisId();
 
@@ -238,12 +243,13 @@ export async function handleAnalyzeRequest(
   // An analysis id is also a Storage key that is written with upsert. Refuse ids already owned by someone
   // else before reserving any credit, so no user can overwrite or adopt another user's report. A fresh
   // server-generated id (crypto-random) cannot collide, so it skips the two database reads.
-  if (clientSuppliedId && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY
-      && await jobOwnerConflict(env, requestId, uid, authFetcher)) {
-    return Response.json(
-      { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },
-      { status: 409, headers: DEFAULT_HEADERS },
-    );
+  const ownershipRefusal = (ownership: JobOwnership): Response | null => ownership === 'clear' ? null
+    : ownership === 'conflict'
+      ? Response.json({ error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false }, { status: 409, headers: DEFAULT_HEADERS })
+      : Response.json({ error: 'The analysis service is temporarily unavailable. Please try again in a moment - your document is safe.', code: 'OWNERSHIP_CHECK_UNAVAILABLE', retryable: true }, { status: 503, headers: DEFAULT_HEADERS });
+  if (clientSuppliedId && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    const refusal = ownershipRefusal(await jobOwnership(env, requestId, uid, authFetcher));
+    if (refusal) return refusal;
   }
   // A Retry of a document whose queued job failed continues under the next attempt id (before any credit is
   // reserved, so the reservation, the job and the polled id all agree). The response carries the id to poll.
@@ -251,13 +257,18 @@ export async function handleAnalyzeRequest(
       && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
     const attemptId = await nextAttemptId(env, requestId, uid, authFetcher);
     // The attempt id is also a Storage key: apply the same ownership check to it.
-    if (attemptId !== requestId && await jobOwnerConflict(env, attemptId, uid, authFetcher)) {
-      return Response.json(
-        { error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false },
-        { status: 409, headers: DEFAULT_HEADERS },
-      );
-    }
+    const refusal = attemptId !== requestId ? ownershipRefusal(await jobOwnership(env, attemptId, uid, authFetcher)) : null;
+    if (refusal) return refusal;
     requestId = attemptId;
+  }
+  // Direct (non-queued) path: claim "<id>.json" create-once before any credit is reserved. The ownership read above
+  // cannot stop two accounts racing for the same never-used id (both read "absent"); exactly one create succeeds.
+  // The queued path gets the same guarantee from the job ledger's unique insert.
+  const queuedPath = Boolean(env.ANALYZER_JOBS_QUEUE) && (isForensic || env.QUEUE_QUICK_ANALYSIS === 'true');
+  if (clientSuppliedId && !queuedPath && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    const claim = await claimJobRecord(env, requestId, uid, authFetcher);
+    const refusal = ownershipRefusal(claim === 'claimed' ? 'clear' : claim);
+    if (refusal) return refusal;
   }
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
   // No client-supplied role, email or session can grant this entitlement.
@@ -362,6 +373,12 @@ export async function handleAnalyzeRequest(
     try {
       await createDurableJob(env, job, authFetcher);
       jobCreated = true;
+      // The ledger insert is unique among queued jobs, but a direct-path request by another account may hold the same
+      // id's report object: claim it too, so the queued worker can never overwrite another account's record.
+      if (clientSuppliedId) {
+        const claim = await claimJobRecord(env, requestId, uid, authFetcher);
+        if (claim !== 'claimed') throw new OwnershipClaimRefused(claim);
+      }
       await saveDurableInput(env, inputKey, { documentText, fileName: typeof body?.documentName === 'string' ? body.documentName : undefined }, authFetcher);
       await env.ANALYZER_JOBS_QUEUE.send(createAnalyzerQueueMessage(requestId));
       return Response.json({
@@ -413,6 +430,11 @@ export async function handleAnalyzeRequest(
         } catch { /* The producer still releases its reservation below. */ }
       }
       await releaseFreshReservation();
+      // The job was marked failed and its reservation released above; report the actual reason.
+      if (enqueueError instanceof OwnershipClaimRefused) {
+        const refusal = ownershipRefusal(enqueueError.outcome);
+        if (refusal) return refusal;
+      }
       return Response.json({
         error: 'The analysis could not be queued. Your reserved credit was released when possible.',
         code: 'ANALYSIS_ENQUEUE_FAILED',
@@ -551,7 +573,7 @@ export async function handleAnalyzeRequest(
             description: rf.explanation,
             severity: rf.severity,
             evidenceQuotes: rf.phraseDetected ? [rf.phraseDetected] : [],
-            pageNumber: rf.locationInDocument ? parseInt(rf.locationInDocument.match(/\d+/)?.[0] || '1', 10) : 1,
+            pageNumber: rf.locationInDocument ? Number.parseInt(rf.locationInDocument.match(/\d+/)?.[0] || '1', 10) : 1,
             paragraphReference: rf.locationInDocument,
           })),
           contradictions: (report.contradictions || []).map((c: any) => ({
