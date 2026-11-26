@@ -117,8 +117,8 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
   if (needle.length === 0) return [];
   const h = joinedHaystack ?? haystack.join("");
   const n = needle.join("");
-  const boundedStart = WORD_CHAR.test(needle[0]);
-  const boundedEnd = WORD_CHAR.test(needle[needle.length - 1]);
+  const boundedStart = WORD_CHAR.test(needle[skipDropped(needle, 0, 1)] ?? "");
+  const boundedEnd = WORD_CHAR.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
   const hits: number[] = [];
   let index = 0;
   let scanned = 0;
@@ -126,12 +126,14 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
   while (at >= 0 && hits.length < 2) {
     index += Array.from(h.slice(scanned, at)).length;
     scanned = at;
-    const before = haystack[index - 1];
-    const after = haystack[index + needle.length];
+    const before = haystack[skipDropped(haystack, index - 1, -1)];
+    const afterAt = skipDropped(haystack, index + needle.length, 1);
+    const after = haystack[afterAt];
+    const tAt = skipDropped(haystack, afterAt + 1, 1);
     const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
     // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
-    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[index + needle.length + 1] ?? "") &&
-      !WORD_CHAR.test(haystack[index + needle.length + 2] ?? "");
+    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[tAt] ?? "") &&
+      !WORD_CHAR.test(haystack[skipDropped(haystack, tAt + 1, 1)] ?? "");
     const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
     const splitsCharacter = splitsSurrogatePair(h, at) || splitsSurrogatePair(h, at + n.length);
     if (!cutsWordStart && !cutsWordEnd && !splitsCharacter) hits.push(index);
@@ -140,10 +142,16 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
   return hits;
 }
 
-// Letters, digits, combining marks and the dropped soft hyphen / zero-width marks all continue a word: "un\u00ADtrue"
-// and "cafe\u0301" are single words (DEVIN-P2-01b).
-const WORD_CHAR = /[\p{L}\p{N}\p{M}\u00AD\u200B-\u200D\uFEFF]/u;
+// Combining marks continue a word ("cafe\u0301"), and soft hyphens and zero-width marks (DROPPED) are skipped when
+// reading a match's neighbours, so "un\u00ADtrue" is one word and "can't\u200B" still ends a contraction (DEVIN-P2-01b).
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
 const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC]$/u;
+
+/** First index from i, moving by step, that is not a soft hyphen or zero-width mark. */
+function skipDropped(chars: string[], i: number, step: 1 | -1): number {
+  while (i >= 0 && i < chars.length && DROPPED.has(chars[i])) i += step;
+  return i;
+}
 
 function splitsSurrogatePair(h: string, i: number): boolean {
   if (i <= 0 || i >= h.length) return false;

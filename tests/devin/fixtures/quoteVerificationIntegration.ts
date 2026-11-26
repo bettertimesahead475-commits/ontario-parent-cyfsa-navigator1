@@ -1,5 +1,5 @@
-// Oracle: shared/quoteVerification.ts at eaca5cf (engineering/integration, with DEVIN-P2-01), plus the DEVIN-P2-01b
-// word-character and apostrophe sets (soft hyphens, zero-width marks, combining marks, U+2018/U+201B/U+02BC). The
+// Oracle: shared/quoteVerification.ts at eaca5cf (engineering/integration, with DEVIN-P2-01), plus DEVIN-P2-01b
+// (soft hyphens and zero-width marks skipped at match edges, combining marks, U+2018/U+201B/U+02BC apostrophes). The
 // unwrapQuote body is restored to the be46ad7 regex, which gives the same result, because shared/linearText is not on
 // this branch.
 /**
@@ -102,8 +102,14 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
   return { chars, starts, ends };
 }
 
-const WORD_CHAR = /[\p{L}\p{N}\p{M}\u00AD\u200B-\u200D\uFEFF]/u;
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
 const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC]$/u;
+
+/** First index from i, moving by step, that is not a soft hyphen or zero-width mark. */
+function skipDropped(chars: string[], i: number, step: 1 | -1): number {
+  while (i >= 0 && i < chars.length && DROPPED.has(chars[i])) i += step;
+  return i;
+}
 
 /**
  * Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous.
@@ -113,8 +119,8 @@ function occurrences(haystack: string[], needle: string[]): number[] {
   if (needle.length === 0) return [];
   const h = haystack.join("");
   const n = needle.join("");
-  const boundedStart = WORD_CHAR.test(needle[0]);
-  const boundedEnd = WORD_CHAR.test(needle[needle.length - 1]);
+  const boundedStart = WORD_CHAR.test(needle[skipDropped(needle, 0, 1)] ?? "");
+  const boundedEnd = WORD_CHAR.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
   const hits: number[] = [];
   let index = 0;
   let scanned = 0;
@@ -122,12 +128,14 @@ function occurrences(haystack: string[], needle: string[]): number[] {
   while (at >= 0 && hits.length < 2) {
     index += Array.from(h.slice(scanned, at)).length;
     scanned = at;
-    const before = haystack[index - 1];
-    const after = haystack[index + needle.length];
+    const before = haystack[skipDropped(haystack, index - 1, -1)];
+    const afterAt = skipDropped(haystack, index + needle.length, 1);
+    const after = haystack[afterAt];
+    const tAt = skipDropped(haystack, afterAt + 1, 1);
     const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
     // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
-    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[index + needle.length + 1] ?? "") &&
-      !WORD_CHAR.test(haystack[index + needle.length + 2] ?? "");
+    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[tAt] ?? "") &&
+      !WORD_CHAR.test(haystack[skipDropped(haystack, tAt + 1, 1)] ?? "");
     const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
     if (!cutsWordStart && !cutsWordEnd) hits.push(index);
     at = h.indexOf(n, at + 1);
