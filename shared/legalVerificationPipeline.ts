@@ -2271,6 +2271,30 @@ export function resolveLegalAuthority(
       }
     }
 
+    // Incomplete proposition checking is never reported as VERIFIED or SUPPORTED: the statement was not evaluated.
+    for (const sec of sectionsToCheck) {
+      const incomplete = evaluatePropositionSupport(sec, propTargetText);
+      if (incomplete.support === "NOT_EVALUATED" && incomplete.reason) {
+        return {
+          status: "UNVERIFIED",
+          authorityId: entry.authorityId,
+          authorityCategory: category,
+          category,
+          entry,
+          officialCitation: entry.citation,
+          sourceUrl: entry.sourceUrl,
+          exactWording: entry.exactWording,
+          practiceNote: entry.practiceNote,
+          warningText: incomplete.reason,
+          sourceExists: true,
+          temporalStatus,
+          propositionSupport: "NOT_EVALUATED",
+          propositionReason: incomplete.reason,
+          allSectionsCited: sectionsToCheck,
+        };
+      }
+    }
+
     const firstPropCheck = evaluatePropositionSupport(sectionsToCheck[0], propTargetText);
     return {
       status: "VERIFIED",
