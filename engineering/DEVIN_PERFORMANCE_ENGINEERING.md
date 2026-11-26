@@ -100,8 +100,8 @@ the studies in B, C, D or I.
 ### 6.1 Six concurrent Forensic sections — controlled test (MEASURED, mocked inference)
 
 Harness: a full Forensic run (`runSectionedAnalysis`, mode `full`) through the **real** Anthropic adapter with a
-synthetic SSE stream (6,000 output tokens per section, 2 s per section, no network), on documents of 5, 50 and 200
-pages, at concurrency 3 and 6, before (`eaca5cf`) and after this branch; 2 samples each. Results: section 6.5.
+synthetic SSE stream (6,000 output tokens per section, 25 red flags, 2 s per section, no network), on documents of
+5, 50 and 200 pages, at concurrency 3 and 6, before (`eaca5cf`) and after this branch; 2 samples each. Results: section 6.5.
 
 Finding: total CPU per run is the sum of the same work whatever the concurrency, and wall-clock time is the same
 at 3 and 6 because verification waits for red flags either way (`redFlags` → verification is the critical path;
@@ -151,7 +151,36 @@ verification completes; the final report replaces them. No server change is requ
 
 ### 6.5 Measured results
 
-See the table appended below by the benchmark run.
+MEASURED in Node 22 on the development VM (not a Worker), 25 red flags per report (one in three quotes absent),
+2 s mocked generation per section, 2 samples per cell (range shown). Heap growth is V8 heap including garbage not
+yet collected, so it is an upper indication, not the Worker's 128 MB isolate measurement.
+
+| Tree | Pages | Concurrency | Wall ms | CPU ms | Peak heap growth MB |
+|---|---|---|---|---|---|
+| eaca5cf | 5 | 3 | 4212–4216 | 513–540 | 24–27 |
+| eaca5cf | 5 | 6 | 4196–4203 | 518–537 | 30–37 |
+| eaca5cf | 50 | 3 | 6086–6442 | 2540–2951 | 44–101 |
+| eaca5cf | 50 | 6 | 6503–6799 | 3008–3368 | 75–114 |
+| eaca5cf | 200 | 3 | 12068–13168 | 8746–9949 | 247–260 |
+| eaca5cf | 200 | 6 | 11835–12049 | 8602–8803 | 89–93 |
+| this branch | 5 | 3 | 4119–4165 | 495–562 | 13 |
+| this branch | 5 | 6 | 4094–4098 | 445–458 | 18 |
+| this branch | 50 | 3 | 4347–4403 | 685–754 | 48 |
+| this branch | 50 | 6 | 4358–4379 | 762–770 | 54–56 |
+| this branch | 200 | 3 | 5132–5206 | 1521–1571 | 135–136 |
+| this branch | 200 | 6 | 5018–5062 | 1415–1473 | 80–142 |
+
+Reading:
+- Concurrency 6 does not shorten the run at any size (verification waits for red flags), and total CPU is the
+  same at 3 and 6 within sample noise.
+- This branch cuts end-of-run CPU by 73–84% on 50–200 page documents and removes 2–7 s of wall time there.
+- A 200-page document still needs about 1.5 s CPU and its heap reached about 135 MB in Node; on a Worker that is
+  close to or over the memory limit. Forensic accepts PDFs up to `MAX_PDF_PAGES` = 200 (Quick is capped at
+  75,000 characters), so a large Forensic document can reach this today. Recommended for Claude: one staging
+  Forensic run on a synthetic 200-page document (budget item S1) to read the real isolate memory.
+- A run with zero red flags (the first matrix, not tabled) showed this branch allocating document copies with no
+  quotes to check; the locator now prepares nothing until the first quote (commit `c8055fb`).
+- Decision: keep Forensic at concurrency 3. Re-test 6 only on staging (S1) if a reason other than latency appears.
 
 ### 6.6 Pipelined and parallel verification (design; mocked)
 
