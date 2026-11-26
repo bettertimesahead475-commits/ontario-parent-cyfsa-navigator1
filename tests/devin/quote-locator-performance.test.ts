@@ -77,4 +77,15 @@ describe("createQuoteLocator", () => {
     }
     expect(guarded.redFlags.every((f: any) => f.quoteVerification === "EXACT")).toBe(true);
   });
+  it("prepares the document on the first quote and treats a marker-only source as absent", () => {
+    const text = largeDocument(120);
+    expect(createQuoteLocator(text)("never written anywhere").status).toBe("ABSENT");
+    expect(createQuoteLocator("[Page 1]\n  ")("anything").status).toBe("ABSENT");
+  });
+  it("never verifies a quotation that starts or ends inside an emoji", () => {
+    const src = "She said \u{1F600} rest of the visit was calm.";
+    expect(locateQuote(src, "\uDE00 rest of the visit was calm").status).toBe("ABSENT");
+    expect(locateQuote(src, "said \uD83D").status).toBe("ABSENT");
+    expect(locateQuote(src, "said \u{1F600} rest").status).toBe("EXACT");
+  });
 });
