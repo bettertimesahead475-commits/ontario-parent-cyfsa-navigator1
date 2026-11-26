@@ -103,7 +103,9 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
 }
 
 const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
-const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC]$/u;
+const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC\uFF07]$/u;
+const HYPHEN = /^[-\u2010\u2011]$/u;
+const LETTER = /[\p{L}\p{M}]/u;
 
 /** First index from i, moving by step, that is not a soft hyphen or zero-width mark. */
 function skipDropped(chars: string[], i: number, step: 1 | -1): number {
@@ -115,12 +117,14 @@ function skipDropped(chars: string[], i: number, step: 1 | -1): number {
  * Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous.
  * A match must not start or end inside a word: "true that he struck" is not a quotation of "untrue that he struck".
  */
-function occurrences(haystack: string[], needle: string[]): number[] {
+function occurrences(haystack: string[], needle: string[], sourceChar?: (i: number) => string | undefined): number[] {
   if (needle.length === 0) return [];
   const h = haystack.join("");
   const n = needle.join("");
   const boundedStart = WORD_CHAR.test(needle[skipDropped(needle, 0, 1)] ?? "");
   const boundedEnd = WORD_CHAR.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
+  const startsWithLetter = LETTER.test(needle[skipDropped(needle, 0, 1)] ?? "");
+  const endsWithLetter = LETTER.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
   const hits: number[] = [];
   let index = 0;
   let scanned = 0;
@@ -128,15 +132,23 @@ function occurrences(haystack: string[], needle: string[]): number[] {
   while (at >= 0 && hits.length < 2) {
     index += Array.from(h.slice(scanned, at)).length;
     scanned = at;
-    const before = haystack[skipDropped(haystack, index - 1, -1)];
+    const beforeAt = skipDropped(haystack, index - 1, -1);
+    const before = haystack[beforeAt];
     const afterAt = skipDropped(haystack, index + needle.length, 1);
     const after = haystack[afterAt];
     const tAt = skipDropped(haystack, afterAt + 1, 1);
-    const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
+    // A hyphen between two letters joins one compound word: "violent" is not a quotation of "non-violent".
+    // Only a real hyphen between letters joins a compound: a dash mapped to "-" for variant matching, or a list
+    // separator such as "1-Child", still ends a word.
+    const cutsCompoundStart = startsWithLetter && HYPHEN.test(sourceChar ? sourceChar(beforeAt) ?? "" : before ?? "") &&
+      LETTER.test(haystack[skipDropped(haystack, beforeAt - 1, -1)] ?? "");
+    const cutsCompoundEnd = endsWithLetter && HYPHEN.test(sourceChar ? sourceChar(afterAt) ?? "" : after ?? "") &&
+      LETTER.test(haystack[skipDropped(haystack, afterAt + 1, 1)] ?? "");
+    const cutsWordStart = boundedStart && before !== undefined && (WORD_CHAR.test(before) || cutsCompoundStart);
     // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
     const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[tAt] ?? "") &&
       !WORD_CHAR.test(haystack[skipDropped(haystack, tAt + 1, 1)] ?? "");
-    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
+    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction || cutsCompoundEnd);
     if (!cutsWordStart && !cutsWordEnd) hits.push(index);
     at = h.indexOf(n, at + 1);
   }
@@ -220,7 +232,7 @@ export function locateQuote(source: string, quote: string): QuoteLocation {
 
   const vs = canonicalize(body, "variant");
   const vq = canonicalize(q, "variant");
-  const vHits = occurrences(vs.chars, vq.chars);
+  const vHits = occurrences(vs.chars, vq.chars, (i) => bodyCp[vs.starts[i]]);
   if (vHits.length === 1) {
     const h = vHits[0];
     return found("CASE_OR_PUNCTUATION_VARIANT", vs.starts[h], vs.ends[h + vq.chars.length - 1]);

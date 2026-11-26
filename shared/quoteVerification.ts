@@ -113,12 +113,14 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
  * A match must not start or end inside a word or a surrogate pair: "true that he struck" is not a quotation of
  * "untrue that he struck" (DEVIN-P2-01). joinedHaystack lets a prepared locator pass the joined text once.
  */
-function occurrences(haystack: string[], needle: string[], joinedHaystack?: string): number[] {
+function occurrences(haystack: string[], needle: string[], joinedHaystack?: string, sourceChar?: (i: number) => string | undefined): number[] {
   if (needle.length === 0) return [];
   const h = joinedHaystack ?? haystack.join("");
   const n = needle.join("");
   const boundedStart = WORD_CHAR.test(needle[skipDropped(needle, 0, 1)] ?? "");
   const boundedEnd = WORD_CHAR.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
+  const startsWithLetter = LETTER.test(needle[skipDropped(needle, 0, 1)] ?? "");
+  const endsWithLetter = LETTER.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
   const hits: number[] = [];
   let index = 0;
   let scanned = 0;
@@ -126,15 +128,23 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
   while (at >= 0 && hits.length < 2) {
     index += Array.from(h.slice(scanned, at)).length;
     scanned = at;
-    const before = haystack[skipDropped(haystack, index - 1, -1)];
+    const beforeAt = skipDropped(haystack, index - 1, -1);
+    const before = haystack[beforeAt];
     const afterAt = skipDropped(haystack, index + needle.length, 1);
     const after = haystack[afterAt];
     const tAt = skipDropped(haystack, afterAt + 1, 1);
-    const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
+    // A hyphen between two letters joins one compound word: "violent" is not a quotation of "non-violent".
+    // Only a real hyphen between letters joins a compound: a dash mapped to "-" for variant matching, or a list
+    // separator such as "1-Child", still ends a word.
+    const cutsCompoundStart = startsWithLetter && HYPHEN.test(sourceChar ? sourceChar(beforeAt) ?? "" : before ?? "") &&
+      LETTER.test(haystack[skipDropped(haystack, beforeAt - 1, -1)] ?? "");
+    const cutsCompoundEnd = endsWithLetter && HYPHEN.test(sourceChar ? sourceChar(afterAt) ?? "" : after ?? "") &&
+      LETTER.test(haystack[skipDropped(haystack, afterAt + 1, 1)] ?? "");
+    const cutsWordStart = boundedStart && before !== undefined && (WORD_CHAR.test(before) || cutsCompoundStart);
     // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
     const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[tAt] ?? "") &&
       !WORD_CHAR.test(haystack[skipDropped(haystack, tAt + 1, 1)] ?? "");
-    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
+    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction || cutsCompoundEnd);
     const splitsCharacter = splitsSurrogatePair(h, at) || splitsSurrogatePair(h, at + n.length);
     if (!cutsWordStart && !cutsWordEnd && !splitsCharacter) hits.push(index);
     at = h.indexOf(n, at + 1);
@@ -145,7 +155,9 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
 // Combining marks continue a word ("cafe\u0301"), and soft hyphens and zero-width marks (DROPPED) are skipped when
 // reading a match's neighbours, so "un\u00ADtrue" is one word and "can't\u200B" still ends a contraction (DEVIN-P2-01b).
 const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
-const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC]$/u;
+const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC\uFF07]$/u;
+const HYPHEN = /^[-\u2010\u2011]$/u;
+const LETTER = /[\p{L}\p{M}]/u;
 
 /** First index from i, moving by step, that is not a soft hyphen or zero-width mark. */
 function skipDropped(chars: string[], i: number, step: 1 | -1): number {
@@ -274,7 +286,7 @@ export function createQuoteLocator(source: string): (quote: string) => QuoteLoca
       vs = { ...c, joined: c.chars.join("") };
     }
     const vq = canonicalize(q, "variant");
-    const vHits = occurrences(vs.chars, vq.chars, vs.joined);
+    const vHits = occurrences(vs.chars, vq.chars, vs.joined, (i) => bodyCp[vs.starts[i]]);
     if (vHits.length === 1) {
       const h = vHits[0];
       return found("CASE_OR_PUNCTUATION_VARIANT", vs.starts[h], vs.ends[h + vq.chars.length - 1]);
