@@ -30,7 +30,7 @@ Conclusions:
 
 Proposed for Claude (not changed by Devin; it alters analyzer output length and cost):
 1. Raise `chronology.maxTokens.full` from 5,000 to 8,000 (other Forensic sections already allow 7,000–8,192). At
-   the observed ~95 tokens/s this ends at about 168 s instead of truncating; cost about +$0.08 per Forensic run.
+   the observed ~95 tokens/s this ends at about 168 s instead of truncating; at most 3,000 more output tokens per Forensic run, billed only when the answer is that long.
 2. Dispatch `chronology` before `overview` so a truncation retry still has budget.
 3. Promote PERF-01 to production (integrated at `b435ad4`, not deployed).
 
