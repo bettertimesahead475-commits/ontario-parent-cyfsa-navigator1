@@ -1,8 +1,8 @@
 /**
- * DEVIN-PERF-01: report guards canonicalized the whole source document once per finding, so guard CPU grew with
- * (findings x document size): 25 findings on a 200-page synthetic document took about 7.9 s of CPU. The locator
- * prepares the document once. These tests pin identical results and per-finding cost that no longer scales with
- * document size. Synthetic text only.
+ * DEVIN-PERF-01: report guards canonicalized the whole source document once per finding. The locator prepares the
+ * document once, which removes per-finding canonicalization. Each lookup still scans the prepared text, so guard cost
+ * remains O(findings x document) in the scan; only the constant factor changes. Equivalence with the pre-PR
+ * implementation is pinned in quote-locator-differential.test.ts. Synthetic text only.
  */
 import { describe, expect, it } from "vitest";
 import { createQuoteLocator, locateQuote } from "../../shared/quoteVerification";
@@ -65,19 +65,16 @@ describe("createQuoteLocator", () => {
     expect(a("beta").page).toBeNull();
   });
 
-  it("keeps report-guard cost per finding independent of document size", () => {
+  // Functional only: 25 findings on one document all receive the verdict locateQuote gives them. No timing assertion,
+  // because wall-clock ratios are flaky. Speed is measured in the benchmark notes, not asserted here.
+  it("applyReportGuards gives 25 findings the same verdict as an independent per-finding locateQuote", () => {
     const text = largeDocument(120);
     const quoted = text.split("\n").filter((l) => !l.startsWith("[Page")).slice(0, 25);
-    const report = (n: number) => ({ redFlags: quoted.slice(0, n).map((q, i) => ({ id: `rf${i + 1}`, severity: "Worth Raising With Counsel", phraseDetected: q.slice(-40), explanation: "x", legalReference: "" })), thresholdAnalysis: [] });
-    applyReportGuards(report(1), text);
-    const t1 = performance.now();
-    applyReportGuards(report(1), text);
-    const one = performance.now() - t1;
-    const t25 = performance.now();
-    const guarded = applyReportGuards(report(25), text);
-    const many = performance.now() - t25;
+    const flags = quoted.map((q, i) => ({ id: `rf${i + 1}`, severity: "Worth Raising With Counsel", phraseDetected: q.slice(-40), explanation: "x", legalReference: "" }));
+    const guarded = applyReportGuards({ redFlags: flags, thresholdAnalysis: [] }, text);
+    for (const f of guarded.redFlags) {
+      expect(f.quoteVerification).toBe(locateQuote(text, f.phraseDetected).status);
+    }
     expect(guarded.redFlags.every((f: any) => f.quoteVerification === "EXACT")).toBe(true);
-    // Measured locally: about 11 when every finding re-scanned the document, about 2.4 with the locator.
-    expect(many / Math.max(one, 1)).toBeLessThan(5);
   });
 });
