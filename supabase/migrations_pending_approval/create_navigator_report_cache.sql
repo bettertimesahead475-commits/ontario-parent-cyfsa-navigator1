@@ -2,6 +2,9 @@
 -- Account-isolated index of completed reports. Stores no document text and no report content: the report stays in
 -- the existing private analysis_jobs storage object; this row only points to it. Keys are HMACs bound to the owner
 -- (functions/api/_report-cache.ts), so rows reveal nothing about documents and never match across accounts.
+-- Proposed eligibility: 30 days (expires_at = completed_at + 30 days), subject to privacy and retention review.
+-- Expiry or purge removes only this index row; the customer's saved report object is never deleted here.
+-- Rollback: supabase/migrations_pending_approval/rollback_navigator_report_cache.sql.
 begin;
 create table public.navigator_report_cache (
   id uuid primary key default gen_random_uuid(),
@@ -19,7 +22,7 @@ create table public.navigator_report_cache (
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   deleted_at timestamptz,
-  check (expires_at > completed_at),
+  check (expires_at > completed_at and expires_at <= completed_at + interval '30 days'),
   unique (owner_uid, cache_key)
 );
 create index navigator_report_cache_expiry_idx on public.navigator_report_cache (expires_at) where deleted_at is null;
