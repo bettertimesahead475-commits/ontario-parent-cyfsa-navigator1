@@ -11,7 +11,9 @@ Method: grep plus reading each call site. Classification:
 
 | # | Location | Limit | Class | Effect on verification | Status |
 |---|---|---|---|---|---|
-| L-1 | `shared/legalVerificationPipeline.ts` `evaluatePropositionSupport` | 4,000 chars per window | was Silent (skipped), now Explicit | Long text was skipped; now windowed; beyond 50 windows → NOT_EVALUATED with reason | Fixed `c38d59a`, `5940df4`; reviewed (see handoff) |
+| L-1 | `shared/legalVerificationPipeline.ts` `evaluatePropositionSupport` | 4,000-char windows, 3,000-char overlap (step 1,000), max 200 windows (about 200,000 chars) | was Silent (skipped), now Explicit | Long text was skipped; now windowed. A single match up to 3,000 characters is guaranteed to lie wholly in one window; longer matches are NOT guaranteed. Beyond 200 windows → NOT_EVALUATED with reason | Fixed `c38d59a`, `5940df4`, reviewer corrections in the commit after `0b28e15`; residual: matches over 3,000 chars |
+| L-1a | same | provided proposition that is empty, whitespace-only or NOT_EVALUATED | was Silent (VERIFIED/SUPPORTED) | — | Fixed: UNVERIFIED (reviewer finding 1) |
+| L-1b | `api/services/analyzerStreaming.ts` `generateAnalysisJobId` | server job ids used `Math.random` | was Silent (predictable Storage keys) | — | Fixed: uses `newAnalysisJobId` (Web Crypto, fails closed) (reviewer finding 7) |
 | L-2 | `shared/legalVerificationPipeline.ts` `finalizeResolution` | incomplete proposition | was Silent (VERIFIED), now Explicit | Returned VERIFIED/SUPPORTED with an unevaluated proposition | Fixed `5940df4` (UNVERIFIED) |
 | L-3 | `api/services/analyzerRequirementExtractor.ts:246` | `exactQuote.slice(0, 2000)` | **Silent** | Stored `source_exact_quote` no longer equals the source text; provenance claims a verbatim quote it is not | **Open.** Recommended: refuse to store a longer quote (or store the full text if the column allows). Owner: Claude; needs a schema check |
 | L-4 | `api/services/caseActionWorkspace.ts:256` | `sourceExactQuote.slice(0, 2000)` | **Silent** | Same as L-3 for user-entered case actions | **Open.** Same fix as L-3 |

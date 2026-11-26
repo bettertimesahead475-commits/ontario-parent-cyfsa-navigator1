@@ -184,10 +184,28 @@ describe("identifier generation fails closed (no predictable fallback)", () => {
     expect(() => newAnalysisJobId(1, () => 0)).toThrow(/too little entropy/);
   });
 
-  it("a produced id is never padded: its random part is at least 8 characters from the source", async () => {
+  it("a produced id has the server format with a random part of 8 to 12 characters", async () => {
     const { newAnalysisJobId, ANALYSIS_JOB_ID_PATTERN } = await import("../../shared/analyzerRetryPolicy");
     const id = newAnalysisJobId(1_700_000_000_000);
     expect(id).not.toMatch(/xxxx/);
     expect(id).toMatch(ANALYSIS_JOB_ID_PATTERN);
+  });
+});
+
+describe("server-generated analysis ids use the same secure source", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("generateAnalysisJobId returns a valid server-format id", async () => {
+    const { generateAnalysisJobId } = await import("./analyzerStreaming");
+    expect(generateAnalysisJobId()).toMatch(/^req_\d{10,16}_[a-z0-9]{8,12}$/);
+  });
+
+  it("generateAnalysisJobId fails closed when Web Crypto is unavailable", async () => {
+    const { generateAnalysisJobId } = await import("./analyzerStreaming");
+    const mathSpy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    vi.stubGlobal("crypto", undefined);
+    expect(() => generateAnalysisJobId()).toThrow(/Web Crypto is unavailable/);
+    expect(mathSpy).not.toHaveBeenCalled();
+    mathSpy.mockRestore();
   });
 });

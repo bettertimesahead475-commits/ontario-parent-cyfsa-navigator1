@@ -1894,9 +1894,14 @@ const isIsoDateString = (v: unknown): v is string =>
  */
 export const MAX_PROPOSITION_CHARS = 4000;
 
-/** Longest text evaluated in one window; the clause-level patterns are quadratic on long runs with no sentence break. */
-export const MAX_PROPOSITION_WINDOWS = 50;
-const PROPOSITION_WINDOW_OVERLAP = 400;
+/** Maximum number of windows evaluated for one text; beyond this the result is an explicit NOT_EVALUATED. */
+export const MAX_PROPOSITION_WINDOWS = 200;
+/**
+ * Overlap between consecutive windows. A match of up to this many characters lies wholly inside at least one window
+ * (window step = MAX_PROPOSITION_CHARS - overlap). Longer matches are not guaranteed; see engineering/LENGTH_LIMIT_AUDIT.md (L-1).
+ */
+const PROPOSITION_WINDOW_OVERLAP = 3000;
+export const PROPOSITION_MATCH_GUARANTEE_CHARS = PROPOSITION_WINDOW_OVERLAP;
 
 /**
  * Splits long text into sentence-aligned windows of at most MAX_PROPOSITION_CHARS. Consecutive windows overlap, so a
@@ -2274,7 +2279,8 @@ export function resolveLegalAuthority(
     // Incomplete proposition checking is never reported as VERIFIED or SUPPORTED: the statement was not evaluated.
     for (const sec of sectionsToCheck) {
       const incomplete = evaluatePropositionSupport(sec, propTargetText);
-      if (incomplete.support === "NOT_EVALUATED" && incomplete.reason) {
+      // A provided proposition that was not evaluated (empty, whitespace-only, or too long) is never VERIFIED.
+      if (incomplete.support === "NOT_EVALUATED" && (incomplete.reason || options?.proposition !== undefined)) {
         return {
           status: "UNVERIFIED",
           authorityId: entry.authorityId,

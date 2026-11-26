@@ -54,7 +54,7 @@ describe("contradictions spanning window boundaries", () => {
   });
 });
 
-describe("statements needing context across windows", () => {
+describe("a short flag straddling a window boundary", () => {
   it("a flag whose trigger and object sit on different sides of a boundary is still matched", () => {
     // The pattern needs "CFSRB" ... "may overturn" ... "court order" within one clause (no period or semicolon).
     const lead = "CFSRB " + "x ".repeat(1);
@@ -127,10 +127,39 @@ describe("incomplete verification is never VERIFIED", () => {
 });
 
 describe("processing time", () => {
-  it("a 200,000-character document is checked in bounded time", () => {
+  // Text beyond the window cap is NOT evaluated; this asserts only that the refusal is fast, not that the text was checked.
+  it("a 200,000-character document is refused in bounded time (beyond the window cap)", () => {
     const text = filler(200_000);
     const t0 = Date.now();
     evaluatePropositionSupport("CYFSA:102(1)", text);
     expect(Date.now() - t0).toBeLessThan(3000);
+  });
+});
+
+describe("long matches straddling a window boundary", () => {
+  // A single pattern match of about 2,500 characters (under the 3,000-character guarantee) is placed across the first
+  // window edge at many offsets. Every placement must be flagged.
+  it("is found for every start offset around the first boundary", () => {
+    const lead = "CFSRB " + "word ".repeat(500); // about 2,500 characters before the operative words
+    const flag = lead + "may overturn a court order.";
+    const misses: number[] = [];
+    for (let offset = MAX_PROPOSITION_CHARS - 2600; offset <= MAX_PROPOSITION_CHARS + 200; offset += 100) {
+      const text = filler(offset) + " " + flag + filler(300);
+      if (evaluatePropositionSupport("CYFSA:119", text).support !== "CONTRADICTED_BY_STATUTE") misses.push(offset);
+    }
+    expect(misses).toEqual([]);
+  });
+});
+
+describe("whitespace-only and empty provided propositions are never VERIFIED", () => {
+  it("a whitespace-only proposition returns UNVERIFIED, not SUPPORTED", () => {
+    const res = resolveLegalAuthority("CYFSA s. 74(2)", { proposition: "   " });
+    expect(res.status).toBe("UNVERIFIED");
+    expect(res.propositionSupport).toBe("NOT_EVALUATED");
+  });
+
+  it("an empty provided proposition returns UNVERIFIED", () => {
+    const res = resolveLegalAuthority("CYFSA s. 74(2)", { proposition: "" });
+    expect(res.status).toBe("UNVERIFIED");
   });
 });

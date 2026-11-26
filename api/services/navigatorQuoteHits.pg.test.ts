@@ -44,6 +44,9 @@ const CASES: { name: string; source: string; quote: string }[] = [
   { name: "Unicode apostrophe contraction is not cut", source: "She can’t attend.", quote: "She can" },
   { name: "negation kept: 'not' inside a word is not a match", source: "It is notable.", quote: "not" },
   { name: "negation kept: 'not' as a whole word matches", source: "It is not valid.", quote: "not" },
+  { name: "accented letter next to a partial word is a word character (collation check)", source: "Le garçon est ici.", quote: "gar" },
+  { name: "accented letter starting a quote is a word character (collation check)", source: "Le garçon est ici.", quote: "çon" },
+  { name: "accented whole word matches", source: "Le garçon est ici.", quote: "garçon" },
   { name: "em dash in the quote", source: "The order — the second one — stands.", quote: "— the second one —" },
   { name: "curly quotes in the source", source: "He said “no” today.", quote: "“no”" },
   { name: "empty quote", source: "anything", quote: "" },
@@ -101,6 +104,11 @@ describe.skipIf(!url)("navigator_quote_hits parity with pageSources.verifyQuote 
       const expected = app === "NORMALIZED_WHITESPACE" ? 1 : 0;
       expect(rows[0].n, c.name).toBe(expected);
     }
+  });
+
+  it("the database encoding is UTF-8, so [[:alnum:]] classifies accented letters as word characters", async () => {
+    const { rows } = await client.query<{ enc: string }>("select pg_catalog.pg_encoding_to_char(encoding) as enc from pg_catalog.pg_database where datname = current_database()");
+    expect(rows[0].enc).toBe("UTF8");
   });
 
   it("a NULL source is rejected by the strict function (returns NULL, never a count)", async () => {
