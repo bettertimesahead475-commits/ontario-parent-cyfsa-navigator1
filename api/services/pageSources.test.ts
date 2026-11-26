@@ -160,3 +160,13 @@ describe("pdfTextObjects (linear replacement for /BT([\s\S]*?)ET/g)", () => {
     expect(Date.now() - t0).toBeLessThan(100);
   });
 });
+
+describe("verifyQuote word boundaries (DEVIN-P2-04)", () => {
+  it("does not verify a fragment cut from inside a word or a contraction", () => {
+    expect(verifyQuote("It is untrue that he struck the child.", "true that he struck").status).toBe("ABSENT");
+    expect(verifyQuote("She can't attend the meeting.", "She can").status).toBe("ABSENT");
+    expect(verifyQuote("The worker visited the homestead.", "the home").status).toBe("ABSENT");
+    expect(verifyQuote("It is untrue that he struck the child.", "untrue that he struck").status).toBe("EXACT");
+    expect(verifyQuote("He said: \"no\". Then he left.", "no").status).toBe("EXACT");
+  });
+});

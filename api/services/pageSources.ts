@@ -277,7 +277,25 @@ function normalized(source:string) {
 }
 /** Zero-based Unicode code-point offsets, end exclusive; duplicate matches are not silently selected. */
 export function verifyQuote(source:string, quote:string) {
-  const find=(s:string[],q:string[])=>{const hits:number[]=[],haystack=s.join(''),needle=q.join('');let at=haystack.indexOf(needle);while(at>=0&&hits.length<2){hits.push(Array.from(haystack.slice(0,at)).length);at=haystack.indexOf(needle,at+1);}return hits;};
+  // Same rule as shared/quoteVerification.ts (DEVIN-P2-01/P2-04): a match may not start or end inside a word, and may
+  // not stop just before "'t" (cutting "can't" to "can" drops the negation).
+  const WORD=/[\p{L}\p{N}]/u;
+  const find=(s:string[],q:string[])=>{
+    const hits:number[]=[],haystack=s.join(''),needle=q.join('');
+    if(!q.length)return hits;
+    const boundedStart=WORD.test(q[0]),boundedEnd=WORD.test(q[q.length-1]);
+    let index=0,scanned=0,at=haystack.indexOf(needle);
+    while(at>=0&&hits.length<2){
+      index+=Array.from(haystack.slice(scanned,at)).length;scanned=at;
+      const before=s[index-1],after=s[index+q.length];
+      const cutsStart=boundedStart&&before!==undefined&&WORD.test(before);
+      const contraction=(after==="'"||after==="’")&&/^t$/i.test(s[index+q.length+1]??"")&&!WORD.test(s[index+q.length+2]??"");
+      const cutsEnd=boundedEnd&&after!==undefined&&(WORD.test(after)||contraction);
+      if(!cutsStart&&!cutsEnd)hits.push(index);
+      at=haystack.indexOf(needle,at+1);
+    }
+    return hits;
+  };
   if(!normalizeQuoteWhitespace(quote))return {status:'ABSENT',start:null,end:null} as const;
   const original=Array.from(source), proposed=Array.from(quote), exact=find(original,proposed);
   if(exact.length===1)return {status:'EXACT',start:exact[0],end:exact[0]+proposed.length} as const;
