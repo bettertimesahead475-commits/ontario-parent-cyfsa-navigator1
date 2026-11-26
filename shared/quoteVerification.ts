@@ -214,10 +214,15 @@ export function createQuoteLocator(source: string): (quote: string) => QuoteLoca
   const absent: QuoteLocation = { status: "ABSENT", page: null, startOffset: null, endOffset: null };
   const ambiguous: QuoteLocation = { status: "AMBIGUOUS", page: null, startOffset: null, endOffset: null };
   if (!source || !source.trim()) return () => ({ ...absent });
-  const { body, originalIndex } = withoutPageMarkers(source);
-  if (!body.trim()) return () => ({ ...absent });
-
-  const bodyCp = Array.from(body);
+  // Nothing is prepared until the first quote arrives: a report with no quotes costs no memory or CPU here.
+  let prepared: { body: string; originalIndex: number[]; bodyCp: string[] } | null | undefined;
+  const prepare = () => {
+    if (prepared === undefined) {
+      const { body, originalIndex } = withoutPageMarkers(source);
+      prepared = body.trim() ? { body, originalIndex, bodyCp: Array.from(body) } : null;
+    }
+    return prepared;
+  };
   let ws: (Canonical & { joined: string }) | undefined;
   let vs: (Canonical & { joined: string }) | undefined;
   let markers: { ends: number[]; pages: number[] } | undefined;
@@ -234,6 +239,7 @@ export function createQuoteLocator(source: string): (quote: string) => QuoteLoca
   };
   // Offsets in the matching text are mapped back to the original source, so the page and span refer to the document.
   const found = (status: QuoteMatchStatus, start: number, end: number): QuoteLocation => {
+    const { originalIndex } = prepared as { originalIndex: number[] };
     const from = originalIndex[start];
     const to = originalIndex[end - 1] + 1;
     return { status, page: pageAt(from), startOffset: from, endOffset: to };
@@ -242,6 +248,9 @@ export function createQuoteLocator(source: string): (quote: string) => QuoteLoca
   return (quote: string): QuoteLocation => {
     const q = withoutPageMarkers(unwrapQuote(quote)).body.trim();
     if (!q) return { ...absent };
+    const doc = prepare();
+    if (!doc) return { ...absent };
+    const { body, bodyCp } = doc;
     const quoteCp = Array.from(q);
 
     const exact = occurrences(bodyCp, quoteCp, body);
