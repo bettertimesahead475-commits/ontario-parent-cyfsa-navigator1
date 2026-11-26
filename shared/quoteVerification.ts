@@ -136,6 +136,14 @@ function codePointAtIndex(h: string, i: number): string | undefined {
   return String.fromCodePoint(h.codePointAt(i) as number);
 }
 
+/** Whether UTF-16 index `i` falls between the two halves of a surrogate pair. */
+function splitsSurrogatePair(h: string, i: number): boolean {
+  if (i <= 0 || i >= h.length) return false;
+  const hi = h.charCodeAt(i - 1);
+  const lo = h.charCodeAt(i);
+  return hi >= 0xd800 && hi <= 0xdbff && lo >= 0xdc00 && lo <= 0xdfff;
+}
+
 /**
  * UTF-16 start indices of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous.
  * A match must not start or end inside a word: "true that he struck" is not a quotation of "untrue that he struck".
@@ -161,7 +169,9 @@ function occurrences(h: string, n: string): number[] {
       cutsContraction = /^t$/i.test(t ?? "") && !WORD_CHAR.test(next ?? "");
     }
     const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
-    if (!cutsWordStart && !cutsWordEnd) hits.push(at);
+    // Half of an emoji or other astral character is never a quotation of the whole character.
+    const splitsCharacter = splitsSurrogatePair(h, at) || splitsSurrogatePair(h, afterAt);
+    if (!cutsWordStart && !cutsWordEnd && !splitsCharacter) hits.push(at);
     at = h.indexOf(n, at + 1);
   }
   return hits;
