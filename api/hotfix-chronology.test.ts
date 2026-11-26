@@ -53,7 +53,7 @@ describe("a cut-off chronology is never accepted as complete", () => {
     const generate = vi.fn(async () => responses.shift()!);
     const out = await runOneSection("chronology", sectionOpts(generate), {});
     expect(out.value.chronology[0].event).toBe("Referral received from the school.");
-    expect(JSON.stringify(out.value)).not.toMatch(/Jan"?,?\s*$/);
+    expect(out.value.chronology).toHaveLength(1); // the cut-off fragment is not merged in
   });
 
   it("a cut-off response is retried with a shorter-answer instruction, not repeated verbatim", async () => {
@@ -66,11 +66,11 @@ describe("a cut-off chronology is never accepted as complete", () => {
 });
 
 describe("Forensic dispatch: chronology starts before overview", () => {
-  it("the first three Forensic sections started are redFlags, chronology and guidance", async () => {
+  it("the first three Forensic sections started are redFlags, thresholds and chronology (verification inputs stay first)", async () => {
     const order: string[] = [];
     const generate = vi.fn(async (o: GenParams) => { order.push(o.stage!); return complete(SECTION_OK[o.stage!] ?? "{}"); });
     await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", requestId: "dispatch-hotfix", deadlineAt: Date.now() + 120_000, generate } as any).catch(() => undefined);
-    expect(order.slice(0, 3)).toEqual(["section:redFlags", "section:chronology", "section:guidance"]);
+    expect(order.slice(0, 3)).toEqual(["section:redFlags", "section:thresholds", "section:chronology"]);
     expect(order.indexOf("section:chronology")).toBeLessThan(order.indexOf("section:overview"));
   });
 });
