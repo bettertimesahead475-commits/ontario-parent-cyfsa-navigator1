@@ -16,6 +16,27 @@ const CASES: [string, string, string][] = [
   ["ends inside an emoji", "She said \u{1F600} rest of the visit was calm.", "said \uD83D"],
 ];
 
+describe("hyphenated compounds and full-width apostrophes (release candidate 20261126 review)", () => {
+  it.each([
+    ["clipped hyphenated prefix", "The father was non-violent during the visit.", "violent during the visit"],
+    ["clipped non-breaking-hyphen prefix", "The father was non\u2011violent during the visit.", "violent during the visit"],
+    ["clipped compound end", "The report was non-urgent.", "The report was non"],
+    ["case variant of a clipped prefix", "The father was non-violent.", "VIOLENT."],
+    ["full-width apostrophe contraction", "I can\uFF07t attend.", "I can"],
+  ])("%s: ABSENT", (_label, source, quote) => {
+    expect(locateQuote(source, quote).status).toBe("ABSENT");
+    expect(createQuoteLocator(source)(quote).status).toBe("ABSENT");
+  });
+
+  it("whole compounds and hyphens used as separators still verify", () => {
+    expect(locateQuote("The father was non-violent during the visit.", "non-violent during the visit").status).toBe("EXACT");
+    expect(locateQuote("A well-known risk.", "A well-known risk.").status).toBe("EXACT");
+    expect(locateQuote("Visit 2 - the child was calm.", "the child was calm.").status).toBe("EXACT");
+    expect(locateQuote("Visit 2 -the child was calm.", "the child was calm.").status).toBe("EXACT");
+    expect(locateQuote("I can\uFF07t attend.", "I can\uFF07t attend.").status).toBe("EXACT");
+  });
+});
+
 describe("quotations must start and end on whole words and whole characters", () => {
   it.each(CASES)("%s: ABSENT (production said EXACT)", (_label, source, quote) => {
     expect(PROD.locateQuote(source, quote).status).toBe("EXACT");
