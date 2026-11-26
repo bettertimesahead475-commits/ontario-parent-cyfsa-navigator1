@@ -98,18 +98,40 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
   return { chars, starts, ends };
 }
 
-/** Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous. */
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/**
+ * Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous.
+ * A match must not start or end inside a word: "true that he struck" is not a quotation of "untrue that he struck".
+ */
 function occurrences(haystack: string[], needle: string[]): number[] {
   if (needle.length === 0) return [];
   const h = haystack.join("");
   const n = needle.join("");
+  const boundedStart = WORD_CHAR.test(needle[0]);
+  const boundedEnd = WORD_CHAR.test(needle[needle.length - 1]);
   const hits: number[] = [];
+  let index = 0;
+  let scanned = 0;
   let at = h.indexOf(n);
   while (at >= 0 && hits.length < 2) {
-    hits.push(Array.from(h.slice(0, at)).length);
+    index += Array.from(h.slice(scanned, at)).length;
+    scanned = at;
+    const before = haystack[index - 1];
+    const after = haystack[index + needle.length];
+    const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
+    const cutsWordEnd = boundedEnd && after !== undefined && WORD_CHAR.test(after);
+    if (!cutsWordStart && !cutsWordEnd) hits.push(index);
     at = h.indexOf(n, at + 1);
   }
   return hits;
+}
+
+/** Whether the quote occurs at least once on word boundaries, after collapsing whitespace. Uniqueness is not required. */
+export function containsQuoteOnWordBoundaries(source: string, quote: string): boolean {
+  const s = canonicalize(source || "", "whitespace").chars;
+  const q = canonicalize(quote || "", "whitespace").chars;
+  return occurrences(s, q).length > 0;
 }
 
 /** Strips quotation marks wrapped around the whole quote, then trims. */
