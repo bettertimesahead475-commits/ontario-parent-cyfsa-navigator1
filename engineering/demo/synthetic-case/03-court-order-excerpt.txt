@@ -1,0 +1,18 @@
+SYNTHETIC DOCUMENT - FICTIONAL CASE - NOT A REAL RECORD
+
+Ontario Court (Family Division) - Fictional Order Excerpt - File SYN-2026-0417
+
+[Page 1]
+Order dated 2026-03-10. The court orders that Child A remain in the care of Parent A, subject to supervision by the society.
+The court directs the society to provide the family with the supports identified in the plan of care.
+
+[Page 2]
+Submission by the Parent B's representative (fictional): "Under section 1(2) of the Child, Youth and Family Services Act, a parent
+has an unconditional statutory entitlement to every requested service, and emergency intervention is prohibited whenever an
+untried support service exists."
+Note for demonstration: the submission misstates the statute. The statutory purposes in section 1(2) are conditional on
+the best interests of the child. A correct check should flag this statement, not accept it.
+
+[Page 3]
+The Child and Family Services Review Board may not overturn a court order. The matter was decided by the court on
+2026-03-10 and is not before the Board.
