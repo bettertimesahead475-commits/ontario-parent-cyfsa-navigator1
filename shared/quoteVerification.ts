@@ -62,7 +62,10 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
   const codePoints = Array.from(input);
   for (let k = 0; k < codePoints.length; k++) {
     const c = codePoints[k];
-    if (SPACE.test(c)) {
+    const code = c.charCodeAt(0);
+    // ASCII fast path: in ASCII, \s is exactly tab, line feed, vertical tab, form feed, carriage return and space.
+    const isSpace = code < 128 ? code === 32 || (code >= 9 && code <= 13) : SPACE.test(c);
+    if (isSpace) {
       if (chars.length > 0 && chars[chars.length - 1] === " ") {
         ends[ends.length - 1] = k + 1;
       } else {
@@ -73,6 +76,13 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
       continue;
     }
     if (mode === "variant") {
+      if (code < 128) {
+        // No ASCII character is dropped or mapped; only capitals change.
+        chars.push(code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : c);
+        starts.push(k);
+        ends.push(k + 1);
+        continue;
+      }
       if (DROPPED.has(c)) continue;
       const mapped = PUNCTUATION_MAP[c] ?? c.toLowerCase();
       // Only single code points are kept, so every element maps to exactly one source position.
@@ -98,10 +108,14 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
   return { chars, starts, ends };
 }
 
-/** Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous. */
-function occurrences(haystack: string[], needle: string[]): number[] {
+/**
+ * Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous.
+ * Production matching rule: no word-boundary check (DEVIN-P2-01 is on the integration branch and is NOT in this hotfix).
+ * joinedHaystack lets a prepared locator pass the joined text once.
+ */
+function occurrences(haystack: string[], needle: string[], joinedHaystack?: string): number[] {
   if (needle.length === 0) return [];
-  const h = haystack.join("");
+  const h = joinedHaystack ?? haystack.join("");
   const n = needle.join("");
   const hits: number[] = [];
   let at = h.indexOf(n);
@@ -149,49 +163,102 @@ function withoutPageMarkers(source: string): { body: string; originalIndex: numb
   return { body: kept.join(""), originalIndex };
 }
 
-/** Locates a quotation in the source text and reports the strictest match type that applies. */
-export function locateQuote(source: string, quote: string): QuoteLocation {
+/** End offset (in code points) and number of every "[Page N]" marker, in document order. */
+function pageMarkerEnds(source: string): { ends: number[]; pages: number[] } {
+  const ends: number[] = [];
+  const pages: number[] = [];
+  let utf16 = 0;
+  let codePoints = 0;
+  for (const m of source.matchAll(/\[Page (\d+)\]/g)) {
+    const matchEnd = (m.index ?? 0) + m[0].length;
+    codePoints += Array.from(source.slice(utf16, matchEnd)).length;
+    utf16 = matchEnd;
+    ends.push(codePoints);
+    pages.push(Number(m[1]));
+  }
+  return { ends, pages };
+}
+
+/**
+ * Prepares a source document once and returns a function that locates quotations in it. Same result as calling
+ * locateQuote(source, quote) for each quote, but the document is canonicalized once instead of once per quote, which
+ * keeps report guards linear in document size (a 25-finding report on a 200-page document re-scanned it 25 times).
+ * Holds no state outside the returned closure.
+ */
+export function createQuoteLocator(source: string): (quote: string) => QuoteLocation {
   const absent: QuoteLocation = { status: "ABSENT", page: null, startOffset: null, endOffset: null };
-  const q = withoutPageMarkers(unwrapQuote(quote)).body.trim();
-  if (!q || !source || !source.trim()) return absent;
+  const ambiguous: QuoteLocation = { status: "AMBIGUOUS", page: null, startOffset: null, endOffset: null };
+  if (!source || !source.trim()) return () => ({ ...absent });
   const { body, originalIndex } = withoutPageMarkers(source);
-  if (!body.trim()) return absent;
+  if (!body.trim()) return () => ({ ...absent });
 
   const bodyCp = Array.from(body);
-  const quoteCp = Array.from(q);
+  let ws: (Canonical & { joined: string }) | undefined;
+  let vs: (Canonical & { joined: string }) | undefined;
+  let markers: { ends: number[]; pages: number[] } | undefined;
+  const pageAt = (codePointOffset: number): number | null => {
+    markers ??= pageMarkerEnds(source);
+    let lo = 0;
+    let hi = markers.ends.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (markers.ends[mid] <= codePointOffset) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo === 0 ? null : markers.pages[lo - 1];
+  };
   // Offsets in the matching text are mapped back to the original source, so the page and span refer to the document.
   const found = (status: QuoteMatchStatus, start: number, end: number): QuoteLocation => {
     const from = originalIndex[start];
     const to = originalIndex[end - 1] + 1;
-    return { status, page: pageAtOffset(source, from), startOffset: from, endOffset: to };
+    return { status, page: pageAt(from), startOffset: from, endOffset: to };
   };
-  const ambiguous: QuoteLocation = { status: "AMBIGUOUS", page: null, startOffset: null, endOffset: null };
 
-  const exact = occurrences(bodyCp, quoteCp);
-  if (exact.length === 1) return found("EXACT", exact[0], exact[0] + quoteCp.length);
-  if (exact.length > 1) return ambiguous;
+  return (quote: string): QuoteLocation => {
+    const q = withoutPageMarkers(unwrapQuote(quote)).body.trim();
+    if (!q) return { ...absent };
+    const quoteCp = Array.from(q);
 
-  const ws = canonicalize(body, "whitespace");
-  const wq = canonicalize(q, "whitespace");
-  const wsHits = occurrences(ws.chars, wq.chars);
-  if (wsHits.length === 1) {
-    const h = wsHits[0];
-    return found("NORMALIZED_WHITESPACE", ws.starts[h], ws.ends[h + wq.chars.length - 1]);
-  }
-  if (wsHits.length > 1) return ambiguous;
+    const exact = occurrences(bodyCp, quoteCp, body);
+    if (exact.length === 1) return found("EXACT", exact[0], exact[0] + quoteCp.length);
+    if (exact.length > 1) return { ...ambiguous };
 
-  const vs = canonicalize(body, "variant");
-  const vq = canonicalize(q, "variant");
-  const vHits = occurrences(vs.chars, vq.chars);
-  if (vHits.length === 1) {
-    const h = vHits[0];
-    return found("CASE_OR_PUNCTUATION_VARIANT", vs.starts[h], vs.ends[h + vq.chars.length - 1]);
-  }
-  if (vHits.length > 1) return ambiguous;
-  return absent;
+    if (!ws) {
+      const c = canonicalize(body, "whitespace");
+      ws = { ...c, joined: c.chars.join("") };
+    }
+    const wq = canonicalize(q, "whitespace");
+    const wsHits = occurrences(ws.chars, wq.chars, ws.joined);
+    if (wsHits.length === 1) {
+      const h = wsHits[0];
+      return found("NORMALIZED_WHITESPACE", ws.starts[h], ws.ends[h + wq.chars.length - 1]);
+    }
+    if (wsHits.length > 1) return { ...ambiguous };
+
+    if (!vs) {
+      const c = canonicalize(body, "variant");
+      vs = { ...c, joined: c.chars.join("") };
+    }
+    const vq = canonicalize(q, "variant");
+    const vHits = occurrences(vs.chars, vq.chars, vs.joined);
+    if (vHits.length === 1) {
+      const h = vHits[0];
+      return found("CASE_OR_PUNCTUATION_VARIANT", vs.starts[h], vs.ends[h + vq.chars.length - 1]);
+    }
+    if (vHits.length > 1) return { ...ambiguous };
+    return { ...absent };
+  };
 }
 
-/** Whether the quoted words are in the document (exact, or equal after whitespace only). Drives "verified". */
+/** Locates a quotation in the source text and reports the strictest match type that applies. */
+export function locateQuote(source: string, quote: string): QuoteLocation {
+  // An empty quote is absent without preparing the source.
+  if (!withoutPageMarkers(unwrapQuote(quote)).body.trim()) {
+    return { status: "ABSENT", page: null, startOffset: null, endOffset: null };
+  }
+  return createQuoteLocator(source)(quote);
+}
+
 export function isVerbatimQuoteStatus(status: string): boolean {
   return status === "EXACT" || status === "NORMALIZED_WHITESPACE";
 }
