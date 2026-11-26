@@ -272,6 +272,44 @@ export type AnalysisJobOutcome =
  * pays for a new analysis. Gives up (throwing ApiResponseError) only when the job cannot exist any
  * more: never created, the account is signed out, or it outlived the server's time limit.
  */
+/** Polling interval while the server reports the job as actively running: completion is noticed within about 1 s. */
+export const ACTIVE_JOB_POLL_MS = 1000;
+
+interface JobStatusRead {
+  status: number;
+  ok: boolean;
+  body: any;
+}
+
+// One status request per job at a time: a second poller of the same job (another tab view, a recovery
+// path) shares the in-flight read instead of doubling the load.
+const inFlightJobReads = new WeakMap<object, Map<string, Promise<JobStatusRead>>>();
+
+function readJobStatus(
+  fetcher: (input: string, init?: RequestInit) => Promise<Response>,
+  jobId: string,
+  timeoutMs: number
+): Promise<JobStatusRead> {
+  let reads = inFlightJobReads.get(fetcher);
+  if (!reads) {
+    reads = new Map();
+    inFlightJobReads.set(fetcher, reads);
+  }
+  const existing = reads.get(jobId);
+  if (existing) return existing;
+  const read = (async () => {
+    const res = await fetcher(`/api/analyze/job/${encodeURIComponent(jobId)}`, { signal: AbortSignal.timeout(timeoutMs) });
+    const body = res.status === 404 ? null : await res.json().catch(() => null);
+    return { status: res.status, ok: res.ok, body };
+  })();
+  reads.set(jobId, read);
+  const clear = () => {
+    if (reads.get(jobId) === read) reads.delete(jobId);
+  };
+  read.then(clear, clear);
+  return read;
+}
+
 export async function pollAnalysisJob(
   jobId: string,
   options: {
@@ -312,9 +350,9 @@ export async function pollAnalysisJob(
         true
       );
     }
-    let res: Response;
+    let res: JobStatusRead;
     try {
-      res = await fetcher(`/api/analyze/job/${encodeURIComponent(jobId)}`, { signal: AbortSignal.timeout(Math.max(1, Math.min(20_000, maxWaitMs - (Date.now() - started)))) });
+      res = await readJobStatus(fetcher, jobId, Math.max(1, Math.min(20_000, maxWaitMs - (Date.now() - started))));
       networkFailures = 0;
     } catch {
       if (++networkFailures >= 10) {
@@ -344,7 +382,7 @@ export async function pollAnalysisJob(
       continue;
     }
     if (!res.ok) {
-      const failure = (await res.json().catch(() => null)) as { code?: unknown; error?: unknown; retryable?: unknown } | null;
+      const failure = res.body as { code?: unknown; error?: unknown; retryable?: unknown } | null;
       const code = typeof failure?.code === "string" ? failure.code : `HTTP_${res.status}`;
       const transientStatus = res.status === 408 || res.status === 429 || res.status >= 500;
       // The server said retrying cannot help (for example a missing server credential), or the request
@@ -369,7 +407,7 @@ export async function pollAnalysisJob(
       continue;
     }
     transientFailures = 0;
-    const job = (await res.json().catch(() => null)) as AnalysisJobSnapshot | null;
+    const job = res.body as AnalysisJobSnapshot | null;
     if (job?.status === "completed" && job.report) return { status: "completed", report: job.report };
     if (job?.status === "failed" || job?.status === "timed_out") {
       // A stopped analysis is reported with its reason, and the caller decides whether to start it again.
@@ -382,10 +420,13 @@ export async function pollAnalysisJob(
       notFoundCount++;
       // A 404/pending result is normal while Cloudflare has not yet saved
       // the completed job. Never infer failure or start a new analysis here.
-    } else if (job) {
-      options.onProgress?.(job);
+      await sleep(backoff(++quietPolls, 5_000));
+      continue;
     }
-    // Ease off gradually while a job runs (capped at 5 s so completion is noticed promptly; measured queued Forensic: 99.4 s on the executor vs 110.5 s seen by the browser with an 8 s cap).
-    await sleep(backoff(++quietPolls, 5_000));
+    if (job) options.onProgress?.(job);
+    // While the job is actively running, check about once a second (with jitter) so completion is noticed within
+    // ~1 s; a 5 s cap added up to 5 s to every queued analysis (99.4 s executor vs 110.5 s seen by the browser).
+    quietPolls = 0;
+    await sleep(Math.max(1, Math.min(Math.min(intervalMs, ACTIVE_JOB_POLL_MS) * (0.9 + Math.random() * 0.2), maxWaitMs - (Date.now() - started))));
   }
 }
