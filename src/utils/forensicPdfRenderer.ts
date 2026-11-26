@@ -503,7 +503,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
         <h2 class="section-heading">2. Evidence Strength Index & Completeness Assessment</h2>
         <div class="score-card-container">
           <div class="score-hero">
-            <span class="score-hero-number">${esiScored ? esiScore : "—"}</span>
+            <span class="score-hero-number">${esiScored ? esiScore : `<span style="font-size:16px;">Not scored</span>`}</span>
             <span class="score-hero-label">Evidence Strength / 100</span>
             <span style="font-size:8px; color:#64748b; margin-top:4px;">Heuristic Evidentiary Weight</span>
           </div>

@@ -16,6 +16,7 @@ describe("forensic PDF renderer with missing data", () => {
 
   it("shows unscored values as not scored instead of a number", () => {
     expect(html).toContain("Information Completeness: Not scored");
+    expect(html).toMatch(/<span class="score-hero-number">[^—]*Not scored/);
     expect(html).not.toMatch(/>\s*62\s*</);
     expect(html).not.toContain("0 / 15");
     expect(html).not.toContain("Evaluated from document record.");

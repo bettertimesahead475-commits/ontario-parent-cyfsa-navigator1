@@ -1847,11 +1847,13 @@ export default function DocumentAnalyzerTab() {
     setSelectedReport(null);
     // Single-file uploads use full streaming and stage callbacks; batches use parallel engine
     if (chunkedFiles.length === 1) {
+      // The single-file path shows its own progress, so the upload message is cleared once the file is read.
+      setBulkProgress("");
       await triggerSingleAnalysis(chunkedFiles[0]);
     } else if (chunkedFiles.length > 1) {
       await runParallelBulkAnalysis(chunkedFiles);
     } else {
-      setBulkProgress(null);
+      setBulkProgress("");
     }
   };
 
