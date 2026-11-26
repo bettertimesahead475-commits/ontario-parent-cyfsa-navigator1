@@ -4,6 +4,7 @@ import { createCloudflareGenerateFn } from '../_analyzer-model-adapter';
 import { runSectionedAnalysis } from '../../../api/services/analyzerSections';
 import { DEFAULT_QUICK_MODEL, DEFAULT_FORENSIC_MODEL } from '../../../api/services/analyzerModels';
 import { providerDiagnostic } from '../../../shared/providerDiagnostics';
+import { replaceAngleTags, replaceEmailAddresses } from '../../../shared/linearText';
 import { AnalyzerError } from '../../../api/services/analyzerErrors';
 import { listGeminiModels, resolveGeminiModel, GeminiError } from '../_gemini';
 
@@ -35,7 +36,8 @@ export async function handleProviderCheck(request: Request, env: Env): Promise<R
           const probe = await fetch(url, { signal: AbortSignal.timeout(15000) });
           const text = await probe.text();
           // This fixed control request has no API key, auth header or document input.
-          const publicError = probe.ok ? undefined : text.replace(/<[^>]*>/g, ' ').replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, '[IP]').replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]').replace(/AIza[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]+/g, '[credential]').replace(/\s+/g, ' ').slice(0,500);
+          // replaceAngleTags / replaceEmailAddresses are linear equivalents of /<[^>]*>/g and the email pattern.
+          const publicError = probe.ok ? undefined : replaceEmailAddresses(replaceAngleTags(text, ' ').replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, '[IP]'), '[email]').replace(/AIza[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]+/g, '[credential]').replace(/\s+/g, ' ').slice(0,500);
           return { host: new URL(url).hostname, diagnostic: providerDiagnostic(probe.status, text), publicUnauthenticatedError: publicError };
         }));
         return Response.json({ geminiFailure, anthropicFailure: providerDiagnostic(response.status, await response.text()), unauthenticatedControl: control, credentialShapes: Object.fromEntries([['gemini',env.GEMINI_API_KEY],['anthropic',env.ANTHROPIC_API_KEY]].map(([name,value])=>{ const text = typeof value === 'string' ? value : ''; return [name,{present:!!text,short:text.length<24,oversized:text.length>512,hasLineBreak:/[\r\n]/.test(text),hasWhitespace:/\s/.test(text),quoted:/^["']|["']$/.test(text.trim()),assignment:/^[A-Z_]+\s*=/.test(text.trim()),json:/^\s*[\[{]/.test(text),containsExpectedPrefix:name==='gemini'?/AIza[A-Za-z0-9_-]{20,100}/.test(text):/sk-ant-[A-Za-z0-9_-]{20,300}/.test(text)}];})) }, { headers });

@@ -1,4 +1,5 @@
 import type { ProviderDiagnostic } from '../../shared/providerDiagnostics';
+import { replaceEmailAddresses } from '../../shared/linearText';
 export type AnalyzerErrorCode =
   | "UPLOAD_FAILED"
   | "ANALYSIS_TIMED_OUT"
@@ -361,16 +362,20 @@ const DIAGNOSTIC_SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/AIza[0-9A-Za-z_-]{20,}/g, "[redacted]"],
   [/\bBearer\s+\S+/gi, "Bearer [redacted]"],
   [/\bBasic\s+[A-Za-z0-9+/=]+/gi, "Basic [redacted]"],
+  // Labelled values. These patterns used to begin with a [A-Za-z_]* prefix (to keep "my_api" in "my_api_key=x"),
+  // which was retried from every position of a long run of letters. The prefix only ever re-emitted the text it
+  // matched through $1, and every match still ends in the same place, so dropping it leaves the output unchanged.
   // Quoted JSON values, including values with spaces: "apiKey": "abc def".
-  [/([A-Za-z_]*(?:api[_-]?key|apikey|token|secret|password|passwd|authorization|key)["']?\s*[:=]\s*)"[^"]*"/gi, '$1"[redacted]"'],
+  [/((?:api[_-]?key|apikey|token|secret|password|passwd|authorization|key)["']?\s*[:=]\s*)"[^"]*"/gi, '$1"[redacted]"'],
   // Unquoted labelled values: token=xyz, password: hunter2, ?key=abc.
-  [/([A-Za-z_]*(?:api[_-]?key|apikey|token|secret|password|passwd|authorization|key)["']?\s*[:=]\s*)[^\s"',;&]+/gi, "$1[redacted]"],
-  [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted]"],
+  [/((?:api[_-]?key|apikey|token|secret|password|passwd|authorization|key)["']?\s*[:=]\s*)[^\s"',;&]+/gi, "$1[redacted]"],
 ];
 
 export function redactDiagnostic(input: unknown, maxLength = 240): string {
   let text = String(input ?? "");
   for (const [pattern, replacement] of DIAGNOSTIC_SECRET_PATTERNS) text = text.replace(pattern, replacement);
+  // Email addresses last, as before; the linear helper replaces /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g.
+  text = replaceEmailAddresses(text, "[redacted]");
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
