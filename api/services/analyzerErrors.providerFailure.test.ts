@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { redactDiagnostic } from "./analyzerErrors.js";
 import {
   providerErrorClass,
   isProviderConnectionFailure,
@@ -91,5 +92,52 @@ describe("provider error classification (SDK error shape)", () => {
   it("keeps an existing AnalyzerError unchanged", () => {
     const original = new AnalyzerError("AI_RESPONSE_INVALID", 422, "bad json", true);
     expect(providerFailure(original, "claude")).toBe(original);
+  });
+});
+
+// SonarCloud S8786: the labelled-value patterns lost their leading [A-Za-z_]* (it only re-emitted its own text via $1)
+// and the email pattern became shared replaceEmailAddresses. The former list is the reference.
+describe("redactDiagnostic (S8786 linear rewrite)", () => {
+  const FORMER: Array<[RegExp, string]> = [
+    [/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/g, "[redacted]"],
+    [/\bAKIA[0-9A-Z]{16}\b/g, "[redacted]"],
+    [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]"],
+    [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "[redacted]"],
+    [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[redacted]"],
+    [/\bsk-[A-Za-z0-9_-]{8,}/g, "[redacted]"],
+    [/AIza[0-9A-Za-z_-]{20,}/g, "[redacted]"],
+    [/\bBearer\s+\S+/gi, "Bearer [redacted]"],
+    [/\bBasic\s+[A-Za-z0-9+/=]+/gi, "Basic [redacted]"],
+    [/([A-Za-z_]*(?:api[_-]?key|apikey|token|secret|password|passwd|authorization|key)["']?\s*[:=]\s*)"[^"]*"/gi, '$1"[redacted]"'],
+    [/([A-Za-z_]*(?:api[_-]?key|apikey|token|secret|password|passwd|authorization|key)["']?\s*[:=]\s*)[^\s"',;&]+/gi, "$1[redacted]"],
+    [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted]"],
+  ];
+  const former = (input: string, maxLength = 100_000) => {
+    let text = input;
+    for (const [pattern, replacement] of FORMER) text = text.replace(pattern, replacement);
+    return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+  };
+
+  it("redacts exactly as the former pattern list did", () => {
+    const samples = [
+      'request failed: {"apiKey": "abc def", "my_api_key":"x", "x-api-key": "y"} token=xyz password: hunter2 ?key=abc&other=1',
+      "MY_SECRET_TOKEN=s3cr3t, passwordless=ok, keyboard: qwerty, monkey=banana",
+      "authorization: Bearer abc.def and Basic dXNlcjpwYXNz from ops@example.org",
+      "x@y.comz@w.org",
+    ];
+    for (const s of samples) expect(redactDiagnostic(s, 100_000), s).toBe(former(s));
+    const alphabet = ["my_", "api", "_", "-", "key", "Key", "token", "secret", "pass", "wd", "=", ":", " ", '"', "'", "abc", "a@b.co", ",", "&"];
+    let seed = 17;
+    for (let i = 0; i < 20_000; i++) {
+      let s = "";
+      for (let j = 0; j < 10; j++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; s += alphabet[seed % alphabet.length]; }
+      expect(redactDiagnostic(s, 100_000), JSON.stringify(s)).toBe(former(s));
+    }
+  });
+
+  it("is linear on 50,000 letters (quadratic for the former patterns)", () => {
+    const t0 = performance.now();
+    expect(redactDiagnostic("a".repeat(50_000) + "!", 10)).toBe("aaaaaaaaaa...");
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });

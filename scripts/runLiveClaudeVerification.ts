@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { resolveServerAuthoritativeModel, calculateEstimatedCost, TOKEN_BUDGETS } from "../api/services/analyzerModels.js";
 import { verifyQuote } from "../api/services/pageSources.js";
 import Anthropic from "@anthropic-ai/sdk";
+import { extractFencedBlock } from "../shared/linearText.js";
 
 function extractJson(text: string): any {
   const trimmed = text.trim();
@@ -9,10 +10,10 @@ function extractJson(text: string): any {
     return JSON.parse(trimmed);
   } catch {}
 
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (fenceMatch) {
+  const fenced = extractFencedBlock(trimmed, { trimTrailingWhitespace: true });
+  if (fenced !== null) {
     try {
-      return JSON.parse(fenceMatch[1].trim());
+      return JSON.parse(fenced.trim());
     } catch {}
   }
 

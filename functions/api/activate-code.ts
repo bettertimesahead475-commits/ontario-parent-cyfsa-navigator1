@@ -11,6 +11,7 @@
 import { verifyFirebaseRequest } from './_auth-check';
 import { normalizeApiKey } from './_supabase-key';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
+import { trimCharacters } from '../../shared/linearText';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -29,7 +30,8 @@ function toBase64Url(bytes: Uint8Array): string {
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  // trimCharacters(..., '=', end) is exactly .replace(/=+$/, '') without a backtracking pattern (btoa pads with at most two '=').
+  return trimCharacters(btoa(binary).replace(/\+/g, '-').replace(/\//g, '_'), '=', { end: true });
 }
 
 async function signSessionToken(jti: string, expiresAt: number, secret: string): Promise<string> {

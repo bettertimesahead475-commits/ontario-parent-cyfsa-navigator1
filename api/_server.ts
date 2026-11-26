@@ -92,6 +92,7 @@ import { PROVIDER_ATTEMPTS, SECTION_ATTEMPTS, TRANSIENT_HTTP_STATUSES } from "..
 import { logSupabaseFailure, describeSupabaseFailure, configuredSupabaseHost, describeConfiguredKey } from "./services/supabaseDiagnostics.js";
 import { getGmailAuthUrl, exchangeGmailAuthCode, scanForPayments, verifyOAuthState } from "./services/gmailAgent.js";
 import { marketingRouter } from "./services/marketing/routes.js";
+import { extractFencedBlock, SIMPLE_EMAIL_SHAPE } from "../shared/linearText.js";
 import { monitoringRouter } from "./services/monitoring/routes.js";
 
 dotenv.config();
@@ -488,10 +489,11 @@ function extractJson(text: string): any {
     return parseJsonLenient(trimmed);
   } catch { /* fall through to next strategy */ }
 
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (fenceMatch) {
+  // Linear equivalent of /```(?:json)?\s*([\s\S]*?)\s*```/, which backtracked polynomially on an unclosed fence.
+  const fenced = extractFencedBlock(trimmed, { trimTrailingWhitespace: true });
+  if (fenced !== null) {
     try {
-      return parseJsonLenient(fenceMatch[1].trim());
+      return parseJsonLenient(fenced.trim());
     } catch { /* fenced block itself wasn't valid/complete JSON — keep trying */ }
   }
 
@@ -3663,7 +3665,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
       if (!parentName || typeof parentName !== "string") {
         return res.status(400).json({ error: "`parentName` is required." });
       }
-      if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      if (!email || typeof email !== "string" || !SIMPLE_EMAIL_SHAPE.test(email)) {
         return res.status(400).json({ error: "A valid `email` is required." });
       }
       if (!lawyerId) {

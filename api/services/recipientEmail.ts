@@ -13,12 +13,16 @@
 //   d. lower-case ASCII A-Z only (no locale-sensitive lower-casing).
 // Nothing else: no dot or plus-tag removal, no domain rewriting, no alias guessing.
 
-const EDGE_WHITESPACE = /^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g;
+import { trimCharacters } from '../../shared/linearText.js';
+
+// Space and codes 9-13 (\t \n \v \f \r). Trimmed with trimCharacters, which gives the same result as the former
+// .replace(/^[ \t\n\v\f\r]+|[ \t\n\v\f\r]+$/g, '') without rescanning a long whitespace run inside the input.
+const EDGE_WHITESPACE = String.fromCharCode(32, 9, 10, 11, 12, 13);
 
 /** Returns the canonical address, or null when the input is not a valid recipient email. */
 export function canonicalRecipientEmail(input: unknown): string | null {
   if (typeof input !== 'string') return null;
-  const v = input.replace(EDGE_WHITESPACE, '');
+  const v = trimCharacters(input, EDGE_WHITESPACE);
   // Length in characters (code points), as PostgreSQL's char_length counts them.
   const chars = Array.from(v);
   if (chars.length < 3 || chars.length > 254) return null;

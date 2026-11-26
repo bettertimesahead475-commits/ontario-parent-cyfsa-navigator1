@@ -58,7 +58,9 @@ export function slugifyCampaign(name: string | null | undefined): string {
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    // The line above leaves no two hyphens in a row, so this is the same as the former /^-+|-+$/g without
+    // the run-of-hyphens quantifier that Sonar flags as super-linear.
+    .replace(/^-|-$/g, "")
     .slice(0, 60);
   return slug || "awareness";
 }

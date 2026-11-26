@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { SECTION_HEADER, SECTION_HEADER_ELAWS, SUBSECTION_MARKER, PARAGRAPH_MARKER, CLAUSE_MARKER, CLAUSE_FIRST_ITEM_MARKER } from "./legalCorpusIngestion.js";
 import {
   classifyRetrievalHostname,
   approvedRetrievalHostnames,
@@ -341,5 +342,43 @@ describe("corpus poisoning / prompt-injection inertness", () => {
     // classifyRetrievalHostname takes only a hostname string — no code path lets embedded
     // document text redefine which hostnames are authoritative.
     expect(classifyRetrievalHostname("ON", "evil-instructions.example.com")).toBe("UNKNOWN");
+  });
+});
+
+// SonarCloud S8786: the line-marker patterns no longer end in "\s*(.*)$" (two quantifiers that can both match
+// spaces). Each is compared with the pattern it replaced, captures included, then timed on a crafted line.
+describe("statute line-marker patterns (S8786 rewrite)", () => {
+  const PAIRS: Array<[RegExp, RegExp]> = [
+    [SECTION_HEADER, /^(\d+[a-zA-Z]?)\.\s+(.+)$/],
+    [SECTION_HEADER_ELAWS, /^\*\*(\d+[a-zA-Z]?)\s*\*\*\s*(?:\((\d{1,3})\)\s*)?(.*)$/],
+    [SUBSECTION_MARKER, /^\((\d{1,3})\)\s*(.*)$/],
+    [PARAGRAPH_MARKER, /^\(([a-z])\)\s*(.*)$/],
+    [CLAUSE_MARKER, /^\(([ivxlcdm]{2,})\)\s*(.*)$/i],
+    [CLAUSE_FIRST_ITEM_MARKER, /^\(([iI])\)\s*(.*)$/],
+  ];
+  const prefixes = ["12.", "74a.", "**74 **", "**74**", "**74 **(1)", "(1)", "(12)", "(a)", "(i)", "(I)", "(ii)", "(xiv)", "(1234)", "x"];
+  const tails = [" ", "  ", "\t", "\r", "\n", "\u2028", "\u00a0", "(2)", "a", "Text", ".", ""];
+
+  it("match exactly what the former patterns matched, with the same captures", () => {
+    let seed = 2026;
+    const next = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    for (let i = 0; i < 20_000; i++) {
+      let line = prefixes[next(prefixes.length)];
+      const parts = next(6);
+      for (let j = 0; j < parts; j++) line += tails[next(tails.length)];
+      for (const [current, former] of PAIRS) {
+        expect(current.exec(line), `${former} on ${JSON.stringify(line)}`).toEqual(former.exec(line));
+      }
+    }
+    expect(SECTION_HEADER.exec("74. Child in need of protection")?.slice(1)).toEqual(["74", "Child in need of protection"]);
+    expect(SECTION_HEADER_ELAWS.exec("**74 **(1)  In this Part")?.slice(1)).toEqual(["74", "1", "In this Part"]);
+    expect(SUBSECTION_MARKER.exec("(2)")?.slice(1)).toEqual(["2", ""]);
+  });
+
+  it("parseStatuteExcerpt stays linear on a marker line with 50,000 spaces before a U+2028", () => {
+    const raw = "74. Heading\n(1) " + " ".repeat(50_000) + "x\u2028y\n(a)" + " ".repeat(50_000) + "z\u2029w";
+    const t0 = performance.now();
+    parseStatuteExcerpt(raw);
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });

@@ -227,16 +227,22 @@ export interface ParseResult {
   warnings: string[];
 }
 
-const SECTION_HEADER = /^(\d+[a-zA-Z]?)\.\s+(.+)$/;
+// Marker patterns end in `\s*` (or `\s+`) followed by the rest of the line. They used to end `\s*(.*)$`, where both
+// parts can match spaces: a line holding a long space run and then a line separator that `.` cannot match
+// (\r, U+2028, U+2029 survive the line split) backtracked quadratically. The rest-of-line group now has to begin
+// with a non-space, so the split is unique; it captures exactly what the greedy `\s*` left before. SECTION_HEADER's
+// former `\s+(.+)$` could also end with its last whitespace character in the group (a line of only spaces after
+// "12."), which the `(?=\s).` branch keeps.
+export const SECTION_HEADER = /^(\d+[a-zA-Z]?)\.\s+(\S.*|(?=\s).)$/;
 // Discovered against real e-Laws consolidated CYFSA text during M2-C validation: the official
 // source marks a section's first appearance as `**74 **(1)  text...` — bold markdown, no period
 // after the number, and the first subsection number inlined on the same line — not the plain
 // `74. Heading` shape the M2-B synthetic fixture used. Both forms are recognized; neither
 // replaces the other, so M2-B's own fixtures/tests are unaffected.
-const SECTION_HEADER_ELAWS = /^\*\*(\d+[a-zA-Z]?)\s*\*\*\s*(?:\((\d{1,3})\)\s*)?(.*)$/;
-const SUBSECTION_MARKER = /^\((\d{1,3})\)\s*(.*)$/;
-const PARAGRAPH_MARKER = /^\(([a-z])\)\s*(.*)$/;
-const CLAUSE_MARKER = /^\(([ivxlcdm]{2,})\)\s*(.*)$/i;
+export const SECTION_HEADER_ELAWS = /^\*\*(\d+[a-zA-Z]?)\s*\*\*\s*(?:\((\d{1,3})\)\s*)?((?:\S.*)?)$/;
+export const SUBSECTION_MARKER = /^\((\d{1,3})\)\s*((?:\S.*)?)$/;
+export const PARAGRAPH_MARKER = /^\(([a-z])\)\s*((?:\S.*)?)$/;
+export const CLAUSE_MARKER = /^\(([ivxlcdm]{2,})\)\s*((?:\S.*)?)$/i;
 // Discovered against real CYFSA text during M2-C validation: a clause's first item is always
 // labelled "(i)", which is byte-identical to PARAGRAPH_MARKER. Real clause lists always START
 // at "i" and never restart mid-list at another single roman letter, so the collision is
@@ -246,7 +252,7 @@ const CLAUSE_MARKER = /^\(([ivxlcdm]{2,})\)\s*(.*)$/i;
 // ambiguity: a section with 9+ paragraphs whose 9th paragraph is genuinely "(i)" immediately
 // after a clause-free paragraph "(h)" would be misread as a clause — accepted as an explicitly
 // out-of-scope limitation (see STAGE_6_M2C doc) rather than solved with sequence look-ahead.
-const CLAUSE_FIRST_ITEM_MARKER = /^\(([iI])\)\s*(.*)$/;
+export const CLAUSE_FIRST_ITEM_MARKER = /^\(([iI])\)\s*((?:\S.*)?)$/;
 
 /** Normalizes "s. 74", "section 74", and "74" (in section-header context) to the same canonical `s.74` — but never collapses a subsection/paragraph/clause suffix into its parent's identity. */
 export function normalizeSectionLabel(raw: string): string {

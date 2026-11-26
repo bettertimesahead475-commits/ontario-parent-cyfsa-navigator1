@@ -75,9 +75,17 @@ function findCause(err: any): { code: string | null; message: string | null } {
   // supabase-js (postgrest-js) does not throw on a failed fetch; it returns
   // `{ message: "TypeError: fetch failed", details: "...\n\nCaused by: Error: <msg> (<CODE>)\n<stack>" }`.
   // Only that one "Caused by" line is kept - never the stack.
-  if (typeof err?.details === "string") {
-    const match = err.details.match(/Caused by: ([^\n]*?)(?: \(([A-Z0-9_]+)\))?\s*(?:\n|$)/);
-    if (match) return { code: match[2] ? clip(match[2], 60) : null, message: clip(match[1]) };
+  // Same result as /Caused by: ([^\n]*?)(?: \(([A-Z0-9_]+)\))?\s*(?:\n|$)/ (which always matched once the marker
+  // was present): the rest of that line without trailing whitespace, minus a final " (CODE)". The pattern's lazy
+  // group retried the trailing \s* from every position of a long run of spaces.
+  const marker = typeof err?.details === "string" ? err.details.indexOf("Caused by: ") : -1;
+  if (marker >= 0) {
+    const rest: string = err.details.slice(marker + "Caused by: ".length);
+    const newline = rest.indexOf("\n");
+    const line = (newline >= 0 ? rest.slice(0, newline) : rest).trimEnd();
+    const coded = / \(([A-Z0-9_]+)\)$/.exec(line);
+    const message = coded ? line.slice(0, coded.index) : line;
+    return { code: coded ? clip(coded[1], 60) : null, message: clip(message) };
   }
   return { code: null, message: clip(err?.cause?.message) };
 }

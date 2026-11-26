@@ -12,6 +12,7 @@
  * Only EXACT and NORMALIZED_WHITESPACE count as "verified": the quoted words are in the document. Everything else
  * is shown as a qualified match, and nothing says "word-for-word" unless the match is EXACT.
  */
+import { trimCharacters } from "./linearText";
 
 export const QUOTE_MATCH_STATUSES = [
   "EXACT",
@@ -114,7 +115,10 @@ function occurrences(haystack: string[], needle: string[]): number[] {
 
 /** Strips quotation marks wrapped around the whole quote, then trims. */
 function unwrapQuote(quote: string): string {
-  return (quote || "").trim().replace(/^["'“‘]+|["'”’]+$/g, "").trim();
+  // Same result as .replace(/^["'“‘]+|["'”’]+$/g, ""), whose trailing alternative was retried from every position
+  // of a long run of quotation marks inside the quote.
+  const unquoted = trimCharacters(trimCharacters((quote || "").trim(), "\"'“‘", { start: true }), "\"'”’", { end: true });
+  return unquoted.trim();
 }
 
 /** The "[Page N]" marker that most recently precedes a code-point offset, or null when there is none. */

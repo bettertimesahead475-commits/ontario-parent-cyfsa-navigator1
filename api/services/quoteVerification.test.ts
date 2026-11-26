@@ -190,3 +190,19 @@ describe("quotations across page breaks", () => {
     expect(locateQuote("[Page 1]\n[Page 2]", "anything").status).toBe("ABSENT");
   });
 });
+
+describe("quotation-mark unwrapping (S8786 linear rewrite)", () => {
+  it("strips the same wrapping marks as before", () => {
+    for (const q of ["“a neighbour told me the child was unsafe”", "‘a neighbour told me the child was unsafe’", "'\"a neighbour told me the child was unsafe\"'", "  \"a neighbour told me the child was unsafe\"  "]) {
+      expect(locateQuote(DOC, q).status, q).toBe("EXACT");
+    }
+    // Only opening marks are stripped at the start and closing marks at the end, as before.
+    expect(locateQuote(DOC, "”a neighbour told me the child was unsafe").status).not.toBe("EXACT");
+  });
+
+  it("stays linear on a quote with 50,000 quotation marks in the middle", () => {
+    const t0 = performance.now();
+    locateQuote(DOC, "a" + "'".repeat(50_000) + "b");
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+});

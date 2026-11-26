@@ -66,3 +66,13 @@ describe("slugifyCampaign", () => {
     expect(slugifyCampaign("a".repeat(100)).length).toBeLessThanOrEqual(60);
   });
 });
+
+describe("slugifyCampaign edge hyphens (S8786)", () => {
+  it("trims leading and trailing hyphens exactly as /^-+|-+$/g did, and stays linear", () => {
+    const old = (name: string) => name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "awareness";
+    for (const name of ["--Spring  Launch!!", "!!!", "a", "-a-", " Back to School 2026 ", "___x___y___", "-"]) expect(slugifyCampaign(name), name).toBe(old(name));
+    const t0 = performance.now();
+    expect(slugifyCampaign("a" + "!".repeat(50_000) + "b")).toBe("a-b");
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+});

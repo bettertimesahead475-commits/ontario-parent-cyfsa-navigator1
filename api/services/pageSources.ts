@@ -57,6 +57,34 @@ function decodePdfString(token: string): string {
 }
 
 /**
+ * The contents of each `[ ... ] TJ` text array in a content-stream block, in order: the same captures as the former
+ * /\[([\s\S]*?)\]\s*TJ/g. That pattern rescanned to the end of the block from every "[" when no "] TJ" followed,
+ * which is quadratic on a crafted (untrusted) PDF; this makes one pass.
+ */
+export function tjArrayContents(block: string): string[] {
+  const out: string[] = [];
+  let pos = 0;
+  for (;;) {
+    const open = block.indexOf('[', pos);
+    if (open < 0) break;
+    let close = -1;
+    for (let r = block.indexOf(']', open + 1); r >= 0; r = block.indexOf(']', r + 1)) {
+      let j = r + 1;
+      while (j < block.length && /\s/.test(block[j])) j++;
+      if (block.startsWith('TJ', j)) {
+        close = r;
+        pos = j + 2;
+        break;
+      }
+    }
+    // No "] TJ" after this "[" means there is none after any later "[" either.
+    if (close < 0) break;
+    out.push(block.slice(open + 1, close));
+  }
+  return out;
+}
+
+/**
  * Extracts plain text streams directly from PDF content streams (BT...ET).
  * Fast, deterministic (<5ms per page), completely offline and free of OCR costs.
  */
@@ -85,10 +113,7 @@ export function extractTextFromPdfPage(page: any, doc: PDFDocument): string {
         while ((tjMatch = tjRegex.exec(block)) !== null) {
           pageText += decodePdfString(tjMatch[1]) + ' ';
         }
-        const tjArrRegex = /\[([\s\S]*?)\]\s*TJ/g;
-        let arrMatch: RegExpExecArray | null;
-        while ((arrMatch = tjArrRegex.exec(block)) !== null) {
-          const arrContent = arrMatch[1];
+        for (const arrContent of tjArrayContents(block)) {
           const itemRegex = /(\((?:[^()\\]|\\.)*\)|<[0-9a-fA-F\s]+>)/g;
           let itemMatch: RegExpExecArray | null;
           while ((itemMatch = itemRegex.exec(arrContent)) !== null) {

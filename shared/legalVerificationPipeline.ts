@@ -2106,6 +2106,11 @@ function normalizeClauseAbbreviations(input: string): string {
   return input.replace(/\b(s|ss|sec|sub|subs|para|r|c|O|S|R|Reg|Sched)\./gi, "$1 ");
 }
 
+// Note on the proposition patterns below (SonarCloud S8786): optional words between whitespace are written
+// "\s*(?:X\s*)?" rather than "\s*X?\s*" (and "CYFSA\s*(?:,\s*)?" rather than "CYFSA\s*,?\s*"). Both forms match
+// exactly the same strings, but in the second form, when X is absent, the two \s* can divide one whitespace run in
+// every possible way, which made a long run of spaces after "CYFSA" (or after "limit", "hearing", ...) quadratic.
+
 /**
  * Authority-specific proposition evaluator for CYFSA s. 102 / s. 102(1).
  * Distinguishes accurate comparisons between a custody order under s. 102(1) and a supervision order
@@ -2118,7 +2123,7 @@ function evaluateSection102Proposition(prop: string): { misapplied: boolean; rea
 
   // 1. Direct nominal attachment of a supervision order to s. 102 / s. 102(1)
   if (
-    /\b102(?:\(\d+\))?\s+(?:society\s+|temporary\s+|final\s+)?supervision\s+order\b|\bsupervision\s+order(?:s)?\s*\(\s*(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?102(?:\(\d+\))?\s*\)|\bsupervision\s+order(?:s)?\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?102(?:\(\d+\))?(?!\w)/i.test(
+    /\b102(?:\(\d+\))?\s+(?:society\s+|temporary\s+|final\s+)?supervision\s+order\b|\bsupervision\s+order(?:s)?\s*\(\s*(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?102(?:\(\d+\))?\s*\)|\bsupervision\s+order(?:s)?\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?102(?:\(\d+\))?(?!\w)/i.test(
       norm
     )
   ) {
@@ -2128,7 +2133,7 @@ function evaluateSection102Proposition(prop: string): { misapplied: boolean; rea
   // 2. Clause-level predicate where s. 102 is the subject or governing prepositional phrase of authorizing/making/governing a supervision order
   // (Catches "Instead of s. 101(1), CYFSA s. 102(1) authorizes a supervision order" and "Under s. 102(1), the court may make a supervision order instead of a custody order")
   if (
-    /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)102(?:\(\d+\))?(?:(?!\b(?:instead\s+of|rather\s+than|as\s+opposed\s+to|unlike|whereas|while|distinguished\s+from|distinct\s+from)\b)[^.;])*?\b(?:governs?|authorizes?|provides?\s+for|permits?|is\s+(?:a\s+)?|makes?\s+(?:a\s+)?|made\s+(?:a\s+)?|grants?\s+(?:a\s+)?|granted\s+(?:a\s+)?|imposes?\s+(?:a\s+)?|orders?\s+(?:a\s+)?|places?\s+[^.;]{1,35}\bunder\s+(?:a\s+)?)(?:an?\s+|temporary\s+|final\s+|society\s+|\d+-month\s+)?supervision\s+order\b/i.test(
+    /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)102(?:\(\d+\))?(?:(?!\b(?:instead\s+of|rather\s+than|as\s+opposed\s+to|unlike|whereas|while|distinguished\s+from|distinct\s+from)\b)[^.;])*?\b(?:governs?|authorizes?|provides?\s+for|permits?|is\s+(?:a\s+)?|makes?\s+(?:a\s+)?|made\s+(?:a\s+)?|grants?\s+(?:a\s+)?|granted\s+(?:a\s+)?|imposes?\s+(?:a\s+)?|orders?\s+(?:a\s+)?|places?\s+[^.;]{1,35}\bunder\s+(?:a\s+)?)(?:an?\s+|temporary\s+|final\s+|society\s+|\d+-month\s+)?supervision\s+order\b/i.test(
       norm
     )
   ) {
@@ -2171,10 +2176,10 @@ function evaluateSection81Proposition(
 
     // 1. Direct or conjoined attribution of warrantless apprehension or warrant issuance to s. 81(1)
     if (
-      /\b(?:warrantless\s+apprehension|apprehend(?:ed|ing|s)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|remov(?:e|ed|ing|al)\s+(?:of\s+a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|emergency\s+warrantless\s+removal|warrant\s+to\s+apprehend|issu(?:e|ed|ing)\s+a\s+warrant)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(1\)/i.test(
+      /\b(?:warrantless\s+apprehension|apprehend(?:ed|ing|s)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|remov(?:e|ed|ing|al)\s+(?:of\s+a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|emergency\s+warrantless\s+removal|warrant\s+to\s+apprehend|issu(?:e|ed|ing)\s+a\s+warrant)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(1\)/i.test(
         norm
       ) ||
-      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(1\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|distinguish(?:ed|ing)?\s+from|rather\s+than|following|after|prior\s+to|and\s+not)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:(?:authorizes?|governs?|permits?|empowers?|allows?|sets?\s+the\s+(?:test|threshold|standard)\s+for|conduct(?:ed|s|ing)?|made|effect(?:ed|s|ing)?|exercis(?:ed|es|ing)?|may\s+apprehend|apprehend(?:ed|s|ing)?)\s+(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;]){0,65}?\b(?:warrantless\s+apprehension|(?:apprehend|remove)(?:ing)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|without\s+a\s+warrant|issu(?:e|ing)\s+a\s+warrant\s+to\s+apprehend|substantial\s+risk\s+during\s+the\s+time\s+necessary|imminent\s+danger)|warrantless\s+apprehension\s+authority)/i.test(
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(1\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|distinguish(?:ed|ing)?\s+from|rather\s+than|following|after|prior\s+to|and\s+not)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:(?:authorizes?|governs?|permits?|empowers?|allows?|sets?\s+the\s+(?:test|threshold|standard)\s+for|conduct(?:ed|s|ing)?|made|effect(?:ed|s|ing)?|exercis(?:ed|es|ing)?|may\s+apprehend|apprehend(?:ed|s|ing)?)\s+(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;]){0,65}?\b(?:warrantless\s+apprehension|(?:apprehend|remove)(?:ing)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|without\s+a\s+warrant|issu(?:e|ing)\s+a\s+warrant\s+to\s+apprehend|substantial\s+risk\s+during\s+the\s+time\s+necessary|imminent\s+danger)|warrantless\s+apprehension\s+authority)/i.test(
         norm
       ) ||
       /\b81\(1\)\s+(?:warrantless\s+apprehension|apprehension\s+warrant|imminent\s+danger\s+test)\b/i.test(norm)
@@ -2213,10 +2218,10 @@ function evaluateSection81Proposition(
       "CYFSA s. 81(2) governs warrants to apprehend a child issued by a justice of the peace where a less restrictive course of action is unavailable or inadequate. Warrantless apprehension by a worker is governed by CYFSA s. 81(7).";
 
     if (
-      /\b(?:warrantless\s+apprehension|apprehend(?:ed|ing|s)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|remov(?:e|ed|ing)\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(2\)/i.test(
+      /\b(?:warrantless\s+apprehension|apprehend(?:ed|ing|s)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|remov(?:e|ed|ing)\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(2\)/i.test(
         norm
       ) ||
-      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(2\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|distinguish(?:ed|ing)?\s+from|rather\s+than|instead\s+of|time\s+necessary\s+to)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:authorizes?|governs?|permits?|empowers?|allows?|sets?\s+the\s+(?:test|threshold|standard)\s+for|conduct(?:ed|s|ing)?|made|may\s+apprehend|apprehend(?:ed|s|ing)?)\s+(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;]){0,65}?\b(?:warrantless\s+apprehension|(?:apprehend|remove)(?:ing)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|without\s+a\s+warrant)\b/i.test(
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(2\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|distinguish(?:ed|ing)?\s+from|rather\s+than|instead\s+of|time\s+necessary\s+to)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:authorizes?|governs?|permits?|empowers?|allows?|sets?\s+the\s+(?:test|threshold|standard)\s+for|conduct(?:ed|s|ing)?|made|may\s+apprehend|apprehend(?:ed|s|ing)?)\s+(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;]){0,65}?\b(?:warrantless\s+apprehension|(?:apprehend|remove)(?:ing)?\s+(?:a\s+child\s+|the\s+child\s+)?without\s+a\s+warrant|without\s+a\s+warrant)\b/i.test(
         norm
       )
     ) {
@@ -2239,10 +2244,10 @@ function evaluateSection81Proposition(
     "CYFSA s. 81(7) governs warrantless apprehension where there would be a substantial risk to the child's health or safety during the time necessary for a s. 90(1) hearing or to obtain a warrant under s. 81(2). Warrants to apprehend issued by a justice of the peace are governed by s. 81(2), and court applications are governed by s. 81(1).";
 
   if (
-    /\b(?:warrant\s+to\s+apprehend|apprehension\s+warrant|justice\s+of\s+the\s+peace\s+(?:may\s+)?issue(?:d|s)?\s+a\s+warrant|issu(?:e|ed|ing)\s+a\s+warrant\s+to\s+apprehend)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(7\)/i.test(
+    /\b(?:warrant\s+to\s+apprehend|apprehension\s+warrant|justice\s+of\s+the\s+peace\s+(?:may\s+)?issue(?:d|s)?\s+a\s+warrant|issu(?:e|ed|ing)\s+a\s+warrant\s+to\s+apprehend)\s+(?:under|pursuant\s+to|in|per|by\s+virtue\s+of|governed\s+by|authorized\s+by)\s+(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?81\(7\)/i.test(
       norm
     ) ||
-    /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(7\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than|instead\s+of|time\s+necessary\s+to|without\s+a\s+warrant)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:(?:authorizes?|governs?|permits?|empowers?)\s+(?:a\s+)?(?:justice\s+of\s+the\s+peace\s+to\s+issue\s+a\s+warrant|issu(?:e|ing)\s+a\s+warrant\s+to\s+apprehend)|justice\s+of\s+the\s+peace\s+(?:may|can|shall)\s+issue\s+a\s+warrant\s+to\s+apprehend)\b/i.test(
+    /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)81\(7\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|rather\s+than|instead\s+of|time\s+necessary\s+to|without\s+a\s+warrant)\b|,\s*(?:and\s+|or\s+)?(?:under\s+|pursuant\s+to\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)\d+)[^.;])*?\b(?:(?:authorizes?|governs?|permits?|empowers?)\s+(?:a\s+)?(?:justice\s+of\s+the\s+peace\s+to\s+issue\s+a\s+warrant|issu(?:e|ing)\s+a\s+warrant\s+to\s+apprehend)|justice\s+of\s+the\s+peace\s+(?:may|can|shall)\s+issue\s+a\s+warrant\s+to\s+apprehend)\b/i.test(
       norm
     )
   ) {
@@ -2280,10 +2285,10 @@ function evaluateSection88And94Proposition(
 
     // 1. Direct attribution of the 30-day adjournment limit to s. 88
     if (
-      /\b(?:30-day|thirty-day|30\s+days?)\s+adjournment\s+(?:limit|maximum|rule|period|cap)?\s*(?:under|pursuant\s+to|in|per|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*)?88\b/i.test(
+      /\b(?:30-day|thirty-day|30\s+days?)\s+adjournment\s+(?:(?:limit|maximum|rule|period|cap)\s*)?(?:under|pursuant\s+to|in|per|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*)?88\b/i.test(
         norm
       ) ||
-      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*)88(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|after|following|and\s+then|subsequently)\b)[^.;])*?\b(?:shall\s+not\s+adjourn|adjourn(?:ed|ment|s)?\s+(?:a\s+hearing\s+)?(?:for\s+(?:more\s+than|up\s+to)|to)\s+30\s+days|limits?\s+adjournments?\s+to\s+30\s+days|governs?\s+(?:the\s+)?30-day\s+adjournment|sets?\s+(?:a\s+|the\s+)?30-day\s+adjournment)/i.test(
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*)88(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|after|following|and\s+then|subsequently)\b)[^.;])*?\b(?:shall\s+not\s+adjourn|adjourn(?:ed|ment|s)?\s+(?:a\s+hearing\s+)?(?:for\s+(?:more\s+than|up\s+to)|to)\s+30\s+days|limits?\s+adjournments?\s+to\s+30\s+days|governs?\s+(?:the\s+)?30-day\s+adjournment|sets?\s+(?:a\s+|the\s+)?30-day\s+adjournment)/i.test(
         norm
       )
     ) {
@@ -2292,10 +2297,10 @@ function evaluateSection88And94Proposition(
 
     // 2. False statutory deadline claim attributed to s. 88 (e.g., claiming s. 88 allows 7, 10, 14, 15, 30, or 45 days to bring the matter to court)
     if (
-      /\b(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)-day\s+(?:post-apprehension|place\s+of\s+safety|initial|statutory)\s+hearing\s+(?:deadline|rule|requirement|limit)\s*(?:under|pursuant\s+to|in|per|governed\s+by)?\s*(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*)?88\b/i.test(
+      /\b(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)-day\s+(?:post-apprehension|place\s+of\s+safety|initial|statutory)\s+hearing\s+(?:deadline|rule|requirement|limit)\s*(?:(?:under|pursuant\s+to|in|per|governed\s+by)\s*)?(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*)?88\b/i.test(
         norm
       ) ||
-      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*)88(?:(?!\b(?:whereas|while|unlike|breach|violat|exceed|contrary|late|overdue|instead\s+of\s+the\s+(?:mandatory\s+)?(?:5|five))\b)[^.;])*?\b(?:(?:requires?|mandates?|permits?|allows?|provides?\s+that|sets?\s+a\s+deadline\s+of|has\s+a)\s+[^.;]{0,65}?\b(?:within\s+(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)\s+days|(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)-day\s+(?:post-apprehension|place\s+of\s+safety|initial|statutory)?\s*hearing\s+deadline)|(?:matter|child)\s+(?:shall|must|may)\s+be\s+brought\s+before\s+a\s+court\s+within\s+(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)\s+days)\b/i.test(
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*)88(?:(?!\b(?:whereas|while|unlike|breach|violat|exceed|contrary|late|overdue|instead\s+of\s+the\s+(?:mandatory\s+)?(?:5|five))\b)[^.;])*?\b(?:(?:requires?|mandates?|permits?|allows?|provides?\s+that|sets?\s+a\s+deadline\s+of|has\s+a)\s+[^.;]{0,65}?\b(?:within\s+(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)\s+days|(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)-day\s+(?:(?:post-apprehension|place\s+of\s+safety|initial|statutory)\s*)?hearing\s+deadline)|(?:matter|child)\s+(?:shall|must|may)\s+be\s+brought\s+before\s+a\s+court\s+within\s+(?:7|seven|10|ten|14|fourteen|15|fifteen|30|thirty|45|forty-five)\s+days)\b/i.test(
         norm
       )
     ) {
@@ -2321,10 +2326,10 @@ function evaluateSection88And94Proposition(
 
     // 1. Direct attribution of the 5-day post-apprehension hearing deadline to s. 94(1)
     if (
-      /\b(?:5-day|five-day|five\s+days?|5\s+days?)\s+(?:post-apprehension|place\s+of\s+safety|initial)?\s*hearing\s+(?:deadline|rule|requirement|limit|timeline)?\s*(?:under|pursuant\s+to|in|per|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(1\)/i.test(
+      /\b(?:5-day|five-day|five\s+days?|5\s+days?)\s+(?:(?:post-apprehension|place\s+of\s+safety|initial)\s*)?hearing\s+(?:(?:deadline|rule|requirement|limit|timeline)\s*)?(?:under|pursuant\s+to|in|per|governed\s+by)\s+(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(1\)/i.test(
         norm
       ) ||
-      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)94\(1\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|after|following)\b)[^.;])*?\b(?:within\s+(?:5|five)\s+days\s+after\s+(?:a\s+child\s+is\s+)?(?:brought\s+to\s+a\s+place\s+of\s+safety|apprehen(?:ded|sion)|remov(?:ed|al))|governs?\s+the\s+(?:5-day|five-day)\s+(?:post-apprehension\s+)?hearing|(?:initial\s+|post-apprehension\s+)?hearing\s+(?:shall|must)\s+(?:occur|take\s+place|be\s+held)\s+within\s+(?:5|five)\s+days|(?:matter|child)\s+(?:shall|must)\s+be\s+brought\s+before\s+a\s+court\s+within\s+(?:5|five)\s+days)\b/i.test(
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)94\(1\)(?:(?!\b(?:whereas|while|unlike|as\s+opposed\s+to|distinct\s+from|after|following)\b)[^.;])*?\b(?:within\s+(?:5|five)\s+days\s+after\s+(?:a\s+child\s+is\s+)?(?:brought\s+to\s+a\s+place\s+of\s+safety|apprehen(?:ded|sion)|remov(?:ed|al))|governs?\s+the\s+(?:5-day|five-day)\s+(?:post-apprehension\s+)?hearing|(?:initial\s+|post-apprehension\s+)?hearing\s+(?:shall|must)\s+(?:occur|take\s+place|be\s+held)\s+within\s+(?:5|five)\s+days|(?:matter|child)\s+(?:shall|must)\s+be\s+brought\s+before\s+a\s+court\s+within\s+(?:5|five)\s+days)\b/i.test(
         norm
       )
     ) {
@@ -2333,10 +2338,10 @@ function evaluateSection88And94Proposition(
 
     // 2. False statutory adjournment deadline or false consent rule attributed to s. 94(1)
     if (
-      /\b(?:5|7|10|14|45|60|90)-day\s+(?:statutory\s+|maximum\s+)?adjournment\s+(?:limit|maximum|cap|rule)\s*(?:under|pursuant\s+to|in|per|governed\s+by)?\s*(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(1\)/i.test(
+      /\b(?:5|7|10|14|45|60|90)-day\s+(?:statutory\s+|maximum\s+)?adjournment\s+(?:limit|maximum|cap|rule)\s*(?:(?:under|pursuant\s+to|in|per|governed\s+by)\s*)?(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(1\)/i.test(
         norm
       ) ||
-      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)94\(1\)(?:(?!\b(?:breach|violat|exceed|contrary|unlawful|impermissibl|beyond\s+the\s+30-day)\b)[^.;])*?\b(?:(?:may|can|permits?\s+the\s+court\s+to)\s+adjourn\s+(?:a\s+(?:temporary\s+care\s+)?hearing\s+)?for\s+(?:up\s+to|more\s+than)\s+(?:45|60|90)\s+days\s+without\s+(?:all\s+parties['’]?\s+)?consent|shall\s+not\s+adjourn\s+(?:a\s+hearing\s+)?for\s+more\s+than\s+(?:5|7|10|14|45|60|90)\s+days|only\s+the\s+society['’]?s\s+consent\s+is\s+required\s+to\s+adjourn|even\s+if\s+an\s+absent\s+party\s+objects)\b/i.test(
+      /(?:(?:under|pursuant\s+to|in|per)\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)94\(1\)(?:(?!\b(?:breach|violat|exceed|contrary|unlawful|impermissibl|beyond\s+the\s+30-day)\b)[^.;])*?\b(?:(?:may|can|permits?\s+the\s+court\s+to)\s+adjourn\s+(?:a\s+(?:temporary\s+care\s+)?hearing\s+)?for\s+(?:up\s+to|more\s+than)\s+(?:45|60|90)\s+days\s+without\s+(?:all\s+parties['’]?\s+)?consent|shall\s+not\s+adjourn\s+(?:a\s+hearing\s+)?for\s+more\s+than\s+(?:5|7|10|14|45|60|90)\s+days|only\s+the\s+society['’]?s\s+consent\s+is\s+required\s+to\s+adjourn|even\s+if\s+an\s+absent\s+party\s+objects)\b/i.test(
         norm
       )
     ) {
@@ -2359,7 +2364,7 @@ function evaluateSection88And94Proposition(
     "CYFSA s. 94(5) requires the court to consider placement with a relative or extended-family/community member before ordering temporary society custody on adjournment. It is NOT the 5-day post-apprehension hearing deadline (governed by CYFSA s. 88) or the 30-day adjournment limit (governed by CYFSA s. 94(1)).";
 
   if (
-    /\b(?:5-day|five-day|five\s+days?|5\s+days?|30-day|thirty-day|30\s+days?)\s+(?:post-apprehension\s+|initial\s+)?(?:hearing|adjournment)\s*(?:deadline|rule|requirement|limit|timeline)?\s*(?:under|pursuant\s+to|in|per|governed\s+by)?\s*(?:the\s+)?(?:CYFSA\s*,?\s*)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(5\)/i.test(
+    /\b(?:5-day|five-day|five\s+days?|5\s+days?|30-day|thirty-day|30\s+days?)\s+(?:post-apprehension\s+|initial\s+)?(?:hearing|adjournment)\s*(?:(?:deadline|rule|requirement|limit|timeline)\s*)?(?:(?:under|pursuant\s+to|in|per|governed\s+by)\s*)?(?:the\s+)?(?:CYFSA\s*(?:,\s*)?)?(?:s(?:ec(?:tion)?)?\s*|subsection\s+)?94\(5\)/i.test(
       norm
     ) ||
     (/\b(?:5-day|five-day|five\s+day|post-apprehension\s+hearing|within\s+(?:5|five)\s+days)\b/i.test(norm) &&
