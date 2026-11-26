@@ -285,7 +285,10 @@ export async function pollAnalysisJob(
 ): Promise<AnalysisJobOutcome> {
   const fetcher = options.fetcher ?? apiFetch;
   const intervalMs = options.intervalMs ?? 3000;
-  const maxWaitMs = options.maxWaitMs ?? 6 * 60 * 1000; // > 300 s function limit + persistence
+  // 30 minutes. A Forensic run that completed on the server took 18 min 47 s (2026-11-26, four attempts); the previous
+  // 6-minute limit stopped polling a job that was still finishing. The server marks a job timed_out at its own limit,
+  // so this cap only bounds how long the browser keeps asking.
+  const maxWaitMs = options.maxWaitMs ?? 30 * 60 * 1000;
   const started = Date.now();
   let notFoundCount = 0;
   let networkFailures = 0;
