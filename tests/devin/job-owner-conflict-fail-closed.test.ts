@@ -28,6 +28,11 @@ describe('DEVIN-SEC-01 jobOwnerConflict fails closed when ownership is unknown',
     const f = fetcherFor(() => new Response('{"code":"XX000"}', { status: 500 }), () => new Response('bad gateway', { status: 502 }));
     expect(await jobOwnerConflict(env, victimId, 'attacker_uid', f)).toBe(true);
   });
+  it('storage sends 200 headers but the body read fails: refuses the id', async () => {
+    const body = new ReadableStream({ pull(controller) { controller.error(new DOMException('timeout', 'TimeoutError')); } });
+    const f = fetcherFor(() => Response.json(null), () => new Response(body, { status: 200 }));
+    expect(await jobOwnerConflict(env, victimId, 'attacker_uid', f)).toBe(true);
+  });
   it('still allows a fresh id (no ledger row, storage 404) and the caller\'s own id', async () => {
     const fresh = fetcherFor(() => Response.json(null), () => new Response('{"statusCode":"404"}', { status: 400 }));
     expect(await jobOwnerConflict(env, 'req_1795545140117_fresh0000001', 'me', fresh)).toBe(false);

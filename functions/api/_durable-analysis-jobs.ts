@@ -278,7 +278,10 @@ export async function jobOwnership(env: DurableJobEnv, jobId: string, uid: strin
     const status = await storageEffectiveStatus(response);
     if (status === 404) return 'clear';
     if (!response.ok) { console.warn('[JOB_OWNER_CHECK_UNAVAILABLE]', JSON.stringify({ source: 'storage', status })); return 'unavailable'; }
-    const stored = await response.json().catch(() => null) as { uid?: unknown } | null;
+    // A body that cannot be read (timeout/reset) is an outage, not an empty record: the outer catch refuses it.
+    const text = await response.text();
+    let stored: { uid?: unknown } | null = null;
+    try { stored = JSON.parse(text) as { uid?: unknown } | null; } catch { /* Not JSON: names no owner. */ }
     // Only a record that names a different owner is a conflict (other object families use reserved prefixes).
     return typeof stored?.uid === 'string' && stored.uid !== uid ? 'conflict' : 'clear';
   } catch { console.warn('[JOB_OWNER_CHECK_UNAVAILABLE]', JSON.stringify({ source: 'storage' })); return 'unavailable'; }
