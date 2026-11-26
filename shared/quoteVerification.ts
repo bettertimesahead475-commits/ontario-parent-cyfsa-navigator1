@@ -110,20 +110,54 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
 
 /**
  * Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous.
- * Production matching rule: no word-boundary check (DEVIN-P2-01 is on the integration branch and is NOT in this hotfix).
- * joinedHaystack lets a prepared locator pass the joined text once.
+ * A match must not start or end inside a word or a surrogate pair: "true that he struck" is not a quotation of
+ * "untrue that he struck" (DEVIN-P2-01). joinedHaystack lets a prepared locator pass the joined text once.
  */
 function occurrences(haystack: string[], needle: string[], joinedHaystack?: string): number[] {
   if (needle.length === 0) return [];
   const h = joinedHaystack ?? haystack.join("");
   const n = needle.join("");
+  const boundedStart = WORD_CHAR.test(needle[skipDropped(needle, 0, 1)] ?? "");
+  const boundedEnd = WORD_CHAR.test(needle[skipDropped(needle, needle.length - 1, -1)] ?? "");
   const hits: number[] = [];
+  let index = 0;
+  let scanned = 0;
   let at = h.indexOf(n);
   while (at >= 0 && hits.length < 2) {
-    hits.push(Array.from(h.slice(0, at)).length);
+    index += Array.from(h.slice(scanned, at)).length;
+    scanned = at;
+    const before = haystack[skipDropped(haystack, index - 1, -1)];
+    const afterAt = skipDropped(haystack, index + needle.length, 1);
+    const after = haystack[afterAt];
+    const tAt = skipDropped(haystack, afterAt + 1, 1);
+    const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
+    // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
+    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[tAt] ?? "") &&
+      !WORD_CHAR.test(haystack[skipDropped(haystack, tAt + 1, 1)] ?? "");
+    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
+    const splitsCharacter = splitsSurrogatePair(h, at) || splitsSurrogatePair(h, at + n.length);
+    if (!cutsWordStart && !cutsWordEnd && !splitsCharacter) hits.push(index);
     at = h.indexOf(n, at + 1);
   }
   return hits;
+}
+
+// Combining marks continue a word ("cafe\u0301"), and soft hyphens and zero-width marks (DROPPED) are skipped when
+// reading a match's neighbours, so "un\u00ADtrue" is one word and "can't\u200B" still ends a contraction (DEVIN-P2-01b).
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
+const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC]$/u;
+
+/** First index from i, moving by step, that is not a soft hyphen or zero-width mark. */
+function skipDropped(chars: string[], i: number, step: 1 | -1): number {
+  while (i >= 0 && i < chars.length && DROPPED.has(chars[i])) i += step;
+  return i;
+}
+
+function splitsSurrogatePair(h: string, i: number): boolean {
+  if (i <= 0 || i >= h.length) return false;
+  const hi = h.charCodeAt(i - 1);
+  const lo = h.charCodeAt(i);
+  return hi >= 0xd800 && hi <= 0xdbff && lo >= 0xdc00 && lo <= 0xdfff;
 }
 
 /** Strips quotation marks wrapped around the whole quote, then trims. */
