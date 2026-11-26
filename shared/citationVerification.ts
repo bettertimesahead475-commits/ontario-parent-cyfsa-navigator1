@@ -262,7 +262,8 @@ export function citedSections(text: string): string[] {
 
   for (const m of text.matchAll(listPattern)) {
     const rawSegment = m[1];
-    const fused = m[2] || "";
+    // A bare conjunction ("74(2)and s. 125(1)") joins the next citation; it is not part of this pinpoint.
+    const fused = /^(?:and|or|to)$/i.test(m[2] || "") ? "" : m[2] || "";
     const before = out.length;
 
     // Expand explicit subsection ranges like "74(2)-(4)" or "74(2)–(4)"
