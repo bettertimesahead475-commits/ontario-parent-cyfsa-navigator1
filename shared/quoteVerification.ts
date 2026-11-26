@@ -145,8 +145,12 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
     const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[tAt] ?? "") &&
       !WORD_CHAR.test(haystack[skipDropped(haystack, tAt + 1, 1)] ?? "");
     const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction || cutsCompoundEnd);
+    // A quotation that starts right after a negating word ("Not guilty" -> "guilty", "No evidence" -> "evidence", or
+    // "non - violent" split by OCR) drops the negation. It is not a faithful quotation, so the match is not counted;
+    // the finding is then reported as not located (unverified), never silently removed.
+    const cutsNegation = startsWithLetter && NEGATORS.has(precedingWord(haystack, beforeAt));
     const splitsCharacter = splitsSurrogatePair(h, at) || splitsSurrogatePair(h, at + n.length);
-    if (!cutsWordStart && !cutsWordEnd && !splitsCharacter) hits.push(index);
+    if (!cutsWordStart && !cutsWordEnd && !cutsNegation && !splitsCharacter) hits.push(index);
     at = h.indexOf(n, at + 1);
   }
   return hits;
@@ -158,6 +162,20 @@ const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
 const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC\uFF07]$/u;
 const HYPHEN = /^[-\u2010\u2011]$/u;
 const LETTER = /[\p{L}\p{M}]/u;
+/** Words whose omission inverts the meaning of the words that follow them. */
+const NEGATORS = new Set(["not", "no", "nor", "never", "without", "non"]);
+
+/**
+ * The whole word immediately before index i (scanning back over spaces and hyphens, lowercased), or "" when there is
+ * none. Used to see whether a quotation starts right after a negating word.
+ */
+function precedingWord(chars: string[], i: number): string {
+  let j = i;
+  while (j >= 0 && (/\s/u.test(chars[j]) || HYPHEN.test(chars[j]))) j--;
+  const end = j;
+  while (j >= 0 && LETTER.test(chars[j])) j--;
+  return chars.slice(j + 1, end + 1).join("").toLowerCase();
+}
 
 /** First index from i, moving by step, that is not a soft hyphen or zero-width mark. */
 function skipDropped(chars: string[], i: number, step: 1 | -1): number {
