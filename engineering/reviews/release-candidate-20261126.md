@@ -161,7 +161,7 @@ used on 2026-11-25. Verify its availability before the release (it is listed as 
 ## Update: final accuracy round (2026-11-26)
 
 ### Identifiers
-- Candidate head: `c044c35` (documentation on top of `ba9c029`). Code head for review: `ba9c029`.
+- Code head for review: `ba9c029`. Document head: `e5984a9` (documentation only, on top of `ba9c029`).
 - PR #145 integrated as merge `4e514d2` (CI #887 green on its head `289e92d`, which the merge contains; the merge differs only by the handoff file).
 - Production unchanged: `7c144cf7` (`be46ad7`). Rollback `d5f2a3c9` (`cf67d8c`), still listed as Production.
 
