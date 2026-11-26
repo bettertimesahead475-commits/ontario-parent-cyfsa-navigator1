@@ -7,7 +7,12 @@ Result: 291 files passed, 13 files fully skipped, 478 tests skipped. No test was
 Skips are not failures, but a skipped file is not evidence that the behaviour is covered locally. Each entry below
 records where the test does run, and what would be needed to run it here.
 
-## A. PostgreSQL-gated suites (10 files, 0 run locally, RUN IN CI)
+## A. PostgreSQL-gated suites (11 files, 0 run locally, RUN IN CI)
+
+Correction (2026-11-26, reconciliation): the earlier count of 10 was wrong. The table below lists 11 `.pg.test.ts`
+files. Together with B and C that accounts for all 13 fully skipped files. The 13-file total is from a JSON run;
+the per-file list was re-derived from that run, not assumed. After commit 5940df4 the total is 14: the new
+`api/services/navigatorQuoteHits.pg.test.ts` is also PostgreSQL-gated (CI runs it with `CREDIT_PG_URL`).
 
 Gate: `describe.skipIf(!process.env.CREDIT_PG_URL)` (or the admin URL variant). `.github/workflows/ci.yml` starts a
 `postgres:16` service container and sets `NAVIGATOR_PG_TEST_ADMIN_URL` and `CREDIT_PG_URL`, so these run on every CI

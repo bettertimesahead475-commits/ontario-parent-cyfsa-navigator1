@@ -4,10 +4,10 @@ Independent audit by Devin (Cognition AI), branch `engineering/devin-independent
 
 | ID | Severity | Status | Area | Summary |
 |---|---|---|---|---|
-| DEVIN-SEC-01 | Low | Fixed (PR, pending Claude review) | Analyzer report ownership (IDOR) | `jobOwnerConflict` failed open on Storage errors |
-| DEVIN-FIN-01 | Low | Open (recommendation) | Admin revenue reporting | Audit-log read failure silently drops refunds from revenue totals |
-| DEVIN-OBS-01 | Info | Open | Access codes | Codes with no bound email are redeemable by any signed-in account |
-| DEVIN-OBS-02 | Info | Open | Auth availability | Google JWKS fetched on every request, no cache |
+| DEVIN-SEC-01 | Low | Integrated (fixed, Claude review in 3b44db5; in `engineering/integration`; not in production `be46ad7`) | Analyzer report ownership (IDOR) | `jobOwnerConflict` failed open on Storage errors |
+| DEVIN-FIN-01 | Low | Integrated (00b6b43 + 5993153; in integration; not in production; CI not read) | Admin revenue reporting | Audit-log read failure silently dropped refunds from revenue totals; now `null` + warning |
+| DEVIN-OBS-01 | Info | Integrated (846e90a + b8ca20a; in integration; not in production; CI not read) | Access codes | Codes with no bound email were redeemable by any signed-in account |
+| DEVIN-OBS-02 | Info | Integrated (0b5bcfc + b8ca20a; in integration; not in production; CI not read) | Auth availability | Google JWKS fetched per request; now cached per max-age, outage answers 503 |
 | DEVIN-OBS-03 | Info | Known (S-05) | Rate limiting | Per-isolate in-memory limiter |
 
 ## DEVIN-SEC-01 — ownership check failed open (Low)
@@ -43,4 +43,4 @@ Full details, reproductions and mutation results: `engineering/DEVIN_PHASE2_AUDI
 | DEVIN-P2-01 | Medium | Fixed (PR #138) | Quotation verification | Quotes matched inside words or clipped from "n't", so negated wording showed as word-for-word |
 | DEVIN-P2-02 | Medium | Fixed (PR #138) | Citation verification | Fused/unparsed pinpoints dropped, so fabricated sections showed as internal-reference matches |
 | DEVIN-P2-03 | Low | Fixed (PR #138) | Red-flag severity | Single-CRITICAL rule ran before quote verification |
-| DEVIN-P2-04 | Low | Open | Page-evidence quotes | `pageSources.verifyQuote` + pending SQL `navigator_quote_hits` share the P2-01 behaviour |
+| DEVIN-P2-04 | Low | Implemented locally: `verifyQuote` fixed (b5e0d13); pending SQL mirror corrected (3781275) and parity test added (CI-run, not yet executed); migration NOT applied; independent review pending (see handoff) | Page-evidence quotes | `pageSources.verifyQuote` and pending SQL `navigator_quote_hits` shared the P2-01 substring behaviour |
