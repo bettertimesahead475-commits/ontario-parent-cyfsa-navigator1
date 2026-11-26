@@ -1,5 +1,7 @@
-// Oracle: shared/quoteVerification.ts at eaca5cf (engineering/integration, with DEVIN-P2-01). Only the unwrapQuote
-// body is restored to the be46ad7 regex, which gives the same result, because shared/linearText is not on this branch.
+// Oracle: shared/quoteVerification.ts at eaca5cf (engineering/integration, with DEVIN-P2-01), plus the DEVIN-P2-01b
+// word-character and apostrophe sets (soft hyphens, zero-width marks, combining marks, U+2018/U+201B/U+02BC). The
+// unwrapQuote body is restored to the be46ad7 regex, which gives the same result, because shared/linearText is not on
+// this branch.
 /**
  * Quotation location and display rules for analyzer reports. Pure, so the server and the UI use the same definitions.
  *
@@ -100,7 +102,8 @@ function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical 
   return { chars, starts, ends };
 }
 
-const WORD_CHAR = /[\p{L}\p{N}]/u;
+const WORD_CHAR = /[\p{L}\p{N}\p{M}\u00AD\u200B-\u200D\uFEFF]/u;
+const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC]$/u;
 
 /**
  * Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous.
@@ -123,7 +126,7 @@ function occurrences(haystack: string[], needle: string[]): number[] {
     const after = haystack[index + needle.length];
     const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
     // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
-    const cutsContraction = (after === "'" || after === "\u2019") && /^t$/i.test(haystack[index + needle.length + 1] ?? "") &&
+    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[index + needle.length + 1] ?? "") &&
       !WORD_CHAR.test(haystack[index + needle.length + 2] ?? "");
     const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
     if (!cutsWordStart && !cutsWordEnd) hits.push(index);

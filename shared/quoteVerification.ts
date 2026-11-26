@@ -130,7 +130,7 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
     const after = haystack[index + needle.length];
     const cutsWordStart = boundedStart && before !== undefined && WORD_CHAR.test(before);
     // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
-    const cutsContraction = (after === "'" || after === "\u2019") && /^t$/i.test(haystack[index + needle.length + 1] ?? "") &&
+    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(haystack[index + needle.length + 1] ?? "") &&
       !WORD_CHAR.test(haystack[index + needle.length + 2] ?? "");
     const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction);
     const splitsCharacter = splitsSurrogatePair(h, at) || splitsSurrogatePair(h, at + n.length);
@@ -140,7 +140,10 @@ function occurrences(haystack: string[], needle: string[], joinedHaystack?: stri
   return hits;
 }
 
-const WORD_CHAR = /[\p{L}\p{N}]/u;
+// Letters, digits, combining marks and the dropped soft hyphen / zero-width marks all continue a word: "un\u00ADtrue"
+// and "cafe\u0301" are single words (DEVIN-P2-01b).
+const WORD_CHAR = /[\p{L}\p{N}\p{M}\u00AD\u200B-\u200D\uFEFF]/u;
+const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC]$/u;
 
 function splitsSurrogatePair(h: string, i: number): boolean {
   if (i <= 0 || i >= h.length) return false;

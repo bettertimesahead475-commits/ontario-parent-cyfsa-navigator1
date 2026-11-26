@@ -9,6 +9,9 @@ const CASES: [string, string, string][] = [
   ["drops the negation of a contraction", "I can't attend the meeting on Tuesday.", "I can"],
   ["ends inside a word", "The parent was uncooperative at the visit.", "The parent was uncooperat"],
   ["starts inside an emoji", "She said \u{1F600} rest of the visit was calm.", "\uDE00 rest of the visit was calm"],
+  ["starts after a soft hyphen inside 'untrue'", "It is un\u00ADtrue that the father struck the child.", "true that the father struck the child"],
+  ["drops a contraction written with U+2018", "I can\u2018t attend the meeting on Tuesday.", "I can"],
+  ["ends before a combining accent", "The cafe\u0301 visit was calm.", "The cafe"],
   ["ends inside an emoji", "She said \u{1F600} rest of the visit was calm.", "said \uD83D"],
 ];
 
@@ -23,6 +26,8 @@ describe("quotations must start and end on whole words and whole characters", ()
     expect(locateQuote("It is untrue that the father struck the child.", "untrue that the father struck the child").status).toBe("EXACT");
     expect(locateQuote("I can't attend the meeting on Tuesday.", "I can't attend").status).toBe("EXACT");
     expect(locateQuote("She said \u{1F600} rest of the visit was calm.", "said \u{1F600} rest").status).toBe("EXACT");
+    expect(locateQuote("It is un\u00ADtrue that he left.", "un\u00ADtrue that he left").status).toBe("EXACT");
+    expect(locateQuote("The cafe\u0301 visit was calm.", "The cafe\u0301 visit").status).toBe("EXACT");
     expect(locateQuote("[Page 2]\nThe worker said the home was clean.", "the home was clean")).toMatchObject({ status: "EXACT", page: 2 });
   });
 
