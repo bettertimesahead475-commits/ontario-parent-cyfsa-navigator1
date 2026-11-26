@@ -2374,7 +2374,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
 
         if (isDocx) {
           try {
-            console.log(`[Dual Pass] Extracting text from DOCX: ${fileName || mime}`);
+            console.log("[Dual Pass] Extracting text from DOCX"); // the file name is personal data; never logged
             const buf = Buffer.from(base64Data, "base64");
             extractedText = extractTextFromDocx(buf);
             console.log(`[Dual Pass] DOCX extracted ${extractedText.length} characters successfully.`);
@@ -2383,7 +2383,7 @@ For any other section number, including s.70, s.81, and CLRA s.8(1), say the gen
           }
         } else if (mime === "application/pdf" || mime.startsWith("image/")) {
           try {
-            console.log(`[Dual Pass] Using Gemini for text/OCR extraction on mime: ${mime}`);
+            console.log("[Dual Pass] Using Gemini for text/OCR extraction on mime:", String(mime).replace(/[^w.+/-]/g, "").slice(0, 80));
             extractedText = await extractTextWithGeminiBase64(base64Data, mime);
             console.log(`[Dual Pass] Gemini extracted ${extractedText.length} characters successfully.`);
           } catch (e) {
@@ -3624,7 +3624,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         return res.status(413).json({ error: "Audio recording is too large to transcribe." });
       }
 
-      console.log("[Voice Transcription] Transcribing audio with mimeType:", mimeType);
+      console.log("[Voice Transcription] Transcribing audio with mimeType:", String(mimeType).replace(/[^w.+/;=-]/g, "").slice(0, 80));
 
       // Gemini handles audio transcription; Claude handles text analysis.
       const transcribedText = (await transcribeAudioWithGemini(audioData, mimeType || "audio/webm")).trim();
@@ -3673,7 +3673,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
         return res.status(400).json({ error: "Consent to share your details with the selected lawyer is required." });
       }
 
-      const referenceNum = "LI-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+      const referenceNum = "LI-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
       const safeEmail = stripHeaderChars(email);
 
       const intakeRecord = {
@@ -3776,7 +3776,10 @@ async function setupViteAndStart() {
 }
 
 if (!process.env.VERCEL) {
-  setupViteAndStart();
+  setupViteAndStart().catch((err) => {
+    console.error("[STARTUP_FAILED]", err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
 }
 
 export default app;

@@ -48,12 +48,11 @@ if (typeof (globalThis as any).Path2D === "undefined") {
 }
 
 // Ensure headless serverless node environment does not attempt to resolve external worker files
-try {
-  import("pdfjs-dist/legacy/build/pdf.mjs")
-    .then((pdfjsLib: any) => {
-      if (pdfjsLib?.GlobalWorkerOptions) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-      }
-    })
-    .catch(() => {});
-} catch {}
+// A dynamic import never throws synchronously; a failed load is handled by .catch().
+import("pdfjs-dist/legacy/build/pdf.mjs")
+  .then((pdfjsLib: any) => {
+    if (pdfjsLib?.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    }
+  })
+  .catch(() => {});
