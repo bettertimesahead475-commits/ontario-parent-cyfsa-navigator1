@@ -522,7 +522,9 @@ const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
     stage: "building_chronology",
     fields: [],
     extraSchema: CHRONOLOGY_SCHEMA,
-    maxTokens: { fast: 3500, full: 5000 },
+    // Forensic chronology was cut off at 5,000 output tokens in production (Devin telemetry, 2026-11-26). 8,000 leaves
+    // room for 25 one-sentence entries plus contradictions; a cut-off response is still never accepted (see runOneSection).
+    maxTokens: { fast: 3500, full: 8000 },
     limits: (mode) =>
       `chronology: at most ${mode === "fast" ? 15 : 25} entries in date order, each one sentence. contradictions: at most 8; return [] if there are none.`,
     validate: (raw, mode) => validateChronology(raw, mode),
@@ -996,7 +998,9 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   // and dispatches the longest sections first (verification inputs redFlags and thresholds lead).
   const defaultConcurrency = opts.mode === "full" ? 3 : keys.length;
   const concurrency = Math.min(Math.max(1, opts.maxConcurrency ?? defaultConcurrency), keys.length, 6);
-  const FORENSIC_DISPATCH_ORDER: SectionKey[] = ["redFlags", "guidance", "thresholds", "timeline", "overview", "chronology"];
+  // Chronology is dispatched right after redFlags: it is the section most likely to need a retry, and it previously
+  // started last, when the execution budget was nearly spent.
+  const FORENSIC_DISPATCH_ORDER: SectionKey[] = ["redFlags", "chronology", "guidance", "thresholds", "timeline", "overview"];
   const queue = opts.mode === "full"
     ? [...keys].sort((a, b) => (FORENSIC_DISPATCH_ORDER.indexOf(a) + 1 || 99) - (FORENSIC_DISPATCH_ORDER.indexOf(b) + 1 || 99))
     : [...keys];
