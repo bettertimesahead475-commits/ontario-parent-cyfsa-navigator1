@@ -64,7 +64,21 @@ registry is identical (after the regex branch merges, to avoid concurrent edits)
 
 ## 4. Coverage
 
-SonarCloud automatic analysis does not import coverage. Measured locally with `@vitest/coverage-v8` (see §6).
+SonarCloud automatic analysis does not import coverage. Measured locally with `@vitest/coverage-v8` on 2026-11-25
+(commit d277a54, full suite, every source file in the listed areas counted, including files no test loads):
+
+| Area | Line coverage | Owner |
+|---|---|---|
+| functions/ (Pages Functions API) | 90.5 % (2,197/2,428) | Claude |
+| workers/ | 88.8 % (150/169) | Claude |
+| shared/ | 89.4 % (1,680/1,879) | Claude |
+| api/services/ | 85.7 % (5,183/6,047) | Claude |
+| src/utils/ | 73.8 % (665/901) | Antigravity |
+| src/components/ | 35.6 % (1,613/4,537) | Antigravity |
+| **All measured (278 files)** | **71.9 % lines, 62.5 % branches** | |
+
+The 80 % target is met for every backend area and not for the frontend (components are mostly exercised by browser
+checks, not unit tests). Reproduce: `npx vitest run --coverage --coverage.provider=v8 --coverage.include=...`.
 
 ## 5. Rules for this work
 
