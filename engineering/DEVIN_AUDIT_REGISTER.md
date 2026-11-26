@@ -32,3 +32,9 @@ Scope: independent audit per the CYFSA Navigator principal-engineering directive
 See `engineering/DEVIN_PHASE2_AUDIT_REGISTER.md` (findings P2-01..04, 19 targeted mutations) and
 `engineering/handoffs/devin-phase2-2026-11-25.md`. Measured after phase two: `vitest run` 283 files / 4339 tests passed,
 `tsc --noEmit` exit 0.
+
+## Phase three (independent release qualification, 2026-11-26)
+
+Candidate `engineering/integration` @ `eaca5cf`. Full assessment, findings (DEVIN-P3-01, pending-SQL parity F-2),
+mutation catalogue P01–P16 and skipped-test classification: `engineering/DEVIN_PHASE3_RELEASE_READINESS.md`.
+Reusable promotion gate: `engineering/RELEASE_ACCEPTANCE_FRAMEWORK.md`. Fix for DEVIN-P3-01: PR #139.
