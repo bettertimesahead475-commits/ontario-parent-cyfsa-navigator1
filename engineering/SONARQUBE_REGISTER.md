@@ -41,7 +41,7 @@ Owner per `FILE_OWNERSHIP.md` (frontend `src/**` → Antigravity; everything els
 | S2245 PricingTab.tsx Math.random | 1 | production frontend | Antigravity | Open (T-20) |
 | S2871 sort without comparator | 22 | production/shared | Claude 21, Antigravity 1 | **Fixed (21)** 1f96186: explicit code-unit comparator; order intentionally unchanged (locale-independent fingerprints); `src/data/formRegistry.ts` open (T-20) |
 | S7773 global NaN/isNaN/parseInt | 28 | production/shared | Claude 27, Antigravity 1 | **Fixed (27)** 1f96186 (every isNaN argument already numeric) |
-| S8786 super-linear regex (ReDoS) | 63 | untrusted document & model text | Claude 54, Antigravity 9 | **In progress**: 54 backend in branch `engineering/claude-sonar-regex` (per-regex behaviour-pinning + adversarial timing tests); 9 frontend open (T-20) |
+| S8786 super-linear regex (ReDoS) | 63 | untrusted document & model text | Claude 54, Antigravity 9 | **Fixed (54)** 1d0145c…0511f42: 52 rewritten/simplified linear, 2 moved to shared linear helpers; old patterns measured 0.2 s–minutes on 20 k-char attacks, new < 100 ms on 50 k. Independent differential review: 0 behaviour differences over 200 k fuzzed inputs per helper and 300 k for legal patterns. Residual quadratic proposition patterns bounded by a 4,000-char cap (847c4e0). Unflagged quadratic PDF BT/ET scan fixed (0ec27c0). 9 frontend open (T-21) |
 | S6544 Promise in condition | 3 | production analyzer | Claude | **Fixed** 5122f39 (explicit null checks; existence checks, no defect) |
 | S3516 always-same return | 2 | legacy admin | Claude | **Fixed** 5122f39 (reported success without a database; now 503) |
 | S1313 hard-coded IPs | 6 | SSRF blocklist | Claude | **Reviewed**: intended blocklist; review found a real gap (fe80::/10 matched only fe80) — **fixed** 5122f39 with test |
@@ -57,10 +57,16 @@ Owner per `FILE_OWNERSHIP.md` (frontend `src/**` → Antigravity; everything els
 
 Largest contributors (PR #115): `shared/legalVerificationPipeline.ts` 1,931 of 3,061 new lines — entirely
 **self-duplication** in the verified-authority registry (every entry repeats instrument, title, source URL,
-consolidation period, dates). Plan: per-instrument entry factories, with a deep-equality proof that the generated
-registry is identical (after the regex branch merges, to avoid concurrent edits). Then `src/utils/statuteReference.ts`
-(Antigravity), `shared/casAccountabilityLibrary.ts`, test files and candidate SQL copies under `scripts/sql/`
-(copies of migrations used by regression scripts).
+consolidation period, dates).
+
+- **Done 0bcba59:** registry entries built by `authority(<INSTRUMENT>_DEFAULTS, {...})`; 638 identical lines removed
+  mechanically (no legal text retyped). Proof: the serialised registry is byte-identical before/after
+  (md5 20c9405fa27d8256523a5d1c0f0b8a4d). Invariant test `api/legal-registry-equivalence.test.ts`.
+- **Done f8a5f82:** `scripts/sql/*-candidate.sql` removed (identical to applied migrations, unreferenced; ~130 lines).
+- **Not changed, documented:** `shared/casAccountabilityLibrary.ts` blocks are curated legal records with the same shape
+  but different statutory text; restructuring legal content for a metric is not justified. Test files and the
+  `*-regression.sql` scripts are deliberately parallel.
+- **Open:** `src/utils/statuteReference.ts` (Antigravity, T-21). Re-measure after the next SonarCloud analysis (T-25).
 
 ## 4. Coverage
 
@@ -91,3 +97,9 @@ defect existed. Production deploys of these changes require owner approval (dire
 | Date | Commit | Evidence |
 |---|---|---|
 | 2026-11-25 | 1f96186, 5122f39, d277a54 | full suite 4,298 passed / 0 failed; tsc clean; new regression tests verified failing on previous code (S1313 link-local) |
+| 2026-11-26 | 1d0145c…0511f42 (regex), 0bcba59 (registry), 0ec27c0 | full suite 4,381 → 4,497 passed / 0 failed; independent differential review of every regex rewrite: 0 differences |
+| 2026-11-26 | PR #137, #138 merged (Devin) + Claude follow-ups | integration `b8ca20a` = backend branch; SonarCloud on PR #138: quality gate passed ("SonarCloud Code Analysis: success") |
+
+**Not yet re-measured:** ratings and new-code duplication for the integration code. SonarCloud analyses PR #115,
+whose head is the production branch (updated only on release). T-25: open a PR from `engineering/integration` to
+`main` (or release) so SonarCloud re-analyses; until then the 12.6 % / D / C figures describe production `be46ad7`.

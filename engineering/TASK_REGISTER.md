@@ -22,4 +22,10 @@ Status: todo · doing · review · done · blocked. One owner per task. Pick the
 | T-18 | P2 | Upload-limit error box in DocumentAnalyzerTab (line ~3412) lacks role="alert": screen readers do not announce "maximum allowed limit of 20 files" | Antigravity | todo | Claude | accessibility; no visual change |
 | T-19 | P3 | Owner workspace holds 20 synthetic harness files; remove them (owner decision) so uploads can be re-measured | Owner | todo | Claude | |
 | T-16 | P1 | Unique index on payments.reference_number (reversible migration, owner approval) | Claude | todo | review S-11 | |
+| T-20 | P2 | Direct-path create-once claim of `<id>.json` before credit reservation (S-19) | Claude | todo | review | release reservation on every abort path |
+| T-21 | P1 | SonarCloud frontend findings: 68× S6853 form labels, 20× S6848 non-native interactive elements, ~35× S9383 floating promises (src/**, public/sw.js), S2245 PricingTab Math.random, 9× S8786 regexes in src/**, formRegistry sort | Antigravity | todo | Claude | list: engineering/sonar/FINDINGS.md; preserve visuals |
+| T-22 | P1 | Frontend unit coverage 35.6 % (src/components) | Antigravity | todo | Claude | backend ≥ 85 % |
+| T-23 | P2 | Remove obsolete Vercel commit statuses (3 projects, "Account is blocked") — repository/Vercel settings | Owner | todo | Devin | B-11 |
+| T-24 | P2 | Worktree isolation: a concurrent session edited AdminConsole.tsx/.test.tsx in Claude's worktree (2026-11-26); change reviewed and kept (847c4e0) | All agents | done | Claude | agents must use their own worktree |
+| T-25 | P2 | Re-run SonarCloud on the integration code: PR #115 head is the production branch (only updated on release); open a PR engineering/integration → main for analysis | Owner/Claude | todo | | gh CLI not available to the agent |
 | T-15 | P2 | Flaky tests under full-suite load | Claude | done | | cause: unmocked real-network calls; fixed 105a47b + c82e971 |
