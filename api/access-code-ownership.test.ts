@@ -94,3 +94,17 @@ describe('failures', () => {
     expect(rpcCalled(f)).toBe(true);
   });
 });
+
+describe('no oracle for a differently signed-in caller without a reference', () => {
+  it.each([
+    ['legacy paid code', { email: null, reference_number: 'PS-ABCD2345' }],
+    ['email-bound code', { email: 'buyer@example.test', reference_number: 'PS-ABCD2345' }],
+    ['unknown code', null],
+  ] as const)('%s → the same 403 PURCHASE_REFERENCE_REQUIRED', async (_name, purchase) => {
+    const f = world(purchase as any, { email: 'signedin@example.test', verified: true });
+    const r = await redeem('typed-other@example.test');
+    expect(r.status).toBe(403);
+    expect((await r.json()).code).toBe('PURCHASE_REFERENCE_REQUIRED');
+    expect(rpcCalled(f)).toBe(false);
+  });
+});

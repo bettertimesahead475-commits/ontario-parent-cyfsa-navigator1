@@ -94,8 +94,50 @@ describe('Google signing-key cache', () => {
     const forged = await keyPair('forged');
     const fetchMock = googleServes(() => [k1.jwk]);
     expect((await verify(await token(k1))).status).toBe(200);
-    for (let i = 0; i < 50; i++) expect((await verify(await token(forged))).status).toBe(401);
+    // The first unknown kid refreshes once and is then known to be unpublished: 401.
+    expect((await verify(await token(forged))).status).toBe(401);
+    // Within the next minute no further refresh: an unknown kid cannot be judged, so 503 (retryable), never 401.
+    for (let i = 0; i < 50; i++) expect((await verify(await token(forged))).status).toBe(503);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Genuine tokens with the known key are unaffected.
+    expect((await verify(await token(k1))).status).toBe(200);
+  });
+
+  it('a newly rotated kid is never answered 401 just because a forged kid used the refresh budget', async () => {
+    const k1 = await keyPair('k1');
+    const k2 = await keyPair('k2');
+    const forged = await keyPair('forged');
+    let published = [k1.jwk];
+    googleServes(() => published);
+    expect((await verify(await token(k1))).status).toBe(200);
+    expect((await verify(await token(forged))).status).toBe(401); // uses the refresh
+    published = [k1.jwk, k2.jwk];
+    expect((await verify(await token(k2))).status).toBe(503); // cannot refresh yet: retryable, not "signed out"
+    const realNow = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(realNow + 61_000);
+    expect((await verify(await token(k2))).status).toBe(200);
+  });
+
+  it('subtracts Age from max-age', async () => {
+    const k1 = await keyPair('k1');
+    const fetchMock = vi.fn(async () => Response.json({ keys: [k1.jwk] }, { headers: { 'Cache-Control': 'max-age=300', Age: '200' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await verify(await token(k1))).status).toBe(200);
+    const realNow = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(realNow + 101_000); // past 300-200 s
+    expect((await verify(await token(k1))).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a shared key fetch that never settles does not block later requests', async () => {
+    const k1 = await keyPair('k1');
+    let call = 0;
+    vi.stubGlobal('fetch', vi.fn(() => (++call === 1 ? new Promise<Response>(() => {}) : Promise.resolve(Response.json({ keys: [k1.jwk] }, { headers: { 'Cache-Control': 'max-age=3600' } })))));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const first = verify(await token(k1));
+    await vi.advanceTimersByTimeAsync(6_500); // the waiter's own deadline fires
+    expect((await first).status).toBe(503);
+    expect((await verify(await token(k1))).status).toBe(200); // a new fetch replaces the stuck one
   });
 
   it('Google unreachable with nothing cached: 503 (never 401, never accepted)', async () => {

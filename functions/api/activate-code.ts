@@ -140,8 +140,9 @@ export const onRequestPost = async ({
         return invalid();
       }
     } else if (purchaseReference) {
-      if (!signedInEmail || signedInEmail !== normalizedEmail) return invalid();
+      // Reference first, so a caller without one gets the same answer as for an email-bound or unknown code.
       if (!reference) return referenceRequired();
+      if (!signedInEmail || signedInEmail !== normalizedEmail) return invalid();
       if (!referenceMatches) return invalid();
     }
   } else if (signedInEmail !== normalizedEmail && !reference) {
