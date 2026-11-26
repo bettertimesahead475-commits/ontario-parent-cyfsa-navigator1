@@ -13,6 +13,10 @@ import { CASE_BRIEF_PART_LABELS, CASE_BRIEF_PART_ORDER, parseCaseBriefPoint } fr
 
 const NOT_STATED = "Not stated in the document";
 
+export function isScored(value: unknown): boolean {
+  return value !== null && value !== undefined && value !== "" && typeof value !== "boolean" && Number.isFinite(Number(value));
+}
+
 export interface PdfRenderOptions {
   fileName?: string;
   redactionEnabled?: boolean;
@@ -23,7 +27,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
   const isRedacted = Boolean(options.redactionEnabled);
   const displayTitle = isRedacted ? "Confidential Case Document Audit" : (report.documentTitle || options.fileName || "Court Record Audit");
   const displayFile = isRedacted ? "Analysis report" : (options.fileName || report.documentTitle || "Document");
-  const docType = report.documentType || "Ontario Child Welfare Court Document";
+  const docType = report.documentType || NOT_STATED;
   const metadata = report.metadata || {};
   const fileNumber = isRedacted ? "[REDACTED]" : (metadata.fileNumber || NOT_STATED);
   const applicant = isRedacted ? "[REDACTED]" : (metadata.applicantName || NOT_STATED);
@@ -32,9 +36,9 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
   const auditDate = new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
 
   const esi = report.evidenceStrengthIndex || { components: {} };
-  const esiScored = Number.isFinite(Number(esi.score)) && esi.score !== null && esi.score !== undefined && esi.score !== "";
+  const esiScored = isScored(esi.score);
   const esiScore = esiScored ? Number(esi.score) : 0;
-  const completenessScored = Number.isFinite(Number(report.completenessScore)) && report.completenessScore !== null && report.completenessScore !== undefined && report.completenessScore !== "";
+  const completenessScored = isScored(report.completenessScore);
   const completenessScore = completenessScored ? Number(report.completenessScore) : 0;
   const verification = report.forensicVerification || null;
 
@@ -52,7 +56,8 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
     if (VERIFIED_AUTHORITIES_REGISTRY[k]) authoritiesMap.set(VERIFIED_AUTHORITIES_REGISTRY[k].citation, VERIFIED_AUTHORITIES_REGISTRY[k]);
   });
 
-  return `
+  const secondReviewDone = verification?.status === "completed";
+  const html = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -395,6 +400,10 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
           display: none;
         }
 
+        @media print {
+          .no-print-bar { display: none !important; }
+        }
+
         @media screen {
           body {
             max-width: 900px;
@@ -435,7 +444,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
       <header class="cover-header">
         <span class="brand-badge">Ontario Child Protection • Forensic Evidence Audit</span>
         <h1 class="report-title">Forensic Document Analysis & Admissibility Audit</h1>
-        <p class="report-subtitle">Independent Dual-Pass Evidentiary Assessment • Ontario Family Court Preparation Brief</p>
+        <p class="report-subtitle">${secondReviewDone ? "Automated Evidentiary Assessment with Second Review" : "Automated Evidentiary Assessment"} • Ontario Family Court Preparation Brief</p>
 
         <div class="case-meta-grid">
           <div class="case-meta-item">
@@ -483,7 +492,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
         ` : ""}
         ${verification ? `
           <div class="review-badge">
-            <strong>✓ Independent Forensic Verification:</strong> ${escapeHtml(verification.status === "completed" ? `Completed. ${verification.checkedFindings ?? 0} findings verified against source record by independent second review model.` : "Verification in progress.")}
+            <strong>${secondReviewDone ? "✓ " : ""}Second Review:</strong> ${escapeHtml(secondReviewDone ? `Completed. ${verification.checkedFindings ?? 0} findings checked against the uploaded document by a second model.` : "Not completed. The findings were not second-reviewed.")}
             ${verification.overallAssessment ? `<br/><span style="margin-top:2px; display:inline-block;">${escapeHtml(verification.overallAssessment)}</span>` : ""}
           </div>
         ` : ""}
@@ -518,8 +527,8 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
                 ${Object.entries(esi.components || {}).map(([k, c]: [string, any]) => `
                   <tr>
                     <td><strong>${escapeHtml(k.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()))}</strong></td>
-                    <td><strong>${c.score || 0} / ${c.maxScore || c.max || 15}</strong></td>
-                    <td>${escapeHtml(c.explanation || "Evaluated from document record.")}</td>
+                    <td><strong>${isScored(c?.score) ? `${Number(c.score)} / ${c.maxScore || c.max || 15}` : "Not scored"}</strong></td>
+                    <td>${escapeHtml(c.explanation || "No explanation was returned.")}</td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -761,7 +770,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
       <!-- 11. DIRECTORY OF VERIFIED LEGAL AUTHORITIES -->
       <section class="section-block">
         <h2 class="section-heading">10. Directory of Verified Legal Authorities</h2>
-        <p class="prose-text">Provisions verified against official consolidated Ontario statutes and regulations (Ontario e-Laws):</p>
+        <p class="prose-text">Reference list: core CYFSA provisions commonly relevant to child-protection reviews, plus provisions cited in this report that match the app's authority registry. Inclusion here does not mean the provision applies to this case. Check the current text on Ontario e-Laws before relying on it.</p>
         <table class="data-table">
           <thead>
             <tr>
@@ -835,10 +844,12 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
 
       <!-- 12. METHODOLOGY & AUDIT TRAIL -->
       <footer style="margin-top:30px; padding-top:14px; border-top:1px solid #cbd5e1; font-size:8.5px; color:#64748b; line-height:1.4;">
-        <p><strong>Audit Methodology:</strong> Multi-pass forensic document review utilizing Claude Sonnet for primary extraction and Claude Opus for adversarial secondary verification. Quotations are verified for verbatim matches against uploaded plaintext. Citations are verified against Ontario e-Laws consolidations.</p>
+        <p><strong>Method:</strong> Automated AI review of the uploaded document. ${secondReviewDone ? "A second model checked the findings against the uploaded text." : "The second review was not completed for this report."} Check every quotation and page reference against the original document, and confirm statute text on Ontario e-Laws before relying on it.</p>
         <p>CYFSA Navigator • Ontario Child Welfare File Organizer & Case Assistant • Confidential Legal Preparation Document</p>
       </footer>
     </body>
     </html>
   `;
+  let sectionNumber = 0;
+  return html.replace(/(<h2 class="section-heading">)\d+\. /g, (_match, open) => `${open}${++sectionNumber}. `);
 }

@@ -80,7 +80,7 @@ import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
-import { renderForensicReportHtml } from "../utils/forensicPdfRenderer";
+import { isScored, renderForensicReportHtml } from "../utils/forensicPdfRenderer";
 import { formatLawyerCaseBriefText, renderLawyerCaseBriefHtml } from "../utils/caseBriefExport";
 import {
   ParagraphListenButton,
@@ -2738,18 +2738,20 @@ export default function DocumentAnalyzerTab() {
     } else if (activeTab === "organizer" && reportForExport) {
       title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || displayFileName || "Report")}`;
       const evidenceIndex = reportForExport.evidenceStrengthIndex || {
-        score: 0,
+        score: null,
         components: {},
         limitations: "Evidence Strength Index data was not present in this report. Re-run the analysis with the current analyzer."
       };
 
-      const evidenceScore = Number(evidenceIndex.score) || 0;
+      const evidenceScored = isScored(evidenceIndex.score);
+      const evidenceScore = evidenceScored ? Number(evidenceIndex.score) : 0;
       const evidenceScoreColor =
         evidenceScore >= 80 ? "#16a34a" :
         evidenceScore >= 50 ? "#d97706" :
         "#dc2626";
 
-      const completenessScore = Number(reportForExport.completenessScore) || 0;
+      const completenessScored = isScored(reportForExport.completenessScore);
+      const completenessScore = completenessScored ? Number(reportForExport.completenessScore) : 0;
       const components = evidenceIndex.components || {};
 
       const evidenceComponents = [
@@ -2772,9 +2774,9 @@ export default function DocumentAnalyzerTab() {
             Document Checked:
             <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "N/A")}</strong>
             • Type:
-            <strong>${escapeHtml(reportForExport.documentType || "Casework Correspondence")}</strong>
+            <strong>${escapeHtml(reportForExport.documentType || "Not stated in the document")}</strong>
             • Date of Audit:
-            <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Current")}</strong>
+            <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Not recorded")}</strong>
           </div>
         </div>
 
@@ -2788,8 +2790,8 @@ export default function DocumentAnalyzerTab() {
               </span>
 
               <div style="font-size:32px; font-weight:800; color:${evidenceScoreColor}; margin-top:5px;">
-                ${evidenceScore}
-                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
+                ${evidenceScored ? `${evidenceScore}
+                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>` : `<span style="font-size:18px; color:#64748b;">Not scored</span>`}
               </div>
             </div>
 
@@ -2817,14 +2819,14 @@ export default function DocumentAnalyzerTab() {
             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px;">
               ${evidenceComponents.map(([key, label, max]) => {
                 const component = components[key] || {};
-                const value = Number(component.score) || 0;
+                const value = isScored(component.score) ? `${Number(component.score)}/${max}` : "Not scored";
 
                 return `
                   <div style="border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc;">
                     <div style="display:flex; justify-content:space-between; gap:10px;">
                       <strong style="font-size:12px; color:#334155;">${label}</strong>
                       <span style="font-size:12px; font-weight:800; color:#475569;">
-                        ${value}/${max}
+                        ${value}
                       </span>
                     </div>
 
@@ -2843,7 +2845,7 @@ export default function DocumentAnalyzerTab() {
             </strong>
 
             <span style="font-size:12px; color:#475569;">
-              ${completenessScore}/100
+              ${completenessScored ? `${completenessScore}/100` : "Not scored"}
             </span>
 
             <div style="font-size:11px; color:#64748b; margin-top:4px;">

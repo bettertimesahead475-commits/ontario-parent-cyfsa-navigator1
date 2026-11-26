@@ -270,6 +270,22 @@ describe("analyzer print export (printAnalyzer)", () => {
   });
 });
 
+describe("analyzer print export with missing report data", () => {
+  it("labels missing scores, type and date instead of inventing them", async () => {
+    const { completenessScore, evidenceStrengthIndex, documentType, ...rest } = REPORT;
+    void completenessScore; void evidenceStrengthIndex; void documentType;
+    seed({ redact: false, report: rest });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("Not stated in the document");
+    expect(html).toContain("Not recorded");
+    expect(html).toContain("Not scored");
+    expect(html).not.toContain("Casework Correspondence");
+    expect(html).not.toMatch(/>\s*0\s*<span[^>]*>\/ 100/);
+  });
+});
+
 describe("redaction on the remaining export sinks and the on-screen toggle", () => {
   it("removes the file name and document text from the certified transcript print", async () => {
     seed({ redact: true, fileName: "ZQNAME-transcript.txt" });

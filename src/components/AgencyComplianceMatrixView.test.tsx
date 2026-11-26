@@ -304,7 +304,7 @@ describe("Milestone 2 Audit Remediation: AgencyComplianceMatrixView & PDF", () =
     };
 
     const html = renderForensicReportHtml(mockReport, { audienceMode: "full" });
-    expect(html).toContain("11. Agency Compliance & Evidence Matrix");
+    expect(html).toMatch(/<h2 class="section-heading">\d+\. Agency Compliance & Evidence Matrix/);
     expect(html).toContain("CUSTOM AUDIT DISCLAIMER: Verified against official Ontario authorities.");
     expect(html).toContain("Standard 7 — 30-Day Service Plan Requirement");
     expect(html).toContain("POTENTIAL NONCOMPLIANCE");
