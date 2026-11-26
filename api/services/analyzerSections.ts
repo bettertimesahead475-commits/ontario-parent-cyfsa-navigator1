@@ -31,6 +31,7 @@ import {
 } from "../../shared/citationVerification.js";
 import {
   isVerbatimQuoteStatus,
+  createQuoteLocator,
   locateQuote,
   severityCeiling,
   VERIFICATION_STATUS,
@@ -780,10 +781,11 @@ export function guardCitation(
  * found is kept, marked as an unverified allegation, and cannot be shown as corroborated.
  */
 export function applyReportGuards(report: Record<string, any>, sourceText: string): Record<string, any> {
+  const locate = createQuoteLocator(sourceText);
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
     if (!flag || typeof flag !== "object") continue;
     if (flag.modelSeverity === undefined) flag.modelSeverity = flag.severity;
-    const loc = locateQuote(sourceText, flag.phraseDetected);
+    const loc = locate(flag.phraseDetected);
     flag.quoteVerification = loc.status;
     flag.quoteVerified = isVerbatimQuoteStatus(loc.status);
     flag.verificationStatus = VERIFICATION_STATUS[loc.status];
