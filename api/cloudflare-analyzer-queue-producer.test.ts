@@ -25,6 +25,8 @@ function request(id = 'job_producer_1234') {
 
 function fetcher(options: { storageStatus?: number } = {}) {
   return vi.fn(async (url: string) => {
+    // The ledger RPC returns SQL NULL (JSON null) when no job has this id.
+    if (url.includes('/rpc/analyzer_get_job')) return Response.json(null);
     if (url.includes('/rpc/analyzer_create_job')) return Response.json({ job_id: 'job_producer_1234' });
     // Ownership pre-check read of a fresh id: Supabase Storage reports a missing object as 400 with an inner 404.
     if (url.includes('/storage/v1/object/authenticated/')) return new Response(JSON.stringify({ statusCode: '404', error: 'not_found', message: 'Object not found' }), { status: 400 });
@@ -156,6 +158,12 @@ describe('durable analyzer queue producer', () => {
         if (url.includes('/rpc/analyzer_create_job')) return Response.json({ code: '23505', message: 'duplicate key' }, { status: 409 });
         if (url.includes('/rpc/analyzer_get_job')) return Response.json(existing);
         if (url.includes('/rpc/analyzer_update_job')) return Response.json(true);
+        // Saved report object: present (with its owner) only once the existing job completed.
+        if (url.includes('/storage/v1/object/authenticated/')) {
+          return existing?.status === 'completed'
+            ? Response.json({ uid: existing.owner_uid, status: 'completed' })
+            : new Response(JSON.stringify({ statusCode: '404' }), { status: 400 });
+        }
         return Response.json({ status: 'released' });
       }) as unknown as ReturnType<typeof vi.fn>;
     }
@@ -211,6 +219,8 @@ describe('durable analyzer queue producer', () => {
         if (url.includes('/rpc/analyzer_create_job')) return new Response('upstream timeout', { status: 504 });
         if (url.includes('/rpc/analyzer_get_job')) return Response.json({ job_id: id, owner_uid: 'owner_1234', status: 'queued', mode: 'full' });
         if (url.includes('/rpc/analyzer_update_job')) return Response.json(true);
+        // A queued job has no saved report object yet.
+        if (url.includes('/storage/v1/object/authenticated/')) return new Response(JSON.stringify({ statusCode: '404' }), { status: 400 });
         return Response.json({ status: 'released' });
       }) as unknown as ReturnType<typeof vi.fn>;
       const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv,

@@ -269,10 +269,21 @@ export async function requeueFromDeadLetter(env: DurableJobEnv, jobId: string, f
 export type JobOwnership = 'clear' | 'conflict' | 'unavailable';
 
 export async function jobOwnership(env: DurableJobEnv, jobId: string, uid: string, fetcher: typeof fetch = fetch): Promise<JobOwnership> {
+  // Both sources must positively establish the id is free or the caller's. Any read that fails is 'unavailable'
+  // (retryable). A record that exists but whose owner cannot be established (no owner, not JSON) is 'conflict':
+  // that is permanent, and every object at "<id>.json" and every ledger row is written with its owner.
   try {
     const job = await readDurableJob(env, jobId, fetcher);
-    if (job && typeof job.owner_uid === 'string' && job.owner_uid !== uid) return 'conflict';
-  } catch { console.warn('[JOB_OWNER_CHECK_LEDGER_UNAVAILABLE]', JSON.stringify({ source: 'ledger' })); }
+    if (job) {
+      if (typeof job.owner_uid !== 'string' || !job.owner_uid) return 'conflict';
+      if (job.owner_uid !== uid) return 'conflict';
+    }
+  } catch {
+    // A queued job has a ledger row long before its "<id>.json" exists, so a ledger outage cannot be covered by
+    // the Storage check below.
+    console.warn('[JOB_OWNER_CHECK_UNAVAILABLE]', JSON.stringify({ source: 'ledger' }));
+    return 'unavailable';
+  }
   try {
     const response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(5000) });
     const status = await storageEffectiveStatus(response);
@@ -281,9 +292,12 @@ export async function jobOwnership(env: DurableJobEnv, jobId: string, uid: strin
     // A body that cannot be read (timeout/reset) is an outage, not an empty record: the outer catch refuses it.
     const text = await response.text();
     let stored: { uid?: unknown } | null = null;
-    try { stored = JSON.parse(text) as { uid?: unknown } | null; } catch { /* Not JSON: names no owner. */ }
-    // Only a record that names a different owner is a conflict (other object families use reserved prefixes).
-    return typeof stored?.uid === 'string' && stored.uid !== uid ? 'conflict' : 'clear';
+    try { stored = JSON.parse(text) as { uid?: unknown } | null; } catch {
+      console.warn('[JOB_OWNER_CHECK_UNREADABLE_RECORD]', JSON.stringify({ source: 'storage' }));
+      return 'conflict';
+    }
+    if (typeof stored?.uid !== 'string' || !stored.uid) return 'conflict';
+    return stored.uid === uid ? 'clear' : 'conflict';
   } catch { console.warn('[JOB_OWNER_CHECK_UNAVAILABLE]', JSON.stringify({ source: 'storage' })); return 'unavailable'; }
 }
 

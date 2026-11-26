@@ -5,6 +5,14 @@ import {
   salvagePartialDirectSections,
 } from './services/directAnalyzer';
 
+// Ownership of client-supplied analysis ids is covered exhaustively by api/analysis-id-ownership.test.ts; this suite
+// exercises later stages, so the pre-check is stubbed to "clear" (its mocks do not model the job ledger).
+vi.mock("../functions/api/_durable-analysis-jobs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../functions/api/_durable-analysis-jobs")>()),
+  jobOwnership: vi.fn(async () => "clear"),
+}));
+
+
 const mockAuthVerification = vi.fn();
 vi.mock('../functions/api/_auth-check', () => ({
   verifyFirebaseRequest: (req: Request, env: any) => mockAuthVerification(req, env),
