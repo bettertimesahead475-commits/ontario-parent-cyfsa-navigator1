@@ -271,12 +271,15 @@ export function validateRedFlags(raw: any, mode: "fast" | "full"): Validation {
     .filter((f: any) => f.phraseDetected && f.explanation)
     .slice(0, max);
   // The second review's verdicts are matched to findings by id: a repeated id would let a verdict on one finding
-  // remove or recalibrate another. Each finding keeps its own id; a repeated or missing one gets the next free rfN.
+  // remove or recalibrate another. Each finding keeps its own id; a repeated or missing one gets the next rfN that no
+  // finding uses, so a later finding never loses the id its report id is derived from.
+  const taken = new Set<string>(flags.map((f: { id: string }) => f.id));
   const used = new Set<string>();
   let next = 1;
   for (const f of flags) {
     if (used.has(f.id)) {
-      while (used.has(`rf${next}`)) next++;
+      while (taken.has(`rf${next}`)) next++;
+      taken.add(`rf${next}`);
       f.id = `rf${next}`;
     }
     used.add(f.id);

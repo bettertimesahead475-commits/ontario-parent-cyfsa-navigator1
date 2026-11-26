@@ -42,4 +42,9 @@ describe('DEVIN-P3-01 second-review verdicts reach only their own finding', () =
     const v = validateRedFlags({ redFlags: [{ id: 'a7', ...STRUCK }, { id: 'rf1', ...LATE }] }, 'full') as { ok: true; value: { redFlags: { id: string }[] } };
     expect(v.value.redFlags.map((f) => f.id)).toEqual(['a7', 'rf1']);
   });
+
+  it('a repeated id never takes an id that a later finding already has', () => {
+    const v = validateRedFlags({ redFlags: [{ id: 'rf1', ...STRUCK }, { id: 'rf1', ...LATE }, { id: 'rf2', ...LATE, phraseDetected: 'two visits' }] }, 'full') as { ok: true; value: { redFlags: { id: string }[] } };
+    expect(v.value.redFlags.map((f) => f.id)).toEqual(['rf1', 'rf3', 'rf2']);
+  });
 });
