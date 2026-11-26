@@ -1,13 +1,13 @@
 /**
- * DEVIN-PERF-01 differential test. The production implementation (be46ad7 shared/quoteVerification.ts, kept verbatim in
- * fixtures/quoteVerificationBaseline.ts as the oracle) is compared with the prepared locator on deterministic synthetic
+ * DEVIN-PERF-01 differential test. The engineering/integration implementation with DEVIN-P2-01 word boundaries
+ * (eaca5cf shared/quoteVerification.ts, kept in fixtures/quoteVerificationIntegration.ts as the oracle) is compared with the prepared locator on deterministic synthetic
  * inputs: Unicode punctuation, soft hyphens, zero-width marks, astral emoji, NBSP and ideographic spaces, page markers
  * that a quotation may cross, and case or punctuation variants. Seeded, so every run checks the same 32,000 cases.
  * Synthetic text only.
  */
 import { describe, expect, it } from "vitest";
 import * as NEW from "../../shared/quoteVerification";
-import * as OLD from "../../tests/devin/fixtures/quoteVerificationProduction";
+import * as OLD from "../../tests/devin/fixtures/quoteVerificationIntegration";
 
 function rng(seed: number) {
   return () => {
@@ -35,7 +35,7 @@ function doc(pages: number): string {
   return lines.join("\n");
 }
 
-describe("prepared quotation locator is identical to the production implementation", () => {
+describe("prepared quotation locator is identical to the integration implementation (DEVIN-P2-01)", () => {
   it("32,000 seeded synthetic cases: same status, page, offsets for createQuoteLocator and locateQuote", () => {
     const r = rng(20261126);
     let cases = 0;
