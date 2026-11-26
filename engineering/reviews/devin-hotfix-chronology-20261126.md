@@ -1,8 +1,8 @@
 # Independent review: Forensic chronology hotfix `9c75884` (Devin, 2026-11-26)
 
 Branch `hotfix/forensic-chronology-20261126` = production `be46ad7` + `d344037` (PR #141 locator, production matching
-rules) + `9c75884` (Forensic chronology `maxTokens.full` 5,000 → 8,000; dispatch order
-`redFlags, chronology, guidance, thresholds, timeline, overview`). All evidence is local, with mocked inference.
+rules) + `9c75884` (Forensic chronology `maxTokens.full` 5,000 → 8,000; chronology dispatched early) + `8156f96`
+(dispatch order `redFlags, thresholds, chronology, guidance, timeline, overview`; browser polling limit 6 → 30 min). All evidence is local, with mocked inference.
 No money was spent and nothing was deployed.
 
 ## Verdict
@@ -15,7 +15,7 @@ No money was spent and nothing was deployed.
 | Quotation accuracy | **FAILED (production behaviour, carried forward).** DEVIN-P2-01 is not included; see below |
 | Cloudflare CPU | **IMPROVED (local measurement).** Report-guard CPU falls about 91% through PR #141. The production `exceededCpu` at 280 ms is still unexplained |
 | Memory, 200-page documents | **NOT FIXED.** Peak memory is unchanged; the compact locator (PR #142) is not included |
-| Full suite / types | 4,305 passed, 478 skipped; `tsc` clean |
+| Full suite / types | 4,305 passed, 478 skipped on `9c75884`; `tsc` clean |
 
 ## Evidence
 
@@ -35,11 +35,14 @@ test fails 4/4 on `be46ad7` and passes 4/4 on the hotfix. Claude's own new tests
 dispatch order). Three of them fail on `be46ad7`. The tests that check a cut-off answer is rejected pass on both,
 because that behaviour is not new.
 
-**Dispatch order.** Thresholds is a verification input and now waits for the first free slot. In the owner's run,
-verification would start at 95.5 s instead of 92.5 s; timeline and overview still end the run. That costs about 3 s
-here, and up to about 20 s on documents where redFlags finishes early (the 2026-11-25 run models at 101 s against 99 s
-measured). Optional: `redFlags, thresholds, chronology, guidance, timeline, overview` gives the same chronology
-benefit without delaying verification.
+**Dispatch order.** `9c75884` put chronology ahead of thresholds, a verification input, which delayed verification
+by about 3 s on the owner's run (up to about 20 s when redFlags finishes early). `8156f96` adopted
+`redFlags, thresholds, chronology, …`. On that revision the replay starts verification at 92.5 s, the same as the
+owner's production run, and the completion times in the table are unchanged.
+
+**Browser polling (`8156f96`).** `pollAnalysisJob` now waits 30 min by default instead of 6 min, still polling every
+3 s. The server's `RECOVERY_TIMEOUT` still ends a job that never finishes. This affects how long the browser keeps
+following a job, not how long the analysis runs or what it costs.
 
 **CPU** (25 findings; one report-guard pass; Forensic runs two passes):
 
