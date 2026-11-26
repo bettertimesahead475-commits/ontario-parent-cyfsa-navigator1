@@ -270,14 +270,7 @@ export function validateRedFlags(raw: any, mode: "fast" | "full"): Validation {
   if (raw.redFlags.length > 0 && flags.length === 0) {
     return { ok: false, problems: ["every red flag was missing its exact quote (phraseDetected) or explanation"] };
   }
-  // Rule: never more than one CRITICAL per document.
-  let seenCritical = false;
-  for (const f of flags) {
-    if (f.severity === "CRITICAL") {
-      if (seenCritical) f.severity = "Worth Raising With Counsel";
-      seenCritical = true;
-    }
-  }
+  // The one-CRITICAL-per-document rule is applied in applyReportGuards, after quotations are located.
   return { ok: true, value: { redFlags: flags } };
 }
 
@@ -808,6 +801,14 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
     flag.citationReason = g.reason;
     flag.identifiedAct = g.identifiedAct;
     if (g.authorityId) flag.authorityId = g.authorityId;
+  }
+  // Never more than one CRITICAL per document. Chosen after the severity ceiling, so an unlocated quotation listed
+  // first cannot displace a located CRITICAL finding.
+  let seenCritical = false;
+  for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
+    if (!flag || typeof flag !== "object" || flag.severity !== "CRITICAL") continue;
+    if (seenCritical) flag.severity = "Worth Raising With Counsel";
+    seenCritical = true;
   }
   applyCitationGuards(report);
   if (!report.complianceMatrix) {
