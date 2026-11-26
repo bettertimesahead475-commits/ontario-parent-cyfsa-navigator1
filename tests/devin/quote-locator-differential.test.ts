@@ -36,7 +36,11 @@ function doc(pages: number): string {
 }
 
 describe("prepared quotation locator is identical to the pre-PR implementation", () => {
-  it("32,000 seeded synthetic cases: same status, page, offsets for createQuoteLocator and locateQuote", () => {
+  // Equality with the pre-PR oracle no longer holds: later documented matcher rules (negating word, hyphen compound,
+  // soft-hyphen join, contraction) change some results by design and are checked as properties in
+  // api/services/quoteLocatorProductionDifferential.test.ts. This test keeps the performance claim: the prepared
+  // locator and the direct locator agree on every case.
+  it("32,000 seeded synthetic cases: createQuoteLocator and locateQuote agree on status, page and offsets", () => {
     const r = rng(20261126);
     let cases = 0;
     const mismatches: string[] = [];
@@ -60,8 +64,7 @@ describe("prepared quotation locator is identical to the pre-PR implementation",
         else if (m < 0.7) quote = quote + "[Page 2]";
         else if (m < 0.75) quote = "";
         cases++;
-        const expected = JSON.stringify(OLD.locateQuote(source, quote));
-        if (JSON.stringify(locate(quote)) !== expected || JSON.stringify(NEW.locateQuote(source, quote)) !== expected) {
+        if (JSON.stringify(locate(quote)) !== JSON.stringify(NEW.locateQuote(source, quote))) {
           mismatches.push(JSON.stringify({ source, quote }));
         }
       }

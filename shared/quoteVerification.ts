@@ -12,6 +12,7 @@
  * Only EXACT and NORMALIZED_WHITESPACE count as "verified": the quoted words are in the document. Everything else
  * is shown as a qualified match, and nothing says "word-for-word" unless the match is EXACT.
  */
+import { trimCharacters } from "./linearText";
 
 export const QUOTE_MATCH_STATUSES = [
   "EXACT",
@@ -204,7 +205,10 @@ function splitsSurrogatePair(h: string, i: number): boolean {
 
 /** Strips quotation marks wrapped around the whole quote, then trims. */
 function unwrapQuote(quote: string): string {
-  return (quote || "").trim().replace(/^["'“‘]+|["'”’]+$/g, "").trim();
+  // Same result as .replace(/^["'“‘]+|["'”’]+$/g, ""), whose trailing alternative was retried from every position
+  // of a long run of quotation marks inside the quote.
+  const unquoted = trimCharacters(trimCharacters((quote || "").trim(), "\"'“‘", { start: true }), "\"'”’", { end: true });
+  return unquoted.trim();
 }
 
 /** The "[Page N]" marker that most recently precedes a code-point offset, or null when there is none. */
@@ -261,6 +265,13 @@ function pageMarkerEnds(source: string): { ends: number[]; pages: number[] } {
  * keeps report guards linear in document size (a 25-finding report on a 200-page document re-scanned it 25 times).
  * Holds no state outside the returned closure.
  */
+/** True when the quote occurs in the source on word boundaries, after whitespace is collapsed. */
+export function containsQuoteOnWordBoundaries(source: string, quote: string): boolean {
+  const s = canonicalize(source || "", "whitespace").chars;
+  const q = canonicalize(quote || "", "whitespace").chars;
+  return occurrences(s, q).length > 0;
+}
+
 export function createQuoteLocator(source: string): (quote: string) => QuoteLocation {
   const absent: QuoteLocation = { status: "ABSENT", page: null, startOffset: null, endOffset: null };
   const ambiguous: QuoteLocation = { status: "AMBIGUOUS", page: null, startOffset: null, endOffset: null };
