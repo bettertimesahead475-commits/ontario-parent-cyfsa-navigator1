@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { apiFetch } from '../utils/api';
+import { finishPrintWindow } from '../utils/printWindow';
+import { renderFinalAssessmentHtml } from '../utils/finalAssessmentExport';
 import type { AssessmentReport } from '../../functions/api/final-case-assessment';
 
 const labels = { overview: 'Case overview', chronology: 'Chronology', conflicts: 'Conflicting accounts', gaps: 'Evidence gaps', questions: 'Questions for counsel' };
@@ -43,6 +45,14 @@ export default function FinalCaseAssessment() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Source could not be saved'); }
     finally { setBusy(false); }
   }
+  function downloadPdf() {
+    if (!report) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) { setError('Allow pop-ups for this site to save the assessment as a PDF'); return; }
+    printWindow.document.write(renderFinalAssessmentHtml(report));
+    printWindow.document.close();
+    finishPrintWindow(printWindow);
+  }
   return <section className="rounded-xl border border-indigo-200 bg-white p-4 space-y-3" aria-label="Final Case Assessment">
     <button type="button" className="font-bold text-indigo-900" aria-expanded={open} onClick={() => { setOpen(!open); if (!open) void load(); }}>Final Case Assessment</button>
     {open && <>
@@ -60,6 +70,7 @@ export default function FinalCaseAssessment() {
       <button type="button" disabled={busy || !matterId} onClick={() => void load(matterId)} className="border rounded px-4 py-2">Reopen saved report</button></div>
       {error && <p role="alert">{error}. Your saved documents remain available.</p>}
       {report && <article className="space-y-4"><h2 className="font-bold text-xl">Final Case Assessment — {report.title}</h2><p className="text-sm">Saved {new Date(report.createdAt).toLocaleString()}</p>
+        <button type="button" onClick={downloadPdf} className="border rounded px-4 py-2">Download PDF</button>
         {Object.entries(labels).map(([key, label]) => <section key={key}><h3 className="font-bold">{label}</h3><ul className="list-disc pl-5">{report.sections[key as keyof typeof labels].map((p, i) => <li key={i}>{p.text} <span className="text-sm">{p.sources.map(id => { const source = report.sources.find(s => s.id === id); return <a className="underline mr-2" key={id} href={'#assessment-source-' + id}>{source?.document}, p. {source?.page}</a>; })}</span></li>)}</ul></section>)}
         <section><h3 className="font-bold">Source pages reviewed</h3>{report.sources.map(s => <details key={s.id} id={'assessment-source-' + s.id}><summary>{s.document}, page {s.page}</summary><p className="whitespace-pre-wrap">{s.text}</p></details>)}</section>
       </article>}

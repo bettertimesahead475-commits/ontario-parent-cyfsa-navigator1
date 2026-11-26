@@ -82,9 +82,9 @@ function renderContradictions(report: Loose): string {
     </section>`;
 }
 
-const STYLES = `
+export const printDocumentStyles = (footerLabel: string): string => `
 @page { size: Letter; margin: 0.85in 0.8in 0.9in 0.8in;
-  @bottom-left { content: "CYFSA Navigator — Lawyer Case Brief"; font: 8pt Georgia, serif; color: #64748b; }
+  @bottom-left { content: "${footerLabel.replace(/["\\]/g, "")}"; font: 8pt Georgia, serif; color: #64748b; }
   @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt Georgia, serif; color: #64748b; } }
 @page :first { @bottom-left { content: none; } @bottom-right { content: none; } }
 * { box-sizing: border-box; }
@@ -114,6 +114,8 @@ table { border-collapse: collapse; width: 100%; font-size: 9.5pt; } th, td { bor
 thead th { background: #f1f5f9; } tr { break-inside: avoid; }
 .muted { color: #64748b; font-style: italic; }
 `;
+
+const STYLES = printDocumentStyles("CYFSA Navigator — Lawyer Case Brief");
 
 export function renderLawyerCaseBriefHtml(report: Loose, options: CaseBriefExportOptions = {}): string {
   const id = identification(report, options);
