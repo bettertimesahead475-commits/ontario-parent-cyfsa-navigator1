@@ -34,6 +34,8 @@ async function adminPost<T = any>(path: string, payload: Record<string, unknown>
 
 // null = the server could not establish this figure (shown as unavailable, never as $0.00).
 const money = (n: unknown) => typeof n === "number" ? `$${n.toFixed(2)}` : n === null ? "unavailable" : "—";
+/** Counts follow the same rule as amounts: null means the server could not establish the figure. */
+const count = (n: unknown) => typeof n === "number" ? String(n) : n === null ? "unavailable" : "—";
 
 /** Server-reported reporting gaps. Financial figures are never presented as complete while any warning exists. */
 function ReportingWarnings({ warnings }: { warnings?: string[] }) {
@@ -196,14 +198,14 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
       <Card title="Revenue (CAD)">{rv ? <><ReportingWarnings warnings={rv.reporting?.warnings} /><ul className="space-y-1 text-sm">
         <li>Approved: {money(rv.totals.approvedAmount)} · Refunded: {money(rv.totals.refundedAmount)} · Net: <strong>{money(rv.totals.netAmount)}</strong></li>
         <li>Bank confirmed: {money(rv.totals.bankConfirmedAmount)} · Disputed: {money(rv.totals.disputedAmount)} · Pending requests: {money(rv.totals.pendingAmount)}</li>
-        <li className="pt-2"><Table head={["Month", "Approved", "Amount", "Refunded"]} rows={rv.byMonth.slice(0, 12).map((r: any) => [r.month, r.approved, money(r.approvedAmount), money(r.refundedAmount)])} /></li>
+        <li className="pt-2"><Table head={["Month", "Approved", "Amount", "Refunded"]} rows={rv.byMonth.slice(0, 12).map((r: any) => [r.month, count(r.approved), money(r.approvedAmount), money(r.refundedAmount)])} /></li>
       </ul></> : <p className="text-sm">Loading…</p>}</Card>
       <Card title="Usage (last 7 days)">{u ? <>
         <p className="mb-2 text-sm">Jobs in the last 24 hours: {u.jobsLast24h}</p>
         <Table head={["Mode", "Total", "Completed", "Failed", "Running", "Queued", "Avg s", "Owner runs"]} rows={Object.entries(u.byMode).map(([k, v]: [string, any]) => [k, v.total, v.completed, v.failed, v.running, v.queued, v.avgSeconds ?? "—", v.ownerRuns])} />
         <p className="mt-2 text-xs text-slate-600">Failures by code: {Object.entries(u.failuresByCode).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}</p>
       </> : <p className="text-sm">Loading…</p>}</Card>
-      <Card title="Packages">{rv?.byPlan ? <><ReportingWarnings warnings={rv.reporting?.warnings} /><Table head={["Package", "Approved", "Amount", "Pending"]} rows={rv.byPlan.map((r: any) => [r.plan, r.approved, money(r.approvedAmount), r.pending])} /></> : <p className="text-sm">Loading…</p>}</Card>
+      <Card title="Packages">{rv?.byPlan ? <><ReportingWarnings warnings={rv.reporting?.warnings} /><Table head={["Package", "Approved", "Amount", "Pending"]} rows={rv.byPlan.map((r: any) => [r.plan, count(r.approved), money(r.approvedAmount), count(r.pending)])} /></> : <p className="text-sm">Loading…</p>}</Card>
     </div>}
 
     {section === "payments" && <Card title="Payments and entitlements">{data.payments ? <><ReportingWarnings warnings={data.payments.reporting?.warnings} /><Table

@@ -22,6 +22,11 @@ import { claimJobRecord, saveCompletedJob, saveJobState } from './_analysis-jobs
 import { createDurableJob, DurableJobStorageError, jobOwnership, nextAttemptId, type JobOwnership, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
 import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
 
+/** The queued job's report object is held by another account (or its ownership could not be established). */
+class OwnershipClaimRefused extends Error {
+  constructor(readonly outcome: 'conflict' | 'unavailable') { super('analysis id claim refused'); }
+}
+
 /** Server-generated analysis id in the client format, from a cryptographic random source. */
 function serverAnalysisId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(9));
@@ -368,6 +373,12 @@ export async function handleAnalyzeRequest(
     try {
       await createDurableJob(env, job, authFetcher);
       jobCreated = true;
+      // The ledger insert is unique among queued jobs, but a direct-path request by another account may hold the same
+      // id's report object: claim it too, so the queued worker can never overwrite another account's record.
+      if (clientSuppliedId) {
+        const claim = await claimJobRecord(env, requestId, uid, authFetcher);
+        if (claim !== 'claimed') throw new OwnershipClaimRefused(claim);
+      }
       await saveDurableInput(env, inputKey, { documentText, fileName: typeof body?.documentName === 'string' ? body.documentName : undefined }, authFetcher);
       await env.ANALYZER_JOBS_QUEUE.send(createAnalyzerQueueMessage(requestId));
       return Response.json({
@@ -419,6 +430,11 @@ export async function handleAnalyzeRequest(
         } catch { /* The producer still releases its reservation below. */ }
       }
       await releaseFreshReservation();
+      // The job was marked failed and its reservation released above; report the actual reason.
+      if (enqueueError instanceof OwnershipClaimRefused) {
+        const refusal = ownershipRefusal(enqueueError.outcome);
+        if (refusal) return refusal;
+      }
       return Response.json({
         error: 'The analysis could not be queued. Your reserved credit was released when possible.',
         code: 'ANALYSIS_ENQUEUE_FAILED',

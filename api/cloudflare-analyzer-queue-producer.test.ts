@@ -72,7 +72,8 @@ describe('durable analyzer queue producer', () => {
     expect(send).toHaveBeenCalledOnce();
     expect(send).toHaveBeenCalledWith({ version: 1, jobId: 'job_producer_1234' });
     expect(JSON.stringify(send.mock.calls)).not.toContain(documentText);
-    const storagePost = fetchImpl.mock.calls.find(([url, init]) => String(url).includes('/storage/v1/object/') && init?.method === 'POST');
+    // The private input object (the report object's create-once ownership claim is a separate write).
+    const storagePost = fetchImpl.mock.calls.find(([url, init]) => String(url).includes('/storage/v1/object/analysis_jobs/inputs/') && init?.method === 'POST');
     expect(storagePost?.[1]?.body).toContain(documentText);
     expect(storagePost?.[0]).toContain('/analysis_jobs/inputs/job_producer_1234.json');
     for (const [url, init] of fetchImpl.mock.calls) {

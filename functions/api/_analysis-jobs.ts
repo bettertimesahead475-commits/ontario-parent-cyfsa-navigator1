@@ -75,6 +75,7 @@ export async function claimJobRecord(
       method: 'POST',
       headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'x-upsert': 'false' },
       body: JSON.stringify({ jobId, uid, status: 'running', currentStage: 'running', percent: 5, message: 'Analysis starting.', updatedAt: Date.now() }),
+      redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
     if (res.ok) return 'claimed';
@@ -83,6 +84,7 @@ export async function claimJobRecord(
     if (res.status !== 409 && String(body?.statusCode) !== '409') return 'unavailable';
     const existing = await fetcher(jobObjectUrl(env.STAGING_SUPABASE_URL, jobId, 'read'), {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
+      redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
     if (!existing.ok) return 'unavailable';

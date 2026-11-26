@@ -129,6 +129,15 @@ describe('Google signing-key cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('a response already past its freshness (Age >= max-age) is used once and not cached', async () => {
+    const k1 = await keyPair('k1');
+    const fetchMock = vi.fn(async () => Response.json({ keys: [k1.jwk] }, { headers: { 'Cache-Control': 'max-age=300', Age: '400' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect((await verify(await token(k1))).status).toBe(200);
+    expect((await verify(await token(k1))).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('a shared key fetch that never settles does not block later requests', async () => {
     const k1 = await keyPair('k1');
     let call = 0;

@@ -688,7 +688,7 @@ describe('financial reporting integrity — independent review follow-ups', () =
   it('#1 a non-audit entry cannot make a cut-off audit listing look complete', async () => {
     const db = fakeSupabase(seed());
     await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
-    fill(db, 5000);
+    fill(db, 20_000); // the read limit; with the placeholder, the raw listing is longer than can be read
     db.storage.set('admin-audit/zzzz-.emptyFolderPlaceholder', '');
     const r = await call(db, 'revenue');
     expect(r.body.reporting.settlementAvailable).toBe(false);
@@ -698,9 +698,18 @@ describe('financial reporting integrity — independent review follow-ups', () =
   it('#1 a refund/settlement decision refuses (503) when the history cannot be read completely', async () => {
     const db = fakeSupabase(seed());
     await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } });
-    fill(db, 5100);
+    fill(db, 20_100);
     expect((await call(db, 'payments/confirm-bank', { method: 'POST', body: { referenceNumber: 'PS-BBBBB' } })).status).toBe(503);
     expect((await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'again' } })).status).toBe(503);
+  });
+
+  it('warns from 80 % of the audit read limit while figures are still complete', async () => {
+    const db = fakeSupabase(seed());
+    fill(db, 16_100);
+    const r = await call(db, 'revenue');
+    expect(r.body.reporting.settlementAvailable).toBe(true);
+    expect(r.body.totals.refundedAmount).toBe(0);
+    expect(r.body.reporting.warnings.join(' ')).toMatch(/per-payment indexing/);
   });
 
   it('#1 a malformed (non-array) listing is an outage, not an empty history', async () => {
@@ -740,5 +749,19 @@ describe('financial reporting integrity — independent review follow-ups', () =
     expect(shared).toHaveLength(2);
     for (const p of shared) expect(p.bankSettlementStatus).toBe('unknown');
     expect(o.body.reporting.warnings.join(' ')).toMatch(/shared by more than one payment/);
+  });
+});
+
+describe('shared references detected across the whole payments table (re-review residual)', () => {
+  it('customer lookup by email marks a reference shared with another customer as unknown, with a warning', async () => {
+    const db = fakeSupabase(seed());
+    await call(db, 'payments/confirm-bank', { method: 'POST', body: { referenceNumber: 'PS-BBBBB' } });
+    // Another customer's legacy payment reuses the same reference (not visible in this customer's rows).
+    db.tables.payments.push({ reference_number: 'PS-BBBBB', plan: 'Basic', amount: 49, status: 'approved', notes: 'email:other@x.com;uid:uidC00001' });
+    const c = await call(db, 'customers?q=' + encodeURIComponent('axb@x.com'));
+    expect(c.status).toBe(200);
+    expect(c.body.payments.map((p: any) => p.referenceNumber)).toEqual(['PS-BBBBB']);
+    expect(c.body.payments[0].bankSettlementStatus).toBe('unknown');
+    expect(c.body.reporting.warnings.join(' ')).toMatch(/also used by another payment/);
   });
 });

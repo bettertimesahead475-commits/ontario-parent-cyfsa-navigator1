@@ -53,12 +53,16 @@ class KeysUnavailable extends Error {}
 function freshnessMs(cacheControl: string | null, age: string | null): number {
   const m = /(?:^|,)\s*max-age\s*=\s*(\d+)/i.exec(cacheControl || '');
   const ageSeconds = Number.parseInt(age || '0', 10);
-  const ms = m ? (Number(m[1]) - (Number.isFinite(ageSeconds) && ageSeconds > 0 ? ageSeconds : 0)) * 1000 : JWKS_DEFAULT_TTL_MS;
+  const remainingS = m ? Number(m[1]) - (Number.isFinite(ageSeconds) && ageSeconds > 0 ? ageSeconds : 0) : null;
+  // A response already past its freshness is used for this request only, never cached.
+  if (remainingS !== null && remainingS <= 0) return 0;
+  const ms = remainingS !== null ? remainingS * 1000 : JWKS_DEFAULT_TTL_MS;
   return Math.min(JWKS_MAX_TTL_MS, Math.max(JWKS_MIN_TTL_MS, ms));
 }
 
 function fetchKeySet(): Promise<KeySet> {
   if (inflight && Date.now() - inflight.startedAt < INFLIGHT_MAX_AGE_MS) return withDeadline(inflight.promise);
+  const entry = { promise: null as unknown as Promise<KeySet>, startedAt: Date.now() };
   const promise = (async () => {
     jwksStats.fetches++;
     const response = await fetch(jwksUrl, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(KEY_FETCH_TIMEOUT_MS) });
@@ -66,10 +70,11 @@ function fetchKeySet(): Promise<KeySet> {
     const body = await response.json() as { keys?: GoogleJwk[] };
     if (!Array.isArray(body.keys) || body.keys.length === 0) throw new KeysUnavailable('JWKS empty');
     const set: KeySet = { keys: body.keys, expiresAt: Date.now() + freshnessMs(response.headers.get('cache-control'), response.headers.get('age')), imported: new Map() };
-    cachedKeySet = set;
+    // An abandoned fetch that finishes after its replacement must not install an older key set.
+    if (inflight === entry || !cachedKeySet) cachedKeySet = set;
     return set;
   })();
-  const entry = { promise, startedAt: Date.now() };
+  entry.promise = promise;
   inflight = entry;
   promise.then(() => undefined, () => undefined).finally(() => { if (inflight === entry) inflight = null; });
   return withDeadline(promise);

@@ -165,3 +165,33 @@ describe('create-once claim of the direct-path job record (T-20 / review finding
     expect(generate).not.toHaveBeenCalled();
   });
 });
+
+describe('queued producer claims the report object too (re-review residual 2)', () => {
+  it('a queued request whose id is already held by another account\'s direct analysis is refused, failed and released', async () => {
+    const calls: string[] = [];
+    let ownershipReads = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push(`${init?.method || 'GET'} ${url.replace('https://example.supabase.co', '')}`);
+      if (url.includes('/rpc/analyzer_get_job')) return Response.json(null);
+      if (url.includes('/rpc/analyzer_create_job')) return Response.json({ job_id: ID });
+      if (url.includes('/rpc/analyzer_update_job')) return Response.json(true);
+      // First read (ownership pre-check): nothing yet. Later reads: another account's direct-path claim landed.
+      if (url.includes('/authenticated/')) return ++ownershipReads === 1 ? NOT_FOUND() : Response.json({ uid: 'user_b' });
+      if (url.includes('/storage/v1/object/')) return new Response('{"statusCode":"409"}', { status: 400 });
+      return Response.json({});
+    }) as unknown as typeof fetch;
+    const rpc = vi.fn(async (name: string) => (name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'r1' } : { status: 'released' }));
+    const send = vi.fn();
+    const response = await handleAnalyzeRequest(new Request('https://navigator.test/api/analyze', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer t', 'Content-Type': 'application/json', 'X-Analysis-Id': ID, Accept: 'application/json', 'x-test-uid': 'user_a' },
+      body: JSON.stringify({ documentText: 'Synthetic CAS file note. '.repeat(40), mode: 'fast', stream: false }),
+    }), { ...env, QUEUE_QUICK_ANALYSIS: 'true', ANALYZER_JOBS_QUEUE: { send } } as never, { rpc, fetcher } as never);
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('ANALYSIS_ID_CONFLICT');
+    expect(send).not.toHaveBeenCalled();
+    expect(rpc.mock.calls.map(([n]) => n)).toContain('free_release_scan');
+    expect(calls.some((c) => c.includes('/rpc/analyzer_update_job'))).toBe(true); // the queued job is marked failed
+  });
+});

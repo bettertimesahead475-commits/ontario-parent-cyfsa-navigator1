@@ -78,12 +78,30 @@ function sharedReferences(payments: Payment[]): Set<string> {
 }
 
 /**
+ * Of these references, the ones held by more than one payment ANYWHERE in the payments table (a view shows only some
+ * rows: one customer's payments, or the most recent 200). A failed read fails the request rather than guessing.
+ */
+async function sharedReferencesInDb(env: AdminEnv, references: string[], fetcher: typeof fetch): Promise<Set<string>> {
+  const refs = [...new Set(references)].filter((r) => REFERENCE.test(r));
+  const rows: Payment[] = [];
+  for (let i = 0; i < refs.length; i += 100) {
+    rows.push(...await rest<Payment[]>(env, `payments?select=reference_number&reference_number=in.(${refs.slice(i, i + 100).join(',')})&limit=1000`, {}, fetcher));
+  }
+  return sharedReferences(rows);
+}
+
+/**
  * Bank-settlement and refund state per payment reference, read from the administrator audit trail (the production
  * schema has no settlement or refund column; see BLOCKERS B-6). `complete` is false when the trail could not be read
  * or was cut off at the read limit: callers must then report the affected figures as unavailable, never as zero.
  */
 type Settlements = { byReference: Map<string, { status: string; at: string }>; names: string[]; available: boolean; truncated: boolean; complete: boolean };
-const SETTLEMENT_READ_LIMIT = 5000;
+// The administrator audit trail is read whole for settlement state and for the refund/settlement/restore guards
+// (which refuse with 503 when it cannot be read completely). 20,000 records = 20 Storage list calls per read.
+// Production holds 0 records today (2026-11-26); the console warns from 80 %, long before actions would refuse.
+// Per-target indexing replaces the full read when that warning first appears (TASK_REGISTER T-26).
+const SETTLEMENT_READ_LIMIT = 20_000;
+const AUDIT_CAPACITY_WARNING_AT = Math.floor(SETTLEMENT_READ_LIMIT * 0.8);
 async function readSettlements(env: AdminEnv, fetcher: typeof fetch): Promise<Settlements> {
   try {
     const { names, exhausted } = await listAuditNamesWithCompleteness(env, SETTLEMENT_READ_LIMIT, fetcher);
@@ -98,6 +116,10 @@ async function readSettlements(env: AdminEnv, fetcher: typeof fetch): Promise<Se
 function settlementWarnings(s: Settlements): string[] {
   if (!s.available) return ['Refund and bank-settlement records could not be read. Refunds, net revenue and settlement totals are unavailable; do not rely on the figures shown as complete.'];
   if (s.truncated) return [`Refund and bank-settlement records exceed ${SETTLEMENT_READ_LIMIT} entries and were not read completely. Refund and settlement figures are unavailable.`];
+  if (s.names.length >= AUDIT_CAPACITY_WARNING_AT) {
+    // Figures are still complete; this is an operational early warning.
+    return [`The administrator audit trail holds ${s.names.length} of the ${SETTLEMENT_READ_LIMIT} records it can read in full. Refunds and settlement changes will be refused beyond that; ask engineering to enable per-payment indexing now.`];
+  }
   return [];
 }
 
@@ -206,7 +228,7 @@ async function restAll<T>(env: AdminEnv, path: string, fetcher: typeof fetch, ma
 /** Latest settlement state of one payment, from the audit trail. */
 async function settlementOf(env: AdminEnv, reference: string, fetcher: typeof fetch): Promise<string | undefined> {
   // Guards refunds, reissues and settlement changes: an incomplete history refuses the action (503), never "not refunded".
-  return settlementByReference(await listAllAuditNames(env, 5000, fetcher)).get(safeSegment(reference))?.status;
+  return settlementByReference(await listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher)).get(safeSegment(reference))?.status;
 }
 
 type CodeLink = AccessCode & { redeemed_session_id?: string | null };
@@ -251,7 +273,7 @@ async function paymentsOverview(env: AdminEnv, fetcher: typeof fetch, now: Date)
     codes.push(...await rest<CodeLink[]>(env, `access_codes?select=*&reference_number=in.(${references.slice(i, i + 100).join(',')})&limit=1000`, {}, fetcher));
   }
   const counters = await countersFor(env, sessions.map((s) => s.id), fetcher);
-  const shared = sharedReferences(payments);
+  const shared = await sharedReferencesInDb(env, payments.map((p) => String(p.reference_number || '')), fetcher);
   return {
     reporting: {
       settlementAvailable: settlements.complete,
@@ -307,11 +329,15 @@ async function customerDetail(env: AdminEnv, q: string, fetcher: typeof fetch, n
   const ownSessions = sessions.filter((s) => s.firebase_uid === uid);
   const counters = await countersFor(env, ownSessions.map((s) => s.id), fetcher);
   const auditNames = settlements.names;
-  const sharedInView = sharedReferences(payments);
+  const sharedInView = await sharedReferencesInDb(env, payments.map((p) => String(p.reference_number || '')), fetcher);
   const targets = new Set([...ownSessions.map((s) => safeSegment(s.id)), ...payments.map((p) => safeSegment(String(p.reference_number || ''))), ...codes.map((c) => safeSegment(String(c.id || '')))]);
   return {
     identity: { email, firebaseUid: uid },
-    reporting: { settlementAvailable: settlements.complete, warnings: settlementWarnings(settlements) },
+    reporting: {
+      settlementAvailable: settlements.complete,
+      warnings: [...settlementWarnings(settlements),
+        ...(sharedInView.size ? [`${sharedInView.size} of this customer's payment reference(s) are also used by another payment; their settlement status is shown as unknown.`] : [])],
+    },
     payments: payments.map((p) => publicPayment(p, settlements, sharedInView.has(String(p.reference_number || '')))),
     sessions: ownSessions.map((s) => publicSession(s, counters, now)),
     accessCodes: codes.filter((c) => (c.email || '').toLowerCase() === email).map(publicCode),
@@ -539,7 +565,7 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
   const revokeAccess = body.revokeAccess !== false;
   const payment = await paymentByReference(env, reference, fetcher);
   if (!payment) return adminError('PAYMENT_NOT_FOUND', 404, 'No payment request has that reference number.');
-  const names = await listAllAuditNames(env, 5000, fetcher);
+  const names = await listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher);
   const target = safeSegment(reference);
   const recorded = names.some((n) => { const p = parseAuditObjectName(n); return p?.target === target && p.action === 'refund'; });
   const applied = names.some((n) => { const p = parseAuditObjectName(n); return p?.target === target && p.action === 'refund-applied'; });
@@ -621,7 +647,7 @@ async function suspendOrRestore(env: AdminEnv, admin: AdminIdentity, action: 'su
   const session = await sessionById(env, sessionId, fetcher);
   if (!session?.revoked_at) return adminError('SESSION_NOT_SUSPENDED', 409, 'That entitlement is not suspended.');
   const current = Date.parse(session.revoked_at);
-  const names = await listAllAuditNames(env, 5000, fetcher);
+  const names = await listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher);
   const suspendNames = names.filter((n) => { const p = parseAuditObjectName(n); return !!p && p.target === safeSegment(session.id) && p.action === 'suspend'; }).slice(0, 10);
   let lastName: string | null = null;
   let last: { at: string } | null = null;
