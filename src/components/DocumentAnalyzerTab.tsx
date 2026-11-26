@@ -81,6 +81,7 @@ import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 import { renderForensicReportHtml } from "../utils/forensicPdfRenderer";
+import { formatLawyerCaseBriefText, renderLawyerCaseBriefHtml } from "../utils/caseBriefExport";
 import {
   ParagraphListenButton,
   SectionListenButton,
@@ -3150,6 +3151,11 @@ export default function DocumentAnalyzerTab() {
     ? currentDeepReport
     : (currentQuickReport || currentDeepReport || selectedReport);
 
+  const briefExportOptions = {
+    fileName: activeSelectedFile?.name,
+    analyzerLabel: activeReportMode === "deep" && currentDeepReport ? "Forensic Deep Scan" : "Quick Document Review",
+  };
+
   const reportSegments = useMemo<NarrationSegment[]>(() => {
     return displayedReport ? extractReportSegments(displayedReport) : [];
   }, [displayedReport]);
@@ -4534,21 +4540,38 @@ export default function DocumentAnalyzerTab() {
 
                                 <button
                                   onClick={() => {
-                                    const textToCopy = redactionEnabled ? undefined : displayedReport.lawyerCaseBrief?.map((b: string) => b.replace(/\*\*/g, "")).join("\n\n");
-                                    if (textToCopy) {
-                                      const blob = new Blob([textToCopy], { type: "text/plain" });
-                                      const url = URL.createObjectURL(blob);
-                                      const a = document.createElement("a");
-                                      a.href = url;
-                                      a.download = `Lawyer_Case_Brief_${(displayedReport.documentTitle || "document").replace(/\s+/g, "_")}.txt`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      document.body.removeChild(a);
-                                      URL.revokeObjectURL(url);
+                                    if (redactionEnabled) return;
+                                    const printWindow = window.open("", "_blank");
+                                    if (!printWindow) {
+                                      alert("Please allow pop-ups to save the brief as a PDF.");
+                                      return;
                                     }
+                                    printWindow.document.write(renderLawyerCaseBriefHtml(displayedReport, briefExportOptions));
+                                    printWindow.document.close();
+                                    finishPrintWindow(printWindow);
+                                  }}
+                                  className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-brand-500 cursor-pointer"
+                                  title="Open the formatted brief and save it as a PDF"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>Download PDF Brief</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    if (redactionEnabled) return;
+                                    const blob = new Blob([formatLawyerCaseBriefText(displayedReport, briefExportOptions)], { type: "text/plain;charset=utf-8" });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `Lawyer_Case_Brief_${(displayedReport.documentTitle || "document").replace(/\s+/g, "_")}.txt`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
                                   }}
                                   className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
-                                  title="Download brief as .txt"
+                                  title="Download an editable plain-text copy of the brief"
                                 >
                                   <Download className="w-3.5 h-3.5 text-brand-400" />
                                   <span>Download .txt Brief</span>

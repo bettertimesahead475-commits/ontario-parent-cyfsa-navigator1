@@ -9,6 +9,9 @@
 import { escapeHtml } from "./reportSectionsHtml";
 import { VERIFIED_AUTHORITIES_REGISTRY, resolveLegalAuthority } from "../../shared/legalVerificationPipeline";
 import { REDACTED_COPY_NOTICE } from "../../shared/exportRedaction";
+import { CASE_BRIEF_PART_LABELS, CASE_BRIEF_PART_ORDER, parseCaseBriefPoint } from "../../shared/caseBriefStructure";
+
+const NOT_STATED = "Not stated in the document";
 
 export interface PdfRenderOptions {
   fileName?: string;
@@ -22,15 +25,17 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
   const displayFile = isRedacted ? "Analysis report" : (options.fileName || report.documentTitle || "Document");
   const docType = report.documentType || "Ontario Child Welfare Court Document";
   const metadata = report.metadata || {};
-  const fileNumber = isRedacted ? "[REDACTED]" : (metadata.fileNumber || "FC-25-00000240-0000");
-  const applicant = isRedacted ? "[REDACTED]" : (metadata.applicantName || "Family & Children's Services");
-  const respondent = isRedacted ? "[REDACTED]" : (metadata.respondentName || "Parent Parties");
-  const hearingDate = isRedacted ? "[REDACTED]" : (metadata.hearingDate || "September 25, 2025");
+  const fileNumber = isRedacted ? "[REDACTED]" : (metadata.fileNumber || NOT_STATED);
+  const applicant = isRedacted ? "[REDACTED]" : (metadata.applicantName || NOT_STATED);
+  const respondent = isRedacted ? "[REDACTED]" : (metadata.respondentName || NOT_STATED);
+  const hearingDate = isRedacted ? "[REDACTED]" : (metadata.hearingDate || NOT_STATED);
   const auditDate = new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
 
-  const esi = report.evidenceStrengthIndex || { score: 62, components: {} };
-  const esiScore = Number(esi.score) || 0;
-  const completenessScore = Number(report.completenessScore) || 45;
+  const esi = report.evidenceStrengthIndex || { components: {} };
+  const esiScored = Number.isFinite(Number(esi.score)) && esi.score !== null && esi.score !== undefined && esi.score !== "";
+  const esiScore = esiScored ? Number(esi.score) : 0;
+  const completenessScored = Number.isFinite(Number(report.completenessScore)) && report.completenessScore !== null && report.completenessScore !== undefined && report.completenessScore !== "";
+  const completenessScore = completenessScored ? Number(report.completenessScore) : 0;
   const verification = report.forensicVerification || null;
 
   // Collect verified authorities referenced across the report
@@ -454,8 +459,8 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
             <span class="case-meta-value">${escapeHtml(respondent)}</span>
           </div>
           <div class="case-meta-item">
-            <span class="case-meta-label">Audit Completion Date</span>
-            <span class="case-meta-value">${escapeHtml(auditDate)} (Claude Sonnet & Opus Verified)</span>
+            <span class="case-meta-label">Analysis Date</span>
+            <span class="case-meta-value">${escapeHtml(report.analysisDate ? String(report.analysisDate) : auditDate)}</span>
           </div>
         </div>
 
@@ -489,13 +494,13 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
         <h2 class="section-heading">2. Evidence Strength Index & Completeness Assessment</h2>
         <div class="score-card-container">
           <div class="score-hero">
-            <span class="score-hero-number">${esiScore}</span>
+            <span class="score-hero-number">${esiScored ? esiScore : "—"}</span>
             <span class="score-hero-label">Evidence Strength / 100</span>
             <span style="font-size:8px; color:#64748b; margin-top:4px;">Heuristic Evidentiary Weight</span>
           </div>
           <div>
             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
-              <strong style="font-size:10.5px; color:#0f172a;">Information Completeness: ${completenessScore}/100</strong>
+              <strong style="font-size:10.5px; color:#0f172a;">Information Completeness: ${completenessScored ? `${completenessScore}/100` : "Not scored"}</strong>
               <span style="font-size:8.5px; color:#64748b;">(Evaluates presence of substantive protection records)</span>
             </div>
             <p style="font-size:9.5px; color:#475569; margin:0 0 8px 0; line-height:1.4;">
@@ -734,11 +739,21 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
         <section class="section-block">
           <h2 class="section-heading">9. Lawyer Case Brief — Litigation Points</h2>
           <div style="display:flex; flex-direction:column; gap:8px;">
-            ${report.lawyerCaseBrief.map((b: string) => `
-              <div style="border-left:3px solid #1e3a8a; padding:6px 12px; background:#f8fafc;">
-                <span style="font-size:10px; color:#0f172a;">${escapeHtml(b)}</span>
-              </div>
-            `).join("")}
+            ${report.lawyerCaseBrief.map((b: string, idx: number) => {
+              const point = parseCaseBriefPoint(b);
+              const body = point.structured
+                ? CASE_BRIEF_PART_ORDER.filter((k) => k !== "issue" && point.parts[k]).map((k) => `
+                  <div style="margin-top:5px;">
+                    <span style="display:block; font-size:7.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#475569;">${escapeHtml(CASE_BRIEF_PART_LABELS[k])}</span>
+                    <span style="display:block; font-size:10px; color:#0f172a;">${escapeHtml(point.parts[k] as string)}</span>
+                  </div>`).join("")
+                : `<span style="font-size:10px; color:#0f172a;">${escapeHtml(point.text)}</span>`;
+              return `
+              <div style="border-left:3px solid #1e3a8a; padding:6px 12px; background:#f8fafc; page-break-inside:avoid;">
+                <strong style="font-size:10.5px; color:#1e3a8a;">${idx + 1}. ${escapeHtml(point.structured && point.parts.issue ? point.parts.issue : "Brief point")}</strong>
+                ${body}
+              </div>`;
+            }).join("")}
           </div>
         </section>
       ` : ""}

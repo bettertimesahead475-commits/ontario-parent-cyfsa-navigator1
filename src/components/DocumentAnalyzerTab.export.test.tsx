@@ -318,6 +318,27 @@ describe("redaction on the remaining export sinks and the on-screen toggle", () 
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("ZQFREE brief point"));
   });
 
+  it("does not open the PDF brief while redaction is on", async () => {
+    seed({ redact: true, report: { ...REPORT, lawyerCaseBrief: ["ZQFREE brief point"] } });
+    render(<DocumentAnalyzerTab />);
+    const before = printedHtml.length;
+    fireEvent.click(screen.getByRole("button", { name: /Download PDF Brief/i }));
+    expect(printedHtml.length).toBe(before);
+  });
+
+  it("prints the brief as a formatted document with each component in its own subsection", async () => {
+    seed({
+      redact: false,
+      report: { ...REPORT, lawyerCaseBrief: ["ISSUE — ZQFREE delay — DOCUMENT EVIDENCE — p. 2 — SIGNIFICANCE — s. 94(1) — VERIFY/NEXT QUESTION — endorsement"] },
+    });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Download PDF Brief/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("1. Issue: ZQFREE delay");
+    expect(html).toContain('<span class="part-label">Verify / Next Question</span><span class="part-value">endorsement</span>');
+    expect(html).not.toMatch(/<script/i);
+  });
+
   it("keeps the true second-review status in a redacted print and drops its free text", async () => {
     seed({
       redact: true,
