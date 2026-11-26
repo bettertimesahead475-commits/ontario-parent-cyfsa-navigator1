@@ -46,7 +46,7 @@ Gate decision (framework §2): **not promotable as `eaca5cf`** — DEVIN-P3-01 i
   `["rf2", <none → default rf2>]`. Verifier returns `UNSUPPORTED` for the second. Result: `redFlags=[]`, both removed.
 - Root cause: `validateRedFlags` kept model ids without de-duplication; `mergeVerification` matches verdicts by id.
 - Production exposure: any Quick Review / Forensic Deep Scan where the model repeats an id; a CRITICAL verbatim finding can disappear silently.
-- Regression: `tests/devin/verification-finding-identity.test.ts` (3 of 4 fail before, 4 pass after). Mutations P15/P16 killed.
+- Regression: `tests/devin/verification-finding-identity.test.ts` (3 of 4 fail on `eaca5cf`; a fifth case added after review — a repeated id must not take a later finding's id — failed on the first fix; 5/5 pass). Mutations P15/P16 killed.
 
 ### F-2 Pending SQL quote counter disagrees with the integrated TypeScript verifier (medium if applied; not applied)
 - `supabase/migrations_pending_approval/create_navigator_page_evidence_foundation.sql` `navigator_quote_hits` uses raw `strpos`.
