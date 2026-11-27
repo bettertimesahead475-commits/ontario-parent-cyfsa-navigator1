@@ -40,10 +40,11 @@ export function redactPiiText(text: string, knownNames: string[] = []): string {
   redacted = redacted.replace(/\b\d{4}-\d{1,2}-\d{1,2}\b/g, "[DATE]");
   redacted = redacted.replace(/\b\d{1,2}-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-\d{4}\b/gi, "[DATE]");
   knownNames.forEach((name) => {
-    if (name && name.trim()) {
-      const nameRegex = new RegExp(`\\b${name.trim()}\\b`, "gi");
-      redacted = redacted.replace(nameRegex, "[NAME]");
-    }
+    const literal = typeof name === "string" ? name.trim() : "";
+    if (!literal) return;
+    // Escaped so punctuation in a name is matched literally; Unicode-aware boundaries so names such as "Zoë" or "Chloé" are masked too.
+    const escaped = literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    redacted = redacted.replace(new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "giu"), "[NAME]");
   });
   return redacted;
 }
