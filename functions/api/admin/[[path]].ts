@@ -34,7 +34,7 @@ const ok = (body: unknown, status = 200) => Response.json(body, { status, header
 const enc = encodeURIComponent;
 
 type Payment = Record<string, unknown> & { reference_number?: string; notes?: string | null; plan?: string; amount?: number | string; status?: string; submitted_at?: string; approved_at?: string | null; firebase_uid?: string | null };
-type Session = Record<string, unknown> & { id: string; firebase_uid?: string; tier?: string; issued_at?: string; expires_at?: string; revoked_at?: string | null; access_code_id?: string | null; email?: string | null };
+type Session = Record<string, unknown> & { id: string; firebase_uid?: string; tier?: string; issued_at?: string; expires_at?: string; revoked_at?: string | null; access_code_id?: string | null; email?: string | null; granted_credits?: number | null };
 type AccessCode = Record<string, unknown> & { id?: string; email?: string | null; tier?: string; reference_number?: string | null; used_at?: string | null; expires_at?: string | null };
 type Counter = { uid: string; analyses_used: number | null; last_analysis_at?: string | null };
 
@@ -556,6 +556,7 @@ async function settlementAction(env: AdminEnv, admin: AdminIdentity, action: 'co
 }
 
 const RENEWAL_DAYS = 30;
+const REFUND_CAS_ATTEMPTS = 5;
 
 async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
   const reference = typeof body.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
@@ -583,7 +584,7 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
   const firstApplication = await acquireOnce(env, `refund__${reference}`, fetcher);
 
   const stamp = now.toISOString();
-  let rejected = false; let codesExpired = 0; let sessionsRevoked = 0; let sessionsShortened = 0; let shorteningsForReview = 0; const revokedSessionIds: string[] = [];
+  let rejected = false; let codesExpired = 0; let sessionsRevoked = 0; let sessionsShortened = 0; let shorteningsForReview = 0; let packAnalysesAlreadyUsed = 0; const revokedSessionIds: string[] = [];
   if (payment.status === 'pending') {
     rejected = (await rest<Payment[]>(env, `payments?${paymentFilter(payment)}&status=eq.pending`, { method: 'PATCH', body: { status: 'rejected' }, prefer: 'return=representation' }, fetcher)).length > 0;
   }
@@ -603,13 +604,39 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
       const renewals = (await rest<CodeLink[]>(env, `access_codes?select=id&redeemed_session_id=eq.${session.id}&used_at=not.is.null&limit=50`, {}, fetcher))
         .filter((c) => c.id !== session.access_code_id);
       const isRenewal = session.access_code_id !== code.id;
-      if ((isRenewal || renewals.length > 0) && session.expires_at && !firstApplication) {
+      // Migration E one-off top-up: one database function takes back this pack's analyses and 30 days under the
+      // reservation lock, never below the tier default, once per code (a retry gets the first result back), so
+      // concurrent refunds and retries cannot lose or repeat a deduction. Before E granted_credits is absent.
+      // A topped-up one-off session after E: granted_credits is set, or null (the column exists) once earlier packs were
+      // refunded, so the last pack's refund also goes through the function.
+      const toppedUp = (s: Session) => { const pack = LIMITS[String(s.tier)]; return !!pack && !pack.monthly && (typeof s.granted_credits === 'number' || (s.granted_credits === null && 'granted_credits' in s)); };
+      const refundPack = async () => {
+        const r = await rest<{ status?: string; used_beyond_remaining?: number }>(env, 'rpc/paid_refund_one_off_pack', {
+          method: 'POST', body: { p_session: session.id, p_refund_key: `${reference}:${code.id}`, p_days: RENEWAL_DAYS },
+        }, fetcher);
+        if (r.status === 'applied' || r.status === 'already_applied') { sessionsShortened++; packAnalysesAlreadyUsed += r.used_beyond_remaining ?? 0; }
+        else if (r.status !== 'not_found') shorteningsForReview++;
+      };
+      if ((isRenewal || renewals.length > 0) && toppedUp(session)) {
+        await refundPack();
+      } else if ((isRenewal || renewals.length > 0) && session.expires_at && !firstApplication) {
         // Not the first application of this refund: shortening is not idempotent, so it is left for manual review.
         shorteningsForReview++;
       } else if ((isRenewal || renewals.length > 0) && session.expires_at) {
-        const shortened = new Date(Date.parse(session.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
-        const rows = await rest<Session[]>(env, `navigator_paid_sessions?id=eq.${session.id}&expires_at=eq.${enc(session.expires_at)}`, { method: 'PATCH', body: { expires_at: shortened }, prefer: 'return=representation' }, fetcher);
-        sessionsShortened += rows.length;
+        // Compare-and-set on the row as read. Another refund of the same entitlement (for example the original pack and
+        // its top-up refunded together) can change it in between; this refund then re-reads and takes back its own 30
+        // days and pack from the new values instead of losing them. Still contended after the retries: manual review.
+        let current: Session | undefined = session; let landed = false;
+        for (let attempt = 0; attempt < REFUND_CAS_ATTEMPTS && current?.expires_at; attempt++) {
+          const shortened = new Date(Date.parse(current.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
+          const change: Record<string, unknown> = { expires_at: shortened };
+          const filter = `navigator_paid_sessions?id=eq.${current.id}&expires_at=eq.${enc(current.expires_at)}`;
+          const rows = await rest<Session[]>(env, filter, { method: 'PATCH', body: change, prefer: 'return=representation' }, fetcher);
+          if (rows.length > 0) { landed = true; break; }
+          current = (await rest<Session[]>(env, `navigator_paid_sessions?select=*&id=eq.${session.id}&limit=1`, {}, fetcher))[0];
+        }
+        if (landed) sessionsShortened++;
+        else if (current) shorteningsForReview++;
       } else {
         // Overwrites any earlier revocation time too, so an earlier console suspension can no longer be "restored".
         const n = (await rest<Session[]>(env, `navigator_paid_sessions?id=eq.${session.id}`, { method: 'PATCH', body: { revoked_at: stamp }, prefer: 'return=representation' }, fetcher)).length;
@@ -618,7 +645,7 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
       }
     }
   }
-  const result = { paymentRejected: rejected, codesExpired, sessionsRevoked, sessionsShortened, shorteningsForReview, resumed: recorded };
+  const result = { paymentRejected: rejected, codesExpired, sessionsRevoked, sessionsShortened, shorteningsForReview, packAnalysesAlreadyUsed, resumed: recorded };
   const auditRecorded = await audit(env, admin, 'refund-applied', reference, null, { ...result, revokedSessionIds }, fetcher);
   return ok({ success: true, referenceNumber: reference, amount: amountOf(payment.amount), ...result, auditRecorded,
     note: 'Recorded only. Return the funds to the customer by Interac e-Transfer; this application never moves money.' });

@@ -765,3 +765,96 @@ describe('shared references detected across the whole payments table (re-review 
     expect(c.body.reporting.warnings.join(' ')).toMatch(/also used by another payment/);
   });
 });
+
+describe('refund of an early one-off re-purchase (Migration E granted_credits)', () => {
+  const TOPUP = '44444444-4444-4444-8444-444444444444';
+  // S1 is an active Premium pack (C1, PS-AAAAA) topped up early by PS-TOPUP1. With E applied the session row carries
+  // granted_credits (5 per Premium pack); before E the column does not exist at all.
+  function topUpFixture(granted?: number | null) {
+    const db = fakeSupabase(seed());
+    const session: Row = { ...db.tables.navigator_paid_sessions[0], expires_at: '2027-01-01T00:00:00.000Z' };
+    if (granted !== undefined) session.granted_credits = granted;
+    db.tables.navigator_paid_sessions[0] = session;
+    db.tables.access_codes[0].redeemed_session_id = S1;
+    db.tables.access_codes.push({ id: TOPUP, email: 'a_b@x.com', tier: 'Premium', reference_number: 'PS-TOPUP1', used_at: '2026-12-01T00:00:00Z', expires_at: '2026-12-15T00:00:00Z', redeemed_session_id: S1 });
+    db.tables.payments.push({ reference_number: 'PS-TOPUP1', plan: 'Premium', amount: 49.99, status: 'approved', notes: 'email:a_b@x.com;uid:uidA00001' });
+    return db;
+  }
+  const refund = (db: ReturnType<typeof fakeSupabase>, referenceNumber: string) =>
+    call(db, 'payments/refund', { method: 'POST', body: { referenceNumber, reason: 'Customer request' } });
+  const sessionPatches = (db: ReturnType<typeof fakeSupabase>) =>
+    db.calls.filter((c) => c.method === 'PATCH' && c.url.includes('/rest/v1/navigator_paid_sessions'));
+
+  // With E applied the top-up refund is one database call (paid_refund_one_off_pack, qualified against PostgreSQL in
+  // tests/devin/early-renewal-credits-migration.pg.test.ts); here only the request and the reading of its answer.
+  function withRefundRpc(db: ReturnType<typeof fakeSupabase>, answer: (body: any) => Record<string, unknown>) {
+    const impl = db.fetcher.getMockImplementation()!;
+    const rpc: any[] = [];
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      if (String(input).includes('/rest/v1/rpc/paid_refund_one_off_pack')) { const body = JSON.parse(init.body); rpc.push(body); return Response.json(answer(body)); }
+      return impl(input, init);
+    });
+    return rpc;
+  }
+
+  it('E1 refunding the top-up is one database call keyed to that code, with no session PATCH', async () => {
+    const db = topUpFixture(10);
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 0 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0, shorteningsForReview: 0, packAnalysesAlreadyUsed: 0 });
+    expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-TOPUP1:${TOPUP}`, p_days: 30 }]);
+    expect(sessionPatches(db)).toHaveLength(0);
+  });
+
+  it('E3 refunding the original pack of a topped-up session uses that pack\'s own refund key', async () => {
+    const db = topUpFixture(10);
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 0 }));
+    expect((await refund(db, 'PS-AAAAA')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0 });
+    expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-AAAAA:${db.tables.access_codes[0].id}`, p_days: 30 }]);
+  });
+
+  it('E4 a resumed refund calls the function again and counts its first result, without a second deduction', async () => {
+    const db = topUpFixture(15);
+    const rpc = withRefundRpc(db, (body) => ({ status: rpcSeen.has(body.p_refund_key) ? 'already_applied' : (rpcSeen.add(body.p_refund_key), 'applied'), used_beyond_remaining: 2 }));
+    const rpcSeen = new Set<string>();
+    await refund(db, 'PS-TOPUP1');
+    for (const key of [...db.storage.keys()]) if (key.startsWith('admin-audit/')) db.storage.delete(key);
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 2 });
+    expect(rpc.map((r) => r.p_refund_key)).toEqual([`PS-TOPUP1:${TOPUP}`, `PS-TOPUP1:${TOPUP}`]);
+    expect(sessionPatches(db)).toHaveLength(0);
+  });
+
+  it('E6 analyses of the refunded pack already used are reported for a partial-refund decision', async () => {
+    const db = topUpFixture(10);
+    withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 3 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, packAnalysesAlreadyUsed: 3 });
+  });
+
+  it('E7 an answer other than applied (no top-up left, unknown) is reported for review, never as applied', async () => {
+    for (const status of ['no_top_up', 'not_one_off', undefined]) {
+      const db = topUpFixture(10);
+      withRefundRpc(db, () => ({ status }));
+      expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 0, shorteningsForReview: 1 });
+    }
+  });
+
+  it('E8 the last pack of a topped-up session (granted_credits null after earlier refunds) also goes through the function', async () => {
+    const db = topUpFixture(null);
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 4 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 4 });
+    expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-TOPUP1:${TOPUP}`, p_days: 30 }]);
+    expect(sessionPatches(db)).toHaveLength(0);
+  });
+
+  it('E5 before E (no granted_credits column) and on monthly tiers the refund sends exactly the request it sent before', async () => {
+    const before = topUpFixture();
+    await refund(before, 'PS-TOPUP1');
+    const [patch] = sessionPatches(before);
+    expect(patch.body).toEqual({ expires_at: '2026-12-02T00:00:00.000Z' });
+    expect(decodeURIComponent(patch.url)).not.toContain('granted_credits');
+
+    const monthly = topUpFixture(null);
+    monthly.tables.navigator_paid_sessions[0].tier = 'Pro';
+    await refund(monthly, 'PS-TOPUP1');
+    expect(sessionPatches(monthly)[0].body).toEqual({ expires_at: '2026-12-02T00:00:00.000Z' });
+  });
+});
