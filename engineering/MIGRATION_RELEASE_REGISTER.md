@@ -35,7 +35,7 @@ Claude has not yet re-qualified.
 | P | 1 activation from 5 concurrent claims; approve versus claim, approve then claim, 3 interruption points (after code insert, after RPC, before refund history) all end with 1 entitlement; monthly renewal extends one entitlement by 30 days. Two live codes of one payment still both activate (S-34) |
 | P + D | Same as P, and D refuses the second code (`ORDER_ALREADY_ACTIVATED`): 1 entitlement |
 | Refund versus reissue (P and P + D) | On #171 head the reissued code activated a refunded order; #188 cancels it (409 `PAYMENT_REFUNDED`) |
-| E | Disposable PG with P + D + E (`tests/devin/early-renewal-credits-migration.pg.test.ts`, 26/26 at `d51dea0`): refund with analyses used, reserved, retried, concurrent (separate connections) and with other entitlements; a reservation racing a refund waits and gets `limit` (it got `reserved` before the wrapper fix). Not yet qualified by Claude |
+| E | Disposable PG with P + D + E (`tests/devin/early-renewal-credits-migration.pg.test.ts`, 21/21 at `d51dea0`): refund with analyses used, reserved, retried, concurrent (separate connections) and with other entitlements; a reservation racing a refund waits and gets `limit` (it got `reserved` before the wrapper fix). Not yet qualified by Claude |
 
 ## P: repo/live drift (new launch blocker for payments)
 
