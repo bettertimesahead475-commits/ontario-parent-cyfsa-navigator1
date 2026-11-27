@@ -16,7 +16,7 @@ import { GEMINI_ERROR_RESPONSE, GeminiError, type GeminiEnv } from './_gemini';
 import { readVerifiedPaidSession } from './_supabase-paid-session';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { extractSessionId } from './analyze';
-import { FREE_TRIAL_MAX_BYTES, FREE_TRIAL_MAX_PAGES, authorizeFreeOcr, type FreeOcrOutcome, type FreeTrialEnv } from './_free-trial';
+import { FREE_TRIAL_MAX_BYTES, FREE_TRIAL_MAX_PAGES, PAID_USAGE_REFUSAL, authorizeFreeOcr, takePaidUsageUnit, type FreeOcrOutcome, type FreeTrialEnv } from './_free-trial';
 import type { CreditRpc } from './_paid-credit-reservation';
 
 export interface ExtractEnv extends GeminiEnv, FreeTrialEnv {
@@ -58,7 +58,8 @@ export async function handleExtractRequest(
   // Accounts without a paid session get the free-scan limits, and OCR (a provider cost) only while a free analysis
   // remains (./_free-trial.ts). Paid sessions and the owner keep the full limits.
   const fetcher = deps.fetcher ?? fetch;
-  let paid = identity.emailVerified && identity.email?.trim().toLowerCase() === 'mr.pelkie@gmail.com';
+  const isOwner = identity.emailVerified && identity.email?.trim().toLowerCase() === 'mr.pelkie@gmail.com';
+  let paid = isOwner;
   const sessionId = extractSessionId(request.headers.get('x-ps-session'));
   if (!paid && sessionId) {
     const read = await readVerifiedPaidSession(env, identity.uid, sessionId, fetcher);
@@ -67,7 +68,17 @@ export async function handleExtractRequest(
     }
     paid = read.status === 'verified';
   }
-  const extractionDeps = paid ? {} : {
+  const extractionDeps = isOwner ? {} : paid ? {
+    // Paid OCR has no credit of its own: a per-account and platform daily cap bounds it before the provider call.
+    authorizeOcr: async () => {
+      if (!env.GEMINI_API_KEY) return;
+      const usage = await takePaidUsageUnit(env, 'pocr', identity.uid, deps.rpc ?? createStagingCreditRpc(env, fetcher));
+      if (usage !== 'ok') {
+        const [code, message] = PAID_USAGE_REFUSAL[usage];
+        throw new ExtractionError(429, code, message);
+      }
+    },
+  } : {
     limits: { maxBytes: FREE_TRIAL_MAX_BYTES, maxPages: FREE_TRIAL_MAX_PAGES, maxOcrPages: FREE_TRIAL_MAX_PAGES, label: 'A free scan' },
     authorizeOcr: async () => {
       if (!env.GEMINI_API_KEY) return; // OCR then fails as unconfigured, without spending a free OCR unit

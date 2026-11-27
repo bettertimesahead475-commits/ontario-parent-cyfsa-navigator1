@@ -19,6 +19,7 @@ on GitHub, so G-1..G-7 are mapped below from the owner's decisions.
 | Failure restores the entitlement | `analyze.ts`, queue consumer | Existing release paths, now keyed by the reservation's own counter (`freeCounterKey`). |
 | Bounded retries of failures | `FREE_TRIAL_MAX_ATTEMPTS = 3` (`fat:` counter), queue consumer | Each entitlement can start at most 3 provider runs in its lifetime; new requests and queue redeliveries both spend from it, a retry of the same request does not. When spent, the job fails and the entitlement is returned. If the ledger is unreachable on a redelivery, the queue's `max_retries` (5) is the bound. |
 | Per-account and platform limits before provider calls | `reserveFreeTrial`, `analyze.ts` | Free Quick 25/day, free Forensic 10/day, free OCR 30/day, paid 300/day; all env-configurable (`0` blocks, `off` disables). |
+| Paid transcription and OCR caps (P0 quotas) | `takePaidUsageUnit`, `transcribe.ts`, `extract-text.ts` | Neither has a credit of its own, so each call takes a per-account daily unit (`acct:tr:`/`acct:pocr:`, 20 / 40) and a platform daily unit (`plat:tr:`/`plat:pocr:`, 200 / 400) before the Gemini call; 429 `ACCOUNT_DAILY_LIMIT` / `PLATFORM_DAILY_LIMIT`. The owner is exempt. |
 | Paid work first | same | Free trials pause (`FREE_TRIAL_PAUSED`, entitlement kept) once paid analyses today reach 200. An unreadable paid counter never blocks a paying customer; only a reached cap does. |
 | Completed reports cost nothing | unchanged | View/export read the saved report; no reservation or provider call (existing PDF/export tests). |
 | Display | `analyzer-usage.ts`, `src/utils/creditBalance.ts`, `DocumentAnalyzerTab.tsx` | Quick and Forensic free balances returned and shown separately from paid credits. |
@@ -64,6 +65,13 @@ $0.021 = **$127.65/day** of free processing. Lower `FREE_*_PLATFORM_DAILY_LIMIT`
   paused and intact; paid-priority pause; 3-run lifetime attempt cap; per-IP cap. 10/10.
 - Unit tests updated for the new policy: usage counters, analyzer usage, extraction/OCR, transcription (402/503, no
   provider call), pricing and guide copy, analyzer integration and queue paths.
+
+## Release-candidate gap this closes
+
+`release/rc-20261127` had no OCR quota beyond 30 pages per request, no transcription quota beyond 10 requests/minute,
+and no platform spending cap. The counters above (all rows in `free_usage`, atomic, persistent) are the financial
+protection ledger: each unit has a known maximum cost (above), so units x ceiling bounds daily spend. A dollar-
+denominated ledger would need a new table and is not included.
 
 ## Owner-dependent / not done
 

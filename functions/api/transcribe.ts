@@ -9,6 +9,8 @@ import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse
 import { GEMINI_ERROR_RESPONSE, GeminiError, generateGemini, resolveGeminiModel, type GeminiEnv } from './_gemini';
 import { readVerifiedPaidSession } from './_supabase-paid-session';
 import { extractSessionId } from './analyze';
+import { PAID_USAGE_REFUSAL, takePaidUsageUnit, type FreeTrialEnv } from './_free-trial';
+import { createStagingCreditRpc } from './_staging-credit-rpc';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -105,6 +107,11 @@ export const onRequestPost = async ({
           : { error: 'Audio transcription is included with paid plans. Purchase a plan to transcribe recordings.', code: 'PAID_FEATURE_REQUIRED' },
         { status: paid.status === 'unavailable' ? 503 : 402, headers: DEFAULT_HEADERS }
       );
+    }
+    const usage = await takePaidUsageUnit(env as FreeTrialEnv, 'tr', authResult.uid, createStagingCreditRpc(env as any));
+    if (usage !== 'ok') {
+      const [code, error] = PAID_USAGE_REFUSAL[usage];
+      return Response.json({ error, code, retryable: false }, { status: 429, headers: DEFAULT_HEADERS });
     }
   }
   let cleanedBase64 = audioData.trim();

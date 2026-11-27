@@ -57,6 +57,10 @@ export interface FreeTrialEnv {
   PAID_PLATFORM_DAILY_LIMIT?: string;
   FREE_TRIAL_PAUSE_AT_PAID_DAILY?: string;
   FREE_TRIAL_MAX_ATTEMPTS?: string;
+  PAID_TRANSCRIBE_ACCOUNT_DAILY_LIMIT?: string;
+  PAID_TRANSCRIBE_PLATFORM_DAILY_LIMIT?: string;
+  PAID_OCR_ACCOUNT_DAILY_LIMIT?: string;
+  PAID_OCR_PLATFORM_DAILY_LIMIT?: string;
 }
 
 /** Defaults; each is overridable by the env var of the same name (a non-negative integer; 0 disables that cap). */
@@ -69,6 +73,10 @@ export const SPEND_LIMIT_DEFAULTS = {
   PAID_PLATFORM_DAILY_LIMIT: 300,
   FREE_TRIAL_PAUSE_AT_PAID_DAILY: 200,
   FREE_TRIAL_MAX_ATTEMPTS,
+  PAID_TRANSCRIBE_ACCOUNT_DAILY_LIMIT: 20,
+  PAID_TRANSCRIBE_PLATFORM_DAILY_LIMIT: 200,
+  PAID_OCR_ACCOUNT_DAILY_LIMIT: 40,
+  PAID_OCR_PLATFORM_DAILY_LIMIT: 400,
 } as const;
 export type SpendLimitName = keyof typeof SPEND_LIMIT_DEFAULTS;
 
@@ -100,7 +108,31 @@ export const freeOcrKey = async (normalizedEmail: string) => `fox:${await hex(no
 const utcDay = (now: Date) => now.toISOString().slice(0, 10).replace(/-/g, '');
 export const ipDayKey = async (ip: string, now: Date) => `fip:${await hex(ip, 32)}:${utcDay(now)}`;
 export const ipMonthKey = async (ip: string, now: Date) => `fim:${await hex(ip, 32)}:${utcDay(now).slice(0, 6)}`;
-export const platformDailyKey = (lane: 'paid' | 'fq' | 'ff' | 'ocr', now: Date) => `plat:${lane}:${utcDay(now)}`;
+export const platformDailyKey = (lane: 'paid' | 'fq' | 'ff' | 'ocr' | PaidUsageLane, now: Date) => `plat:${lane}:${utcDay(now)}`;
+
+/** Paid provider features without a credit of their own: audio transcription and OCR. */
+export type PaidUsageLane = 'tr' | 'pocr';
+const PAID_LANE_LIMITS = {
+  tr: ['PAID_TRANSCRIBE_ACCOUNT_DAILY_LIMIT', 'PAID_TRANSCRIBE_PLATFORM_DAILY_LIMIT'],
+  pocr: ['PAID_OCR_ACCOUNT_DAILY_LIMIT', 'PAID_OCR_PLATFORM_DAILY_LIMIT'],
+} as const;
+
+/**
+ * One unit of a paid feature, taken per account and then platform-wide before the provider call. Paid work is served
+ * first, so only a reached cap refuses; an unreadable counter does not block a paying customer.
+ */
+export async function takePaidUsageUnit(env: FreeTrialEnv, lane: PaidUsageLane, uid: string, rpc: CreditRpc, now = new Date()): Promise<'ok' | 'account_limit' | 'platform_limit'> {
+  const requestId = crypto.randomUUID();
+  const [account, platform] = PAID_LANE_LIMITS[lane];
+  if ((await takeCapUnit(`acct:${lane}:${uid}:${utcDay(now)}`, requestId, spendLimit(env, account), rpc)) === 'limit') return 'account_limit';
+  if ((await takeCapUnit(platformDailyKey(lane, now), requestId, spendLimit(env, platform), rpc)) === 'limit') return 'platform_limit';
+  return 'ok';
+}
+
+export const PAID_USAGE_REFUSAL = {
+  account_limit: ['ACCOUNT_DAILY_LIMIT', "You have reached today's limit for your account. Please try again tomorrow. Nothing was charged."],
+  platform_limit: ['PLATFORM_DAILY_LIMIT', "Today's capacity has been reached. Please try again tomorrow. Nothing was charged."],
+} as const;
 
 /** The counter key a free reservation belongs to (`free_res_<key>_<32 hex>`); falls back to the account uid. */
 export function freeCounterKey(reservationId: string | null | undefined, uid: string): string {
