@@ -46,28 +46,46 @@ its guard (1 fails).
   live (PostgREST rejects unknown columns).
 - Pricing UI: allow an early re-purchase of the same one-off pack only after E is applied.
 
-## Refund of a top-up (was blocking for E; fixed in this PR)
-`refundPayment` in `functions/api/admin/[[path]].ts` used to take back only the 30 days of a refunded top-up, so the
-refunded analyses stayed usable. It now also sets `granted_credits` to `granted_credits - pack` (null once back at the
-tier default), in the same conditional PATCH as the expiry (`expires_at=eq.…&granted_credits=eq.…`). Refunding the
-original pack of a topped-up session does the same, so the paid top-up survives and the refunded pack does not.
-- Before E (no column) and on monthly tiers, the request is byte-for-byte unchanged (`api/cloudflare-admin-api.test.ts` E5).
-- Only the first application of a refund takes analyses back; a repeat is counted in `shorteningsForReview` (E4).
-- If the customer already used more than the remaining allowance, nothing goes negative: further reservations are refused.
-- The PATCH is a compare-and-set on the row as read. If another write lands in between (for example the original
-  pack and a top-up refunded at the same moment, or a top-up redeemed during the refund), the write misses; the
-  refund re-reads the row and applies its own 30 days and pack to the new values, up to `REFUND_CAS_ATTEMPTS` (5)
-  times. Only if every attempt misses is it counted in `shorteningsForReview`, never as `sessionsShortened`.
-  (Previously the losing refund was recorded as applied with nothing taken back, and could not be retried.)
-- Evidence: 7 unit tests (E1–E7; E1–E4 fail on the pre-fix code, E6–E7 fail on the code without re-read) and two
-  disposable-PG tests running the real refund handler against P + D + E: 2 of 5 used + top-up = 8 left, refunded =
-  3 left; and two top-ups refunded concurrently with both reads forced before either write: 15 -> tier default (5)
-  and -60 days. Each fails on the code it covers.
+## Refund of a top-up: one database function (was blocking for E)
+E now adds `public.paid_refund_one_off_pack(p_session uuid, p_refund_key text, p_days integer)` and its record table
+`public.navigator_paid_session_refunds` (RLS on; service_role select/insert only). `refundPayment` in
+`functions/api/admin/[[path]].ts` calls it for a topped-up one-off session (`granted_credits` present, non-monthly tier)
+with `p_refund_key = <reference>:<access_code id>` and `p_days = 30`. In one transaction, under the same per-session
+advisory lock as `paid_reserve_credit`, and with the session row locked, it:
+- takes back exactly one pack (Basic/AnalyzerBasic 3, Premium/AnalyzerPremium 5) and 30 days, setting
+  `granted_credits` to null at the tier default; it never goes below the tier default (`no_top_up`, nothing changed),
+  refuses monthly tiers (`not_one_off`) and touches no other session;
+- records the refund once per key: a retry, a resumed refund or a duplicate returns the first result
+  (`already_applied`) and subtracts nothing;
+- counts analyses already used (the `_total` counter, which includes reservations) and reserved-but-unfinished
+  markers, and returns `used_beyond_remaining` = analyses of the refunded pack already used. Used analyses are not
+  rewritten; further reservations are refused once used >= the new allowance. The admin response reports the sum as
+  `packAnalysesAlreadyUsed`, for a partial-refund decision.
+
+The reserve wrapper (`paid_reserve_credit`, now plpgsql) takes the session lock before it reads `granted_credits`.
+Before this change it read the allowance before waiting for the lock, so a reservation racing a refund could use a
+refunded analysis (the disposable-PG test below failed with `reserved` instead of `limit`).
+
+Before E (no column) and on monthly tiers the refund sends byte-for-byte the request it sent before (E5); the
+monthly path keeps its compare-and-set on `expires_at`. Rollback drops the function and the record table.
+
+Evidence (disposable PostgreSQL 16, P + D + E, real refund handler where marked "handler"):
+- handler: 2 of 5 used + top-up = 8 left; refunded = 3 left, 30 days removed.
+- handler: 7 of 10 used, top-up refunded: tier default, 0 left, counter still 7, `packAnalysesAlreadyUsed: 2`.
+- 4 finished + 2 reserved of 10, refunded: `used 6, reserved 2, used_beyond_remaining 1`; next reservation `limit`.
+- handler retry after the completion record is lost: one deduction; same key twice directly: `already_applied`.
+- other entitlements: no top-up -> `no_top_up` and unchanged; the customer's Basic top-up session unchanged; monthly refused.
+- concurrency on separate connections: two refunds 15 -> 5 (both `applied`); a reservation started while a refund
+  holds the lock waits (seen in `pg_stat_activity`) and then gets `limit`.
+- unit (`api/cloudflare-admin-api.test.ts` E1, E3–E7): RPC body and key, no session PATCH, resumed refund counted
+  once, unexpected answers go to `shorteningsForReview`, never counted as applied.
 
 ## Claude handoff: please qualify independently
-1. Lock order: code row → reference lock (D) → renewal lock → session row; the reserve wrapper reads the session
-   outside the per-session lock (a concurrent top-up can only cause a transient `limit`, never an extra analysis).
-2. The wrapper (`language sql`, security invoker) and the rename keep grants: service_role only.
+1. Lock order: code row → reference lock (D) → renewal lock → session row; the reserve wrapper and the refund
+   function take the per-session advisory lock before reading the allowance.
+2. The wrapper (plpgsql, security invoker), the refund function (security invoker) and the rename keep grants:
+   service_role only.
 3. Rollback equality with D and with `paid_credit_reservation_functions.sql` (fingerprints above).
 4. Whether +30 days from the current expiry is the intended one-off extension, and exact-tier matching for aliases.
-5. The top-up refund above: pack size per tier (`LIMITS`), null at the tier default, and the compare-and-set retry (bounded at 5, then review).
+5. The top-up refund function above: pack size per tier, null at the tier default, idempotency per refund key, and
+   whether `used_beyond_remaining` is the right input for a partial-refund decision.

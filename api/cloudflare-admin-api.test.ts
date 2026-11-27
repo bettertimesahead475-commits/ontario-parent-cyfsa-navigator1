@@ -785,63 +785,56 @@ describe('refund of an early one-off re-purchase (Migration E granted_credits)',
   const sessionPatches = (db: ReturnType<typeof fakeSupabase>) =>
     db.calls.filter((c) => c.method === 'PATCH' && c.url.includes('/rest/v1/navigator_paid_sessions'));
 
-  it('E1 refunding the top-up takes back its 5 analyses with its 30 days (10 -> tier default)', async () => {
+  // With E applied the top-up refund is one database call (paid_refund_one_off_pack, qualified against PostgreSQL in
+  // tests/devin/early-renewal-credits-migration.pg.test.ts); here only the request and the reading of its answer.
+  function withRefundRpc(db: ReturnType<typeof fakeSupabase>, answer: (body: any) => Record<string, unknown>) {
+    const impl = db.fetcher.getMockImplementation()!;
+    const rpc: any[] = [];
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      if (String(input).includes('/rest/v1/rpc/paid_refund_one_off_pack')) { const body = JSON.parse(init.body); rpc.push(body); return Response.json(answer(body)); }
+      return impl(input, init);
+    });
+    return rpc;
+  }
+
+  it('E1 refunding the top-up is one database call keyed to that code, with no session PATCH', async () => {
     const db = topUpFixture(10);
-    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0 });
-    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-12-02T00:00:00.000Z', granted_credits: null, revoked_at: null });
-    // Conditional on the value it read, like expires_at: a top-up landing in between makes this write miss, never undercount.
-    expect(decodeURIComponent(sessionPatches(db)[0].url)).toContain('granted_credits=eq.10');
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 0 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0, shorteningsForReview: 0, packAnalysesAlreadyUsed: 0 });
+    expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-TOPUP1:${TOPUP}`, p_days: 30 }]);
+    expect(sessionPatches(db)).toHaveLength(0);
   });
 
-  it('E2 with two top-ups, refunding one leaves the other pack (15 -> 10)', async () => {
-    const db = topUpFixture(15);
-    await refund(db, 'PS-TOPUP1');
-    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-12-02T00:00:00.000Z', granted_credits: 10 });
-  });
-
-  it('E3 refunding the original pack of a topped-up session keeps the paid top-up, not both packs', async () => {
+  it('E3 refunding the original pack of a topped-up session uses that pack\'s own refund key', async () => {
     const db = topUpFixture(10);
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 0 }));
     expect((await refund(db, 'PS-AAAAA')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0 });
-    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-12-02T00:00:00.000Z', granted_credits: null, revoked_at: null });
+    expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-AAAAA:${db.tables.access_codes[0].id}`, p_days: 30 }]);
   });
 
-  it('E4 a repeated refund run never takes the analyses back twice', async () => {
+  it('E4 a resumed refund calls the function again and counts its first result, without a second deduction', async () => {
     const db = topUpFixture(15);
+    const rpc = withRefundRpc(db, (body) => ({ status: rpcSeen.has(body.p_refund_key) ? 'already_applied' : (rpcSeen.add(body.p_refund_key), 'applied'), used_beyond_remaining: 2 }));
+    const rpcSeen = new Set<string>();
     await refund(db, 'PS-TOPUP1');
     for (const key of [...db.storage.keys()]) if (key.startsWith('admin-audit/')) db.storage.delete(key);
-    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 0, shorteningsForReview: 1 });
-    expect(db.tables.navigator_paid_sessions[0].granted_credits).toBe(10);
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 2 });
+    expect(rpc.map((r) => r.p_refund_key)).toEqual([`PS-TOPUP1:${TOPUP}`, `PS-TOPUP1:${TOPUP}`]);
+    expect(sessionPatches(db)).toHaveLength(0);
   });
 
-  it('E6 a refund whose write misses because another refund of the same entitlement landed first re-reads and still applies', async () => {
-    const db = topUpFixture(15);
-    const impl = db.fetcher.getMockImplementation()!;
-    let raced = false;
-    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
-      if (!raced && (init.method || 'GET') === 'PATCH' && String(input).includes('/rest/v1/navigator_paid_sessions')) {
-        raced = true; // the original pack's refund lands between this refund's read and its write
-        Object.assign(db.tables.navigator_paid_sessions[0], { expires_at: '2026-12-02T00:00:00.000Z', granted_credits: 10 });
-      }
-      return impl(input, init);
-    });
-    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0 });
-    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-11-02T00:00:00.000Z', granted_credits: null });
-    expect(sessionPatches(db)).toHaveLength(2);
+  it('E6 analyses of the refunded pack already used are reported for a partial-refund decision', async () => {
+    const db = topUpFixture(10);
+    withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 3 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, packAnalysesAlreadyUsed: 3 });
   });
 
-  it('E7 a write that keeps missing is reported for review, never as applied', async () => {
-    const db = topUpFixture(15);
-    const impl = db.fetcher.getMockImplementation()!;
-    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
-      if ((init.method || 'GET') === 'PATCH' && String(input).includes('/rest/v1/navigator_paid_sessions')) {
-        const row = db.tables.navigator_paid_sessions[0]; // another writer wins every time
-        row.expires_at = new Date(Date.parse(String(row.expires_at)) + 1000).toISOString();
-      }
-      return impl(input, init);
-    });
-    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 0, shorteningsForReview: 1 });
-    expect(db.tables.navigator_paid_sessions[0].granted_credits).toBe(15);
-    expect(sessionPatches(db)).toHaveLength(5);
+  it('E7 an answer other than applied (no top-up left, unknown) is reported for review, never as applied', async () => {
+    for (const status of ['no_top_up', 'not_one_off', undefined]) {
+      const db = topUpFixture(10);
+      withRefundRpc(db, () => ({ status }));
+      expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 0, shorteningsForReview: 1 });
+    }
   });
 
   it('E5 before E (no granted_credits column) and on monthly tiers the refund sends exactly the request it sent before', async () => {

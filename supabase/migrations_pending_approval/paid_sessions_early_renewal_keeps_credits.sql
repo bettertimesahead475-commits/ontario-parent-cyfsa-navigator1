@@ -199,15 +199,90 @@ end $$;
 create or replace function public.paid_reserve_credit(
   p_session text, p_request text, p_scope text, p_granted integer, p_now timestamptz, p_ttl interval, p_claim_window interval)
 returns jsonb
-language sql
+language plpgsql
 as $$
-  select public.paid_reserve_credit_tier_default(p_session, p_request, p_scope,
-    case when p_scope = 'total' then greatest(p_granted, coalesce(
-      (select s.granted_credits from public.navigator_paid_sessions s where s.id::text = p_session), p_granted))
-    else p_granted end,
-    p_now, p_ttl, p_claim_window)
+declare
+  v_granted integer := p_granted;
+begin
+  if p_scope = 'total' then
+    -- The session lock first (re-entrant, the original takes it again), then the allowance: a refund or a top-up that
+    -- holds the lock is committed before it is read, so a refunded pack's analyses can never be reserved.
+    perform pg_advisory_xact_lock(hashtextextended(p_session, 0));
+    select greatest(p_granted, coalesce(s.granted_credits, p_granted)) into v_granted
+      from public.navigator_paid_sessions s where s.id::text = p_session;
+    v_granted := coalesce(v_granted, p_granted);
+  end if;
+  return public.paid_reserve_credit_tier_default(p_session, p_request, p_scope, v_granted, p_now, p_ttl, p_claim_window);
+end
 $$;
 
 revoke all on function public.paid_reserve_credit(text, text, text, integer, timestamptz, interval, interval) from public, anon, authenticated;
 grant execute on function public.paid_reserve_credit(text, text, text, integer, timestamptz, interval, interval) to service_role;
+
+-- Admin refund of one one-off pack on a topped-up session (functions/api/admin/[[path]].ts). One transaction, under
+-- paid_reserve_credit's lock, so no reservation lands between the read and the write. Takes back exactly that pack's
+-- analyses and p_days, never below the tier default, and touches no other session. Once per p_refund_key: a retry
+-- returns the first result and subtracts nothing. Analyses already used or reserved stay used: used_beyond_remaining
+-- reports how many of the refunded pack's analyses the customer had already used, for a partial-refund decision.
+create table if not exists public.navigator_paid_session_refunds (
+  refund_key text primary key,
+  session_id uuid not null references public.navigator_paid_sessions(id) on delete cascade,
+  applied_at timestamptz not null default now(),
+  granted_before integer not null,
+  granted_after integer not null,
+  used_at_refund integer not null,
+  reserved_at_refund integer not null
+);
+alter table public.navigator_paid_session_refunds enable row level security;
+revoke all on table public.navigator_paid_session_refunds from public, anon, authenticated;
+grant select, insert on table public.navigator_paid_session_refunds to service_role;
+
+create or replace function public.paid_refund_one_off_pack(p_session uuid, p_refund_key text, p_days integer)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_s public.navigator_paid_sessions%rowtype;
+  v_prior public.navigator_paid_session_refunds%rowtype;
+  v_pack integer;
+  v_before integer;
+  v_after integer;
+  v_used integer;
+  v_reserved integer;
+  v_prefix text := 'paid_res_' || p_session::text || '_';
+begin
+  if p_session is null or coalesce(p_refund_key, '') = '' or p_days is null or p_days < 0 then
+    raise exception 'paid_refund_one_off_pack: session, refund key and days are required' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_session::text, 0));
+  select * into v_prior from public.navigator_paid_session_refunds where refund_key = p_refund_key;
+  if found then
+    return jsonb_build_object('status', 'already_applied', 'session_id', v_prior.session_id,
+      'granted_before', v_prior.granted_before, 'granted_after', v_prior.granted_after,
+      'used', v_prior.used_at_refund, 'reserved', v_prior.reserved_at_refund,
+      'used_beyond_remaining', greatest(v_prior.used_at_refund - v_prior.granted_after, 0));
+  end if;
+  select * into v_s from public.navigator_paid_sessions where id = p_session for update;
+  if not found then return jsonb_build_object('status', 'not_found'); end if;
+  v_pack := case v_s.tier when 'Basic' then 3 when 'AnalyzerBasic' then 3 when 'Premium' then 5 when 'AnalyzerPremium' then 5 end;
+  if v_pack is null then return jsonb_build_object('status', 'not_one_off', 'tier', v_s.tier); end if;
+  v_before := coalesce(v_s.granted_credits, v_pack);
+  if v_before < 2 * v_pack then return jsonb_build_object('status', 'no_top_up', 'granted', v_before); end if;
+  v_after := v_before - v_pack;
+  select coalesce(max(analyses_used), 0) into v_used from public.free_usage where uid = 'paid_session_' || p_session::text || '_total';
+  select count(*) into v_reserved from public.free_usage
+    where left(uid, length(v_prefix)) = v_prefix and email = 'reservation:reserved' and analyses_used > 0;
+  update public.navigator_paid_sessions
+    set granted_credits = case when v_after > v_pack then v_after else null end,
+        expires_at = expires_at - make_interval(days => p_days)
+    where id = p_session;
+  insert into public.navigator_paid_session_refunds (refund_key, session_id, granted_before, granted_after, used_at_refund, reserved_at_refund)
+    values (p_refund_key, p_session, v_before, v_after, v_used, v_reserved);
+  return jsonb_build_object('status', 'applied', 'session_id', p_session, 'granted_before', v_before, 'granted_after', v_after,
+    'used', v_used, 'reserved', v_reserved, 'used_beyond_remaining', greatest(v_used - v_after, 0),
+    'expires_at', v_s.expires_at - make_interval(days => p_days));
+end
+$$;
+revoke all on function public.paid_refund_one_off_pack(uuid, text, integer) from public, anon, authenticated;
+grant execute on function public.paid_refund_one_off_pack(uuid, text, integer) to service_role;
 commit;
