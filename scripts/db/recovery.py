@@ -235,6 +235,7 @@ def backup(args, env, server, directory, backup_root):
     version = client_version("pg_dump", major)
     if not re.fullmatch(r"[0-9A-Fa-f]{40}|[0-9A-Fa-f]{64}", args.recipient):
         raise ValueError("Provide the approved full GPG key fingerprint.")
+    recipient = bytes.fromhex(args.recipient)
     restrict_key = secrets.token_hex(32)
     with snapshot(env) as token:
         dump(env, schemas, token, directory, restrict_key, include_data=True)
@@ -253,7 +254,7 @@ def backup(args, env, server, directory, backup_root):
             bundle.write(directory / name, name)
     with plain.open("rb") as source, tempfile.NamedTemporaryFile(dir=backup_root, prefix=".recovery-") as encrypted:
         run(["gpg", "--batch", "--no-tty", "--trust-model", "always",
-             "--recipient=" + args.recipient, "--output", "-", "--encrypt"], stdin=source, stdout=encrypted)
+             "--recipient=" + recipient.hex().upper(), "--output", "-", "--encrypt"], stdin=source, stdout=encrypted)
         checksum = digest(Path(encrypted.name))
         require(os.stat(encrypted.name).st_size > 0, "Empty encrypted artifact.")
         os.link(encrypted.name, args.artifact)
