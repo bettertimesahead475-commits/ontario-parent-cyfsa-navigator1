@@ -1,0 +1,5 @@
+# Every app path has its own HTML file in dist (scripts/prerender.mjs), and dist/404.html answers any other path
+# with HTTP 404. These rewrites serve the app shell for the paths with dynamic segments.
+/upgrade      /pricing     301
+/admin/*      /admin       200
+/lawyers/*    /app-shell   200

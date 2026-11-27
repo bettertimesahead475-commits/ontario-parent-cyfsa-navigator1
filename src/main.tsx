@@ -2,7 +2,7 @@
 // before App.tsx and its telemetry packages are even evaluated. See src/utils/invitationFragment.ts.
 import './utils/invitationFragment';
 import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
+import {createRoot, hydrateRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
@@ -54,8 +54,18 @@ if ("serviceWorker" in navigator) {
   }
 }
 
-createRoot(document.getElementById('root')!).render(
+// Public pages are pre-rendered at build time (scripts/prerender.mjs). Hydrate only markup made for this path;
+// anything else (an offline shell cached for another page) is replaced by a normal client render.
+const rootElement = document.getElementById('root')!;
+const app = (
   <StrictMode>
     <App />
-  </StrictMode>,
+  </StrictMode>
 );
+const currentPath = (window.location.pathname.replace(/\/+$/, '') || '/').toLowerCase();
+if (rootElement.dataset.prerendered && rootElement.dataset.prerendered === currentPath) {
+  hydrateRoot(rootElement, app);
+} else {
+  rootElement.replaceChildren();
+  createRoot(rootElement).render(app);
+}
