@@ -25,18 +25,20 @@ const MONTH = "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|Jul
 /**
  * Masks common PII patterns in free text: phone numbers (incl. (416) 555-0199), dates (MM/DD/YYYY, YYYY-MM-DD,
  * DD-MON-YYYY, "April 3, 2019", "3 April 2019"),
- * Ontario court file numbers (FC-XX-XXXXXXXX-XXXX) and, optionally, known personal names.
+ * Ontario court file numbers (FC-19-1234, FO-21-00012345-0000, C1234/19) and, optionally, known personal names.
  */
 export function redactPiiText(text: string, knownNames: string[] = []): string {
   if (!text) return text;
   let redacted = text;
+  // Court file numbers first, so the phone and ISO-date patterns cannot consume their digits.
+  redacted = redacted.replace(/\b(?:FC|FO|FS|FD|CV|CFO|DFO)-?\d{2}-\d{2,8}(?:-[A-Z0-9]{1,6}){0,2}\b/gi, "[FILE]");
+  redacted = redacted.replace(/\b[A-Z]{1,2}\d{2,6}\/\d{2}\b/g, "[FILE]");
   redacted = redacted.replace(/(?:\(\d{3}\)\s?|\b\d{3}[-.\s]?)\d{3}[-.\s]?\d{4}\b/g, "[PHONE]");
   redacted = redacted.replace(new RegExp(`\\b${MONTH}\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}\\b`, "gi"), "[DATE]");
   redacted = redacted.replace(new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH}\\.?,?\\s+\\d{4}\\b`, "gi"), "[DATE]");
   redacted = redacted.replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, "[DATE]");
   redacted = redacted.replace(/\b\d{4}-\d{1,2}-\d{1,2}\b/g, "[DATE]");
   redacted = redacted.replace(/\b\d{1,2}-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-\d{4}\b/gi, "[DATE]");
-  redacted = redacted.replace(/\bFC-\d{2}-\d{8}-\d{4}\b/gi, "[FILE]");
   knownNames.forEach((name) => {
     if (name && name.trim()) {
       const nameRegex = new RegExp(`\\b${name.trim()}\\b`, "gi");
