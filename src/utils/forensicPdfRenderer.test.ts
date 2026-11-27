@@ -87,3 +87,38 @@ describe("forensic PDF renderer with sparse sections", () => {
     expect(html).toContain("Reference List of Legal Authorities");
   });
 });
+
+describe("Forensic PDF fidelity to the saved analysis", () => {
+  const saved = {
+    documentTitle: "Synthetic summary",
+    redFlags: [{ category: "Hearsay", severity: "Needs Counsel Review", phraseDetected: "the food ran out", explanation: "x", legalReference: "CYFSA s. 74(2)(l)" }],
+    proceduralTimelineViolations: [{ timelineRule: "Follow-up visit", evaluation: "y", citation: "CYFSA s. 81(7)" }],
+    contradictions: [{ description: "Attendance differs", locations: ["Page 2"] }],
+    whatToVerify: ["Synthetic item to verify"],
+  };
+  const out = renderForensicReportHtml(saved);
+
+  it("prints the citation exactly as saved, including the clause", () => {
+    expect(out).toContain("CYFSA s. 74(2)(l)");
+  });
+
+  it("does not claim a second review that did not happen", () => {
+    expect(out).not.toContain("independently reviewed");
+    expect(out).toContain("These findings were not second-reviewed");
+    expect(renderForensicReportHtml({ ...saved, forensicVerification: { status: "completed" } })).toContain("A second review checked each finding");
+  });
+
+  it("says a location or significance is not stated instead of inventing one", () => {
+    expect(out).not.toContain(">Record<");
+    expect(out).not.toContain("Location: Record");
+    expect(out).not.toContain("commissioned copy");
+    expect(out).toContain("Location: Not stated in the document");
+  });
+
+  it("includes the saved items to verify as a numbered section", () => {
+    expect(out).toContain("Items to Verify");
+    expect(out).toContain("Synthetic item to verify");
+    const numbers = [...out.matchAll(/<h2 class="section-heading">(\d+)\. /g)].map((m) => Number(m[1]));
+    expect(numbers).toEqual(numbers.map((_, i) => i + 1));
+  });
+});

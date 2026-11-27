@@ -197,6 +197,7 @@ export function formatLawyerCaseBriefText(report: Loose, options: CaseBriefExpor
     "CYFSA NAVIGATOR — LAWYER CASE BRIEF",
     rule,
     `Document:        ${id.title}`,
+    ...(id.fileName && id.fileName !== id.title ? [`File:            ${id.fileName}`] : []),
     `Document type:   ${id.documentType}`,
     ...(id.fileNumber ? [`Court file no.:  ${id.fileNumber} (as stated in the document)`] : []),
     ...(id.analyzer ? [`Analysis:        ${id.analyzer}`] : []),
@@ -220,6 +221,17 @@ export function formatLawyerCaseBriefText(report: Loose, options: CaseBriefExpor
       if (p.parts[k]) out.push(`   ${CASE_BRIEF_PART_LABELS[k].toUpperCase()}`, `     ${p.parts[k]}`);
     }
   });
+  const contradictions: Loose[] = Array.isArray(report.contradictions) ? report.contradictions.filter((c: Loose) => c && c.description) : [];
+  if (contradictions.length) {
+    out.push("", "CONTRADICTIONS AND DISCREPANCIES", "-".repeat(32));
+    contradictions.forEach((c, i) => {
+      out.push(
+        `${i + 1}. ${String(c.description)}`,
+        `   Where in the document: ${Array.isArray(c.locations) ? c.locations.join("; ") : String(c.locations || NOT_RECORDED)}`,
+        `   Significance: ${String(c.significance || NOT_RECORDED)}`
+      );
+    });
+  }
   const list = (title: string, items: string[]) => {
     if (!items.length) return;
     out.push("", title.toUpperCase(), "-".repeat(title.length));

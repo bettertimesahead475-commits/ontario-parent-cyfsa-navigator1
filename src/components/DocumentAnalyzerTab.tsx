@@ -2456,7 +2456,7 @@ export default function DocumentAnalyzerTab() {
           cursor: pointer;
           margin-bottom: 25px;
         }
-        @page { size: A4; margin: 13mm 12mm; }
+        @page { size: A4; margin: 13mm 12mm 16mm; @bottom-center { content: "CYFSA Navigator — Page " counter(page) " of " counter(pages); font-family: sans-serif; font-size: 8px; color: #64748b; } }
         @media print {
           .no-print-btn { display: none !important; }
           body { margin: 0; line-height: 1.35; font-size: 10px; }
@@ -2774,13 +2774,20 @@ export default function DocumentAnalyzerTab() {
 
           <div class="meta-bar">
             Document Checked:
-            <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "N/A")}</strong>
+            <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "Not stated in the document")}</strong>
             • Type:
             <strong>${escapeHtml(reportForExport.documentType || "Not stated in the document")}</strong>
             • Date of Audit:
             <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Not recorded")}</strong>
           </div>
         </div>
+
+        ${reportForExport.fileSummary ? `
+          <div class="section-card">
+            <h3 class="section-title">Document Summary</h3>
+            <p style="margin:6px 0 0; white-space:pre-wrap;">${escapeHtml(String(reportForExport.fileSummary))}</p>
+          </div>
+        ` : ""}
 
         <div class="section-card">
           <h3 class="section-title">📊 Educational Evidence Strength Summary</h3>
@@ -3006,6 +3013,9 @@ export default function DocumentAnalyzerTab() {
 
         <div class="section-card">
           <h3 class="section-title">📋 Practical Verification & Next Steps Guide</h3>
+          ${![reportForExport.whatToVerify, reportForExport.whatToAskALawyer, reportForExport.whatIsMissing].some(list => Array.isArray(list) && list.length > 0) ? `
+            <p style="color:#64748b;">Not stated in the document.</p>
+          ` : ""}
           ${reportForExport.whatToVerify && reportForExport.whatToVerify.length > 0 ? `
             <div style="margin-bottom: 15px;">
               <strong style="font-size: 13px; color: #0f172a;">Information to Verify & Double-Check:</strong>
@@ -3180,7 +3190,7 @@ export default function DocumentAnalyzerTab() {
   return (
     <div className="space-y-3 w-full max-w-full overflow-x-hidden break-words font-sans analyzer-reading-workspace" id="document-analyzer-tab">
       
-      <FinalCaseAssessment />
+      <FinalCaseAssessment redactionEnabled={redactionEnabled} />
       {/* Platform Sub-Header Banner */}
       {/* Title and introduction on their own full-width row, controls below. Side by side, the controls (four groups)
           took their full width and squeezed the introduction into a ~120 px column at every desktop width. */}

@@ -20,6 +20,27 @@ import { getUserKey } from "./storage";
 
 const REDACTION_KEY = "OPA_REDACTION_ENABLED";
 
+/**
+ * Masks common PII patterns in free text: phone numbers, dates (MM/DD/YYYY, YYYY-MM-DD, DD-MON-YYYY),
+ * Ontario court file numbers (FC-XX-XXXXXXXX-XXXX) and, optionally, known personal names.
+ */
+export function redactPiiText(text: string, knownNames: string[] = []): string {
+  if (!text) return text;
+  let redacted = text;
+  redacted = redacted.replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g, "[PHONE]");
+  redacted = redacted.replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, "[DATE]");
+  redacted = redacted.replace(/\b\d{4}-\d{1,2}-\d{1,2}\b/g, "[DATE]");
+  redacted = redacted.replace(/\b\d{1,2}-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-\d{4}\b/gi, "[DATE]");
+  redacted = redacted.replace(/\bFC-\d{2}-\d{8}-\d{4}\b/gi, "[FILE]");
+  knownNames.forEach((name) => {
+    if (name && name.trim()) {
+      const nameRegex = new RegExp(`\\b${name.trim()}\\b`, "gi");
+      redacted = redacted.replace(nameRegex, "[NAME]");
+    }
+  });
+  return redacted;
+}
+
 export function useRedaction() {
   const [enabled, setEnabled] = useState<boolean>(() => {
     try {
@@ -50,40 +71,8 @@ export function useRedaction() {
     [enabled]
   );
 
-  /**
-   * Redacts common PII patterns from document text:
-   * - Phone numbers (10 digits, with/without formatting)
-   * - Dates of birth (MM/DD/YYYY, YYYY-MM-DD, DD-MON-YYYY patterns)
-   * - Court file numbers (7-8 digits with dashes)
-   * - Known personal names (optional: pass a list to redact specific names)
-   */
   const redactDocumentText = useCallback(
-    (text: string, knownNames: string[] = []): string => {
-      if (!enabled || !text) return text;
-
-      let redacted = text;
-
-      // Redact phone numbers (10-digit patterns with optional formatting)
-      redacted = redacted.replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g, "[PHONE]");
-
-      // Redact dates that look like birthdates (MM/DD/YYYY, YYYY-MM-DD, DD-MON-YYYY)
-      redacted = redacted.replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, "[DATE]");
-      redacted = redacted.replace(/\b\d{4}-\d{1,2}-\d{1,2}\b/g, "[DATE]");
-      redacted = redacted.replace(/\b\d{1,2}-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-\d{4}\b/gi, "[DATE]");
-
-      // Redact Ontario court file numbers (FC-XX-XXXXXXXX-XXXX pattern)
-      redacted = redacted.replace(/\bFC-\d{2}-\d{8}-\d{4}\b/gi, "[FILE]");
-
-      // Redact known personal names (case-insensitive)
-      knownNames.forEach((name) => {
-        if (name && name.trim()) {
-          const nameRegex = new RegExp(`\\b${name.trim()}\\b`, "gi");
-          redacted = redacted.replace(nameRegex, "[NAME]");
-        }
-      });
-
-      return redacted;
-    },
+    (text: string, knownNames: string[] = []): string => (enabled ? redactPiiText(text, knownNames) : text),
     [enabled]
   );
 

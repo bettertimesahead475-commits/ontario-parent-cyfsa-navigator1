@@ -72,3 +72,27 @@ describe("formatLawyerCaseBriefText", () => {
     expect(text).toContain("2.\n   An unstructured <b>point</b> with markup.");
   });
 });
+
+describe("Lawyer Case Brief TXT parity with the PDF", () => {
+  const report = {
+    documentTitle: "Synthetic summary",
+    fileSummary: "Synthetic summary text.",
+    lawyerCaseBrief: [],
+    contradictions: [{ description: "Synthetic attendance differs", locations: ["Page 2", "Page 3"] }],
+  };
+  const text = formatLawyerCaseBriefText(report, { fileName: "synthetic.txt" });
+  const html = renderLawyerCaseBriefHtml(report, { fileName: "synthetic.txt" });
+
+  it("lists the contradictions the PDF shows, with locations and an honest missing significance", () => {
+    expect(html).toContain("Contradictions and Discrepancies");
+    expect(text).toContain("CONTRADICTIONS AND DISCREPANCIES");
+    expect(text).toContain("1. Synthetic attendance differs");
+    expect(text).toContain("Where in the document: Page 2; Page 3");
+    expect(text).toMatch(/Significance: Not (recorded|stated)/);
+  });
+
+  it("names the source file like the PDF cover", () => {
+    expect(text).toContain("File:            synthetic.txt");
+  });
+});
+

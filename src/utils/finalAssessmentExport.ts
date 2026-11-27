@@ -1,5 +1,6 @@
 import { escapeHtml } from "./reportSectionsHtml";
 import { printDocumentStyles } from "./caseBriefExport";
+import { redactPiiText } from "./redaction";
 import type { AssessmentReport } from "../../functions/api/final-case-assessment";
 
 export const FINAL_ASSESSMENT_SECTIONS = [
@@ -14,6 +15,34 @@ export const FINAL_ASSESSMENT_NOTICE =
   "Educational legal information prepared by CYFSA Navigator from an automated review of the source documents listed in this report. " +
   "It is not legal advice, not a court filing, and not certified. Findings are preliminary: check each one against the cited source page before relying on it.";
 
+export const FINAL_ASSESSMENT_REDACTED_NOTICE =
+  "Redacted copy: the matter title and source file names are replaced, and phone numbers, dates and Ontario court file numbers are masked in findings and source text. " +
+  "Names and other identifying details in free text may remain. This copy is not guaranteed to be anonymous. Review it before sharing.";
+
+export const REDACTED_MATTER_TITLE = "Redacted matter";
+
+export interface FinalAssessmentExportOptions {
+  generatedAt?: Date;
+  /** Mirrors the user's export redaction setting (useRedaction). */
+  redact?: boolean;
+}
+
+/** Copy of the report with the matter title, source file names and PII patterns in findings and source text masked. */
+export function redactFinalAssessment(report: AssessmentReport): AssessmentReport {
+  const sources = Array.isArray(report.sources) ? report.sources : [];
+  const sections = { ...report.sections } as AssessmentReport["sections"];
+  for (const [key] of FINAL_ASSESSMENT_SECTIONS) {
+    const points = Array.isArray(report.sections?.[key]) ? report.sections[key] : [];
+    sections[key] = points.map((p) => ({ ...p, text: redactPiiText(p.text) }));
+  }
+  return {
+    ...report,
+    title: REDACTED_MATTER_TITLE,
+    sources: sources.map((s, i) => ({ ...s, document: `Source document ${i + 1}`, text: redactPiiText(s.text) })),
+    sections,
+  };
+}
+
 const EXTRA_STYLES = `
 .src-ref { font: 600 8pt system-ui, sans-serif; color: #1e3a8a; white-space: nowrap; }
 .src-ref a { color: inherit; text-decoration: none; }
@@ -27,7 +56,8 @@ const dateText = (value: string | Date) => {
   return Number.isNaN(d.getTime()) ? "Not recorded" : d.toLocaleString("en-CA", { dateStyle: "long", timeStyle: "short" });
 };
 
-export function renderFinalAssessmentHtml(report: AssessmentReport, options: { generatedAt?: Date } = {}): string {
+export function renderFinalAssessmentHtml(input: AssessmentReport, options: FinalAssessmentExportOptions = {}): string {
+  const report = options.redact ? redactFinalAssessment(input) : input;
   const sources = Array.isArray(report.sources) ? report.sources : [];
   const sourceIndex = new Map(sources.map((s, i) => [s.id, i + 1]));
   const sourceLabel = (id: string) => {
@@ -83,6 +113,7 @@ export function renderFinalAssessmentHtml(report: AssessmentReport, options: { g
     ${identRows.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("")}
   </tbody></table>
   <div class="notice">${escapeHtml(FINAL_ASSESSMENT_NOTICE)}</div>
+  ${options.redact ? `<div class="notice" role="note"><strong>${escapeHtml(FINAL_ASSESSMENT_REDACTED_NOTICE)}</strong></div>` : ""}
 </section>
 <section class="block toc"><h2>Contents</h2><ol>${contents.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ol></section>
 ${sectionHtml}
