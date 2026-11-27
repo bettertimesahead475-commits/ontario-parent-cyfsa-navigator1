@@ -82,9 +82,13 @@ describe.skipIf(!isLocal || !bin)('Migration E through PostgREST', () => {
     await h.q(`insert into public.navigator_paid_sessions (id, firebase_uid, tier, issued_at, expires_at)
       values ($1,$2,'Pro',$3,$3::timestamptz + interval '30 days')`, [session, 'uid-pro-qualification', now]);
     await h.q('insert into public.free_usage (uid, analyses_used) values ($1,2), ($2,3)', [current, past]);
-    const response = await admin('credits/restore', { sessionId: session, credits: 1, reason: 'failed analysis' });
+    const restore = () => admin('credits/restore', { sessionId: session, credits: 1, expectedUsed: 2, reason: 'failed analysis' });
+    const response = await restore();
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ success: true, creditsRestored: 1 });
+    const duplicate = await restore();
+    expect(duplicate.status).toBe(409);
+    expect(await duplicate.json()).toMatchObject({ code: 'CONCURRENT_UPDATE' });
     expect(await h.q('select uid, analyses_used from public.free_usage where uid in ($1, $2) order by uid', [current, past]))
       .toEqual([{ uid: past, analyses_used: 3 }, { uid: current, analyses_used: 1 }]);
   });

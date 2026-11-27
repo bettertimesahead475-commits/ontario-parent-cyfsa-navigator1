@@ -25,7 +25,7 @@ customer data, payments, credentials, migration execution or deployment were use
 | PASS | As actual `anon` and `authenticated` roles, reads of refunds and usage and calls to the privileged RPCs failed with SQLSTATE `42501`. Refund ledger RLS is enabled; as `service_role`, refund and reserve worked, but receipt UPDATE was denied. Duplicate refund key and unknown session FK failed with `23505` and `23503`. The redemption definer has `search_path=public, pg_temp`; the other E functions are invokers. |
 | PASS | E reapplied over post-E traffic without changing any receipt, payment code, paid session or usage row. Custom-format backup/restore preserved pre-E entitlement and usage and, from the later snapshot, the used code and its `already_applied` receipt. The earlier snapshot did not contain these later transactions. |
 | OUT OF SCOPE | **Approval/refund race.** Prior qualification on #197 reproduced that approval can issue a redeemable code after a refund. The G/P/D session owns this fix; no change or retest here. |
-| PASS | **Manual credit restore.** The service-only RPC waited on the specific backend holding the session reservation lock, refused with `409 RESERVATION_PENDING` after the reservation committed, and left the finalized analysis charged. Subsequent deliberate restore deducted only the unit available. Through PostgREST, monthly restoration touched only the selected period. Before E, manual restore fails closed with `503 CREDIT_RESTORE_UNAVAILABLE`; deploy E before enabling that action on the new app. |
+| PASS | **Manual credit restore.** The service-only RPC waited on the specific backend holding the session reservation lock, refused with `409 RESERVATION_PENDING` after the reservation committed, and left the finalized analysis charged. Subsequent deliberate restore deducted only the unit available. Through PostgREST, two requests using the same displayed count returned 200 then `409 CONCURRENT_UPDATE`, deducting one unit in only the selected monthly period. Before E, manual restore fails closed with `503 CREDIT_RESTORE_UNAVAILABLE`; deploy E before enabling that action on the new app. |
 | PASS | **Receipt-preserving recovery.** With grants expired, rollback refused on the receipt ledger even with the credit-reduction override, preserving receipts and other accounting rows. Clean rollback without receipts still restores the D and original reservation fingerprints. Reapplying E to a post-E restore reinstated a missing restore RPC while retaining the used payment and refund idempotency. |
 | PASS | **Stacked allowance.** Customer Quick and Forensic and admin balances reflect the one-off granted total; the tier default is used on null or on the pre-E projection, with no fallback on a permissions error. Monthly allowance behavior is unchanged. Old reserve and finalize RPC signatures still work. No UI or old production binary validation was performed. |
 | BLOCKED | No registered, executable currency-denominated spending reservation or provider-usage ledger exists in this release. E has the pack-refund receipt table; `free_usage` holds paid-unit reservations and counters. Admin revenue aggregates payments and Storage refund/settlement history; it is not a spending reservation. `create_paid_access_credit_ledger_and_enforcement.sql` is explicitly superseded and must not be run. |
@@ -50,8 +50,10 @@ For the database tests, start a **disposable** PG 16 server on loopback and use
 Other tests consuming the same environment may modify the scratch server's default
 database; never point the suite at an operational host or proxy.
 
-The final focused PostgreSQL/PostgREST/API run reported `Test Files  10 passed (10)`,
-`Tests  140 passed (140)`. `npx tsc --noEmit -p .` exited 0. The broad
+The duplicate restore regression on `1a66c4a` failed with
+`AssertionError: expected 200 to be 409`. After the compare-and-set fix, the
+focused PostgreSQL/PostgREST/API/console run reported `Test Files  12 passed (12)`,
+`Tests  301 passed (301)`. `npx tsc --noEmit -p .` exited 0. The broad
 Vitest run, without database opt-in and before the final focused integration
 test was added, reported `Test Files  344 passed | 18 skipped (362)`,
 `Tests  5165 passed | 561 skipped (5726)`.
@@ -74,8 +76,8 @@ Paths below prefixed `pending/` mean `supabase/migrations_pending_approval/`;
 | `migrations/20261110004740_preserve_monthly_renewal.sql` (P) | `6916521f08840cad96ee69632c3b01b16728ae669b7d0e05cb001f17f375f1f9` |
 | `pending/access_codes_one_redemption_per_reference.sql` (D) | `f7087176c3f6cfba9343bd02019500e8825befffd1d2992b670b423507b680ae` |
 | `pending/paid_sessions_early_renewal_keeps_credits.preflight.sql` | `a6e7a78af6d8d1c06d9a7407d4b9633df041a79ae1f2f076fac624e7cfaf90ac` |
-| `pending/paid_sessions_early_renewal_keeps_credits.sql` (E) | `56474ceb1f297dfe01c855cbeaca55e2774752abfe98869f2453502a48214140` |
-| `pending/paid_sessions_early_renewal_keeps_credits.rollback.sql` | `0082aef2305774388eb5d4891259ab82611f4b8226b1db8b5a85e98729bf8494` |
+| `pending/paid_sessions_early_renewal_keeps_credits.sql` (E) | `80c7484bf4efa43a953a9c0c5ba472c26d05124f878e67f24fc26995ab3bbeef` |
+| `pending/paid_sessions_early_renewal_keeps_credits.rollback.sql` | `6e02bb1b13fb742276de50b5bf5485f3d3b60fffa0e56a1d95ba043fbcc565c3` |
 
 - **Clean disposable bootstrap:** captured payment schema and `free_usage`
   → durable analyzer jobs + paid reservation functions + A
@@ -92,7 +94,8 @@ Paths below prefixed `pending/` mean `supabase/migrations_pending_approval/`;
   `_paid-credit-lifecycle.ts` and legacy `api/services/creditAccounting.ts` use
   paid reserve/finalize/release. Admin `refundPayment` calls
   `paid_refund_one_off_pack` for stacked one-off sessions; `restoreCredits`
-  calls `paid_restore_credits`, serialized on the same paid-session advisory lock.
+  calls `paid_restore_credits`, which compares the console's displayed usage
+  against the current counter under the paid-session advisory lock before updating.
 
 ## Release gates, backup and recovery
 

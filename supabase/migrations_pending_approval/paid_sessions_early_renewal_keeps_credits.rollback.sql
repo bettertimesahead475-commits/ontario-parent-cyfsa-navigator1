@@ -161,7 +161,7 @@ revoke all on function public.redeem_access_code_atomic(text, text, text) from a
 grant execute on function public.redeem_access_code_atomic(text, text, text) to service_role;
 
 drop function if exists public.paid_refund_one_off_pack(uuid, text, integer);
-drop function if exists public.paid_restore_credits(uuid, text, integer);
+drop function if exists public.paid_restore_credits(uuid, text, integer, integer);
 drop table if exists public.navigator_paid_session_refunds;
 alter table public.navigator_paid_sessions drop column if exists granted_credits;
 commit;

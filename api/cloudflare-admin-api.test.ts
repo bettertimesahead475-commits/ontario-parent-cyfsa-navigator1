@@ -54,12 +54,13 @@ function fakeSupabase(seed: Record<string, Row[]>) {
     }
     const table = url.pathname.replace('/rest/v1/', '');
     if (table === 'rpc/paid_restore_credits' && method === 'POST') {
-      const { p_session, p_scope, p_credits } = body;
+      const { p_session, p_scope, p_credits, p_expected_used } = body;
       const usage = tables.free_usage;
       if (usage.some((r) => String(r.uid).startsWith(`paid_res_${p_session}_`) && String(r.email).startsWith('reservation:reserved'))) {
         return Response.json({ status: 'reservation_pending' });
       }
       const counter = usage.find((r) => r.uid === `paid_session_${p_session}_${p_scope.replace('period:', 'period_')}`);
+      if ((counter?.analyses_used ?? 0) !== p_expected_used) return Response.json({ status: 'concurrent_update' });
       if (!counter || counter.analyses_used <= 0) return Response.json({ status: 'nothing_to_restore' });
       const used_before = counter.analyses_used;
       counter.analyses_used = Math.max(0, used_before - p_credits);
@@ -304,16 +305,16 @@ describe('admin state changes', () => {
 
   it('restores used credits through one RPC and reports its actual deduction', async () => {
     const db = fakeSupabase(seed());
-    const r = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 2, reason: 'Failed analysis' } });
+    const r = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 2, expectedUsed: 3, reason: 'Failed analysis' } });
     expect(r.body).toMatchObject({ success: true, creditsRestored: 2, creditsRemaining: 4 });
     expect(db.tables.free_usage[0].analyses_used).toBe(1);
     expect(db.tables.free_usage[1].analyses_used).toBe(1); // another customer's counter is untouched
     expect(db.calls.filter((c) => c.url.includes('/rest/v1/rpc/paid_restore_credits')))
-      .toEqual([{ method: 'POST', url: expect.stringContaining('/rest/v1/rpc/paid_restore_credits'), body: { p_session: S1, p_scope: 'total', p_credits: 2 } }]);
+      .toEqual([{ method: 'POST', url: expect.stringContaining('/rest/v1/rpc/paid_restore_credits'), body: { p_session: S1, p_scope: 'total', p_credits: 2, p_expected_used: 3 } }]);
     expect(db.calls.some((c) => c.url.includes('/rest/v1/free_usage'))).toBe(false);
-    const over = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 5, reason: 'Failed analysis' } });
+    const over = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 5, expectedUsed: 1, reason: 'Failed analysis' } });
     expect(over.body.creditsRestored).toBe(1);
-    expect((await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, reason: 'x y z' } })).body.code).toBe('NOTHING_TO_RESTORE');
+    expect((await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, expectedUsed: 0, reason: 'x y z' } })).body.code).toBe('NOTHING_TO_RESTORE');
 
     const preE = fakeSupabase(seed());
     const original = preE.fetcher.getMockImplementation()!;
@@ -321,7 +322,7 @@ describe('admin state changes', () => {
       if (String(input).includes('/rpc/paid_restore_credits')) return Response.json({ code: 'PGRST202' }, { status: 404 });
       return original(input, init);
     });
-    const unavailable = await call(preE, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, reason: 'Failed analysis' } });
+    const unavailable = await call(preE, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, expectedUsed: 3, reason: 'Failed analysis' } });
     expect([unavailable.status, unavailable.body.code]).toEqual([503, 'CREDIT_RESTORE_UNAVAILABLE']);
     expect(preE.tables.free_usage[0].analyses_used).toBe(3);
   });
@@ -526,11 +527,11 @@ describe('independent review findings (fc8b31c) stay fixed', () => {
   it('#10 credits are not restored while a reservation that returns them itself is still open', async () => {
     const db = fakeSupabase(seed());
     db.tables.free_usage.push({ uid: `paid_res_${S1}_abcdef`, email: 'reservation:reserved', analyses_used: 3 });
-    const r = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, reason: 'Failed analysis' } });
+    const r = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, expectedUsed: 3, reason: 'Failed analysis' } });
     expect(r.body.code).toBe('RESERVATION_PENDING');
     expect(db.tables.free_usage[0].analyses_used).toBe(3);
     db.tables.free_usage.at(-1)!.email = 'reservation:consumed';
-    expect((await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, reason: 'Failed analysis' } })).body.creditsRestored).toBe(1);
+    expect((await call(db, 'credits/restore', { method: 'POST', body: { sessionId: S1, credits: 1, expectedUsed: 3, reason: 'Failed analysis' } })).body.creditsRestored).toBe(1);
   });
 });
 
@@ -619,7 +620,7 @@ describe('independent re-review findings (c82e971) stay fixed', () => {
     // Postgres compares uuid columns case-insensitively (text columns such as free_usage.uid are case-sensitive).
     db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
       original(String(input).includes('/navigator_paid_sessions') ? String(input).replace(SX.toUpperCase(), SX) : String(input), init));
-    const r = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: SX.toUpperCase(), credits: 1, reason: 'Failed analysis' } });
+    const r = await call(db, 'credits/restore', { method: 'POST', body: { sessionId: SX.toUpperCase(), credits: 1, expectedUsed: 2, reason: 'Failed analysis' } });
     expect(r.body.code).toBe('RESERVATION_PENDING');
   });
 

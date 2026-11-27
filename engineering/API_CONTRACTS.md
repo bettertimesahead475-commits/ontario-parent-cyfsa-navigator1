@@ -62,7 +62,7 @@ authorization and touch nothing. POST bodies must be `application/json` ≤ 4 KB
 | `POST payments/suspend` | `{sessionId, reason}` | `{status:"suspended"}`; `409` if not active |
 | `POST payments/restore` | `{sessionId, reason?}` | `{status:"active"}`; only for entitlements suspended from the console |
 | `POST access-codes/revoke` | `{codeId, reason}` | `{state:"expired"}`; `409` if redeemed |
-| `POST credits/restore` | `{sessionId, credits:1..25, reason}` | `{creditsRestored, creditsRemaining}`; serialized service-only RPC, `409 RESERVATION_PENDING` or `409 NOTHING_TO_RESTORE`; `503 CREDIT_RESTORE_UNAVAILABLE` before E |
+| `POST credits/restore` | `{sessionId, credits:1..25, expectedUsed, reason}`; `expectedUsed` is the displayed `creditsConsumed` | `{creditsRestored, creditsRemaining}`; `409 CONCURRENT_UPDATE` if the count changed, `409 RESERVATION_PENDING` or `409 NOTHING_TO_RESTORE`; `503 CREDIT_RESTORE_UNAVAILABLE` before E |
 
 Every state change is a conditional database update (exactly-once under concurrency) and writes an immutable
 audit object `analysis_jobs/admin-audit/<timestamp>__<action>__<target>__<nonce>.json`.

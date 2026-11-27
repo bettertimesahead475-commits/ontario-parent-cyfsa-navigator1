@@ -65,7 +65,7 @@ dump source_e > "$archive/post-e.dump"
 create_db restored_after_e
 restore restored_after_e < "$archive/post-e.dump"
 echo 'PASS: post-E backup restored separately; the pre-E backup does not contain the intervening payment or refund'
-pg -q -d restored_after_e -c 'drop function public.paid_restore_credits(uuid, text, integer)'
+pg -q -d restored_after_e -c 'drop function public.paid_restore_credits(uuid, text, integer, integer)'
 pg -q -d restored_after_e < "$e"
 pg -q -d restored_after_e <<'SQL'
 set role service_role;
@@ -75,7 +75,7 @@ begin
   assert public.paid_refund_one_off_pack('11111111-1111-4111-8111-111111111111', 'synthetic-refund-key', 30)->>'status' = 'already_applied';
   assert (select count(*) from public.navigator_paid_session_refunds where granted_before = 10 and granted_after = 5) = 1;
   assert (select analyses_used from public.free_usage where uid = 'paid_session_11111111-1111-4111-8111-111111111111_total') = 2;
-  assert public.paid_restore_credits('11111111-1111-4111-8111-111111111111', 'total', 1)->>'used_after' = '1';
+  assert public.paid_restore_credits('11111111-1111-4111-8111-111111111111', 'total', 1, 2)->>'used_after' = '1';
 end $$;
 SQL
 echo 'PASS: forward repair restores the missing RPC and preserves the used payment, original usage, and refund idempotency'

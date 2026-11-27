@@ -714,6 +714,10 @@ async function restoreCredits(env: AdminEnv, admin: AdminIdentity, body: Record<
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
   const credits = typeof body.credits === 'number' ? body.credits : Number.NaN;
   if (!UUID.test(sessionId) || !Number.isInteger(credits) || credits < 1 || credits > 25) return adminError('INVALID_REQUEST', 400, 'sessionId and a whole number of credits (1-25) are required.');
+  const expectedUsed = body.expectedUsed;
+  if (typeof expectedUsed !== 'number' || !Number.isInteger(expectedUsed) || expectedUsed < 0 || expectedUsed > 2147483647) {
+    return adminError('INVALID_REQUEST', 400, 'The displayed credits used are required. Refresh the balance and try again.');
+  }
   const reason = reasonOf(body, true);
   if (reason instanceof Response) return reason;
   const session = await sessionById(env, sessionId, fetcher);
@@ -723,7 +727,7 @@ async function restoreCredits(env: AdminEnv, admin: AdminIdentity, body: Record<
   let result: { status?: string; used_before?: number; used_after?: number };
   try {
     result = await rest<typeof result>(env, 'rpc/paid_restore_credits', {
-      method: 'POST', body: { p_session: session.id, p_scope: counter.scope, p_credits: credits },
+      method: 'POST', body: { p_session: session.id, p_scope: counter.scope, p_credits: credits, p_expected_used: expectedUsed },
     }, fetcher);
   } catch (error) {
     if (error instanceof AdminStoreError && (error.pgCode === 'PGRST202' || error.pgCode === '42883')) {
@@ -733,6 +737,7 @@ async function restoreCredits(env: AdminEnv, admin: AdminIdentity, body: Record<
   }
   if (!result) return adminError('CREDIT_RESTORE_UNAVAILABLE', 503, 'Credit restoration could not be verified.');
   if (result.status === 'reservation_pending') return adminError('RESERVATION_PENDING', 409, 'An analysis on this entitlement still holds a credit reservation, which is returned automatically if it fails. Try again later.');
+  if (result.status === 'concurrent_update') return adminError('CONCURRENT_UPDATE', 409, 'Credits used have changed. Refresh the balance before restoring credits.');
   if (result.status === 'nothing_to_restore') return adminError('NOTHING_TO_RESTORE', 409, 'No credits have been used in the current period.');
   if (result.status === 'not_found') return adminError('SESSION_NOT_FOUND', 404, 'No entitlement has that id.');
   const { used_before: used, used_after: next } = result;

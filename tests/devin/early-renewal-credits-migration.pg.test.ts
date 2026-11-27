@@ -330,7 +330,7 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
         return Response.json((await db.query("select public.paid_refund_one_off_pack(p_session => $1, p_refund_key => $2, p_days => $3) as r", [body.p_session, body.p_refund_key, body.p_days])).rows[0].r);
       }
       if (table === "rpc/paid_restore_credits" && method === "POST") {
-        return Response.json((await restoreClient.query("select public.paid_restore_credits(p_session => $1, p_scope => $2, p_credits => $3) as r", [body.p_session, body.p_scope, body.p_credits])).rows[0].r);
+        return Response.json((await restoreClient.query("select public.paid_restore_credits(p_session => $1, p_scope => $2, p_credits => $3, p_expected_used => $4) as r", [body.p_session, body.p_scope, body.p_credits, body.p_expected_used])).rows[0].r);
       }
       if (table === "payments") {
         const r = u.searchParams.get("reference_number")?.slice(3) ?? ""; const p = payments[r];
@@ -356,7 +356,7 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
       env as never, { requireAdmin: (async () => ({ admin: { uid: "admin-uid", email: "ops@example.test" } })) as never, fetcher: fetcher as never });
     return Object.assign(async (referenceNumber: string) => (await request("payments/refund", { referenceNumber, reason: "Customer request" })).json() as Promise<Record<string, unknown>>, {
       storage,
-      restore: (sessionId: string, credits = 1) => request("credits/restore", { sessionId, credits, reason: "Restore an analysis" }),
+      restore: (sessionId: string, credits: number, expectedUsed: number) => request("credits/restore", { sessionId, credits, expectedUsed, reason: "Restore an analysis" }),
     });
   };
   const refundPack = async (c: pg.Client, session: string, key: string) =>
@@ -603,14 +603,14 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
     const admin = adminHarness({}, 0, restoring);
     await reserving.query("begin");
     expect(await reserve(reserving, session!, "restore-race")).toMatchObject({ status: "reserved", counter_used: 1 });
-    const pending = admin.restore(session!);
+    const pending = admin.restore(session!, 1, 0);
     try { await blockedBy(restoringPid, reservingPid); } finally { await reserving.query("commit"); }
     const response = await pending;
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: "RESERVATION_PENDING" });
     expect((await reserving.query("select public.paid_finalize_credit($1,'restore-race',now()) as r", [session])).rows[0].r.status).toBe("consumed");
     expect(await used(session!)).toEqual({ analyses_used: 1 });
-    const restored = await admin.restore(session!, 25);
+    const restored = await admin.restore(session!, 25, 1);
     expect(await restored.json()).toMatchObject({ success: true, creditsRestored: 1, creditsRemaining: 5 });
     expect(await used(session!)).toEqual({ analyses_used: 0 });
   });
@@ -656,7 +656,7 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
         "select public.paid_reserve_credit('session','request','total',5,now(),'15 minutes','60 seconds')",
         "select public.paid_release_credit('session','request','marker',now())",
         "select public.paid_finalize_credit('session','request',now())",
-        "select public.paid_restore_credits(null, 'total', 1)",
+        "select public.paid_restore_credits(null, 'total', 1, 1)",
       ]) await expect(c.query(statement)).rejects.toMatchObject({ code: "42501" });
     }
     expect(await one("select relrowsecurity from pg_class where oid = 'public.navigator_paid_session_refunds'::regclass"))
@@ -685,7 +685,7 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
       await db.query("rollback");
     }
     await db.query("reset navigator.allow_credit_reduction");
-    await db.query("drop function public.paid_restore_credits(uuid,text,integer)");
+    await db.query("drop function public.paid_restore_credits(uuid,text,integer,integer)");
     await db.query(UP);
     expect(await fp("paid_restore_credits")).toBeDefined();
     expect((await db.query("select * from public.navigator_paid_session_refunds order by refund_key")).rows).toEqual(receipts);

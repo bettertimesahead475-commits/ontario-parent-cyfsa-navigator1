@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const apiFetch = vi.fn();
 vi.mock("../../utils/api", () => ({ apiFetch: (...args: unknown[]) => apiFetch(...args) }));
@@ -41,6 +41,32 @@ describe("AdminConsole", () => {
     expect(sessionStorage.length).toBe(0);
     expect(localStorage.length).toBe(0);
     for (const [, init] of apiFetch.mock.calls) expect(JSON.stringify(init ?? {})).not.toMatch(/admin-secret/i);
+  });
+
+  it("submits the displayed credits used with a manual credit restore", async () => {
+    apiFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith("/session")) return json(200, { admin: true, email: "owner@example.com" });
+      if (url.endsWith("/payments/overview")) return json(200, { payments: [{
+        referenceNumber: "PS-RESTORE", sessionId: "session-1", creditsGranted: 5, creditsConsumed: 3, accessStatus: "active",
+      }] });
+      if (url.endsWith("/credits/restore")) return json(409, { error: "Credits used have changed." });
+      return json(404, {});
+    });
+    const prompt = vi.spyOn(window, "prompt").mockReturnValueOnce("1").mockReturnValueOnce("Failed analysis");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      render(<AdminConsole />);
+      fireEvent.click(await screen.findByRole("button", { name: "Payments" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Restore credit" }));
+      expect(await screen.findByText("Credits used have changed.")).toBeTruthy();
+      const request = apiFetch.mock.calls.find(([url]) => url === "/api/admin/credits/restore");
+      expect(JSON.parse(request?.[1].body)).toEqual({
+        sessionId: "session-1", credits: 1, expectedUsed: 3, reason: "Failed analysis",
+      });
+    } finally {
+      prompt.mockRestore();
+      confirm.mockRestore();
+    }
   });
 });
 
