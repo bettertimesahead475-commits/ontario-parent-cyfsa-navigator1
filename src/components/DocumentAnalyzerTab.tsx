@@ -97,6 +97,7 @@ import { extractReportSegments } from "../utils/narration/reportSegments";
 import type { NarrationSegment } from "../utils/narration/types";
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
+import { isSecondReviewComplete } from "../../shared/reportContract";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -2921,7 +2922,7 @@ export default function DocumentAnalyzerTab() {
           <div class="section-card">
             <h3 class="section-title">Independent second review</h3>
             <p style="font-size:12px; color:#334155;">
-              ${reportForExport.forensicVerification.status === "completed"
+              ${isSecondReviewComplete(reportForExport.forensicVerification)
                 ? `Completed: ${reportForExport.forensicVerification.checkedFindings ?? 0} findings checked against the document by a second model. ${escapeHtml(reportForExport.forensicVerification.overallAssessment || "")}`
                 : escapeHtml(reportForExport.forensicVerification.reason || "Not completed. The findings were not second-reviewed.")}
             </p>
@@ -4668,14 +4669,14 @@ export default function DocumentAnalyzerTab() {
                           {displayedReport.forensicVerification && (
                             <div
                               className={`rounded-xl border p-3.5 text-xs font-sans space-y-1 ${
-                                displayedReport.forensicVerification.status === "completed"
+                                isSecondReviewComplete(displayedReport.forensicVerification)
                                   ? "bg-emerald-50/60 border-emerald-200 text-emerald-950"
                                   : "bg-amber-50 border-amber-200 text-amber-950"
                               }`}
                               id="forensic-verification-summary"
                             >
                               <div className="font-bold">
-                                {displayedReport.forensicVerification.status === "completed"
+                                {isSecondReviewComplete(displayedReport.forensicVerification)
                                   ? `Independent second review completed (${displayedReport.forensicVerification.checkedFindings ?? 0} findings checked)`
                                   : "Independent second review not completed"}
                               </div>

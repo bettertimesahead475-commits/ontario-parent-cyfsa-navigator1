@@ -25,7 +25,7 @@ export interface StructuredCaseBriefPoint {
 }
 
 const LABEL_PATTERN =
-  /(?<![A-Za-z])(ISSUE|DOCUMENT EVIDENCE|EVIDENCE|SIGNIFICANCE|LIMITATION\s*\/\s*COUNTERPOINT|LIMITATION|COUNTERPOINT|VERIFY\s*\/\s*NEXT QUESTION|VERIFY|NEXT QUESTION)(?![A-Za-z])\s*(?:\*\*)?\s*(?::|—|–|\s-\s)/g;
+  /(?<![A-Za-z])(ISSUE|DOCUMENT EVIDENCE|EVIDENCE|SIGNIFICANCE|LIMITATION\s*\/\s*COUNTERPOINT|LIMITATION|COUNTERPOINT|VERIFY\s*\/\s*NEXT QUESTION|VERIFY|NEXT QUESTION)(?![A-Za-z])\s*(?:\*\*\s*)?(?::|—|–|(?<=\s)-\s)/g;
 
 function partFor(label: string): CaseBriefPart {
   const l = label.replace(/\s+/g, " ");
@@ -37,11 +37,15 @@ function partFor(label: string): CaseBriefPart {
 }
 
 function clean(value: string): string {
-  return value
-    .replace(/\*\*/g, "")
-    .replace(/^[\s:—–\-|;]+/, "")
-    .replace(/[\s—–\-|;]+$/, "")
-    .trim();
+  const v = value.replace(/\*\*/g, "").replace(/^[\s:—–\-|;]+/, "");
+  return v.slice(0, trailingSeparatorStart(v)).trim();
+}
+
+/** Index where a trailing run of separators (whitespace — – - | ;) begins; a linear scan instead of a backtracking /[…]+$/. */
+function trailingSeparatorStart(value: string): number {
+  let end = value.length;
+  while (end > 0 && /[\s—–\-|;]/.test(value[end - 1])) end--;
+  return end;
 }
 
 /** True when index i falls inside a quotation, so a label there is quoted text rather than a section boundary. */
@@ -79,13 +83,28 @@ export function parseCaseBriefPoint(point: string): StructuredCaseBriefPoint {
   return { structured: Object.keys(parts).length >= 2, parts: Object.keys(parts).length >= 2 ? parts : {}, text };
 }
 
+/** Splits on "|" with whitespace on both sides (same result as split(/\s+\|\s+/), without its quadratic backtracking). */
+function splitOnSpacedPipes(text: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  for (let i = text.indexOf("|"); i !== -1; i = text.indexOf("|", i + 1)) {
+    if (i - 1 < start || !/\s/.test(text[i - 1]) || !/\s/.test(text[i + 1] ?? "")) continue;
+    out.push(text.slice(start, i).trimEnd());
+    let next = i + 1;
+    while (next < text.length && /\s/.test(text[next])) next++;
+    start = next;
+  }
+  out.push(text.slice(start));
+  return out;
+}
+
 /** Splits "Question: … | What the uploaded record shows: … | Still unknown: … | Source: …" into labelled lines. */
 export function parseLabelledPipeItem(item: string): { label: string; value: string }[] | null {
   const text = (typeof item === "string" ? item : "").replace(/\*\*/g, "").trim();
-  const segments = text.split(/\s+\|\s+/);
+  const segments = splitOnSpacedPipes(text);
   if (segments.length < 2) return null;
   const rows = segments.map((segment) => {
-    const m = segment.match(/^([A-Z][A-Za-z ,'/()-]{1,48}):\s*(.*)$/s);
+    const m = segment.match(/^([A-Z][A-Za-z ,'/()-]{1,48}):(.*)$/s);
     return m ? { label: m[1].trim(), value: m[2].trim() } : { label: "", value: segment.trim() };
   });
   return rows.some((r) => r.label) ? rows : null;

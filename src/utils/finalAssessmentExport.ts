@@ -16,9 +16,34 @@ export const FINAL_ASSESSMENT_NOTICE =
   "It is not legal advice, not a court filing, and not certified. Findings are preliminary: check each one against the cited source page before relying on it.";
 
 export const FINAL_ASSESSMENT_REDACTED_NOTICE =
-  REDACTED_COPY_NOTICE + " The matter title and source file names are replaced with neutral labels; page numbers are kept.";
+  REDACTED_COPY_NOTICE +
+  " Names cannot be reliably detected in free text, so finding wording and source excerpts are withheld rather than partly masked." +
+  " The matter title and source file names are replaced with neutral labels. Section structure, source numbers and page references are kept, so each withheld finding can be checked against the original page.";
 
 export const REDACTED_MATTER_TITLE = "Redacted matter";
+export const FINDING_WITHHELD = "[Finding withheld in this redacted copy. Check the cited source page in the original.]";
+export const EXCERPT_WITHHELD = "[Source excerpt withheld in this redacted copy.]";
+
+/** What a redacted FCA export includes and withholds, shown to the user before download. */
+export function describeRedactedFinalAssessment(report: AssessmentReport): { included: string[]; withheld: string[] } {
+  const sources = Array.isArray(report.sources) ? report.sources : [];
+  const counts = FINAL_ASSESSMENT_SECTIONS.map(([key, label]) => [label, Array.isArray(report.sections?.[key]) ? report.sections[key].length : 0] as const);
+  const findings = counts.reduce((n, [, c]) => n + c, 0);
+  const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+  return {
+    included: [
+      `Section headings with the number of findings in each (${counts.map(([l, c]) => `${l}: ${c}`).join(", ")})`,
+      `Source and page references for every finding (${plural(sources.length, "source page")}, labelled "Source document N")`,
+      "The saved date and the educational-use notice",
+    ],
+    withheld: [
+      "The matter title",
+      plural(sources.length, "source file name"),
+      `The wording of ${plural(findings, "finding")}`,
+      plural(sources.filter((s) => typeof s.text === "string" && s.text !== "").length, "source excerpt"),
+    ],
+  };
+}
 
 export interface FinalAssessmentExportOptions {
   generatedAt?: Date;
@@ -28,20 +53,21 @@ export interface FinalAssessmentExportOptions {
 
 /**
  * Redacted copy built with the shared export redaction (every free-text string removed), so the FCA follows the same
- * rule as the Quick Review and Forensic exports. Only source ids, page numbers and the save time survive. The input is not modified.
+ * rule as the Quick Review and Forensic exports; findings and excerpts are then labelled as withheld. Only source ids, page numbers
+ * and the save time survive. The input is not modified.
  */
 export function redactFinalAssessment(report: AssessmentReport): AssessmentReport {
   const sources = Array.isArray(report.sources) ? report.sources : [];
   const sections = {} as AssessmentReport["sections"];
   for (const [key] of FINAL_ASSESSMENT_SECTIONS) {
     const points = Array.isArray(report.sections?.[key]) ? report.sections[key] : [];
-    sections[key] = points.map((p) => ({ ...redactForExport(p), sources: Array.isArray(p.sources) ? [...p.sources] : [] }));
+    sections[key] = points.map((p) => ({ ...redactForExport(p), text: p.text ? FINDING_WITHHELD : p.text, sources: Array.isArray(p.sources) ? [...p.sources] : [] }));
   }
   return {
     ...redactForExport(report),
     title: REDACTED_MATTER_TITLE,
     createdAt: report.createdAt,
-    sources: sources.map((s, i) => ({ ...redactForExport(s), id: s.id, page: s.page, document: `Source document ${i + 1}` })),
+    sources: sources.map((s, i) => ({ ...redactForExport(s), id: s.id, page: s.page, document: `Source document ${i + 1}`, text: s.text ? EXCERPT_WITHHELD : s.text })),
     sections,
   };
 }

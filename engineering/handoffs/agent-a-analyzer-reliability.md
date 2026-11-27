@@ -147,3 +147,78 @@ Verification: fix commit `06bfe41` on `devin/1795745654-analyzer-redflags-timeou
 `npx tsc --noEmit -p .` clean; full Vitest **314 files passed, 15 skipped (329); 4,718 tests passed, 512 skipped
 (5,230)**. Without the code change, 2 of the 6 tests in `api/forensic-budget-overview-last.test.ts` fail (redFlags alone
 at 1.20x; uniform at 1.20x). No Cloudflare, Supabase, binding or deployment change; no paid inference.
+
+## Follow-up 2026-11-26: verification coverage defect and full-lifecycle replay
+
+### Defect: a second review that checked nothing was reported as "completed" (fixed)
+
+`runForensicVerification` returned `status: "completed"` for any parseable verifier reply, whatever it covered. A
+reply with verdicts for 0 of N findings (or only some of them, or none of the threshold rows the verifier is sent)
+was saved and shown as a completed second review: the in-app summary showed "Independent second review completed
+(0 findings checked)", and the Forensic PDF headed the report "with Second Review". The earlier replay test
+(`forensic-budget-overview-last.test.ts:85`) passed only because its verifier mock (`{ verdicts: [] }`) hit this.
+
+- Fix (`api/services/analyzerSections.ts`): when `checked < findingCount` the result is `status: "incomplete"` with
+  `checkedFindings`, `totalFindings` and a reason. Verdicts that were returned stay on their findings.
+- Already-saved reports: `isSecondReviewComplete` (`shared/reportContract.ts`) treats `completed` with
+  `checkedFindings < totalFindings` as not complete; used by the in-app summary and export
+  (`DocumentAnalyzerTab.tsx`), the Forensic PDF (`forensicPdfRenderer.ts`) and the report contract's run notes. The
+  parent view already showed partial coverage.
+- Other paths checked, no defect: verification that times out or is cut off is `incomplete`; a failed section run
+  throws and saves nothing; the queue saves the report before finalizing and marks `completed` only after.
+- Regression: `api/forensic-verification-coverage.test.ts` (5 tests; 3 fail on the old analyzer code; the fifth covers saved reports).
+- Production `b9617a8` is affected: it has the same unconditional `status: "completed"` and the same UI check.
+- Product risk to watch: the prompt asks for a verdict on every threshold row, including the mandatory CYFSA rows the
+  parser adds. If the production model leaves rows out, those reports now say "incomplete" instead of "completed". That
+  is the accurate label; it was not measured (no paid inference).
+- Five existing test mocks returned partial verifier replies while asserting "completed"; they now use
+  `completeVerification` (`api/analyzerTestFixtures.ts`), which fills a verdict for each finding and row sent.
+
+### Full-lifecycle replay (`api/forensic-lifecycle-replay.test.ts`)
+
+Real `processJob` → real `handleAnalyzeRequest` (trusted job) → real section pipeline and verification, with fake
+timers. Every ledger RPC, Storage write, credit call and model call is delayed. Covered: Worker startup, claim,
+persisted-report check, input load, awaited job-state and progress writes, inference per section (concurrency 3),
+retries, verification, report save, reload and finalization. Deadlines checked: 178 s AI deadline, the handler's hard
+deadline (budget + 5 s), the 240 s lease renewed by each running write, and the 15-minute Queue wall time.
+
+I/O latency is not measured anywhere in the repository. The only figure is the ~30–80 ms per Supabase round trip
+estimated in `engineering/SECURITY_REGISTER.md`. The replay uses conservative values: typical 250 ms per RPC and
+600 ms per Storage write; slow 2 s and 4 s; startup 1 s. The startup, claim and input load come before the AI deadline
+is set. The job-state write and the first progress write come after it, so they cost AI budget.
+
+Corrected figures (largest slowdown that still completes with a full second review):
+
+| Claim | Section-only replay | Lifecycle, typical I/O | Lifecycle, slow I/O |
+| --- | --- | --- | --- |
+| redFlags alone | 1.55x | 1.55x | 1.50x |
+| Uniform (every call) | 1.35x | **1.30x** | **1.25x** |
+| Overview alone | 2.25x | **2.20x** | **2.00x** |
+| Chronology alone | 1.35x | 1.35x | 1.35x |
+
+- Overview-last at production timings starts at 95.4 s with an 81.4 s timeout (slow I/O: 107.5 s, 74.5 s); it needs
+  36.7 s. Runs complete in 133.9 s (slow: 158.2 s). The longest lease gap is 43.6 s, far below 240 s.
+- Variable latency (±15 % on every call, 20 seeds): all complete to 1.15x. At 1.2x one seed of 20 loses chronology
+  (its 110 s limit), and nothing is saved.
+- A fast provider failure on the first redFlags and first verification attempt is retried and still completes.
+- Verification slower than the remaining budget: the report is saved and labelled `incomplete` (0 checked).
+- Uniform 1.5x: nothing is saved, no completed state is written, and the message is redelivered.
+
+### Recommendation: checkpointing / resumable verification (not implemented)
+
+The queue path keeps no section checkpoints. A redelivery after a deadline miss restarts all six sections and
+verification, which is the likely shape of the 18-minute, four-attempt incident run. `runSectionedAnalysis` already accepts
+`initialSections` and starts verification from them. A resumable design would persist each validated section, plus the
+verification result, to the job's Storage object (`onSectionComplete`) and pass them back as `initialSections` on
+redelivery. Each attempt would then only spend budget on what is missing. This needs a new Storage object layout,
+cleanup and ownership checks; it is not a small change, so it is left for the lead engineer.
+
+Verification: commits `df92cce` (fix + coverage tests + fixtures) and `cc78b7a` (lifecycle replay + handoff) on
+`devin/1795746866-analyzer-verification-lifecycle`, base `engineering/integration` `0a7c680` (includes #147, #152).
+`npx tsc --noEmit -p .` clean; full Vitest **321 files passed, 15 skipped (336); 4,755 tests passed, 512 skipped
+(5,267)**. No paid inference, migration, binding, Cloudflare or customer-data change.
+
+Review round: `d7109bf` (the Forensic PDF now reports a partial review as "Partly completed. N of M findings checked",
+not "Not completed"; Devin Review finding), `7c22511` (`isSecondReviewComplete` moved above `adaptLegacyReport`'s
+JSDoc; new test: with no red flags, a reply covering none of the 4 threshold rows is `incomplete`, 0 of 4). Full Vitest
+**321 files passed, 15 skipped (336); 4,756 tests passed, 512 skipped (5,268)**; `tsc` clean.

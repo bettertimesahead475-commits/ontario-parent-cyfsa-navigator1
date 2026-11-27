@@ -79,10 +79,25 @@ export function requestedSection(body: any): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * A verifier reply that gives a result for every finding id and threshold row the request sent (SUPPORTED for any
+ * the reply leaves out). Only a reply with full coverage is a completed second review.
+ */
+export function completeVerification(reply: Record<string, any>, body: any): Record<string, any> {
+  const prompt = JSON.stringify(body?.messages ?? "");
+  const named = (field: string) => [...prompt.matchAll(new RegExp(`\\\\"${field}\\\\": \\\\"([^\\\\]+)\\\\"`, "g"))].map((m) => m[1]);
+  const findings = [...(reply.findings || [])];
+  for (const id of named("id")) if (!findings.some((f: any) => f.id === id)) findings.push({ id, verdict: "SUPPORTED", note: "Supported." });
+  const thresholds = [...(reply.thresholds || [])];
+  for (const t of named("thresholdChecked")) if (!thresholds.some((v: any) => v.thresholdChecked === t)) thresholds.push({ thresholdChecked: t, verdict: "SUPPORTED", note: "Supported." });
+  return { ...reply, findings, thresholds };
+}
+
 /** mockImplementation for the Anthropic messages mock: answers sections and verification. */
 export function sectionResponder(
   report: Record<string, any> = COMPLETE_ANALYSIS,
-  verification: Record<string, any> = VERIFICATION_RESULT
+  verification: Record<string, any> = VERIFICATION_RESULT,
+  completeReview = false
 ) {
-  return async (body: any) => claudeJson(isVerificationRequest(body) ? verification : report);
+  return async (body: any) => claudeJson(isVerificationRequest(body) ? (completeReview ? completeVerification(verification, body) : verification) : report);
 }
