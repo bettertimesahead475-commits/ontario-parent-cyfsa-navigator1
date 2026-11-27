@@ -1,13 +1,27 @@
 // Reproduction evidence for the renderer-level redaction: renders a synthetic, UNREDACTED report with
 // redactionEnabled, prints it to PDF with headless Chrome, and checks the PDF's extracted text and metadata.
-// Usage: npx tsx scripts/verify-redacted-forensic-pdf.ts <outDir>   (needs google-chrome, pdftotext, pdfinfo)
+// Usage: npx tsx scripts/verify-redacted-forensic-pdf.ts   (writes to <tmpdir>/cyfsa-redacted-forensic-pdf; needs Chrome)
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PDFParse } from "pdf-parse";
 import { renderForensicReportHtml } from "../src/utils/forensicPdfRenderer";
 
-const out = resolve(process.argv[2] || "evidence-redacted-pdf");
+// Fixed locations only: no path or binary comes from arguments or PATH lookup.
+const out = join(tmpdir(), "cyfsa-redacted-forensic-pdf");
 mkdirSync(out, { recursive: true });
+const CFT_ROOT = "/opt/.devin/chrome/chrome";
+const chromeCandidates = [
+  ...(existsSync(CFT_ROOT) ? readdirSync(CFT_ROOT).sort().reverse().map((d) => join(CFT_ROOT, d, "chrome-linux64", "chrome")) : []),
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/google-chrome",
+  "/opt/google/chrome/chrome",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/chromium",
+];
+const chrome = chromeCandidates.find((c) => existsSync(c));
+if (!chrome) throw new Error("No Chrome binary found in the fixed locations");
 const SECRETS = ["Jordan Syntheticparent", "FC-26-00000001-0000", "maternal aunt", "416-555-0100", "Riverside Crescent"];
 const report = {
   documentTitle: `Affidavit of ${SECRETS[0]}`,
@@ -22,11 +36,14 @@ const html = renderForensicReportHtml(report, { redactionEnabled: true, fileName
 const htmlPath = join(out, "redacted-forensic.html");
 const pdfPath = join(out, "redacted-forensic.pdf");
 writeFileSync(htmlPath, html);
-execFileSync("google-chrome", ["--headless=new", "--no-sandbox", "--disable-gpu", `--print-to-pdf=${pdfPath}`, "--no-pdf-header-footer", `file://${htmlPath}`], { stdio: "ignore" });
-const text = execFileSync("pdftotext", ["-layout", pdfPath, "-"]).toString();
-const meta = execFileSync("pdfinfo", [pdfPath]).toString();
+execFileSync(chrome, ["--headless=new", "--no-sandbox", "--disable-gpu", `--print-to-pdf=${pdfPath}`, "--no-pdf-header-footer", `file://${htmlPath}`], { stdio: "ignore", env: { HOME: tmpdir() } });
+const parser = new PDFParse({ data: readFileSync(pdfPath) });
+const text = (await parser.getText()).text;
+const info = await parser.getInfo();
+await parser.destroy();
+const meta = JSON.stringify({ pages: info.total, info: info.info, metadata: info.metadata ?? null }, null, 2);
 writeFileSync(join(out, "redacted-forensic.txt"), text);
-writeFileSync(join(out, "redacted-forensic.pdfinfo.txt"), meta);
+writeFileSync(join(out, "redacted-forensic.pdfinfo.json"), meta);
 const leaks = SECRETS.filter((s) => text.includes(s) || meta.includes(s) || html.includes(s));
-console.log(JSON.stringify({ pdf: pdfPath, pages: /Pages:\s+(\d+)/.exec(meta)?.[1], title: /Title:\s+(.*)/.exec(meta)?.[1] ?? null, notice: text.includes("not guaranteed to be anonymous"), leaks }, null, 2));
+console.log(JSON.stringify({ pdf: pdfPath, pages: info.total, title: (info.info as { Title?: string } | undefined)?.Title ?? null, notice: text.includes("not guaranteed to be anonymous"), leaks }, null, 2));
 if (leaks.length) process.exit(1);
