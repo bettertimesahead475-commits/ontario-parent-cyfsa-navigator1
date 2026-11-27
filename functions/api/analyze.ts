@@ -16,7 +16,7 @@ import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse
 import { readVerifiedPaidSession } from './_supabase-paid-session';
 import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reservation';
 import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
-import { reserveFreeScan } from './_free-credit-reservation';
+import { FREE_SCAN_LIMIT, reserveFreeScan } from './_free-credit-reservation';
 import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
 import { claimJobRecord, saveCompletedJob, saveJobState } from './_analysis-jobs';
 import { createDurableJob, DurableJobStorageError, jobOwnership, nextAttemptId, type JobOwnership, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
@@ -323,7 +323,7 @@ export async function handleAnalyzeRequest(
     const reservation = await reserveFreeScan(uid, requestId, rpc);
     if (reservation.status === 'limit') {
       return Response.json(
-        { error: "You've used your free analysis. Upgrade to continue.", code: 'FREE_LIMIT_REACHED' },
+        { error: `You've used your ${FREE_SCAN_LIMIT} free Quick Reviews. Upgrade to continue.`, code: 'FREE_LIMIT_REACHED' },
         { status: 402, headers: DEFAULT_HEADERS }
       );
     }

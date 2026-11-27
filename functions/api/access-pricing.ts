@@ -5,6 +5,8 @@
  * Returns verified tier prices, product descriptions, and feature entitlements.
  */
 
+import { FREE_SCAN_LIMIT } from './_free-credit-reservation';
+
 const DEFAULT_HEADERS = {
   'Cache-Control': 'public, max-age=3600',
   'X-Content-Type-Options': 'nosniff',
@@ -138,7 +140,7 @@ export const onRequestGet = async (): Promise<Response> => {
           ],
           restrictions: [
             'No premium report download/export/print unless included in paid access',
-            '1 Free Quick Document Review',
+            `${FREE_SCAN_LIMIT} Free Quick Document Reviews`,
           ],
         },
       },
