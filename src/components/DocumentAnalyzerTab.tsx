@@ -5666,7 +5666,7 @@ export default function DocumentAnalyzerTab() {
                                   <span>{file.name}</span>
                                 </h4>
                                 <p className="text-[10px] font-sans text-slate-500 mt-0.5">
-                                  Uploaded: {file.uploadedAt} • Size: {Math.round(file.size / 1024)} KB
+                                  Uploaded: {file.uploadedAt || "Not recorded"} • Size: {Number.isFinite(file.size) ? `${Math.round(file.size / 1024)} KB` : "Not recorded"}
                                 </p>
                               </div>
 
@@ -5678,7 +5678,7 @@ export default function DocumentAnalyzerTab() {
                                   </span>
                                 ) : file.analysisStatus === "analyzing" ? (
                                   <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1 animate-pulse">
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing (3-5s)...
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing…
                                   </span>
                                 ) : file.analysisStatus === "failed" ? (
                                   <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1">

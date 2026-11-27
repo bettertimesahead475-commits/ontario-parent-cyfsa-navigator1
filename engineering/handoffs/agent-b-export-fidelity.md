@@ -19,7 +19,22 @@ Branch: `devin/1795744359-exports-pdf-polish` → base `devin/1795744800-exports
 - Persistence: Case Cabinet file and saved reports survive refresh; hidden after sign-out; not visible to a second user; restored on re-sign-in (keys `*_<uid>`).
 
 ## Open findings (not changed here)
-- `OPA_COACH_CHAT_MESSAGES` and `OPA_STATUTE_BOOKMARKS` are stored without a per-user suffix, so they carry across accounts on a shared browser.
 - Quick Review chronology prints raw enum labels (`DIRECT_OBSERVATION`).
 - Quick/Forensic headings use emoji that render as boxes where no emoji font is installed.
 - Forensic's last page can hold only the closing footer line.
+
+## Follow-up: per-account coach chat and bookmarks, Case Cabinet/matters UX
+
+Branch: `devin/1795745710-exports-account-scoped-storage`.
+
+- `useAccountStorage(baseKey, fallback)` (`src/hooks/useAccountStorage.ts`) stores under `${baseKey}_${uid}` (the `getUserKey` format) and reloads when the account changes. When signed out, data is kept in memory only. `ParentChatBot` (`OPA_COACH_CHAT_MESSAGES`) and `StatutoryBookmarkSidebar` (`OPA_STATUTE_BOOKMARKS`) use it.
+- Legacy shared keys (`SHARED_LEGACY_ACCOUNT_KEYS` in `src/utils/firebase.ts`) are never read, and `signOutOfAccount` deletes them. They are not copied into the first account that signs in, because nobody can tell whose data they were.
+- Final Case Assessment: "Reopen saved report" on a matter without a report now says so instead of showing nothing. API error codes are shown in plain words (unknown codes fall back to the server's text), with no doubled full stop. A missing `createdAt` shows "Saved Not recorded" (it used to show "Invalid Date"), and a source id missing from the saved list is labelled instead of printing ", p. undefined". Stale notices are cleared on reload.
+- Case Cabinet: "Analyzing (3-5s)..." → "Analyzing…" (a Forensic run takes minutes). A missing upload date or size shows "Not recorded".
+- Browser check (two mocked users, legacy shared data seeded): A sees only A's chat and bookmark, before and after refresh. Sign-out deletes the legacy keys and hides A's data. B sees nothing of A's or the legacy data, and A's keys are unchanged. FCA no-report notice and `MISSING_SOURCE_DOCUMENTS` alert checked in the browser with mocked `/api`.
+
+- Review fix (`9edceae`): the setter is bound to the account that rendered it, so a coach reply that arrives after sign-out or an account switch is dropped instead of being added to the next account's history.
+- Verified at `9edceae`: tsc 0 errors; vitest 317 files passed, 15 skipped; 4725 tests passed, 512 skipped, 0 failed.
+- Escalated (pre-existing, needs a lead decision): the coach "clear chat" button calls `useAppReset.resetAll()`, which wipes localStorage/IndexedDB for every account on the browser, even when nobody is signed in. Recommendation: make it clear only the current account's chat.
+
+Still open: Quick Review chronology prints raw enum labels; emoji headings in Quick/Forensic PDFs; Forensic's last page can hold only the closing footer line.
