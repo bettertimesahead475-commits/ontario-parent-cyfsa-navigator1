@@ -316,6 +316,80 @@ describe.skipIf(!enabled).each(variants)('post-$name: one activation per approve
     expect(await t.live()).toHaveLength(0);
   });
 
+  const isRejectPatch = (hop: Hop) => hop.method === 'PATCH' && hop.target === 'payments' && (hop.body as Json | undefined)?.status === 'rejected';
+  /** After a refund is recorded, nothing of that payment may work: no live entitlement, no redeemable code, no claim. */
+  const refundedClosed = async (ref: string, code?: string | null) => {
+    if (code) expect((await t.activate(code)).status).not.toBe(200);
+    expect(await t.redeemableCodes(ref)).toBe(0);
+    h.nextMinute();
+    expect((await t.claim(ref)).status).not.toBe(200);
+    expect(await t.live()).toHaveLength(0);
+  };
+
+  it('approve versus refund (refund runs while approval is issuing its code): the approval code is cancelled, nothing activates', async () => {
+    const ref = await t.order();
+    const g = gateFor(isCodePost);
+    const approving = t.approve(ref);
+    await g.reached; // payment moved to approved, its code not inserted yet
+    const r = await t.refund(ref);
+    expect(r.status).toBe(200);
+    g.release();
+    const a = await approving;
+    expect([a.status, a.body.code]).toEqual([409, 'PAYMENT_REFUNDED']);
+    await refundedClosed(ref, a.body.accessCode);
+  });
+
+  it('approve versus refund (approval completes while the refund is paused before cancelling): the code is retired, nothing activates', async () => {
+    const ref = await t.order();
+    const g = gateFor(isRejectPatch);
+    const refunding = t.refund(ref);
+    await g.reached; // refund recorded, cancellation not yet attempted
+    const a = await t.approve(ref);
+    expect([a.status, a.body.code]).toEqual([409, 'PAYMENT_REFUNDED']);
+    g.release();
+    expect((await refunding).status).toBe(200);
+    await refundedClosed(ref, a.body.accessCode);
+  });
+
+  it('approve versus refund (customer redeems the approval code before the refund cancels): the refund revokes it', async () => {
+    const ref = await t.order();
+    const a = await t.approve(ref);
+    // The order is approved now, so the refund has nothing to cancel: pause it before it retires unused codes.
+    const g = gateFor((hop) => hop.method === 'PATCH' && hop.target === 'access_codes');
+    expect(a.status).toBe(200);
+    const refunding = t.refund(ref);
+    await g.reached;
+    expect((await t.activate(a.body.accessCode)).status).toBe(200);
+    g.release();
+    const r = await refunding;
+    expect([r.status, r.body.sessionsRevoked]).toEqual([200, 1]);
+    await refundedClosed(ref, a.body.accessCode);
+  });
+
+  it('approve and refund sent at the same moment, 12 orders: every refunded order ends with no access and no working code', async () => {
+    for (let i = 0; i < 12; i++) {
+      const ref = await t.order();
+      const [a] = await Promise.all([t.approve(ref), t.refund(ref)]);
+      expect([200, 409]).toContain(a.status);
+      if (a.status === 200 && a.body.accessCode) expect((await t.activate(a.body.accessCode)).status).not.toBe(200);
+      expect(await t.redeemableCodes(ref)).toBe(0);
+      expect(await t.usedCodes(ref)).toBe(0);
+    }
+    expect(await t.live()).toHaveLength(0);
+  });
+
+  it('approval of a pending order whose refund was already recorded is refused before anything changes', async () => {
+    const ref = await t.order();
+    t.cut(isRejectPatch, 'before'); // refund recorded, then interrupted before it could cancel the order
+    expect((await t.refund(ref)).status).not.toBe(200);
+    const a = await t.approve(ref);
+    expect([a.status, a.body.code]).toEqual([409, 'PAYMENT_REFUNDED']);
+    expect((await h.q('select status from public.payments where reference_number = $1', [ref]))[0].status).toBe('pending');
+    expect(await t.codes(ref)).toHaveLength(0);
+    const resumed = await t.refund(ref);
+    expect([resumed.status, resumed.body.paymentRejected, resumed.body.resumed]).toEqual([200, true, true]);
+  });
+
   it('a monthly renewal (new verified payment) extends the one entitlement by 30 days; refunding it takes the 30 days back', async () => {
     const a = await t.order('Pro'); const b = await t.order('Pro');
     await t.approve(a, 'Pro'); await t.approve(b, 'Pro');
@@ -337,5 +411,5 @@ describe.skipIf(!enabled).each(variants)('post-$name: one activation per approve
   let overlapExpected = false;
   afterEach(async () => { if (!overlapExpected) await t.noOverlap(); overlapExpected = false; });
 
-  function gateFor(match: (hop: Hop) => boolean) { return t.gate(match); }
+  function gateFor(match: (hop: Hop) => boolean, phase: 'before' | 'after' = 'before') { return t.gate(match, phase); }
 });
