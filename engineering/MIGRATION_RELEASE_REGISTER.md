@@ -1,4 +1,4 @@
-# Database migration release register (A–F)
+# Database migration release register (A–G, P)
 
 Owner: lead engineer (T-05 session). Last read-only check of the live-bound database: 2026-11-27 18:40 UTC (aggregate queries only; nothing changed).
 
@@ -20,6 +20,22 @@ database behind production Cloudflare Pages (`cyfsa-navigator-git-staging`, depl
 | D | `migrations_pending_approval/access_codes_one_redemption_per_reference.sql` | Not applied. **Its preflight fails 2 blocking checks on live** (see P): 3 of 4 required columns, and the RPC fingerprint mismatches. Non-blocking: 0 duplicate references, 0 redeemed codes with a reference, 0 unused codes of activated references | **P** | [#175](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/175), `engineering/reviews/s34-one-redemption-per-reference-20261127.md` |
 | E | `migrations_pending_approval/paid_sessions_early_renewal_keeps_credits.sql` (+ `.rollback.sql`, `.preflight.sql`) | Not applied; preflight prepared, not run on live | D | [#181](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/181), `engineering/reviews/e-early-renewal-keeps-credits-20261127.md`. **Blocking app fix first (#171):** an admin top-up refund must subtract the pack from `granted_credits`, not only the 30 days |
 | F | `migrations_pending_approval/create_transactional_email_outbox.sql` (+ `.down.sql`, `.preflight.sql`, `.test.sql`/`.test.sh`) | Not applied; preflight prepared, not run on live | — (independent of P–E) | [#182](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/182) (Agent B) |
+| **G** | `migrations_pending_approval/payments_service_role_review_update.sql` (+ `.rollback.sql`, `.preflight.sql`) | Not applied. **Live `service_role` has no `UPDATE` on `payments`** (read-only, 2026-11-27), so admin approve and pending-order refund get 502 and issue nothing. G grants `UPDATE (status, approved_at)` only | — (independent of P–F; needed before any live e-Transfer sale) | [#188](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/188) |
+
+## Qualification: real PostgreSQL + PostgREST harness ([#188](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/188))
+
+Real handlers through the real PostgREST 12.2.3 binary on disposable PostgreSQL 16, with a live-schema baseline (`md5(prosrc) = ca9f13a8…`).
+Only Firebase verification is stubbed. 27/27 pass locally; detail in `engineering/reviews/payment-schema-qualification-20261127.md`.
+Claude has not yet re-qualified.
+
+| Entry | Result |
+|---|---|
+| Baseline (today, before P) | Claim 503 `ACTIVATION_UNAVAILABLE`, nothing written. My Orders 503 and refund of an activated order 501 on #171 head `1773183`; #188 fixes both (orders listed without `accessActive`; refund revokes). Monthly renewal makes 2 overlapping entitlements |
+| G | Without G: approve 502, nothing issued. With G: approve, reissue and refund work before P |
+| P | 1 activation from 5 concurrent claims; approve versus claim, approve then claim, 3 interruption points (after code insert, after RPC, before refund history) all end with 1 entitlement; monthly renewal extends one entitlement by 30 days. Two live codes of one payment still both activate (S-34) |
+| P + D | Same as P, and D refuses the second code (`ORDER_ALREADY_ACTIVATED`): 1 entitlement |
+| Refund versus reissue (P and P + D) | On #171 head the reissued code activated a refunded order; #188 cancels it (409 `PAYMENT_REFUNDED`) |
+| E | Not covered here; refund accounting with P+D+E is the next task |
 
 ## P: repo/live drift (new launch blocker for payments)
 
@@ -44,11 +60,12 @@ database behind production Cloudflare Pages (`cyfsa-navigator-git-staging`, depl
 
 1. Owner decides on the authorization for A/B, which are already live.
 2. Backup or PITR.
-3. P, then D's preflight.
-4. D.
-5. E.
-6. C, with the flag off; activate later per the #174 brief.
-7. F.
+3. G (independent; required before any live e-Transfer approval).
+4. P, then D's preflight.
+5. D.
+6. E.
+7. C, with the flag off; activate later per the #174 brief.
+8. F.
 
 C and F have no data dependency on the others and can move if needed.
 Before each step, re-run its read-only preflight and these aggregate checks:
