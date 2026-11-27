@@ -8,7 +8,6 @@ const authState = vi.hoisted(() => ({
 }));
 
 vi.mock("../utils/firebase", () => ({
-  SHARED_LEGACY_ACCOUNT_KEYS: ["OPA_COACH_CHAT_MESSAGES", "OPA_STATUTE_BOOKMARKS"],
   auth: {
     get currentUser() {
       return authState.currentUser;

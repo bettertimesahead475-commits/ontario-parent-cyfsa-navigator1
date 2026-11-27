@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { auth } from "../utils/firebase";
-
-export { SHARED_LEGACY_ACCOUNT_KEYS } from "../utils/firebase";
+import { ACCOUNT_STORAGE_CHANGED } from "../utils/legacySharedData";
 
 function read<T>(baseKey: string, uid: string | null, fallback: () => T): T {
   if (!uid) return fallback();
@@ -29,6 +28,13 @@ export function useAccountStorage<T>(baseKey: string, fallback: () => T): [T, Di
     // fallback is a factory for the initial value; only the account matters here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, baseKey, state.owner]);
+
+  useEffect(() => {
+    const reload = () => setState({ owner: uid, value: read(baseKey, uid, fallback) });
+    window.addEventListener(ACCOUNT_STORAGE_CHANGED, reload);
+    return () => window.removeEventListener(ACCOUNT_STORAGE_CHANGED, reload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, baseKey]);
 
   useEffect(() => {
     if (!state.owner || state.owner !== uid) return;

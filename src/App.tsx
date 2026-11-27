@@ -28,6 +28,7 @@ const SignUpTab = lazy(() => import("./components/SignUpTab"));
 const StatutoryBookmarkSidebar = lazy(() => import("./components/StatutoryBookmarkSidebar"));
 const FloatingTTS = lazy(() => import("./components/FloatingTTS"));
 const ParentChatBot = lazy(() => import("./components/ParentChatBot"));
+const LegacySharedDataPrompt = lazy(() => import("./components/LegacySharedDataPrompt"));
 const LegalTerminologyDrawer = lazy(() => import("./components/LegalTerminologyDrawer"));
 const PricingTab = lazy(() => import("./components/PricingTab"));
 // Admin-only Marketing Agent console; intentionally omitted from public navigation.
@@ -638,6 +639,7 @@ export default function App() {
           {/* Free educational Q&A chat ("OPA Coach") - always available, never gated by
               sign-in or payment: it's informational, not one of the paid document tools. */}
           <ParentChatBot />
+          <LegacySharedDataPrompt />
         </Suspense>
       )}
       
