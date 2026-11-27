@@ -72,6 +72,14 @@ describe("legacy shared-data migration", () => {
     expect(get(`${BOOKS}_user-a`)[0].userNotes).toBe("legacy note");
   });
 
+  it("keeps the shared coach greeting first, then the imported chat, then the account's own messages", () => {
+    localStorage.setItem(CHAT, JSON.stringify([{ id: "coach-welcome" }, { id: "legacy-q" }, { id: "legacy-a" }]));
+    localStorage.setItem(`${CHAT}_user-a`, JSON.stringify([{ id: "coach-welcome" }, { id: "mine" }]));
+    legacyOfferFor("user-a");
+    decideLegacy("user-a", "import");
+    expect(get(`${CHAT}_user-a`).map((m: { id: string }) => m.id)).toEqual(["coach-welcome", "legacy-q", "legacy-a", "mine"]);
+  });
+
   it("a resumed import does not duplicate items already copied", () => {
     seedLegacy();
     localStorage.setItem(`${CHAT}_user-a`, JSON.stringify([{ id: "m1", text: "legacy chat" }]));

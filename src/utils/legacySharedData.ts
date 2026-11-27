@@ -46,7 +46,10 @@ function merge(account: Item[], legacy: Item[], legacyFirst: boolean): Item[] {
   const kept = account.map(item => (item?.id !== undefined && byId.has(item.id) ? combine(item, byId.get(item.id)!) : item));
   const accountIds = new Set(account.map(item => item?.id).filter(id => id !== undefined));
   const added = legacy.filter(item => item?.id === undefined || !accountIds.has(item.id));
-  return legacyFirst ? [...added, ...kept] : [...kept, ...added];
+  if (!legacyFirst) return [...kept, ...added];
+  // Items in both histories (e.g. the coach greeting) began both of them, so they stay ahead of the imported ones.
+  const shared = kept.filter(item => item?.id !== undefined && byId.has(item.id));
+  return [...shared, ...added, ...kept.filter(item => !shared.includes(item))];
 }
 
 function finish(uid: string, decision: Decision): boolean {
