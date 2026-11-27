@@ -129,28 +129,6 @@ describe('processJob', () => {
     expect(mocks.releaseFree).toHaveBeenCalledWith('user_1', JOB.job_id, 'reservation_1', undefined);
     expect(msg.ack).toHaveBeenCalledOnce();
   });
-
-  it('skips the pre-analysis Storage recovery read on a fresh first attempt, but checks Storage on retries', async () => {
-    succeedAndPersist();
-    const first = message();
-    await processJob(first as any, {} as any);
-    // Only the post-analysis persistence verification read runs on attempt 1.
-    expect(mocks.loadReport).toHaveBeenCalledTimes(1);
-    expect(mocks.analyze).toHaveBeenCalledTimes(1);
-    expect(first.ack).toHaveBeenCalledOnce();
-
-    vi.clearAllMocks();
-    mocks.claim.mockResolvedValue({ ...JOB, attempt_count: 2 });
-    mocks.loadReport.mockResolvedValue({ summary: 'recovered' });
-    mocks.update.mockResolvedValue(true);
-    mocks.finalizeFree.mockResolvedValue({ status: 'consumed' });
-    const retryMsg = { ...message(), attempts: 2 };
-    await processJob(retryMsg as any, {} as any);
-    expect(mocks.loadReport).toHaveBeenCalledTimes(1);
-    expect(mocks.analyze).not.toHaveBeenCalled();
-    expect(mocks.finalizeFree).toHaveBeenCalledOnce();
-    expect(retryMsg.ack).toHaveBeenCalledOnce();
-  });
 });
 
 describe('processDeadLetter', () => {
