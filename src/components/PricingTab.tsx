@@ -28,6 +28,7 @@ import { getUserKey } from "../utils/storage";
 import { useLocation } from "wouter";
 import { auth, signInMinimal } from "../utils/firebase";
 import { apiFetch } from "../utils/api";
+import MyOrdersPanel from "./MyOrdersPanel";
 
 interface PricingTabProps {
   currentTier: AccessTier;
@@ -51,6 +52,10 @@ const FALLBACK_TIER_PRICES: Record<string, number> = {
 
 const PAYMENT_EMAIL = "chris@cyfsanavigator.com";
 
+// Same format as the server's e-Transfer instructions (request-access getInstructions): 2,000 and 49.99.
+const formatCad = (amount: number) =>
+  Number.isInteger(amount) ? amount.toLocaleString("en-CA") : amount.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 type PurchasableTier = "Pro" | "Premium" | "Basic" | "Community5" | "Community10" | "Community25";
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
 
@@ -69,6 +74,8 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
   // Activator state
   const [sidebarEmail, setSidebarEmail] = useState(userEmail);
   const [sidebarCode, setSidebarCode] = useState("");
+  // Plans whose active period ends within the reminder window: their card offers checkout again to renew.
+  const [renewalTiers, setRenewalTiers] = useState<string[]>([]);
   const [sidebarError, setSidebarError] = useState("");
   const [sidebarBusy, setSidebarBusy] = useState(false);
   const [sidebarSuccess, setSidebarSuccess] = useState(false);
@@ -406,7 +413,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                 </span>
                 <p className="text-slate-700 font-semibold text-xs flex items-center gap-1.5">
                   <FileSearch className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>1 Free Quick Document Review</span>
+                  <span>3 Free Quick Document Reviews</span>
                 </p>
                 <p className="text-[10.5px] text-slate-500 leading-tight pt-1 border-t border-slate-200/60">
                   When used, your on-screen report remains viewable. Upgrade to analyze new files.
@@ -417,7 +424,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               <div className="space-y-2.5 pt-1 text-xs text-slate-700">
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>1 Free Quick Document Review</span>
+                  <span>3 Free Quick Document Reviews</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -604,7 +611,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               <div className="space-y-2.5 pt-1 text-xs text-slate-700">
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <span className="font-semibold text-slate-900">5 Forensic In-Depth Dual-Pass analyses</span>
+                  <span className="font-semibold text-slate-900">5 analyses in total, Forensic In-Depth Dual-Pass or Quick</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
@@ -633,7 +640,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             </div>
 
             <div className="pt-6 mt-auto">
-              {currentTier === "Premium" ? (
+              {currentTier === "Premium" && !renewalTiers.includes("Premium") ? (
                 <button
                   type="button"
                   disabled
@@ -749,7 +756,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             </div>
 
             <div className="pt-6 mt-auto">
-              {currentTier === "Pro" ? (
+              {currentTier === "Pro" && !renewalTiers.includes("Pro") ? (
                 <button
                   type="button"
                   disabled
@@ -823,9 +830,9 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               </tr>
               <tr className="bg-slate-50/40">
                 <td className="py-3 px-4 font-semibold text-slate-900">Included Analyses</td>
-                <td className="py-3 px-3 text-center font-bold text-slate-800">1 Quick Review</td>
+                <td className="py-3 px-3 text-center font-bold text-slate-800">3 Quick Reviews</td>
                 <td className="py-3 px-3 text-center font-bold text-blue-800">3 Quick Reviews</td>
-                <td className="py-3 px-3 text-center font-bold text-purple-800">5 Forensic Dual-Pass</td>
+                <td className="py-3 px-3 text-center font-bold text-purple-800">5 Forensic or Quick</td>
                 <td className="py-3 px-3 text-center font-bold text-indigo-800">5 Forensic / month</td>
               </tr>
               <tr>
@@ -1089,6 +1096,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
         </div>
       </div>
 
+      <React.Fragment key={firebaseSignedIn ? userEmail || "signed-in" : "signed-out"}>
+        <MyOrdersPanel signedIn={firebaseSignedIn} onActivated={onChangeTier} onRenewalDue={setRenewalTiers} />
+      </React.Fragment>
+
       {/* 7. Access Code Activator */}
       <div
         className="bg-linear-to-r from-[#eef2ff] to-[#f0fdf4] border border-indigo-100 rounded-2xl p-6 text-left shadow-2xs space-y-4"
@@ -1196,7 +1207,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                     Interac e-Transfer Checkout
                   </h3>
                   <p className="text-[10px] text-emerald-400 font-semibold font-sans">
-                    {selectedTier} Plan — ${selectedTier ? TIER_PRICES[selectedTier] : 0} CAD
+                    {selectedTier} Plan — ${selectedTier ? formatCad(TIER_PRICES[selectedTier]) : 0} CAD
                   </p>
                 </div>
               </div>
@@ -1294,7 +1305,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                         2. Exact Amount:
                       </span>
                       <span className="font-bold text-slate-900 text-sm">
-                        ${selectedTier ? TIER_PRICES[selectedTier] : 0} CAD
+                        ${selectedTier ? formatCad(TIER_PRICES[selectedTier]) : 0} CAD
                       </span>
                     </div>
 

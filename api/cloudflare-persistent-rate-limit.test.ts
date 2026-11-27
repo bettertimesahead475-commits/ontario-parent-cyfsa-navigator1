@@ -106,8 +106,8 @@ describe('persistent rate limiting (T-05, pending approval)', () => {
     });
   }
 
-  it('fails closed exactly for activation codes and access requests', () => {
-    expect(Object.entries(RATE_LIMIT_STORE_FAILURE_MODE).filter(([, m]) => m === 'closed').map(([b]) => b).sort()).toEqual(['activateCode', 'requestAccess']);
+  it('fails closed exactly for activation codes, purchase claims and access requests', () => {
+    expect(Object.entries(RATE_LIMIT_STORE_FAILURE_MODE).filter(([, m]) => m === 'closed').map(([b]) => b).sort()).toEqual(['activateCode', 'claimPurchase', 'requestAccess']);
     expect(Object.keys(RATE_LIMIT_STORE_FAILURE_MODE).sort()).toEqual(Object.keys(RATE_LIMITS).sort());
   });
 
