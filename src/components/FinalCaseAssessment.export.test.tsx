@@ -43,4 +43,34 @@ describe("Final Case Assessment PDF download", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Download PDF" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Allow pop-ups");
   });
+
+  it("honours the export redaction setting in the PDF", async () => {
+    const written: string[] = [];
+    const fakeWindow = { document: { write: (h: string) => written.push(h), close: vi.fn(), querySelectorAll: () => [] }, focus: vi.fn(), print: vi.fn() };
+    vi.spyOn(window, "open").mockReturnValue(fakeWindow as unknown as Window);
+    render(<FinalCaseAssessment redactionEnabled />);
+    fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+    fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: REPORT.matterId } });
+    fireEvent.click(await screen.findByRole("button", { name: "Download redacted PDF" }));
+    expect(written[0]).not.toContain("Synthetic matter");
+    expect(written[0]).not.toContain("affidavit.txt");
+    expect(written[0]).toContain("[S1: Source document 1, p. 1]");
+    expect(written[0]).toContain("Redacted copy");
+  });
+
+  it("uses the saved redaction setting when no setting is passed in", async () => {
+    localStorage.setItem("OPA_REDACTION_ENABLED", "true");
+    try {
+      const written: string[] = [];
+      const fakeWindow = { document: { write: (h: string) => written.push(h), close: vi.fn(), querySelectorAll: () => [] }, focus: vi.fn(), print: vi.fn() };
+      vi.spyOn(window, "open").mockReturnValue(fakeWindow as unknown as Window);
+      render(<FinalCaseAssessment />);
+      fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+      fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: REPORT.matterId } });
+      fireEvent.click(await screen.findByRole("button", { name: "Download redacted PDF" }));
+      expect(written[0]).not.toContain("affidavit.txt");
+    } finally {
+      localStorage.removeItem("OPA_REDACTION_ENABLED");
+    }
+  });
 });

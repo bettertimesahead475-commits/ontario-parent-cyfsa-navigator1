@@ -13,6 +13,12 @@ import { CASE_BRIEF_PART_LABELS, CASE_BRIEF_PART_ORDER, parseCaseBriefPoint } fr
 
 const NOT_STATED = "Not stated in the document";
 
+/** The citation exactly as saved in the analysis; the registry form is used only when nothing was saved. */
+function citationLabel(saved: unknown, auth: { officialCitation?: string }): string {
+  const text = typeof saved === "string" ? saved.trim() : "";
+  return text || auth.officialCitation || "No citation provided";
+}
+
 export function isScored(value: unknown): boolean {
   return value !== null && value !== undefined && value !== "" && typeof value !== "boolean" && Number.isFinite(Number(value));
 }
@@ -56,6 +62,13 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
   });
 
   const secondReviewDone = verification?.status === "completed";
+  // Coverage is read from the per-finding verdicts, which survive redaction; the overall status may not.
+  const secondReviewCoverage = (flags: any[]): string => {
+    const checked = flags.filter((rf) => rf?.forensicVerification?.verdict).length;
+    if (checked > 0 && checked === flags.length) return "A second review checked each finding against the uploaded text.";
+    if (checked > 0) return `A second review gave a verdict on ${checked} of ${flags.length} findings; check the others against the original document.`;
+    return "These findings were not second-reviewed; check each quotation against the original document.";
+  };
   const html = `
     <!DOCTYPE html>
     <html lang="en">
@@ -563,7 +576,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
                     <td><strong>${escapeHtml(c.date || "Undated")}</strong></td>
                     <td>${escapeHtml(c.event || "")}</td>
                     <td><span class="badge-classification ${badgeClass}">${escapeHtml(cls)}</span></td>
-                    <td><span style="color:#64748b;">${escapeHtml(c.locationInDocument || "Record")}</span></td>
+                    <td><span style="color:#64748b;">${escapeHtml(c.locationInDocument || NOT_STATED)}</span></td>
                   </tr>
                 `;
               }).join("")}
@@ -576,7 +589,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
       ${Array.isArray(report.redFlags) && report.redFlags.length > 0 ? `
         <section class="section-block">
           <h2 class="section-heading">4. Key Forensic Findings & Evidence Audit Flags</h2>
-          <p class="prose-text">Specific passages exhibiting procedural irregularities, unsworn hearsay, or potential statutory overreach. Each finding has been independently reviewed:</p>
+          <p class="prose-text">Specific passages exhibiting procedural irregularities, unsworn hearsay, or potential statutory overreach. ${secondReviewCoverage(report.redFlags)}</p>
           ${report.redFlags.map((rf: any, idx: number) => {
             const sev = (rf.severity || "Affects Evidentiary Weight").toLowerCase();
             let sevClass = "severity-weight";
@@ -591,7 +604,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
               <div class="finding-card">
                 <div class="finding-header ${sevClass}">
                   <span>Finding ${idx + 1} • ${escapeHtml(rf.category || "Evidentiary Finding")} [${escapeHtml(rf.severity || "Review Required")}]</span>
-                  <span>${escapeHtml(rf.locationInDocument || "Record")}</span>
+                  <span>${escapeHtml(rf.locationInDocument || NOT_STATED)}</span>
                 </div>
                 <div class="finding-body">
                   <div class="quote-box">
@@ -610,7 +623,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
                   <div class="finding-row">
                     <span class="finding-label">Applicable Legal Authority:</span>
                     <span class="finding-value">
-                      <strong>${escapeHtml(auth.officialCitation)}</strong>
+                      <strong>${escapeHtml(citationLabel(cit, auth))}</strong>
                       ${auth.sourceUrl ? ` — <a href="${auth.sourceUrl}" target="_blank" style="color:#1d4ed8; text-decoration:underline;">Ontario e-Laws Provision</a>` : ""}
                       ${auth.warningText ? `<br/><span style="color:#b45309; font-size:8.5px;">${escapeHtml(auth.warningText)}</span>` : ""}
                     </span>
@@ -657,7 +670,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
               </div>
               <p style="margin:4px 0; color:#334155;">${escapeHtml(t.reasoning || "")}</p>
               <div style="font-size:8.5px; color:#64748b;">
-                Statutory Reference: <strong>${escapeHtml(auth.officialCitation)}</strong>
+                Statutory Reference: <strong>${escapeHtml(citationLabel(t.primarySourceLaw, auth))}</strong>
                 ${auth.sourceUrl ? ` (<a href="${auth.sourceUrl}" target="_blank" style="color:#2563eb;">e-Laws Text</a>)` : ""}
               </div>
               ${t.forensicVerification ? `
@@ -677,14 +690,14 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
             <div class="checklist-item">
               <div style="display:flex; justify-content:space-between; align-items:baseline;">
                 <strong>${idx + 1}. ${escapeHtml(p.timelineRule || "Procedural Timeline Rule")}</strong>
-                <span style="font-size:8.5px; color:#64748b;">Location: ${escapeHtml(p.locationInDocument || "Record")}</span>
+                <span style="font-size:8.5px; color:#64748b;">Location: ${escapeHtml(p.locationInDocument || NOT_STATED)}</span>
               </div>
               ${p.documentAssertion && !p.documentAssertion.includes("Not explicitly") ? `
                 <div style="font-size:9.5px; font-style:italic; color:#475569; margin:2px 0;">"${escapeHtml(p.documentAssertion)}"</div>
               ` : ""}
               <p style="margin:3px 0; color:#334155;">${escapeHtml(p.evaluation || "")}</p>
               <div style="font-size:8.5px; color:#64748b;">
-                Authority: <strong>${escapeHtml(auth.officialCitation)}</strong>
+                Authority: <strong>${escapeHtml(citationLabel(p.citation, auth))}</strong>
                 ${auth.sourceUrl ? ` (<a href="${auth.sourceUrl}" target="_blank" style="color:#2563eb;">Official Source</a>)` : ""}
               </div>
             </div>
@@ -709,7 +722,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
                 <tr>
                   <td><strong>${escapeHtml(cd.description || "")}</strong></td>
                   <td>${Array.isArray(cd.locations) ? cd.locations.map(escapeHtml).join("<br/>") : escapeHtml(cd.locations || "")}</td>
-                  <td>${escapeHtml(cd.significance || "Compare against original commissioned copy.")}</td>
+                  <td>${escapeHtml(cd.significance || NOT_STATED)}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -739,6 +752,16 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
               </div>
             `).join("")}
           </div>
+        </section>
+      ` : ""}
+
+      <!-- ITEMS TO VERIFY -->
+      ${Array.isArray(report.whatToVerify) && report.whatToVerify.length > 0 ? `
+        <section class="section-block">
+          <h2 class="section-heading">8. Items to Verify</h2>
+          <ol style="padding-left:18px; margin:0; font-size:10px; line-height:1.6; color:#1e293b;">
+            ${report.whatToVerify.map((v: string) => `<li style="margin-bottom:6px;">${escapeHtml(v)}</li>`).join("")}
+          </ol>
         </section>
       ` : ""}
 

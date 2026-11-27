@@ -87,3 +87,50 @@ describe("forensic PDF renderer with sparse sections", () => {
     expect(html).toContain("Reference List of Legal Authorities");
   });
 });
+
+describe("Forensic PDF fidelity to the saved analysis", () => {
+  const saved = {
+    documentTitle: "Synthetic summary",
+    redFlags: [{ category: "Hearsay", severity: "Needs Counsel Review", phraseDetected: "the food ran out", explanation: "x", legalReference: "CYFSA s. 74(2)(l)" }],
+    proceduralTimelineViolations: [{ timelineRule: "Follow-up visit", evaluation: "y", citation: "CYFSA s. 81(7)" }],
+    contradictions: [{ description: "Attendance differs", locations: ["Page 2"] }],
+    whatToVerify: ["Synthetic item to verify"],
+  };
+  const out = renderForensicReportHtml(saved);
+
+  it("prints the citation exactly as saved, including the clause", () => {
+    expect(out).toContain("CYFSA s. 74(2)(l)");
+  });
+
+  it("does not claim a second review that did not happen", () => {
+    expect(out).not.toContain("independently reviewed");
+    expect(out).toContain("These findings were not second-reviewed");
+    expect(renderForensicReportHtml({ ...saved, forensicVerification: { status: "completed" } })).not.toContain("A second review checked each finding");
+  });
+
+  it("states second-review coverage from the per-finding verdicts", () => {
+    const flag = saved.redFlags[0];
+    const reviewed = { ...flag, forensicVerification: { verdict: "supported" } };
+    const all = renderForensicReportHtml({ ...saved, redFlags: [reviewed, reviewed], forensicVerification: { status: "completed" } });
+    expect(all).toContain("A second review checked each finding");
+    const partial = renderForensicReportHtml({ ...saved, redFlags: [reviewed, flag], forensicVerification: { status: "completed" } });
+    expect(partial).not.toContain("checked each finding");
+    expect(partial).toContain("A second review gave a verdict on 1 of 2 findings");
+    const redactedStatus = renderForensicReportHtml({ ...saved, redFlags: [reviewed], forensicVerification: { status: "[removed from redacted copy]" } });
+    expect(redactedStatus).not.toContain("These findings were not second-reviewed");
+  });
+
+  it("says a location or significance is not stated instead of inventing one", () => {
+    expect(out).not.toContain(">Record<");
+    expect(out).not.toContain("Location: Record");
+    expect(out).not.toContain("commissioned copy");
+    expect(out).toContain("Location: Not stated in the document");
+  });
+
+  it("includes the saved items to verify as a numbered section", () => {
+    expect(out).toContain("Items to Verify");
+    expect(out).toContain("Synthetic item to verify");
+    const numbers = [...out.matchAll(/<h2 class="section-heading">(\d+)\. /g)].map((m) => Number(m[1]));
+    expect(numbers).toEqual(numbers.map((_, i) => i + 1));
+  });
+});

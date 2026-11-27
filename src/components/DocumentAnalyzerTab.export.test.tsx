@@ -286,6 +286,34 @@ describe("analyzer print export with missing report data", () => {
   });
 });
 
+describe("quick review PDF fidelity to the saved analysis", () => {
+  it("includes the saved document summary", async () => {
+    seed({ redact: false });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("Document Summary");
+    expect(html).toContain("ZQFREE summary of the affidavit.");
+  });
+
+  it("says the verification guide is not stated instead of leaving an empty heading", async () => {
+    seed({ redact: false, report: { ...REPORT, whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [] } });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toMatch(/Practical Verification & Next Steps Guide<\/h3>\s*<p[^>]*>Not stated in the document\.<\/p>/);
+  });
+
+  it("omits the not-stated line when the guide has items", async () => {
+    seed({ redact: false, report: { ...REPORT, whatToVerify: ["ZQVERIFY item"] } });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("ZQVERIFY item");
+    expect(html.split("Practical Verification")[1]).not.toContain("Not stated in the document.");
+  });
+});
+
 describe("redaction on the remaining export sinks and the on-screen toggle", () => {
   it("removes the file name and document text from the certified transcript print", async () => {
     seed({ redact: true, fileName: "ZQNAME-transcript.txt" });
