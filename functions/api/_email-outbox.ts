@@ -36,7 +36,8 @@ export async function enqueueTransactionalEmail(env: OutboxEnv, item: EnqueueIte
   if (!transactionalEmailEnabled(env)) return false;
   try {
     const email = item.email.trim().toLowerCase();
-    if (!isValidRecipient(email)) return false;
+    // A recipient outside a testing allowlist is not queued, so callers report "not queued" and the admin delivers by hand.
+    if (!isValidRecipient(email) || !recipientAllowed(env, email)) return false;
     let secret: string | null = null;
     if (item.kind === 'access_code') {
       if (!item.accessCode) return false;
@@ -111,7 +112,8 @@ async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | un
       const sessionId = row.dedupe_key.split(':')[0];
       const sessions = await rest<Array<{ expires_at?: string; revoked_at?: string | null }>>(env, `navigator_paid_sessions?select=expires_at,revoked_at&id=eq.${enc(sessionId)}&limit=1`, {}, fetcher);
       const s = sessions[0];
-      return !!s && !s.revoked_at && !!s.expires_at && Date.parse(s.expires_at) === Date.parse(row.template_data?.expiresAt ?? '');
+      return !!s && !s.revoked_at && !!s.expires_at && Date.parse(s.expires_at) > now.getTime()
+        && Date.parse(s.expires_at) === Date.parse(row.template_data?.expiresAt ?? '');
     }
     case 'refund_confirmation': return true;
   }
