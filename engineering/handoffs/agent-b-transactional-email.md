@@ -57,6 +57,10 @@ plan) or Google Workspace, and both are new expenditure.
     `refundEmailQueued`.
   - Not hooked: reissued codes (the admin delivers them; a second `access_code` row for the same reference is deduped).
   - Not edited: `claim-purchase.ts`, `my-payments.ts`, `_customer-payments.ts`, T-05 rate-limit files.
+- **Send-time check:** before each send the processor re-reads the current state and skips (`NO_LONGER_APPLICABLE`)
+  instructions for an order that is no longer pending, confirmation/receipt for one that is not approved, an access
+  code that is no longer the live unused code for the order (hash match, unused, unexpired), and a renewal reminder
+  whose entitlement was renewed or revoked. A failed check is retried with the same backoff, never sent blind.
 - **Processing trigger:** Pages Functions have no cron, and no existing Worker has a scheduled trigger. Added
   `POST /api/admin/email-outbox/process` (admin only; refuses with `EMAIL_DISABLED` while off): queues renewal
   reminders for entitlements ending within 7 days, then sends up to 10 due rows. `GET /api/admin/email-outbox` shows
@@ -95,6 +99,14 @@ plan) or Google Workspace, and both are new expenditure.
 
 Decision for the owner: which Gmail account sends (the existing `donations.ontarioparentassist@gmail.com` or another
 Gmail address the owner controls), and the Reply-To address.
+
+## Pre-existing admin console defect (fixed here, also in production)
+
+`AdminConsole.tsx` `act()` showed the result message and then reloaded the section, and `load()` / `searchCustomer()`
+clear the message first. So after "Approve" or "Reissue code" the one-time access code disappeared before the
+administrator could read it. Present on `engineering/integration` and production `82dfe65`. Fixed by reloading first,
+then showing the message (`src/components/admin/AdminConsole.tsx`, Claude-owned). The approval message now also says
+when the code was queued for email, so it is not sent twice.
 
 ## Tests
 
