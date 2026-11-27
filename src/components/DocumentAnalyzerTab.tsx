@@ -1745,7 +1745,8 @@ export default function DocumentAnalyzerTab() {
     setCustomUploadError("");
     setBulkProgress(`Concurrently processing ${filesArray.length} files for speedy results...`);
 
-    const loadedFiles: OrganizedFile[] = await Promise.all(filesArray.map(async (f) => {
+    const refusedUploads: string[] = [];
+    const loadedFiles: OrganizedFile[] = (await Promise.all(filesArray.map(async (f): Promise<OrganizedFile | null> => {
       let parsedContent = "";
       let finalName = f.name;
       const nameL = f.name.toLowerCase();
@@ -1800,6 +1801,11 @@ export default function DocumentAnalyzerTab() {
           finalName = responseData.fileName;
           finalMimeType = "application/pdf"; // Stored in PDF format
         } catch (error: any) {
+          // A refusal (e.g. transcription needs a paid plan) is not a transcript: leave the recording out of the batch.
+          if (error instanceof ApiResponseError) {
+            refusedUploads.push(`${f.name}: ${error.message}`);
+            return null;
+          }
           console.error("Automated audio transcription failed:", error);
           parsedContent = `IN THE ONTARIO FAMILY COURT OF JUSTICE\n\nRECORDING STATEMENT FOR: ${f.name}\n\n[SYSTEM TRANSCRIBING PIPE WARNING]: The automated transcription queue failed to reach the model. Falling back to parent raw audio metadata representation.\nReason: ${error.message || error}\nPencil notes: Please contact your legal advisor.`;
           finalName = `Transcript - ${f.name.replace(/\.[^/.]+$/, "")}.pdf`;
@@ -1847,7 +1853,8 @@ export default function DocumentAnalyzerTab() {
         mimeType: finalMimeType,
         analysisStatus: "pending"
       };
-    }));
+    }))).filter((file): file is OrganizedFile => file !== null);
+    if (refusedUploads.length) showUploadError(refusedUploads.join(" "));
 
     const chunkedFiles = chunkFilesForAnalysis(loadedFiles);
     setOrganizedFiles(prev => [...prev, ...chunkedFiles]);
