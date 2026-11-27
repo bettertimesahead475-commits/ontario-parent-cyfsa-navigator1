@@ -3,6 +3,12 @@
 Branch `release/rc-20261127`, built on `engineering/integration` (`679b7f6`). Nothing here is deployed, applied or sent.
 Production stays `0cc59589` / `82dfe65` (rollback `4c902955` / `b9617a8`) until the owner approves item 9.
 
+**Status: HOLD (2026-11-27).** Claude's independent qualification of #171 (PR #171 comment 7226489336) lists blockers D-1..D-4: the payment
+routes depend on `access_codes.redeemed_session_id`, which only migration P adds, and P is missing on the operational `nxfh` ledger. The
+RC is not releasable until the disposable-PostgreSQL + PostgREST qualification of P, D and one-activation-per-payment passes (Agent A, in
+progress) and the pre-P payment paths fail closed. E additionally needs an atomic top-up refund that accounts for consumed and reserved credits.
+Never run `free_scan_reservation_functions.down.sql` on the operational database; any rollback of A/B needs reviewed saved prior definitions.
+
 ## Contents
 
 | PR | What | Qualification so far |
