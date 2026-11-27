@@ -5,6 +5,26 @@ import { renderFinalAssessmentHtml } from '../utils/finalAssessmentExport';
 import { useRedaction } from '../utils/redaction';
 import type { AssessmentReport } from '../../functions/api/final-case-assessment';
 
+const ERROR_MESSAGES: Record<string, string> = {
+  INDIVIDUAL_CASE_ACCESS_REQUIRED: 'The Final Case Assessment requires active Individual Case Access',
+  ACCESS_CHANGED: 'Your case access changed. Check your plan, then retry',
+  MATTER_NOT_FOUND: 'This matter could not be found for your account',
+  MISSING_SOURCE_DOCUMENTS: 'Add at least one text document to this matter before generating the assessment',
+  SOURCE_NOT_READY: 'A source document is still being saved. Wait a moment, then retry',
+  SOURCE_SET_TOO_LARGE: 'This matter has too much source text for one assessment (up to 20 documents, about 75,000 characters)',
+  INPUT_TOO_LARGE: 'This document is too large. Use a text file under 150 KB',
+  ASSESSMENT_IN_PROGRESS: 'An assessment for this matter is already running. Reopen the saved report in a few minutes',
+  ACCOUNTING_PENDING: 'The assessment finished but its credit is still being recorded. Retry; you will not be charged twice',
+};
+/** A customer-readable message for an API error body; unknown codes fall back to the server's wording. */
+function errorMessage(body: { code?: string; error?: string } | null, fallback: string): string {
+  return (body?.code && ERROR_MESSAGES[body.code]) || body?.error || fallback;
+}
+function savedAtLabel(createdAt: unknown): string {
+  const date = typeof createdAt === 'string' && createdAt ? new Date(createdAt) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : 'Not recorded';
+}
+
 const labels = { overview: 'Case overview', chronology: 'Chronology', conflicts: 'Conflicting accounts', gaps: 'Evidence gaps', questions: 'Questions for counsel' };
 export default function FinalCaseAssessment({ redactionEnabled }: { redactionEnabled?: boolean } = {}) {
   const { enabled: storedRedaction } = useRedaction();
@@ -22,19 +42,22 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
     setBusy(true); setError(''); setNotice('');
     try {
       const res = await apiFetch('/api/final-case-assessment?action=create-matter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: newTitle, requestId: creationId }) });
-      const body = await res.json(); if (!res.ok) throw new Error(body.error || 'Matter could not be created');
+      const body = await res.json(); if (!res.ok) throw new Error(errorMessage(body, 'Matter could not be created'));
       setMatters(previous => [...previous.filter(m => m.id !== body.matter.id), body.matter]); setMatterId(body.matter.id); setReport(null); setNewTitle(''); setCreationId(crypto.randomUUID()); setNotice('Matter saved. Add your source documents below.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Matter could not be created'); }
     finally { setBusy(false); }
   }
   async function load(id?: string, generate = false) {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setNotice('');
     try {
       const res = await apiFetch('/api/final-case-assessment' + (id ? '?matterId=' + encodeURIComponent(id) : ''), { method: generate ? 'POST' : 'GET' });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error || 'Assessment unavailable');
+      if (!res.ok) throw new Error(errorMessage(body, 'Assessment unavailable'));
       if (body.matters) { setMatters(body.matters); setMatterId(''); setReport(null); }
-      else setReport(body.report);
+      else {
+        setReport(body.report ?? null);
+        if (!body.report) setNotice('No saved report for this matter yet. Add its source documents, then generate the assessment.');
+      }
     } catch (e) { setError(e instanceof Error ? e.message : 'Assessment unavailable'); }
     finally { setBusy(false); }
   }
@@ -43,7 +66,7 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
     setBusy(true); setError('');
     try {
       const res = await apiFetch('/api/final-case-assessment?matterId=' + encodeURIComponent(matterId) + '&action=source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, text: await file.text() }) });
-      const body = await res.json(); if (!res.ok) throw new Error(body.error || 'Source could not be saved');
+      const body = await res.json(); if (!res.ok) throw new Error(errorMessage(body, 'Source could not be saved'));
       setReport(null); setNotice(body.reused ? 'This source document is already saved.' : 'Source document saved. Add another document or generate the assessment.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Source could not be saved'); }
     finally { setBusy(false); }
@@ -71,10 +94,10 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
       <p className="text-sm">Add every document you want assessed. Text documents are shown as one source page. The saved report lists exactly which sources were reviewed.</p>
       <div className="flex gap-3"><button type="button" disabled={busy || !matterId} onClick={() => void load(matterId, true)} className="rounded bg-indigo-900 text-white px-4 py-2 disabled:opacity-50">{busy ? 'Loading assessment…' : 'Generate assessment / retry'}</button>
       <button type="button" disabled={busy || !matterId} onClick={() => void load(matterId)} className="border rounded px-4 py-2">Reopen saved report</button></div>
-      {error && <p role="alert">{error}. Your saved documents remain available.</p>}
-      {report && <article className="space-y-4"><h2 className="font-bold text-xl">Final Case Assessment — {report.title}</h2><p className="text-sm">Saved {new Date(report.createdAt).toLocaleString()}</p>
+      {error && <p role="alert">{error.replace(/\.$/, '')}. Your saved documents remain available.</p>}
+      {report && <article className="space-y-4"><h2 className="font-bold text-xl">Final Case Assessment — {report.title}</h2><p className="text-sm">Saved {savedAtLabel(report.createdAt)}</p>
         <button type="button" onClick={downloadPdf} className="border rounded px-4 py-2">{redact ? 'Download redacted PDF' : 'Download PDF'}</button>
-        {Object.entries(labels).map(([key, label]) => <section key={key}><h3 className="font-bold">{label}</h3><ul className="list-disc pl-5">{report.sections[key as keyof typeof labels].map((p, i) => <li key={i}>{p.text} <span className="text-sm">{p.sources.map(id => { const source = report.sources.find(s => s.id === id); return <a className="underline mr-2" key={id} href={'#assessment-source-' + id}>{source?.document}, p. {source?.page}</a>; })}</span></li>)}</ul></section>)}
+        {Object.entries(labels).map(([key, label]) => <section key={key}><h3 className="font-bold">{label}</h3><ul className="list-disc pl-5">{report.sections[key as keyof typeof labels].map((p, i) => <li key={i}>{p.text} <span className="text-sm">{p.sources.map(id => { const source = report.sources.find(s => s.id === id); return <a className="underline mr-2" key={id} href={'#assessment-source-' + id}>{source ? `${source.document}, p. ${source.page}` : `Source ${id} (not in the saved source list)`}</a>; })}</span></li>)}</ul></section>)}
         <section><h3 className="font-bold">Source pages reviewed</h3>{report.sources.map(s => <details key={s.id} id={'assessment-source-' + s.id}><summary>{s.document}, page {s.page}</summary><p className="whitespace-pre-wrap">{s.text}</p></details>)}</section>
       </article>}
     </>}
