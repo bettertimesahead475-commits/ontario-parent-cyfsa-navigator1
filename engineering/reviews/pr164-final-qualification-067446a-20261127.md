@@ -82,3 +82,30 @@ Rollback: revert the application deployment first, then run the matching `.down.
 ## 8. Requests to Devin and the owner
 - Devin: none blocking. Optional: record the staging database function md5 values in the register.
 - Owner: decide D1 and D2 (section 5). Authorize steps 3–7 only after a snapshot. Decide the spend for the live NAV-004 measurement (step 9).
+
+## 9. Application record (owner authorization received 2026-11-27: D1 and D2 confirmed)
+
+Staging project `nxfhvebzzobegubefcda` (live credit ledger) was changed as follows. No production project (`qboidsfpjuxeqtfotryj`) was touched. No row was written by any step.
+
+Pre-change state (read-only, recorded before any change):
+- `free_reconcile` used the range `uid >= lo and uid < hi` (no prefix fix, no live-job skip).
+- `paid_reconcile` already had the prefix fix; `paid_release_marker` matched the repository body. The paid pending file was therefore not re-applied.
+- `free_reserve_scan` matched the repository body.
+- `free_usage` marker counts: reserved 8, consumed 2, released 6; counter rows 7.
+
+Applied, in order:
+1. `free_scan_reservation_functions` (migration name `free_scan_reservation_functions_pr164`). `free_marker_uid`, `free_release_marker`, `free_reconcile` (now prefix-fixed), `free_reserve_scan`, `free_finalize_scan`, `free_release_scan`; grants: service_role only.
+2. `create index concurrently analyzer_jobs_live_reservation_idx` on `analyzer_jobs (reservation_id) where status in ('queued','running')`. Result: valid.
+3. `reconcile_skip_live_analyzer_jobs` (migration name `reconcile_skip_live_analyzer_jobs_pr164`). `paid_reconcile` and `free_reconcile` now skip markers of live analyzer jobs; grants: service_role only.
+
+Verified after the change (catalogue reads):
+- `free_reconcile` and `paid_reconcile`: prefix fix present, live-job skip present.
+- EXECUTE for anon and authenticated: false on all reservation functions; service_role: true.
+- Marker counts unchanged: reserved 8, consumed 2, released 6; counter rows 7.
+
+Behaviour change to note: the 8 `reservation:reserved` markers are now reclaimable. When an account next reserves a scan, any of its expired markers are released and their units return to that account's counter. This is the intended fix and gives back free scans, but it happens at runtime, not at apply time.
+
+Not done (still required before release):
+- Deploy head 067446a to the Cloudflare preview only and verify `/api/status` and `/api/_supabase-reachability` (steps 8-9 of section 7).
+- Production promotion remains a separate decision (step 10). Production Pages is still `0cc59589` (commit `82dfe65`).
+- Provider-level backup: no Supabase backup was created by this audit. The rollback path is the repository `.down.sql` files; the pre-change function definitions are recorded in this section.
