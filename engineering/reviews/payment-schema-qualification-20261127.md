@@ -31,13 +31,14 @@ simply never issued. Pending package (not applied):
 `supabase/migrations_pending_approval/payments_service_role_review_update.sql` grants `UPDATE (status, approved_at)`
 only, with `.rollback.sql` and a read-only `.preflight.sql`. Independent of P; must precede any live e-Transfer sale.
 
-## Results (27 of 27 pass locally, 2026-11-27)
+## Results (32 of 32 pass locally, 2026-11-27)
 
 ### Pre-P (live baseline)
 
 | Scenario | Today (base `1773183`) | After this branch |
 |---|---|---|
 | Admin approve on live grants | 502 `ADMIN_STORE_REJECTED`, nothing issued | same (needs G) ; with G: 200 and one code |
+| G least privilege (ported from #190) | n/a | service_role may UPDATE only `status`, `approved_at`; no DELETE; anon/authenticated have no SELECT/INSERT/UPDATE/DELETE; PostgREST refuses PATCH of `amount`/`plan`/`firebase_uid` and anon/authenticated PATCH/DELETE; a customer claim leaves a pending order pending. Fails if G is widened (table-wide, `authenticated`, extra column, DELETE) |
 | `claim-purchase` (D-1) | **503 `ACTIVATION_UNAVAILABLE`** "Activation is temporarily unavailable. Please try again." No code, no session | unchanged (already fail-closed, never 500) |
 | My Orders (`my-payments`) | **503 `PAYMENT_STATUS_UNAVAILABLE`**: no orders listed | 200, all orders listed, `accessActive` omitted |
 | Refund of an activated order | **501 `ADMIN_SCHEMA_UNAVAILABLE`**: entitlement not revoked | 200, one entitlement revoked, later claim 409 |
@@ -58,6 +59,8 @@ only, with `.rollback.sql` and a read-only `.preflight.sql`. Independent of P; m
 | Interrupted after the RPC committed (response lost) | 503, retry restores the same entitlement | same |
 | Interrupted before the refund-history check | 503 with the code kept, retry activates once | same |
 | Refund versus reissue (reissue paused mid-issue) | **base: the reissued code activated a refunded order**; now 409 `PAYMENT_REFUNDED`, code cancelled, 0 entitlements | same |
+| Approve versus refund, refund lands while approval issues its code | **base: approval returned a working code for the refunded order**; now 409 `PAYMENT_REFUNDED`, code cancelled, 0 entitlements, claim `ORDER_CLOSED` | same |
+| Approve versus refund, approval lands while the refund runs | the refund retires the approval code; 0 entitlements, claim `ORDER_CLOSED` | same |
 | Monthly renewal (new verified payment) | one entitlement extended by 30 days; refund takes the 30 days back | same |
 | No overlapping entitlements (checked after every test) | holds, except the documented no-D S-34 case | holds |
 
@@ -77,8 +80,9 @@ reissue on P and on P+D). Type check clean; `tests/devin/etransfer*`, `api`, `fu
 
 ## Not covered / open
 
-- Approve versus refund of the same pending order is not exercised; approval's code insert has the same shape as
-  reissue's and may need the same post-insert check.
+- Approve versus refund of the same pending order is now covered. Approval gained the same post-insert refund check
+  as reissue; with it reverted, the first of the two tests fails on P and on P+D. In the second order the payment
+  stays `approved` with the refund recorded; the refund audit record is what closes the order.
 - E (early one-off renewal) is outside this harness; its refund accounting is the next task.
 
 ## For Claude (independent qualification)
