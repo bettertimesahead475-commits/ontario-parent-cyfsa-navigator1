@@ -125,3 +125,18 @@ this pass. No live write, migration, deployment, paid inference or expenditure w
 - Engineering access cannot correct this: Pages secret values are write-only, and copying production values into Preview
   would route preview traffic to the live ledger. Setting real preview values is a configuration decision for the owner.
 - Classification: fail-closed working as designed. Not a code defect.
+
+## Update: financial protection, migration A/B, Gemini, preview housekeeping (2026-11-27)
+| Requirement | Status | Basis |
+|---|---|---|
+| Transcription entitlement and quota (F-1) | FAIL (P0) | `functions/api/transcribe.ts` 41–50: identity and per-isolate limit only |
+| OCR page quota (F-2) | FAIL (P0) | `functions/api/extract-text.ts` 5–6: no reservation by design; 30 pages per request |
+| Final Case Assessment quota (F-3) | PASS | `functions/api/final-case-assessment.ts` 70–72 (Pro session), 162 (credit reservation) |
+| Quick Review and Forensic quota | PASS (retry budget not verified) | `functions/api/analyze.ts` reservation RPC |
+| Aggregate platform spending ceiling (F-5) | FAIL (P1) | none in the codebase |
+| Per-isolate limits fail open on expensive buckets (F-4) | FAIL (P1) | PR #174 `RATE_LIMIT_STORE_FAILURE_MODE`; persistent limiter not wired |
+| Financial protection overall | BLOCKED | Spec: `engineering/reviews/financial-exposure-audit-20261127.md` (allowances pending owner approval) |
+| Migration A/B pre-migration snapshot | NOT MET | Owner's "Yes, both" was conditional on a snapshot; none was taken. Backup status not readable with the available tools; check the Supabase dashboard for both projects |
+| Production `GEMINI_API_KEY` flagged unusable | OPEN | Production logs `[CONFIG_SECRET_UNUSABLE]` for GEMINI_API_KEY only; `analyzerReady` stays true because Gemini is not in its gate. OCR and transcription may be affected. Not determined: would need the shape diagnostic on production, which is excluded |
+| Preview diagnostic `a5b0ac88` / alias `diag-status-067446a` | LIVE, removal pending authorization | Preview only; not referenced by production or by the RC |
+| Diagnostic logging in release candidate | PASS | `CONFIG_SECRET_SHAPE` not present in `engineering/integration` or `release/rc-20261127` (grep) |
