@@ -8,7 +8,8 @@ Last updated: 2026-11-26 by Claude (backend); see `engineering/handoffs/claude-2
   pending quote-hit SQL fix. Not merged, not pushed. Commit isolation: `FILE_OWNERSHIP.md` ("Worktree and commit rules").
   Skipped-test register: `engineering/SKIPPED_TESTS.md`.
 
-- Production: deployment `7c144cf7` / commit `be46ad7` (concurrency fixes), smoke-verified 2026-11-25. Rollback: `d5f2a3c9`.
+- Production (2026-11-27, Devin lead engineer): deployment `0cc59589` / commit `82dfe65` (release round 2: PRs #147-#160). Rollback: `4c902955` (commit `b9617a8`). Smoke: /api/health 200, /api/status analyzerReady+forensicQueueReady true, CSP present, home 200, Google sign-in popup opens, /api/admin/session 401. Signed-in synthetic extraction pending (owner harness). A push to the production branch auto-creates a production deployment that stays `queued: idle`; create the real one with the manual POST.
+- Previous: deployment `7c144cf7` / commit `be46ad7`.
   Executor Worker `d030585d` (rollback: `npx wrangler rollback 4cd2181f-d7de-46a2-a523-61f6b4984052 --config wrangler.staging-job-service.jsonc`).
 - `engineering/integration` = baseline + these control documents.
 - Inference budget remaining ≈ $0.40 (no paid runs today).
