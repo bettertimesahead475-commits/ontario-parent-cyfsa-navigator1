@@ -222,3 +222,53 @@ Review round: `d7109bf` (the Forensic PDF now reports a partial review as "Partl
 not "Not completed"; Devin Review finding), `7c22511` (`isSecondReviewComplete` moved above `adaptLegacyReport`'s
 JSDoc; new test: with no red flags, a reply covering none of the 4 threshold rows is `incomplete`, 0 of 4). Full Vitest
 **321 files passed, 15 skipped (336); 4,756 tests passed, 512 skipped (5,268)**; `tsc` clean.
+
+## Coverage of critical analyzer, security and financial logic (owner directive: ≥95% meaningful)
+
+Branch `devin/1795748104-analyzer-critical-coverage`, base `engineering/integration` `a4d2b42` (includes #156). Measured
+with `npx vitest run --coverage --coverage.include=<file>` (v8, full suite). Genuine regression tests only; no file is
+excluded and no source was changed to raise coverage.
+
+| File | Lines before | Lines after |
+| --- | ---: | ---: |
+| `api/services/creditAccounting.ts` | 89.60% | 99.21% |
+| `api/services/directAnalyzer.ts` | 89.13% | 98.55% |
+| `api/services/analyzerStreaming.ts` | 81.98% | 96.89% |
+| `functions/api/analyze/job/[jobId].ts` | 88.70% | 100% |
+| `workers/analyzer-queue-consumer.ts` | 91.48% | 100% |
+| `functions/api/analyze.ts` | 93.43% | 96.35% |
+| `functions/api/_analyzer-model-adapter.ts` | 93.43% | 99.27% |
+| `api/services/analyzerErrors.ts` | 92.77% | 100% |
+| `functions/api/admin/analyzer-provider-check.ts` | 62.85% | 100% |
+
+**Defect found and fixed (`dad4814`, separate commit; affects production `b9617a8`):** when the `suspended` column update
+failed, `suspendPaidSession` fell back to a `free_usage` suspension marker but ignored that write's error, so an admin was
+told a session was suspended when nothing had been recorded. `restorePaidSession` likewise ignored a failed marker delete
+and reported a still-suspended session as restored. Both now fail with 503 and say what state the session is in.
+
+**Tests added (`e42a292`):** queue consumer (invalid messages, claim failures, owner bypass, permanent/non-retryable
+failures, dead-letter recovery only for confirmed terminal states, safe error bodies); job status (owner/admin access,
+retry lookup failure, missing saved report, bounded progress, storage outages, no ids or secrets in diagnostics);
+provider check (executor delegation, model listing failures, credential-shape diagnostics without key/email/IP/HTML
+leaks, error mapping); Anthropic adapter (SSE error/unparseable/oversized events, `[DONE]`, non-streaming replies,
+billing rejection, unreadable error body, no retry when backoff exceeds the budget); error classification and redaction;
+legacy Express job storage (an existing public `analysis_jobs` bucket is made private before any job is written to it;
+storage failures never break the analysis); SSE keep-alive stops on disconnect; direct analysis (eligibility reasons,
+redFlags/chronology/guidance validation failures fall back without emitting sections); analyze request validation
+(configuration, JSON, mode, plain-text file decoding, duplicate free scan) and `withHardDeadline`.
+
+**Not covered, reported rather than tested around:**
+- `_analyzer-model-adapter.ts:63` (`attempt > 1 && remainingTime <= 0`): effectively dead. A retry only happens after line
+  270 confirmed the remaining budget exceeds the backoff, so it is reachable only if the backoff sleep overshoots the
+  whole remaining budget. Defensive guard; harmless.
+- `creditAccounting.ts:403`: `safeGetDb` fallback when `getSupabase()` returns an object without `from`; not reachable
+  with the real client factory.
+- `analyze.ts` remaining lines (240 rate limit, 303 paid reservation denied/unavailable, 396/406 enqueue-failure release
+  and lookup, 591/614/631 compliance-matrix and release retries, 654-673 SSE stream cancel and heartbeat, 695/715/719/747
+  hard-deadline paths, 774 Pages `onRequest` wrapper): reachable; existing suites exercise neighbouring paths, and the file
+  is above 95%. Candidates for a later SSE/deadline suite.
+- `analyzerStreaming.ts:194-196` (in-memory job pruning above 200 jobs) and `442-443` (withheld event write): reachable
+  legacy Express paths, low risk.
+
+Verification: `npx tsc --noEmit -p .` clean; full Vitest **328 files passed, 15 skipped (343); 4,815 tests passed, 512
+skipped (5,327)**. Mocked inference and synthetic data only; no migration, binding, Cloudflare or customer-data change.

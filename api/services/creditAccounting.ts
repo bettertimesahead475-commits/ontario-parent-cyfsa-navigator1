@@ -428,12 +428,13 @@ export async function suspendSession(params: {
 
   if (error) {
     // If column doesn't exist, store in free_usage flag
-    await db.from("free_usage").upsert({
+    const { error: markerError } = await db.from("free_usage").upsert({
       uid: `suspended_${sessionId}`,
       email: reason,
       analyses_used: 1,
       last_analysis_at: now,
     });
+    if (markerError) throw Object.assign(new Error("The suspension could not be recorded; the session is not suspended."), { statusCode: 503 });
   }
 
   // Record audit log
@@ -467,7 +468,8 @@ export async function restoreSession(sessionId: string): Promise<void> {
     .eq("id", sessionId);
 
   if (error) {
-    await db.from("free_usage").delete().eq("uid", `suspended_${sessionId}`);
+    const { error: markerError } = await db.from("free_usage").delete().eq("uid", `suspended_${sessionId}`);
+    if (markerError) throw Object.assign(new Error("The suspension marker could not be removed; the session is still suspended."), { statusCode: 503 });
   }
 
   // Record audit log
