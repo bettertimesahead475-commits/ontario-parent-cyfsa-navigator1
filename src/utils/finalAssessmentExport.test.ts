@@ -83,8 +83,14 @@ describe("Final Case Assessment PDF", () => {
     });
 
     it("fails closed when any sensitive text would survive", () => {
-      expect(() => assertFinalAssessmentRedacted("<p>smith-affidavit.txt</p>", pii)).toThrow("REDACTION_INCOMPLETE");
-      expect(() => assertFinalAssessmentRedacted(redacted, pii)).not.toThrow();
+      const at = { redact: true, generatedAt: new Date("2026-11-26T12:00:00Z") };
+      expect(() => assertFinalAssessmentRedacted(redacted.replace("Redacted matter", "smith-affidavit.txt"), pii, at)).toThrow("REDACTION_INCOMPLETE");
+      expect(() => assertFinalAssessmentRedacted(redacted, pii, at)).not.toThrow();
+    });
+
+    it("exports when the title or a finding matches a fixed heading", () => {
+      const html = renderFinalAssessmentHtml({ ...pii, title: "Chronology", sections: { ...pii.sections, gaps: [{ text: "Case Overview", sources: [] }] } }, { redact: true });
+      expect(html).toContain("Redacted matter");
     });
 
     it("says what was masked and does not change the unredacted copy or the input", () => {

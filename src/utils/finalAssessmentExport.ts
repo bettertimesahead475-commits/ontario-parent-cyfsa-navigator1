@@ -46,17 +46,24 @@ export function redactFinalAssessment(report: AssessmentReport): AssessmentRepor
   };
 }
 
-/** Fails closed: throws if any title, file name, finding or source text of the original report survives in the redacted HTML. */
-export function assertFinalAssessmentRedacted(html: string, original: AssessmentReport): void {
-  const sources = Array.isArray(original.sources) ? original.sources : [];
-  const points = FINAL_ASSESSMENT_SECTIONS.flatMap(([key]) => (Array.isArray(original.sections?.[key]) ? original.sections[key] : []));
-  const sensitive = [original.title, ...sources.flatMap((s) => [s.document, s.text]), ...points.map((p) => p.text)];
-  for (const value of sensitive) {
-    const text = typeof value === "string" ? value.trim() : "";
-    if (text.length >= 6 && (html.includes(text) || html.includes(escapeHtml(text)))) {
-      throw new Error("REDACTION_INCOMPLETE");
-    }
+/** The same report with every title, file name, finding and source text replaced by one placeholder (empty values stay empty). */
+function neutralized(report: AssessmentReport): AssessmentReport {
+  const x = (v: unknown) => (typeof v === "string" && v === "" ? v : "x");
+  const sections = {} as AssessmentReport["sections"];
+  for (const [key] of FINAL_ASSESSMENT_SECTIONS) {
+    const points = Array.isArray(report.sections?.[key]) ? report.sections[key] : [];
+    sections[key] = points.map((p) => ({ ...p, text: x(p.text) }));
   }
+  const sources = Array.isArray(report.sources) ? report.sources : [];
+  return { ...report, title: x(report.title), sources: sources.map((s) => ({ ...s, document: x(s.document), text: x(s.text) })), sections };
+}
+
+/**
+ * Fails closed: the redacted HTML must be identical to the redacted HTML of the same report with all of its text replaced,
+ * so no title, file name, finding or source text can reach the PDF. Fixed headings are compared like for like.
+ */
+export function assertFinalAssessmentRedacted(html: string, original: AssessmentReport, options: FinalAssessmentExportOptions & { generatedAt: Date }): void {
+  if (html !== renderHtml(redactFinalAssessment(neutralized(original)), options)) throw new Error("REDACTION_INCOMPLETE");
 }
 
 const EXTRA_STYLES = `
@@ -74,8 +81,9 @@ const dateText = (value: string | Date) => {
 
 export function renderFinalAssessmentHtml(input: AssessmentReport, options: FinalAssessmentExportOptions = {}): string {
   if (!options.redact) return renderHtml(input, options);
-  const html = renderHtml(redactFinalAssessment(input), options);
-  assertFinalAssessmentRedacted(html, input);
+  const fixed = { ...options, generatedAt: options.generatedAt ?? new Date() };
+  const html = renderHtml(redactFinalAssessment(input), fixed);
+  assertFinalAssessmentRedacted(html, input, fixed);
   return html;
 }
 
