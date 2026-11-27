@@ -105,7 +105,19 @@ describe("Forensic PDF fidelity to the saved analysis", () => {
   it("does not claim a second review that did not happen", () => {
     expect(out).not.toContain("independently reviewed");
     expect(out).toContain("These findings were not second-reviewed");
-    expect(renderForensicReportHtml({ ...saved, forensicVerification: { status: "completed" } })).toContain("A second review checked each finding");
+    expect(renderForensicReportHtml({ ...saved, forensicVerification: { status: "completed" } })).not.toContain("A second review checked each finding");
+  });
+
+  it("states second-review coverage from the per-finding verdicts", () => {
+    const flag = saved.redFlags[0];
+    const reviewed = { ...flag, forensicVerification: { verdict: "supported" } };
+    const all = renderForensicReportHtml({ ...saved, redFlags: [reviewed, reviewed], forensicVerification: { status: "completed" } });
+    expect(all).toContain("A second review checked each finding");
+    const partial = renderForensicReportHtml({ ...saved, redFlags: [reviewed, flag], forensicVerification: { status: "completed" } });
+    expect(partial).not.toContain("checked each finding");
+    expect(partial).toContain("A second review gave a verdict on 1 of 2 findings");
+    const redactedStatus = renderForensicReportHtml({ ...saved, redFlags: [reviewed], forensicVerification: { status: "[removed from redacted copy]" } });
+    expect(redactedStatus).not.toContain("These findings were not second-reviewed");
   });
 
   it("says a location or significance is not stated instead of inventing one", () => {

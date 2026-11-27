@@ -62,6 +62,13 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
   });
 
   const secondReviewDone = verification?.status === "completed";
+  // Coverage is read from the per-finding verdicts, which survive redaction; the overall status may not.
+  const secondReviewCoverage = (flags: any[]): string => {
+    const checked = flags.filter((rf) => rf?.forensicVerification?.verdict).length;
+    if (checked > 0 && checked === flags.length) return "A second review checked each finding against the uploaded text.";
+    if (checked > 0) return `A second review gave a verdict on ${checked} of ${flags.length} findings; check the others against the original document.`;
+    return "These findings were not second-reviewed; check each quotation against the original document.";
+  };
   const html = `
     <!DOCTYPE html>
     <html lang="en">
@@ -582,7 +589,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
       ${Array.isArray(report.redFlags) && report.redFlags.length > 0 ? `
         <section class="section-block">
           <h2 class="section-heading">4. Key Forensic Findings & Evidence Audit Flags</h2>
-          <p class="prose-text">Specific passages exhibiting procedural irregularities, unsworn hearsay, or potential statutory overreach. ${secondReviewDone ? "A second review checked each finding against the uploaded text." : "These findings were not second-reviewed; check each quotation against the original document."}</p>
+          <p class="prose-text">Specific passages exhibiting procedural irregularities, unsworn hearsay, or potential statutory overreach. ${secondReviewCoverage(report.redFlags)}</p>
           ${report.redFlags.map((rf: any, idx: number) => {
             const sev = (rf.severity || "Affects Evidentiary Weight").toLowerCase();
             let sevClass = "severity-weight";
