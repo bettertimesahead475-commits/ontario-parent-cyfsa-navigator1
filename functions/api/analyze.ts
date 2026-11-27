@@ -360,6 +360,12 @@ export async function handleAnalyzeRequest(
         { status: 503, headers: DEFAULT_HEADERS }
       );
     }
+    if (trial.status === 'attempt_limit') {
+      return Response.json(
+        { error: `Your free ${label} could not be completed after several attempts. Please contact support or purchase a plan. Nothing was charged.`, code: 'FREE_TRIAL_ATTEMPTS_EXHAUSTED', retryable: false },
+        { status: 429, headers: DEFAULT_HEADERS }
+      );
+    }
     if (trial.status === 'ip_limit') {
       return Response.json(
         { error: 'Too many free trials were started from this network today. Try again tomorrow or purchase a plan. Nothing was charged.', code: 'FREE_TRIAL_DAILY_LIMIT', retryable: false },

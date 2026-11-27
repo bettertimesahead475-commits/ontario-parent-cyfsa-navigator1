@@ -1,6 +1,7 @@
 /** Test fixtures for the free-trial policy (functions/api/_free-trial.ts). Synthetic values only. */
 export const SPEND_CAPS_OFF = {
   FREE_TRIAL_IP_DAILY_LIMIT: 'off',
+  FREE_TRIAL_MAX_ATTEMPTS: 'off',
   FREE_TRIAL_IP_MONTHLY_LIMIT: 'off',
   FREE_QUICK_PLATFORM_DAILY_LIMIT: 'off',
   FREE_FORENSIC_PLATFORM_DAILY_LIMIT: 'off',

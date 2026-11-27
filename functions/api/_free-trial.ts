@@ -33,7 +33,16 @@ export const FREE_TRIAL_MAX_PAGES = 30;
 /** Text accepted by a free analysis: 30 pages at ~3,500 characters a page; Quick keeps its 75,000 ceiling. */
 export const FREE_TRIAL_MAX_CHARS: Record<FreeTrialKind, number> = { quick: 75_000, forensic: 105_000 };
 /** OCR extraction requests per account without a paid session, lifetime (two trials plus one re-read). */
-export const FREE_OCR_LIFETIME_LIMIT = 3;
+export const FREE_OCR_LIFETIME_LIMIT = 2;
+/**
+ * Provider runs one free entitlement may start in its lifetime. A failed run returns the entitlement, so without this
+ * a document that always fails could be retried at our expense forever. Retries of the same request join and are free.
+ */
+export const FREE_TRIAL_MAX_ATTEMPTS = 3;
+/** The run-count key of a free reservation; queue redeliveries spend from the same lifetime budget. */
+export function freeAttemptKey(reservationId: string | null | undefined, uid: string): string {
+  return `fat:${freeCounterKey(reservationId, uid)}`;
+}
 
 export interface FreeTrialEnv {
   STAGING_SUPABASE_URL?: string;
@@ -47,6 +56,7 @@ export interface FreeTrialEnv {
   FREE_OCR_PLATFORM_DAILY_LIMIT?: string;
   PAID_PLATFORM_DAILY_LIMIT?: string;
   FREE_TRIAL_PAUSE_AT_PAID_DAILY?: string;
+  FREE_TRIAL_MAX_ATTEMPTS?: string;
 }
 
 /** Defaults; each is overridable by the env var of the same name (a non-negative integer; 0 disables that cap). */
@@ -58,6 +68,7 @@ export const SPEND_LIMIT_DEFAULTS = {
   FREE_OCR_PLATFORM_DAILY_LIMIT: 30,
   PAID_PLATFORM_DAILY_LIMIT: 300,
   FREE_TRIAL_PAUSE_AT_PAID_DAILY: 200,
+  FREE_TRIAL_MAX_ATTEMPTS,
 } as const;
 export type SpendLimitName = keyof typeof SPEND_LIMIT_DEFAULTS;
 
@@ -167,7 +178,7 @@ export async function readFreeTrialBalance(env: FreeTrialEnv, uid: string, email
 
 export type FreeTrialReservation =
   | { status: 'reserved'; reservationId: string }
-  | { status: 'joined' | 'consumed' | 'limit' | 'email_unverified' | 'captcha_failed' | 'ip_limit' | 'paused' | 'unavailable' };
+  | { status: 'joined' | 'consumed' | 'limit' | 'email_unverified' | 'captcha_failed' | 'ip_limit' | 'attempt_limit' | 'paused' | 'unavailable' };
 
 export interface FreeTrialRequest {
   kind: FreeTrialKind;
@@ -215,6 +226,9 @@ export async function reserveFreeTrial(req: FreeTrialRequest): Promise<FreeTrial
     await releaseFreeScan(key, requestId, reservationId, rpc).catch(() => undefined);
     return { status } as FreeTrialReservation;
   };
+
+  const attempts = await takeCapUnit(`fat:${key}`, requestId, spendLimit(env, 'FREE_TRIAL_MAX_ATTEMPTS'), rpc);
+  if (attempts !== 'ok') return refuse(attempts === 'limit' ? 'attempt_limit' : 'unavailable');
 
   if (captchaRequired(env)) {
     const secret = normalizeApiKey(env.TURNSTILE_SECRET_KEY);

@@ -13,7 +13,7 @@ import {
 } from '../functions/api/_durable-analysis-jobs';
 import { createAnalyzerQueueMessage, parseAnalyzerQueueMessage } from '../functions/api/_analyzer-queue-contract';
 import { createStagingCreditRpc } from '../functions/api/_staging-credit-rpc';
-import { finalizeFreeReservation, releaseFreeReservation } from '../functions/api/_free-trial';
+import { finalizeFreeReservation, freeAttemptKey, releaseFreeReservation, spendLimit, takeCapUnit } from '../functions/api/_free-trial';
 import { finalizePaidReservation, releasePaidReservation } from '../functions/api/_paid-credit-lifecycle';
 
 interface QueueMessageLike {
@@ -154,6 +154,17 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
       return;
     }
 
+    // A redelivered free job is another provider run: it spends from the entitlement's lifetime run budget, so a
+    // job that keeps failing transiently stops and returns the entitlement. An unreachable ledger defers to the
+    // queue's own max_retries rather than failing a run that may still complete.
+    if (!job.session_id && !job.owner_bypass && message.attempts > 1) {
+      const runs = await takeCapUnit(freeAttemptKey(job.reservation_id, job.owner_uid), `${job.job_id.slice(0, 100)}_delivery_${message.attempts}`, spendLimit(env, 'FREE_TRIAL_MAX_ATTEMPTS'), createStagingCreditRpc(env));
+      if (runs === 'limit') {
+        await markPermanentFailure(env, job, token, 'FREE_TRIAL_ATTEMPTS_EXHAUSTED', 'Your free analysis could not be completed after several attempts and has been returned to your account. Nothing was charged.');
+        message.ack();
+        return;
+      }
+    }
     const input = await loadDurableInput(env, job.input_key);
     const request = new Request('https://analyzer-queue.internal/api/analyze', {
       method: 'POST',

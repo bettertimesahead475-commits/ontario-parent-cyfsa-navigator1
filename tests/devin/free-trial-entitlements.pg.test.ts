@@ -144,6 +144,20 @@ describe.skipIf(!isLocal)("free-trial entitlements on a real PostgreSQL server",
     expect((await attempt("forensic", "uid-e", "e@example.com", { env: env({ FREE_TRIAL_PAUSE_AT_PAID_DAILY: "6" }) })).status).toBe("reserved");
   });
 
+  it("a failing free entitlement can start at most 3 provider runs in its lifetime, then is refused", async () => {
+    const outcomes = [];
+    for (let i = 0; i < 4; i++) {
+      const requestId = `req_attempt_${i}_padding`;
+      const r = await attempt("forensic", "uid-f", "f@example.com", { requestId });
+      outcomes.push(r.status);
+      if (r.status === "reserved") await releaseFreeReservation("uid-f", requestId, r.reservationId, rpc);
+    }
+    expect(outcomes).toEqual(["reserved", "reserved", "reserved", "attempt_limit"]);
+    expect(await used(await freeTrialKey("forensic", "f@example.com"))).toBe(0);
+    // A retry of an earlier request joins it and does not spend another run.
+    expect((await attempt("forensic", "uid-f", "f@example.com", { requestId: "req_attempt_0_padding" })).status).toBe("reserved");
+  });
+
   it("repeated account creation from one network is capped per day", async () => {
     const e = env({ FREE_TRIAL_IP_DAILY_LIMIT: "2" });
     const rs = [];
