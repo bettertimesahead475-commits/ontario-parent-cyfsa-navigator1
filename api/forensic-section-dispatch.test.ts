@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { runSectionedAnalysis } from "./services/analyzerSections";
+import { completeVerification } from "./analyzerTestFixtures";
 
 type GenParams = Parameters<Parameters<typeof runSectionedAnalysis>[0]["generate"]>[0];
 
@@ -14,7 +15,7 @@ const SECTIONS: Record<string, unknown> = {
   forensic_verification: { findings: [{ id: "rf1", verdict: "SUPPORTED", recommendedSeverity: "Worth Raising With Counsel", note: "Supported." }], thresholds: [], overallAssessment: "Consistent." },
 };
 const DOC = "Synthetic affidavit. The school concern was relayed to me by the intake worker, Morgan Placeholder.";
-const ok = (stage: string) => ({ text: JSON.stringify(SECTIONS[stage] ?? {}), model: "synthetic", durationMs: 0, stopReason: "end_turn" });
+const ok = (stage: string, options?: GenParams) => ({ text: JSON.stringify(stage === "forensic_verification" && options ? completeVerification(SECTIONS[stage] as any, options) : SECTIONS[stage] ?? {}), model: "synthetic", durationMs: 0, stopReason: "end_turn" });
 
 describe("forensic section dispatch", () => {
   it("bounds cost when every section fails: each section is attempted at most twice and never via provider retries", async () => {
@@ -34,7 +35,7 @@ describe("forensic section dispatch", () => {
 
   it("dispatches Forensic longest-first with the verification inputs leading, three at a time", async () => {
     const order: string[] = [];
-    const generate = vi.fn(async (options: GenParams) => { order.push(options.stage!); return ok(options.stage!); });
+    const generate = vi.fn(async (options: GenParams) => { order.push(options.stage!); return ok(options.stage!, options); });
     await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "order-test", deadlineAt: Date.now() + 60_000, generate });
     // Chronology moved up behind the verification inputs (2026-11-26 hotfix): it previously started last.
     expect(order.slice(0, 3)).toEqual(["section:redFlags", "section:thresholds", "section:chronology"]);
@@ -42,7 +43,7 @@ describe("forensic section dispatch", () => {
 
   it("honours an explicit concurrency cap", async () => {
     let inFlight = 0, peak = 0;
-    const generate = vi.fn(async (options: GenParams) => { inFlight++; peak = Math.max(peak, inFlight); await new Promise((r) => setTimeout(r, 5)); inFlight--; return ok(options.stage!); });
+    const generate = vi.fn(async (options: GenParams) => { inFlight++; peak = Math.max(peak, inFlight); await new Promise((r) => setTimeout(r, 5)); inFlight--; return ok(options.stage!, options); });
     await runSectionedAnalysis({ mode: "fast", documentText: DOC, primaryModel: "m", requestId: "cap-test", deadlineAt: Date.now() + 60_000, generate, maxConcurrency: 2 });
     expect(peak).toBe(2);
   });
@@ -54,7 +55,7 @@ describe("forensic section dispatch", () => {
       startedAt[options.stage!] = Date.now() - t0;
       await new Promise((r) => setTimeout(r, delays[options.stage!] ?? 10));
       finishedAt[options.stage!] = Date.now() - t0;
-      return ok(options.stage!);
+      return ok(options.stage!, options);
     });
     const run = await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "overlap-test", deadlineAt: Date.now() + 120_000, generate, maxConcurrency: 6 });
     const sectionStarts = Object.entries(startedAt).filter(([k]) => k.startsWith("section:")).map(([, v]) => v);
@@ -71,7 +72,7 @@ describe("forensic section dispatch", () => {
   it("fails cleanly, without a dangling verification, when a section fails after verification started", async () => {
     const generate = vi.fn(async (options: GenParams) => {
       if (options.stage === "section:guidance") { await new Promise((r) => setTimeout(r, 30)); return { text: "{}", model: "m", durationMs: 0, stopReason: "end_turn" }; }
-      return ok(options.stage!);
+      return ok(options.stage!, options);
     });
     await expect(runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "fail-after-verify", deadlineAt: Date.now() + 120_000, generate })).rejects.toThrow();
     expect(generate.mock.calls.some(([o]) => o.stage === "forensic_verification")).toBe(true);
@@ -80,7 +81,7 @@ describe("forensic section dispatch", () => {
 
 describe("targeted Forensic re-runs (independent review finding 3)", () => {
   it("still verifies, via the full report, when the run does not include both verification inputs", async () => {
-    const generate = vi.fn(async (options: GenParams) => ok(options.stage!));
+    const generate = vi.fn(async (options: GenParams) => ok(options.stage!, options));
     const run = await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "targeted-test", deadlineAt: Date.now() + 60_000, generate, targetSections: ["guidance", "timeline"] });
     expect(run.report.forensicVerification).toBeDefined();
     expect(generate.mock.calls.map(([o]) => o.stage)).toEqual(expect.arrayContaining(["section:guidance", "section:timeline"]));

@@ -9,6 +9,7 @@
 import { escapeHtml } from "./reportSectionsHtml";
 import { VERIFIED_AUTHORITIES_REGISTRY, resolveLegalAuthority } from "../../shared/legalVerificationPipeline";
 import { REDACTED_COPY_NOTICE } from "../../shared/exportRedaction";
+import { isSecondReviewComplete } from "../../shared/reportContract";
 import { CASE_BRIEF_PART_LABELS, CASE_BRIEF_PART_ORDER, parseCaseBriefPoint } from "../../shared/caseBriefStructure";
 
 const NOT_STATED = "Not stated in the document";
@@ -61,7 +62,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
     if (VERIFIED_AUTHORITIES_REGISTRY[k]) authoritiesMap.set(VERIFIED_AUTHORITIES_REGISTRY[k].citation, VERIFIED_AUTHORITIES_REGISTRY[k]);
   });
 
-  const secondReviewDone = verification?.status === "completed";
+  const secondReviewDone = isSecondReviewComplete(verification);
   // Coverage is read from the per-finding verdicts, which survive redaction; the overall status may not.
   const secondReviewCoverage = (flags: any[]): string => {
     const checked = flags.filter((rf) => rf?.forensicVerification?.verdict).length;

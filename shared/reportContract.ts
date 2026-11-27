@@ -254,6 +254,16 @@ export interface AdaptOptions {
  * are placed in one section each, by the rules in `placeRedFlag`. The original object is not
  * modified.
  */
+
+/** A second review is complete only when it says so and gave a result for every finding it was sent (saved reports included). */
+export function isSecondReviewComplete(verification: unknown): boolean {
+  if (!verification || typeof verification !== "object") return false;
+  const v = verification as { status?: unknown; checkedFindings?: unknown; totalFindings?: unknown };
+  if (v.status !== "completed") return false;
+  const total = Number(v.totalFindings);
+  return !(v.totalFindings != null && Number.isFinite(total) && Number(v.checkedFindings) < total);
+}
+
 export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): ReportContract {
   const report: Loose = legacy && typeof legacy === "object" && !Array.isArray(legacy) ? (legacy as Loose) : {};
   const documentId = options.documentId || PRIMARY_DOCUMENT_ID;
@@ -472,7 +482,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
   if (verification) {
     // Only the outcome is kept. The verifying model's identifier is deliberately not copied.
     runNotes.push(
-      `Independent second review: ${text(verification.status) || "unknown"}; ${Number(verification.checkedFindings) || 0} findings checked.`
+      `Independent second review: ${isSecondReviewComplete(verification) ? "completed" : text(verification.status) === "completed" ? "incomplete" : text(verification.status) || "unknown"}; ${Number(verification.checkedFindings) || 0} findings checked.`
     );
     if (text(verification.overallAssessment)) runNotes.push(text(verification.overallAssessment));
     if (text(verification.reason)) runNotes.push(text(verification.reason));

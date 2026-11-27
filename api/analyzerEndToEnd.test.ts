@@ -174,7 +174,7 @@ const PAID_TOKEN = "Bearer paid-user-token";
 const free = () => ({ Authorization: FREE_TOKEN });
 const paid = () => ({ Authorization: PAID_TOKEN, "x-ps-session": "paid-session" });
 
-const { COMPLETE_ANALYSIS, VERIFICATION_RESULT, sectionResponder, isVerificationRequest, claudeJson } = await import("./analyzerTestFixtures.js");
+const { COMPLETE_ANALYSIS, VERIFICATION_RESULT, sectionResponder, isVerificationRequest, claudeJson, completeVerification } = await import("./analyzerTestFixtures.js");
 const CORE = {
   ...COMPLETE_ANALYSIS,
   documentTitle: "Affidavit of a worker",
@@ -754,7 +754,7 @@ describe("Analyzer Access Isolation & Multi-Representation Binding", () => {
       mockCreateMessage.mockImplementation(async (body: any) =>
         isVerificationRequest(body)
           ? claudeJson(
-              { findings: [{ id: "rf1", verdict: "OVERSTATED", recommendedSeverity: "Affects Evidentiary Weight", note: "Single hearsay source." }], thresholds: [], overallAssessment: "Mostly supported." },
+              completeVerification({ findings: [{ id: "rf1", verdict: "OVERSTATED", recommendedSeverity: "Affects Evidentiary Weight", note: "Single hearsay source." }], thresholds: [], overallAssessment: "Mostly supported." }, body),
               { input_tokens: 5000, output_tokens: 1000 }
             )
           : claudeJson(report, { input_tokens: 1000, output_tokens: 500 })

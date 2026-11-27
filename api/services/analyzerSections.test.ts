@@ -16,7 +16,7 @@ import {
   type GenerateFn,
 } from "./analyzerSections.js";
 import { AnalyzerError, redactDiagnostic } from "./analyzerErrors.js";
-import { COMPLETE_ANALYSIS, VERIFICATION_RESULT, isVerificationRequest, requestedSection } from "../analyzerTestFixtures.js";
+import { COMPLETE_ANALYSIS, VERIFICATION_RESULT, completeVerification, isVerificationRequest, requestedSection } from "../analyzerTestFixtures.js";
 
 const DOC = "The worker states that a neighbour told me the child was left alone on March 3, 2026.";
 
@@ -159,7 +159,7 @@ describe("runSectionedAnalysis", () => {
       thresholds: [],
       overallAssessment: "Calibrate severity.",
     };
-    const generate = responder(report, verification);
+    const generate: GenerateFn = vi.fn(async (params: any) => ok(isVerificationRequest(params) ? completeVerification(verification, params) : report));
     const { report: out, usageByModel } = await runSectionedAnalysis(
       base(generate, { mode: "full", verificationModel: "claude-opus-5" })
     );
