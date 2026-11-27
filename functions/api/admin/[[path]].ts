@@ -555,6 +555,15 @@ async function reissueCode(env: AdminEnv, admin: AdminIdentity, body: Record<str
   const after = await rest<AccessCode[]>(env, `access_codes?select=id,used_at&reference_number=eq.${enc(reference)}&used_at=not.is.null&limit=1`, {}, fetcher);
   if (after.length) return adminError('CODE_ALREADY_REDEEMED', 409, 'The customer redeemed the earlier code just now; no new code was issued.');
   const issued = await issueCode(env, payment, email, amountOf(payment.amount), fetcher, now);
+  // A refund recorded while this code was being issued may have retired the unused codes before it was inserted. The
+  // refund writes its record first, so checking after the insert closes the race; unreadable history fails closed.
+  const settled = await settlementOf(env, reference, fetcher).catch(() => null);
+  if (settled === 'refunded' || settled === null) {
+    await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
+    return settled === 'refunded'
+      ? adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded while the code was being issued. The new code was cancelled.')
+      : adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund history could not be read, so the new code was cancelled. Try again.');
+  }
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt,
     note: 'Send this code to the customer now. It is shown once; earlier unused codes for this payment no longer work.' });
 }
@@ -619,7 +628,8 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
       // Monthly renewals extend one entitlement by 30 days per code. Refunding one month (the renewal itself, or the
       // original purchase of an entitlement that has paid renewals) takes back those 30 days; refunding a purchase
       // with no renewals revokes it.
-      const renewals = (await rest<CodeLink[]>(env, `access_codes?select=id&redeemed_session_id=eq.${session.id}&used_at=not.is.null&limit=50`, {}, fetcher))
+      // Before 20261110004740 there is no redeemed_session_id: every redemption had its own entitlement, so no renewals.
+      const renewals = (await restOptional<CodeLink[]>(env, `access_codes?select=id&redeemed_session_id=eq.${session.id}&used_at=not.is.null&limit=50`, [], fetcher)).data
         .filter((c) => c.id !== session.access_code_id);
       const isRenewal = session.access_code_id !== code.id;
       if ((isRenewal || renewals.length > 0) && session.expires_at && !firstApplication) {
