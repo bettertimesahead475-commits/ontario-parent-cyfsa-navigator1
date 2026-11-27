@@ -224,8 +224,35 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     await db.query("update public.navigator_paid_sessions set granted_credits = null where id = $1", [s.session_id]);
   });
 
+  it("rollback counts suspended top-ups and waits for an in-flight top-up before checking", async () => {
+    const email = "rb@example.test";
+    const first = await redeem(db, "uid-rb-susp", await issue(ref(), email), email);
+    await redeem(db, "uid-rb-susp", await issue(ref(), email), email);
+    await db.query("update public.navigator_paid_sessions set revoked_at = now() where id = $1", [first.session_id]);
+    const refused = (c: pg.Client) => c.query(DOWN).then(() => -1, async (e: Error) => {
+      await c.query("rollback").catch(() => undefined);
+      return Number(/rollback: (\d+) unexpired session/.exec(e.message)?.[1] ?? -2);
+    });
+    const unexpired = () => count("select count(*) as n from public.navigator_paid_sessions where granted_credits is not null and expires_at > now()");
+    const before = await unexpired();
+    expect(before).toBeGreaterThan(await count("select count(*) as n from public.navigator_paid_sessions where granted_credits is not null and revoked_at is null and expires_at > now()"));
+    expect(await refused(db)).toBe(before);
+
+    const second = await redeem(db, "uid-rb-race", await issue(ref(), email), email);
+    const holder = await connect(); const roller = await connect();
+    await holder.query("begin");
+    expect((await redeem(holder, "uid-rb-race", await issue(ref(), email), email)).session_id).toBe(second.session_id);
+    const pending = refused(roller);
+    await new Promise((r) => setTimeout(r, 300));
+    const waiting = await count("select count(*) as n from pg_locks where not granted");
+    await holder.query("commit");
+    expect(waiting).toBeGreaterThan(0);
+    expect(await pending).toBe(before + 1);
+    expect(await count("select count(*) as n from information_schema.columns where table_name = 'navigator_paid_sessions' and column_name = 'granted_credits'")).toBe(1);
+  });
+
   it("rollback refuses while a customer holds added analyses; with the owner's override it restores D and the original reserve exactly", async () => {
-    await expect(db.query(DOWN)).rejects.toThrow(/active session\(s\) hold credits from an early re-purchase/);
+    await expect(db.query(DOWN)).rejects.toThrow(/unexpired session\(s\) \(active or suspended\) hold credits from an early re-purchase/);
     await db.query("rollback").catch(() => undefined);
     expect(await fp("paid_reserve_credit_tier_default")).toBe(reserveFingerprint);
     expect(await count("select count(*) as n from public.navigator_paid_sessions where granted_credits is not null")).toBeGreaterThan(0);

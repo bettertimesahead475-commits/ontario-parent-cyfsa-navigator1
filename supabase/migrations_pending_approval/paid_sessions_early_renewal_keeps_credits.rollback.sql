@@ -1,18 +1,22 @@
 -- ROLLBACK for paid_sessions_early_renewal_keeps_credits.sql (Migration E). PENDING APPROVAL: run only with written
 -- owner approval. Restores D's redeem_access_code_atomic and the original paid_reserve_credit, and drops
 -- navigator_paid_sessions.granted_credits.
--- Refuses while an active session holds credits added by an early re-purchase, because those customers would silently
--- fall back to the tier default. To accept that reduction knowingly, run it with
--- `set navigator.allow_credit_reduction = 'on';` in the same session, after the owner has decided each case.
+-- Refuses while an unexpired session (active, or suspended and so restorable) holds credits added by an early
+-- re-purchase, because those customers would silently fall back to the tier default. To accept that reduction
+-- knowingly, run it with `set navigator.allow_credit_reduction = 'on';` in the same session, after the owner has
+-- decided each case.
 begin;
+
+-- Blocks new top-ups and waits for in-flight ones to commit, so the check below sees every credit the drop removes.
+lock table public.navigator_paid_sessions in share row exclusive mode;
 
 do $$
 declare v_active integer;
 begin
   select count(*) into v_active from public.navigator_paid_sessions
-    where granted_credits is not null and revoked_at is null and expires_at > now();
+    where granted_credits is not null and expires_at > now();
   if v_active > 0 and coalesce(current_setting('navigator.allow_credit_reduction', true), '') <> 'on' then
-    raise exception 'Migration E rollback: % active session(s) hold credits from an early re-purchase; rolling back would reduce them to the tier default. Nothing was changed.', v_active;
+    raise exception 'Migration E rollback: % unexpired session(s) (active or suspended) hold credits from an early re-purchase; rolling back would reduce them to the tier default. Nothing was changed.', v_active;
   end if;
 end $$;
 
