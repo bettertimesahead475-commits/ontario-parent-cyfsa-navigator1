@@ -37,13 +37,13 @@ its guard (1 fails).
 | Depends on | **P** → **D** → `paid_credit_reservation_functions.sql` (not listed in the register yet; confirm whether it is live) |
 | Prerequisites | 1. Owner written approval. 2. Claude qualification. 3. Backup or PITR confirmed. 4. **Read-only preflight**: every blocking row `ok = true`. The live `redeem_access_code_atomic` must equal D (`76dd0fe56ba742c3f50fbfef7dcfa536`) and the live `paid_reserve_credit` must equal `paid_credit_reservation_functions.sql` (`b79c9a9d06a0375c8ab0036711e17c50`); otherwise stop and re-baseline. 5. Apply on a preview or disposable DB first |
 | Apply order | After D, in one transaction (the file has `begin`/`commit`). It raises and changes nothing if D or `paid_reserve_credit` is missing |
-| Rollback order | Before D's rollback. It first takes an ACCESS EXCLUSIVE lock on `navigator_paid_sessions` (waits for in-flight redemptions, no deadlock with a held row lock; blocks session reads for the few milliseconds of the rollback), then refuses while any unexpired session, active or suspended, has `granted_credits`, because those customers would silently drop to the tier default. The owner can accept that knowingly with `set navigator.allow_credit_reduction = 'on'`. It restores D's RPC and the original `paid_reserve_credit` exactly, and drops the column |
+| Rollback order | Before D's rollback, and only without refund receipts. It locks the receipt table and then the session table exclusively. Any receipt always prevents rollback; use the [forward repair procedure](../handoffs/devin-migration-e-qualification.md#release-gates-backup-and-recovery). Without receipts, the existing guard still rejects unexpired grants unless explicitly overridden. A clean rollback restores D's RPC and the original `paid_reserve_credit` exactly. |
 | Customer impact | No existing row changes. After E, an early re-purchase of the same one-off pack keeps the unused analyses and extends access by 30 days. Monthly tiers and codes without a reference are unchanged |
 
-## Application follow-ups that must ship with or after E (not in this PR)
-- Usage display: `functions/api/analyzer-usage.ts:84` and `functions/api/admin/[[path]].ts:128` show `LIMITS[tier]`.
-  After E they should show `granted_credits ?? LIMITS[tier]`. Their selects can only add `granted_credits` once E is
-  live (PostgREST rejects unknown columns).
+## Application rollout
+- Customer and admin usage show `granted_credits ?? LIMITS[tier]` for one-off packs. Customer usage retries the
+  legacy projection when the optional column is absent; admin uses the returned session row.
+- Manual restore uses E's service-only `paid_restore_credits` RPC and is unavailable on the new app before E.
 - Pricing UI: allow an early re-purchase of the same one-off pack only after E is applied.
 
 ## Refund of a top-up: one database function (was blocking for E)

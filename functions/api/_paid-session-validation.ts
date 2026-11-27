@@ -10,6 +10,7 @@ export type PaidSessionRow = {
   issued_at: string | null;
   expires_at: string | null;
   revoked_at: string | null;
+  granted_credits?: number | null;
 };
 
 export type VerifiedSession = {
@@ -18,6 +19,7 @@ export type VerifiedSession = {
   tier: string;
   issuedAt: string | null;
   expiresAt: string | null;
+  grantedCredits?: number;
 };
 
 const TIERS = new Set([
@@ -53,5 +55,7 @@ export function validatePaidSessionRow(
     tier: row.tier,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at,
+    ...(typeof row.granted_credits === 'number' && Number.isSafeInteger(row.granted_credits) && row.granted_credits > 0
+      ? { grantedCredits: row.granted_credits } : {}),
   };
 }

@@ -1,8 +1,7 @@
 // Migration E: supabase/migrations_pending_approval/paid_sessions_early_renewal_keeps_credits.sql, its rollback and
 // read-only preflight, on a disposable PostgreSQL. Runs only where CREDIT_PG_URL is set. Creates its own throwaway
-// database (dropped afterwards) with a minimal access_codes / navigator_paid_sessions / free_usage schema, then P
-// (20261110004740), D and paid_credit_reservation_functions.sql, as on the intended release order. No other database
-// is touched; synthetic accounts only.
+// database (dropped afterwards) with the captured payment schema, a minimal free_usage fixture, the paid
+// reservation functions and A/B, then P (20261110004740) and D. No other database is touched; synthetic accounts only.
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -12,33 +11,36 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { handleAdminRequest } from "../../functions/api/admin/[[path]]";
 
 const url = process.env.CREDIT_PG_URL;
+const isLocal = url && ["127.0.0.1", "localhost", "[::1]"].includes(new URL(url).hostname);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sql = (p: string) => readFileSync(path.resolve(here, "../../supabase", p), "utf8");
 const P = sql("migrations/20261110004740_preserve_monthly_renewal.sql");
 const D = sql("migrations_pending_approval/access_codes_one_redemption_per_reference.sql");
 const CREDITS = sql("migrations_pending_approval/paid_credit_reservation_functions.sql");
+const JOBS = sql("migrations/20261104230000_durable_analyzer_queue.sql");
+const A = sql("migrations_pending_approval/free_scan_reservation_functions.sql");
+const B = sql("migrations_pending_approval/reconcile_skip_live_analyzer_jobs.sql");
 const UP = sql("migrations_pending_approval/paid_sessions_early_renewal_keeps_credits.sql");
 const DOWN = sql("migrations_pending_approval/paid_sessions_early_renewal_keeps_credits.rollback.sql");
 const PREFLIGHT = sql("migrations_pending_approval/paid_sessions_early_renewal_keeps_credits.preflight.sql");
-const SCHEMA = `
-create table public.access_codes (id uuid primary key default gen_random_uuid(), tier text, code_hash text unique, email text,
-  used_at timestamptz, expires_at timestamptz, reference_number text, amount numeric, created_at timestamptz not null default now());
-create table public.navigator_paid_sessions (id uuid primary key default gen_random_uuid(), firebase_uid text not null, email text,
-  tier text not null, issued_at timestamptz not null default now(), expires_at timestamptz not null, revoked_at timestamptz,
-  revocation_reason text, access_code_id uuid references public.access_codes(id) on delete set null,
-  constraint navigator_paid_sessions_access_code_id_key unique (access_code_id));
+const SCHEMA = readFileSync(path.resolve(here, "fixtures/live-nxfh-payment-schema.sql"), "utf8") + `
+create schema auth;
+create function auth.uid() returns uuid language sql stable
+  as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 create table public.free_usage (uid text primary key, email text, analyses_used integer not null default 0,
-  first_analysis_at timestamptz, last_analysis_at timestamptz);`;
+  first_analysis_at timestamptz, last_analysis_at timestamptz);
+alter table public.free_usage enable row level security;
+grant select, insert, update on public.free_usage to service_role;`;
 const DAY = 86400000;
 const PACK: Record<string, number> = { Basic: 3, AnalyzerBasic: 3, Premium: 5, AnalyzerPremium: 5, Pro: 5 };
 const hash = (code: string) => createHash("sha256").update(code.trim().toUpperCase()).digest("hex");
 type Rpc = { status: string; code?: string; session_id?: string; expires_at?: string; granted_credits?: number };
 
-describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused analyses", () => {
+describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unused analyses", () => {
   const dbName = `mig_e_${process.pid}_${Date.now()}`;
   let admin: pg.Client; let db: pg.Client; let dbUrl: string;
   const clients: pg.Client[] = [];
-  const connect = async () => { const c = new pg.Client({ connectionString: dbUrl }); await c.connect(); clients.push(c); return c; };
+  const connect = async () => { const c = new pg.Client({ connectionString: dbUrl, statement_timeout: 5000 }); await c.connect(); clients.push(c); return c; };
   let n = 0;
   const ref = () => `PS-E${String(++n).padStart(7, "0")}`;
   const issue = async (reference: string | null, email: string, tier = "Premium") => {
@@ -74,12 +76,11 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     admin = new pg.Client({ connectionString: url }); await admin.connect();
     await admin.query(`create database ${dbName}`);
     const u = new URL(url!); u.pathname = `/${dbName}`; dbUrl = u.toString();
-    for (const role of ["anon", "authenticated", "service_role"]) {
-      await admin.query(`do $$ begin if not exists (select 1 from pg_roles where rolname = '${role}') then create role ${role} nologin; end if; end $$;`);
-    }
     db = new pg.Client({ connectionString: dbUrl }); await db.connect();
     await db.query(SCHEMA);
-    await db.query(P); await db.query(D); await db.query(CREDITS);
+    await db.query(JOBS); await db.query(CREDITS); await db.query(A);
+    await db.query("create index concurrently analyzer_jobs_live_reservation_idx on public.analyzer_jobs (reservation_id) where status in ('queued', 'running')");
+    await db.query(B); await db.query(P); await db.query(D);
     dFingerprint = (await fp("redeem_access_code_atomic"))!;
     reserveFingerprint = (await fp("paid_reserve_credit"))!;
   });
@@ -122,8 +123,10 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
 
   it("applies cleanly: existing sessions are untouched, the original reserve body is kept, only service_role can call", async () => {
     const before = (await db.query("select id, tier, expires_at, revoked_at from public.navigator_paid_sessions order by id")).rows;
+    const usage = (await db.query("select * from public.free_usage order by uid")).rows;
     await db.query(UP);
     expect((await db.query("select id, tier, expires_at, revoked_at from public.navigator_paid_sessions order by id")).rows).toEqual(before);
+    expect((await db.query("select * from public.free_usage order by uid")).rows).toEqual(usage);
     expect(await count("select count(*) as n from public.navigator_paid_sessions where granted_credits is not null")).toBe(0);
     expect(await fp("paid_reserve_credit_tier_default")).toBe(reserveFingerprint);
     for (const fn of ["redeem_access_code_atomic(text,text,text)", "paid_reserve_credit(text,text,text,integer,timestamptz,interval,interval)"]) {
@@ -288,7 +291,7 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
   // The admin refund (functions/api/admin/[[path]].ts) against this database through a minimal PostgREST
   // (select / eq / is.null / not.is.null / or=(a.eq.x,...) / limit, PATCH returning rows); payments and storage in memory.
   // holdSessionPatches = n: the first n session PATCHes wait until all n have been sent, so n refunds race on one row.
-  const adminHarness = (payments: Record<string, { plan: string; email: string; uid: string }>, holdSessionPatches = 0) => {
+  const adminHarness = (payments: Record<string, { plan: string; email: string; uid: string }>, holdSessionPatches = 0, restoreClient = db) => {
     const storage = new Map<string, string>();
     let held: Array<() => void> = [];
     const where = (u: URL) => {
@@ -297,6 +300,9 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
         if (!/^[a-z_]+$/.test(col)) throw new Error(`bad column ${col}`);
         if (expr === "is.null") return `${col} is null`;
         if (expr === "not.is.null") return `${col} is not null`;
+        if (expr.startsWith("like.")) {
+          params.push(expr.slice(5).replaceAll("*", "%")); return `${col} like $${params.length}`;
+        }
         if (!expr.startsWith("eq.")) throw new Error(`bad filter ${expr}`);
         params.push(expr.slice(3)); return `${col} = $${params.length}`;
       };
@@ -323,11 +329,14 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
       if (table === "rpc/paid_refund_one_off_pack" && method === "POST") {
         return Response.json((await db.query("select public.paid_refund_one_off_pack(p_session => $1, p_refund_key => $2, p_days => $3) as r", [body.p_session, body.p_refund_key, body.p_days])).rows[0].r);
       }
+      if (table === "rpc/paid_restore_credits" && method === "POST") {
+        return Response.json((await restoreClient.query("select public.paid_restore_credits(p_session => $1, p_scope => $2, p_credits => $3) as r", [body.p_session, body.p_scope, body.p_credits])).rows[0].r);
+      }
       if (table === "payments") {
         const r = u.searchParams.get("reference_number")?.slice(3) ?? ""; const p = payments[r];
         return Response.json(p ? [{ id: randomUUID(), reference_number: r, plan: p.plan, amount: 49.99, status: "approved", notes: `email:${p.email};uid:${p.uid}` }] : []);
       }
-      if (table !== "access_codes" && table !== "navigator_paid_sessions") return new Response("unexpected", { status: 500 });
+      if (table !== "access_codes" && table !== "navigator_paid_sessions" && table !== "free_usage") return new Response("unexpected", { status: 500 });
       const w = where(u);
       // row_to_json: timestamps come back as PostgREST sends them (ISO 8601, microseconds), so eq filters on them round-trip.
       if (method === "GET") return Response.json((await db.query(`select row_to_json(t) as r from (select * from public.${table}${w.sql}${w.limit ? ` limit ${Number(w.limit)}` : ""}) t`, w.params)).rows.map((x) => x.r));
@@ -342,9 +351,13 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
       return new Response("unexpected", { status: 500 });
     };
     const env = { FIREBASE_PROJECT_ID: "p", STAGING_SUPABASE_URL: "https://db.test", STAGING_SUPABASE_SERVICE_ROLE_KEY: "k" };
-    return Object.assign(async (referenceNumber: string) => (await handleAdminRequest(new Request("https://cyfsanavigator.com/api/admin/payments/refund", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ referenceNumber, reason: "Customer request" }) }),
-      env as never, { requireAdmin: (async () => ({ admin: { uid: "admin-uid", email: "ops@example.test" } })) as never, fetcher: fetcher as never })).json() as Promise<Record<string, unknown>>, { storage });
+    const request = async (route: string, body: Record<string, unknown>) => handleAdminRequest(new Request(`https://cyfsanavigator.com/api/admin/${route}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+      env as never, { requireAdmin: (async () => ({ admin: { uid: "admin-uid", email: "ops@example.test" } })) as never, fetcher: fetcher as never });
+    return Object.assign(async (referenceNumber: string) => (await request("payments/refund", { referenceNumber, reason: "Customer request" })).json() as Promise<Record<string, unknown>>, {
+      storage,
+      restore: (sessionId: string, credits = 1) => request("credits/restore", { sessionId, credits, reason: "Restore an analysis" }),
+    });
   };
   const refundPack = async (c: pg.Client, session: string, key: string) =>
     (await c.query("select public.paid_refund_one_off_pack($1, $2, 30) as r", [session, key])).rows[0].r as Record<string, unknown>;
@@ -518,5 +531,167 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     expect(await refund(topRef)).toMatchObject({ success: true, sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 2 });
     expect(await refund(origRef)).toMatchObject({ success: true, sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 5 });
     expect((await one("select expires_at <= now() as ended from public.navigator_paid_sessions where id = $1", [first.session_id])).ended).toBe(true);
+  });
+
+  const reserve = async (c: pg.Client, session: string, request: string) =>
+    (await c.query("select public.paid_reserve_credit($1,$2,'total',5,now(),'15 minutes','60 seconds') as r", [session, request])).rows[0].r;
+  const release = async (c: pg.Client, session: string, request: string, id: string) =>
+    (await c.query("select public.paid_release_credit($1,$2,$3,now()) as r", [session, request, id])).rows[0].r.status;
+  const used = (session: string) => one("select analyses_used from public.free_usage where uid = $1", [`paid_session_${session}_total`]);
+  const pid = async (c: pg.Client) => (await c.query("select pg_backend_pid() as pid")).rows[0].pid;
+  const blockedBy = async (waiter: number, blocker: number) => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if ((await one("select $2 = any(pg_blocking_pids($1)) as waiting", [waiter, blocker])).waiting) return;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    throw new Error(`backend ${waiter} did not block behind ${blocker}`);
+  };
+
+  it("serializes the final paid slot, returns a reservation once, and cannot return a committed unit", async () => {
+    const email = "credit-race@example.test";
+    const { session_id: session } = await redeem(db, "uid-credit-race", await issue(ref(), email), email);
+    for (let i = 0; i < 4; i++) expect(await analyse(session!, "Premium")).toBe("reserved");
+    const [a, b] = await Promise.all([connect(), connect()]);
+    const [aPid, bPid] = await Promise.all([pid(a), pid(b)]);
+    await Promise.all([a.query("set role service_role"), b.query("set role service_role")]);
+    await a.query("begin");
+    const held = await reserve(a, session!, "final-slot");
+    expect(held).toMatchObject({ status: "reserved", counter_used: 5 });
+    const waiting = reserve(b, session!, "contender");
+    try { await blockedBy(bPid, aPid); } finally { await a.query("commit"); }
+    expect((await waiting).status).toBe("limit");
+    expect(await used(session!)).toEqual({ analyses_used: 5 });
+
+    await a.query("begin");
+    expect(await release(a, session!, "final-slot", held.reservation_id)).toBe("released");
+    const duplicate = release(b, session!, "final-slot", held.reservation_id);
+    try { await blockedBy(bPid, aPid); } finally { await a.query("commit"); }
+    expect(await duplicate).toBe("noop");
+    expect(await used(session!)).toEqual({ analyses_used: 4 });
+    const committed = await reserve(b, session!, "contender");
+    expect(committed).toMatchObject({ status: "reserved", counter_used: 5 });
+    const finalize = (c: pg.Client) => c.query("select public.paid_finalize_credit($1,'contender',now()) as r", [session]);
+    await a.query("begin");
+    expect((await finalize(a)).rows[0].r.status).toBe("consumed");
+    const afterCommit = release(b, session!, "contender", committed.reservation_id);
+    try { await blockedBy(bPid, aPid); } finally { await a.query("commit"); }
+    expect(await afterCommit).toBe("noop");
+    expect(await used(session!)).toEqual({ analyses_used: 5 });
+  });
+
+  it("keeps B's reservation protection for live analyzer jobs after E", async () => {
+    const email = "aged-credit@example.test";
+    const { session_id: session } = await redeem(db, "uid-aged-credit", await issue(ref(), email), email);
+    const c = await connect();
+    await c.query("set role service_role");
+    const held = await reserve(c, session!, "aged-request");
+    expect(held.status).toBe("reserved");
+    await c.query("update public.free_usage set last_analysis_at = now() - interval '20 minutes' where uid = $1", [held.reservation_id]);
+    await c.query("insert into public.analyzer_jobs (job_id, owner_uid, mode, status, input_key, session_id, reservation_id) values ('e-aged-job','uid-aged-credit','full','running','synthetic',$1,$2)", [session, held.reservation_id]);
+    expect(await reserve(c, session!, "next-request")).toMatchObject({ status: "reserved", counter_used: 2 });
+    await c.query("update public.analyzer_jobs set status = 'failed' where job_id = 'e-aged-job'");
+    expect(await reserve(c, session!, "after-failure")).toMatchObject({ status: "reserved", counter_used: 2 });
+    expect(await one("select email from public.free_usage where uid = $1", [held.reservation_id])).toEqual({ email: "reservation:released" });
+  });
+
+  it("blocks a real admin restore behind an in-flight reservation and leaves the finalized analysis charged", async () => {
+    const email = "restore-race@example.test";
+    const { session_id: session } = await redeem(db, "uid-restore-race", await issue(ref(), email), email);
+    const [reserving, restoring] = await Promise.all([connect(), connect()]);
+    const [reservingPid, restoringPid] = await Promise.all([pid(reserving), pid(restoring)]);
+    await Promise.all([reserving.query("set role service_role"), restoring.query("set role service_role")]);
+    const admin = adminHarness({}, 0, restoring);
+    await reserving.query("begin");
+    expect(await reserve(reserving, session!, "restore-race")).toMatchObject({ status: "reserved", counter_used: 1 });
+    const pending = admin.restore(session!);
+    try { await blockedBy(restoringPid, reservingPid); } finally { await reserving.query("commit"); }
+    const response = await pending;
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "RESERVATION_PENDING" });
+    expect((await reserving.query("select public.paid_finalize_credit($1,'restore-race',now()) as r", [session])).rows[0].r.status).toBe("consumed");
+    expect(await used(session!)).toEqual({ analyses_used: 1 });
+    const restored = await admin.restore(session!, 25);
+    expect(await restored.json()).toMatchObject({ success: true, creditsRestored: 1, creditsRemaining: 5 });
+    expect(await used(session!)).toEqual({ analyses_used: 0 });
+  });
+
+  it("rolls back a killed reservation and an interrupted refund without orphan markers or receipts", async () => {
+    const email = "interrupt-e@example.test";
+    const { session_id: session } = await redeem(db, "uid-interrupt-e", await issue(ref(), email), email);
+    await redeem(db, "uid-interrupt-e", await issue(ref(), email), email);
+    const before = await one("select granted_credits, expires_at from public.navigator_paid_sessions where id = $1", [session]);
+    const a = await connect();
+    const backend = await pid(a);
+    const disconnected = new Promise<void>((resolve) => { a.on("error", () => resolve()); });
+    await a.query("begin");
+    const held = await reserve(a, session!, "uncommitted");
+    expect(held.status).toBe("reserved");
+    expect((await one("select pg_terminate_backend($1, 5000) as killed", [backend])).killed).toBe(true);
+    await disconnected;
+    expect(await used(session!)).toBeUndefined();
+    expect(await one("select uid from public.free_usage where uid = $1", [held.reservation_id])).toBeUndefined();
+    const retried = await reserve(db, session!, "uncommitted");
+    expect(retried).toMatchObject({ status: "reserved", counter_used: 1 });
+    expect(await release(db, session!, "uncommitted", retried.reservation_id)).toBe("released");
+    expect(await used(session!)).toEqual({ analyses_used: 0 });
+
+    const b = await connect();
+    await b.query("set role service_role; begin");
+    expect(await refundPack(b, session!, "interrupt-refund")).toMatchObject({ status: "applied" });
+    await b.query("rollback");
+    expect(await one("select granted_credits, expires_at from public.navigator_paid_sessions where id = $1", [session])).toEqual(before);
+    expect(await one("select 1 from public.navigator_paid_session_refunds where refund_key = 'interrupt-refund'")).toBeUndefined();
+    expect(await refundPack(b, session!, "interrupt-refund")).toMatchObject({ status: "applied", granted_after: 5 });
+  });
+
+  it("enforces real role permissions, refund-key uniqueness, FK integrity, and the definer search path", async () => {
+    for (const role of ["anon", "authenticated"]) {
+      const c = await connect();
+      await c.query(`set role ${role}`);
+      for (const statement of [
+        "select * from public.navigator_paid_session_refunds",
+        "select * from public.free_usage",
+        "select public.paid_refund_one_off_pack(null, 'permission-check', 30)",
+        "select public.redeem_access_code_atomic('uid', 'fake-code', 'someone@example.test')",
+        "select public.paid_reserve_credit('session','request','total',5,now(),'15 minutes','60 seconds')",
+        "select public.paid_release_credit('session','request','marker',now())",
+        "select public.paid_finalize_credit('session','request',now())",
+        "select public.paid_restore_credits(null, 'total', 1)",
+      ]) await expect(c.query(statement)).rejects.toMatchObject({ code: "42501" });
+    }
+    expect(await one("select relrowsecurity from pg_class where oid = 'public.navigator_paid_session_refunds'::regclass"))
+      .toEqual({ relrowsecurity: true });
+    expect(await one("select prosecdef, proconfig from pg_proc where oid = 'public.redeem_access_code_atomic(text,text,text)'::regprocedure"))
+      .toEqual({ prosecdef: true, proconfig: ["search_path=public, pg_temp"] });
+    const service = await connect();
+    await service.query("set role service_role");
+    await expect(service.query("update public.navigator_paid_session_refunds set granted_after = 0")).rejects.toMatchObject({ code: "42501" });
+    await expect(service.query("insert into public.navigator_paid_session_refunds select * from public.navigator_paid_session_refunds where refund_key = 'interrupt-refund'"))
+      .rejects.toMatchObject({ code: "23505" });
+    await expect(service.query("insert into public.navigator_paid_session_refunds values ('unknown-session', gen_random_uuid(), now(), 10, 5, 0, 0)"))
+      .rejects.toMatchObject({ code: "23503" });
+  });
+
+  it("refuses rollback with receipts even with the override; E forward repair preserves post-migration accounting", async () => {
+    await db.query("update public.navigator_paid_sessions set expires_at = now() - interval '1 day' where granted_credits is not null");
+    const receipts = (await db.query("select * from public.navigator_paid_session_refunds order by refund_key")).rows;
+    const codes = (await db.query("select * from public.access_codes order by id")).rows;
+    const usage = (await db.query("select * from public.free_usage order by uid")).rows;
+    const sessions = (await db.query("select * from public.navigator_paid_sessions order by id")).rows;
+    expect(receipts.length).toBeGreaterThan(0);
+    for (const override of ["on", "off"]) {
+      await db.query(`set navigator.allow_credit_reduction = '${override}'`);
+      await expect(db.query(DOWN)).rejects.toThrow(/refund receipt/);
+      await db.query("rollback");
+    }
+    await db.query("reset navigator.allow_credit_reduction");
+    await db.query("drop function public.paid_restore_credits(uuid,text,integer)");
+    await db.query(UP);
+    expect(await fp("paid_restore_credits")).toBeDefined();
+    expect((await db.query("select * from public.navigator_paid_session_refunds order by refund_key")).rows).toEqual(receipts);
+    expect((await db.query("select * from public.navigator_paid_sessions order by id")).rows).toEqual(sessions);
+    expect((await db.query("select * from public.access_codes order by id")).rows).toEqual(codes);
+    expect((await db.query("select * from public.free_usage order by uid")).rows).toEqual(usage);
+    expect(await refundPack(db, receipts[0].session_id, receipts[0].refund_key)).toMatchObject({ status: "already_applied" });
   });
 });
