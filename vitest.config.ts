@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['api/**/*.test.ts', 'src/**/*.test.ts', 'src/**/*.test.tsx', 'eval/**/*.test.ts', 'tests/cloudflare-pages-api.test.ts', 'tests/devin/**/*.test.ts'],
+    include: ['api/**/*.test.ts', 'src/**/*.test.ts', 'src/**/*.test.tsx', 'eval/**/*.test.ts', 'tests/cloudflare-pages-api.test.ts', 'tests/devin/**/*.test.ts', 'tests/security/**/*.test.ts'],
     testTimeout: 45000,
     hookTimeout: 45000,
     teardownTimeout: 45000,
