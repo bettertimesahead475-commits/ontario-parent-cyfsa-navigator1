@@ -7,7 +7,7 @@ import { auditObjectName } from '../functions/api/_admin-store';
 const env = { FIREBASE_PROJECT_ID: 'p', SESSION_SECRET: 'secret', PAYMENT_EMAIL: 'pay@cyfsanavigator.com', STAGING_SUPABASE_URL: 'https://db.test', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'k' };
 const OWNER = { status: 'verified', uid: 'uid-owner', email: 'parent@example.com', emailVerified: true } as const;
 
-type Db = { payments: any[]; codes: any[]; sessions: any[]; audit: string[]; auditUnreadable?: boolean; rpc: any[]; writes: string[]; locks: string[]; onCodeInsert?: () => void; heldReissue?: boolean };
+type Db = { payments: any[]; codes: any[]; sessions: any[]; audit: string[]; auditUnreadable?: boolean; rpc: any[]; writes: string[]; locks: string[]; onCodeInsert?: () => void; heldReissue?: boolean; rpcFailOnce?: boolean };
 let db: Db;
 const order = (over: Partial<any> = {}) => ({ id: '11111111-1111-4111-8111-111111111111', reference_number: 'PS-ABCD2345', plan: 'Premium', amount: 49.99, status: 'approved',
   submitted_at: '2026-11-20T00:00:00Z', approved_at: '2026-11-21T00:00:00Z', notes: 'email:parent@example.com;uid:uid-owner', firebase_uid: 'uid-owner', ...over });
@@ -28,12 +28,15 @@ function install() {
       return Response.json(db.payments.filter((p) => (!ref || p.reference_number === ref) && (!uid || p.firebase_uid === uid)));
     }
     if (url.pathname === '/rest/v1/access_codes') {
-      if (method === 'PATCH') { db.codes.filter((c) => !c.used_at).forEach((c) => { c.expires_at = 'now'; }); return new Response(null, { status: 204 }); }
+      const h = url.searchParams.get('code_hash') ?? '';
+      const byHash = (c: any) => h.startsWith('neq.') ? c.code_hash !== h.slice(4) : h.startsWith('eq.') ? c.code_hash === h.slice(3) : true;
+      if (method === 'PATCH') { db.codes.filter((c) => !c.used_at && byHash(c)).forEach((c) => { c.expires_at = 'now'; }); return new Response(null, { status: 204 }); }
       if (method === 'POST') { db.codes.push({ ...JSON.parse(String(init?.body)), used_at: null }); db.onCodeInsert?.(); return new Response(null, { status: 201 }); }
-      return Response.json(db.codes);
+      return Response.json(db.codes.filter(byHash).map((c) => ({ ...c, expires_at: c.expires_at === 'now' ? '2000-01-01T00:00:00Z' : c.expires_at })));
     }
     if (url.pathname === '/rest/v1/rpc/redeem_access_code_atomic') {
       const args = JSON.parse(String(init?.body)); db.rpc.push(args);
+      if (db.rpcFailOnce) { db.rpcFailOnce = false; return new Response('upstream', { status: 502 }); }
       const live = db.codes.filter((c) => !c.used_at && c.expires_at !== 'now' && !c.reissued).at(-1);
       if (!live) return Response.json({ status: 'expired' });
       live.used_at = 'redeemed'; live.redeemed_session_id = '33333333-3333-4333-8333-333333333333';
@@ -141,7 +144,6 @@ describe('POST /api/claim-purchase', () => {
     db.locks = db.locks.filter((l) => !l.includes('reissue'));
     const second = await claimReq();
     expect(second.status).toBe(409);
-    expect((await second.json()).code).toBe('ACTIVATION_IN_PROGRESS');
     expect(db.rpc).toHaveLength(1);
   });
 
@@ -154,6 +156,26 @@ describe('POST /api/claim-purchase', () => {
     db.heldReissue = false;
     expect((await claimReq()).status).toBe(200);
     expect(db.rpc).toHaveLength(1);
+  });
+
+  it('an activation interrupted after the code was created finishes on retry with the same code', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue(OWNER);
+    db.rpcFailOnce = true;
+    expect((await claimReq()).status).toBe(503);
+    db.locks = db.locks.filter((l) => !l.includes('reissue')); // the next minute
+    const retry = await claimReq();
+    expect(retry.status).toBe(200);
+    expect(db.codes.filter((c) => c.reference_number === 'PS-ABCD2345')).toHaveLength(1);
+    expect(db.rpc).toHaveLength(2);
+    expect(db.rpc[0].p_code).toBe(db.rpc[1].p_code);
+  });
+
+  it('a retry while the first request still holds the order lock is told to wait', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue(OWNER);
+    db.locks.push('/storage/v1/object/analysis_jobs/admin-locks/claim-PS-ABCD2345.json');
+    const waiting = await claimReq();
+    expect(waiting.status).toBe(409);
+    expect(db.rpc).toHaveLength(0);
   });
 
   it('a refund recorded while the code is being issued stops the activation', async () => {

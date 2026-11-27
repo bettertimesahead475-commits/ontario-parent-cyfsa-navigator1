@@ -43,7 +43,12 @@ the reissued code can survive and later be redeemed as a renewal. That needs an 
 
 ## Resolution (lead, PR #171)
 
-Code-only fix: `claim-purchase` takes the minute-scoped reissue lock, then a permanent `claim__<reference>` lock, so a
-second claim of one order can never issue another code. A claim that fails after the permanent lock is recovered by an
-administrator code reissue. The DB-level constraint (one used code per reference) remains a proposed migration
-requiring owner approval. `tests/security/etransfer-claim-race.test.ts` now passes.
+Code-only fix: `claim-purchase` takes the minute-scoped reissue lock, then derives one deterministic code per order
+(HMAC of the reference with `SESSION_SECRET`). Only the request that wins the permanent `claim__<reference>` lock may
+insert that code, so a second claim of one order can never issue another code. An activation interrupted after the
+code exists (RPC or refund-history failure, worker crash) is finished by simply retrying: the retry finds the same
+code and redeems it, and the atomic RPC answers a repeat redemption by the same account with the existing session
+(`reused`). A non-activated RPC result after a concurrent redemption (including Migration D's
+`ORDER_ALREADY_ACTIVATED`) returns the existing entitlement. Only a crash between the claim lock and the code insert
+still needs an administrator reissue. The DB-level constraint (one used code per reference, Migration D) remains a
+proposed migration requiring owner approval. `tests/security/etransfer-claim-race.test.ts` now passes.
