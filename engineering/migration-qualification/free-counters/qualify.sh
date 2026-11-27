@@ -208,6 +208,58 @@ check consumed "SET ROLE service_role; SELECT public.free_finalize_scan('worker-
 [[ $(snapshot) == "$before" ]]
 echo 'PASS: function-only rollback and forward repair preserve settled transactions'
 
+pause_sql="$here/pause-free-admission.sql"
+resume_sql="$here/resume-free-admission.sql"
+admission_acl="SELECT has_function_privilege('service_role',
+  'public.free_reserve_scan(text,text,integer,timestamptz,interval)', 'EXECUTE');"
+sha256sum "$pause_sql" "$resume_sql"
+check t "$admission_acl"
+run -c "CREATE ROLE alternate_reserver NOLOGIN;
+  GRANT EXECUTE ON FUNCTION public.free_reserve_scan(text,text,integer,timestamptz,interval) TO alternate_reserver;
+  GRANT alternate_reserver TO service_role;"
+if run -f "$pause_sql" >"$scratch/admission-grant-error.log" 2>&1; then
+  echo 'Pause reported success despite an inherited grant' >&2
+  exit 1
+fi
+grep -F 'Free admission still executable through another grant; pause not established' "$scratch/admission-grant-error.log"
+run -c 'REVOKE alternate_reserver FROM service_role;'
+check t "$admission_acl"
+echo 'PASS: pause aborts on inherited execute and rolls back the direct grant change'
+
+drain_key="ff:$(printf '%040d' 7)"
+check reserved "SET ROLE service_role; $(reserve "$drain_key" drain-queued-job)"
+run -c "SET ROLE service_role; SELECT public.analyzer_create_job('drain-queued-job', 'worker-owner', 'full',
+  'input', NULL, public.free_marker_uid('$drain_key', 'drain-queued-job'), false);" >/dev/null
+check reserved "SET ROLE service_role; $(reserve paused-legacy-uid drain-direct-job)"
+before=$(snapshot)
+run -f "$pause_sql"
+run -f "$pause_sql"
+apply_a
+check f "$admission_acl"
+run -f "$here/verify-admission-pause.sql"
+[[ $(snapshot) == "$before" ]]
+echo 'PASS: paused legacy Quick and new split calls fail without changing counters; retry and guarded A keep pause intact'
+
+check consumed "SET ROLE service_role; SELECT public.free_finalize_scan('worker-owner', 'drain-queued-job', now())->>'status';"
+check released "SET ROLE service_role; SELECT public.free_release_scan('paused-legacy-uid', 'drain-direct-job',
+  public.free_marker_uid('paused-legacy-uid', 'drain-direct-job'), now())->>'status';"
+check reserved "SET ROLE service_role; SELECT public.paid_reserve_credit('pause-paid-session','paid-job',
+  'total',1,now(),interval '15 min',interval '1 min')->>'status';"
+echo 'PASS: in-flight settlement and the separate paid credit RPC still work during pause'
+
+before=$(snapshot)
+run -f "$resume_sql"
+run -f "$resume_sql"
+check t "$admission_acl"
+[[ $(snapshot) == "$before" ]]
+check reserved "SET ROLE service_role; $(reserve "fq:$(printf '%040d' 8)" resume-new-quick)"
+check limit "SET ROLE service_role; $(reserve "fq:$(printf '%040d' 8)" resume-second-quick)"
+old_after_resume=$(run -At -c 'BEGIN; SET LOCAL ROLE service_role;' \
+  -c "SELECT public.free_reserve_scan('resume-old-uid','unsafe-old-quick',3,now(),interval '15 min')->>'status';" \
+  -c 'ROLLBACK;')
+[[ "$old_after_resume" == reserved ]]
+echo 'PASS: new Quick resumes at its limit; the old call also works after resume, so old routes must be fenced first'
+
 run -f "$here/inspect.sql" >"$scratch/postverify.log"
 
 if [[ -n "$app_checkout" ]]; then
