@@ -26,8 +26,13 @@ function fakeDb(seed: Record<string, Row[]> = {}) {
     if (expr === 'is.null') return row[col] == null;
     throw new Error('unsupported ' + expr);
   };
+  const auditNames: string[] = [];
   const fetcher = vi.fn(async (input: any, init: any = {}) => {
     const url = new URL(String(input));
+    if (url.pathname.startsWith('/storage/v1/object/list/')) {
+      const { limit, offset } = JSON.parse(init.body);
+      return Response.json(auditNames.slice(offset, offset + limit).map((name) => ({ name })));
+    }
     const table = url.pathname.replace('/rest/v1/', '');
     const rows = tables[table];
     if (!rows) return Response.json({ code: '42P01' }, { status: 404 });
@@ -45,7 +50,7 @@ function fakeDb(seed: Record<string, Row[]> = {}) {
     }
     throw new Error('unexpected');
   });
-  return { tables, fetcher: fetcher as unknown as typeof fetch, mock: fetcher };
+  return { tables, auditNames, fetcher: fetcher as unknown as typeof fetch, mock: fetcher };
 }
 
 const hex = async (text: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -261,6 +266,18 @@ describe('outbox processing', () => {
     expect(await processOutbox(ON, mailer, db.fetcher, NOW)).toMatchObject({ sent: 1, skipped: 5 });
     expect(sent.map((m) => m.subject)).toEqual(['Refund recorded for order PS-1']);
     expect(db.tables.transactional_email_outbox.filter((r) => r.status === 'skipped').every((r) => r.last_error === 'NO_LONGER_APPLICABLE' && r.secret_payload === null)).toBe(true);
+  });
+
+  it('skips the confirmation and receipt of an approved order refunded before sending', async () => {
+    const db = fakeDb();
+    db.auditNames.push('20261125T110000000Z__refund__PS-1__abcd1234.json');
+    await queue(db);
+    await queue(db, { kind: 'payment_confirmation' });
+    await queue(db, { kind: 'refund_confirmation' });
+    const { mailer, sent } = fakeMailer();
+    expect(await processOutbox(ON, mailer, db.fetcher, NOW)).toMatchObject({ sent: 1, skipped: 2 });
+    expect(sent.map((m) => m.subject)).toEqual(['Refund recorded for order PS-1']);
+    expect(db.mock.mock.calls.filter(([u]) => String(u).includes('/storage/v1/object/list/'))).toHaveLength(1);
   });
 
   it('a failed state check is retried later, not sent', async () => {

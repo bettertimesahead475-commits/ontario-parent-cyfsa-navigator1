@@ -6,7 +6,7 @@
  * Delivery is at most once: a row whose send outcome is unknown (the run stopped mid-send, or Gmail did not answer)
  * becomes 'unknown' for an administrator to check in the Sent folder, never an automatic resend.
  */
-import { rest, AdminStoreError, type AdminStoreEnv } from './_admin-store';
+import { rest, AdminStoreError, listAllAuditNames, safeSegment, settlementByReference, type AdminStoreEnv } from './_admin-store';
 import { renderTransactionalEmail, type TemplateData, type TransactionalKind } from './_email-templates';
 import {
   MailerError, isValidRecipient, openPayload, recipientAllowed, sealPayload, transactionalEmailEnabled,
@@ -84,16 +84,24 @@ async function sha256Hex(text: string): Promise<string> {
  * rejected, refunded or already activated, a code that was replaced or redeemed, or an entitlement that was renewed
  * or revoked since the row was queued gets no email.
  */
-async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | undefined, fetcher: typeof fetch, now: Date): Promise<boolean> {
+// Refunds live only in the administrator audit trail (payments.status stays 'approved'); read it whole, once per run.
+const SETTLEMENT_READ_LIMIT = 20_000;
+type RunState = { refunds?: Promise<Map<string, { status: string }>> };
+
+async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | undefined, fetcher: typeof fetch, now: Date, run: RunState): Promise<boolean> {
   const ref = row.payment_reference ? enc(row.payment_reference) : '';
   const paymentStatusIs = async (status: string) => {
     const rows = await rest<Array<{ status?: string }>>(env, `payments?select=status&reference_number=eq.${ref}&limit=2`, {}, fetcher);
     return rows.length === 1 && rows[0].status === status;
   };
+  const refunded = async () => {
+    run.refunds ??= listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher).then(settlementByReference);
+    return (await run.refunds).get(safeSegment(row.payment_reference || ''))?.status === 'refunded';
+  };
   switch (row.kind) {
     case 'payment_instructions': return paymentStatusIs('pending');
     case 'payment_confirmation':
-    case 'purchase_receipt': return paymentStatusIs('approved');
+    case 'purchase_receipt': return (await paymentStatusIs('approved')) && !(await refunded());
     case 'access_code': {
       if (!code) return false;
       const live = await rest<unknown[]>(env, `access_codes?select=id&reference_number=eq.${ref}&code_hash=eq.${await sha256Hex(code)}&used_at=is.null&expires_at=gt.${enc(now.toISOString())}&limit=1`, {}, fetcher);
@@ -116,6 +124,7 @@ export type ProcessResult = { sent: number; retrying: number; failed: number; sk
 export async function processOutbox(env: OutboxEnv, mailer: TransactionalMailer, fetcher: typeof fetch, now: Date, limit = 10): Promise<ProcessResult> {
   const result: ProcessResult = { sent: 0, retrying: 0, failed: 0, skipped: 0, unknown: 0 };
   if (!transactionalEmailEnabled(env)) return result;
+  const run: RunState = {};
   const stamp = now.toISOString();
 
   // A row left in 'sending' by an interrupted run may or may not have been delivered: never resend it automatically.
@@ -139,7 +148,7 @@ export async function processOutbox(env: OutboxEnv, mailer: TransactionalMailer,
     const code = row.kind === 'access_code' && row.secret_payload ? (await openPayload(env, row.secret_payload, `${row.kind}:${row.dedupe_key}`)) ?? undefined : undefined;
     let applicable: boolean;
     try {
-      applicable = await stillApplicable(env, row, code, fetcher, now);
+      applicable = await stillApplicable(env, row, code, fetcher, now, run);
     } catch {
       if (attempts < MAX_ATTEMPTS) {
         await patch(env, id, { status: 'pending', locked_at: null, last_error: 'STATE_CHECK_FAILED', next_attempt_at: new Date(now.getTime() + retryDelayMs(attempts)).toISOString() }, fetcher);

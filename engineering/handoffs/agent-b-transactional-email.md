@@ -58,7 +58,8 @@ plan) or Google Workspace, and both are new expenditure.
   - Not hooked: reissued codes (the admin delivers them; a second `access_code` row for the same reference is deduped).
   - Not edited: `claim-purchase.ts`, `my-payments.ts`, `_customer-payments.ts`, T-05 rate-limit files.
 - **Send-time check:** before each send the processor re-reads the current state and skips (`NO_LONGER_APPLICABLE`)
-  instructions for an order that is no longer pending, confirmation/receipt for one that is not approved, an access
+  instructions for an order that is no longer pending, confirmation/receipt for one that is not approved or was refunded
+  (refunds are read from the administrator audit trail, once per run), an access
   code that is no longer the live unused code for the order (hash match, unused, unexpired), and a renewal reminder
   whose entitlement was renewed or revoked. A failed check is retried with the same backoff, never sent blind.
 - **Processing trigger:** Pages Functions have no cron, and no existing Worker has a scheduled trigger. Added
