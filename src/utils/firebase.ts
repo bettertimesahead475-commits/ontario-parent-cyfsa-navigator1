@@ -39,7 +39,7 @@ export const ACTIVE_ANALYZER_JOB_KEY = 'OPA_ACTIVE_ANALYZER_JOB_ID';
 /**
  * Ends the Firebase (Google) session so a different account can sign in. Per-user data in
  * localStorage is namespaced by uid (utils/storage.ts), so it stays locked to its owner; only the
- * active-job pointer is cleared so the next account never tries to recover the previous one's job,. Legacy shared coach chat and
+ * active-job pointer is cleared so the next account never tries to recover the previous one's job. Legacy shared coach chat and
  * bookmarks are left for the one-time import/discard choice (utils/legacySharedData.ts), which no other account sees.
  */
 export async function signOutOfAccount(): Promise<void> {
