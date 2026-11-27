@@ -81,6 +81,30 @@ def schema_digest(path):
     return hasher.hexdigest()
 
 
+def approved_migration(path):
+    root = Path(__file__).resolve().parents[2] / "supabase"
+    resolved = path.resolve(strict=True)
+    if resolved.parent not in (root / "migrations", root / "migrations_pending_approval"):
+        raise ValueError("Migration must be in a repository Supabase migration directory.")
+    require(resolved.suffix == ".sql" and resolved.is_file(), "Migration must be a regular SQL file.")
+    return resolved
+
+
+def approved_artifact(path):
+    configured = os.environ.get("CYFSA_RECOVERY_BACKUP_DIR")
+    require(configured and Path(configured).is_absolute(), "Configure CYFSA_RECOVERY_BACKUP_DIR in the operator environment.")
+    root = Path(configured).resolve(strict=True)
+    require(root.is_dir() and root.stat().st_uid == os.getuid() and not root.stat().st_mode & 0o022,
+            "Backup storage must be owned by the invoking account and not writable by others.")
+    require(path.is_absolute() and ".." not in path.parts
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.gpg", path.name),
+            "Use an absolute .gpg artifact path with a simple filename.")
+    destination = path.resolve()
+    if destination.parent != root or path.is_symlink():
+        raise ValueError("Artifact must be a direct, non-symlink child of CYFSA_RECOVERY_BACKUP_DIR.")
+    return root, destination
+
+
 def connection(args):
     env = dict(os.environ)
     for key in ("PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE", "PGSYSCONFDIR", "PGOPTIONS"):
@@ -205,11 +229,12 @@ def migration(args):
     return {"version": args.version, "file": args.migration.name, "sha256": digest(args.migration)}
 
 
-def backup(args, env, server, directory):
+def backup(args, env, server, directory, backup_root):
     schemas = sorted(set(args.schema))
     major = int(server["server_version_num"]) // 10000
     version = client_version("pg_dump", major)
-    require(re.fullmatch(r"[0-9A-Fa-f]{40}|[0-9A-Fa-f]{64}", args.recipient), "Provide the approved full GPG key fingerprint.")
+    if not re.fullmatch(r"[0-9A-Fa-f]{40}|[0-9A-Fa-f]{64}", args.recipient):
+        raise ValueError("Provide the approved full GPG key fingerprint.")
     restrict_key = secrets.token_hex(32)
     with snapshot(env) as token:
         dump(env, schemas, token, directory, restrict_key, include_data=True)
@@ -226,9 +251,9 @@ def backup(args, env, server, directory):
     with zipfile.ZipFile(plain, "w") as bundle:
         for name in FILES:
             bundle.write(directory / name, name)
-    with tempfile.NamedTemporaryFile(dir=args.artifact.parent, prefix=".recovery-") as encrypted:
+    with plain.open("rb") as source, tempfile.NamedTemporaryFile(dir=backup_root, prefix=".recovery-") as encrypted:
         run(["gpg", "--batch", "--no-tty", "--trust-model", "always",
-             "--recipient", args.recipient, "--output", "-", "--encrypt", str(plain)], stdout=encrypted)
+             "--recipient=" + args.recipient, "--output", "-", "--encrypt"], stdin=source, stdout=encrypted)
         checksum = digest(Path(encrypted.name))
         require(os.stat(encrypted.name).st_size > 0, "Empty encrypted artifact.")
         os.link(encrypted.name, args.artifact)
@@ -253,9 +278,13 @@ def restore(args, env, directory):
     for name in FILES[:3]:
         require(digest(directory / name) == manifest["sha256"][name], f"{name} SHA-256 mismatch.")
     schemas = manifest["schemas"]
-    require(schemas and all(re.fullmatch(NAME, name) for name in schemas), "Invalid backup schema scope.")
+    require(schemas, "Empty backup schema scope.")
+    for name in schemas:
+        if not re.fullmatch(NAME, name):
+            raise ValueError("Invalid backup schema scope.")
     restrict_key = manifest["restrict_key"]
-    require(re.fullmatch(r"[0-9a-f]{64}", restrict_key), "Invalid schema dump restrict key.")
+    if not re.fullmatch(r"[0-9a-f]{64}", restrict_key):
+        raise ValueError("Invalid schema dump restrict key.")
     maintenance = dict(env, PGDATABASE="postgres")
     server = identity(maintenance, args)
     major = int(server["server_version_num"]) // 10000
@@ -296,6 +325,7 @@ def main():
     args = parser.parse_args()
     require(args.local != bool(args.project_ref), "Specify exactly one of --local or --project-ref.")
     require(re.fullmatch(r"[0-9]{8,14}", args.version), "Specify the approved numeric migration version.")
+    args.migration = approved_migration(args.migration)
     metadata = migration(args)
     env = connection(args)
     if args.action == "preflight":
@@ -303,6 +333,7 @@ def main():
     else:
         require(args.work_dir and args.work_dir.is_absolute() and args.work_dir.is_dir() and args.artifact,
                 "Specify the absolute private encrypted --work-dir and the --artifact path.")
+        backup_root, args.artifact = approved_artifact(args.artifact)
         require((args.work_dir.stat().st_mode & 0o077) == 0 and args.work_dir.stat().st_uid == os.getuid(),
                 "Plaintext staging directory must be private and owned by the invoking account.")
         os.umask(0o077)
@@ -312,7 +343,7 @@ def main():
                 require(args.schema and all(re.fullmatch(NAME, name) for name in args.schema),
                         "Specify the approved scope as one or more --schema names.")
                 require(args.recipient and not args.artifact.exists(), "Require a recipient and a new artifact path.")
-                backup(args, env, identity(env, args), directory)
+                backup(args, env, identity(env, args), directory, backup_root)
             else:
                 require(args.artifact_sha256 and not args.schema, "Require --artifact-sha256; scope is read from the backup.")
                 restore(args, env, directory)

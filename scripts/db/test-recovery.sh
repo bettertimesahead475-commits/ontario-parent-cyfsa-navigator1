@@ -38,6 +38,7 @@ PY
 
 mkdir "$work/bin" "$work/gnupg"
 export GNUPGHOME="$work/gnupg"
+export CYFSA_RECOVERY_BACKUP_DIR="$work"
 export PATH="$work/bin:$PATH"
 unset PGHOSTADDR PGSERVICE PGSERVICEFILE PGSYSCONFDIR PGOPTIONS PGPASSWORD PGPASSFILE PGSSLMODE
 export PGHOST=/var/run/postgresql PGPORT=5432 PGUSER=postgres PGDATABASE=postgres
@@ -113,6 +114,12 @@ must_fail 'Default requires an explicit local Unix socket' env PGHOST=127.0.0.1 
   "${recovery[@]}" preflight --local "${release[@]}"
 must_fail 'Require the verified direct Supabase endpoint' env PGDATABASE="$source_db" \
   "${recovery[@]}" preflight --project-ref 'aaaaaaaaaaaaaaaaaaaa' "${release[@]}"
+must_fail 'Migration must be in a repository Supabase migration directory' env PGDATABASE="$source_db" \
+  "${recovery[@]}" preflight --local "${release[@]}" --migration "$work/schema-test.sql"
+must_fail 'Artifact must be a direct, non-symlink child' env PGDATABASE="$source_db" \
+  "${recovery[@]}" backup --local "${release[@]}" "${artifact[@]}" --artifact "$work/bin/unapproved.gpg" --schema public --recipient invalid
+must_fail 'Provide the approved full GPG key fingerprint' env PGDATABASE="$source_db" \
+  "${recovery[@]}" backup --local "${release[@]}" "${artifact[@]}" --schema public --recipient=--version
 gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key \
   'Disposable Recovery Test <recovery@example.invalid>' rsa2048 encr 1d >/dev/null 2>&1
 key=$(gpg --batch --with-colons --fingerprint --list-keys 2>/dev/null | awk -F: '$1=="fpr" { print $10; exit }')

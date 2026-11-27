@@ -50,6 +50,7 @@ Also run the entry's reviewed, read-only preflight in its own read-only transact
 - Use compatible patched PostgreSQL clients (same major as the source, same `pg_dump` build on restore, with `--restrict-key` support), Python 3 and GnuPG. Use a private, owner-controlled mode-0700 staging directory **on an encrypted volume**; permissions alone do not verify encryption. Allow space for multiple plaintext copies plus ciphertext, and configure encrypted swap or no swap for recovery. Check the approved GPG recipient fingerprint out of band and confirm a separate authorized custodian can decrypt. Never execute or share the diagnostic schema SQL.
 
 ```bash
+export CYFSA_RECOVERY_BACKUP_DIR="$RESTRICTED_BACKUPS"
 python3 scripts/db/recovery.py backup --project-ref "$VERIFIED_REF" \
   --version "$MIGRATION_VERSION" --migration "$MIGRATION" \
   --schema public --schema supabase_migrations \
@@ -57,7 +58,7 @@ python3 scripts/db/recovery.py backup --project-ref "$VERIFIED_REF" \
   --artifact "$RESTRICTED_BACKUPS/$ARTIFACT_NAME.gpg"
 ```
 
-The schema list is an example, **not** adequate coverage without the per-entry scope decision. The GPG-encrypted bundle carries a custom archive, separate schema-only SQL, snapshot counts and SHA-256 fingerprints per ordinary table/partition (hashed rows sorted, preserving multiplicity), sequence state, and a SHA-256 manifest with source identity, scope and migration identity. Store ciphertext in an existing owner-approved, access-audited backup location with retention/immutability protection, not Git, tickets, chat, CI artifacts or ad hoc cloud storage. Record the emitted ciphertext SHA-256 in a separate trusted restricted release record; public-key encryption does not authenticate the sender and a hash supplied with an untrusted archive is not evidence. Capture backup/restore elapsed times and evidence; after abnormal termination inspect and clean up residual plaintext on the encrypted volume under owner policy.
+The schema list is an example, **not** adequate coverage without the per-entry scope decision. The GPG-encrypted bundle carries a custom archive, separate schema-only SQL, snapshot counts and SHA-256 fingerprints per ordinary table/partition (hashed rows sorted, preserving multiplicity), sequence state, and a SHA-256 manifest with source identity, scope and migration identity. Set `CYFSA_RECOVERY_BACKUP_DIR` in the trusted operator environment to the existing approved backup directory owned by the invoking account and not writable by others. Backup and restore only accept a direct, non-symlink `.gpg` file under that directory; the migration path must resolve within the repository's Supabase migration directories. Store ciphertext in access-audited storage with retention/immutability protection, not Git, tickets, chat, CI artifacts or ad hoc cloud storage. Record the emitted ciphertext SHA-256 in a separate trusted restricted release record; public-key encryption does not authenticate the sender and a hash supplied with an untrusted archive is not evidence. Capture backup/restore elapsed times and evidence; after abnormal termination inspect and clean up residual plaintext on the encrypted volume under owner policy.
 
 ### Scratch restoration and verification
 
