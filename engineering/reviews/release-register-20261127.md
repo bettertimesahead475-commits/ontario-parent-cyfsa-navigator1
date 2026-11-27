@@ -140,3 +140,13 @@ this pass. No live write, migration, deployment, paid inference or expenditure w
 | Production `GEMINI_API_KEY` flagged unusable | OPEN | Production logs `[CONFIG_SECRET_UNUSABLE]` for GEMINI_API_KEY only; `analyzerReady` stays true because Gemini is not in its gate. OCR and transcription may be affected. Not determined: would need the shape diagnostic on production, which is excluded |
 | Preview diagnostic `a5b0ac88` / alias `diag-status-067446a` | LIVE, removal pending authorization | Preview only; not referenced by production or by the RC |
 | Diagnostic logging in release candidate | PASS | `CONFIG_SECRET_SHAPE` not present in `engineering/integration` or `release/rc-20261127` (grep) |
+
+## Update: PR #191 at dd9993b (approval racing refund), 2026-11-27
+| Requirement | Status | Evidence |
+|---|---|---|
+| Typecheck at dd9993b | PASS | `tsc --noEmit -p .` exit 0 (worktree `pr191-audit`) |
+| Admin and unit tests | PASS (56), 32 skipped | `api/cloudflare-admin-api.test.ts`; `tests/devin/payment-schema-qualification.pg.test.ts` skipped: no `CREDIT_PG_URL` / PostgREST binary here |
+| Approve-then-refund race (code) | PASS by reading | refund writes its audit record before expiring codes; approve checks after insert and cancels the code by hash |
+| Refund-then-approve race (code) | PASS by reading | the post-insert check sees `refunded` and retires the code |
+| Database-backed proof of the race | BLOCKED | needs Devin's PostgreSQL 16 + PostgREST harness |
+| Minor (non-blocking) | NOTE | `settlementOf` returns `undefined` when there is no settlement, and the new guard relies on `undefined !== null`. Recommend an explicit `=== undefined` branch |
