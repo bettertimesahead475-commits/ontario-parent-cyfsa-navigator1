@@ -217,3 +217,8 @@ Verification: commits `df92cce` (fix + coverage tests + fixtures) and `cc78b7a` 
 `devin/1795746866-analyzer-verification-lifecycle`, base `engineering/integration` `0a7c680` (includes #147, #152).
 `npx tsc --noEmit -p .` clean; full Vitest **321 files passed, 15 skipped (336); 4,755 tests passed, 512 skipped
 (5,267)**. No paid inference, migration, binding, Cloudflare or customer-data change.
+
+Review round: `d7109bf` (the Forensic PDF now reports a partial review as "Partly completed. N of M findings checked",
+not "Not completed"; Devin Review finding), `7c22511` (`isSecondReviewComplete` moved above `adaptLegacyReport`'s
+JSDoc; new test: with no red flags, a reply covering none of the 4 threshold rows is `incomplete`, 0 of 4). Full Vitest
+**321 files passed, 15 skipped (336); 4,756 tests passed, 512 skipped (5,268)**; `tsc` clean.
