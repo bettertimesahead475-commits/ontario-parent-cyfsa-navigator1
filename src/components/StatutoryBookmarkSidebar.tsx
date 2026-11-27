@@ -17,6 +17,7 @@ import {
   Layers,
   ChevronLeft
 } from "lucide-react";
+import { useAccountStorage } from "../hooks/useAccountStorage";
 
 // Types for the bookmarks
 interface LegalItem {
@@ -186,14 +187,7 @@ export default function StatutoryBookmarkSidebar() {
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   
   // Bookmarks state (loads from localStorage)
-  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(() => {
-    try {
-      const stored = localStorage.getItem("OPA_STATUTE_BOOKMARKS");
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [bookmarks, setBookmarks] = useAccountStorage<BookmarkItem[]>("OPA_STATUTE_BOOKMARKS", () => []);
 
   // Custom reference creator states
   const [customTitle, setCustomTitle] = useState("");
@@ -210,11 +204,6 @@ export default function StatutoryBookmarkSidebar() {
 
   // Copy feedback states
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // Sync to localStorage
-  useEffect(() => {
-    localStorage.setItem("OPA_STATUTE_BOOKMARKS", JSON.stringify(bookmarks));
-  }, [bookmarks]);
 
   // Handle bookmark action
   const toggleBookmark = (item: LegalItem) => {
