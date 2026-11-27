@@ -14,7 +14,6 @@ import { escapeHtml } from "./reportSectionsHtml";
  */
 
 const LETTERHEAD_STYLES = `
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
   body { font-family: 'Inter', sans-serif; color: #1e293b; margin: 40px; line-height: 1.6; background-color: #fff; }
   .no-print-btn { background-color: #1e3a8a; color: white; border: none; padding: 10px 18px; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: bold; border-radius: 6px; cursor: pointer; margin-bottom: 25px; }
   @media print { .no-print-btn { display: none !important; } body { margin: 20px; } }
@@ -62,6 +61,9 @@ export function printBrandedDocument(title: string, bodyHtml: string) {
     <html>
       <head>
         <title>${title} - CYFSA Navigator</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Playfair+Display:ital,wght@0,700;1,700&amp;display=swap" />
         <style>${LETTERHEAD_STYLES}</style>
       </head>
       <body>

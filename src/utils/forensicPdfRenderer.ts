@@ -79,9 +79,10 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
     <head>
       <meta charset="utf-8" />
       <title>Forensic Deep Scan — ${escapeHtml(displayTitle)}</title>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+      <link rel="stylesheet" data-print-fonts href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&amp;family=Inter:wght@400;500;600;700&amp;family=Lora:ital,wght@0,400;0,600;1,400&amp;display=swap" />
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap');
-
         @page {
           size: letter;
           margin: 16mm 14mm 16mm 14mm;
