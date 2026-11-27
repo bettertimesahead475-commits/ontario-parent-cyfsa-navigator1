@@ -18,7 +18,7 @@ database behind production Cloudflare Pages (`cyfsa-navigator-git-staging`, depl
 | B | `migrations_pending_approval/reconcile_skip_live_analyzer_jobs.sql` (+ index `analyzer_jobs_live_reservation_idx`) | Applied 16:33:09 UTC (`20261127163309`); authorization unconfirmed | A | same as A |
 | C | `migrations_pending_approval/create_navigator_rate_limit_hits.sql` | Not applied: table and function absent, no history row | — | [#174](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/174), `engineering/reviews/pr168-rate-limit-qualification-20261127.md` |
 | D | `migrations_pending_approval/access_codes_one_redemption_per_reference.sql` | Not applied. **Its preflight fails 2 blocking checks on live** (see P): 3 of 4 required columns, and the RPC fingerprint mismatches. Non-blocking: 0 duplicate references, 0 redeemed codes with a reference, 0 unused codes of activated references | **P** | [#175](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/175), `engineering/reviews/s34-one-redemption-per-reference-20261127.md` |
-| E | (not written yet) early pack renewal keeps unused credits | — | D | Agent A |
+| E | `migrations_pending_approval/paid_sessions_early_renewal_keeps_credits.sql` (+ `.rollback.sql`, `.preflight.sql`) | Not applied; preflight prepared, not run on live | D | [#181](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/181), `engineering/reviews/e-early-renewal-keeps-credits-20261127.md`. **Blocking app fix first (#171):** an admin top-up refund must subtract the pack from `granted_credits`, not only the 30 days |
 | F | (not written yet) transactional email outbox | — | — | Agent B |
 
 ## P: repo/live drift (new launch blocker for payments)
