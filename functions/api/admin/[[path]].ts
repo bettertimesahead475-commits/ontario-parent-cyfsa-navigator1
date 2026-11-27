@@ -18,10 +18,12 @@ import { monthlyCreditScope } from '../_monthly-credit-scope';
 import { statusResponse, type StatusEnv } from '../_status';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitedResponse } from '../_rate-limit';
 import { trimCharacters } from '../../../shared/linearText';
+import { enqueueTransactionalEmail, enqueueRenewalReminders, outboxSummary, processOutbox } from '../_email-outbox';
+import { gmailMailer, transactionalEmailEnabled, type TransactionalEmailEnv, type TransactionalMailer } from '../_mailer';
 
-export type AdminEnv = AdminAuthEnv & AdminStoreEnv & StatusEnv;
+export type AdminEnv = AdminAuthEnv & AdminStoreEnv & StatusEnv & TransactionalEmailEnv;
 type Context = { request: Request; env: AdminEnv };
-type Deps = { requireAdmin?: typeof requireAdmin; fetcher?: typeof fetch; now?: () => Date };
+type Deps = { requireAdmin?: typeof requireAdmin; fetcher?: typeof fetch; now?: () => Date; mailer?: TransactionalMailer };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REFERENCE = /^PS-[A-Z0-9]{4,12}$/;
@@ -524,8 +526,17 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
         : 'Approved, but the activation check failed, so this code was withheld to avoid giving access twice. Use "Reissue code" to send the customer a code.' });
   }
   const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeExpiresAt: issued.expiresAt }, fetcher);
+  // Enqueue only: each call is a no-op unless transactional email is enabled, and a failure never undoes the approval.
+  const data = { plan: String(payment.plan), amount: received, approvedAt: now.toISOString(), expiresAt: issued.expiresAt };
+  const base = { reference, email };
+  const confirmationQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'payment_confirmation', dedupeKey: reference, data }, fetcher);
+  const receiptQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'purchase_receipt', dedupeKey: reference, data }, fetcher);
+  const codeEmailQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'access_code', dedupeKey: reference, data, accessCode: issued.code }, fetcher);
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt, auditRecorded: audited,
-    note: 'Send this code to the customer now. It is shown once and only its hash is stored.' });
+    emailsQueued: { confirmation: confirmationQueued, receipt: receiptQueued, accessCode: codeEmailQueued },
+    note: codeEmailQueued
+      ? 'The code was queued for email to the customer. It is shown once and only its hash is stored; check the email outbox before sending it yourself.'
+      : 'Send this code to the customer now. It is shown once and only its hash is stored.' });
 }
 
 /** Replaces an undelivered or lost code of an approved payment. Refused once the payment's code was redeemed or refunded. */
@@ -639,7 +650,12 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
   }
   const result = { paymentRejected: rejected, codesExpired, sessionsRevoked, sessionsShortened, shorteningsForReview, resumed: recorded };
   const auditRecorded = await audit(env, admin, 'refund-applied', reference, null, { ...result, revokedSessionIds }, fetcher);
-  return ok({ success: true, referenceNumber: reference, amount: amountOf(payment.amount), ...result, auditRecorded,
+  // Only a payment that was received is refunded to the customer; rejecting a pending order sends nothing.
+  const { email } = parsePaymentNotes(payment.notes);
+  const refundEmailQueued = payment.status === 'approved' && email
+    ? await enqueueTransactionalEmail(env, { kind: 'refund_confirmation', dedupeKey: reference, reference, email, data: { plan: String(payment.plan), amount: amountOf(payment.amount) } }, fetcher)
+    : false;
+  return ok({ success: true, referenceNumber: reference, amount: amountOf(payment.amount), ...result, auditRecorded, refundEmailQueued,
     note: 'Recorded only. Return the funds to the customer by Interac e-Transfer; this application never moves money.' });
 }
 
@@ -729,8 +745,8 @@ async function restoreCredits(env: AdminEnv, admin: AdminIdentity, body: Record<
 
 // ---------------------------------------------------------------- router
 
-const GET_ROUTES = ['session', 'payments/overview', 'payments/audit-history', 'customers', 'access-codes', 'jobs', 'usage', 'revenue', 'audit', 'monitoring/status'];
-const POST_ROUTES = ['payments/approve', 'payments/confirm-bank', 'payments/dispute', 'payments/reset-settlement', 'payments/refund', 'payments/reissue-code', 'payments/suspend', 'payments/restore', 'access-codes/revoke', 'credits/restore', 'monitoring/run'];
+const GET_ROUTES = ['session', 'payments/overview', 'payments/audit-history', 'customers', 'access-codes', 'jobs', 'usage', 'revenue', 'audit', 'monitoring/status', 'email-outbox'];
+const POST_ROUTES = ['payments/approve', 'payments/confirm-bank', 'payments/dispute', 'payments/reset-settlement', 'payments/refund', 'payments/reissue-code', 'payments/suspend', 'payments/restore', 'access-codes/revoke', 'credits/restore', 'monitoring/run', 'email-outbox/process'];
 
 export async function handleAdminRequest(request: Request, env: AdminEnv, deps: Deps = {}): Promise<Response> {
   const fetcher = deps.fetcher ?? fetch;
@@ -786,6 +802,7 @@ export async function handleAdminRequest(request: Request, env: AdminEnv, deps: 
           return ok({ total: names.length, events: events.filter(Boolean) });
         }
         case 'monitoring/status': return ok(await monitoringStatus(request, env, fetcher, now));
+        case 'email-outbox': return ok(await outboxSummary(env, fetcher));
       }
     }
     const body = await readJson(request);
@@ -802,6 +819,12 @@ export async function handleAdminRequest(request: Request, env: AdminEnv, deps: 
       case 'access-codes/revoke': return await revokeAccessCode(env, admin, body, fetcher, now);
       case 'credits/restore': return await restoreCredits(env, admin, body, fetcher, now);
       case 'monitoring/run': return ok(await monitoringStatus(request, env, fetcher, now));
+      case 'email-outbox/process': {
+        if (!transactionalEmailEnabled(env)) return adminError('EMAIL_DISABLED', 409, 'Transactional email is turned off (TRANSACTIONAL_EMAIL_ENABLED is not "true"). Nothing was sent.');
+        const remindersQueued = await enqueueRenewalReminders(env, fetcher, now);
+        const result = await processOutbox(env, deps.mailer ?? gmailMailer(env, fetcher), fetcher, now);
+        return ok({ success: true, remindersQueued, ...result });
+      }
     }
     return adminError('API_ROUTE_NOT_FOUND', 404, 'No administrator endpoint matches this request.');
   } catch (error) {

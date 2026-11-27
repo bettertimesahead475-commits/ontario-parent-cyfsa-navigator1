@@ -126,8 +126,9 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
     setBusy(true);
     try {
       const result = await adminPost(path, reason ? { ...payload, reason } : payload);
-      setMessage({ kind: "ok", text: opts.after ? opts.after(result) : "Done." });
+      // Reload first: load() clears the message, which would otherwise hide a one-time access code.
       if (section === "customers") await searchCustomer(); else await load(section);
+      setMessage({ kind: "ok", text: opts.after ? opts.after(result) : "Done." });
     } catch (e: any) {
       setMessage({ kind: "error", text: e.message });
     } finally {
@@ -141,7 +142,9 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
     const amountReceived = Number(raw);
     if (!Number.isFinite(amountReceived) || amountReceived <= 0) { setMessage({ kind: "error", text: "Enter the amount received." }); return; }
     void act(`Approve ${p.referenceNumber} and issue an access code to ${p.customerEmail}?`, "payments/approve", { referenceNumber: p.referenceNumber, amountReceived }, {
-      after: (r) => r.alreadyActivated || r.activationUnknown ? String(r.note) : `Access code for ${r.customerEmail}: ${r.accessCode} (expires ${when(r.expiresAt)}). Send it now: it is shown only once.`,
+      after: (r) => r.alreadyActivated || r.activationUnknown ? String(r.note) : r.emailsQueued?.accessCode
+        ? `Access code for ${r.customerEmail}: ${r.accessCode} (expires ${when(r.expiresAt)}). It was queued for email to the customer: do not send it yourself unless the email outbox shows it was not sent. It is shown only once.`
+        : `Access code for ${r.customerEmail}: ${r.accessCode} (expires ${when(r.expiresAt)}). Send it now: it is shown only once.`,
     });
   }
 
