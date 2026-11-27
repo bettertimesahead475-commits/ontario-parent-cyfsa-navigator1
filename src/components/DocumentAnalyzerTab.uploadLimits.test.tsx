@@ -41,6 +41,18 @@ describe("upload limit errors are announced to screen readers", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("You have reached the maximum allowed limit of 20 files.");
   });
 
+  it("announces a repeated rejection again by replacing the alert", async () => {
+    seedFiles(20);
+    render(<DocumentAnalyzerTab />);
+    upload(1);
+    const first = await screen.findByRole("alert");
+    upload(1);
+    const second = await screen.findByRole("alert");
+    expect(second.textContent).toBe(first.textContent);
+    expect(second).not.toBe(first);
+    expect(first.isConnected).toBe(false);
+  });
+
   it("announces the 15-file batch limit as an alert", async () => {
     seedFiles(0);
     render(<DocumentAnalyzerTab />);
