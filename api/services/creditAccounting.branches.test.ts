@@ -110,4 +110,30 @@ describe("credit accounting branches", () => {
     currentDb.ref = db;
     await expect(reserve()).rejects.toMatchObject({ statusCode: 403, code: "ACCOUNT_SUSPENDED" });
   });
+  it("restore removes a leftover suspension marker even when the column update succeeds", async () => {
+    const db = createProductionLikeDb();
+    currentDb.ref = db;
+    await suspendSession({ sessionId: "session_branch", reason: "Chargeback received" });
+    const sessions = db.from("navigator_paid_sessions");
+    currentDb.ref = withOverrides({ navigator_paid_sessions: { ...sessions, update: () => chain({ data: null, error: null }) } }, undefined, db);
+    await restoreSession("session_branch");
+    currentDb.ref = db;
+    expect(await getCreditBalance("session_branch", "Premium")).toMatchObject({ isSuspended: false });
+  });
+
+  it("restore of a revoked session fails with 409 instead of reporting success", async () => {
+    const db = createProductionLikeDb();
+    currentDb.ref = withOverrides({ navigator_paid_sessions: chain({ data: { id: "session_branch", revoked_at: "2026-11-01T00:00:00Z" }, error: null }) }, undefined, db);
+    await expect(restoreSession("session_branch")).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("restore fails with 503 when the marker is still present afterwards", async () => {
+    const db = createProductionLikeDb();
+    currentDb.ref = db;
+    await suspendSession({ sessionId: "session_branch", reason: "Chargeback received" });
+    currentDb.ref = withOverrides({ free_usage: { ...db.from("free_usage"), delete: () => chain({ data: null, error: null }) } }, undefined, db);
+    await expect(restoreSession("session_branch")).rejects.toMatchObject({ statusCode: 503 });
+    currentDb.ref = db;
+    await expect(reserve()).rejects.toMatchObject({ statusCode: 403, code: "ACCOUNT_SUSPENDED" });
+  });
 });

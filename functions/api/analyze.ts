@@ -265,11 +265,23 @@ export async function handleAnalyzeRequest(
   // cannot stop two accounts racing for the same never-used id (both read "absent"); exactly one create succeeds.
   // The queued path gets the same guarantee from the job ledger's unique insert.
   const queuedPath = Boolean(env.ANALYZER_JOBS_QUEUE) && (isForensic || env.QUEUE_QUICK_ANALYSIS === 'true');
+  let freshDirectClaim = false;
   if (clientSuppliedId && !queuedPath && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
     const claim = await claimJobRecord(env, requestId, uid, authFetcher);
-    const refusal = ownershipRefusal(claim === 'claimed' ? 'clear' : claim);
+    const refusal = ownershipRefusal(claim === 'claimed' || claim === 'created' ? 'clear' : claim);
     if (refusal) return refusal;
+    freshDirectClaim = claim === 'created';
   }
+  // A record this request created says "running"; a refusal below must replace it, or a refreshed page would poll a
+  // job that never starts. Records from an earlier attempt of the same id are left alone (they may be live or complete).
+  const refuseAfterClaim = async (response: Response, code: string): Promise<Response> => {
+    if (freshDirectClaim) {
+      const body = await response.clone().json().catch(() => null) as { error?: unknown } | null;
+      const message = typeof body?.error === 'string' ? body.error : 'The analysis could not be started.';
+      await saveJobState(env, { jobId: requestId, uid, status: 'failed', error: { code, message, retryable: false } }, deps.fetcher || fetch);
+    }
+    return response;
+  };
   // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
   // No client-supplied role, email or session can grant this entitlement.
   const isOwner = deps.trustedJob ? deps.trustedJob.owner_bypass : identity.emailVerified && identity.email?.trim().toLowerCase() === 'mr.pelkie@gmail.com';
@@ -286,18 +298,18 @@ export async function handleAnalyzeRequest(
   } else if (sessionId) {
     const sessionRead = await readVerifiedPaidSession(env, uid, sessionId, authFetcher);
     if (sessionRead.status !== 'verified') {
-      return Response.json(
+      return refuseAfterClaim(Response.json(
         { error: 'Paid session is invalid, expired, or revoked.', code: 'SESSION_INVALID' },
         { status: sessionRead.status === 'unavailable' ? 503 : 403, headers: DEFAULT_HEADERS }
-      );
+      ), 'SESSION_INVALID');
     }
 
     const reservation = await reserveVerifiedPaidCredit(sessionRead.session, isForensic ? 'forensic' : 'quick', requestId, rpc);
     if (reservation.status === 'limit') {
-      return Response.json(
+      return refuseAfterClaim(Response.json(
         { error: 'Plan credit limit reached for this billing period.', code: 'CREDIT_LIMIT_REACHED' },
         { status: 402, headers: DEFAULT_HEADERS }
-      );
+      ), 'CREDIT_LIMIT_REACHED');
     }
     if (reservation.status === 'in_progress' || reservation.status === 'joined' || reservation.status === 'consumed') {
       return Response.json(
@@ -306,26 +318,26 @@ export async function handleAnalyzeRequest(
       );
     }
     if (reservation.status !== 'reserved' || !reservation.reservation_id) {
-      return Response.json(
+      return refuseAfterClaim(Response.json(
         { error: 'Credit reservation service is temporarily unavailable.', code: 'RESERVATION_UNAVAILABLE' },
         { status: reservation.status === 'denied' ? 403 : 503, headers: DEFAULT_HEADERS }
-      );
+      ), 'RESERVATION_UNAVAILABLE');
     }
     reservationId = reservation.reservation_id;
   } else {
     // Free user scan
     if (isForensic) {
-      return Response.json(
+      return refuseAfterClaim(Response.json(
         { error: 'Forensic In-Depth analysis requires a paid plan.', code: 'UPGRADE_REQUIRED' },
         { status: 403, headers: DEFAULT_HEADERS }
-      );
+      ), 'UPGRADE_REQUIRED');
     }
     const reservation = await reserveFreeScan(uid, requestId, rpc);
     if (reservation.status === 'limit') {
-      return Response.json(
+      return refuseAfterClaim(Response.json(
         { error: "You've used your free analysis. Upgrade to continue.", code: 'FREE_LIMIT_REACHED' },
         { status: 402, headers: DEFAULT_HEADERS }
-      );
+      ), 'FREE_LIMIT_REACHED');
     }
     if (reservation.status === 'joined' || reservation.status === 'consumed') {
       return Response.json(
@@ -342,13 +354,13 @@ export async function handleAnalyzeRequest(
         pgCode: reservation.pgCode,
       }));
 
-      return Response.json({
+      return refuseAfterClaim(Response.json({
         error: 'Free scan reservation unavailable.',
         code: 'RESERVATION_UNAVAILABLE',
       }, {
         status: reservation.status === 'denied' ? 403 : 503,
         headers: DEFAULT_HEADERS,
-      });
+      }), 'RESERVATION_UNAVAILABLE');
     }
     reservationId = reservation.reservation_id;
   }
@@ -377,7 +389,7 @@ export async function handleAnalyzeRequest(
       // id's report object: claim it too, so the queued worker can never overwrite another account's record.
       if (clientSuppliedId) {
         const claim = await claimJobRecord(env, requestId, uid, authFetcher);
-        if (claim !== 'claimed') throw new OwnershipClaimRefused(claim);
+        if (claim !== 'claimed' && claim !== 'created') throw new OwnershipClaimRefused(claim);
       }
       await saveDurableInput(env, inputKey, { documentText, fileName: typeof body?.documentName === 'string' ? body.documentName : undefined }, authFetcher);
       await env.ANALYZER_JOBS_QUEUE.send(createAnalyzerQueueMessage(requestId));

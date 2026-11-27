@@ -467,9 +467,19 @@ export async function restoreSession(sessionId: string): Promise<void> {
     })
     .eq("id", sessionId);
 
-  if (error) {
-    const { error: markerError } = await db.from("free_usage").delete().eq("uid", `suspended_${sessionId}`);
-    if (markerError) throw Object.assign(new Error("The suspension marker could not be removed; the session is still suspended."), { statusCode: 503 });
+  // The marker is removed even when the column update worked: a marker left from an earlier fallback suspension
+  // would keep the session suspended while this call reported success.
+  const { error: markerError } = await db.from("free_usage").delete().eq("uid", `suspended_${sessionId}`);
+  if (markerError) throw Object.assign(new Error("The suspension marker could not be removed; the session is still suspended."), { statusCode: 503 });
+  void error;
+
+  // Success is reported only when the state the reservation path reads is no longer suspended.
+  const session = await readSession(sessionId);
+  if (session.revoked) {
+    throw Object.assign(new Error("This session is revoked (for example by a refund or the admin console) and was not restored."), { statusCode: 409 });
+  }
+  if (await readUsageRow(`suspended_${sessionId}`)) {
+    throw Object.assign(new Error("The session is still suspended; restoration could not be confirmed."), { statusCode: 503 });
   }
 
   // Record audit log

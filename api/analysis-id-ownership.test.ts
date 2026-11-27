@@ -127,7 +127,7 @@ describe('create-once claim of the direct-path job record (T-20 / review finding
   it('two accounts racing for the same new id: exactly one claims it, the other is refused', async () => {
     const store = new Map<string, string>();
     const results = await Promise.all([claim(store, 'user_a'), claim(store, 'user_b')]);
-    expect([...results].sort()).toEqual(['claimed', 'conflict']);
+    expect([...results].sort()).toEqual(['conflict', 'created']);
   });
 
   it('the owner re-claiming its own record (retry) succeeds; owner-less or foreign records are refused', async () => {
