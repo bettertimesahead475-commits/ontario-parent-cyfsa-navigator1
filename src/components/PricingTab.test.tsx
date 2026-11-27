@@ -65,7 +65,9 @@ describe('PricingTab Branding & Payment Instructions', () => {
 
     // Free / Self-Represented
     expect(screen.getAllByText(/Free \/ Self-Represented/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/1 Free Quick Document Review/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/3 Free Quick Document Reviews/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/1 Free Quick Document Review/i)).toBeNull();
+    expect(screen.getByText('3 Quick Reviews', { selector: 'td.text-slate-800' })).toBeDefined();
     expect(screen.getByText(/Free Forever • No card needed/i)).toBeDefined();
 
     // Analyzer Basic

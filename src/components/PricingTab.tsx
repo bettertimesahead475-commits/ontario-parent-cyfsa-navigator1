@@ -406,7 +406,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                 </span>
                 <p className="text-slate-700 font-semibold text-xs flex items-center gap-1.5">
                   <FileSearch className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>1 Free Quick Document Review</span>
+                  <span>3 Free Quick Document Reviews</span>
                 </p>
                 <p className="text-[10.5px] text-slate-500 leading-tight pt-1 border-t border-slate-200/60">
                   When used, your on-screen report remains viewable. Upgrade to analyze new files.
@@ -417,7 +417,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               <div className="space-y-2.5 pt-1 text-xs text-slate-700">
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>1 Free Quick Document Review</span>
+                  <span>3 Free Quick Document Reviews</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -823,7 +823,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               </tr>
               <tr className="bg-slate-50/40">
                 <td className="py-3 px-4 font-semibold text-slate-900">Included Analyses</td>
-                <td className="py-3 px-3 text-center font-bold text-slate-800">1 Quick Review</td>
+                <td className="py-3 px-3 text-center font-bold text-slate-800">3 Quick Reviews</td>
                 <td className="py-3 px-3 text-center font-bold text-blue-800">3 Quick Reviews</td>
                 <td className="py-3 px-3 text-center font-bold text-purple-800">5 Forensic Dual-Pass</td>
                 <td className="py-3 px-3 text-center font-bold text-indigo-800">5 Forensic / month</td>
