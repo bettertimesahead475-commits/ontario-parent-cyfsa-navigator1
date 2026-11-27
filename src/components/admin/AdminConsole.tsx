@@ -125,7 +125,8 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
     }
     setBusy(true);
     try {
-      const result = await adminPost(path, reason ? { ...payload, reason } : payload);
+      const settlement = ['payments/confirm-bank', 'payments/dispute', 'payments/reset-settlement'].includes(path);
+      const result = await adminPost(path, { ...payload, ...(reason ? { reason } : {}), ...(settlement ? { idempotencyKey: crypto.randomUUID() } : {}) });
       // Reload first: load() clears the message, which would otherwise hide a one-time access code.
       if (section === "customers") await searchCustomer(); else await load(section);
       setMessage({ kind: "ok", text: opts.after ? opts.after(result) : "Done." });

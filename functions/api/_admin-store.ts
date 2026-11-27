@@ -11,7 +11,7 @@
 import { normalizeSupabaseKey } from './_supabase-key';
 import { byCodeUnit } from "../../shared/codeUnitOrder";
 
-export type AdminStoreEnv = { STAGING_SUPABASE_URL?: string; STAGING_SUPABASE_SERVICE_ROLE_KEY?: string };
+export type AdminStoreEnv = { STAGING_SUPABASE_URL?: string; STAGING_SUPABASE_SERVICE_ROLE_KEY?: string; PAYMENT_ACCOUNTING_LEDGER_ENABLED?: string };
 export const AUDIT_BUCKET = 'analysis_jobs';
 export const AUDIT_PREFIX = 'admin-audit';
 

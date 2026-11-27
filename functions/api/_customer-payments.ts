@@ -2,7 +2,8 @@
  * Shared reads for the customer payment endpoints (/api/my-payments, /api/claim-purchase).
  * Every read is scoped to the verified Firebase uid of the caller; nothing here can change a payment's status.
  */
-import { AdminStoreError, listAllAuditNames, rest, safeSegment, settlementByReference, type AdminStoreEnv } from './_admin-store';
+import { AdminStoreError, rest, safeSegment, type AdminStoreEnv } from './_admin-store';
+import { paymentAccountingStates } from './_payment-accounting';
 
 export type CustomerPayment = {
   id?: string; reference_number: string; plan: string; amount: number | string; status: string;
@@ -11,7 +12,6 @@ export type CustomerPayment = {
 export type CustomerCode = { id?: string; reference_number: string | null; used_at: string | null; expires_at: string | null; redeemed_session_id?: string | null };
 
 export const PAYMENT_REFERENCE = /^PS-[A-Z0-9]{4,12}$/;
-const SETTLEMENT_READ_LIMIT = 20_000;
 
 export function amountOf(value: unknown): number {
   const n = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
@@ -46,9 +46,9 @@ export async function codesWithLinks(env: AdminStoreEnv, references: string[], f
   }
 }
 
-/** References whose latest settlement is a recorded refund. Throws when the audit trail cannot be read completely. */
+/** References with a recorded refund. Throws if the configured accounting source cannot be read. */
 export async function refundedReferences(env: AdminStoreEnv, fetcher: typeof fetch = fetch): Promise<Set<string>> {
-  const settlements = settlementByReference(await listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher));
+  const settlements = await paymentAccountingStates(env, fetcher);
   return new Set([...settlements].filter(([, v]) => v.status === 'refunded').map(([k]) => k));
 }
 
