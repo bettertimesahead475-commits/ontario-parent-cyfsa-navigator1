@@ -1,3 +1,4 @@
+import { JOB_LEASE_SECONDS } from '../../shared/analyzerDeadlines';
 import { ANALYSIS_JOBS_BUCKET } from './_analysis-jobs';
 import { normalizeSupabaseKey, supabaseKeyHygiene } from './_supabase-key';
 import type { AnalyzerQueueMessage } from './_analyzer-queue-contract';
@@ -28,6 +29,7 @@ export interface DurableJobRecord {
   retryable?: boolean;
   progress?: number;
   stage?: string | null;
+  created_at?: string;
 }
 
 export class DurableJobStorageError extends Error {
@@ -221,7 +223,7 @@ export async function readDurableJob(env: DurableJobEnv, jobId: string, fetcher:
   return await rpc<DurableJobRecord | null>(env, 'analyzer_get_job', { p_job_id: jobId }, fetcher);
 }
 
-export async function claimDurableJob(env: DurableJobEnv, jobId: string, workerToken: string, leaseSeconds = 240, fetcher: typeof fetch = fetch): Promise<DurableJobRecord | null> {
+export async function claimDurableJob(env: DurableJobEnv, jobId: string, workerToken: string, leaseSeconds = JOB_LEASE_SECONDS, fetcher: typeof fetch = fetch): Promise<DurableJobRecord | null> {
   return await rpc<DurableJobRecord | null>(env, 'analyzer_claim_job', {
     p_job_id: jobId, p_worker_token: workerToken, p_lease_seconds: leaseSeconds,
   }, fetcher);
