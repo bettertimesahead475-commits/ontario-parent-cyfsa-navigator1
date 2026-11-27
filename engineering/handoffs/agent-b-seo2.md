@@ -9,7 +9,7 @@ submissions, publication, paid tools or deployments were made.
 |---|---|---|
 | `package.json` | `build`: `vite build && node scripts/prerender.mjs && esbuild …` | runs the pre-render step after the client build |
 | `.github/workflows/cloudflare-staging-deploy.yml` | the manual staging deploy runs `node scripts/prerender.mjs` after `vite build` and checks `404.html`/`rights.html` exist | otherwise staging would upload a JS-only shell with no 404 page |
-| `public/_redirects` (new) | `/upgrade → /pricing 301`, the four routed `/admin/<page>` paths → `/admin 200`, `/lawyers/:id → /app-shell 200` (one segment only; `/admin/paymnts` and `/lawyers/a/b` return 404) | dynamic app paths still get the app; everything else unknown gets the 404 page |
+| `public/_redirects` (new) | `/upgrade → /pricing 301`, the four routed `/admin/<page>` paths → `/admin 200`, `/lawyers/:id → /app-shell 200` (one segment only; `/admin/paymnts` and `/lawyers/a/b` return 404; trailing-slash forms 301 to the slash-less URL) | dynamic app paths still get the app; everything else unknown gets the 404 page |
 
 The lead's session could not be messaged (HTTP 403), so please review these two files in the PR.
 

@@ -211,5 +211,8 @@ describe("build-time pre-rendering (scripts/prerender.mjs)", () => {
       }
     }
     expect(rules.every(([from]) => !from.includes("*")), "no wildcard rewrites: unknown sub-paths must 404").toBe(true);
+    for (const [from, , status] of rules.filter(([, , status]) => status === "200")) {
+      expect(rules.find(([source]) => source === `${from}/`), `${from}/ redirects to ${from}`).toEqual([`${from}/`, from, "301"]);
+    }
   });
 });
