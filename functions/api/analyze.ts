@@ -281,7 +281,9 @@ export async function handleAnalyzeRequest(
       const failed = { jobId: requestId, uid, status: 'failed' as const, error: { code, message, retryable: false } };
       // One retry; if both writes fail, the record stays "running" until the status endpoint reports it timed out
       // (effectiveJob, RUNNING_JOB_STALE_MS). No credit is held either way: every refusal here precedes a reservation.
-      if (!await saveJobState(env, failed, deps.fetcher || fetch) && !await saveJobState(env, failed, deps.fetcher || fetch)) {
+      let saved = false;
+      for (let attempt = 0; attempt < 2 && !saved; attempt++) saved = await saveJobState(env, failed, deps.fetcher || fetch);
+      if (!saved) {
         console.error(JSON.stringify({ tag: '[ANALYSIS_REFUSAL_STATE_UNSAVED]', jobId: requestId, code }));
       }
     }
