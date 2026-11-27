@@ -28,6 +28,7 @@ import { getUserKey } from "../utils/storage";
 import { useLocation } from "wouter";
 import { auth, signInMinimal } from "../utils/firebase";
 import { apiFetch } from "../utils/api";
+import MyOrdersPanel from "./MyOrdersPanel";
 
 interface PricingTabProps {
   currentTier: AccessTier;
@@ -1088,6 +1089,8 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
           </div>
         </div>
       </div>
+
+      <MyOrdersPanel signedIn={firebaseSignedIn} onActivated={onChangeTier} />
 
       {/* 7. Access Code Activator */}
       <div
