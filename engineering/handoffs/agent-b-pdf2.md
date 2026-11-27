@@ -65,4 +65,4 @@ No final-run PDF contains `**`, U+FFFD or mojibake. Before the fixes: 14 PDFs co
 
 ## Tests
 
-- New `src/utils/printExport.guide.test.tsx` (5 tests): `**` → `<strong>`, escaping, emoji removal; CYFSA guide and Family Rights PDFs have no `**` or pictographs and the break rule follows the base rule; Respondent Answer print has no pictographs. All fail on the old code.
+- New `src/utils/printExport.guide.test.tsx` (4 tests): `**` → `<strong>`, escaping, emoji removal; CYFSA guide and Family Rights PDFs have no `**` or pictographs and the break rule follows the base rule; Respondent Answer print has no pictographs. All fail on the old code.
