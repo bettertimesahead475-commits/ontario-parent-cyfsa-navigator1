@@ -31,7 +31,10 @@ Branch `devin/1795746871-exports-guest-legacy-fca`, based on `engineering/integr
   - 150,000 UTF-8 bytes per request body.
   - 75,000 characters per document and 75,000 per source set.
   - 20 sources per set; 255-character file names; `.txt` only.
-- The client measures the exact body it sends (`sourceRequestBody`) and shows the real limit and the current size. The suggested fix is to split the document into several `.txt` files, or to put more documents in a separate matter; it never suggests cutting evidence.
+- The client measures the exact body it sends (`sourceRequestBody`) and shows the real limit and the current size.
+  - The character limit is checked first. One document's limit (75,000 characters) equals the whole matter's, so splitting cannot help: the message says the matter reads about 75,000 characters in total and suggests removing non-evidence pages or moving them to a separate matter.
+  - Splitting is suggested only when the 150,000-byte limit alone is the cause (multi-byte text).
+- The client cannot see the saved sources' sizes: the API returns them only inside a completed report, and the API shape must not change. The upload help text now states the matter-wide limit instead (`SOURCE_SET_NOTICE`).
 - `INPUT_TOO_LARGE` and `SOURCE_SET_TOO_LARGE` messages now state the real limits.
 
 ## Verification
@@ -40,7 +43,13 @@ Branch `devin/1795746871-exports-guest-legacy-fca`, based on `engineering/integr
   - `src/utils/firebase.signout.test.ts`: fails on the old `firebase.ts`.
   - `src/components/StatutoryBookmarkSidebar.guest.test.tsx` and `src/hooks/useAccountStorage.test.tsx`: 6 of 13 fail on the old hook and sidebar.
   - `src/utils/legacySharedData.test.ts` is new and covers import, discard, second account and interrupted import.
-- At `5937934`: `npx tsc --noEmit -p .` reports 0 errors. Vitest: 322 files passed, 15 skipped; 4759 tests passed, 512 skipped, 0 failed.
+- Review and lead fixes:
+  - `f663001`, `1629e0a`: size guidance.
+  - `8a9b5b3`: the legacy import keeps the legacy notes and court date for a bookmark that is in both lists.
+  - `55fd723`: other tabs reload on a `storage` event instead of overwriting the import.
+  - `bce86cf`: if storage is full, the guest bookmarks stay pending.
+  - `ccccb78`: comment typo.
+- At `ccccb78`: `npx tsc --noEmit -p .` reports 0 errors. Vitest: 322 files passed, 15 skipped; 4765 tests passed, 512 skipped, 0 failed.
 - Browser check (Playwright, mocked Firebase users, mocked `/api`, synthetic legacy data):
   - A was offered "1 coach chat message and 1 statute bookmark", imported them, and the legacy keys were removed. B got no prompt and saw no legacy data.
   - When A signed out without choosing, the legacy keys stayed claimed by A and B got no prompt.
