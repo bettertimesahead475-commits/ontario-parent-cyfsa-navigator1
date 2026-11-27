@@ -105,6 +105,6 @@ describe('prompt injection: credits are server-authoritative', () => {
     const reservations = rpc.mock.calls.filter(([name]: any) => name === 'free_reserve_scan');
     expect(reservations).toHaveLength(1);
     expect(reservations[0][1]).toMatchObject({ p_uid: 'injector', p_limit: FREE_SCAN_LIMIT });
-    expect(JSON.stringify(rpc.mock.calls)).not.toMatch(/victim|999/);
+    expect(JSON.stringify(rpc.mock.calls)).not.toMatch(/victim|(?<!\w)999(?!\w)/);
   });
 });

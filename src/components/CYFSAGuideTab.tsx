@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { guideTextHtml } from "../utils/printExport";
 import { finishPrintWindow } from "../utils/printWindow";
 import { CYFSA_TOPICS } from "../data";
 import { CYFSATopic } from "../types";
@@ -277,6 +278,12 @@ export default function CYFSAGuideTab() {
               border-top: 1px solid #f1f5f9;
               padding-top: 15px;
             }
+            /* After the base rules so it wins: long cards may break instead of leaving a title-only page. */
+            @media print {
+              .section-card { break-inside: auto; page-break-inside: auto; }
+              .section-title { break-after: avoid; page-break-after: avoid; }
+              .end-matter { break-inside: avoid; page-break-inside: avoid; }
+            }
           </style>
         </head>
         <body>
@@ -293,51 +300,51 @@ export default function CYFSAGuideTab() {
           </div>
 
           <div class="section-card">
-            <h3 class="section-title">⚖️ Statutory Background & Context</h3>
-            <div class="body-text">${topic.fullBody}</div>
+            <h3 class="section-title">Statutory Background & Context</h3>
+            <div class="body-text">${guideTextHtml(topic.fullBody)}</div>
           </div>
 
           <div class="section-card">
-            <h3 class="section-title">📋 Recommended Actions & Guidelines</h3>
+            <h3 class="section-title">Recommended Actions & Guidelines</h3>
             <div class="guide-list">
               ${topic.guidelines.map((guide: string, idx: number) => `
                 <div class="guide-item">
                   <div class="guide-num">${idx + 1}</div>
-                  <div>${guide}</div>
+                  <div>${guideTextHtml(guide)}</div>
                 </div>
               `).join("")}
             </div>
           </div>
 
           <div class="section-card">
-            <h3 class="section-title">⚠️ Watchpoint Checklist for Parents</h3>
+            <h3 class="section-title">Watchpoint Checklist for Parents</h3>
             <div style="margin-top: 10px;">
               ${topic.checklistItems.map((item: any) => `
                 <div class="checklist-item">
-                  <span class="checklist-title">✓ ${item.label}</span>
-                  <span class="checklist-desc">${item.description}</span>
+                  <span class="checklist-title">${guideTextHtml(item.label)}</span>
+                  <span class="checklist-desc">${guideTextHtml(item.description)}</span>
                 </div>
               `).join("")}
             </div>
           </div>
 
           <div class="section-card">
-            <h3 class="section-title">💡 Fact vs. Fiction Mythbusters</h3>
+            <h3 class="section-title">Fact vs. Fiction Mythbusters</h3>
             <div class="fvf-container">
               ${topic.factVersusFiction.map((fvf: any) => `
                 <div class="fvf-card">
                   <div class="fvf-header fvf-fiction">
                     <span class="fvf-fiction-title">Misconception (Fiction)</span>
                   </div>
-                  <div class="fvf-fiction-body">"${fvf.fiction}"</div>
+                  <div class="fvf-fiction-body">"${guideTextHtml(fvf.fiction)}"</div>
                   
                   <div class="fvf-header fvf-fact">
                     <span class="fvf-fact-title">Statutory Reality (Fact)</span>
                   </div>
-                  <div class="fvf-fact-body">${fvf.fact}</div>
+                  <div class="fvf-fact-body">${guideTextHtml(fvf.fact)}</div>
                   
                   <div class="fvf-expl">
-                    <strong>Source Authority:</strong> ${fvf.sourceExplanation}
+                    <strong>Source Authority:</strong> ${guideTextHtml(fvf.sourceExplanation)}
                   </div>
                 </div>
               `).join("")}
@@ -345,23 +352,25 @@ export default function CYFSAGuideTab() {
           </div>
 
           <div class="section-card">
-            <h3 class="section-title">🔗 Official Verification Citations</h3>
+            <h3 class="section-title">Official Verification Citations</h3>
             <div style="margin-top: 10px;">
               ${topic.primarySources.map((source: any) => `
                 <div class="primary-source-item">
-                  <strong>Source Label:</strong> ${source.label}<br/>
-                  <strong>Live URL Path:</strong> ${source.url}
+                  <strong>Source Label:</strong> ${guideTextHtml(source.label)}<br/>
+                  <strong>Live URL Path:</strong> ${guideTextHtml(source.url)}
                 </div>
               `).join("")}
             </div>
           </div>
 
+          <div class="end-matter">
           <div class="legal-disclaimer">
             <strong>MANDATORY LEGAL EDUCATIONAL STATEMENT:</strong> This document is generated for informational/educational objectives only under secondary statutory guidelines of the Child, Youth and Family Services Act (CYFSA) S.O. 2017, Chapter 14. This does not represent formal counsel or legal aid representations. Please immediately secure local, verified counsel from the Law Society of Ontario or Legal Aid Ontario to represent your case before the Court.
           </div>
 
           <div class="footer-signature">
             Primary sources verified current through Q2 2026 • Saved dynamically via OPA PDF Legal Desk.
+          </div>
           </div>
         </body>
       </html>

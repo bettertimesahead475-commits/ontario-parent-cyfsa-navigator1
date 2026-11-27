@@ -311,6 +311,12 @@ export default function DocumentAnalyzerTab() {
     return parsedProg?.activeFolder || null;
   });
   const [customUploadError, setCustomUploadError] = useState<string>("");
+  // Bumped on every rejection so a repeated message remounts the alert and is announced again.
+  const [uploadErrorAttempt, setUploadErrorAttempt] = useState(0);
+  const showUploadError = (message: string) => {
+    setCustomUploadError(message);
+    setUploadErrorAttempt(n => n + 1);
+  };
   const [bulkProgress, setBulkProgress] = useState<string>("");
   const [isBulkAnalyzing, setIsBulkAnalyzing] = useState<boolean>(false);
 
@@ -1727,12 +1733,12 @@ export default function DocumentAnalyzerTab() {
     // Tiered Limits check
     const customFilesCount = organizedFiles.filter(f => !f.id.startsWith("preloaded-")).length;
     if (customFilesCount + filesArray.length > 20) {
-      setCustomUploadError("You have reached the maximum allowed limit of 20 files.");
+      showUploadError("You have reached the maximum allowed limit of 20 files.");
       return;
     }
 
     if (filesArray.length > 15) {
-      setCustomUploadError("Bulk analyze limit: You can upload up to 15 concurrent files in a single batch for quick analyze. Please select fewer files to upload in this batch.");
+      showUploadError("Bulk analyze limit: You can upload up to 15 concurrent files in a single batch for quick analyze. Please select fewer files to upload in this batch.");
       return;
     }
 
@@ -3437,7 +3443,7 @@ export default function DocumentAnalyzerTab() {
             </div>
               
               {customUploadError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-sans leading-normal flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div key={uploadErrorAttempt} role="alert" className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-sans leading-normal flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div className="flex gap-1.5 items-start">
                     <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
                     <span>{customUploadError}</span>

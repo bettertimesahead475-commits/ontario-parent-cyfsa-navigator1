@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { ArrowRight, BookOpen, CalendarDays, FileSearch, Heart, Lock, Phone, Scale, ShieldCheck, Users, Search, Shield, Upload } from "lucide-react";
 import { CYFSA_TOPICS } from "../data";
 import { ROADMAP_STAGES } from "../data-transferred";
-import { printBrandedDocument } from "../utils/printExport";
+import { guideTextHtml, printBrandedDocument } from "../utils/printExport";
 
 // Same key CYFSAGuideTab.tsx reads on mount — set it right before navigating there so the
 // parent lands on the exact topic they clicked, not the guide's unrelated default.
@@ -235,12 +235,12 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
       let body = "";
       const renderTopicFull = (t: NonNullable<ReturnType<typeof CYFSA_TOPICS.find>>) => `
         <div class="section-card">
-          <div class="section-title">${t.title}</div>
-          <p class="body-text">${t.summary}</p>
-          <p class="body-text">${t.fullBody.replace(/\n/g, "<br/>")}</p>
-          ${t.guidelines.length ? `<p class="body-text"><strong>Recommended action steps:</strong></p><ul class="body-text">${t.guidelines.map(g => `<li>${g}</li>`).join("")}</ul>` : ""}
-          ${t.checklistItems.length ? `<p class="body-text"><strong>Watch-for checklist:</strong></p>${t.checklistItems.map(c => `<div class="watch-item"><span class="watch-title">${c.label}</span><span class="watch-desc">${c.description}</span></div>`).join("")}` : ""}
-          ${t.factVersusFiction.length ? `<p class="body-text"><strong>Fact vs. fiction:</strong></p><ul class="body-text">${t.factVersusFiction.map(f => `<li><em>"${f.fiction}"</em> — ${f.fact} (${f.sourceExplanation})</li>`).join("")}</ul>` : ""}
+          <div class="section-title">${guideTextHtml(t.title)}</div>
+          <p class="body-text">${guideTextHtml(t.summary)}</p>
+          <p class="body-text">${guideTextHtml(t.fullBody).replace(/\n/g, "<br/>")}</p>
+          ${t.guidelines.length ? `<p class="body-text"><strong>Recommended action steps:</strong></p><ul class="body-text">${t.guidelines.map(g => `<li>${guideTextHtml(g)}</li>`).join("")}</ul>` : ""}
+          ${t.checklistItems.length ? `<p class="body-text"><strong>Watch-for checklist:</strong></p>${t.checklistItems.map(c => `<div class="watch-item"><span class="watch-title">${guideTextHtml(c.label)}</span><span class="watch-desc">${guideTextHtml(c.description)}</span></div>`).join("")}` : ""}
+          ${t.factVersusFiction.length ? `<p class="body-text"><strong>Fact vs. fiction:</strong></p><ul class="body-text">${t.factVersusFiction.map(f => `<li><em>"${guideTextHtml(f.fiction)}"</em> — ${guideTextHtml(f.fact)} (${guideTextHtml(f.sourceExplanation)})</li>`).join("")}</ul>` : ""}
         </div>`;
       if (page === "rights") {
         title = "Understanding Your Family Rights";
