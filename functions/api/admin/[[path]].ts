@@ -36,7 +36,7 @@ const ok = (body: unknown, status = 200) => Response.json(body, { status, header
 const enc = encodeURIComponent;
 
 type Payment = Record<string, unknown> & { reference_number?: string; notes?: string | null; plan?: string; amount?: number | string; status?: string; submitted_at?: string; approved_at?: string | null; firebase_uid?: string | null };
-type Session = Record<string, unknown> & { id: string; firebase_uid?: string; tier?: string; issued_at?: string; expires_at?: string; revoked_at?: string | null; access_code_id?: string | null; email?: string | null };
+type Session = Record<string, unknown> & { id: string; firebase_uid?: string; tier?: string; issued_at?: string; expires_at?: string; revoked_at?: string | null; access_code_id?: string | null; email?: string | null; granted_credits?: number | null };
 type AccessCode = Record<string, unknown> & { id?: string; email?: string | null; tier?: string; reference_number?: string | null; used_at?: string | null; expires_at?: string | null };
 type Counter = { uid: string; analyses_used: number | null; last_analysis_at?: string | null };
 
@@ -633,7 +633,18 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
         shorteningsForReview++;
       } else if ((isRenewal || renewals.length > 0) && session.expires_at) {
         const shortened = new Date(Date.parse(session.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
-        const rows = await rest<Session[]>(env, `navigator_paid_sessions?id=eq.${session.id}&expires_at=eq.${enc(session.expires_at)}`, { method: 'PATCH', body: { expires_at: shortened }, prefer: 'return=representation' }, fetcher);
+        const change: Record<string, unknown> = { expires_at: shortened };
+        let filter = `navigator_paid_sessions?id=eq.${session.id}&expires_at=eq.${enc(session.expires_at)}`;
+        // Migration E: an early re-purchase of a one-off pack also added that pack's analyses (granted_credits), so the
+        // refund takes them back with the 30 days; back at the tier default it is null again. Before E the column does
+        // not exist (granted_credits is absent) and the request is unchanged.
+        const pack = LIMITS[String(session.tier)];
+        if (typeof session.granted_credits === 'number' && pack && !pack.monthly) {
+          const left = session.granted_credits - pack.limit;
+          change.granted_credits = left > pack.limit ? left : null;
+          filter += `&granted_credits=eq.${session.granted_credits}`;
+        }
+        const rows = await rest<Session[]>(env, filter, { method: 'PATCH', body: change, prefer: 'return=representation' }, fetcher);
         sessionsShortened += rows.length;
       } else {
         // Overwrites any earlier revocation time too, so an earlier console suspension can no longer be "restored".
