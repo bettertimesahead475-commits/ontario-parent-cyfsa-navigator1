@@ -316,6 +316,91 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     }
   });
 
+  it('delivers checkout, approval and refund emails once with only transactional fields', async () => {
+    await h.q('grant update (status, approved_at) on public.payments to service_role');
+    const confidential = 'SYNTHETIC-PRIVATE-CASE-DOCUMENT';
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'synthetic-acceptance', email: recipient, emailVerified: true } as never);
+    vi.stubGlobal('fetch', h.fetch);
+    const checkout = () => requestAccess({ request: new Request('https://app.test/api/request-access', {
+      method: 'POST', headers: { 'user-agent': confidential },
+      body: JSON.stringify({ tier: 'Basic', requestKey: 'synthetic-acceptance', document: confidential }),
+    }), env });
+
+    const messages: Array<{ subject: string; text: string }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      if (String(input) === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'synthetic-token' });
+      if (String(input) === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+        expect(init?.method).toBe('POST');
+        const payload = JSON.parse(String(init?.body)) as { raw: string };
+        expect(Object.keys(payload)).toEqual(['raw']);
+        const [headers, body] = Buffer.from(payload.raw, 'base64url').toString('utf8').split('\r\n\r\n');
+        expect(headers).toContain(`To: ${recipient}`);
+        expect(headers.match(/^Content-Type: .+$/gm)).toEqual(['Content-Type: text/plain; charset=UTF-8']);
+        expect(headers).not.toMatch(/multipart|Content-Disposition|attachment/i);
+        const subject = /^Subject: =\?UTF-8\?B\?([^?]+)\?=$/m.exec(headers)?.[1] ?? '';
+        messages.push({ subject: Buffer.from(subject, 'base64').toString('utf8'), text: Buffer.from(body, 'base64').toString('utf8') });
+        return Response.json({ id: `synthetic-message-${messages.length}` });
+      }
+      return h.fetch(input, init);
+    };
+    let admin = 0;
+    const call = (route: string, body: Record<string, unknown> = {}) => handleAdminRequest(new Request(`https://app.test/api/admin/${route}`, {
+      method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+    }), {
+      ...env, GMAIL_SENDER_ADDRESS: 'sender@example.test', GMAIL_OAUTH_CLIENT_ID: 'synthetic-client',
+      GMAIL_OAUTH_CLIENT_SECRET: 'synthetic-secret', GMAIL_OAUTH_REFRESH_TOKEN: 'synthetic-refresh',
+    }, {
+      fetcher, now: due, requireAdmin: async () => ({ admin: { uid: `acceptance-admin-${++admin}`, email: 'operator@example.test' } }),
+    });
+    const drain = async (sent: number) => {
+      const results = await Promise.all([call('email-outbox/process'), call('email-outbox/process')]);
+      expect(results.map((r) => r.status)).toEqual([200, 200]);
+      const counts = await Promise.all(results.map((r) => r.json() as Promise<{ sent: number }>));
+      expect(counts.reduce((sum, count) => sum + count.sent, 0)).toBe(sent);
+    };
+
+    const order = await checkout();
+    expect(order.status).toBe(200);
+    const { referenceNumber, amount } = await order.json() as { referenceNumber: string; amount: number };
+    expect(await (await checkout()).json()).toMatchObject({ referenceNumber, reused: true });
+    const amountText = `$${amount.toFixed(2)} CAD`;
+    await drain(1);
+    expect(messages[0]).toEqual({ subject: `Payment instructions for order ${referenceNumber}`, text: expect.stringContaining(`Amount: ${amountText}\nSend by Interac e-Transfer to: pay@example.test\nReference: ${referenceNumber}`) });
+
+    const approval = { referenceNumber, amountReceived: amount, document: confidential };
+    const approved = await call('payments/approve', approval);
+    expect(approved.status).toBe(200);
+    const { accessCode } = await approved.json() as { accessCode: string };
+    expect(accessCode).toBeTruthy();
+    expect((await call('payments/approve', approval)).status).toBe(409);
+    await drain(3);
+    expect(messages).toEqual(expect.arrayContaining([
+      { subject: `Payment received for order ${referenceNumber}`, text: expect.stringContaining('Activate now') },
+      { subject: `Your access code for order ${referenceNumber}`, text: expect.stringContaining(accessCode) },
+      { subject: `Receipt for order ${referenceNumber}`, text: expect.stringContaining(`Amount paid: ${amountText}`) },
+    ]));
+
+    const refund = { referenceNumber, reason: confidential, revokeAccess: false };
+    expect((await call('payments/refund', refund)).status).toBe(200);
+    expect((await call('payments/refund', refund)).status).toBe(409);
+    await drain(1);
+    await drain(0);
+    expect(messages[4]).toEqual({ subject: `Refund recorded for order ${referenceNumber}`, text: expect.stringContaining(`A refund of ${amountText} for Basic (reference ${referenceNumber}) has been recorded.`) });
+    expect(messages).toHaveLength(5);
+    expect(JSON.stringify(messages)).not.toContain(confidential);
+    const rows = await h.q(`select kind, status, attempts, template_data, secret_payload from ${OUTBOX_TABLE} where dedupe_key = $1 order by kind`, [referenceNumber]);
+    const base = { plan: 'Basic', amount, reference: referenceNumber };
+    const approvedData = { ...base, approvedAt: expect.any(String), expiresAt: expect.any(String) };
+    const sent = { status: 'sent', attempts: 1, secret_payload: null };
+    expect(rows).toEqual([
+      { ...sent, kind: 'access_code', template_data: approvedData },
+      { ...sent, kind: 'payment_confirmation', template_data: approvedData },
+      { ...sent, kind: 'payment_instructions', template_data: { ...base, payTo: 'pay@example.test' } },
+      { ...sent, kind: 'purchase_receipt', template_data: approvedData },
+      { ...sent, kind: 'refund_confirmation', template_data: base },
+    ]);
+  });
+
   it('preserves rows during reapply and only rolls back an empty outbox', async () => {
     const snapshot = await h.q(contents);
     expect(snapshot.length).toBeGreaterThan(0);
