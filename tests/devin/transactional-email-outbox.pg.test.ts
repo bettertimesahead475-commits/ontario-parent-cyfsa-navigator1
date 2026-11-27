@@ -21,9 +21,24 @@ const env = {
 const recipient = 'parent@example.test';
 const item = { kind: 'refund_confirmation', dedupeKey: 'synthetic-refund', email: recipient, data: {} } as const;
 const due = () => new Date(Date.now() + 1_000);
-const probe = `${OUTBOX_TABLE}?select=id&limit=1`;
 const contents = `select row_to_json(o) as row from ${OUTBOX_TABLE} o order by id`;
 let h: Harness;
+
+async function applyOutbox() {
+  await h.pool.query(sql(''));
+  for (let attempt = 0; attempt < 100; attempt++) {
+    await h.q("notify pgrst, 'reload schema'");
+    // A GET can see a newly created table before PostgREST's mutation planner has cached its columns.
+    const response = await h.fetch(`${env.STAGING_SUPABASE_URL}/rest/v1/${OUTBOX_TABLE}`, {
+      method: 'OPTIONS',
+      headers: { Authorization: `Bearer ${env.STAGING_SUPABASE_SERVICE_ROLE_KEY}` },
+    });
+    const allowed = response.headers.get('Allow')?.split(',');
+    if (response.ok && allowed?.includes('POST') && allowed.includes('PATCH')) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('PostgREST schema cache is not ready for outbox mutations');
+}
 
 async function waitForLocks(command: 'INSERT' | 'UPDATE', count: number) {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -73,7 +88,7 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     };
     await paymentContract('synthetic-before');
     const priorPayments = await h.q("select * from payments where firebase_uid = 'synthetic-before'");
-    await h.migrate(sql(''), probe);
+    await applyOutbox();
     await paymentContract('synthetic-after');
     expect(await h.q("select * from payments where firebase_uid = 'synthetic-before'")).toEqual(priorPayments);
     expect(await h.q("select * from navigator_paid_sessions where firebase_uid = 'synthetic-existing'")).toEqual(entitlement);
@@ -208,12 +223,12 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     const payments = await h.q('select * from payments order by id');
     const entitlements = await h.q('select * from navigator_paid_sessions order by id');
     await h.q('drop index public.transactional_email_outbox_due');
-    await h.migrate(sql(''), probe);
+    await applyOutbox();
     expect(await h.q("select to_regclass('public.transactional_email_outbox_due') is not null as present")).toEqual([{ present: true }]);
     expect(await h.q(contents)).toEqual(snapshot);
     await h.pool.query(sql('.down'));
     expect(await h.q("select to_regclass('public.transactional_email_outbox') is null as absent")).toEqual([{ absent: true }]);
-    await h.migrate(sql(''), probe);
+    await applyOutbox();
     expect(await h.q(contents)).toEqual([]);
     expect(await h.q('select * from payments order by id')).toEqual(payments);
     expect(await h.q('select * from navigator_paid_sessions order by id')).toEqual(entitlements);
