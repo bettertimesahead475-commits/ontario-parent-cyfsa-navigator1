@@ -271,6 +271,20 @@ export function validateRedFlags(raw: any, mode: "fast" | "full"): Validation {
     // A flag without its quote or explanation breaks Core Rule 1, so it is not shown.
     .filter((f: any) => f.phraseDetected && f.explanation)
     .slice(0, max);
+  // The second review's verdicts are matched to findings by id: a repeated id would let a verdict on one finding
+  // remove or recalibrate another. Each finding keeps its own id; a repeated or missing one gets the next rfN that no
+  // finding uses, so a later finding never loses the id its report id is derived from.
+  const taken = new Set<string>(flags.map((f: { id: string }) => f.id));
+  const used = new Set<string>();
+  let next = 1;
+  for (const f of flags) {
+    if (used.has(f.id)) {
+      while (taken.has(`rf${next}`)) next++;
+      taken.add(`rf${next}`);
+      f.id = `rf${next}`;
+    }
+    used.add(f.id);
+  }
   if (raw.redFlags.length > 0 && flags.length === 0) {
     return { ok: false, problems: ["every red flag was missing its exact quote (phraseDetected) or explanation"] };
   }
@@ -1139,6 +1153,10 @@ export function mergeVerification(report: Record<string, any>, parsed: any, mode
   for (const v of Array.isArray(parsed?.findings) ? parsed.findings : []) {
     if (v && typeof v === "object" && str(v.id)) byId.set(str(v.id), v);
   }
+  // A verdict for an id shared by several findings cannot be attributed to one of them: none of them receives it.
+  const idCounts = new Map<string, number>();
+  for (const flag of report.redFlags || []) idCounts.set(flag?.id, (idCounts.get(flag?.id) || 0) + 1);
+  for (const [id, n] of idCounts) if (n > 1) byId.delete(id);
 
   const activeFlags: any[] = [];
   const unsupportedFindings: any[] = [];
