@@ -22,6 +22,14 @@ export function sourceSetEntryLength(filename: string, text: string): number {
   return '['.length + 64 + '] '.length + filename.length + ' page 1\n'.length + text.length;
 }
 
+/** Separator the server puts between documents when it joins the source set ("\n\n"). */
+export const SOURCE_SET_SEPARATOR_CHARS = 2;
+
+/** Characters a whole source set occupies, as the server counts them: every entry plus a separator between entries. */
+export function sourceSetLength(entries: ReadonlyArray<{ filename: string; text: string }>): number {
+  return entries.reduce((total, e) => total + sourceSetEntryLength(e.filename, e.text), 0) + SOURCE_SET_SEPARATOR_CHARS * Math.max(0, entries.length - 1);
+}
+
 /** UTF-8 byte length, which is what the server counts. */
 export function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;

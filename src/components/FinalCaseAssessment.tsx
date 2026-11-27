@@ -4,7 +4,7 @@ import { finishPrintWindow } from '../utils/printWindow';
 import { describeRedactedFinalAssessment, renderFinalAssessmentHtml } from '../utils/finalAssessmentExport';
 import { useRedaction } from '../utils/redaction';
 import type { AssessmentReport } from '../../functions/api/final-case-assessment';
-import { INPUT_TOO_LARGE_MESSAGE, SOURCE_SET_LIMIT_MESSAGE, SOURCE_SET_NOTICE, sourceRequestBody, sourceUploadProblem } from '../../shared/assessmentLimits';
+import { ASSESSMENT_SOURCE_SET_MAX_CHARS, INPUT_TOO_LARGE_MESSAGE, SOURCE_SET_LIMIT_MESSAGE, SOURCE_SET_NOTICE, sourceRequestBody, sourceSetLength, sourceUploadProblem } from '../../shared/assessmentLimits';
 
 const ERROR_MESSAGES: Record<string, string> = {
   INDIVIDUAL_CASE_ACCESS_REQUIRED: 'The Final Case Assessment requires active Individual Case Access',
@@ -39,6 +39,8 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
   const [newTitle, setNewTitle] = useState('');
   const [creationId, setCreationId] = useState(() => crypto.randomUUID());
   const [notice, setNotice] = useState('');
+  // Documents saved in this visit, per matter: enough to catch a set over the limit (separators included) before upload.
+  const [addedSources, setAddedSources] = useState<Record<string, { filename: string; text: string }[]>>({});
   async function createMatter() {
     setBusy(true); setError(''); setNotice('');
     try {
@@ -69,8 +71,11 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
       const text = await file.text();
       const problem = sourceUploadProblem(file.name, text);
       if (problem) throw new Error(problem);
+      const added = addedSources[matterId] ?? [];
+      if (sourceSetLength([...added, { filename: file.name, text }]) > ASSESSMENT_SOURCE_SET_MAX_CHARS) throw new Error(SOURCE_SET_LIMIT_MESSAGE);
       const res = await apiFetch('/api/final-case-assessment?matterId=' + encodeURIComponent(matterId) + '&action=source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: sourceRequestBody(file.name, text) });
       const body = await res.json(); if (!res.ok) throw new Error(errorMessage(body, 'Source could not be saved'));
+      if (!body.reused) setAddedSources(previous => ({ ...previous, [matterId]: [...(previous[matterId] ?? []), { filename: file.name, text }] }));
       setReport(null); setNotice(body.reused ? 'This source document is already saved.' : 'Source document saved. Add another document or generate the assessment.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Source could not be saved'); }
     finally { setBusy(false); }

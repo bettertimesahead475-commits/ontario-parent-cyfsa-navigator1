@@ -4,7 +4,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ASSESSMENT_REQUEST_MAX_BYTES, SOURCE_SET_LIMIT_MESSAGE, SOURCE_SET_NOTICE, sourceRequestBody, sourceUploadProblem, utf8ByteLength } from "../../shared/assessmentLimits";
+import { ASSESSMENT_REQUEST_MAX_BYTES, ASSESSMENT_SOURCE_SET_MAX_CHARS, SOURCE_SET_LIMIT_MESSAGE, sourceSetEntryLength, sourceSetLength, SOURCE_SET_NOTICE, sourceRequestBody, sourceUploadProblem, utf8ByteLength } from "../../shared/assessmentLimits";
 
 const MATTER = { id: "11111111-1111-4111-8111-111111111111", title: "Synthetic matter" };
 const apiFetch = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
@@ -112,5 +112,27 @@ describe("Final Case Assessment source size limits", () => {
     fireEvent.change(input, { target: { files: [new File(["Synthetic document two — é"], "two.txt", { type: "text/plain" })] } });
     await waitFor(() => expect(sourcePosts()).toHaveLength(2));
     expect(sourcePosts()[1][1]?.body).toBe(sourceRequestBody("two.txt", "Synthetic document two — é"));
+  });
+  it("counts the two-character separator between documents exactly as the server joins them", () => {
+    const docs = [{ filename: "a.txt", text: "one" }, { filename: "bb.txt", text: "two two" }, { filename: "c.txt", text: "3" }];
+    const id = "f".repeat(64);
+    const server = docs.map((d) => "[" + id + "] " + d.filename + " page 1\n" + d.text).join("\n\n");
+    expect(sourceSetLength(docs)).toBe(server.length);
+    expect(sourceSetLength([docs[0]])).toBe(sourceSetEntryLength("a.txt", "one"));
+    expect(sourceSetLength([])).toBe(0);
+  });
+
+  it("refuses, before sending, a second document that fits alone but puts the set over the limit only through the separator", async () => {
+    const first = "a".repeat(40000);
+    const room = ASSESSMENT_SOURCE_SET_MAX_CHARS - sourceSetEntryLength("one.txt", first) - sourceSetEntryLength("two.txt", "");
+    await uploadFile("one.txt", first);
+    await waitFor(() => expect(sourcePosts()).toHaveLength(1));
+    const input = screen.getByLabelText("Add a text document to this matter") as HTMLInputElement;
+    // Without the separator this would total exactly 75,000; with it, 75,002.
+    fireEvent.change(input, { target: { files: [new File(["b".repeat(room)], "two.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(SOURCE_SET_LIMIT_MESSAGE));
+    expect(sourcePosts()).toHaveLength(1);
+    fireEvent.change(input, { target: { files: [new File(["b".repeat(room - 2)], "two.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(sourcePosts()).toHaveLength(2));
   });
 });
