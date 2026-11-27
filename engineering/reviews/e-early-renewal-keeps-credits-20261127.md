@@ -55,10 +55,13 @@ advisory lock as `paid_reserve_credit`, and with the session row locked, it:
 - takes back exactly one pack (Basic/AnalyzerBasic 3, Premium/AnalyzerPremium 5) and 30 days, setting
   `granted_credits` to null at the tier default; it never goes below the tier default (`no_top_up`, nothing changed),
   refuses monthly tiers (`not_one_off`) and touches no other session;
+- refunding the last pack of a session whose other packs were already refunded (for example both packs refunded at
+  the same moment) still takes its 30 days, so access ends; a session that was never topped up is `no_top_up`;
 - records the refund once per key: a retry, a resumed refund or a duplicate returns the first result
   (`already_applied`) and subtracts nothing;
 - counts analyses already used (the `_total` counter, which includes reservations) and reserved-but-unfinished
-  markers, and returns `used_beyond_remaining` = analyses of the refunded pack already used. Used analyses are not
+  markers, and returns `used_beyond_remaining` = analyses of the refunded pack already used: the overage this refund creates, at most one
+  pack, never counted again by a later refund. Used analyses are not
   rewritten; further reservations are refused once used >= the new allowance. The admin response reports the sum as
   `packAnalysesAlreadyUsed`, for a partial-refund decision.
 
@@ -77,6 +80,9 @@ Evidence (disposable PostgreSQL 16, P + D + E, real refund handler where marked 
 - other entitlements: no top-up -> `no_top_up` and unchanged; the customer's Basic top-up session unchanged; monthly refused.
 - concurrency on separate connections: two refunds 15 -> 5 (both `applied`); a reservation started while a refund
   holds the lock waits (seen in `pg_stat_activity`) and then gets `limit`.
+- both packs of a two-pack session refunded on separate connections: both `applied`, -60 days, access ended.
+- 12 of 15 used, three refunds: overage reported 2, 5, 5 (each at most one pack).
+- unit E8: a top-up landing while a one-pack refund shortens the expiry hands the refund to the function.
 - unit (`api/cloudflare-admin-api.test.ts` E1, E3–E7): RPC body and key, no session PATCH, resumed refund counted
   once, unexpected answers go to `shorteningsForReview`, never counted as applied.
 

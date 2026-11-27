@@ -466,4 +466,31 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     await a.query("commit");
     expect((await pending).rows[0].r.status).toBe("limit");
   });
+
+  it("both packs of a two-pack session refunded at the same moment: both applied, -60 days, access ends", async () => {
+    const email = "both@example.test"; const uid = "uid-bothpacks";
+    const first = await redeem(db, uid, await issue(ref(), email), email);
+    const top = await redeem(db, uid, await issue(ref(), email), email);
+    expect(top.granted_credits).toBe(10);
+    const [a, b] = [await connect(), await connect()];
+    const rs = await Promise.all([refundPack(a, first.session_id!, "both-orig"), refundPack(b, first.session_id!, "both-top")]);
+    expect(rs.map((r) => r.status)).toEqual(["applied", "applied"]);
+    expect(rs.map((r) => r.granted_after).sort()).toEqual([0, 5]);
+    const s = await one("select granted_credits, expires_at, expires_at <= now() as ended from public.navigator_paid_sessions where id = $1", [first.session_id]);
+    expect(s.granted_credits).toBeNull();
+    expect(new Date(s.expires_at).toISOString()).toBe(new Date(Date.parse(String(top.expires_at)) - 60 * DAY).toISOString());
+    expect(s.ended).toBe(true);
+  });
+
+  it("analyses used beyond the remaining allowance are reported once per refund, at most one pack", async () => {
+    const email = "overage@example.test"; const uid = "uid-overage";
+    const first = await redeem(db, uid, await issue(ref(), email), email);
+    await redeem(db, uid, await issue(ref(), email), email);
+    await redeem(db, uid, await issue(ref(), email), email);
+    for (let i = 0; i < 12; i++) expect(await analyse(first.session_id!, "Premium")).toBe("reserved");
+    expect(await refundPack(db, first.session_id!, "over-1")).toMatchObject({ status: "applied", granted_after: 10, used_beyond_remaining: 2 });
+    expect(await refundPack(db, first.session_id!, "over-2")).toMatchObject({ status: "applied", granted_after: 5, used_beyond_remaining: 5 });
+    expect(await refundPack(db, first.session_id!, "over-2")).toMatchObject({ status: "already_applied", used_beyond_remaining: 5 });
+    expect(await refundPack(db, first.session_id!, "over-3")).toMatchObject({ status: "applied", granted_after: 0, used_beyond_remaining: 5 });
+  });
 });

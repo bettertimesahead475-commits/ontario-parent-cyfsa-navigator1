@@ -223,7 +223,8 @@ grant execute on function public.paid_reserve_credit(text, text, text, integer, 
 -- paid_reserve_credit's lock, so no reservation lands between the read and the write. Takes back exactly that pack's
 -- analyses and p_days, never below the tier default, and touches no other session. Once per p_refund_key: a retry
 -- returns the first result and subtracts nothing. Analyses already used or reserved stay used: used_beyond_remaining
--- reports how many of the refunded pack's analyses the customer had already used, for a partial-refund decision.
+-- reports how many of the refunded pack's analyses the customer had already used (at most one pack, never counted
+-- twice across refunds), for a partial-refund decision.
 create table if not exists public.navigator_paid_session_refunds (
   refund_key text primary key,
   session_id uuid not null references public.navigator_paid_sessions(id) on delete cascade,
@@ -260,15 +261,21 @@ begin
     return jsonb_build_object('status', 'already_applied', 'session_id', v_prior.session_id,
       'granted_before', v_prior.granted_before, 'granted_after', v_prior.granted_after,
       'used', v_prior.used_at_refund, 'reserved', v_prior.reserved_at_refund,
-      'used_beyond_remaining', greatest(v_prior.used_at_refund - v_prior.granted_after, 0));
+      'used_beyond_remaining', greatest(v_prior.used_at_refund - v_prior.granted_after, 0) - greatest(v_prior.used_at_refund - v_prior.granted_before, 0));
   end if;
   select * into v_s from public.navigator_paid_sessions where id = p_session for update;
   if not found then return jsonb_build_object('status', 'not_found'); end if;
   v_pack := case v_s.tier when 'Basic' then 3 when 'AnalyzerBasic' then 3 when 'Premium' then 5 when 'AnalyzerPremium' then 5 end;
   if v_pack is null then return jsonb_build_object('status', 'not_one_off', 'tier', v_s.tier); end if;
   v_before := coalesce(v_s.granted_credits, v_pack);
-  if v_before < 2 * v_pack then return jsonb_build_object('status', 'no_top_up', 'granted', v_before); end if;
-  v_after := v_before - v_pack;
+  if v_before >= 2 * v_pack then
+    v_after := v_before - v_pack;
+  elsif exists (select 1 from public.navigator_paid_session_refunds where session_id = p_session) then
+    -- The last pack of a session whose other packs were refunded: its 30 days go, nothing is left to grant.
+    v_after := 0;
+  else
+    return jsonb_build_object('status', 'no_top_up', 'granted', v_before);
+  end if;
   select coalesce(max(analyses_used), 0) into v_used from public.free_usage where uid = 'paid_session_' || p_session::text || '_total';
   select count(*) into v_reserved from public.free_usage
     where left(uid, length(v_prefix)) = v_prefix and email = 'reservation:reserved' and analyses_used > 0;
@@ -279,7 +286,7 @@ begin
   insert into public.navigator_paid_session_refunds (refund_key, session_id, granted_before, granted_after, used_at_refund, reserved_at_refund)
     values (p_refund_key, p_session, v_before, v_after, v_used, v_reserved);
   return jsonb_build_object('status', 'applied', 'session_id', p_session, 'granted_before', v_before, 'granted_after', v_after,
-    'used', v_used, 'reserved', v_reserved, 'used_beyond_remaining', greatest(v_used - v_after, 0),
+    'used', v_used, 'reserved', v_reserved, 'used_beyond_remaining', greatest(v_used - v_after, 0) - greatest(v_used - v_before, 0),
     'expires_at', v_s.expires_at - make_interval(days => p_days));
 end
 $$;
