@@ -203,12 +203,13 @@ describe("build-time pre-rendering (scripts/prerender.mjs)", () => {
     const builtFiles = new Set([...Object.keys(PUBLIC_ROUTE_META), ...Object.keys(NOINDEX_ROUTE_META).filter((r) => !r.endsWith("/"))].map(htmlFileFor));
     builtFiles.add("app-shell.html");
     for (const route of appRoutes) {
-      const rule = rules.find(([from]) => from === route || (from.endsWith("/*") && route.startsWith(from.slice(0, -1))));
+      const rule = rules.find(([from]) => from === route);
       if (rule) {
         expect(rule[2] === "301" || builtFiles.has(htmlFileFor(rule[1])), route).toBe(true);
       } else {
         expect(builtFiles.has(htmlFileFor(route)), route).toBe(true);
       }
     }
+    expect(rules.every(([from]) => !from.includes("*")), "no wildcard rewrites: unknown sub-paths must 404").toBe(true);
   });
 });
