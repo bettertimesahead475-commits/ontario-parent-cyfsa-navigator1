@@ -467,8 +467,10 @@ export default function TemplatesTab() {
     let bodyContent = "";
 
     const sharedStyle = `
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+      <link rel="stylesheet" data-print-fonts href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" />
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         body {
           font-family: 'Inter', sans-serif;
           color: #1e293b;

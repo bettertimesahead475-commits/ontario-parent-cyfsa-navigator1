@@ -38,7 +38,10 @@ async function bundle(root) {
   }
   collect(source);
   assert.equal(definitions.size, 2);
-  const header = readFileSync(resolve(root, "public/_headers"), "utf8").match(/^\s*Content-Security-Policy:\s*(.*)$/m)?.[1];
+  const cspPrefix = "Content-Security-Policy:";
+  const header = readFileSync(resolve(root, "public/_headers"), "utf8").split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.startsWith(cspPrefix))?.slice(cspPrefix.length).trim();
   assert(header);
   const { outputFiles } = await build({
     bundle: true,
@@ -154,7 +157,7 @@ const server = createServer((req, res) => {
 });
 await new Promise((done) => server.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${server.address().port}`;
-const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || execFileSync("which", ["google-chrome"], {encoding: "utf8"}).trim() });
+const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || "/usr/bin/google-chrome" });
 const proxies = new Map();
 for (const profile of profiles.filter((profile) => profile !== "online")) {
   const proxy = createServer((req, res) => res.writeHead(403).end());
@@ -209,16 +212,17 @@ async function run(bench, { version, profile, report, size, rows }, pdf) {
 }
 
 function comparePdfs(prefix) {
+  const env = { PATH: "/usr/bin:/bin", LC_ALL: "C" };
   const files = ["before", "after"].map((version) => {
     const stem = `${prefix}-${version}`;
     const pdf = stem + ".pdf";
-    const pages = Number(execFileSync("pdfinfo", [pdf], {encoding: "utf8"}).match(/^Pages:\s+(\d+)/m)[1]);
-    const text = execFileSync("pdftotext", ["-layout", pdf, "-"], {encoding: "utf8"});
-    execFileSync("pdftoppm", ["-r", "80", "-png", pdf, stem]);
+    const pages = Number(execFileSync("/usr/bin/pdfinfo", [pdf], {env, encoding: "utf8"}).match(/^Pages:\s+(\d+)/m)[1]);
+    const text = execFileSync("/usr/bin/pdftotext", ["-layout", pdf, "-"], {env, encoding: "utf8"});
+    execFileSync("/usr/bin/pdftoppm", ["-r", "80", "-png", pdf, stem], {env});
     const pngs = readdirSync(destination).filter((file) => resolve(destination, file).startsWith(resolve(stem) + "-") && file.endsWith(".png"));
     assert.equal(pngs.length, pages);
     const hashes = pngs.map((file) => createHash("sha256").update(readFileSync(resolve(destination, file))).digest("hex"));
-    const pdfFonts = execFileSync("pdffonts", [pdf], {encoding: "utf8"}).split("\n").slice(2).filter(Boolean);
+    const pdfFonts = execFileSync("/usr/bin/pdffonts", [pdf], {env, encoding: "utf8"}).split("\n").slice(2).filter(Boolean);
     return { pages, text, hashes, pdfFonts };
   });
   const [before, after] = files;

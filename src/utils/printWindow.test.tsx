@@ -84,4 +84,17 @@ describe("print windows without inline scripts (CSP compatible)", () => {
       expect({ f, scripts: (text.match(/<script>/g) || []).length, handlers: (text.match(/\sonclick="/g) || []).length }).toEqual({ f, scripts: 0, handlers: 0 });
     }
   });
+
+  it("registers font stylesheets for readiness in guide, template and transcript exports", async () => {
+    const { readFileSync } = await import("node:fs");
+    const guide = readFileSync("src/components/CYFSAGuideTab.tsx", "utf8");
+    const templates = readFileSync("src/components/TemplatesTab.tsx", "utf8");
+    const analyzer = readFileSync("src/components/DocumentAnalyzerTab.tsx", "utf8");
+    const transcriptStart = analyzer.indexOf("<title>Print Certified Transcript");
+    const transcript = analyzer.slice(transcriptStart, analyzer.indexOf("</html>", transcriptStart));
+    for (const html of [guide, templates, transcript]) {
+      expect(html).toContain('<link rel="stylesheet" data-print-fonts href="https://fonts.googleapis.com/');
+      expect(html).not.toContain("@import");
+    }
+  });
 });
