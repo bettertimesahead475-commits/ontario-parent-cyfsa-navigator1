@@ -60,6 +60,18 @@ describe("legacy shared-data migration", () => {
     expect([localStorage.getItem(CHAT), localStorage.getItem(BOOKS), localStorage.getItem(LEGACY_CLAIM_KEY)]).toEqual([null, null, null]);
   });
 
+  it("keeps legacy notes and court date for a statute bookmarked in both, without duplicating them on resume", () => {
+    localStorage.setItem(BOOKS, JSON.stringify([{ id: "s74", userNotes: "legacy note", courtDate: "2026-12-01" }]));
+    localStorage.setItem(`${BOOKS}_user-a`, JSON.stringify([{ id: "s74", userNotes: "" }]));
+    legacyOfferFor("user-a");
+    decideLegacy("user-a", "import");
+    expect(get(`${BOOKS}_user-a`)).toEqual([{ id: "s74", userNotes: "legacy note", courtDate: "2026-12-01" }]);
+    localStorage.setItem(BOOKS, JSON.stringify([{ id: "s74", userNotes: "legacy note" }]));
+    localStorage.setItem(LEGACY_CLAIM_KEY, JSON.stringify({ uid: "user-a", decision: "import" }));
+    resumeLegacyDecision();
+    expect(get(`${BOOKS}_user-a`)[0].userNotes).toBe("legacy note");
+  });
+
   it("a resumed import does not duplicate items already copied", () => {
     seedLegacy();
     localStorage.setItem(`${CHAT}_user-a`, JSON.stringify([{ id: "m1", text: "legacy chat" }]));

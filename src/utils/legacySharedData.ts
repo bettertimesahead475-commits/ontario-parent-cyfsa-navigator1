@@ -12,7 +12,7 @@ type Decision = 'import' | 'discard';
 interface Claim { uid: string; decision?: Decision }
 export interface LegacyOffer { chatMessages: number; bookmarks: number }
 
-function list(key: string): { id?: unknown }[] | null {
+function list(key: string): Item[] | null {
   try {
     const value = JSON.parse(localStorage.getItem(key) ?? 'null');
     return Array.isArray(value) ? value : null;
@@ -30,11 +30,23 @@ function readClaim(): Claim | null {
 }
 const hasLegacy = () => LEGACY_SHARED_KEYS.some(key => localStorage.getItem(key) !== null);
 
-/** Merges by id so a resumed import never duplicates items. Account items keep their place first. */
-function merge(account: { id?: unknown }[], legacy: { id?: unknown }[], legacyFirst: boolean) {
-  const seen = new Set<unknown>();
-  const ordered = legacyFirst ? [...legacy, ...account] : [...account, ...legacy];
-  return ordered.filter(item => (item?.id === undefined ? true : !seen.has(item.id) && !!seen.add(item.id)));
+type Item = { id?: unknown; userNotes?: unknown; courtDate?: unknown };
+
+/** A bookmark in both lists keeps the account copy, adds legacy notes it lacks, and fills a missing court date. */
+function combine(account: Item, legacy: Item): Item {
+  const mine = typeof account.userNotes === 'string' ? account.userNotes : '';
+  const theirs = typeof legacy.userNotes === 'string' ? legacy.userNotes : '';
+  const userNotes = theirs && !mine.includes(theirs) ? [mine, theirs].filter(Boolean).join('\n\n') : account.userNotes;
+  return { ...account, ...(userNotes !== undefined && { userNotes }), courtDate: account.courtDate || legacy.courtDate };
+}
+
+/** Merges by id so a resumed import never duplicates items or notes. */
+function merge(account: Item[], legacy: Item[], legacyFirst: boolean): Item[] {
+  const byId = new Map(legacy.filter(item => item?.id !== undefined).map(item => [item.id, item]));
+  const kept = account.map(item => (item?.id !== undefined && byId.has(item.id) ? combine(item, byId.get(item.id)!) : item));
+  const accountIds = new Set(account.map(item => item?.id).filter(id => id !== undefined));
+  const added = legacy.filter(item => item?.id === undefined || !accountIds.has(item.id));
+  return legacyFirst ? [...added, ...kept] : [...kept, ...added];
 }
 
 function finish(uid: string, decision: Decision): boolean {
