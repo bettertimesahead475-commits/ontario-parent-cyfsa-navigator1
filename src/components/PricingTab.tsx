@@ -52,6 +52,10 @@ const FALLBACK_TIER_PRICES: Record<string, number> = {
 
 const PAYMENT_EMAIL = "chris@cyfsanavigator.com";
 
+// Same format as the server's e-Transfer instructions (request-access getInstructions): 2,000 and 49.99.
+const formatCad = (amount: number) =>
+  Number.isInteger(amount) ? amount.toLocaleString("en-CA") : amount.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 type PurchasableTier = "Pro" | "Premium" | "Basic" | "Community5" | "Community10" | "Community25";
 type CheckoutStage = "idle" | "email" | "awaiting-code" | "verifying" | "success" | "error";
 
@@ -409,7 +413,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                 </span>
                 <p className="text-slate-700 font-semibold text-xs flex items-center gap-1.5">
                   <FileSearch className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>1 Free Quick Document Review</span>
+                  <span>3 Free Quick Document Reviews</span>
                 </p>
                 <p className="text-[10.5px] text-slate-500 leading-tight pt-1 border-t border-slate-200/60">
                   When used, your on-screen report remains viewable. Upgrade to analyze new files.
@@ -420,7 +424,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               <div className="space-y-2.5 pt-1 text-xs text-slate-700">
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>1 Free Quick Document Review</span>
+                  <span>3 Free Quick Document Reviews</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -607,7 +611,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               <div className="space-y-2.5 pt-1 text-xs text-slate-700">
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <span className="font-semibold text-slate-900">5 Forensic In-Depth Dual-Pass analyses</span>
+                  <span className="font-semibold text-slate-900">5 analyses in total, Forensic In-Depth Dual-Pass or Quick</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
@@ -826,9 +830,9 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               </tr>
               <tr className="bg-slate-50/40">
                 <td className="py-3 px-4 font-semibold text-slate-900">Included Analyses</td>
-                <td className="py-3 px-3 text-center font-bold text-slate-800">1 Quick Review</td>
+                <td className="py-3 px-3 text-center font-bold text-slate-800">3 Quick Reviews</td>
                 <td className="py-3 px-3 text-center font-bold text-blue-800">3 Quick Reviews</td>
-                <td className="py-3 px-3 text-center font-bold text-purple-800">5 Forensic Dual-Pass</td>
+                <td className="py-3 px-3 text-center font-bold text-purple-800">5 Forensic or Quick</td>
                 <td className="py-3 px-3 text-center font-bold text-indigo-800">5 Forensic / month</td>
               </tr>
               <tr>
@@ -1203,7 +1207,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                     Interac e-Transfer Checkout
                   </h3>
                   <p className="text-[10px] text-emerald-400 font-semibold font-sans">
-                    {selectedTier} Plan — ${selectedTier ? TIER_PRICES[selectedTier] : 0} CAD
+                    {selectedTier} Plan — ${selectedTier ? formatCad(TIER_PRICES[selectedTier]) : 0} CAD
                   </p>
                 </div>
               </div>
@@ -1301,7 +1305,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                         2. Exact Amount:
                       </span>
                       <span className="font-bold text-slate-900 text-sm">
-                        ${selectedTier ? TIER_PRICES[selectedTier] : 0} CAD
+                        ${selectedTier ? formatCad(TIER_PRICES[selectedTier]) : 0} CAD
                       </span>
                     </div>
 

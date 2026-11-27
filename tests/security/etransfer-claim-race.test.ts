@@ -49,7 +49,9 @@ function install(uid: string) {
     if (url.pathname.startsWith('/storage/v1/object/analysis_jobs/')) return Response.json({});
     if (url.pathname === '/rest/v1/payments') return Response.json(url.searchParams.get('reference_number') === `eq.${REF}` ? [payment] : []);
     if (url.pathname === '/rest/v1/access_codes') {
-      const mine = codes.filter((c) => c.reference_number === REF);
+      const h = url.searchParams.get('code_hash') ?? '';
+      const mine = codes.filter((c) => c.reference_number === REF
+        && (h.startsWith('neq.') ? c.code_hash !== h.slice(4) : h.startsWith('eq.') ? c.code_hash === h.slice(3) : true));
       if (method === 'PATCH') { mine.filter((c) => !c.used_at).forEach((c) => { c.expires_at = JSON.parse(String(init?.body)).expires_at; }); return new Response(null, { status: 204 }); }
       if (method === 'POST') {
         // Interleaving point: hold each insert until `size` claims have reached it (or 300 ms pass).

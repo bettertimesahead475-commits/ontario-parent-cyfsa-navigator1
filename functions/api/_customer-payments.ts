@@ -43,7 +43,8 @@ export type CustomerPaymentState = 'awaiting_verification' | 'ready_to_activate'
 
 export function paymentState(p: CustomerPayment, codes: CustomerCode[], refunded: Set<string> | null): CustomerPaymentState | 'unknown' {
   if (p.status === 'pending') return 'awaiting_verification';
-  if (p.status === 'rejected') return refunded?.has(safeSegment(p.reference_number)) ? 'refunded' : 'cancelled';
+  // Only a pending (unpaid) order is ever moved to 'rejected', so it was cancelled, not refunded.
+  if (p.status === 'rejected') return 'cancelled';
   if (p.status !== 'approved') return 'unknown';
   if (refunded === null) return 'unknown';
   if (refunded.has(safeSegment(p.reference_number))) return 'refunded';
