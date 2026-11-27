@@ -150,3 +150,28 @@ describe("Forensic PDF fidelity to the saved analysis", () => {
     expect(numbers).toEqual(numbers.map((_, i) => i + 1));
   });
 });
+
+describe("forensic PDF renderer redaction is independent of the caller", () => {
+  const secret = ["Jordan Syntheticparent", "FC-26-00000001-0000", "Kinship placement with the maternal aunt was never assessed"];
+  const raw = {
+    documentTitle: `Affidavit of ${secret[0]}`,
+    fileSummary: `${secret[0]} says: ${secret[2]}.`,
+    metadata: { fileNumber: secret[1], applicantName: secret[0], respondentName: "Society", hearingDate: "2026-12-01" },
+    redFlags: [{ id: "rf1", classification: "Procedural", title: secret[2], quote: `${secret[0]} was not told`, legalReference: "CYFSA s. 74" }],
+    forensicVerification: { status: "completed", overallAssessment: `${secret[0]} is credible` },
+  };
+  const html = renderForensicReportHtml(raw, { redactionEnabled: true, fileName: `${secret[0]}.pdf` });
+
+  it("contains none of the unredacted free text, names or file numbers", () => {
+    for (const s of secret) expect(html).not.toContain(escapeHtml(s));
+  });
+
+  it("keeps the redaction notice and the second-review status", () => {
+    expect(html).toContain("not guaranteed to be anonymous");
+    expect(html).not.toContain("second review is in progress");
+  });
+
+  it("does not change the caller's report object", () => {
+    expect(raw.fileSummary).toContain(secret[2]);
+  });
+});

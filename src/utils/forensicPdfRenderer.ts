@@ -8,7 +8,7 @@
 
 import { escapeHtml } from "./reportSectionsHtml";
 import { VERIFIED_AUTHORITIES_REGISTRY, resolveLegalAuthority } from "../../shared/legalVerificationPipeline";
-import { REDACTED_COPY_NOTICE } from "../../shared/exportRedaction";
+import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 import { isSecondReviewComplete } from "../../shared/reportContract";
 import { CASE_BRIEF_PART_LABELS, CASE_BRIEF_PART_ORDER, parseCaseBriefPoint } from "../../shared/caseBriefStructure";
 
@@ -30,8 +30,18 @@ export interface PdfRenderOptions {
   audienceMode?: "parent" | "self_rep" | "lawyer" | "full";
 }
 
-export function renderForensicReportHtml(report: Record<string, any>, options: PdfRenderOptions = {}): string {
+/** Redacted copy made here, so a caller that passes an unredacted report still gets no free text. The second-review status is an enum and is kept. */
+function redactedReportCopy(report: Record<string, any>): Record<string, any> {
+  const copy = redactForExport(report);
+  if (report.forensicVerification && copy.forensicVerification) {
+    copy.forensicVerification = { ...copy.forensicVerification, status: report.forensicVerification.status };
+  }
+  return copy;
+}
+
+export function renderForensicReportHtml(inputReport: Record<string, any>, options: PdfRenderOptions = {}): string {
   const isRedacted = Boolean(options.redactionEnabled);
+  const report = isRedacted ? redactedReportCopy(inputReport) : inputReport;
   const displayTitle = isRedacted ? "Confidential Case Document Audit" : (report.documentTitle || options.fileName || "Court Record Audit");
   const displayFile = isRedacted ? "Analysis report" : (options.fileName || report.documentTitle || "Document");
   const docType = report.documentType || NOT_STATED;

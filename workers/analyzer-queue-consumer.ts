@@ -15,6 +15,7 @@ import { createAnalyzerQueueMessage, parseAnalyzerQueueMessage } from '../functi
 import { createStagingCreditRpc } from '../functions/api/_staging-credit-rpc';
 import { finalizeFreeScan, releaseFreeScan } from '../functions/api/_free-credit-lifecycle';
 import { finalizePaidReservation, releasePaidReservation } from '../functions/api/_paid-credit-lifecycle';
+import { JOB_LEASE_SECONDS, RESERVATION_TTL_MS, RETRY_MAX_SECONDS, retryDelaySeconds } from '../shared/analyzerDeadlines';
 
 interface QueueMessageLike {
   body: unknown;
@@ -34,9 +35,7 @@ export interface ConsumerEnv extends AnalyzerEnv {
   ANALYZER_JOBS_REQUEUE?: AnalyzerQueueBinding;
 }
 
-const RETRY_BASE_SECONDS = 20;
-const RETRY_MAX_SECONDS = 900;
-const retryDelay = (attempts: number): number => Math.min(RETRY_MAX_SECONDS, RETRY_BASE_SECONDS * 2 ** Math.min(10, Math.max(0, attempts - 1)));
+const retryDelay = retryDelaySeconds;
 
 export async function errorResponse(response: Response): Promise<{ code: string; error: string; retryable: boolean }> {
   const fallback = {
@@ -115,7 +114,7 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
 
   const token = crypto.randomUUID();
   let job: DurableJobRecord | null;
-  try { job = await claimDurableJob(env, parsed.jobId, token, 240); }
+  try { job = await claimDurableJob(env, parsed.jobId, token, JOB_LEASE_SECONDS); }
   catch (error) {
     // Log only a stable error class/status; never job text, uid, URL, or keys.
     // A silent claim failure otherwise looks like a healthy Queue that never drains.
@@ -143,7 +142,12 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
   }
 
   // Metadata only (no job ID, uid or text): with the outcome lines below, a claim with no outcome identifies a Worker that was stopped.
-  console.info('[ANALYZER_JOB_CLAIMED]', JSON.stringify({ mode: job.mode, jobAttempt: job.attempt_count ?? null, deliveryAttempt: message.attempts, paid: Boolean(job.session_id) }));
+  const ageMs = job.created_at ? Date.now() - Date.parse(job.created_at) : NaN;
+  console.info('[ANALYZER_JOB_CLAIMED]', JSON.stringify({ mode: job.mode, jobAttempt: job.attempt_count ?? null, deliveryAttempt: message.attempts, paid: Boolean(job.session_id), queueAgeSeconds: Number.isFinite(ageMs) ? Math.round(ageMs / 1000) : null }));
+  // The reservation was taken at submit; past its TTL the account's next reservation may have returned it.
+  if (job.reservation_id && !job.owner_bypass && ageMs > RESERVATION_TTL_MS) {
+    console.warn('[ANALYZER_RESERVATION_PAST_TTL]', JSON.stringify({ mode: job.mode, paid: Boolean(job.session_id), queueAgeSeconds: Math.round(ageMs / 1000) }));
+  }
 
   try {
     const recoveredReport = await loadPersistedReport(env, job.job_id, fetch, job.owner_uid);

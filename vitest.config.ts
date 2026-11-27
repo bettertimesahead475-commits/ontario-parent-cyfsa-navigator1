@@ -13,7 +13,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}', 'shared/**/*.ts', 'functions/**/*.ts', 'api/**/*.ts', 'workers/**/*.ts'],
-      exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts', 'src/main.tsx'],
+      exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts', 'src/main.tsx', 'api/testSupport/**'],
       reporter: ['text-summary', 'lcov', 'json-summary'],
     },
   },

@@ -3691,7 +3691,14 @@ OUTPUT — return strictly this JSON schema, nothing else:
       // Always log server-side so nothing is lost even if email sending
       // fails or isn't configured. (Vercel function logs are viewable
       // per-deployment.)
-      console.log("[lawyer-intake]", JSON.stringify({ ...intakeRecord, details: `${intakeRecord.details.length} chars` }));
+      // Name, email, city and details are confidential parent information: only the reference and sizes are logged.
+      console.log("[lawyer-intake]", JSON.stringify({
+        referenceNum: intakeRecord.referenceNum,
+        lawyerId: intakeRecord.lawyerId,
+        hasCity: Boolean(intakeRecord.city),
+        detailsChars: intakeRecord.details.length,
+        receivedAt: intakeRecord.receivedAt,
+      }));
 
       const hasSmtpConfig = Boolean(
         process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.LAWYER_INTAKE_TO
@@ -3716,7 +3723,7 @@ OUTPUT — return strictly this JSON schema, nothing else:
           });
           emailSent = true;
         } catch (mailErr) {
-          console.error("[lawyer-intake] email send failed", mailErr);
+          console.error("[lawyer-intake] email send failed", JSON.stringify({ referenceNum, errorName: mailErr instanceof Error ? mailErr.name : "unknown", code: (mailErr as any)?.code ?? null }));
         }
       }
 

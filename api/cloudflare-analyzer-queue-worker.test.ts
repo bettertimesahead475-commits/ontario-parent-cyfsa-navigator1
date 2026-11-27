@@ -350,4 +350,18 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.retry).toHaveBeenCalledOnce();
     expect(msg.ack).not.toHaveBeenCalled();
   });
+  it('logs a claimed job whose reservation is older than the reservation TTL (metadata only), and not a fresh one', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.claim.mockResolvedValueOnce({ ...job('full'), created_at: new Date(Date.now() - 16 * 60_000).toISOString() });
+    await processJob(message(), {} as any);
+    const line = warn.mock.calls.find(([tag]) => tag === '[ANALYZER_RESERVATION_PAST_TTL]');
+    expect(line).toBeDefined();
+    expect(JSON.parse(line![1] as string)).toEqual({ mode: 'full', paid: false, queueAgeSeconds: 960 });
+    warn.mockClear();
+    mocks.loadReport.mockReset().mockResolvedValueOnce(null).mockResolvedValue({ fileSummary: 'Saved report' });
+    mocks.claim.mockResolvedValueOnce({ ...job('full'), created_at: new Date(Date.now() - 60_000).toISOString() });
+    await processJob(message(), {} as any);
+    expect(warn.mock.calls.some(([tag]) => tag === '[ANALYZER_RESERVATION_PAST_TTL]')).toBe(false);
+    warn.mockRestore();
+  });
 });

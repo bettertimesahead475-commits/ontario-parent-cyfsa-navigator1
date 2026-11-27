@@ -5,10 +5,11 @@
 // scan being recorded.
 import { getSupabase } from "./access.js";
 import { usageUnavailable } from "./freeUsageStore.js";
+import { RESERVATION_TTL_INTERVAL } from "../../shared/analyzerDeadlines.js";
 
-// A reservation not finished within this time is released. The analysis function's time limit is far shorter,
-// so the attempt that held it has certainly ended.
-export const FREE_SCAN_RESERVATION_TTL = "15 minutes";
+// A reservation not finished within this time can be released by the account's next reservation. A direct request
+// ends far sooner; a queued job can wait longer (shared/analyzerDeadlines.ts).
+export const FREE_SCAN_RESERVATION_TTL = RESERVATION_TTL_INTERVAL;
 
 // Recording a delivered scan is retried briefly before the caller gives up. Giving up never releases the scan: the
 // report is already saved as completed, and the client settles the same analysis id on its retry.

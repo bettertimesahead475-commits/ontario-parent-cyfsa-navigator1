@@ -16,6 +16,7 @@
 // session, so the cycle for a monthly plan starts on that date and renews on the same day each month (UTC).
 // ---------------------------------------------------------------------------
 
+import { RESERVATION_TTL_INTERVAL, RESERVATION_TTL_MS as SHARED_RESERVATION_TTL_MS } from "../../shared/analyzerDeadlines.js";
 import { createHash } from "node:crypto";
 import { getSupabase } from "./access.js";
 import { LifecycleError } from "./lifecycleErrors.js";
@@ -26,10 +27,10 @@ export const BASIC_ANALYSES_LIMIT = 3;
 export const PREMIUM_ANALYSES_LIMIT = 5;
 export const CASE_ACCESS_FORENSIC_LIMIT = 5;
 
-// Longer than the 300 s function limit in vercel.json. A reservation with a recorded unit that has not been touched
-// for this long belongs to a request that can no longer be running.
-export const RESERVATION_TTL = "15 minutes";
-export const RESERVATION_TTL_MS = 15 * 60 * 1000;
+// A reservation with a recorded unit untouched for this long is treated as abandoned. A queued job can wait longer
+// than this (see shared/analyzerDeadlines.ts and reconcile_skip_live_analyzer_jobs.sql, pending approval).
+export const RESERVATION_TTL = RESERVATION_TTL_INTERVAL;
+export const RESERVATION_TTL_MS = SHARED_RESERVATION_TTL_MS;
 // A claim that records no unit within this window is abandoned.
 export const CLAIM_WINDOW = "60 seconds";
 
@@ -466,10 +467,25 @@ export async function restoreSession(sessionId: string): Promise<void> {
       suspended_reason: null,
     })
     .eq("id", sessionId);
+  // 42703 (Postgres) and PGRST204 (PostgREST schema cache) mean the column does not exist: the legacy schema, where
+  // suspension lives only in the marker below. Any other error leaves is_suspended true, which the admin console
+  // reads, so restoration is not reported.
+  if (error && error.code !== "42703" && error.code !== "PGRST204") {
+    throw Object.assign(new Error("The session record could not be updated; the session is still suspended."), { statusCode: 503 });
+  }
 
-  if (error) {
-    const { error: markerError } = await db.from("free_usage").delete().eq("uid", `suspended_${sessionId}`);
-    if (markerError) throw Object.assign(new Error("The suspension marker could not be removed; the session is still suspended."), { statusCode: 503 });
+  // The marker is removed even when the column update worked: a marker left from an earlier fallback suspension
+  // would keep the session suspended while this call reported success.
+  const { error: markerError } = await db.from("free_usage").delete().eq("uid", `suspended_${sessionId}`);
+  if (markerError) throw Object.assign(new Error("The suspension marker could not be removed; the session is still suspended."), { statusCode: 503 });
+
+  // Success is reported only when the state the reservation path reads is no longer suspended.
+  const session = await readSession(sessionId);
+  if (session.revoked) {
+    throw Object.assign(new Error("This session is revoked (for example by a refund or the admin console) and was not restored."), { statusCode: 409 });
+  }
+  if (await readUsageRow(`suspended_${sessionId}`)) {
+    throw Object.assign(new Error("The session is still suspended; restoration could not be confirmed."), { statusCode: 503 });
   }
 
   // Record audit log

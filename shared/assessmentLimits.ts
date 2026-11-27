@@ -14,6 +14,22 @@ export function sourceRequestBody(filename: string, text: string): string {
   return JSON.stringify({ filename, text });
 }
 
+/**
+ * Characters one document adds to the assessment's source set, as the server counts them: a "[<64-hex id>] <name> page 1"
+ * header line plus the text. A document that alone exceeds the set limit can never be assessed.
+ */
+export function sourceSetEntryLength(filename: string, text: string): number {
+  return '['.length + 64 + '] '.length + filename.length + ' page 1\n'.length + text.length;
+}
+
+/** Separator the server puts between documents when it joins the source set ("\n\n"). */
+export const SOURCE_SET_SEPARATOR_CHARS = 2;
+
+/** Characters a whole source set occupies, as the server counts them: every entry plus a separator between entries. */
+export function sourceSetLength(entries: ReadonlyArray<{ filename: string; text: string }>): number {
+  return entries.reduce((total, e) => total + sourceSetEntryLength(e.filename, e.text), 0) + SOURCE_SET_SEPARATOR_CHARS * Math.max(0, entries.length - 1);
+}
+
 /** UTF-8 byte length, which is what the server counts. */
 export function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
@@ -28,7 +44,7 @@ export function sourceUploadProblem(filename: string, text: string): string | nu
   if (filename.length > ASSESSMENT_FILENAME_MAX_CHARS) return `The file name is ${n(filename.length)} characters; the limit is ${n(ASSESSMENT_FILENAME_MAX_CHARS)}. Rename the file, then add it again`;
   if (!text.trim()) return 'This file has no text. Choose a .txt file that contains the document text';
   const bytes = utf8ByteLength(sourceRequestBody(filename, text));
-  if (text.length > ASSESSMENT_SOURCE_MAX_CHARS) return `This document has ${n(text.length)} characters. One assessment reads about ${n(ASSESSMENT_SOURCE_SET_MAX_CHARS)} characters in total across all of a matter's documents, so splitting it will not help. ${TRIM}, then add it again`;
+  if (text.length > ASSESSMENT_SOURCE_MAX_CHARS || sourceSetEntryLength(filename, text) > ASSESSMENT_SOURCE_SET_MAX_CHARS) return `This document has ${n(text.length)} characters (with its name, ${n(sourceSetEntryLength(filename, text))}). One assessment reads about ${n(ASSESSMENT_SOURCE_SET_MAX_CHARS)} characters in total across all of a matter's documents, so splitting it will not help. ${TRIM}, then add it again`;
   if (bytes > ASSESSMENT_REQUEST_MAX_BYTES) return `This document is ${n(bytes)} bytes as sent (file name and text); the limit is ${n(ASSESSMENT_REQUEST_MAX_BYTES)} bytes per document. ${SPLIT}`;
   return null;
 }
@@ -36,4 +52,4 @@ export function sourceUploadProblem(filename: string, text: string): string | nu
 export const SOURCE_SET_LIMIT_MESSAGE = `This matter has more source text than one assessment can read: about ${n(ASSESSMENT_SOURCE_SET_MAX_CHARS)} characters in total, including each document's name, across up to ${n(ASSESSMENT_MAX_SOURCES)} documents. ${TRIM}`;
 export const INPUT_TOO_LARGE_MESSAGE = `This document is over the ${n(ASSESSMENT_REQUEST_MAX_BYTES)}-byte limit per document (file name and text, as sent). ${SPLIT}`;
 
-export const SOURCE_SET_NOTICE = `One assessment reads about ${n(ASSESSMENT_SOURCE_SET_MAX_CHARS)} characters in total across up to ${n(ASSESSMENT_MAX_SOURCES)} documents in a matter.`;
+export const SOURCE_SET_NOTICE = `One assessment reads about ${n(ASSESSMENT_SOURCE_SET_MAX_CHARS)} characters in total, including each document's name, across up to ${n(ASSESSMENT_MAX_SOURCES)} documents in a matter.`;

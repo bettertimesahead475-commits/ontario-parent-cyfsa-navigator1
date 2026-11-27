@@ -4,7 +4,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ASSESSMENT_REQUEST_MAX_BYTES, SOURCE_SET_LIMIT_MESSAGE, SOURCE_SET_NOTICE, sourceRequestBody, sourceUploadProblem, utf8ByteLength } from "../../shared/assessmentLimits";
+import { ASSESSMENT_REQUEST_MAX_BYTES, ASSESSMENT_SOURCE_SET_MAX_CHARS, SOURCE_SET_LIMIT_MESSAGE, sourceSetEntryLength, sourceSetLength, SOURCE_SET_NOTICE, sourceRequestBody, sourceUploadProblem, utf8ByteLength } from "../../shared/assessmentLimits";
 
 const MATTER = { id: "11111111-1111-4111-8111-111111111111", title: "Synthetic matter" };
 const apiFetch = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
@@ -15,11 +15,6 @@ vi.mock("../utils/api", () => ({ apiFetch: (url: string, init?: { method?: strin
 const { default: FinalCaseAssessment } = await import("./FinalCaseAssessment");
 
 /** Text whose serialized source request is exactly `bytes` UTF-8 bytes, using 2-byte characters. */
-function textForBodyBytes(filename: string, bytes: number): string {
-  const overhead = utf8ByteLength(sourceRequestBody(filename, ""));
-  const room = bytes - overhead;
-  return "é".repeat(Math.floor(room / 2)) + "a".repeat(room % 2);
-}
 
 beforeEach(() => { apiFetch.mockClear(); });
 afterEach(() => cleanup());
@@ -36,7 +31,9 @@ const sourcePosts = () => apiFetch.mock.calls.filter(([url]) => url.includes("ac
 
 describe("Final Case Assessment source size limits", () => {
   it("accepts a request of exactly the server's byte limit and rejects one byte more", () => {
-    const atLimit = textForBodyBytes("a.txt", ASSESSMENT_REQUEST_MAX_BYTES);
+    // Three-byte characters, so the byte limit is reached well inside the matter's 75,000-character limit.
+    const room = ASSESSMENT_REQUEST_MAX_BYTES - utf8ByteLength(sourceRequestBody("a.txt", ""));
+    const atLimit = "€".repeat(Math.floor(room / 3)) + "a".repeat(room % 3);
     expect(utf8ByteLength(sourceRequestBody("a.txt", atLimit))).toBe(150000);
     expect(sourceUploadProblem("a.txt", atLimit)).toBeNull();
     const over = atLimit + "a";
@@ -46,15 +43,22 @@ describe("Final Case Assessment source size limits", () => {
   });
 
   it("counts multi-byte Unicode as UTF-8 bytes, not characters", () => {
-    const emoji = "😀".repeat(37500); // 75,000 UTF-16 units, 150,000 bytes
-    expect(sourceUploadProblem("a.txt", emoji)).toContain("bytes as sent");
+    const euros = "€".repeat(50001); // 50,001 characters, 150,003 bytes
+    expect(sourceUploadProblem("a.txt", euros)).toContain("bytes as sent");
   });
 
   it("for the character limit, says the matter's total is the limit and does not suggest splitting", () => {
     const message = sourceUploadProblem("a.txt", "a".repeat(75001));
     expect(message).toBe(
-      "This document has 75,001 characters. One assessment reads about 75,000 characters in total across all of a matter's documents, so splitting it will not help. Remove pages that are not evidence for this matter, or move them to a separate matter, then add it again"
+      "This document has 75,001 characters (with its name, 75,081). One assessment reads about 75,000 characters in total across all of a matter's documents, so splitting it will not help. Remove pages that are not evidence for this matter, or move them to a separate matter, then add it again"
     );
+  });
+
+  it("rejects a document the server would refuse once its name header is counted (75,000 characters exactly)", () => {
+    const message = sourceUploadProblem("a.txt", "a".repeat(75000));
+    expect(message).toContain("(with its name, 75,080)");
+    expect(message).toContain("splitting it will not help");
+    expect(sourceUploadProblem("a.txt", "a".repeat(75000 - 80))).toBeNull();
   });
 
   it("gives the character message, not split advice, when both limits are exceeded", () => {
@@ -64,7 +68,7 @@ describe("Final Case Assessment source size limits", () => {
   });
 
   it("suggests splitting only when the byte limit is the cause", () => {
-    const message = sourceUploadProblem("a.txt", "😀".repeat(37500)); // 75,000 characters, 150,000+ bytes
+    const message = sourceUploadProblem("a.txt", "€".repeat(50001)); // 50,001 characters, 150,003+ bytes
     expect(message).toContain("bytes as sent");
     expect(message).toContain("Split the document into several .txt files and add each one to this matter");
   });
@@ -73,7 +77,7 @@ describe("Final Case Assessment source size limits", () => {
     expect(SOURCE_SET_LIMIT_MESSAGE).toBe(
       "This matter has more source text than one assessment can read: about 75,000 characters in total, including each document's name, across up to 20 documents. Remove pages that are not evidence for this matter, or move them to a separate matter"
     );
-    expect(SOURCE_SET_NOTICE).toBe("One assessment reads about 75,000 characters in total across up to 20 documents in a matter.");
+    expect(SOURCE_SET_NOTICE).toBe("One assessment reads about 75,000 characters in total, including each document's name, across up to 20 documents in a matter.");
   });
 
   it("rejects a file name over 255 characters before sending", () => {
@@ -88,7 +92,7 @@ describe("Final Case Assessment source size limits", () => {
   });
 
   it("does not send a file under 150 KB on disk whose JSON request is over the limit", async () => {
-    const quotes = '"'.repeat(74990); // 74,990 bytes on disk, ~150,010 bytes once JSON-escaped
+    const quotes = '"'.repeat(50000) + "€".repeat(17000); // 101,000 bytes on disk, ~151,000 bytes once JSON-escaped
     await uploadFile("quotes.txt", quotes);
     expect((await screen.findByRole("alert")).textContent).toContain("bytes as sent");
     expect(sourcePosts()).toHaveLength(0);
@@ -108,5 +112,42 @@ describe("Final Case Assessment source size limits", () => {
     fireEvent.change(input, { target: { files: [new File(["Synthetic document two — é"], "two.txt", { type: "text/plain" })] } });
     await waitFor(() => expect(sourcePosts()).toHaveLength(2));
     expect(sourcePosts()[1][1]?.body).toBe(sourceRequestBody("two.txt", "Synthetic document two — é"));
+  });
+  it("counts the two-character separator between documents exactly as the server joins them", () => {
+    const docs = [{ filename: "a.txt", text: "one" }, { filename: "bb.txt", text: "two two" }, { filename: "c.txt", text: "3" }];
+    const id = "f".repeat(64);
+    const server = docs.map((d) => "[" + id + "] " + d.filename + " page 1\n" + d.text).join("\n\n");
+    expect(sourceSetLength(docs)).toBe(server.length);
+    expect(sourceSetLength([docs[0]])).toBe(sourceSetEntryLength("a.txt", "one"));
+    expect(sourceSetLength([])).toBe(0);
+  });
+
+  it("refuses, before sending, a second document that fits alone but puts the set over the limit only through the separator", async () => {
+    const first = "a".repeat(40000);
+    const room = ASSESSMENT_SOURCE_SET_MAX_CHARS - sourceSetEntryLength("one.txt", first) - sourceSetEntryLength("two.txt", "");
+    await uploadFile("one.txt", first);
+    await waitFor(() => expect(sourcePosts()).toHaveLength(1));
+    const input = screen.getByLabelText("Add a text document to this matter") as HTMLInputElement;
+    // Without the separator this would total exactly 75,000; with it, 75,002.
+    fireEvent.change(input, { target: { files: [new File(["b".repeat(room)], "two.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(SOURCE_SET_LIMIT_MESSAGE));
+    expect(sourcePosts()).toHaveLength(1);
+    fireEvent.change(input, { target: { files: [new File(["b".repeat(room - 2)], "two.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(sourcePosts()).toHaveLength(2));
+  });
+  it("does not count a reselected source again, because the server saves it once", async () => {
+    const first = "a".repeat(40000);
+    await uploadFile("one.txt", first);
+    await waitFor(() => expect(sourcePosts()).toHaveLength(1));
+    const input = screen.getByLabelText("Add a text document to this matter") as HTMLInputElement;
+    // Counted twice, the set would be 80,000+ characters and refused before sending.
+    fireEvent.change(input, { target: { files: [new File([first], "one.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(sourcePosts()).toHaveLength(2));
+    expect(screen.queryByRole("alert")).toBeNull();
+    // The duplicate did not consume room: a second document that fits alongside the first is still accepted.
+    const room = ASSESSMENT_SOURCE_SET_MAX_CHARS - sourceSetEntryLength("one.txt", first) - sourceSetEntryLength("two.txt", "") - 2;
+    fireEvent.change(input, { target: { files: [new File(["b".repeat(room)], "two.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(sourcePosts()).toHaveLength(3));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

@@ -57,11 +57,10 @@ as $$
 declare
   r record;
   lo text := 'free_res_' || p_uid || '_';
-  hi text := 'free_res_' || p_uid || '`';
 begin
   for r in
     select uid from public.free_usage
-     where uid >= lo and uid < hi
+     where left(uid, length(lo)) = lo
        and length(uid) = length(lo) + 32
        and uid <> p_own_marker
        and email like 'reservation:reserved%'

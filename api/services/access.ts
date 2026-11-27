@@ -857,7 +857,7 @@ async function sendTrustGrantNotificationEmail(
     });
     return true;
   } catch (mailErr) {
-    console.error("[trust-grant email] send failed", mailErr);
+    console.error("[trust-grant email] send failed", JSON.stringify({ errorName: mailErr instanceof Error ? mailErr.name : "unknown", code: (mailErr as { code?: unknown } | null)?.code ?? null })); // SMTP errors can carry recipient addresses
     return false;
   }
 }
@@ -987,7 +987,7 @@ async function sendAccessCodeEmail(email: string, tier: Tier, code: string, refe
     });
     return true;
   } catch (mailErr) {
-    console.error("[access-code email] send failed", mailErr);
+    console.error("[access-code email] send failed", JSON.stringify({ errorName: mailErr instanceof Error ? mailErr.name : "unknown", code: (mailErr as { code?: unknown } | null)?.code ?? null })); // SMTP errors can carry recipient addresses
     return false;
   }
 }

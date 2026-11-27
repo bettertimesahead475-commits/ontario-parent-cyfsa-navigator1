@@ -1,0 +1,25 @@
+{
+  "source": "Cloudflare API (read-only), account 6dea4d69ac820b3b1736b302971190df, 2026-11-27, GET /queues, /queues/{id}/consumers, /workers/scripts/{name}/settings, /pages/projects/cyfsa-navigator-git-staging. Binding names only; no secret values.",
+  "queues": {
+    "cyfsa-staging-analyzer-jobs": {
+      "consumer": { "script": "cyfsa-staging-analyzer-queue-consumer", "batch_size": 1, "max_retries": 5, "max_wait_time_ms": 1000, "max_concurrency": 2, "retry_delay": 20, "dead_letter_queue": "cyfsa-staging-analyzer-dead-letter" }
+    },
+    "cyfsa-staging-analyzer-dead-letter": {
+      "consumer": { "script": "cyfsa-staging-analyzer-queue-consumer", "batch_size": 1, "max_retries": 5, "max_wait_time_ms": 1000, "max_concurrency": 1, "retry_delay": 60 }
+    },
+    "cyfsa-analyzer-jobs": { "consumer": null },
+    "cyfsa-analyzer-dead-letter": { "consumer": null }
+  },
+  "workers": {
+    "cyfsa-staging-analyzer-queue-consumer": { "role": "relay (wrangler.analyzer-queue-staging.jsonc)", "limits": null, "service_binding": "ANALYZER_EXECUTOR" },
+    "cyfsa-analyzer-queue-consumer": { "role": "executor (wrangler.staging-job-service.jsonc)", "limits": null, "ANALYZER_ENABLED": "true", "requeue": "cyfsa-staging-analyzer-jobs" },
+    "cyfsa-production-analyzer-queue-consumer": { "role": "production consumer (wrangler.production-analyzer-queue-consumer.jsonc)", "limits": null, "ANALYZER_ENABLED": "false", "attached_consumer": false }
+  },
+  "pages": {
+    "project": "cyfsa-navigator-git-staging",
+    "production_branch": "migration/cloudflare-staging-20261029",
+    "production_deployment": { "id": "0cc59589-2be1-43d9-b41f-ff0c0c048792", "commit": "82dfe65e80f48d6085e2e73a6ed48afb0f7db63d", "created": "2026-11-27T03:27:30Z" },
+    "production_queue_producer": { "ANALYZER_JOBS_QUEUE": "cyfsa-staging-analyzer-jobs" },
+    "preview_queue_producer": { "ANALYZER_JOBS_QUEUE": "cyfsa-staging-analyzer-jobs" }
+  }
+}

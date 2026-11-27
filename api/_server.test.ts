@@ -1437,6 +1437,19 @@ describe("POST /api/lawyer-intake", () => {
     expect(res.status).toBe(400);
   });
 
+  it("never logs the parent's name, email, city or details", async () => {
+    const spies = (["log", "info", "warn", "error"] as const).map((m) => vi.spyOn(console, m).mockImplementation(() => {}));
+    try {
+      const res = await request(app).post("/api/lawyer-intake").send(validBody);
+      expect(res.status).toBe(200);
+      const logged = spies.flatMap((s) => s.mock.calls).map((c) => c.map((a) => typeof a === "string" ? a : JSON.stringify(a)).join(" ")).join("\n");
+      expect(logged).toContain("[lawyer-intake]");
+      for (const pii of [validBody.parentName, validBody.email, validBody.city, validBody.details]) expect(logged).not.toContain(pii);
+    } finally {
+      spies.forEach((s) => s.mockRestore());
+    }
+  });
+
   it("records the intake without claiming an email was sent when SMTP isn't configured", async () => {
     const res = await request(app).post("/api/lawyer-intake").send(validBody);
     expect(res.status).toBe(200);

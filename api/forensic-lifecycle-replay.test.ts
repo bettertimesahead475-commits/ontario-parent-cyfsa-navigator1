@@ -10,6 +10,7 @@
 // Storage write ("typical"), and 2 s / 4 s ("slow tail"). Worker startup: 1 s. Real deadlines checked: the 178 s AI
 // deadline, the handler's hard deadline (budget + 5 s from the start of the analysis), the 240 s claim lease renewed
 // to 4 min by each running write, and the 15-minute Queue consumer wall-time limit (Cloudflare Workers limits).
+import { JOB_LEASE_SECONDS, WORKER_WALL_MS } from '../shared/analyzerDeadlines';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const H = vi.hoisted(() => ({
@@ -100,7 +101,7 @@ const PRODUCTION_MS: Record<string, number> = {
   'section:guidance': 57_800, 'section:timeline': 45_300, 'section:overview': 36_700, forensic_verification: 30_000,
 };
 const scaled = (f: number, only?: string) => Object.fromEntries(Object.entries(PRODUCTION_MS).map(([k, v]) => [k, !only || k === only ? v * f : v]));
-const QUEUE_WALL_MS = 15 * 60_000, LEASE_MS = 240_000;
+const QUEUE_WALL_MS = WORKER_WALL_MS, LEASE_MS = JOB_LEASE_SECONDS * 1000;
 const env = { ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'synthetic-project', STAGING_SUPABASE_URL: 'https://synthetic.supabase.co', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'synthetic-service', ANTHROPIC_API_KEY: 'synthetic-anthropic' };
 
 export async function lifecycle(durations: Record<string, number>, o: { rpcMs?: number; storageMs?: number; jitter?: number; seed?: number; failFirst?: string[] } = {}) {

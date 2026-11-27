@@ -67,7 +67,7 @@ export async function claimJobRecord(
   jobId: string,
   uid: string,
   fetcher: typeof fetch = fetch,
-): Promise<'claimed' | 'conflict' | 'unavailable'> {
+): Promise<'created' | 'claimed' | 'conflict' | 'unavailable'> {
   const key = normalizeSupabaseKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
   if (!env.STAGING_SUPABASE_URL || !key) return 'unavailable';
   try {
@@ -78,7 +78,8 @@ export async function claimJobRecord(
       redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
-    if (res.ok) return 'claimed';
+    // A fresh create: no earlier record existed, so only this request has written to it.
+    if (res.ok) return 'created';
     // Supabase Storage reports "already exists" as 409, or as 400 with statusCode "409" in the body.
     const body = await res.json().catch(() => null) as { statusCode?: unknown } | null;
     if (res.status !== 409 && String(body?.statusCode) !== '409') return 'unavailable';

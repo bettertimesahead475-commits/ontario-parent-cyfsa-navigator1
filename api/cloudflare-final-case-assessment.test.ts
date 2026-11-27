@@ -38,6 +38,8 @@ function fixture() {
       const key = url.pathname.replace('/authenticated/', '/');
       if (init?.method === 'POST') {
         if (failSave) return new Response('', { status: 503 });
+        // Supabase Storage refuses an existing object without x-upsert as HTTP 400 with statusCode "409".
+        if (key.includes('/assessment_sources/') && store.has(key) && (init.headers as Record<string, string>)?.['x-upsert'] === 'false') return Response.json({ statusCode: '409', error: 'Duplicate', message: 'The resource already exists' }, { status: 400 });
         store.set(key, JSON.parse(String(init.body))); return Response.json({});
       }
       if (store.has(key)) return Response.json(store.get(key));
@@ -114,6 +116,12 @@ describe('parent Final Case Assessment Cloudflare route', () => {
     const response = await handleAssessment(request, env, { fetcher: f.fetcher, rpc: f.rpc, generate: f.generate, authenticate: f.authenticate });
     expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ saved: true }); expect(f.rpc).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
     expect([...f.store.values()].some(v => v.uid === 'parent' && v.matterId === matter && v.source?.document === 'synthetic.txt')).toBe(true);
+  });
+  it('reports a reselected source as reused when storage returns its duplicate as 400 with statusCode 409', async () => {
+    const f = fixture();
+    const send = () => handleAssessment(new Request(f.request().url + '&action=source', { method: 'POST', headers: f.request().headers, body: JSON.stringify({ filename: 'synthetic.txt', text: 'Fictional source document.' }) }), env, { fetcher: f.fetcher, rpc: f.rpc, generate: f.generate, authenticate: f.authenticate });
+    const first = await send(); expect(first.status).toBe(200); expect(await first.json()).toMatchObject({ saved: true, reused: false });
+    const second = await send(); expect(second.status).toBe(200); expect(await second.json()).toMatchObject({ saved: true, reused: true });
   });
   it('denies a source write to another account matter', async () => {
     const f = fixture(); f.foreign(); const request = new Request(f.request().url + '&action=source', { method: 'POST', headers: f.request().headers, body: JSON.stringify({ filename: 'synthetic.txt', text: 'Fictional source.' }) });
