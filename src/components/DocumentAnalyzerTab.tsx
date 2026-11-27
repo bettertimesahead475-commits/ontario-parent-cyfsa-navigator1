@@ -3437,7 +3437,7 @@ export default function DocumentAnalyzerTab() {
             </div>
               
               {customUploadError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-sans leading-normal flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div role="alert" className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-sans leading-normal flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div className="flex gap-1.5 items-start">
                     <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
                     <span>{customUploadError}</span>
