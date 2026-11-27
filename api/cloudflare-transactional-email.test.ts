@@ -154,6 +154,14 @@ describe('outbox enqueue', () => {
     expect(init.headers.Prefer).toContain('resolution=ignore-duplicates');
   });
 
+  it('does not queue a recipient outside the testing allowlist, so the caller reports "not queued"', async () => {
+    const db = fakeDb();
+    const env = { ...ON, TRANSACTIONAL_EMAIL_ALLOWLIST: '@synthetic.test' };
+    expect(await enqueueTransactionalEmail(env, { kind: 'access_code', dedupeKey: 'PS-1', reference: 'PS-1', email: 'real.customer@gmail.com', data: {}, accessCode: 'ABCD-EFGH-JKMN' }, db.fetcher)).toBe(false);
+    expect(await enqueueTransactionalEmail(env, { kind: 'access_code', dedupeKey: 'PS-2', reference: 'PS-2', email: 'qa@synthetic.test', data: {}, accessCode: 'ABCD-EFGH-JKMN' }, db.fetcher)).toBe(true);
+    expect(db.tables.transactional_email_outbox.map((r) => r.recipient_email)).toEqual(['qa@synthetic.test']);
+  });
+
   it('never throws: a database failure or a missing key only returns false', async () => {
     const down = vi.fn(async () => { throw new Error('network'); });
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -278,6 +286,14 @@ describe('outbox processing', () => {
     expect(await processOutbox(ON, mailer, db.fetcher, NOW)).toMatchObject({ sent: 1, skipped: 2 });
     expect(sent.map((m) => m.subject)).toEqual(['Refund recorded for order PS-1']);
     expect(db.mock.mock.calls.filter(([u]) => String(u).includes('/storage/v1/object/list/'))).toHaveLength(1);
+  });
+
+  it('drops a reminder whose end date has passed by the time it is processed', async () => {
+    const db = fakeDb({ navigator_paid_sessions: [{ id: 's1', email: 'a@example.test', tier: 'Pro', expires_at: '2026-11-30T00:00:00.000Z', revoked_at: null }] });
+    await enqueueRenewalReminders(ON, db.fetcher, NOW);
+    const { mailer, sent } = fakeMailer();
+    expect(await processOutbox(ON, mailer, db.fetcher, new Date('2026-12-01T00:00:00Z'))).toMatchObject({ skipped: 1, sent: 0 });
+    expect(sent).toHaveLength(0);
   });
 
   it('a failed state check is retried later, not sent', async () => {
