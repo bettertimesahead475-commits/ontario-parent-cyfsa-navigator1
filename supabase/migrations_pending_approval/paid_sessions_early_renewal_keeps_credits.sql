@@ -239,9 +239,34 @@ alter table public.navigator_paid_session_refunds enable row level security;
 revoke all on table public.navigator_paid_session_refunds from public, anon, authenticated;
 grant select, insert on table public.navigator_paid_session_refunds to service_role;
 
+create or replace function public.guard_stacked_paid_session_reduction()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if current_setting('navigator.e_pack_refund', true) is distinct from 'on' then
+    raise exception 'Stacked paid session reductions require paid_refund_one_off_pack'
+      using errcode = '23514';
+  end if;
+  return new;
+end
+$$;
+revoke all on function public.guard_stacked_paid_session_reduction() from public, anon, authenticated;
+
+drop trigger if exists guard_stacked_paid_session_reduction on public.navigator_paid_sessions;
+create trigger guard_stacked_paid_session_reduction
+before update of expires_at, granted_credits on public.navigator_paid_sessions
+for each row
+when (old.granted_credits is not null and (
+  new.expires_at < old.expires_at or new.granted_credits is null or new.granted_credits < old.granted_credits
+))
+execute function public.guard_stacked_paid_session_reduction();
+
 create or replace function public.paid_refund_one_off_pack(p_session uuid, p_refund_key text, p_days integer)
 returns jsonb
 language plpgsql
+set navigator.e_pack_refund = 'off'
 as $$
 declare
   v_s public.navigator_paid_sessions%rowtype;
@@ -286,6 +311,7 @@ begin
   -- after a refund raises the allowance without new usage).
   select coalesce(sum(used_beyond_remaining), 0) into v_reported from public.navigator_paid_session_refunds where session_id = p_session;
   v_over := greatest(greatest(v_used - v_after, 0) - greatest(greatest(v_used - v_before, 0), v_reported), 0);
+  perform set_config('navigator.e_pack_refund', 'on', true);
   update public.navigator_paid_sessions
     set granted_credits = case when v_after > v_pack then v_after else null end,
         expires_at = expires_at - make_interval(days => p_days)
@@ -299,4 +325,46 @@ end
 $$;
 revoke all on function public.paid_refund_one_off_pack(uuid, text, integer) from public, anon, authenticated;
 grant execute on function public.paid_refund_one_off_pack(uuid, text, integer) to service_role;
+
+drop function if exists public.paid_restore_credits(uuid, text, integer);
+create or replace function public.paid_restore_credits(p_session uuid, p_scope text, p_credits integer, p_expected_used integer)
+returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_prefix text := 'paid_res_' || p_session::text || '_';
+  v_counter text;
+  v_used integer;
+  v_next integer;
+begin
+  if p_session is null or p_credits is null or p_credits not between 1 and 25
+     or p_expected_used is null or p_expected_used < 0
+     or p_scope is null or (p_scope <> 'total' and p_scope !~ '^period:[0-9]{4}-[0-9]{2}-[0-9]{2}$') then
+    raise exception 'paid_restore_credits: invalid session, scope or credit count' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_session::text, 0));
+  if not exists (select 1 from public.navigator_paid_sessions where id = p_session) then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+  if exists (select 1 from public.free_usage
+    where left(uid, length(v_prefix)) = v_prefix and email like 'reservation:reserved%') then
+    return jsonb_build_object('status', 'reservation_pending');
+  end if;
+
+  v_counter := public.paid_counter_for_state(p_session::text, public.paid_state_for_scope(p_scope));
+  select analyses_used into v_used from public.free_usage where uid = v_counter for update;
+  if coalesce(v_used, 0) <> p_expected_used then
+    return jsonb_build_object('status', 'concurrent_update');
+  end if;
+  if coalesce(v_used, 0) <= 0 then
+    return jsonb_build_object('status', 'nothing_to_restore');
+  end if;
+  v_next := greatest(0, v_used - p_credits);
+  update public.free_usage set analyses_used = v_next where uid = v_counter;
+  return jsonb_build_object('status', 'restored', 'used_before', v_used, 'used_after', v_next);
+end
+$$;
+revoke all on function public.paid_restore_credits(uuid, text, integer, integer) from public, anon, authenticated;
+grant execute on function public.paid_restore_credits(uuid, text, integer, integer) to service_role;
 commit;

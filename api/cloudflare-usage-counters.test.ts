@@ -49,6 +49,17 @@ describe("GET /api/analyzer-usage reads the counters reservation enforces", () =
     expect(await (await get({ "x-ps-session": id })).json()).toMatchObject({ type: "paid", tier: "Premium", creditsLimit: 5, creditsRemaining: 1, forensicAnalysesRemaining: 1 });
   });
 
+  it("reports the stacked one-time allowance to both Quick and Forensic", async () => {
+    verify.mockResolvedValue({ status: "verified", uid: "u", email: null, emailVerified: false });
+    const id = "11111111-1111-4111-8111-111111111111";
+    readSession.mockResolvedValue({ status: "verified", session: { sessionId: id, tier: "Premium", ownerUid: "u", grantedCredits: 10 } });
+    vi.stubGlobal("fetch", counters({ [`paid_session_${id}_total`]: 4 }));
+    expect(await (await get({ "x-ps-session": id })).json()).toMatchObject({
+      creditsLimit: 10, creditsRemaining: 6, quickReviewsLimit: 10, quickReviewsRemaining: 6,
+      forensicAnalysesLimit: 10, forensicAnalysesRemaining: 6,
+    });
+  });
+
   it("monthly tier: Forensic period counter; Quick Reviews uncounted", async () => {
     verify.mockResolvedValue({ status: "verified", uid: "u", email: null, emailVerified: false });
     const id = "22222222-2222-4222-8222-222222222222";

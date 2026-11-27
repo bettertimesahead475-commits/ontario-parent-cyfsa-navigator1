@@ -22,6 +22,7 @@ export async function readVerifiedPaidSession(
   firebaseUid: string,
   sessionId: string,
   fetcher: typeof fetch = fetch,
+  { includeGrantedCredits = false }: { includeGrantedCredits?: boolean } = {},
 ): Promise<SessionReadResult> {
   if (!firebaseUid || !sessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return { status: 'denied' };
   // navigator_paid_sessions has RLS with zero policies and grants SELECT only to service_role
@@ -36,10 +37,11 @@ export async function readVerifiedPaidSession(
     return { status: 'unavailable' };
   }
   let url: URL;
+  const columns = 'id,firebase_uid,tier,issued_at,expires_at,revoked_at';
   try {
     url = new URL('/rest/v1/navigator_paid_sessions', env.STAGING_SUPABASE_URL);
     if (url.protocol !== 'https:') return { status: 'unavailable' };
-    url.searchParams.set('select', 'id,firebase_uid,tier,issued_at,expires_at,revoked_at');
+    url.searchParams.set('select', includeGrantedCredits ? columns + ',granted_credits' : columns);
     url.searchParams.set('id', 'eq.' + sessionId);
     url.searchParams.set('firebase_uid', 'eq.' + firebaseUid);
     url.searchParams.set('limit', '1');
@@ -51,7 +53,7 @@ export async function readVerifiedPaidSession(
     // The service-role key uses exactly the header pair the working credit RPC transport sends
     // (_staging-credit-rpc.ts). Only the legacy read-key fallback omits Bearer for opaque keys.
     const sendBearer = Boolean(serviceKey) || !opaqueKey;
-    const response = await fetcher(url.toString(), {
+    const options: RequestInit = {
       method: 'GET',
       headers: {
         apikey: readKey,
@@ -60,19 +62,26 @@ export async function readVerifiedPaidSession(
       },
       redirect: 'manual',
       signal: AbortSignal.timeout(5000),
-    });
+    };
+    const rejectionCode = async (response: Response) => {
+      const error = response.headers.get('content-type')?.split(';')[0] === 'application/json'
+        ? await response.json().catch(() => null) as { code?: unknown } | null : null;
+      return typeof error?.code === 'string' && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code) ? error.code : null;
+    };
+    let response = await fetcher(url.toString(), options);
+    let code = response.ok ? null : await rejectionCode(response);
+    if (!response.ok && includeGrantedCredits && (code === '42703' || code === 'PGRST204')) {
+      url.searchParams.set('select', columns);
+      response = await fetcher(url.toString(), options);
+      code = response.ok ? null : await rejectionCode(response);
+    }
     if (!response.ok) {
-      const contentType = response.headers.get('content-type')?.split(';')[0];
-      const error = contentType === 'application/json'
-        ? await response.json().catch(() => null) as { code?: unknown } | null
-        : null;
-      const code = typeof error?.code === 'string' && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code) ? error.code : null;
       console.warn('[paid_session_read] upstream rejected request', {
         status: response.status,
         credential: serviceKey ? 'service_role' : 'read_key',
         keyFormat: opaqueKey ? 'opaque' : readKey.split('.').length === 3 ? 'jwt-shaped' : 'unrecognized',
         code,
-        json: contentType === 'application/json',
+        json: response.headers.get('content-type')?.split(';')[0] === 'application/json',
         supabaseRequestIdPresent: response.headers.has('sb-request-id'),
       });
       return { status: 'unavailable' };
