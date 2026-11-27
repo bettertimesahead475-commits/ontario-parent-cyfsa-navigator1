@@ -1,16 +1,16 @@
 // Reproduction evidence for the renderer-level redaction: renders a synthetic, UNREDACTED report with
 // redactionEnabled, prints it to PDF with headless Chrome, and checks the PDF's extracted text and metadata.
-// Usage: npx tsx scripts/verify-redacted-forensic-pdf.ts   (writes to <tmpdir>/cyfsa-redacted-forensic-pdf; needs Chrome)
+// Usage: npx tsx scripts/verify-redacted-forensic-pdf.ts   (writes to a new <tmpdir>/cyfsa-redacted-forensic-pdf-XXXXXX; needs Chrome)
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PDFParse } from "pdf-parse";
 import { renderForensicReportHtml } from "../src/utils/forensicPdfRenderer";
 
 // Fixed locations only: no path or binary comes from arguments or PATH lookup.
-const out = join(tmpdir(), "cyfsa-redacted-forensic-pdf");
-mkdirSync(out, { recursive: true });
+// A fresh owner-only (0700) directory, so nothing pre-created in a shared tmpdir can be followed or overwritten.
+const out = mkdtempSync(join(tmpdir(), "cyfsa-redacted-forensic-pdf-"));
 const CFT_ROOT = "/opt/.devin/chrome/chrome";
 const chromeCandidates = [
   ...(existsSync(CFT_ROOT) ? readdirSync(CFT_ROOT).sort().reverse().map((d) => join(CFT_ROOT, d, "chrome-linux64", "chrome")) : []),
