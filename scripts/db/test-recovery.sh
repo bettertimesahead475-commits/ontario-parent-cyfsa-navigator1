@@ -16,6 +16,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+python3 - "$work" <<'PY'
+from pathlib import Path
+from runpy import run_path
+import sys
+
+schema_digest = run_path("scripts/db/recovery.py")["schema_digest"]
+schema = Path(sys.argv[1]) / "schema-test.sql"
+header = "-- PostgreSQL database dump\n-- Dumped from database version {}\n-- Dumped by pg_dump version {}\n"
+body = "SET statement_timeout = 0;\nCREATE TABLE test (id int);\n-- Dumped from database version function body\n"
+schema.write_text(header.format("17.11", "17.11") + body)
+expected = schema_digest(schema)
+schema.write_text(header.format("17.12", "17.12") + body)
+assert schema_digest(schema) == expected
+schema.write_text(header.format("17.12", "17.12") + body.replace("int", "text"))
+assert schema_digest(schema) != expected
+schema.write_text(header.format("17.12", "17.12") + body.replace("function body", "changed body"))
+assert schema_digest(schema) != expected
+print("PASS: schema fingerprint ignores patch-version headers, not SQL body changes")
+PY
+
 mkdir "$work/bin" "$work/gnupg"
 export GNUPGHOME="$work/gnupg"
 export PATH="$work/bin:$PATH"

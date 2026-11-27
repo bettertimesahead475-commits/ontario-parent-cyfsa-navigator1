@@ -68,6 +68,19 @@ def digest(path):
     return hasher.hexdigest()
 
 
+def schema_digest(path):
+    hasher = hashlib.sha256()
+    versions = (b"-- Dumped from database version ", b"-- Dumped by pg_dump version ")
+    header = True
+    with path.open("rb") as data:
+        for line in data:
+            if line.startswith(b"SET "):
+                header = False
+            if not header or not line.startswith(versions):
+                hasher.update(line)
+    return hasher.hexdigest()
+
+
 def connection(args):
     env = dict(os.environ)
     for key in ("PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE", "PGSYSCONFDIR", "PGOPTIONS"):
@@ -207,6 +220,7 @@ def backup(args, env, server, directory):
         "restrict_key": restrict_key,
         "completed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "sha256": {name: digest(directory / name) for name in FILES[:3]},
+        "schema_sha256": schema_digest(directory / FILES[1]),
     })
     plain = directory / "bundle.zip"
     with zipfile.ZipFile(plain, "w") as bundle:
@@ -261,9 +275,9 @@ def restore(args, env, directory):
     expected = json.loads((directory / FILES[2]).read_text())
     with snapshot(env) as token:
         require(table_fingerprints(env, schemas, token) == expected, "Restored table or sequence fingerprints differ.")
-        expected_schema = digest(directory / FILES[1])
+        expected_schema = manifest.get("schema_sha256") or schema_digest(directory / FILES[1])
         dump(env, schemas, token, directory, restrict_key, include_data=False)
-        require(digest(directory / FILES[1]) == expected_schema, "Restored schema SQL differs.")
+        require(schema_digest(directory / FILES[1]) == expected_schema, "Restored schema SQL differs.")
     print("Scratch restore verified: schema SQL, per-table counts and SHA-256, sequence states.")
 
 
