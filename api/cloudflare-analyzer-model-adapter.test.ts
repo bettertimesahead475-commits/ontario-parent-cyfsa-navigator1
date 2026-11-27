@@ -394,4 +394,26 @@ describe('Cloudflare Anthropic Model Adapter', () => {
       mode: 'full',
     }, 'claude-opus-5')).rejects.toMatchObject({ code: 'AI_RESPONSE_INVALID' });
   });
+
+  it('rejects a message_stop event missing its terminating blank line', async () => {
+    const payload = [
+      'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n',
+    ].join('');
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(payload, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    await expect(generate({
+      system: 'sys',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      max_tokens: 100,
+      timeoutMs: 5000,
+      retries: 0,
+      requestId: 'req_unterminated_stop',
+      stage: 'redFlags',
+      mode: 'full',
+    }, 'claude-opus-5')).rejects.toMatchObject({ code: 'AI_RESPONSE_INVALID' });
+  });
 });

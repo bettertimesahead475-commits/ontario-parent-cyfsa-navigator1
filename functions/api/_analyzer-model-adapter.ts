@@ -158,6 +158,7 @@ export function createCloudflareGenerateFn(
           let streamBuf = '';
           let currentEventType = '';
           let currentEventChars = 0;
+          let pendingMessageStop = false;
           let receivedMessageStop = false;
 
           try {
@@ -177,6 +178,10 @@ export function createCloudflareGenerateFn(
               if (lineEnd === lineStart) {
                 currentEventType = '';
                 currentEventChars = 0;
+                if (pendingMessageStop) {
+                  receivedMessageStop = true;
+                  break;
+                }
               } else {
                 currentEventChars += rawLen;
                 if (currentEventChars > MAX_SSE_EVENT_CHARS) {
@@ -221,9 +226,8 @@ export function createCloudflareGenerateFn(
                       const dataStr = streamBuf.slice(ds, lineEnd);
                       if (dataStr !== '[DONE]') {
                         if (dataStr === '{"type":"message_stop"}') {
-                          receivedMessageStop = true;
-                          break;
-                        }
+                          pendingMessageStop = true;
+                        } else {
                         // Skip JSON.parse for high-volume thinking/signature deltas on Opus/Sonnet.
                         const skippableDelta =
                           isJsonObject &&
@@ -239,8 +243,7 @@ export function createCloudflareGenerateFn(
                             } else if (evt.type === 'error') {
                               throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI provider interrupted the analysis. Nothing was charged.', true);
                             } else if (evt.type === 'message_stop') {
-                              receivedMessageStop = true;
-                              break;
+                              pendingMessageStop = true;
                             } else if (evt.type === 'message_delta') {
                               if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason;
                               if (evt.usage?.output_tokens) outputTokens = evt.usage.output_tokens;
@@ -249,6 +252,7 @@ export function createCloudflareGenerateFn(
                             if (parseError instanceof AnalyzerError) throw parseError;
                             throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an invalid streaming event. Nothing was charged.', true);
                           }
+                        }
                         }
                       }
                     }
