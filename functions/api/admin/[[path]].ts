@@ -523,6 +523,16 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
         ? 'Approved. The customer already activated this order from their account, so no code needs to be sent.'
         : 'Approved, but the activation check failed, so this code was withheld to avoid giving access twice. Use "Reissue code" to send the customer a code.' });
   }
+  // A refund that read the order before this approval leaves the order approved and expires only the codes that existed
+  // then. The refund writes its record first, so checking after the insert closes the race; unreadable history fails closed.
+  const settled = await settlementOf(env, reference, fetcher).catch(() => null);
+  if (settled === 'refunded' || settled === null) {
+    await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
+    await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeWithheld: settled === 'refunded' ? 'refunded' : 'refund-history-unreadable' }, fetcher);
+    return settled === 'refunded'
+      ? adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded while it was being approved. No code was issued.')
+      : adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund history could not be read, so the code was withheld. Use "Reissue code" once it is readable.');
+  }
   const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeExpiresAt: issued.expiresAt }, fetcher);
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt, auditRecorded: audited,
     note: 'Send this code to the customer now. It is shown once and only its hash is stored.' });
