@@ -4,8 +4,8 @@ Branch `release/rc-20261127`, built on `engineering/integration` (`679b7f6`). No
 Production stays `0cc59589` / `82dfe65` (rollback `4c902955` / `b9617a8`) until the owner approves item 9.
 
 **Status: HOLD (2026-11-27).** Claude's independent qualification of #171 (PR #171 comment 7226489336) lists blockers D-1..D-4: the payment
-routes depend on `access_codes.redeemed_session_id`, which only migration P adds, and P is missing on the operational `nxfh` ledger. The
-RC is not releasable until the disposable-PostgreSQL + PostgREST qualification of P, D and one-activation-per-payment passes (Agent A, in
+routes depend on `access_codes.redeemed_session_id`, which only migration P adds, and P is missing on the operational `nxfh` ledger. #188 (real PostgreSQL + PostgREST, 27 tests, merged) answers D-1..D-4 and is awaiting Claude's review. The
+RC is not releasable until that qualification of P, D and one-activation-per-payment passes (Agent A, in
 progress) and the pre-P payment paths fail closed. E additionally needs an atomic top-up refund that accounts for consumed and reserved credits.
 A/B were applied without the snapshot their approval required (incident: `engineering/incidents/2026-11-27-migrations-a-b-applied-without-snapshot.md`).
 Never run `free_scan_reservation_functions.down.sql` on the operational database; any rollback of A/B needs reviewed saved prior definitions.
@@ -37,10 +37,13 @@ Not yet included: #181 (Migration E, early pack renewal keeps unused credits) un
 Database (target `nxfhvebzzobegubefcda`, the staging-named project that serves production; see the register):
 1. [ ] Ratify or roll back migrations A and B, which were applied to live on 2026-11-27 16:32–16:33 UTC without confirmed authorization.
 2. [ ] Take a backup / confirm PITR before any further migration.
+2a. [ ] Apply **G** (`payments_service_role_review_update.sql`: `grant update (status, approved_at) on payments to service_role`).
+       Live `service_role` has no UPDATE on `payments`, so admin approve and cancel of e-Transfer orders fail (502) on production
+       `82dfe65` today, and no access code is issued. Found read-only by #188; fixes the live site with no deploy.
 3. [ ] Apply **P** (`20261110004740_preserve_monthly_renewal.sql`). Required before deploying this RC, and it also fixes the live
        admin path that queries the missing `access_codes.redeemed_session_id` column.
 4. [ ] Apply **D** after P (one redemption per payment reference).
-5. [ ] Apply **E** after D (early pack renewal keeps unused credits), once #181 is qualified and merged.
+5. [ ] Apply **E** after D (early pack renewal keeps unused credits), once Claude qualifies #181 (`a7584d2`, merged into this RC; atomic refund function).
 6. [ ] Apply **C** (persistent rate limits) with its flag off.
 7. [ ] Apply **F** (transactional email outbox).
 
