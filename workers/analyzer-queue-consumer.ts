@@ -142,6 +142,9 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
     return;
   }
 
+  // Metadata only (no job ID, uid or text): with the outcome lines below, a claim with no outcome identifies a Worker that was stopped.
+  console.info('[ANALYZER_JOB_CLAIMED]', JSON.stringify({ mode: job.mode, jobAttempt: job.attempt_count ?? null, deliveryAttempt: message.attempts, paid: Boolean(job.session_id) }));
+
   try {
     const recoveredReport = await loadPersistedReport(env, job.job_id, fetch, job.owner_uid);
     if (recoveredReport) {
@@ -161,17 +164,27 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
       trustedJob: {
         ...job,
         workerToken: token,
-        onProgress: async (stage, progress, message) => {
-          await persistJobUpdate(env, { jobId: job!.job_id, workerToken: token, status: 'running', stage, progress });
-          void message;
+        // A progress write is a heartbeat. A transient ledger failure must not abandon a healthy run (the
+        // completed write still requires this token); a write that matched no row means the lease is lost.
+        onProgress: async (stage, progress) => {
+          let owned: boolean;
+          try {
+            owned = await updateDurableJob(env, { jobId: job!.job_id, workerToken: token, status: 'running', stage, progress });
+          } catch (error) {
+            console.warn('[ANALYZER_PROGRESS_WRITE_FAILED]', JSON.stringify({ stage, errorClass: error instanceof Error ? error.name : 'unknown', deliveryAttempt: message.attempts }));
+            return;
+          }
+          if (!owned) throw Object.assign(new Error('The analyzer job lease is no longer held by this Worker.'), { retryable: true, code: 'JOB_LEASE_LOST' });
         },
       },
     });
     if (!response.ok) {
       const failure = await errorResponse(response);
       if (failure.retryable) {
+        const delaySeconds = retryDelay(message.attempts);
+        console.warn('[ANALYZER_JOB_RETRY_SCHEDULED]', JSON.stringify({ code: failure.code, httpStatus: response.status, mode: job.mode, jobAttempt: job.attempt_count ?? null, deliveryAttempt: message.attempts, delaySeconds }));
         await persistJobUpdate(env, { jobId: job.job_id, workerToken: token, status: 'queued', errorCode: failure.code, errorMessage: failure.error, retryable: true });
-        message.retry({ delaySeconds: retryDelay(message.attempts) });
+        message.retry({ delaySeconds });
       } else {
         await markPermanentFailure(env, job, token, failure.code, failure.error);
         message.ack();
