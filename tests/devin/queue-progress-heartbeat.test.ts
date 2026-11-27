@@ -98,8 +98,17 @@ describe('queue Worker progress heartbeat', () => {
     analyzerReportingProgress();
     await processJob({ ...message(), attempts: 2 } as any, {} as any);
     const logged = (console.info as any).mock.calls.find((c: unknown[]) => c[0] === '[ANALYZER_JOB_CLAIMED]');
-    expect(JSON.parse(logged[1])).toEqual({ mode: 'full', jobAttempt: 3, deliveryAttempt: 2, paid: false });
+    expect(JSON.parse(logged[1])).toEqual({ mode: 'full', jobAttempt: 3, deliveryAttempt: 2, paid: false, queueAgeSeconds: null });
     expect(logged[1]).not.toContain('user_1');
+    expect(logged[1]).not.toContain(JOB.job_id);
+  });
+  it('logs the queue age (NAV-004) from the durable created_at, still without identifiers', async () => {
+    mocks.claim.mockResolvedValue({ ...JOB, attempt_count: 1, created_at: new Date(Date.now() - 90_000).toISOString() });
+    mocks.update.mockResolvedValue(true);
+    analyzerReportingProgress();
+    await processJob({ ...message(), attempts: 1 } as any, {} as any);
+    const logged = (console.info as any).mock.calls.find((c: unknown[]) => c[0] === '[ANALYZER_JOB_CLAIMED]');
+    expect(JSON.parse(logged[1]).queueAgeSeconds).toBe(90);
     expect(logged[1]).not.toContain(JOB.job_id);
   });
 });
