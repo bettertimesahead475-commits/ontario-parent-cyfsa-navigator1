@@ -89,18 +89,10 @@ begin
     return jsonb_build_object('status', 'consumed', 'code', 'CODE_ALREADY_USED');
   end if;
 
-  if v_row.expires_at is not null and v_row.expires_at <= v_now then
-    return jsonb_build_object('status', 'expired', 'code', 'CODE_EXPIRED');
-  end if;
-
-  if v_row.tier is null or v_row.tier not in
-     ('Basic', 'AnalyzerBasic', 'Premium', 'AnalyzerPremium', 'Pro', 'Community5', 'Community10', 'Community25') then
-    return jsonb_build_object('status', 'denied', 'code', 'TIER_NOT_REDEEMABLE');
-  end if;
-
   -- S-34: one payment reference gives at most one redemption, whichever of its codes is presented (the customer's
   -- self-activation code, the administrator's approval code or a reissued one). Serialised per reference, after the
-  -- code row lock and before the renewal lock (fixed order, no deadlock); the unique index is the backstop.
+  -- code row lock and before the renewal lock (fixed order, no deadlock); the unique index is the backstop. It runs before
+  -- the expiry check so that resending a code this guard already retired still returns the same entitlement.
   v_reference := nullif(upper(btrim(coalesce(v_row.reference_number, ''))), '');
   if v_reference is not null then
     perform pg_advisory_xact_lock(hashtextextended('navigator-reference:' || v_reference, 0));
@@ -109,7 +101,8 @@ begin
       order by used_at, id limit 1;
     if found then
       -- This order is already activated. Retire the presented code so it can never be used later.
-      update public.access_codes set expires_at = v_now where id = v_row.id and used_at is null;
+      update public.access_codes set expires_at = least(coalesce(expires_at, v_now), v_now)
+        where id = v_row.id and used_at is null;
       -- The same account asking again gets the entitlement it already has; never a second one.
       select * into v_existing from public.navigator_paid_sessions
         where (access_code_id = v_other.id or id = v_other.redeemed_session_id) and firebase_uid = p_firebase_uid
@@ -121,6 +114,15 @@ begin
       end if;
       return jsonb_build_object('status', 'consumed', 'code', 'ORDER_ALREADY_ACTIVATED');
     end if;
+  end if;
+
+  if v_row.expires_at is not null and v_row.expires_at <= v_now then
+    return jsonb_build_object('status', 'expired', 'code', 'CODE_EXPIRED');
+  end if;
+
+  if v_row.tier is null or v_row.tier not in
+     ('Basic', 'AnalyzerBasic', 'Premium', 'AnalyzerPremium', 'Pro', 'Community5', 'Community10', 'Community25') then
+    return jsonb_build_object('status', 'denied', 'code', 'TIER_NOT_REDEEMABLE');
   end if;
 
   -- Serialize fresh codes for the same monthly entitlement. Keep its original

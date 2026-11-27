@@ -136,6 +136,8 @@ describe.skipIf(!url)("Migration D: one redemption per payment reference (S-34)"
     expect(await count("select count(*) as n from public.access_codes where reference_number = $1 and used_at is not null", [ref])).toBe(1);
     // The refused codes are retired, so none can be used later.
     expect(await count("select count(*) as n from public.access_codes where reference_number = $1 and used_at is null and expires_at > now()", [ref])).toBe(0);
+    // Resending a retired code later returns the same entitlement again, not CODE_EXPIRED and not a second one.
+    expect(await redeem(db, "uid-r", codes[3], email)).toMatchObject({ status: "reused", session_id: first.session_id });
     const days = (Date.parse(first.expires_at!) - Date.now()) / DAY;
     expect(days).toBeGreaterThan(29.9); expect(days).toBeLessThanOrEqual(30);
   });
@@ -184,6 +186,7 @@ describe.skipIf(!url)("Migration D: one redemption per payment reference (S-34)"
     const ref = "PS-OTHER001";
     await redeem(db, "uid-o1", await issue(ref, "o@example.test"), "o@example.test");
     const second = await issue(ref, "x@example.test");
+    expect(await redeem(db, "uid-o2", second, "x@example.test")).toEqual({ status: "consumed", code: "ORDER_ALREADY_ACTIVATED" });
     expect(await redeem(db, "uid-o2", second, "x@example.test")).toEqual({ status: "consumed", code: "ORDER_ALREADY_ACTIVATED" });
     expect(await count("select count(*) as n from public.navigator_paid_sessions where firebase_uid = 'uid-o2'")).toBe(0);
   });
