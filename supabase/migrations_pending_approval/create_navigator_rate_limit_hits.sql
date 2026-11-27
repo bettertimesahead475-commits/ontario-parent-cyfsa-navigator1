@@ -1,4 +1,5 @@
--- PENDING APPROVAL: do not execute automatically, including on the disposable DB. (T-05 / SEC-3 / S-05)
+-- PENDING APPROVAL: do not apply to any Supabase project without written owner approval. (T-05 / SEC-3 / S-05)
+-- The only automatic execution is tests/devin/rate-limit-migration.pg.test.ts on the disposable CI PostgreSQL.
 -- Cross-isolate rate limiting. One row per hashed subject and fixed window. key_hash is SHA-256 of
 -- "bucket:subject" computed in the Pages Function (functions/api/_persistent-rate-limit.ts), so no uid, email or
 -- IP address is stored. Only service_role may call the function; the table is closed to anon/authenticated.
