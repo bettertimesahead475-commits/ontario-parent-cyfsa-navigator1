@@ -466,12 +466,16 @@ export async function restoreSession(sessionId: string): Promise<void> {
       suspended_reason: null,
     })
     .eq("id", sessionId);
+  // 42703 (column does not exist) is the legacy schema, where suspension lives only in the marker below. Any other
+  // error leaves is_suspended true, which the admin console reads, so restoration is not reported.
+  if (error && error.code !== "42703") {
+    throw Object.assign(new Error("The session record could not be updated; the session is still suspended."), { statusCode: 503 });
+  }
 
   // The marker is removed even when the column update worked: a marker left from an earlier fallback suspension
   // would keep the session suspended while this call reported success.
   const { error: markerError } = await db.from("free_usage").delete().eq("uid", `suspended_${sessionId}`);
   if (markerError) throw Object.assign(new Error("The suspension marker could not be removed; the session is still suspended."), { statusCode: 503 });
-  void error;
 
   // Success is reported only when the state the reservation path reads is no longer suspended.
   const session = await readSession(sessionId);
