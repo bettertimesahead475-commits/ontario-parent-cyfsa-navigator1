@@ -494,6 +494,8 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   const { email } = parsePaymentNotes(payment.notes);
   if (!email || !LIMITS[String(payment.plan)]) return adminError('PAYMENT_INCOMPLETE', 422, 'This payment request has no customer email or a package that cannot be activated.');
 
+  // A refund recorded for this order (for example one interrupted before it could cancel it) is final.
+  if (await settlementOf(env, reference, fetcher) === 'refunded') return adminError('PAYMENT_REFUNDED', 409, 'This order was refunded. No code was issued.');
   const usedBefore = await usedCodeIds(env, reference, fetcher);
   // Compare-and-set on this exact row: only one approval can move it out of 'pending', so a code is never issued twice.
   const claimed = await rest<Payment[]>(env, `payments?${paymentFilter(payment)}&status=eq.pending`, {
@@ -510,6 +512,15 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
     await rest(env, `payments?${paymentFilter(payment)}&status=eq.approved`, { method: 'PATCH', body: { status: 'pending', approved_at: null }, prefer: 'return=minimal' }, fetcher)
       .catch(() => console.error('[ADMIN_APPROVE_ROLLBACK_FAILED]', JSON.stringify({ reference })));
     throw error;
+  }
+  // A refund recorded while this code was being issued may have retired the unused codes before it was inserted. The
+  // refund writes its record first, so checking after the insert closes the race; unreadable history fails closed.
+  const settled = await settlementOf(env, reference, fetcher).catch(() => null);
+  if (settled === 'refunded' || settled === null) {
+    await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
+    return settled === 'refunded'
+      ? adminError('PAYMENT_REFUNDED', 409, 'This order was refunded while it was being approved. The code was cancelled.')
+      : adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund history could not be read, so the code was cancelled. Use "Reissue code" once it can be read.');
   }
   // A customer can self-activate the moment the status flips (claim-purchase); if that happened before this code was
   // inserted, the claim's cleanup missed it, so retire it here. Either order leaves at most one redeemable code.
