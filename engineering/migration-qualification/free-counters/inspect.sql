@@ -28,7 +28,7 @@ SELECT p.oid::regprocedure AS signature, md5(p.prosrc) AS body_md5, p.prosecdef,
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public' AND p.proname IN
   ('free_marker_uid', 'free_release_marker', 'free_reconcile', 'free_reserve_scan',
-   'free_finalize_scan', 'free_release_scan', 'paid_reconcile')
+   'free_finalize_scan', 'free_release_scan', 'free_queue_settlement_key', 'paid_reconcile')
 ORDER BY 1;
 
 SELECT rolname, rolbypassrls, has_table_privilege(rolname, 'public.free_usage', 'SELECT') AS counter_read,

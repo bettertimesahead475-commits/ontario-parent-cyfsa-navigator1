@@ -4,7 +4,7 @@ set -euo pipefail
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
 applied=067446ab96027f9fc09a606af213e236c4ff5a13
-candidate=12d79e04d91006ea49fbfe748c3d6a7af5b5836f
+candidate=71f5b6811d1c6e465286cc2836453a2c1b52a12d
 pending=supabase/migrations_pending_approval
 pgbin=$(pg_config --bindir)
 port=${FREE_COUNTER_TEST_PORT:-54329}
@@ -50,6 +50,7 @@ extract "$applied" free_scan_reservation_functions A
 extract "$applied" reconcile_skip_live_analyzer_jobs B
 extract "$candidate" free_scan_reservation_functions candidate-A
 sha256sum "$scratch/"{A,B,candidate-A}.sql
+sha256sum "$here/"{apply-a-if-absent,free-queue-settlement-compat}.sql
 printf '%s  %s\n' \
   89d5e381e00800e1b654130ec32a55b22de1df691f8c40b0d9fd955e619f6e9b "$scratch/A.sql" \
   9c12c84701f22b169329ea6fa2eb3ad21c81f283108de5a8e3e2bf24c504c763 "$scratch/B.sql" \
@@ -155,6 +156,58 @@ run -f "$here/queue-guard.sql"
 echo 'PASS: forward repair reapplies B; no post-backup rows overwritten'
 
 run -f "$here/compatibility.sql"
+finalizer='public.free_finalize_scan(text,text,timestamptz)'
+releaser='public.free_release_scan(text,text,text,timestamptz)'
+{
+  printf 'BEGIN;\n'
+  scalar "SELECT pg_get_functiondef('$finalizer'::regprocedure) || ';';"
+  scalar "SELECT pg_get_functiondef('$releaser'::regprocedure) || ';';"
+  printf 'DROP FUNCTION public.free_queue_settlement_key(text,text);\nCOMMIT;\n'
+} >"$scratch/settlement-rollback.sql"
+bridge="$here/free-queue-settlement-compat.sql"
+run -f "$bridge"
+run -f "$here/worker-compatibility.sql"
+
+race_key="ff:$(printf '%040d' 6)"
+race_job='forensic-settlement-race'
+check reserved "SET ROLE service_role; $(reserve "$race_key" "$race_job")"
+run -c "SET ROLE service_role; SELECT public.analyzer_create_job('$race_job', 'worker-owner', 'full',
+  'input', NULL, public.free_marker_uid('$race_key', '$race_job'), false);" >/dev/null
+exec 3<>"$scratch/input"
+PGAPPNAME=counter-holder run <"$scratch/input" >"$scratch/settlement-holder.log" 2>&1 &
+holder=$!
+hold "SELECT public.free_finalize_scan('worker-owner', '$race_job', now())->>'status';"
+wait_state counter-holder "state = 'idle in transaction' AND query LIKE '%free_finalize_scan%'"
+PGAPPNAME=counter-racer scalar "SET ROLE service_role; SELECT public.free_release_scan('$race_key',
+  '$race_job', public.free_marker_uid('$race_key', '$race_job'), now())->>'status';" >"$scratch/settlement-racer.log" &
+racer=$!
+wait_state counter-racer "cardinality(pg_blocking_pids(pid)) = 1"
+printf 'COMMIT;\n\\q\n' >&3
+wait "$holder"
+wait "$racer"
+exec 3>&-
+[[ $(<"$scratch/settlement-racer.log") == noop ]]
+check consumed "SET ROLE service_role; SELECT public.free_finalize_scan('$race_key', '$race_job', now())->>'status';"
+check 1 "SELECT analyses_used FROM public.free_usage WHERE uid = '$race_key';"
+echo 'PASS: old-worker finalize and new-worker release serialize on the same Forensic counter'
+
+before=$(snapshot)
+run -f "$bridge"
+apply_a
+check "$b_fingerprint" "$fingerprint_query"
+check consumed "SET ROLE service_role; SELECT public.free_finalize_scan('worker-owner', '$race_job', now())->>'status';"
+run -f "$here/queue-guard.sql"
+[[ $(snapshot) == "$before" ]]
+echo 'PASS: bridge reapplication and guarded A leave the settlement bridge and B intact'
+
+run -f "$scratch/settlement-rollback.sql"
+check missing "SET ROLE service_role; SELECT public.free_finalize_scan('worker-owner', '$race_job', now())->>'status';"
+check consumed "SET ROLE service_role; SELECT public.free_finalize_scan('$race_key', '$race_job', now())->>'status';"
+run -f "$bridge"
+check consumed "SET ROLE service_role; SELECT public.free_finalize_scan('worker-owner', '$race_job', now())->>'status';"
+[[ $(snapshot) == "$before" ]]
+echo 'PASS: function-only rollback and forward repair preserve settled transactions'
+
 run -f "$here/inspect.sql" >"$scratch/postverify.log"
 
 if [[ -n "$app_checkout" ]]; then
@@ -166,5 +219,5 @@ if [[ -n "$app_checkout" ]]; then
     NODE_OPTIONS=--no-experimental-webstorage npx --no-install vitest run \
       tests/devin/free-trial-entitlements.pg.test.ts api/cloudflare-free-credit-reservation.test.ts \
       api/cloudflare-analyzer-usage.test.ts api/cloudflare-deep-scan.test.ts \
-      api/cloudflare-analyzer-queue-producer.test.ts)
+      api/cloudflare-analyzer-queue-producer.test.ts api/cloudflare-analyzer-queue-worker.test.ts)
 fi
