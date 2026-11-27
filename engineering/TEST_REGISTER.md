@@ -19,6 +19,21 @@ npx tsc --noEmit -p .                                         # type check
 | 2026-11-25 | fc8b31c (admin) | 4,252 passed / 2 failed / 478 skipped; both failures pass in isolation with and without the change | flaky under full-suite load (T-15) |
 | 2026-11-27 | 82dfe65 (release round 2: PRs #147-#160) | 4,870 passed / 0 failed / 512 skipped | tsc clean; `npm run build` OK; CI whole-app coverage 74.4% lines; critical analyzer/credit files ≥96% (PR #160) |
 
+## Disposable PostgreSQL qualification (2026-11-27, PR #164)
+
+Local throwaway server only (`mirror.gcr.io/library/postgres:16`, 127.0.0.1:54329). The suite creates a unique scratch
+database, applies `supabase/migrations_pending_approval/free_scan_reservation_functions.sql` there, and drops it. No staging
+or production database was touched.
+
+- `CREDIT_PG_URL=postgres://postgres@127.0.0.1:54329/postgres npx vitest run api/services/freeScanFunctions.pg.test.ts`: 13 passed
+  (20-way allowance and cap races, 15-way duplicate request, account isolation including prefix-like uids, TTL expiry,
+  finalize idempotency, concurrent release, unauthorized release, rollback, execute grants).
+- `api/services/paidCreditFunctions.pg.test.ts`: 13 passed.
+- `free_scan_reservation_functions.test.sql`: `ALL FREE SCAN RESERVATION CHECKS PASSED`.
+- Defect found and fixed in the pending SQL: the reconciliation range `uid >= 'free_res_<uid>_' and uid < 'free_res_<uid>`'`
+  is empty under `en_US.utf8` collation, so expired reservations were never reclaimed. Replaced with a prefix match
+  (`left(uid, length(lo)) = lo`) in both pending files.
+
 ## Known flaky tests (T-15)
 
 - `api/cloudflare-analysis-jobs.test.ts` › "never writes provider text into the stored record"
