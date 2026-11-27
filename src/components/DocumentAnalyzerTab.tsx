@@ -1951,8 +1951,9 @@ export default function DocumentAnalyzerTab() {
                       },
                       body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
                     });
-                    // A non-2xx response throws an ApiResponseError that the shared policy classifies.
-                    return safeReadJson(response);
+                    // A non-2xx response throws an ApiResponseError that the shared policy classifies; a queued
+                    // (HTTP 202) Forensic scan is followed to its finished report.
+                    return readAnalysisResponse(response, undefined, { fetcher: apiFetch });
                   },
                   recover: () => recoverAnalysisReport(fileAnalysisId),
                   onWait: (wait) => {
