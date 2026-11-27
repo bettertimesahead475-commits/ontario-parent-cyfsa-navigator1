@@ -217,15 +217,19 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
   });
 
   it("the reserve wrapper never lowers an allowance and leaves non-total scopes alone", async () => {
-    const email = "wrap@example.test";
-    const s = await redeem(db, "uid-wrap", await issue(ref(), email), email);
-    await db.query("update public.navigator_paid_sessions set granted_credits = 2 where id = $1", [s.session_id]);
-    expect(await analyseUntilLimit(s.session_id!, "Premium")).toBe(5);
-    await db.query("update public.navigator_paid_sessions set granted_credits = 50 where id = $1", [s.session_id]);
-    const period = (await one("select public.paid_reserve_credit($1,'p-1','period:2026-11-01',1,now(),'15 minutes','60 seconds') as r", [s.session_id])).r;
-    const period2 = (await one("select public.paid_reserve_credit($1,'p-2','period:2026-11-01',1,now(),'15 minutes','60 seconds') as r", [s.session_id])).r;
-    expect([period.status, period2.status]).toEqual(["reserved", "limit"]);
-    await db.query("update public.navigator_paid_sessions set granted_credits = null where id = $1", [s.session_id]);
+    await db.query("begin");
+    try {
+      const email = "wrap@example.test";
+      const s = await redeem(db, "uid-wrap", await issue(ref(), email), email);
+      await db.query("update public.navigator_paid_sessions set granted_credits = 2 where id = $1", [s.session_id]);
+      expect(await analyseUntilLimit(s.session_id!, "Premium")).toBe(5);
+      await db.query("update public.navigator_paid_sessions set granted_credits = 50 where id = $1", [s.session_id]);
+      const period = (await one("select public.paid_reserve_credit($1,'p-1','period:2026-11-01',1,now(),'15 minutes','60 seconds') as r", [s.session_id])).r;
+      const period2 = (await one("select public.paid_reserve_credit($1,'p-2','period:2026-11-01',1,now(),'15 minutes','60 seconds') as r", [s.session_id])).r;
+      expect([period.status, period2.status]).toEqual(["reserved", "limit"]);
+    } finally {
+      await db.query("rollback");
+    }
   });
 
   it("rollback counts suspended top-ups and waits for an in-flight top-up before checking", async () => {
@@ -658,6 +662,8 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
         "select public.paid_finalize_credit('session','request',now())",
         "select public.paid_restore_credits(null, 'total', 1, 1)",
       ]) await expect(c.query(statement)).rejects.toMatchObject({ code: "42501" });
+      await c.query("set navigator.e_pack_refund = 'on'");
+      await expect(c.query("update public.navigator_paid_sessions set expires_at = now()")).rejects.toMatchObject({ code: "42501" });
     }
     expect(await one("select relrowsecurity from pg_class where oid = 'public.navigator_paid_session_refunds'::regclass"))
       .toEqual({ relrowsecurity: true });
@@ -672,8 +678,34 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
       .rejects.toMatchObject({ code: "23503" });
   });
 
+  it("requires the refund RPC to reduce a stacked grant or expiry and confines its bypass to the function", async () => {
+    const email = "guard-e@example.test";
+    const uid = "uid-guard-e";
+    const { session_id } = await redeem(db, uid, await issue(ref(), email), email);
+    for (let i = 0; i < 2; i++) await redeem(db, uid, await issue(ref(), email), email);
+    const c = await connect();
+    await c.query("set role service_role");
+    const reduce = (change: string) => c.query(`update public.navigator_paid_sessions set ${change} where id = $1`, [session_id]);
+    for (const change of ["expires_at = expires_at - interval '1 day'", "granted_credits = granted_credits - 5", "granted_credits = null"]) {
+      await expect(reduce(change)).rejects.toMatchObject({ code: "23514" });
+    }
+    expect((await one("select granted_credits from public.navigator_paid_sessions where id = $1", [session_id])).granted_credits).toBe(15);
+    await c.query("begin");
+    try {
+      expect(await refundPack(c, session_id!, "guard-e-refund")).toMatchObject({ status: "applied", granted_after: 10 });
+      await expect(reduce("granted_credits = null")).rejects.toMatchObject({ code: "23514" });
+    } finally {
+      await c.query("rollback");
+    }
+    expect(await refundPack(c, session_id!, "guard-e-refund")).toMatchObject({ status: "applied", granted_after: 10 });
+  });
+
   it("refuses rollback with receipts even with the override; E forward repair preserves post-migration accounting", async () => {
-    await db.query("update public.navigator_paid_sessions set expires_at = now() - interval '1 day' where granted_credits is not null");
+    await db.query(`begin;
+      alter table public.navigator_paid_sessions disable trigger guard_stacked_paid_session_reduction;
+      update public.navigator_paid_sessions set expires_at = now() - interval '1 day' where granted_credits is not null;
+      alter table public.navigator_paid_sessions enable trigger guard_stacked_paid_session_reduction;
+      commit;`);
     const receipts = (await db.query("select * from public.navigator_paid_session_refunds order by refund_key")).rows;
     const codes = (await db.query("select * from public.access_codes order by id")).rows;
     const usage = (await db.query("select * from public.free_usage order by uid")).rows;
@@ -688,6 +720,7 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
     await db.query("drop function public.paid_restore_credits(uuid,text,integer,integer)");
     await db.query(UP);
     expect(await fp("paid_restore_credits")).toBeDefined();
+    expect(await count("select count(*) as n from pg_trigger where tgname = 'guard_stacked_paid_session_reduction'")).toBe(1);
     expect((await db.query("select * from public.navigator_paid_session_refunds order by refund_key")).rows).toEqual(receipts);
     expect((await db.query("select * from public.navigator_paid_sessions order by id")).rows).toEqual(sessions);
     expect((await db.query("select * from public.access_codes order by id")).rows).toEqual(codes);

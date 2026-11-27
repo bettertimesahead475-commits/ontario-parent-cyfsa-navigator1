@@ -162,6 +162,8 @@ grant execute on function public.redeem_access_code_atomic(text, text, text) to 
 
 drop function if exists public.paid_refund_one_off_pack(uuid, text, integer);
 drop function if exists public.paid_restore_credits(uuid, text, integer, integer);
+drop trigger if exists guard_stacked_paid_session_reduction on public.navigator_paid_sessions;
+drop function if exists public.guard_stacked_paid_session_reduction();
 drop table if exists public.navigator_paid_session_refunds;
 alter table public.navigator_paid_sessions drop column if exists granted_credits;
 commit;

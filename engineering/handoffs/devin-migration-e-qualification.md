@@ -1,9 +1,10 @@
 # Migration E qualification — 2026-11-27
 
-**Decision: the three E fixes pass disposable qualification; operational release remains
-blocked.** Do not apply E or enable early one-off re-purchase until the G/P/D
-approval/refund fix is qualified and the operational gates below are cleared. The
-authoritative register was not edited.
+**Decision: combined #200 + #202 passes disposable qualification, including rejection
+of legacy stacked refunds. E remains deferred from production activation.** The
+guard is not mixed-version refund support. Do not enable one-off top-ups or
+refund writes until all affected traffic uses the combined app. The authoritative
+register was not edited.
 
 Base: PR #181 at `6f8d876a87029c66ff4195aef6e20920e171baee`. The E apply SQL
 differs from `release/rc-20261127` at `dd02ef34b862b89b0a755cf568ca9e18f2efa674`,
@@ -16,6 +17,22 @@ Supabase Storage (audit and create-once locks) are test doubles. No production s
 customer data, payments, credentials, migration execution or deployment were used.
 
 ## Evidence
+
+The final combined run used local merge `96b38fda747eceba9ff9f5212c7e2e0843eca677`
+(#200 `29f0594fd7d0d6d0456d3f0377c7a14d48e01a1d`, #202 `caa23687640f0f86b4cb15de80fa41e0bfc2afbe`)
+plus this guard and the combined qualification harness. No combined branch was pushed.
+
+| Result | Combined evidence |
+|---|---|
+| PASS | `Test Files  19 passed (19)`; `Tests  432 passed (432)`. Approval/refund (including 12 simultaneous pairs), credit reservation and restore races, duplicate restore, interruption, reapplication, entitlement preservation, RLS, and rollback/repair passed. |
+| PASS | The trigger rejects direct expiry reductions and grant reductions/clears on stacked rows. The refund RPC can still update the entitlement and issue its receipt. Its setting is function-scoped; it did not authorize a following update in the same transaction. With the setting explicitly enabled, both `anon` and `authenticated` still received `42501` on direct UPDATE. Monthly renewal, top-ups and ordinary legacy refunds after P still work. |
+| PASS (rejection only) | On G/P/D/E with `82dfe65`, the first stacked refund returned HTTP 502, code `ADMIN_STORE_REJECTED`, error `The database rejected the request.` The refund audit and one-time lock were already written, but no `refund-applied` or E receipt was written. The session retained 10 credits and 60 days. Retrying returned HTTP 200 with `resumed: true`, `sessionsShortened: 0`, and `shorteningsForReview: 1`; it leaves the reduction to manual review, not an automatic repair. The combined handler still records 10 → 5 and 60 → 30 days as one refund. |
+| PASS | `TypeScript exited 0`. Backup rehearsal: `PASS: pre-E backup restored with existing Premium entitlement and 2 used units`; `PASS: post-E backup restored separately; the pre-E backup does not contain the intervening payment or refund`; `PASS: forward repair restores the missing RPC and preserves the used payment, original usage, and refund idempotency`. |
+| BLOCKED | Operational cutover, current production bindings and hosted recovery were not exercised. |
+
+G ships with P: the unchanged legacy handler still records but returns
+`501 ADMIN_SCHEMA_UNAVAILABLE` on an activated refund before P and leaves access intact.
+Combined run logs: `~/.cache/migration-e-guard-{vitest,tsc,backup}.log`.
 
 | Result | Check and observation |
 |---|---|
@@ -76,8 +93,8 @@ Paths below prefixed `pending/` mean `supabase/migrations_pending_approval/`;
 | `migrations/20261110004740_preserve_monthly_renewal.sql` (P) | `6916521f08840cad96ee69632c3b01b16728ae669b7d0e05cb001f17f375f1f9` |
 | `pending/access_codes_one_redemption_per_reference.sql` (D) | `f7087176c3f6cfba9343bd02019500e8825befffd1d2992b670b423507b680ae` |
 | `pending/paid_sessions_early_renewal_keeps_credits.preflight.sql` | `a6e7a78af6d8d1c06d9a7407d4b9633df041a79ae1f2f076fac624e7cfaf90ac` |
-| `pending/paid_sessions_early_renewal_keeps_credits.sql` (E) | `80c7484bf4efa43a953a9c0c5ba472c26d05124f878e67f24fc26995ab3bbeef` |
-| `pending/paid_sessions_early_renewal_keeps_credits.rollback.sql` | `6e02bb1b13fb742276de50b5bf5485f3d3b60fffa0e56a1d95ba043fbcc565c3` |
+| `pending/paid_sessions_early_renewal_keeps_credits.sql` (E) | `57f6fea9c42ddaa5677c7315e9deea8b210779cf93a25c3e95ec9b82b7319f73` |
+| `pending/paid_sessions_early_renewal_keeps_credits.rollback.sql` | `74aa1be7562f44d3ac7cc89d25b4acc7004ac55832ee0ce4916bf8d7d4732908` |
 
 - **Clean disposable bootstrap:** captured payment schema and `free_usage`
   → durable analyzer jobs + paid reservation functions + A

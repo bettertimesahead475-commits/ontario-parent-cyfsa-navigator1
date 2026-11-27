@@ -239,9 +239,34 @@ alter table public.navigator_paid_session_refunds enable row level security;
 revoke all on table public.navigator_paid_session_refunds from public, anon, authenticated;
 grant select, insert on table public.navigator_paid_session_refunds to service_role;
 
+create or replace function public.guard_stacked_paid_session_reduction()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if current_setting('navigator.e_pack_refund', true) is distinct from 'on' then
+    raise exception 'Stacked paid session reductions require paid_refund_one_off_pack'
+      using errcode = '23514';
+  end if;
+  return new;
+end
+$$;
+revoke all on function public.guard_stacked_paid_session_reduction() from public, anon, authenticated;
+
+drop trigger if exists guard_stacked_paid_session_reduction on public.navigator_paid_sessions;
+create trigger guard_stacked_paid_session_reduction
+before update of expires_at, granted_credits on public.navigator_paid_sessions
+for each row
+when (old.granted_credits is not null and (
+  new.expires_at < old.expires_at or new.granted_credits is null or new.granted_credits < old.granted_credits
+))
+execute function public.guard_stacked_paid_session_reduction();
+
 create or replace function public.paid_refund_one_off_pack(p_session uuid, p_refund_key text, p_days integer)
 returns jsonb
 language plpgsql
+set navigator.e_pack_refund = 'off'
 as $$
 declare
   v_s public.navigator_paid_sessions%rowtype;
@@ -286,6 +311,7 @@ begin
   -- after a refund raises the allowance without new usage).
   select coalesce(sum(used_beyond_remaining), 0) into v_reported from public.navigator_paid_session_refunds where session_id = p_session;
   v_over := greatest(greatest(v_used - v_after, 0) - greatest(greatest(v_used - v_before, 0), v_reported), 0);
+  perform set_config('navigator.e_pack_refund', 'on', true);
   update public.navigator_paid_sessions
     set granted_credits = case when v_after > v_pack then v_after else null end,
         expires_at = expires_at - make_interval(days => p_days)
