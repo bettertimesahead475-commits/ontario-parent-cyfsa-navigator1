@@ -23,11 +23,13 @@ cleanup() {
   rm -rf -- "$scratch"
 }
 trap cleanup EXIT
+chmod 700 "$scratch"
 # Explicit connection options and no inherited PG service/defaults.
 unset PGHOST PGHOSTADDR PGPORT PGUSER PGDATABASE PGSERVICE PGSERVICEFILE PGOPTIONS PGPASSFILE PGPASSWORD
-"$pgbin/initdb" -D "$scratch/db" --locale=en_US.UTF-8 --encoding=UTF8 --auth=trust -U postgres >"$scratch/init.log"
+"$pgbin/initdb" -D "$scratch/db" --locale=en_US.UTF-8 --encoding=UTF8 \
+  --auth-local=trust --auth-host=scram-sha-256 -U postgres >"$scratch/init.log"
 "$pgbin/pg_ctl" -D "$scratch/db" -l "$scratch/server.log" -w start \
-  -o "-h 127.0.0.1 -k '$scratch' -p $port" >/dev/null
+  -o "-c listen_addresses='' -c unix_socket_permissions=0700 -k '$scratch' -p $port" >/dev/null
 psql=("$pgbin/psql" -X -v ON_ERROR_STOP=1 -h "$scratch" -p "$port" -U postgres -d postgres)
 run() { "${psql[@]}" -q "$@"; }
 scalar() { "${psql[@]}" -Atq -c "$1"; }
@@ -39,6 +41,10 @@ check() {
     exit 1
   fi
 }
+check '' 'SHOW listen_addresses;'
+check 0700 'SHOW unix_socket_permissions;'
+echo 'PASS: PostgreSQL has no TCP listener and uses a private Unix socket'
+
 extract() { git -C "$repo" show "$1:$pending/$2.sql" >"$scratch/$3.sql"; }
 extract "$applied" free_scan_reservation_functions A
 extract "$applied" reconcile_skip_live_analyzer_jobs B
@@ -141,7 +147,11 @@ run -f "$here/compatibility.sql"
 run -f "$here/inspect.sql" >"$scratch/postverify.log"
 
 if [[ -n "$app_checkout" ]]; then
-  (cd -- "$app_checkout" && CREDIT_PG_URL="postgres://postgres@127.0.0.1:$port/postgres" \
+  # The candidate test requires a loopback URL; node-postgres uses the host query argument for the socket.
+  socket_url=$(node -p 'const [port, host] = process.argv.slice(1);
+    const url = new URL("postgres://postgres@127.0.0.1:" + port + "/postgres");
+    url.searchParams.set("host", host); url.href' "$port" "$scratch")
+  (cd -- "$app_checkout" && CREDIT_PG_URL="$socket_url" \
     NODE_OPTIONS=--no-experimental-webstorage npx --no-install vitest run \
       tests/devin/free-trial-entitlements.pg.test.ts api/cloudflare-free-credit-reservation.test.ts \
       api/cloudflare-analyzer-usage.test.ts api/cloudflare-deep-scan.test.ts \

@@ -20,7 +20,7 @@ The copies of A/B at the requested release base are older: both use the locale-s
 
 ## Reproduce
 
-Use local PostgreSQL server/client binaries (`pg_config`, `initdb`, `pg_ctl`, `psql`, `pg_dump`, `pg_restore`), the `en_US.UTF-8` locale, and Node 22 for the optional application tests. The harness creates its own temporary cluster and listens only on loopback; it rejects external connection parameters by using explicit local connection options. Do not run it as root. Use `FREE_COUNTER_TEST_PORT` if 54329 is occupied.
+Use local PostgreSQL server/client binaries (`pg_config`, `initdb`, `pg_ctl`, `psql`, `pg_dump`, `pg_restore`), the `en_US.UTF-8` locale, and Node 22 for the optional application tests. The harness creates its own temporary cluster with no TCP listener. Both the Unix socket and its enclosing directory are mode `0700`; all clients use that socket. Do not run it as root. `FREE_COUNTER_TEST_PORT` controls the socket filename suffix (default 54329).
 
 ```sh
 git fetch origin refs/pull/164/head
