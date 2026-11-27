@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, feature/durable-analyzer-queue-20261104]
+    branches: [main, engineering/integration, migration/cloudflare-staging-20261029, feature/durable-analyzer-queue-20261104]
   pull_request:
 
 jobs:
@@ -27,9 +27,12 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # The PR head itself (not GitHub's merge commit), so the tests, the coverage and the SonarCloud analysis all
+      # belong to the one commit SonarCloud reports.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -73,12 +76,25 @@ jobs:
           path: dist
           retention-days: 3
 
-      # CI-based SonarCloud analysis is the only way to import coverage (automatic analysis cannot).
-      # Runs last, once SONAR_TOKEN is set and automatic analysis is switched off in SonarCloud.
+      # CI-based SonarCloud analysis is the only way to import coverage (automatic analysis cannot, and while it is
+      # enabled in SonarCloud this CI scan is rejected). It runs last, after build and packaging, and a failure fails
+      # this job: a silent scan failure previously left SonarCloud showing no coverage at all.
+      - name: SonarCloud not configured
+        if: env.SONAR_TOKEN == ''
+        run: echo "::warning title=SonarCloud scan skipped::SONAR_TOKEN is not set, so no analysis or coverage was sent to SonarCloud."
+
+      - name: Check coverage report belongs to this commit
+        if: env.SONAR_TOKEN != ''
+        run: |
+          test -s coverage/lcov.info || { echo "::error::coverage/lcov.info is missing or empty"; exit 1; }
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}" || { echo "::error::checked-out commit differs from the analyzed commit"; exit 1; }
+          echo "Coverage for $(git rev-parse HEAD): $(grep -c '^SF:' coverage/lcov.info) files" >> "$GITHUB_STEP_SUMMARY"
+
       - name: SonarCloud scan (with coverage)
         if: env.SONAR_TOKEN != ''
-        # Reporting only: its quality gate is a separate check, and a scan failure must not fail the build or skip packaging.
-        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.scm.revision=${{ github.event.pull_request.head.sha || github.sha }}
