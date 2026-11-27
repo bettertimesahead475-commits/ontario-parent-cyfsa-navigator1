@@ -58,13 +58,6 @@ jobs:
           path: coverage/
           retention-days: 14
 
-      # CI-based SonarCloud analysis is the only way to import coverage (automatic analysis cannot).
-      # Runs once SONAR_TOKEN is set and automatic analysis is switched off in SonarCloud.
-      - name: SonarCloud scan (with coverage)
-        if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: Build
         run: npm run build
@@ -79,3 +72,13 @@ jobs:
           name: isolated-staging-pages-release
           path: dist
           retention-days: 3
+
+      # CI-based SonarCloud analysis is the only way to import coverage (automatic analysis cannot).
+      # Runs last, once SONAR_TOKEN is set and automatic analysis is switched off in SonarCloud.
+      - name: SonarCloud scan (with coverage)
+        if: env.SONAR_TOKEN != ''
+        # Reporting only: its quality gate is a separate check, and a scan failure must not fail the build or skip packaging.
+        continue-on-error: true
+        uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
