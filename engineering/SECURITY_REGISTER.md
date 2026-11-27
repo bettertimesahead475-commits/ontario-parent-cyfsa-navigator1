@@ -45,17 +45,11 @@ No regulatory compliance is claimed without independent verification.
 
 ## S-RL: persistent rate-limiting options (no provisioning without owner approval)
 
-Prices from Cloudflare/Supabase public pricing as known on 2026-11-25; confirm on the billing page before choosing.
-
-| Option | How | Recurring cost | Trade-offs |
-|---|---|---|---|
-| 1. Cloudflare WAF rate-limiting rule | Zone rule on `/api/analyze*`, `/api/extract-text`, `/api/activate-code` keyed by IP | Free plan includes 1 rule (10 s window); more rules / longer windows need Pro ($20–25/mo per zone) | No code; IP-based only (not per account); coarse |
-| 2. Supabase table + atomic RPC | `rate_limit_hits(key, window_start, count)` with `insert … on conflict … do update … returning` | $0 (existing database) | One extra DB round trip (~30–80 ms) per limited request; reversible migration needed (B-6 style approval) |
-| 3. Workers KV | counter per key/window | Free: 1,000 writes/day (insufficient at volume); Workers Paid $5/mo includes 1M writes | Eventually consistent: allows bursts across locations |
-| 4. Durable Object limiter | one object per subject, strongly consistent | Free plan (SQLite-backed DOs) has a daily request allowance; Workers Paid $5/mo for higher volume | Most accurate; new Worker binding to deploy |
-
-Recommendation: Option 2 (no cost, uses existing database, exact per-account limits) for analyze /
-activate-code / request-access, plus Option 1's free rule as IP-level backstop for extract-text.
+Superseded by `engineering/handoffs/agent-a-t05-rate-limiting.md` (T-05, prices from the official pricing pages
+fetched 2026-11-27, with URLs). Recommendation there: a Supabase table + atomic RPC on the existing project ($0,
+exact across isolates and locations). Its migration and code are prepared under
+`supabase/migrations_pending_approval/create_navigator_rate_limit_hits.sql` (rollback alongside) and
+`functions/api/_persistent-rate-limit.ts`; neither is applied nor wired. Applying it needs written owner approval.
 
 ## S-AL: alerting options for failed/stuck analyses and outages (no provisioning without owner approval)
 
