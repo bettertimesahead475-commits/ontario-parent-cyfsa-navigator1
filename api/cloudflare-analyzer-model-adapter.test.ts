@@ -343,4 +343,55 @@ describe('Cloudflare Anthropic Model Adapter', () => {
 
     expect(capturedBody.stream).toBe(true);
   });
+
+  it('skips thinking_delta, signature_delta, and ping SSE events while preserving text, usage, and error handling', async () => {
+    const payload = [
+      'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":1234}}}\n\n',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"internal reasoning"}}\n\n',
+      'event: ping\ndata: {"type":"ping"}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig_abc123"}}\n\n',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"{\\"note\\":\\"thinking_delta literal\\"}"}}\n\n',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":1}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":456}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ].join('');
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(payload, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    const result = await generate({
+      system: 'sys',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      max_tokens: 100,
+      timeoutMs: 5000,
+      retries: 0,
+      requestId: 'req_thinking_fastpath',
+      stage: 'redFlags',
+      mode: 'full',
+    }, 'claude-opus-5');
+    expect(result.text).toBe('{"note":"thinking_delta literal"}');
+    expect(result.usage).toEqual({ input_tokens: 1234, output_tokens: 456 });
+    expect(result.stopReason).toBe('end_turn');
+  });
+
+  it('still rejects malformed non-JSON SSE data payloads with AI_RESPONSE_INVALID', async () => {
+    const payload = 'event: content_block_delta\ndata: not-json\n\n';
+    const mockFetcher = vi.fn().mockResolvedValue(
+      new Response(payload, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+    );
+    const generate = createCloudflareGenerateFn({ ANTHROPIC_API_KEY: 'test-key' }, mockFetcher as any);
+    await expect(generate({
+      system: 'sys',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      max_tokens: 100,
+      timeoutMs: 5000,
+      retries: 0,
+      requestId: 'req_invalid_json_sse',
+      stage: 'redFlags',
+      mode: 'full',
+    }, 'claude-opus-5')).rejects.toMatchObject({ code: 'AI_RESPONSE_INVALID' });
+  });
 });

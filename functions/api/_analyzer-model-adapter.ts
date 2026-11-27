@@ -153,56 +153,123 @@ export function createCloudflareGenerateFn(
         if (contentType.includes('text/event-stream') && response.body) {
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
+          const MAX_SSE_EVENT_CHARS = 1_048_576;
+          const textParts: string[] = [];
           let streamBuf = '';
+          let currentEventType = '';
+          let currentEventChars = 0;
           let receivedMessageStop = false;
 
           try {
           while (!receivedMessageStop) {
             const { done, value } = await bounded(reader.read());
             if (done) break;
-            // Parse CRLF at buffer level: CR and LF may arrive in separate network chunks.
             streamBuf += decoder.decode(value, { stream: true });
-            const events = streamBuf.split(/\r?\n\r?\n/);
-            streamBuf = events.pop() || '';
-            // A malformed SSE stream without event separators must not grow a
-            // Worker buffer indefinitely and exhaust memory with document data.
-            const MAX_SSE_EVENT_CHARS = 1_048_576;
-            if (streamBuf.length > MAX_SSE_EVENT_CHARS) {
-              throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider sent an oversized streaming event. Nothing was charged.', true);
-            }
 
-            for (const rawEvent of events) {
-              if (rawEvent.length > MAX_SSE_EVENT_CHARS) {
-                throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider sent an oversized streaming event. Nothing was charged.', true);
+            let lineStart = 0;
+            let nlIdx = streamBuf.indexOf('\n', lineStart);
+            while (nlIdx !== -1) {
+              const rawLen = nlIdx - lineStart + 1;
+              let lineEnd = nlIdx;
+              if (lineEnd > lineStart && streamBuf.charCodeAt(lineEnd - 1) === 13) {
+                lineEnd--;
               }
-              const lines = rawEvent.split(/\r?\n/);
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (trimmed.startsWith('data:')) {
-                  const dataStr = trimmed.slice(5).trim();
-                  if (!dataStr || dataStr === '[DONE]') continue;
-                  try {
-                    const evt = JSON.parse(dataStr);
-                    if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
-                      text += evt.delta.text || '';
-                    } else if (evt.type === 'message_start' && evt.message?.usage) {
-                      inputTokens = evt.message.usage.input_tokens || 0;
-                    } else if (evt.type === 'error') {
-                      throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI provider interrupted the analysis. Nothing was charged.', true);
-                    } else if (evt.type === 'message_stop') {
-                      receivedMessageStop = true;
-                    } else if (evt.type === 'message_delta') {
-                      if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason;
-                      if (evt.usage?.output_tokens) outputTokens = evt.usage.output_tokens;
+              if (lineEnd === lineStart) {
+                currentEventType = '';
+                currentEventChars = 0;
+              } else {
+                currentEventChars += rawLen;
+                if (currentEventChars > MAX_SSE_EVENT_CHARS) {
+                  throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider sent an oversized streaming event. Nothing was charged.', true);
+                }
+                // Skip leading ASCII whitespace without slicing the full line.
+                let s = lineStart;
+                while (s < lineEnd && streamBuf.charCodeAt(s) <= 32) s++;
+                while (lineEnd > s && streamBuf.charCodeAt(lineEnd - 1) <= 32) lineEnd--;
+
+                if (streamBuf.startsWith('event:', s)) {
+                  let es = s + 6;
+                  while (es < lineEnd && streamBuf.charCodeAt(es) <= 32) es++;
+                  if (streamBuf.startsWith('content_block_delta', es)) {
+                    currentEventType = 'content_block_delta';
+                  } else if (streamBuf.startsWith('ping', es)) {
+                    currentEventType = 'ping';
+                  } else if (streamBuf.startsWith('content_block_start', es)) {
+                    currentEventType = 'content_block_start';
+                  } else if (streamBuf.startsWith('content_block_stop', es)) {
+                    currentEventType = 'content_block_stop';
+                  } else {
+                    currentEventType = streamBuf.slice(es, lineEnd);
+                  }
+                } else if (streamBuf.startsWith('data:', s)) {
+                  let ds = s + 5;
+                  while (ds < lineEnd && streamBuf.charCodeAt(ds) <= 32) ds++;
+                  if (ds < lineEnd) {
+                    const firstChar = streamBuf.charCodeAt(ds);
+                    const lastChar = streamBuf.charCodeAt(lineEnd - 1);
+                    const isJsonObject = firstChar === 123 && lastChar === 125;
+                    // Skip JSON.parse for high-volume non-text SSE events (pings, block boundaries)
+                    // without even slicing the data payload.
+                    if (
+                      isJsonObject &&
+                      (currentEventType === 'ping' ||
+                        currentEventType === 'content_block_start' ||
+                        currentEventType === 'content_block_stop')
+                    ) {
+                      // Benign structural/keepalive event; no text, usage, or error payload.
+                    } else {
+                      const dataStr = streamBuf.slice(ds, lineEnd);
+                      if (dataStr !== '[DONE]') {
+                        if (dataStr === '{"type":"message_stop"}') {
+                          receivedMessageStop = true;
+                          break;
+                        }
+                        // Skip JSON.parse for high-volume thinking/signature deltas on Opus/Sonnet.
+                        const skippableDelta =
+                          isJsonObject &&
+                          !dataStr.includes('"text_delta"') &&
+                          (dataStr.includes('"thinking_delta"') || dataStr.includes('"signature_delta"'));
+                        if (!skippableDelta) {
+                          try {
+                            const evt = JSON.parse(dataStr);
+                            if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta') {
+                              if (evt.delta.text) textParts.push(evt.delta.text);
+                            } else if (evt.type === 'message_start' && evt.message?.usage) {
+                              inputTokens = evt.message.usage.input_tokens || 0;
+                            } else if (evt.type === 'error') {
+                              throw new AnalyzerError('AI_PROVIDER_TEMPORARILY_UNAVAILABLE', 503, 'The AI provider interrupted the analysis. Nothing was charged.', true);
+                            } else if (evt.type === 'message_stop') {
+                              receivedMessageStop = true;
+                              break;
+                            } else if (evt.type === 'message_delta') {
+                              if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason;
+                              if (evt.usage?.output_tokens) outputTokens = evt.usage.output_tokens;
+                            }
+                          } catch (parseError) {
+                            if (parseError instanceof AnalyzerError) throw parseError;
+                            throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an invalid streaming event. Nothing was charged.', true);
+                          }
+                        }
+                      }
                     }
-                  } catch (parseError) {
-                    if (parseError instanceof AnalyzerError) throw parseError;
-                    throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider returned an invalid streaming event. Nothing was charged.', true);
                   }
                 }
               }
+              lineStart = nlIdx + 1;
+              nlIdx = streamBuf.indexOf('\n', lineStart);
+            }
+
+            if (lineStart >= streamBuf.length) {
+              streamBuf = '';
+            } else if (lineStart > 0) {
+              streamBuf = streamBuf.slice(lineStart);
+            }
+            // A malformed SSE stream without newlines must not grow a Worker buffer indefinitely.
+            if (currentEventChars + streamBuf.length > MAX_SSE_EVENT_CHARS) {
+              throw new AnalyzerError('AI_RESPONSE_INVALID', 422, 'The AI provider sent an oversized streaming event. Nothing was charged.', true);
             }
           }
+          text = textParts.join('');
           // A stop reason alone does not prove that the streamed response finished.
           // Never persist or charge for an interrupted or token-truncated report.
           // A complete message that stopped at max_tokens is returned to callers that handle it (they

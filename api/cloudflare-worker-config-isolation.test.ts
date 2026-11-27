@@ -41,4 +41,9 @@ describe('Cloudflare analyzer worker release isolation', () => {
     expect(retired.queues).toBeUndefined();
     expect(retired.vars.ANALYZER_ENABLED).toBe('false');
   });
+
+  it('sets explicit CPU limits on active queue consumer executors to prevent default exceededResources crashes', () => {
+    expect(stagingExecutor.limits?.cpu_ms).toBeGreaterThanOrEqual(30000);
+    expect(production.limits?.cpu_ms).toBeGreaterThanOrEqual(30000);
+  });
 });
