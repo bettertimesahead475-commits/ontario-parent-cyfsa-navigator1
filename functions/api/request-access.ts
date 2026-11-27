@@ -7,6 +7,7 @@
 import { verifyFirebaseRequest } from './_auth-check';
 import { normalizeApiKey } from './_supabase-key';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
+import { TIER_PRICES } from './access-pricing';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -24,16 +25,11 @@ const VALID_TIERS = [
   'Community25',
 ] as const;
 
-const TIER_PRICES: Record<string, number> = {
-  Basic: 49,
-  AnalyzerBasic: 29,
-  Premium: 89,
-  AnalyzerPremium: 59,
-  Pro: 129,
-  Community5: 5,
-  Community10: 10,
-  Community25: 25,
-};
+// Prices come from the authoritative pricing API, the same table the pricing page shows, so the recorded amount
+// (which administrators approve against) always matches what the customer was told to send.
+
+
+const OPEN_ORDER_DAYS = 30;
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -48,8 +44,12 @@ function generateReferenceNumber(): string {
   return `PS-${code}`;
 }
 
-function getInstructions(referenceNumber: string, amount: number, paymentEmail: string): string {
-  return `Send an Interac e-transfer for $${amount} CAD to ${paymentEmail}. Put "${referenceNumber}" in the message/memo field so your payment can be matched. Once it's confirmed, you'll receive an access code.`;
+function formatAmount(amount: number): string {
+  return Number.isInteger(amount) ? amount.toLocaleString('en-CA') : amount.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function getInstructions(referenceNumber: string, amount: number, paymentEmail: string): string {
+  return `Send an Interac e-transfer for $${formatAmount(amount)} CAD to ${paymentEmail}. Put "${referenceNumber}" in the message/memo field so your payment can be matched. Once it's confirmed, you'll receive an access code.`;
 }
 
 interface Env {
@@ -119,7 +119,7 @@ export const onRequestPost = async ({
   }
 
   const paymentEmail = (env.PAYMENT_EMAIL || 'chris@cyfsanavigator.com').trim().toLowerCase();
-  const amount = TIER_PRICES[tier] || 129;
+  const amount = TIER_PRICES[tier];
   const normalizedEmail = identity.email.trim().toLowerCase();
 
   // If Supabase credentials are not configured, fail-closed
@@ -171,6 +171,47 @@ export const onRequestPost = async ({
     } catch {
       // Proceed to insert attempt
     }
+  }
+
+  // One open order per account and package: a second checkout for the same package returns the pending order instead of
+  // creating another reference, so a customer cannot be led to pay twice. Orders recorded at a different price are not reused.
+  try {
+    const openUrl = new URL('/rest/v1/payments', env.STAGING_SUPABASE_URL);
+    openUrl.searchParams.set('firebase_uid', `eq.${uid}`);
+    openUrl.searchParams.set('plan', `eq.${tier}`);
+    openUrl.searchParams.set('status', 'eq.pending');
+    openUrl.searchParams.set('submitted_at', `gte.${new Date(Date.now() - OPEN_ORDER_DAYS * 86400000).toISOString()}`);
+    openUrl.searchParams.set('select', 'reference_number,amount,plan');
+    openUrl.searchParams.set('order', 'submitted_at.desc');
+    openUrl.searchParams.set('limit', '1');
+    const openRes = await fetch(openUrl.toString(), {
+      headers: {
+        apikey: (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? ''),
+        Authorization: `Bearer ${(normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '')}`,
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (openRes.ok) {
+      const rows = (await openRes.json()) as any[];
+      const row = Array.isArray(rows) ? rows[0] : null;
+      const openAmount = row ? (typeof row.amount === 'number' ? row.amount : Number.parseFloat(row.amount)) : Number.NaN;
+      if (row?.reference_number && Math.abs(openAmount - amount) < 0.005) {
+        return Response.json(
+          {
+            referenceNumber: row.reference_number,
+            amount,
+            payTo: paymentEmail,
+            instructions: getInstructions(row.reference_number, amount, paymentEmail),
+            reused: true,
+            openOrder: true,
+          },
+          { status: 200, headers: DEFAULT_HEADERS }
+        );
+      }
+    }
+  } catch {
+    // Lookup failure only loses the reuse; a new order is still a valid pending request.
   }
 
   const referenceNumber = generateReferenceNumber();
