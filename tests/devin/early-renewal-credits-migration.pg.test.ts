@@ -494,6 +494,21 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     expect(await refundPack(db, first.session_id!, "over-3")).toMatchObject({ status: "applied", granted_after: 0, used_beyond_remaining: 5 });
   });
 
+  it("a refunded pack replaced and the replacement refunded: earlier overage is not reported again; new usage is", async () => {
+    const email = "replace@example.test"; const uid = "uid-replace";
+    const first = await redeem(db, uid, await issue(ref(), email), email);
+    await redeem(db, uid, await issue(ref(), email), email);
+    for (let i = 0; i < 7; i++) expect(await analyse(first.session_id!, "Premium")).toBe("reserved");
+    expect(await refundPack(db, first.session_id!, "rep-1")).toMatchObject({ status: "applied", granted_after: 5, used_beyond_remaining: 2 });
+    await redeem(db, uid, await issue(ref(), email), email);
+    expect(await refundPack(db, first.session_id!, "rep-2")).toMatchObject({ status: "applied", granted_after: 5, used_beyond_remaining: 0 });
+    expect(await refundPack(db, first.session_id!, "rep-2")).toMatchObject({ status: "already_applied", used_beyond_remaining: 0 });
+    await redeem(db, uid, await issue(ref(), email), email);
+    for (let i = 0; i < 3; i++) expect(await analyse(first.session_id!, "Premium")).toBe("reserved");
+    expect(await refundPack(db, first.session_id!, "rep-3")).toMatchObject({ status: "applied", granted_after: 5, used_beyond_remaining: 3 });
+    expect(await refundPack(db, first.session_id!, "rep-4")).toMatchObject({ status: "applied", granted_after: 0, used_beyond_remaining: 5 });
+  });
+
   it("handler: both packs refunded one after the other, 7 used: overage 2 then 5, access ends", async () => {
     const email = "seq@example.test"; const uid = "uid-seqpacks"; const origRef = ref(); const topRef = ref();
     const refund = adminHarness({ [origRef]: { plan: "Premium", email, uid }, [topRef]: { plan: "Premium", email, uid } });
