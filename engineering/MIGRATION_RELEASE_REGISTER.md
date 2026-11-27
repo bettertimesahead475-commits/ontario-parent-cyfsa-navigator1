@@ -13,7 +13,7 @@ database behind production Cloudflare Pages (`cyfsa-navigator-git-staging`, depl
 
 | ID | File (`supabase/…`) | State on live (read-only, 2026-11-27) | Depends on | PR / brief |
 |---|---|---|---|---|
-| **P** | `migrations/20261110004740_preserve_monthly_renewal.sql` | **Not applied (drift).** It sits in the repo's applied folder, but live history jumps from `20261110003928` to `20261127163256`. `access_codes.redeemed_session_id` is missing, and the live `redeem_access_code_atomic` `md5(prosrc)` = `ca9f13a8…`, not `b835b252…` (P's version) | — | this register. Package: `migrations_pending_approval/preserve_monthly_renewal_P.{preflight,postcheck,rollback}.sql`, `tests/devin/migration-p-preserve-monthly-renewal.pg.test.ts` |
+| **P** | `migrations/20261110004740_preserve_monthly_renewal.sql` | **Not applied (drift).** It sits in the repo's applied folder, but live history jumps from `20261110003928` to `20261127163256`. `access_codes.redeemed_session_id` is missing, and the live `redeem_access_code_atomic` `md5(prosrc)` = `ca9f13a8…`, not `b835b252…` (P's version) | — | this register |
 | A | `migrations_pending_approval/free_scan_reservation_functions.sql` | Applied 2026-11-27 16:32:56 UTC (version `20261127163256`); owner authorization unconfirmed | — | `engineering/reviews/pr164-migration-approval-brief.md`, `pr164-staging-migration-verification-20261127.md` (branch `devin/1795797327-launch-prep`) |
 | B | `migrations_pending_approval/reconcile_skip_live_analyzer_jobs.sql` (+ index `analyzer_jobs_live_reservation_idx`) | Applied 16:33:09 UTC (`20261127163309`); authorization unconfirmed | A | same as A |
 | C | `migrations_pending_approval/create_navigator_rate_limit_hits.sql` | Not applied: table and function absent, no history row | — | [#174](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/174), `engineering/reviews/pr168-rate-limit-qualification-20261127.md` |
@@ -48,42 +48,28 @@ Claude has not yet re-qualified.
   replaces the RPC; no row changes.
 - **What P does:** `add column if not exists redeemed_session_id uuid references navigator_paid_sessions(id)` and
   `create or replace redeem_access_code_atomic(text,text,text)`, which adds 30 days on a monthly renewal instead of replacing the entitlement.
-- **Rollback readiness (done 2026-11-27, read-only capture):**
-  - The live RPC is the comment-stripped `20261030182320` version (`md5(prosrc)` = `ca9f13a8…`). The repo file of that name has md5 `da9c7103…` because it keeps its comments, so it is **not** a valid rollback source.
-  - `preserve_monthly_renewal_P.rollback.sql` embeds the exact `pg_get_functiondef` taken from live. The disposable test applies P and then this rollback, and gets `ca9f13a8…` back.
-  - Dependants of `access_codes`: one view (`navigator_payment_summary`), which does not use the new column; no triggers; RLS on; table grants to `service_role` only.
-  - The rollback refuses if D's index exists, if the RPC is not P's version, or if dropping the column would lose renewal links. A session setting is needed to accept that loss deliberately.
-  - Tests: 7/7 on disposable PostgreSQL. Each of the three guards fails at least one test when removed.
+- **Prerequisites:**
+  1. Save the live function (`select pg_get_functiondef('public.redeem_access_code_atomic(text,text,text)'::regprocedure)`),
+     because P's rollback is that saved text plus `drop column redeemed_session_id`.
+  2. Find which file produced fingerprint `ca9f13a8…`. Likely candidates are `migrations_pending_approval/20261030_reconcile_access_codes_and_atomic_rpc.sql`,
+     version `20261030182320` in live history. Confirm the column has no dependants before dropping it in a rollback.
+  3. Run P, then D's preflight, on disposable PostgreSQL built to the live schema.
+- **Order:** P before D. D's rollback restores P's version, so D must never be applied while P is missing.
 
-## Execution sequence and owner approval checklist
+## Release order
 
-Single owner approval covers the whole sequence; each step still stops on a failed check. Target: `nxfhvebzzobegubefcda` only.
+1. Owner decides on the authorization for A/B, which are already live.
+2. Backup or PITR.
+3. G (independent; required before any live e-Transfer approval).
+4. P, then D's preflight.
+5. D.
+6. E.
+7. C, with the flag off; activate later per the #174 brief.
+8. F.
 
-| Step | Action | Gate (must be true to continue) | Rollback |
-|---|---|---|---|
-| 0 | Owner ratifies A/B as applied (owner 14:26: preserve; no rollback) | Claude's A/B integrity and authorization note | none planned |
-| 1 | Logical backup: `supabase db dump` (schema, then `--data-only`) stored off-site. The org is on the **Free plan**, which has no daily backups or PITR | Dump files exist, are non-empty and were taken after the last write | Last resort only: restore from the dump and replay rows written after it (checklist item 6), with downtime while restoring |
-| 2 | Apply G (`payments_service_role_review_update.sql`, [#188](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/188)) | G preflight `ok`; `has_column_privilege('service_role','public.payments','status','UPDATE')` is true | G `.rollback.sql` |
-| 3 | P preflight (`preserve_monthly_renewal_P.preflight.sql`), then apply P (`supabase/migrations/20261110004740_preserve_monthly_renewal.sql`) | Preflight blocking rows `ok`; `preserve_monthly_renewal_P.postcheck.sql` all `ok` | `preserve_monthly_renewal_P.rollback.sql`; if P is re-applied later, run `preserve_monthly_renewal_P.reapply_backfill.sql` straight after it |
-| 4 | D preflight, then apply D | D preflight blocking rows `ok`; D brief postchecks | D `.rollback.sql`, then P's if needed |
-| 5 | Apply C, with `PERSISTENT_RATE_LIMITS` unset | #174 brief checks | `rollback_navigator_rate_limit_hits.sql` |
-| 6 | Apply F | F preflight `ok`; no sends (owner 14:26) | F `.down.sql` |
-| 7 | Deploy the frozen RC commit to Cloudflare production | RELEASE_CHECKLIST smoke tests | Cloudflare rollback to the deployment that was live before step 7 (today `0cc59589`) |
-| — | E is **not in this release** (it is a feature; owner 15:01: no additional features). When it is scheduled: deploy #181's handler first (it calls `paid_refund_one_off_pack` only once `granted_credits` exists), then apply E | Claude qualification of #181 at `d51dea0` or later | E `.rollback.sql` |
-
-Steps 2–6 are compatible with the code live today (`82dfe65`):
-- P keeps the RPC's signature and its `activated`/`reused` statuses.
-- D's new `ORDER_ALREADY_ACTIVATED` can only occur for a second code of one payment. Live has 0 access codes.
-- G only adds a column grant.
-- C and F only add objects.
-
-So step 7 can roll back the app alone, without rolling back the database.
-
-**Rollback order:** reverse order only: the Cloudflare deployment, then F, C, D, P, G. Never run `free_scan_reservation_functions.down.sql` on this database.
-
-Every step needs Claude's qualification of that entry. Before each step, record `select max(version) from supabase_migrations.schema_migrations`.
-Apply through Supabase `apply_migration` so a history row is written. The recorded version will be the apply time, not the
-repo filename, so note both in this register.
+C and F have no data dependency on the others and can move if needed.
+Before each step, re-run its read-only preflight and these aggregate checks:
+`select max(version) from supabase_migrations.schema_migrations`, and the column and fingerprint checks above.
 
 ## Out of scope for this release
 
