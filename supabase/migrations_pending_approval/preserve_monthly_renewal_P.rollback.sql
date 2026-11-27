@@ -5,6 +5,7 @@
 -- Refuses if D's index exists, if the RPC is not P's version, or if any code already records a session link that no
 -- other column holds (monthly renewal codes): dropping it would lose which entitlement those codes extended.
 -- To accept that loss deliberately, run first in the same session: set navigator.p_rollback_accept_link_loss = 'yes';
+-- If P is re-applied later, run preserve_monthly_renewal_P.reapply_backfill.sql straight after it to restore first-redemption links.
 begin;
 
 lock table public.access_codes in access exclusive mode;

@@ -18,6 +18,7 @@ const DIR = "migrations_pending_approval/preserve_monthly_renewal_P";
 const PREFLIGHT = sql(`${DIR}.preflight.sql`);
 const POSTCHECK = sql(`${DIR}.postcheck.sql`);
 const ROLLBACK = sql(`${DIR}.rollback.sql`);
+const BACKFILL = sql(`${DIR}.reapply_backfill.sql`);
 const LIVE_FP = "ca9f13a85933345f0dfede3b1ab2975e";
 const P_FP = "b835b252c9d2b97413e43271c712e5ce";
 const SCHEMA = `
@@ -125,6 +126,13 @@ describe.skipIf(!url)("Migration P: preserve_monthly_renewal preflight, postchec
     expect((await db.query("select count(*)::int as n from public.navigator_paid_sessions")).rows[0].n).toBe(1);
     await db.query(P);
     expect(await fp()).toBe(P_FP);
+    expect((await db.query("select count(*)::int as n from public.access_codes where redeemed_session_id is not null")).rows[0].n).toBe(0);
+    await db.query(BACKFILL);
+    const linked = await db.query(
+      "select c.redeemed_session_id = s.id as ok from public.access_codes c join public.navigator_paid_sessions s on s.access_code_id = c.id",
+    );
+    expect(linked.rows).toEqual([{ ok: true }]);
+    expect((await db.query("select count(*)::int as n from public.access_codes where redeemed_session_id is not null")).rows[0].n).toBe(1);
   });
 
   it("rollback refuses when the RPC is not P's version", async () => {
