@@ -15,7 +15,7 @@ provisioned, and no cost may be incurred, without separate owner approval.
 
 | Concern | Design |
 |---|---|
-| Database | A separate Supabase project holding synthetic data only, built from `supabase/migrations` and the release's pending migrations. The org is on the Free plan, which allows 2 active projects, and both slots are in use (`nxfh…`, `qboid…`). A third project needs a paid plan or a freed slot: owner decision. |
+| Database | A separate Supabase project holding synthetic data only, built from `supabase/migrations` and the release's pending migrations. The org is on the Free plan, which allows 2 active projects, and both slots are in use (`nxfh…`, `qboid…`; two more projects are paused). A third project needs a paid plan or a freed slot: owner decision. |
 | Cloudflare | Either a second Pages project, or the existing project with Preview builds restricted to `release/rc-*` (`preview_deployment_setting: custom`). Preview variables point only at the test project. |
 | AI keys | Separate Anthropic workspace and Gemini project keys with hard monthly spend limits set at the provider. Never the production keys. |
 | Firebase | A test Firebase project, or the production project with test accounts only. No customer accounts. |

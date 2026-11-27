@@ -74,7 +74,7 @@ Live state (read-only, 2026-11-27):
 | A/B authorization and integrity | pending |
 | #164 audit remediation, #176, #178 | pending |
 
-Devin-side evidence: disposable-PG suites for P (7/7), D, E, F and the harness (27/27), plus full Vitest and tsc on the frozen head (to be recorded).
+Devin-side evidence: disposable-PG suites for P (7/7), D, E, F and the harness (27/27), plus full Vitest on this branch (`23217bd` + register merge): 5,318 passed, 0 failed, 461 skipped. It must be re-run on the frozen head.
 
 ## 6. Production rollback procedure
 
