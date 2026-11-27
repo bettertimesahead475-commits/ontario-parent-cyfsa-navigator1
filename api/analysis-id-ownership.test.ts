@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { SPEND_CAPS_OFF, freeIdentity, withFreeUsage } from './helpers/freeTrialTestEnv';
 
 vi.mock('../functions/api/_auth-check', () => ({
-  verifyFirebaseRequest: vi.fn(async (req: Request) => ({ status: 'verified', uid: req.headers.get('x-test-uid') || 'user_a', emailVerified: false, email: null })),
+  verifyFirebaseRequest: vi.fn(async (req: Request) => { const uid = req.headers.get('x-test-uid') || 'user_a'; return { status: 'verified', uid, emailVerified: true, email: `${uid}@example.com` }; }),
   onRequestGet: vi.fn(),
 }));
 
@@ -12,6 +13,7 @@ import { handleAnalyzeRequest, type AnalyzerEnv } from '../functions/api/analyze
 // refusal happens before any credit reservation, AI call or report write.
 const env = {
   ANALYZER_ENABLED: 'true',
+  ...SPEND_CAPS_OFF,
   STAGING_SUPABASE_URL: 'https://example.supabase.co',
   STAGING_SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test_key_0000000000',
   ANTHROPIC_API_KEY: 'test',
@@ -28,6 +30,7 @@ function world(ledger: Answer, storage: Answer) {
     if (url.includes('/storage/v1/object/authenticated/')) return storage();
     if (url.includes('/storage/v1/object/')) return new Response('{}', { status: 200 }); // writes
     void init;
+    if (url.includes('/rest/v1/free_usage')) return Response.json([]);
     return Response.json({});
   }) as unknown as typeof fetch & ReturnType<typeof vi.fn>;
 }
@@ -150,6 +153,7 @@ describe('create-once claim of the direct-path job record (T-20 / review finding
       // The ownership read saw nothing, but another account's create landed first.
       if (url.includes('/authenticated/')) return fetcher.mock.calls.filter(([u]) => String(u).includes('/authenticated/')).length === 1 ? NOT_FOUND() : Response.json({ uid: 'user_b' });
       if (url.includes('/storage/v1/object/')) return new Response('{"statusCode":"409"}', { status: 400 });
+      if (url.includes('/rest/v1/free_usage')) return Response.json([]);
       return Response.json({});
     }) as unknown as typeof fetch & ReturnType<typeof vi.fn>;
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'r1' }));
@@ -179,6 +183,7 @@ describe('queued producer claims the report object too (re-review residual 2)', 
       // First read (ownership pre-check): nothing yet. Later reads: another account's direct-path claim landed.
       if (url.includes('/authenticated/')) return ++ownershipReads === 1 ? NOT_FOUND() : Response.json({ uid: 'user_b' });
       if (url.includes('/storage/v1/object/')) return new Response('{"statusCode":"409"}', { status: 400 });
+      if (url.includes('/rest/v1/free_usage')) return Response.json([]);
       return Response.json({});
     }) as unknown as typeof fetch;
     const rpc = vi.fn(async (name: string) => (name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'r1' } : { status: 'released' }));

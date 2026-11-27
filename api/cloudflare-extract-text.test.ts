@@ -4,6 +4,7 @@ import path from 'node:path';
 
 const SCANNED_PDF = fs.readFileSync(path.resolve(__dirname, '../tests/fixtures/synthetic/04-scanned-3-pages.pdf')).toString('base64');
 import { handleExtractRequest, type ExtractEnv } from '../functions/api/extract-text';
+import { SPEND_CAPS_OFF, SYNTHETIC_SUPABASE, freeIdentity, roomyCounterRpc, withFreeUsage } from './helpers/freeTrialTestEnv';
 
 const mockAuth = vi.fn();
 
@@ -58,7 +59,7 @@ describe('Cloudflare Text Extraction Endpoint (/api/extract-text)', () => {
   });
 
   it('returns 503 OCR_SERVICE_UNCONFIGURED for PDF when GEMINI_API_KEY is missing', async () => {
-    mockAuth.mockResolvedValueOnce({ status: 'verified', uid: 'user_123' });
+    mockAuth.mockResolvedValueOnce(freeIdentity('user_123'));
     const request = new Request('https://staging.example/api/extract-text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer token' },
@@ -78,7 +79,7 @@ describe('Cloudflare Text Extraction Endpoint (/api/extract-text)', () => {
   });
 
   it('successfully uses Gemini OCR when GEMINI_API_KEY is configured', async () => {
-    mockAuth.mockResolvedValueOnce({ status: 'verified', uid: 'user_123' });
+    mockAuth.mockResolvedValueOnce(freeIdentity('user_123'));
 
     const mockFetcher = vi.fn(async (url: string, init?: RequestInit) => {
       expect(url).toContain('generativelanguage.googleapis.com');
@@ -114,7 +115,7 @@ describe('Cloudflare Text Extraction Endpoint (/api/extract-text)', () => {
       }),
     });
 
-    const response = await handleExtractRequest(request, { ...env, GEMINI_API_KEY: 'test-gemini-key' }, { fetcher: mockFetcher as any });
+    const response = await handleExtractRequest(request, { ...env, ...SPEND_CAPS_OFF, ...SYNTHETIC_SUPABASE, GEMINI_API_KEY: 'test-gemini-key' }, { fetcher: withFreeUsage(mockFetcher as unknown as typeof fetch), rpc: roomyCounterRpc as any });
     expect(response.status).toBe(200);
     const json = await response.json();
     // Three scanned pages: one OCR call each, every result attributed to its page.

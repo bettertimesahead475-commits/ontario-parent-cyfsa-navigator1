@@ -1,4 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { SPEND_CAPS_OFF, withFreeUsage } from './helpers/freeTrialTestEnv';
+import { freeTrialKey } from '../functions/api/_free-trial';
 import { handleDeepScanRequest } from '../functions/api/deep-scan';
 import type { AnalyzerEnv } from '../functions/api/analyze';
 import type { GenerateFn } from './services/analyzerSections';
@@ -146,6 +148,7 @@ describe('Cloudflare Pages Functions /api/deep-scan Endpoint', () => {
     ANTHROPIC_API_KEY: 'test-anthropic-key',
     ANTHROPIC_QUICK_MODEL: 'claude-sonnet-5',
     ANTHROPIC_FORENSIC_MODEL: 'claude-opus-5',
+    ...SPEND_CAPS_OFF,
     STAGING_SUPABASE_URL: 'https://staging.supabase.co',
     STAGING_SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
   };
@@ -171,7 +174,7 @@ describe('Cloudflare Pages Functions /api/deep-scan Endpoint', () => {
     expect(body.code).toBe('SIGN_IN_REQUIRED');
   });
 
-  it('rejects free user attempting Deep Scan with HTTP 403 UPGRADE_REQUIRED', async () => {
+  it('a free account whose one Forensic Deep Scan is used gets 402 FREE_LIMIT_REACHED without a model call', async () => {
     mockAuthVerification.mockResolvedValueOnce({
       status: 'verified',
       uid: 'user_free_123',
@@ -185,11 +188,14 @@ describe('Cloudflare Pages Functions /api/deep-scan Endpoint', () => {
       body: JSON.stringify({ documentText: SAMPLE_DOC }),
     });
 
-    const res = await handleDeepScanRequest(req, env);
-    expect(res.status).toBe(403);
+    const rpc = vi.fn(async () => ({ status: 'limit' }));
+    const generate = vi.fn();
+    const res = await handleDeepScanRequest(req, { ...env, ...SPEND_CAPS_OFF }, { rpc: rpc as any, generate, fetcher: withFreeUsage(fetch) });
+    expect(res.status).toBe(402);
     const body = await res.json();
-    expect(body.code).toBe('UPGRADE_REQUIRED');
-    expect(body.error).toContain('Forensic In-Depth analysis requires a paid plan');
+    expect(body.code).toBe('FREE_LIMIT_REACHED');
+    expect(rpc).toHaveBeenCalledWith('free_reserve_scan', expect.objectContaining({ p_uid: await freeTrialKey('forensic', 'parent@example.com'), p_limit: 1 }));
+    expect(generate).not.toHaveBeenCalled();
   });
 
   it('rejects paid user with Basic tier (forensic: false) with HTTP 403 RESERVATION_UNAVAILABLE', async () => {

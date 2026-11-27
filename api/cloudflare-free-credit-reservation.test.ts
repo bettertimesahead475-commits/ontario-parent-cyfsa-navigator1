@@ -3,11 +3,11 @@ import { reserveFreeScan } from '../functions/api/_free-credit-reservation';
 import { StagingRpcError } from '../functions/api/_staging-credit-rpc';
 
 describe('staging free credit reservation', () => {
-  it('reserves exactly three scans with the verified UID', async () => {
+  it('reserves against a limit of one by default, with the given key', async () => {
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'marker' }));
     expect((await reserveFreeScan('firebase-user', 'request_12345678', rpc)).status).toBe('reserved');
     expect(rpc).toHaveBeenCalledWith('free_reserve_scan', expect.objectContaining({
-      p_uid: 'firebase-user', p_limit: 3, p_ttl: '15 minutes',
+      p_uid: 'firebase-user', p_limit: 1, p_ttl: '15 minutes',
     }));
   });
 

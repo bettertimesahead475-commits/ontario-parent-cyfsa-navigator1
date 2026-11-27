@@ -7,6 +7,8 @@
 import { verifyFirebaseRequest } from './_auth-check';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
 import { GEMINI_ERROR_RESPONSE, GeminiError, generateGemini, resolveGeminiModel, type GeminiEnv } from './_gemini';
+import { readVerifiedPaidSession } from './_supabase-paid-session';
+import { extractSessionId } from './analyze';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'no-store',
@@ -21,6 +23,9 @@ const ALLOWED_AUDIO_TYPES = new Set([
 interface Env extends GeminiEnv {
   FIREBASE_PROJECT_ID?: string;
   GEMINI_API_KEY?: string;
+  STAGING_SUPABASE_URL?: string;
+  STAGING_SUPABASE_READ_KEY?: string;
+  STAGING_SUPABASE_SERVICE_ROLE_KEY?: string;
 }
 
 export const onRequestPost = async ({
@@ -88,6 +93,20 @@ export const onRequestPost = async ({
     );
   }
 
+  // Audio transcription is a paid feature (free-trial policy 2026-11-27): a verified paid session, or the owner.
+  const isOwner = authResult.emailVerified && authResult.email?.trim().toLowerCase() === 'mr.pelkie@gmail.com';
+  if (!isOwner) {
+    const sessionId = extractSessionId(request.headers.get('x-ps-session'));
+    const paid = sessionId ? await readVerifiedPaidSession(env, authResult.uid, sessionId) : { status: 'denied' as const };
+    if (paid.status !== 'verified') {
+      return Response.json(
+        paid.status === 'unavailable'
+          ? { error: 'Your plan could not be checked. Please try again. Nothing was charged.', code: 'RESERVATION_UNAVAILABLE' }
+          : { error: 'Audio transcription is included with paid plans. Purchase a plan to transcribe recordings.', code: 'PAID_FEATURE_REQUIRED' },
+        { status: paid.status === 'unavailable' ? 503 : 402, headers: DEFAULT_HEADERS }
+      );
+    }
+  }
   let cleanedBase64 = audioData.trim();
   if (cleanedBase64.includes(',')) {
     cleanedBase64 = cleanedBase64.split(',')[1];

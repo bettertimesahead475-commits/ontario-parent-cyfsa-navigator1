@@ -405,7 +405,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                   <span className="text-slate-500 text-xs font-semibold">CAD</span>
                 </div>
                 <span className="text-[11px] font-sans text-emerald-700 font-semibold block mt-0.5">
-                  Free Forever • No card needed
+                  No card needed • One-time free analyses
                 </span>
               </div>
 
@@ -416,10 +416,10 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                 </span>
                 <p className="text-slate-700 font-semibold text-xs flex items-center gap-1.5">
                   <FileSearch className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>3 Free Quick Document Reviews</span>
+                  <span>1 Free Quick Document Review + 1 Free Forensic Deep Scan</span>
                 </p>
                 <p className="text-[10.5px] text-slate-500 leading-tight pt-1 border-t border-slate-200/60">
-                  When used, your on-screen report remains viewable. Upgrade to analyze new files.
+                  One-time per verified email, up to 30 pages and 10 MB per document; they do not renew. Completed reports stay viewable and exportable. Audio transcription and Final Case Assessment are paid.
                 </p>
               </div>
 
@@ -427,7 +427,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
               <div className="space-y-2.5 pt-1 text-xs text-slate-700">
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>3 Free Quick Document Reviews</span>
+                  <span>1 Free Quick Document Review + 1 Free Forensic Deep Scan</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -826,14 +826,14 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             <tbody className="divide-y divide-slate-100 text-slate-700">
               <tr>
                 <td className="py-3 px-4 font-semibold text-slate-900">Billing Type</td>
-                <td className="py-3 px-3 text-center text-slate-600 font-sans text-[11px]">Free Forever</td>
+                <td className="py-3 px-3 text-center text-slate-600 font-sans text-[11px]">Free (one-time trial)</td>
                 <td className="py-3 px-3 text-center text-blue-800 font-sans text-[11px]">One-Time</td>
                 <td className="py-3 px-3 text-center text-purple-800 font-sans text-[11px]">One-Time</td>
                 <td className="py-3 px-3 text-center text-indigo-800 font-sans text-[11px]">Monthly Membership</td>
               </tr>
               <tr className="bg-slate-50/40">
                 <td className="py-3 px-4 font-semibold text-slate-900">Included Analyses</td>
-                <td className="py-3 px-3 text-center font-bold text-slate-800">3 Quick Reviews</td>
+                <td className="py-3 px-3 text-center font-bold text-slate-800">1 Quick + 1 Forensic (once)</td>
                 <td className="py-3 px-3 text-center font-bold text-blue-800">3 Quick Reviews</td>
                 <td className="py-3 px-3 text-center font-bold text-purple-800">5 Forensic or Quick</td>
                 <td className="py-3 px-3 text-center font-bold text-indigo-800">5 Forensic / month</td>

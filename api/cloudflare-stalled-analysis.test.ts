@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { SPEND_CAPS_OFF, freeIdentity, withFreeUsage } from './helpers/freeTrialTestEnv';
 import { handleAnalyzeRequest, type AnalyzerEnv } from "../functions/api/analyze";
 import { createCloudflareGenerateFn } from "../functions/api/_analyzer-model-adapter";
 import type { GenerateFn } from "./services/analyzerSections";
@@ -34,6 +35,7 @@ const ENV = {
   FIREBASE_PROJECT_ID: "p",
   ANTHROPIC_API_KEY: "sk-ant-test",
   QUICK_ANALYSIS_BUDGET_MS: "10000",
+  ...SPEND_CAPS_OFF,
   STAGING_SUPABASE_URL: "https://staging.example.supabase.co",
   STAGING_SUPABASE_SERVICE_ROLE_KEY: "svc-key",
 } as unknown as AnalyzerEnv;
@@ -89,7 +91,7 @@ describe("Quick Review that never returns from the model", () => {
   }, 10000);
 
   it("the stream reports an error and releases the credit when the model call never returns", async () => {
-    mockAuthVerification.mockResolvedValueOnce({ status: "verified", uid: "user_free_1" });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity("user_free_1"));
     const rpc = rpcStub();
     const jobWrites: Array<Record<string, any>> = [];
     const storage = vi.fn(async (url: string, init?: RequestInit) => {
@@ -105,7 +107,7 @@ describe("Quick Review that never returns from the model", () => {
       body: JSON.stringify({ documentText: DOC, mode: "fast", stream: true }),
     });
     let background: Promise<unknown> | undefined;
-    const res = await handleAnalyzeRequest(req, ENV, { rpc, generate, fetcher: storage as any }, (p) => {
+    const res = await handleAnalyzeRequest(req, ENV, { rpc, generate, fetcher: withFreeUsage((storage as any) as typeof fetch) }, (p) => {
       background = p;
     });
     expect(res.status).toBe(200);

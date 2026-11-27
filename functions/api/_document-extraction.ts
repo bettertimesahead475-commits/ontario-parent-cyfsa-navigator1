@@ -431,12 +431,29 @@ async function ocr(env: GeminiEnv, mimeType: string, data: Uint8Array, fetcher?:
 export async function extractDocument(
   input: { base64: string; mimeType?: string; fileName?: string },
   env: GeminiEnv,
-  deps: { fetcher?: typeof fetch; getDocumentProxy?: typeof getDocumentProxy; timeoutMs?: number } = {}
+  deps: {
+    fetcher?: typeof fetch; getDocumentProxy?: typeof getDocumentProxy; timeoutMs?: number;
+    /** Tighter limits for an account without a paid session (free trial: 10 MB, 30 pages). */
+    limits?: { maxBytes: number; maxPages: number; maxOcrPages: number; label: string };
+    /** Called once before the first OCR request; throws ExtractionError when OCR is not authorized or capped. */
+    authorizeOcr?: () => Promise<void>;
+  } = {}
 ): Promise<ExtractionResult> {
   const deadline = Date.now() + Math.min(EXTRACTION_TIMEOUT_MS, Math.max(1, deps.timeoutMs ?? EXTRACTION_TIMEOUT_MS));
   const remaining = () => Math.max(0, Math.min(OCR_PAGE_TIMEOUT_MS, deadline - Date.now()));
   const bytes = decodeBase64(input.base64);
   if (bytes.length > MAX_FILE_BYTES) throw new ExtractionError(413, 'FILE_TOO_LARGE', 'File is too large. The limit is 20 MB.');
+  const limits = deps.limits;
+  if (limits && bytes.length > limits.maxBytes) {
+    throw new ExtractionError(413, 'FILE_TOO_LARGE', `File is too large. ${limits.label} accepts files up to ${Math.round(limits.maxBytes / 1024 / 1024)} MB. Nothing was charged.`);
+  }
+  const ocrLimit = Math.min(MAX_OCR_PAGES, limits?.maxOcrPages ?? MAX_OCR_PAGES);
+  let ocrAuthorized = false;
+  const authorizeOcr = async () => {
+    if (ocrAuthorized || !deps.authorizeOcr) return;
+    await deps.authorizeOcr();
+    ocrAuthorized = true;
+  };
   const fileName = String(input.fileName ?? 'document').slice(0, 255);
   const declared = String(input.mimeType ?? '').toLowerCase().split(';')[0].trim();
   const detected = detectType(bytes);
@@ -487,6 +504,7 @@ export async function extractDocument(
   } else if (type === 'docx') {
     pages = [await page(null, extractDocx(bytes), 'DOCX_XML', 'ok')];
   } else if (type === 'image') {
+    await authorizeOcr();
     const r = await ocr(env, mimeType, bytes, deps.fetcher, remaining());
     track(r);
     pageCount = 1;
@@ -516,9 +534,13 @@ export async function extractDocument(
     }
 
     pageCount = layer.length;
+    if (limits && pageCount > limits.maxPages) {
+      throw new ExtractionError(413, 'TOO_MANY_PAGES', `This PDF has ${pageCount} pages. ${limits.label} accepts up to ${limits.maxPages} pages. Split the PDF or purchase a plan. Nothing was charged.`);
+    }
     const needOcr = layer.map((t, i) => (letters(t) < MIN_TEXT_LAYER_CHARS ? i : -1)).filter((i) => i >= 0);
-    const ocrNow = needOcr.slice(0, MAX_OCR_PAGES);
-    const skipped = new Set(needOcr.slice(MAX_OCR_PAGES));
+    const ocrNow = needOcr.slice(0, ocrLimit);
+    const skipped = new Set(needOcr.slice(ocrLimit));
+    if (ocrNow.length > 0) await authorizeOcr();
     const ocrText = new Map<number, string>();
     const failedOcr = new Map<number, GeminiError | null>();
     const truncated = new Set<number>();
@@ -618,7 +640,7 @@ export async function extractDocument(
     );
     if (skipped.size) {
       const list = [...skipped].map((i) => i + 1);
-      incomplete.push(`${skipped.size} scanned page(s) were not read because one request reads at most ${MAX_OCR_PAGES} scanned pages: ${list.slice(0, 20).join(', ')}${list.length > 20 ? ', ...' : ''}. Split the PDF and upload the rest separately.`);
+      incomplete.push(`${skipped.size} scanned page(s) were not read because one request reads at most ${ocrLimit} scanned pages: ${list.slice(0, 20).join(', ')}${list.length > 20 ? ', ...' : ''}. Split the PDF and upload the rest separately.`);
     }
     const empty = pages.filter((p) => p.status === 'empty').map((p) => p.pageNumber);
     if (empty.length) incomplete.push(`No text was found on page(s) ${empty.join(', ')}.`);

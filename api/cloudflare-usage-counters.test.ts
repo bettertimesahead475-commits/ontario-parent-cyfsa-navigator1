@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeCreditBalance, creditPillLabel } from "../src/utils/creditBalance";
+import { freeTrialKey } from "../functions/api/_free-trial";
 
 const verify = vi.fn();
 const readSession = vi.fn();
@@ -22,21 +23,34 @@ describe("GET /api/analyzer-usage reads the counters reservation enforces", () =
     readSession.mockReset();
   });
 
-  it("free account: remaining = 3 - used, from the uid's counter row (was always 3)", async () => {
-    verify.mockResolvedValue({ status: "verified", uid: "user-abc", email: null, emailVerified: false });
+  it("an account that started under the earlier 3-Quick offer keeps it, from the uid's counter row, plus 1 Forensic", async () => {
+    verify.mockResolvedValue({ status: "verified", uid: "user-abc", email: "abc@example.com", emailVerified: true });
     vi.stubGlobal("fetch", counters({ "user-abc": 2 }));
     const b = await (await get()).json();
-    expect(b).toMatchObject({ type: "free", creditsLimit: 3, creditsRemaining: 1, creditsUsed: 2, remaining: 1, countsAvailable: true });
+    expect(b).toMatchObject({
+      type: "free", countsAvailable: true, quickReviewsLimit: 3, quickReviewsUsed: 2, quickReviewsRemaining: 1,
+      forensicAnalysesLimit: 1, forensicAnalysesRemaining: 1, creditsLimit: 4, creditsRemaining: 2, creditsUsed: 2,
+    });
   });
 
-  it("free account with no usage yet has its full allowance", async () => {
-    verify.mockResolvedValue({ status: "verified", uid: "new-user", email: null, emailVerified: false });
+  it("a new verified account has 1 free Quick Review and 1 free Forensic Deep Scan, counted per verified email", async () => {
+    verify.mockResolvedValue({ status: "verified", uid: "new-user", email: "New.User+cyfsa@gmail.com", emailVerified: true });
+    const quickKey = await freeTrialKey("quick", "newuser@gmail.com");
+    vi.stubGlobal("fetch", counters({ [quickKey]: 1 }));
+    expect(await (await get()).json()).toMatchObject({
+      quickReviewsLimit: 1, quickReviewsRemaining: 0, forensicAnalysesLimit: 1, forensicAnalysesRemaining: 1,
+      creditsLimit: 2, creditsRemaining: 1, allowsForensic: true, emailVerificationRequired: false,
+    });
+  });
+
+  it("an unverified email has no free analyses until it is verified", async () => {
+    verify.mockResolvedValue({ status: "verified", uid: "new-user", email: "x@example.com", emailVerified: false });
     vi.stubGlobal("fetch", counters({}));
-    expect(await (await get()).json()).toMatchObject({ creditsRemaining: 3, creditsUsed: 0 });
+    expect(await (await get()).json()).toMatchObject({ emailVerificationRequired: true, creditsRemaining: 0, allowsForensic: false });
   });
 
   it("reports unknown, not a full allowance, when the counter cannot be read", async () => {
-    verify.mockResolvedValue({ status: "verified", uid: "user-abc", email: null, emailVerified: false });
+    verify.mockResolvedValue({ status: "verified", uid: "user-abc", email: "abc@example.com", emailVerified: true });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("err", { status: 500 })));
     expect(await (await get()).json()).toMatchObject({ creditsRemaining: null, countsAvailable: false });
   });

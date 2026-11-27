@@ -4127,10 +4127,10 @@ export default function DocumentAnalyzerTab() {
                           <div role="alert" className="bg-amber-950/70 border border-amber-400/40 rounded-xl p-4 text-xs text-amber-100 space-y-2" id="deep-scan-limit-reached-banner">
                             <div className="flex items-center gap-2 font-bold text-amber-300 text-sm">
                               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                              <span>Forensic In-Depth Scan Requires a Paid Plan</span>
+                              <span>Free Forensic Deep Scan Already Used</span>
                             </div>
                             <p className="leading-relaxed">
-                              Forensic In-Depth analysis provides comprehensive 6-section statutory assessment and independent verification. Upgrade your plan to continue.
+                              Each verified account includes one free Forensic Deep Scan. Yours has been used; purchase a plan for further Forensic analyses. Your completed reports stay available to view and export at no charge.
                             </p>
                             <div className="pt-1">
                               <button

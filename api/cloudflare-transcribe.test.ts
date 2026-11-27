@@ -1,11 +1,42 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { onRequestPost } from '../functions/api/transcribe';
 import * as authCheck from '../functions/api/_auth-check';
+import * as paidSession from '../functions/api/_supabase-paid-session';
+
+const SESSION = '0a0a0a0a-1111-4222-8333-444444444444';
+/** Transcription is paid-only: these requests carry a session that the stubbed ledger reports as a verified plan. */
+const paidReq = (r: Request) => { const h = new Headers(r.headers); h.set('X-PS-Session', SESSION); return new Request(r, { headers: h }); };
+const asPaid = () => vi.spyOn(paidSession, 'readVerifiedPaidSession').mockResolvedValue({ status: 'verified', session: {} as never });
 
 describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-audio)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+  beforeEach(() => { asPaid(); });
+
+  it('refuses a signed-in account without a paid plan with 402 and never calls Gemini', async () => {
+    vi.mocked(paidSession.readVerifiedPaidSession).mockResolvedValue({ status: 'denied' });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'u1', email: 'u1@example.com', emailVerified: true });
+    const body = JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' });
+    for (const r of [new Request('http://localhost/api/transcribe', { method: 'POST', body }), paidReq(new Request('http://localhost/api/transcribe', { method: 'POST', body }))]) {
+      const res = await onRequestPost({ request: r, env: validEnv });
+      expect(res.status).toBe(402);
+      expect((await res.json()).code).toBe('PAID_FEATURE_REQUIRED');
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with 503 when the plan cannot be checked', async () => {
+    vi.mocked(paidSession.readVerifiedPaidSession).mockResolvedValue({ status: 'unavailable' });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'u1', email: 'u1@example.com', emailVerified: true });
+    const res = await onRequestPost({ request: paidReq(new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' }) })), env: validEnv });
+    expect(res.status).toBe(503);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   const validEnv = {
@@ -20,7 +51,7 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
-    const res = await onRequestPost({ request: req, env: validEnv });
+    const res = await onRequestPost({ request: paidReq(req), env: validEnv });
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.code).toBe('INVALID_AUDIO');
@@ -34,7 +65,7 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ audioData: hugeAudio }),
     });
-    const res = await onRequestPost({ request: req, env: validEnv });
+    const res = await onRequestPost({ request: paidReq(req), env: validEnv });
     expect(res.status).toBe(413);
     const json = await res.json();
     expect(json.code).toBe('PAYLOAD_TOO_LARGE');
@@ -45,7 +76,7 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
     vi.stubGlobal('fetch', fetchSpy);
     vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'denied' });
     const req = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' }) });
-    const res = await onRequestPost({ request: req, env: validEnv });
+    const res = await onRequestPost({ request: paidReq(req), env: validEnv });
     expect(res.status).toBe(401);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -54,7 +85,7 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
     const req = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' }) });
-    const res = await onRequestPost({ request: req, env: { GEMINI_API_KEY: 'k' } });
+    const res = await onRequestPost({ request: paidReq(req), env: { GEMINI_API_KEY: 'k' } });
     expect(res.status).toBe(503);
     expect((await res.json()).code).toBe('AUTH_NOT_CONFIGURED');
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -63,10 +94,10 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
   it('refuses non-audio types and hides provider error bodies', async () => {
     vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'u1', email: null, emailVerified: false });
     const bad = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'JVBERi0=', mimeType: 'application/pdf' }) });
-    expect((await onRequestPost({ request: bad, env: validEnv })).status).toBe(415);
+    expect((await onRequestPost({ request: paidReq(bad), env: validEnv })).status).toBe(415);
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":{"message":"API key not valid. project 123456"}}', { status: 400 })));
     const req = new Request('http://localhost/api/transcribe', { method: 'POST', body: JSON.stringify({ audioData: 'UklGRg==', mimeType: 'audio/wav' }) });
-    const res = await onRequestPost({ request: req, env: validEnv });
+    const res = await onRequestPost({ request: paidReq(req), env: validEnv });
     // An invalid key is a service problem (503), not the user's file.
     expect(res.status).toBe(503);
     expect(await res.text()).not.toMatch(/API key|123456/);
@@ -85,7 +116,7 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ audioData: 'SGVsbG8gd29ybGQ=' }),
     });
-    const res = await onRequestPost({ request: req, env: { FIREBASE_PROJECT_ID: 'test-proj' } });
+    const res = await onRequestPost({ request: paidReq(req), env: { FIREBASE_PROJECT_ID: 'test-proj' } });
     expect(res.status).toBe(503);
     const json = await res.json();
     expect(json.code).toBe('TRANSCRIPTION_SERVICE_UNAVAILABLE');
@@ -125,7 +156,7 @@ describe('Cloudflare Native Transcribe API (/api/transcribe & /api/transcribe-au
         fileName: 'case-meeting.webm',
       }),
     });
-    const res = await onRequestPost({ request: req, env: validEnv });
+    const res = await onRequestPost({ request: paidReq(req), env: validEnv });
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.success).toBe(true);
