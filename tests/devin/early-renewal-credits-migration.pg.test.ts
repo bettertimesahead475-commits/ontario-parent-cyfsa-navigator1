@@ -287,9 +287,10 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
   });
   // The admin refund (functions/api/admin/[[path]].ts) against this database through a minimal PostgREST
   // (select / eq / is.null / not.is.null / or=(a.eq.x,...) / limit, PATCH returning rows); payments and storage in memory.
-  it("admin refund of the top-up takes back its 5 analyses and 30 days: 2 of 5 used + top-up = 8 left, refunded = 3 left", async () => {
-    const email = "refund@example.test"; const uid = "uid-refund"; const topRef = ref();
+  // holdSessionPatches = n: the first n session PATCHes wait until all n have been sent, so n refunds race on one row.
+  const adminHarness = (payments: Record<string, { plan: string; email: string; uid: string }>, holdSessionPatches = 0) => {
     const storage = new Map<string, string>();
+    let held: Array<() => void> = [];
     const where = (u: URL) => {
       const w: string[] = []; const params: unknown[] = [];
       const cond = (col: string, expr: string) => {
@@ -319,22 +320,33 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
         storage.set(key, String(init.body)); return Response.json({ Key: key });
       }
       const table = u.pathname.replace("/rest/v1/", "");
-      if (table === "payments") return Response.json(u.searchParams.get("reference_number") === `eq.${topRef}`
-        ? [{ id: randomUUID(), reference_number: topRef, plan: "Premium", amount: 49.99, status: "approved", notes: `email:${email};uid:${uid}` }] : []);
+      if (table === "payments") {
+        const r = u.searchParams.get("reference_number")?.slice(3) ?? ""; const p = payments[r];
+        return Response.json(p ? [{ id: randomUUID(), reference_number: r, plan: p.plan, amount: 49.99, status: "approved", notes: `email:${p.email};uid:${p.uid}` }] : []);
+      }
       if (table !== "access_codes" && table !== "navigator_paid_sessions") return new Response("unexpected", { status: 500 });
       const w = where(u);
       // row_to_json: timestamps come back as PostgREST sends them (ISO 8601, microseconds), so eq filters on them round-trip.
       if (method === "GET") return Response.json((await db.query(`select row_to_json(t) as r from (select * from public.${table}${w.sql}${w.limit ? ` limit ${Number(w.limit)}` : ""}) t`, w.params)).rows.map((x) => x.r));
       if (method === "PATCH") {
+        if (table === "navigator_paid_sessions" && holdSessionPatches > 0) {
+          holdSessionPatches--;
+          await new Promise<void>((release) => { held.push(release); if (holdSessionPatches === 0) { held.forEach((h) => h()); held = []; } });
+        }
         const sets = Object.keys(body).map((k, i) => `${k} = $${w.params.length + i + 1}`);
         return Response.json((await db.query(`with t as (update public.${table} set ${sets.join(", ")}${w.sql} returning *) select row_to_json(t) as r from t`, [...w.params, ...Object.values(body)])).rows.map((x) => x.r));
       }
       return new Response("unexpected", { status: 500 });
     };
     const env = { FIREBASE_PROJECT_ID: "p", STAGING_SUPABASE_URL: "https://db.test", STAGING_SUPABASE_SERVICE_ROLE_KEY: "k" };
-    const refund = async () => (await handleAdminRequest(new Request("https://cyfsanavigator.com/api/admin/payments/refund", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ referenceNumber: topRef, reason: "Customer request" }) }),
+    return async (referenceNumber: string) => (await handleAdminRequest(new Request("https://cyfsanavigator.com/api/admin/payments/refund", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ referenceNumber, reason: "Customer request" }) }),
       env as never, { requireAdmin: (async () => ({ admin: { uid: "admin-uid", email: "ops@example.test" } })) as never, fetcher: fetcher as never })).json() as Promise<Record<string, unknown>>;
+  };
+
+  it("admin refund of the top-up takes back its 5 analyses and 30 days: 2 of 5 used + top-up = 8 left, refunded = 3 left", async () => {
+    const email = "refund@example.test"; const uid = "uid-refund"; const topRef = ref();
+    const refund = adminHarness({ [topRef]: { plan: "Premium", email, uid } });
 
     const first = await redeem(db, uid, await issue(ref(), email), email);
     expect(await analyse(first.session_id!, "Premium")).toBe("reserved");
@@ -342,10 +354,27 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     const top = await redeem(db, uid, await issue(topRef, email), email);
     expect(top).toMatchObject({ session_id: first.session_id, granted_credits: 10 });
 
-    expect(await refund()).toMatchObject({ success: true, sessionsShortened: 1, sessionsRevoked: 0 });
+    expect(await refund(topRef)).toMatchObject({ success: true, sessionsShortened: 1, sessionsRevoked: 0 });
     const s = await one("select expires_at, granted_credits, revoked_at from public.navigator_paid_sessions where id = $1", [first.session_id]);
     expect(s).toMatchObject({ granted_credits: null, revoked_at: null });
     expect(new Date(s.expires_at).toISOString()).toBe(new Date(first.expires_at!).toISOString());
     expect(await analyseUntilLimit(first.session_id!, "Premium")).toBe(3);
+  });
+
+  it("two top-ups refunded at the same moment both take back their analyses and days (15 -> 5, -60 days)", async () => {
+    const email = "race@example.test"; const uid = "uid-race"; const topA = ref(); const topB = ref();
+    const refund = adminHarness({ [topA]: { plan: "Premium", email, uid }, [topB]: { plan: "Premium", email, uid } }, 2);
+    const first = await redeem(db, uid, await issue(ref(), email), email);
+    await redeem(db, uid, await issue(topA, email), email);
+    const both = await redeem(db, uid, await issue(topB, email), email);
+    expect(both).toMatchObject({ session_id: first.session_id, granted_credits: 15 });
+
+    // Both refunds read the same row before either writes; the one whose write misses re-reads and applies its own.
+    const results = await Promise.all([refund(topA), refund(topB)]);
+    for (const r of results) expect(r).toMatchObject({ success: true, sessionsShortened: 1, shorteningsForReview: 0 });
+    const s = await one("select expires_at, granted_credits from public.navigator_paid_sessions where id = $1", [first.session_id]);
+    expect(s.granted_credits).toBeNull();
+    expect(new Date(s.expires_at).toISOString()).toBe(new Date(Date.parse(String(both.expires_at)) - 60 * DAY).toISOString());
+    expect(await analyseUntilLimit(first.session_id!, "Premium")).toBe(5);
   });
 });

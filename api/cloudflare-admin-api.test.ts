@@ -813,6 +813,37 @@ describe('refund of an early one-off re-purchase (Migration E granted_credits)',
     expect(db.tables.navigator_paid_sessions[0].granted_credits).toBe(10);
   });
 
+  it('E6 a refund whose write misses because another refund of the same entitlement landed first re-reads and still applies', async () => {
+    const db = topUpFixture(15);
+    const impl = db.fetcher.getMockImplementation()!;
+    let raced = false;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      if (!raced && (init.method || 'GET') === 'PATCH' && String(input).includes('/rest/v1/navigator_paid_sessions')) {
+        raced = true; // the original pack's refund lands between this refund's read and its write
+        Object.assign(db.tables.navigator_paid_sessions[0], { expires_at: '2026-12-02T00:00:00.000Z', granted_credits: 10 });
+      }
+      return impl(input, init);
+    });
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0 });
+    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-11-02T00:00:00.000Z', granted_credits: null });
+    expect(sessionPatches(db)).toHaveLength(2);
+  });
+
+  it('E7 a write that keeps missing is reported for review, never as applied', async () => {
+    const db = topUpFixture(15);
+    const impl = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      if ((init.method || 'GET') === 'PATCH' && String(input).includes('/rest/v1/navigator_paid_sessions')) {
+        const row = db.tables.navigator_paid_sessions[0]; // another writer wins every time
+        row.expires_at = new Date(Date.parse(String(row.expires_at)) + 1000).toISOString();
+      }
+      return impl(input, init);
+    });
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 0, shorteningsForReview: 1 });
+    expect(db.tables.navigator_paid_sessions[0].granted_credits).toBe(15);
+    expect(sessionPatches(db)).toHaveLength(5);
+  });
+
   it('E5 before E (no granted_credits column) and on monthly tiers the refund sends exactly the request it sent before', async () => {
     const before = topUpFixture();
     await refund(before, 'PS-TOPUP1');

@@ -556,6 +556,7 @@ async function settlementAction(env: AdminEnv, admin: AdminIdentity, action: 'co
 }
 
 const RENEWAL_DAYS = 30;
+const REFUND_CAS_ATTEMPTS = 5;
 
 async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
   const reference = typeof body.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
@@ -607,20 +608,29 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
         // Not the first application of this refund: shortening is not idempotent, so it is left for manual review.
         shorteningsForReview++;
       } else if ((isRenewal || renewals.length > 0) && session.expires_at) {
-        const shortened = new Date(Date.parse(session.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
-        const change: Record<string, unknown> = { expires_at: shortened };
-        let filter = `navigator_paid_sessions?id=eq.${session.id}&expires_at=eq.${enc(session.expires_at)}`;
-        // Migration E: an early re-purchase of a one-off pack also added that pack's analyses (granted_credits), so the
-        // refund takes them back with the 30 days; back at the tier default it is null again. Before E the column does
-        // not exist (granted_credits is absent) and the request is unchanged.
-        const pack = LIMITS[String(session.tier)];
-        if (typeof session.granted_credits === 'number' && pack && !pack.monthly) {
-          const left = session.granted_credits - pack.limit;
-          change.granted_credits = left > pack.limit ? left : null;
-          filter += `&granted_credits=eq.${session.granted_credits}`;
+        // Compare-and-set on the row as read. Another refund of the same entitlement (for example the original pack and
+        // its top-up refunded together) can change it in between; this refund then re-reads and takes back its own 30
+        // days and pack from the new values instead of losing them. Still contended after the retries: manual review.
+        let current: Session | undefined = session; let landed = false;
+        for (let attempt = 0; attempt < REFUND_CAS_ATTEMPTS && current?.expires_at; attempt++) {
+          const shortened = new Date(Date.parse(current.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
+          const change: Record<string, unknown> = { expires_at: shortened };
+          let filter = `navigator_paid_sessions?id=eq.${current.id}&expires_at=eq.${enc(current.expires_at)}`;
+          // Migration E: an early re-purchase of a one-off pack also added that pack's analyses (granted_credits), so the
+          // refund takes them back with the 30 days; back at the tier default it is null again. Before E the column does
+          // not exist (granted_credits is absent) and the request is unchanged.
+          const pack = LIMITS[String(current.tier)];
+          if (typeof current.granted_credits === 'number' && pack && !pack.monthly) {
+            const left = current.granted_credits - pack.limit;
+            change.granted_credits = left > pack.limit ? left : null;
+            filter += `&granted_credits=eq.${current.granted_credits}`;
+          }
+          const rows = await rest<Session[]>(env, filter, { method: 'PATCH', body: change, prefer: 'return=representation' }, fetcher);
+          if (rows.length > 0) { landed = true; break; }
+          current = (await rest<Session[]>(env, `navigator_paid_sessions?select=*&id=eq.${session.id}&limit=1`, {}, fetcher))[0];
         }
-        const rows = await rest<Session[]>(env, filter, { method: 'PATCH', body: change, prefer: 'return=representation' }, fetcher);
-        sessionsShortened += rows.length;
+        if (landed) sessionsShortened++;
+        else if (current) shorteningsForReview++;
       } else {
         // Overwrites any earlier revocation time too, so an earlier console suspension can no longer be "restored".
         const n = (await rest<Session[]>(env, `navigator_paid_sessions?id=eq.${session.id}`, { method: 'PATCH', body: { revoked_at: stamp }, prefer: 'return=representation' }, fetcher)).length;

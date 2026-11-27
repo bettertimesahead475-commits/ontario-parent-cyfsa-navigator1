@@ -54,11 +54,15 @@ original pack of a topped-up session does the same, so the paid top-up survives 
 - Before E (no column) and on monthly tiers, the request is byte-for-byte unchanged (`api/cloudflare-admin-api.test.ts` E5).
 - Only the first application of a refund takes analyses back; a repeat is counted in `shorteningsForReview` (E4).
 - If the customer already used more than the remaining allowance, nothing goes negative: further reservations are refused.
-- As before for `expires_at`, a top-up redeemed between the refund's read and its write makes the write miss
-  (`sessionsShortened: 0`); the admin repeats the refund review manually. Unchanged behaviour, noted for Claude.
-- Evidence: 5 unit tests (E1–E5; E1–E4 fail on the previous code) and one disposable-PG test running the real refund
-  handler against P + D + E (2 of 5 used + top-up = 8 left; after the refund 3 left; it fails on the previous code with
-  `granted_credits` still 10).
+- The PATCH is a compare-and-set on the row as read. If another write lands in between (for example the original
+  pack and a top-up refunded at the same moment, or a top-up redeemed during the refund), the write misses; the
+  refund re-reads the row and applies its own 30 days and pack to the new values, up to `REFUND_CAS_ATTEMPTS` (5)
+  times. Only if every attempt misses is it counted in `shorteningsForReview`, never as `sessionsShortened`.
+  (Previously the losing refund was recorded as applied with nothing taken back, and could not be retried.)
+- Evidence: 7 unit tests (E1–E7; E1–E4 fail on the pre-fix code, E6–E7 fail on the code without re-read) and two
+  disposable-PG tests running the real refund handler against P + D + E: 2 of 5 used + top-up = 8 left, refunded =
+  3 left; and two top-ups refunded concurrently with both reads forced before either write: 15 -> tier default (5)
+  and -60 days. Each fails on the code it covers.
 
 ## Claude handoff: please qualify independently
 1. Lock order: code row → reference lock (D) → renewal lock → session row; the reserve wrapper reads the session
@@ -66,4 +70,4 @@ original pack of a topped-up session does the same, so the paid top-up survives 
 2. The wrapper (`language sql`, security invoker) and the rename keep grants: service_role only.
 3. Rollback equality with D and with `paid_credit_reservation_functions.sql` (fingerprints above).
 4. Whether +30 days from the current expiry is the intended one-off extension, and exact-tier matching for aliases.
-5. The top-up refund above: pack size per tier (`LIMITS`), null at the tier default, and the missed-write case.
+5. The top-up refund above: pack size per tier (`LIMITS`), null at the tier default, and the compare-and-set retry (bounded at 5, then review).
