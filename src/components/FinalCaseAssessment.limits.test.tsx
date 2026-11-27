@@ -135,4 +135,19 @@ describe("Final Case Assessment source size limits", () => {
     fireEvent.change(input, { target: { files: [new File(["b".repeat(room - 2)], "two.txt", { type: "text/plain" })] } });
     await waitFor(() => expect(sourcePosts()).toHaveLength(2));
   });
+  it("does not count a reselected source again, because the server saves it once", async () => {
+    const first = "a".repeat(40000);
+    await uploadFile("one.txt", first);
+    await waitFor(() => expect(sourcePosts()).toHaveLength(1));
+    const input = screen.getByLabelText("Add a text document to this matter") as HTMLInputElement;
+    // Counted twice, the set would be 80,000+ characters and refused before sending.
+    fireEvent.change(input, { target: { files: [new File([first], "one.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(sourcePosts()).toHaveLength(2));
+    expect(screen.queryByRole("alert")).toBeNull();
+    // The duplicate did not consume room: a second document that fits alongside the first is still accepted.
+    const room = ASSESSMENT_SOURCE_SET_MAX_CHARS - sourceSetEntryLength("one.txt", first) - sourceSetEntryLength("two.txt", "") - 2;
+    fireEvent.change(input, { target: { files: [new File(["b".repeat(room)], "two.txt", { type: "text/plain" })] } });
+    await waitFor(() => expect(sourcePosts()).toHaveLength(3));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

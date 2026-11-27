@@ -72,10 +72,12 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
       const problem = sourceUploadProblem(file.name, text);
       if (problem) throw new Error(problem);
       const added = addedSources[matterId] ?? [];
-      if (sourceSetLength([...added, { filename: file.name, text }]) > ASSESSMENT_SOURCE_SET_MAX_CHARS) throw new Error(SOURCE_SET_LIMIT_MESSAGE);
+      // The server stores a source once per (filename, text), so reselecting a saved source does not grow the set.
+      const alreadyAdded = added.some(e => e.filename === file.name && e.text === text);
+      if (!alreadyAdded && sourceSetLength([...added, { filename: file.name, text }]) > ASSESSMENT_SOURCE_SET_MAX_CHARS) throw new Error(SOURCE_SET_LIMIT_MESSAGE);
       const res = await apiFetch('/api/final-case-assessment?matterId=' + encodeURIComponent(matterId) + '&action=source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: sourceRequestBody(file.name, text) });
       const body = await res.json(); if (!res.ok) throw new Error(errorMessage(body, 'Source could not be saved'));
-      if (!body.reused) setAddedSources(previous => ({ ...previous, [matterId]: [...(previous[matterId] ?? []), { filename: file.name, text }] }));
+      if (!body.reused && !alreadyAdded) setAddedSources(previous => ({ ...previous, [matterId]: [...(previous[matterId] ?? []), { filename: file.name, text }] }));
       setReport(null); setNotice(body.reused ? 'This source document is already saved.' : 'Source document saved. Add another document or generate the assessment.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Source could not be saved'); }
     finally { setBusy(false); }
