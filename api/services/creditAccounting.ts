@@ -467,9 +467,10 @@ export async function restoreSession(sessionId: string): Promise<void> {
       suspended_reason: null,
     })
     .eq("id", sessionId);
-  // 42703 (column does not exist) is the legacy schema, where suspension lives only in the marker below. Any other
-  // error leaves is_suspended true, which the admin console reads, so restoration is not reported.
-  if (error && error.code !== "42703") {
+  // 42703 (Postgres) and PGRST204 (PostgREST schema cache) mean the column does not exist: the legacy schema, where
+  // suspension lives only in the marker below. Any other error leaves is_suspended true, which the admin console
+  // reads, so restoration is not reported.
+  if (error && error.code !== "42703" && error.code !== "PGRST204") {
     throw Object.assign(new Error("The session record could not be updated; the session is still suspended."), { statusCode: 503 });
   }
 

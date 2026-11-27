@@ -147,6 +147,17 @@ describe("credit accounting branches", () => {
     await expect(reserve()).rejects.toMatchObject({ statusCode: 403, code: "ACCOUNT_SUSPENDED" });
   });
 
+  it("restore succeeds when PostgREST reports the missing legacy column as PGRST204", async () => {
+    const db = createProductionLikeDb();
+    currentDb.ref = db;
+    await suspendSession({ sessionId: "session_branch", reason: "Chargeback received" });
+    const sessions = db.from("navigator_paid_sessions");
+    currentDb.ref = withOverrides({ navigator_paid_sessions: { ...sessions, update: () => chain({ data: null, error: { code: "PGRST204", message: "Could not find the 'is_suspended' column of 'navigator_paid_sessions' in the schema cache" } }) } }, undefined, db);
+    await restoreSession("session_branch");
+    currentDb.ref = db;
+    expect(await getCreditBalance("session_branch", "Premium")).toMatchObject({ isSuspended: false });
+  });
+
   it("restore succeeds on the legacy schema, where the column is missing (42703) and the marker holds the suspension", async () => {
     const db = createProductionLikeDb();
     currentDb.ref = db;
