@@ -48,14 +48,14 @@ Single owner approval covers the whole sequence; each step still stops on a fail
 | 0 | Owner ratifies A/B as applied (owner 14:26: preserve; no rollback) | Claude's A/B integrity and authorization note | none planned |
 | 1 | Confirm PITR or take a backup | Backup id or PITR window recorded | — |
 | 2 | P preflight (`preserve_monthly_renewal_P.preflight.sql`) | All blocking rows `ok` | — |
-| 3 | Apply P (`supabase/migrations/20261110004740_preserve_monthly_renewal.sql`) | `preserve_monthly_renewal_P.postcheck.sql` all `ok` | `preserve_monthly_renewal_P.rollback.sql` |
+| 3 | Apply P (`supabase/migrations/20261110004740_preserve_monthly_renewal.sql`) | `preserve_monthly_renewal_P.postcheck.sql` all `ok` | `preserve_monthly_renewal_P.rollback.sql`; if P is re-applied later, run `preserve_monthly_renewal_P.reapply_backfill.sql` straight after it |
 | 4 | D preflight, then apply D | D preflight blocking rows `ok`; D brief postchecks | D `.rollback.sql`, then P's if needed |
-| 5 | Apply E | The #171 refund reverses `granted_credits` (owner 14:26); E preflight `ok` | E `.rollback.sql` |
-| 6 | Apply C, with `PERSISTENT_RATE_LIMITS` unset | #174 brief checks | `rollback_navigator_rate_limit_hits.sql` |
-| 7 | Apply F | F preflight `ok`; no sends (owner 14:26) | F `.down.sql` |
-| 8 | Deploy the RC to Cloudflare production (separate owner approval in `RELEASE_CANDIDATE_20261127.md`) | RELEASE_CHECKLIST smoke tests | Cloudflare rollback to `0cc59589` |
+| 5 | Apply C, with `PERSISTENT_RATE_LIMITS` unset | #174 brief checks | `rollback_navigator_rate_limit_hits.sql` |
+| 6 | Apply F | F preflight `ok`; no sends (owner 14:26) | F `.down.sql` |
+| 7 | Deploy the RC to Cloudflare production (separate owner approval in `RELEASE_CANDIDATE_20261127.md`) | RELEASE_CHECKLIST smoke tests; the deployed admin refund subtracts a top-up from `granted_credits` | Cloudflare rollback to `0cc59589` (roll back E first if it is applied) |
+| 8 | Apply E, only **after** step 7: the live `82dfe65` refund shortens access but leaves `granted_credits`, so E before the RC would let refunded top-ups keep their analyses | The #171 refund reverses `granted_credits` and is live (owner 14:26); E preflight `ok` | E `.rollback.sql` |
 
-**Rollback order:** reverse order only: F, C, E, D, P. Never run `free_scan_reservation_functions.down.sql` on this database.
+**Rollback order:** reverse order only: E, then the Cloudflare deployment, then F, C, D, P. Never run `free_scan_reservation_functions.down.sql` on this database.
 
 Every step needs Claude's qualification of that entry. Before each step, record `select max(version) from supabase_migrations.schema_migrations`.
 Apply through Supabase `apply_migration` so a history row is written. The recorded version will be the apply time, not the
