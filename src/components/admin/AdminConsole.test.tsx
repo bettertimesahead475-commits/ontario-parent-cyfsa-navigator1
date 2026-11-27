@@ -90,3 +90,33 @@ describe("AdminConsole financial reporting (DEVIN-FIN-01)", () => {
     expect(text).not.toMatch(/Bank confirmed: \$0\.00/);
   });
 });
+
+describe("AdminConsole approval message with transactional email", () => {
+  beforeEach(() => { apiFetch.mockReset(); vi.restoreAllMocks(); });
+
+  const payment = { referenceNumber: "PS-AAAA1111", customerEmail: "parent@example.test", package: "Basic", amount: 19.99, submittedAt: "2026-11-25T00:00:00Z", status: "pending", bankSettlementStatus: "pending_settlement", accessStatus: "pending" };
+  const setup = (approval: Record<string, unknown>) => {
+    vi.spyOn(window, "prompt").mockReturnValue("19.99");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/session")) return json(200, { admin: true, email: "owner@example.com" });
+      if (url.endsWith("/payments/overview")) return json(200, { payments: [payment], reporting: { warnings: [] } });
+      if (url.endsWith("/payments/approve") && init?.method === "POST") return json(200, { success: true, customerEmail: "parent@example.test", accessCode: "ABCD-EFGH-JKMN", expiresAt: "2026-12-09T00:00:00Z", ...approval });
+      return json(404, {});
+    });
+    render(<AdminConsole initialSection="payments" />);
+  };
+
+  it("tells the administrator not to send the code again when it was queued for email", async () => {
+    setup({ emailsQueued: { confirmation: true, receipt: true, accessCode: true } });
+    (await screen.findByRole("button", { name: "Approve" })).click();
+    expect(await screen.findByText(/queued for email to the customer: do not send it yourself/)).toBeTruthy();
+    expect(screen.queryByText(/Send it now/)).toBeNull();
+  });
+
+  it("still asks for manual delivery when the code was not queued", async () => {
+    setup({ emailsQueued: { confirmation: false, receipt: false, accessCode: false } });
+    (await screen.findByRole("button", { name: "Approve" })).click();
+    expect(await screen.findByText(/Send it now: it is shown only once/)).toBeTruthy();
+  });
+});

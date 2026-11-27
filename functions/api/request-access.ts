@@ -7,6 +7,8 @@
 import { verifyFirebaseRequest } from './_auth-check';
 import { normalizeApiKey } from './_supabase-key';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
+import { enqueueTransactionalEmail } from './_email-outbox';
+import type { TransactionalEmailEnv } from './_mailer';
 import { TIER_PRICES } from './access-pricing';
 
 const DEFAULT_HEADERS = {
@@ -52,7 +54,7 @@ export function getInstructions(referenceNumber: string, amount: number, payment
   return `Send an Interac e-transfer for $${formatAmount(amount)} CAD to ${paymentEmail}. Put "${referenceNumber}" in the message/memo field so your payment can be matched. Once it's confirmed, you'll receive an access code.`;
 }
 
-interface Env {
+interface Env extends TransactionalEmailEnv {
   FIREBASE_PROJECT_ID?: string;
   PAYMENT_EMAIL?: string;
   STAGING_SUPABASE_URL?: string;
@@ -297,6 +299,12 @@ export const onRequestPost = async ({
         { status: 500, headers: DEFAULT_HEADERS }
       );
     }
+
+    // Enqueue only (no-op unless TRANSACTIONAL_EMAIL_ENABLED); a failure is logged and never affects the order.
+    await enqueueTransactionalEmail(env, {
+      kind: 'payment_instructions', dedupeKey: referenceNumber, reference: referenceNumber, email: normalizedEmail,
+      data: { plan: tier, amount, payTo: paymentEmail },
+    });
 
     return Response.json(
       {
