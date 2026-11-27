@@ -25,8 +25,8 @@ Not yet included: #181 (Migration E, early pack renewal keeps unused credits) un
 
 ## Verification on this branch
 
-- `tsc --noEmit` clean. Vitest: 5,203 passed, 544 skipped; 1 failure (`FinalCaseAssessment.failclosed`, a 1 s
-  `findByRole` timeout under full-suite load) that passes in isolation.
+- `tsc --noEmit` clean. Vitest: 5,203 passed, 544 skipped; 1 failure (`FinalCaseAssessment.failclosed`) under full-suite load.
+  Root cause: the tests picked the matter before the matter list loaded. Fixed in tests only (#186, `bdbcc06`); full suite 5,213 passed, 0 failed.
 - `npm run build` + `wrangler pages dev dist`: `/`, `/five-day-rule`, `/pricing` → 200 with own title, `index,follow`,
   JSON-LD; `/no-such-page` → **404** noindex; `/admin` → 200 noindex shell; sitemap has 17 URLs with `<lastmod>`;
   `og-image.png` is 1200×630; `/api/access-pricing` reports "3 Free Quick Document Reviews" and Premium "5 analyses included".

@@ -11,7 +11,11 @@ const REPORT = {
   sections: { overview: [{ text: "Synthetic overview point.", sources: ["s-a"] }], chronology: [], conflicts: [], gaps: [], questions: [] },
 };
 vi.mock("../utils/api", () => ({
-  apiFetch: async (url: string) => ({ ok: true, json: async () => (url.includes("matterId=") ? { report: REPORT } : { matters: [{ id: REPORT.matterId, title: REPORT.title }] }) }),
+  // The matter list arrives a little later than the select renders, as under a loaded test run.
+  apiFetch: async (url: string) => {
+    if (!url.includes("matterId=")) await new Promise((resolve) => setTimeout(resolve, 30));
+    return { ok: true, json: async () => (url.includes("matterId=") ? { report: REPORT } : { matters: [{ id: REPORT.matterId, title: REPORT.title }] }) };
+  },
 }));
 vi.mock("../utils/finalAssessmentExport", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../utils/finalAssessmentExport")>()),
@@ -26,7 +30,9 @@ describe("Final Case Assessment redacted PDF", () => {
     const open = vi.spyOn(window, "open");
     render(<FinalCaseAssessment redactionEnabled />);
     fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+    await screen.findByRole("option", { name: REPORT.title });
     fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: REPORT.matterId } });
+    expect((screen.getByLabelText("Assessment matter") as HTMLSelectElement).value).toBe(REPORT.matterId);
     fireEvent.click(await screen.findByRole("button", { name: "Download redacted PDF" }));
     expect(open).not.toHaveBeenCalled();
     expect((await screen.findByRole("alert")).textContent).toContain("redacted copy could not be prepared");

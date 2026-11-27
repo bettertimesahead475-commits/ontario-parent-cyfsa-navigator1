@@ -27,6 +27,7 @@ afterEach(() => cleanup());
 async function uploadFile(name: string, text: string) {
   render(<FinalCaseAssessment />);
   fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+  await screen.findByRole("option", { name: MATTER.title });
   fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: MATTER.id } });
   await screen.findByRole("status");
   const input = screen.getByLabelText("Add a text document to this matter") as HTMLInputElement;
