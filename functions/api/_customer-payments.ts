@@ -8,7 +8,7 @@ export type CustomerPayment = {
   id?: string; reference_number: string; plan: string; amount: number | string; status: string;
   submitted_at?: string | null; approved_at?: string | null; notes?: string | null; firebase_uid?: string | null;
 };
-export type CustomerCode = { id?: string; reference_number: string | null; used_at: string | null; expires_at: string | null };
+export type CustomerCode = { id?: string; reference_number: string | null; used_at: string | null; expires_at: string | null; redeemed_session_id?: string | null };
 
 export const PAYMENT_REFERENCE = /^PS-[A-Z0-9]{4,12}$/;
 const SETTLEMENT_READ_LIMIT = 20_000;
@@ -30,7 +30,7 @@ export async function paymentsOf(env: AdminStoreEnv, uid: string, fetcher: typeo
 export async function codesOf(env: AdminStoreEnv, references: string[], fetcher: typeof fetch = fetch): Promise<CustomerCode[]> {
   const safe = references.filter((r) => PAYMENT_REFERENCE.test(r));
   if (!safe.length) return [];
-  return rest<CustomerCode[]>(env, `access_codes?select=id,reference_number,used_at,expires_at&reference_number=in.(${safe.join(',')})&limit=200`, {}, fetcher);
+  return rest<CustomerCode[]>(env, `access_codes?select=id,reference_number,used_at,expires_at,redeemed_session_id&reference_number=in.(${safe.join(',')})&limit=200`, {}, fetcher);
 }
 
 /** References whose latest settlement is a recorded refund. Throws when the audit trail cannot be read completely. */

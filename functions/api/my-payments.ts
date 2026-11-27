@@ -10,6 +10,7 @@ import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse
 import { rest, type AdminStoreEnv } from './_admin-store';
 import { amountOf, codesOf, paymentState, paymentsOf, refundedReferences } from './_customer-payments';
 import { getInstructions } from './request-access';
+import { TIER_PRICES } from './access-pricing';
 
 const HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 export const RENEWAL_REMINDER_DAYS = 7;
@@ -42,10 +43,14 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
       orders: payments.map((p) => {
         const amount = amountOf(p.amount);
         const state = paymentState(p, codes, refunded);
+        // Orders recorded before prices were unified may hold an amount that differs from the advertised price;
+        // they get no payment instructions, so nobody is told to send a different amount than checkout showed.
+        const priceOutdated = state === 'awaiting_verification' && !(Math.abs(amount - (TIER_PRICES[p.plan] ?? Number.NaN)) < 0.005);
         return {
           referenceNumber: p.reference_number, plan: p.plan, amount, currency: 'CAD', state,
           submittedAt: p.submitted_at ?? null, approvedAt: p.approved_at ?? null,
-          ...(state === 'awaiting_verification' ? { instructions: getInstructions(p.reference_number, amount, payTo) } : {}),
+          ...(priceOutdated ? { priceOutdated: true } : {}),
+          ...(state === 'awaiting_verification' && !priceOutdated ? { instructions: getInstructions(p.reference_number, amount, payTo) } : {}),
         };
       }),
       entitlements: sessions.map((s) => {

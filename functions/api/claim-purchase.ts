@@ -16,6 +16,7 @@ import { signSessionToken } from './activate-code';
 const HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_TTL_DAYS = 14;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Env extends AdminStoreEnv { FIREBASE_PROJECT_ID?: string; SESSION_SECRET?: string }
 
@@ -61,28 +62,49 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     // Fail closed: an unreadable audit trail must not let a refunded order be activated.
     if ((await refundedReferences(env)).has(safeSegment(reference))) return fail(409, 'ORDER_CLOSED', 'This order was cancelled or refunded.');
 
-    const used = (await codesOf(env, [reference])).some((c) => c.used_at);
-    if (used) return fail(409, 'ALREADY_ACTIVATED', 'This purchase is already activated.');
-    if (!(await acquireOnce(env, `claim__${reference}__${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}`))) {
-      return fail(409, 'ACTIVATION_IN_PROGRESS', 'Activation is already in progress. Wait a minute and refresh.');
-    }
+    const restore = async () => {
+      // Already redeemed: return this account's still-active entitlement (another browser), never a new one.
+      const sessionId = (await codesOf(env, [reference])).find((c) => c.used_at && c.redeemed_session_id && UUID.test(c.redeemed_session_id))?.redeemed_session_id;
+      const session = sessionId ? (await rest<Array<{ id: string; tier: string; expires_at: string }>>(env,
+        `navigator_paid_sessions?select=id,tier,expires_at&id=eq.${sessionId}&firebase_uid=eq.${encodeURIComponent(identity.uid!)}&revoked_at=is.null&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&limit=1`))[0] : undefined;
+      if (!session) return fail(409, 'ALREADY_ACTIVATED', 'This purchase was already activated and its access is no longer active.');
+      const expiresAt = Date.parse(session.expires_at);
+      const token = await signSessionToken(session.id, expiresAt, env.SESSION_SECRET!);
+      return Response.json({ success: true, restored: true, tier: session.tier, token, email, expiresAt: new Date(expiresAt).toISOString(), referenceNumber: reference }, { status: 200, headers: HEADERS });
+    };
+    if ((await codesOf(env, [reference])).some((c) => c.used_at)) return await restore();
+    // Self-activation runs at most once per order (no time window, so two isolates cannot both pass at a minute
+    // boundary); an activation that fails after this point is recovered by an administrator code reissue. It also takes
+    // the reissue lock, so a reissue in the same minute cannot issue a second code.
+    const inProgress = () => fail(409, 'ACTIVATION_IN_PROGRESS', 'Activation for this order has already started. Refresh in a minute; if access is not active, contact support with your reference number.');
+    if (!(await acquireOnce(env, `claim__${reference}`))) return inProgress();
+    if (!(await acquireOnce(env, `reissue__${reference}__${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}`))) return inProgress();
 
     const now = new Date();
-    await rest(env, `access_codes?reference_number=eq.${encodeURIComponent(reference)}&used_at=is.null`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' });
-    if ((await codesOf(env, [reference])).some((c) => c.used_at)) return fail(409, 'ALREADY_ACTIVATED', 'This purchase is already activated.');
+    const expireUnused = () => rest(env, `access_codes?reference_number=eq.${encodeURIComponent(reference)}&used_at=is.null`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' });
+    await expireUnused();
+    if ((await codesOf(env, [reference])).some((c) => c.used_at)) return await restore();
     const code = generateCode();
     await rest(env, 'access_codes', { method: 'POST', prefer: 'return=minimal', body: {
       email, tier: payment.plan, reference_number: reference, amount: amountOf(payment.amount), code_hash: await sha256Hex(code),
       expires_at: new Date(now.getTime() + CODE_TTL_DAYS * 86400000).toISOString(),
     } });
+    // A refund writes its audit record before it expires unused codes, so checking after the code exists closes the
+    // race: a refund recorded later expires this code before redemption, or revokes the entitlement after it.
+    let refundedNow: boolean;
+    try { refundedNow = (await refundedReferences(env)).has(safeSegment(reference)); } catch { await expireUnused().catch(() => undefined); throw new Error('refund history unavailable'); }
+    if (refundedNow) { await expireUnused(); return fail(409, 'ORDER_CLOSED', 'This order was cancelled or refunded.'); }
     const result = await rest<{ status?: string; session_id?: string; tier?: string; expires_at?: string }>(env, 'rpc/redeem_access_code_atomic', {
       method: 'POST', body: { p_firebase_uid: identity.uid, p_code: code, p_email: email },
     });
     if (result?.status !== 'activated' && result?.status !== 'reused') {
+      await expireUnused().catch(() => undefined);
       return fail(result?.status === 'denied' ? 400 : 500, 'ACTIVATION_FAILED', 'Activation could not be completed. Contact support with your reference number.');
     }
+    // A code reissued concurrently (across a lock-minute boundary) must not stay usable for a second entitlement.
+    await expireUnused().catch(() => undefined);
     const expiresAt = result.expires_at ? Date.parse(result.expires_at) : now.getTime() + 30 * 86400000;
-    const token = await signSessionToken(String(result.session_id), expiresAt, env.SESSION_SECRET);
+    const token = await signSessionToken(String(result.session_id), expiresAt, env.SESSION_SECRET!);
     await appendAudit(env, { action: 'customer-activate', target: safeSegment(reference), admin: `customer:${safeSegment(identity.uid)}`, reason: null, details: { plan: payment.plan } }).catch(() => undefined);
     return Response.json({ success: true, tier: result.tier, token, email, expiresAt: new Date(expiresAt).toISOString(), referenceNumber: reference }, { status: 200, headers: HEADERS });
   } catch {

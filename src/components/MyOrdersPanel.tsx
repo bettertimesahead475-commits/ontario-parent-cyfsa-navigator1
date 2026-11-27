@@ -4,7 +4,7 @@ import { getUserKey } from "../utils/storage";
 import type { AccessTier } from "../types";
 
 type OrderState = "awaiting_verification" | "ready_to_activate" | "activated" | "refunded" | "cancelled" | "unknown";
-type Order = { referenceNumber: string; plan: string; amount: number; state: OrderState; submittedAt: string | null; instructions?: string };
+type Order = { referenceNumber: string; plan: string; amount: number; state: OrderState; submittedAt: string | null; instructions?: string; priceOutdated?: boolean };
 type Entitlement = { tier: string; expiresAt: string | null; daysLeft: number | null; renewalDue: boolean };
 
 const STATE_LABEL: Record<OrderState, string> = {
@@ -19,7 +19,7 @@ const STATE_LABEL: Record<OrderState, string> = {
 const formatCad = (n: number) => n.toLocaleString("en-CA", { style: "currency", currency: "CAD" });
 
 /** The signed-in customer's own e-Transfer orders, their status, and one-click activation once an administrator has verified the funds. */
-export default function MyOrdersPanel({ signedIn, onActivated }: { signedIn: boolean; onActivated: (tier: AccessTier) => void }) {
+export default function MyOrdersPanel({ signedIn, onActivated, onRenewalDue }: { signedIn: boolean; onActivated: (tier: AccessTier) => void; onRenewalDue?: (tiers: string[]) => void }) {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [entitlements, setEntitlements] = useState<Entitlement[]>([]);
   const [error, setError] = useState("");
@@ -33,13 +33,20 @@ export default function MyOrdersPanel({ signedIn, onActivated }: { signedIn: boo
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Your orders could not be loaded.");
       setOrders(Array.isArray(data.orders) ? data.orders : []);
-      setEntitlements(Array.isArray(data.entitlements) ? data.entitlements : []);
+      const active: Entitlement[] = Array.isArray(data.entitlements) ? data.entitlements : [];
+      setEntitlements(active);
+      onRenewalDue?.(active.filter((e) => e.renewalDue).map((e) => e.tier));
     } catch (err: any) {
       setError(err?.message || "Your orders could not be loaded.");
     }
-  }, []);
+  }, [onRenewalDue]);
 
-  useEffect(() => { if (signedIn) void load(); }, [signedIn, load]);
+  useEffect(() => {
+    if (signedIn) { void load(); return; }
+    // Signed out: drop the previous account's orders.
+    setOrders(null); setEntitlements([]); setMessage(""); setError("");
+    onRenewalDue?.([]);
+  }, [signedIn, load, onRenewalDue]);
 
   const activate = async (referenceNumber: string) => {
     setBusyRef(referenceNumber);
@@ -90,6 +97,7 @@ export default function MyOrdersPanel({ signedIn, onActivated }: { signedIn: boo
             </div>
             <p className="font-bold text-slate-700">{STATE_LABEL[o.state] ?? STATE_LABEL.unknown}</p>
             {o.state === "awaiting_verification" && o.instructions && <p className="text-slate-600 leading-relaxed">{o.instructions}</p>}
+            {o.priceOutdated && <p className="text-amber-800 leading-relaxed">This order was recorded at an outdated price. Do not send a payment for it; choose the plan above for a new reference. If you already paid, contact support with this reference.</p>}
             {o.state === "ready_to_activate" && (
               <button type="button" disabled={busyRef !== null} onClick={() => void activate(o.referenceNumber)}
                 className="bg-indigo-700 hover:bg-indigo-800 disabled:opacity-60 text-white font-bold px-3 py-1.5 rounded-lg">

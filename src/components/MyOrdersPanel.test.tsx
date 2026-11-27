@@ -55,4 +55,23 @@ describe("MyOrdersPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Activate now" }));
     expect((await screen.findByRole("alert")).textContent).toContain("not been verified");
   });
+  it("drops the previous account's orders on sign-out and reports renewal-due plans", async () => {
+    const onRenewalDue = vi.fn();
+    vi.spyOn(api, "apiFetch").mockResolvedValue(ok({
+      orders: [{ referenceNumber: "PS-PEND2345", plan: "Pro", amount: 149, state: "activated", submittedAt: null }],
+      entitlements: [{ tier: "Pro", expiresAt: "2026-12-01T00:00:00Z", daysLeft: 2, renewalDue: true }],
+    }));
+    const { rerender, container } = render(<MyOrdersPanel signedIn onActivated={() => {}} onRenewalDue={onRenewalDue} />);
+    expect(await screen.findByText("PS-PEND2345")).toBeTruthy();
+    expect(onRenewalDue).toHaveBeenLastCalledWith(["Pro"]);
+    rerender(<MyOrdersPanel signedIn={false} onActivated={() => {}} onRenewalDue={onRenewalDue} />);
+    expect(container.innerHTML).toBe("");
+    expect(onRenewalDue).toHaveBeenLastCalledWith([]);
+  });
+
+  it("warns instead of giving instructions for an order at an outdated price", async () => {
+    vi.spyOn(api, "apiFetch").mockResolvedValue(ok({ orders: [{ referenceNumber: "PS-OLD23456", plan: "Premium", amount: 89, state: "awaiting_verification", submittedAt: null, priceOutdated: true }], entitlements: [] }));
+    render(<MyOrdersPanel signedIn onActivated={() => {}} />);
+    expect(await screen.findByText(/outdated price/)).toBeTruthy();
+  });
 });

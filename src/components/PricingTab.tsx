@@ -70,6 +70,8 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
   // Activator state
   const [sidebarEmail, setSidebarEmail] = useState(userEmail);
   const [sidebarCode, setSidebarCode] = useState("");
+  // Plans whose active period ends within the reminder window: their card offers checkout again to renew.
+  const [renewalTiers, setRenewalTiers] = useState<string[]>([]);
   const [sidebarError, setSidebarError] = useState("");
   const [sidebarBusy, setSidebarBusy] = useState(false);
   const [sidebarSuccess, setSidebarSuccess] = useState(false);
@@ -634,7 +636,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             </div>
 
             <div className="pt-6 mt-auto">
-              {currentTier === "Premium" ? (
+              {currentTier === "Premium" && !renewalTiers.includes("Premium") ? (
                 <button
                   type="button"
                   disabled
@@ -750,7 +752,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             </div>
 
             <div className="pt-6 mt-auto">
-              {currentTier === "Pro" ? (
+              {currentTier === "Pro" && !renewalTiers.includes("Pro") ? (
                 <button
                   type="button"
                   disabled
@@ -1090,7 +1092,9 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
         </div>
       </div>
 
-      <MyOrdersPanel signedIn={firebaseSignedIn} onActivated={onChangeTier} />
+      <React.Fragment key={firebaseSignedIn ? userEmail || "signed-in" : "signed-out"}>
+        <MyOrdersPanel signedIn={firebaseSignedIn} onActivated={onChangeTier} onRenewalDue={setRenewalTiers} />
+      </React.Fragment>
 
       {/* 7. Access Code Activator */}
       <div
