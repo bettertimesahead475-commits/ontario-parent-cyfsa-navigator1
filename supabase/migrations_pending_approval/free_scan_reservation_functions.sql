@@ -52,7 +52,8 @@ end
 $$;
 
 -- Releases reservations of THIS account (p_uid) that were not touched within p_ttl.
--- The range predicate uses the uid primary key index (a LIKE or left() predicate would scan the table). The length
+-- The prefix test is left(), not a range on uid: under the en_US collation Supabase and the postgres image use, '`'
+-- does not sort after '_', so a range [lo, hi) matched no markers and expired reservations were never returned. The length
 -- check makes the match exact: a marker is 'free_res_<uid>_' plus 32 hex characters, so a marker of another account
 -- whose uid merely starts with p_uid || '_' can never be released against p_uid's counter.
 create or replace function public.free_reconcile(p_uid text, p_own_marker text, p_now timestamptz, p_ttl interval)
@@ -62,11 +63,10 @@ as $$
 declare
   r record;
   lo text := 'free_res_' || p_uid || '_';
-  hi text := 'free_res_' || p_uid || '`';
 begin
   for r in
     select uid from public.free_usage
-     where uid >= lo and uid < hi
+     where left(uid, length(lo)) = lo
        and length(uid) = length(lo) + 32
        and uid <> p_own_marker
        and email like 'reservation:reserved%'
