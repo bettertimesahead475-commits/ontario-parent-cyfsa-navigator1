@@ -478,6 +478,10 @@ async function issueCode(env: AdminEnv, payment: Payment, email: string, amount:
   return { code, expiresAt };
 }
 
+async function usedCodeIds(env: AdminEnv, reference: string, fetcher: typeof fetch): Promise<string[]> {
+  return (await rest<AccessCode[]>(env, `access_codes?select=id&reference_number=eq.${enc(reference)}&used_at=not.is.null`, {}, fetcher)).map((c) => String(c.id));
+}
+
 async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
   const reference = typeof body.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
   const received = typeof body.amountReceived === 'number' ? body.amountReceived : Number.NaN;
@@ -490,6 +494,7 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   const { email } = parsePaymentNotes(payment.notes);
   if (!email || !LIMITS[String(payment.plan)]) return adminError('PAYMENT_INCOMPLETE', 422, 'This payment request has no customer email or a package that cannot be activated.');
 
+  const usedBefore = await usedCodeIds(env, reference, fetcher);
   // Compare-and-set on this exact row: only one approval can move it out of 'pending', so a code is never issued twice.
   const claimed = await rest<Payment[]>(env, `payments?${paymentFilter(payment)}&status=eq.pending`, {
     method: 'PATCH', body: { status: 'approved', approved_at: now.toISOString() }, prefer: 'return=representation',
@@ -506,12 +511,21 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
       .catch(() => console.error('[ADMIN_APPROVE_ROLLBACK_FAILED]', JSON.stringify({ reference })));
     throw error;
   }
-  const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeExpiresAt: issued.expiresAt }, fetcher);
+  // A customer can self-activate the moment the status flips (claim-purchase); if that happened before this code was
+  // inserted, the claim's cleanup missed it, so retire it here. Either order leaves at most one redeemable code.
+  const customerActivated = (await usedCodeIds(env, reference, fetcher)).some((id) => !usedBefore.includes(id));
+  if (customerActivated) await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' }, fetcher);
+  const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, ...(customerActivated ? { customerActivated: true } : { codeExpiresAt: issued.expiresAt }) }, fetcher);
   // Enqueue only: each call is a no-op unless transactional email is enabled, and a failure never undoes the approval.
   const data = { plan: String(payment.plan), amount: received, approvedAt: now.toISOString(), expiresAt: issued.expiresAt };
   const base = { reference, email };
   const confirmationQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'payment_confirmation', dedupeKey: reference, data }, fetcher);
   const receiptQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'purchase_receipt', dedupeKey: reference, data }, fetcher);
+  if (customerActivated) {
+    return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: null, alreadyActivated: true, auditRecorded: audited,
+      emailsQueued: { confirmation: confirmationQueued, receipt: receiptQueued, accessCode: false },
+      note: 'Approved. The customer already activated this order from their account, so no code needs to be sent.' });
+  }
   const codeEmailQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'access_code', dedupeKey: reference, data, accessCode: issued.code }, fetcher);
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt, auditRecorded: audited,
     emailsQueued: { confirmation: confirmationQueued, receipt: receiptQueued, accessCode: codeEmailQueued },
