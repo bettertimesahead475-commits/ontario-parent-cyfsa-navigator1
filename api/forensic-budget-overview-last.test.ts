@@ -39,13 +39,13 @@ async function replay(durations: Record<string, number>) {
     const text = o.stage === "forensic_verification" ? JSON.stringify({ verdicts: [] }) : OK[o.stage];
     return { text, model: "m", durationMs: dur, stopReason: "end_turn" };
   };
-  let ok = false, finishedAt = 0;
+  let ok = false, finishedAt = 0, result: any = null;
   const p = runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "sim", deadlineAt: BUDGET, generate } as any)
-    .then(() => { ok = true; finishedAt = Date.now(); }, () => { finishedAt = Date.now(); });
+    .then((r: any) => { ok = true; result = r; finishedAt = Date.now(); }, () => { finishedAt = Date.now(); });
   await vi.advanceTimersByTimeAsync(400_000);
   await p;
   vi.useRealTimers();
-  return { ok, finishedAt, calls, first: (stage: string) => calls.find((c) => c.stage === `section:${stage}`)! };
+  return { ok, finishedAt, result, calls, first: (stage: string) => calls.find((c) => c.stage === `section:${stage}`)! };
 }
 
 const scaled = (f: number, only?: string) =>
@@ -71,14 +71,46 @@ describe("Forensic budget with overview dispatched last (production section timi
     expect(r.first("overview").ok).toBe(false);
   });
 
-  it("under a uniform provider slowdown the first section lost is redFlags (110 s section timeout) at 1.20x, not overview", async () => {
-    const fits = await replay(scaled(1.15));
-    expect(fits.ok).toBe(true);
-    expect(fits.first("overview").ok).toBe(true);
-    const r = await replay(scaled(1.2));
+});
+
+// redFlags' own limit (FORENSIC_SECTION_TIMEOUT_MS.redFlags = 145 s; previously SECTION_TIMEOUT_MS.full = 110 s).
+const factors = (from: number, to: number) => Array.from({ length: Math.round((to - from) / 0.05) + 1 }, (_, i) => +(from + i * 0.05).toFixed(2));
+const completesInsideBudget = (r: Awaited<ReturnType<typeof replay>>) => {
+  expect(r.ok).toBe(true);
+  expect(r.calls.every((c) => c.ok)).toBe(true);
+  expect(Math.max(...r.calls.map((c) => c.end))).toBeLessThanOrEqual(BUDGET - 3_000);
+  expect(r.result.report.forensicVerification.status).toBe("completed");
+};
+
+describe("Forensic redFlags tolerance with a 145 s redFlags limit (total budget unchanged)", () => {
+  it("redFlags alone completes, verified, at 1.0-1.55x its production time (it failed from 1.20x at 110 s)", async () => {
+    for (const f of factors(1.0, 1.55)) completesInsideBudget(await replay(scaled(f, "section:redFlags")));
+    const r = await replay(scaled(1.2, "section:redFlags"));
+    expect(r.first("redFlags").timeoutMs).toBe(145_000);
+    expect(r.calls.filter((c) => c.stage === "section:redFlags")).toHaveLength(1);
+  });
+
+  it("redFlags beyond its 145 s limit still fails inside the budget", async () => {
+    const r = await replay(scaled(1.6, "section:redFlags"));
     expect(r.ok).toBe(false);
-    // redFlags needs 111 s: attempt 1 hits SECTION_TIMEOUT_MS.full (110 s), and the retry gets only the ~64 s left.
-    expect(r.calls.filter((c) => !c.ok).map((c) => c.stage)).toEqual(["section:redFlags", "section:redFlags"]);
-    expect(r.calls.filter((c) => c.stage === "section:overview").every((c) => c.ok)).toBe(true);
+    expect(r.finishedAt).toBeLessThanOrEqual(BUDGET);
+  });
+
+  it("every other section alone, overview included, still completes inside the budget at 1.0-1.5x", async () => {
+    for (const stage of ["section:thresholds", "section:guidance", "section:timeline", "section:overview", "forensic_verification"])
+      for (const f of factors(1.0, 1.5)) completesInsideBudget(await replay(scaled(f, stage)));
+    // Unchanged by this fix: chronology keeps SECTION_TIMEOUT_MS.full (110 s) and its 81.3 s production time fits up to 1.35x.
+    for (const f of factors(1.0, 1.35)) completesInsideBudget(await replay(scaled(f, "section:chronology")));
+  });
+
+  it("under a uniform slowdown the run now completes up to 1.35x (was 1.15x); beyond that redFlags is not what fails", async () => {
+    for (const f of factors(1.0, 1.35)) completesInsideBudget(await replay(scaled(f)));
+    // At 1.4x chronology + timeline alone need 1.4 x 126.6 s > 175 s: past the budget for any redFlags limit.
+    for (const f of factors(1.4, 1.5)) {
+      const r = await replay(scaled(f));
+      expect(r.ok).toBe(false);
+      expect(r.calls.filter((c) => c.stage === "section:redFlags").every((c) => c.ok)).toBe(true);
+      expect(Math.max(...r.calls.map((c) => c.end))).toBeLessThanOrEqual(BUDGET - 3_000);
+    }
   });
 });
