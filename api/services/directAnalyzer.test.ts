@@ -319,3 +319,39 @@ describe("repairTruncatedJsonObject fence handling", () => {
     expect(performance.now() - t0).toBeLessThan(100);
   });
 });
+
+describe("runDirectAnalysis section validation failures", () => {
+  // A single direct reply that is valid overall but has one broken section must not produce a report: the caller
+  // falls back to the section pipeline, and the salvage keeps only the sections that did validate.
+  const breakers: Array<[string, (o: any) => void]> = [
+    ["RedFlags", (o) => { o.redFlags = "not a list"; }],
+    ["Chronology", (o) => { o.chronology = "not a list"; }],
+    ["Guidance", (o) => { o.whatToAskALawyer = []; }],
+  ];
+  for (const [label, breakIt] of breakers) {
+    it(`returns null and reports validation_failed when ${label} is invalid`, async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const body = JSON.parse(VALID_DIRECT_JSON);
+      breakIt(body);
+      const text = JSON.stringify(body);
+      const reasons: Array<[string, string | undefined, any]> = [];
+      const emitted: string[] = [];
+      const result = await runDirectAnalysis({
+        mode: "fast",
+        documentText: "The worker attended. The parent denied the claim.",
+        primaryModel: "claude-sonnet-5",
+        generate: vi.fn().mockResolvedValue({ text, usage: { input_tokens: 1, output_tokens: 1 }, stopReason: "end_turn", durationMs: 10 }),
+        deadlineAt: Date.now() + 90_000,
+        requestId: `req_direct_invalid_${label}`,
+        onSectionComplete: (key) => { emitted.push(key); },
+        onFailureReason: (r, d, p) => reasons.push([r, d, p]),
+      });
+      expect(result).toBeNull();
+      expect(emitted).toEqual([]);
+      expect(reasons).toHaveLength(1);
+      expect(reasons[0][0]).toBe("validation_failed");
+      expect(reasons[0][1]).toMatch(new RegExp(`^${label}: `));
+      expect(reasons[0][2]).toMatchObject({ text, stopReason: "end_turn" });
+    });
+  }
+});
