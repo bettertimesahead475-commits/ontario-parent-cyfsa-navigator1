@@ -13,7 +13,7 @@ database behind production Cloudflare Pages (`cyfsa-navigator-git-staging`, depl
 
 | ID | File (`supabase/…`) | State on live (read-only, 2026-11-27) | Depends on | PR / brief |
 |---|---|---|---|---|
-| **P** | `migrations/20261110004740_preserve_monthly_renewal.sql` | **Not applied (drift).** It sits in the repo's applied folder, but live history jumps from `20261110003928` to `20261127163256`. `access_codes.redeemed_session_id` is missing, and the live `redeem_access_code_atomic` `md5(prosrc)` = `ca9f13a8…`, not `b835b252…` (P's version) | — | this register |
+| **P** | `migrations/20261110004740_preserve_monthly_renewal.sql` | **Not applied (drift).** It sits in the repo's applied folder, but live history jumps from `20261110003928` to `20261127163256`. `access_codes.redeemed_session_id` is missing, and the live `redeem_access_code_atomic` `md5(prosrc)` = `ca9f13a8…`, not `b835b252…` (P's version) | — | this register. Package: `migrations_pending_approval/preserve_monthly_renewal_P.{preflight,postcheck,rollback}.sql`, `tests/devin/migration-p-preserve-monthly-renewal.pg.test.ts` |
 | A | `migrations_pending_approval/free_scan_reservation_functions.sql` | Applied 2026-11-27 16:32:56 UTC (version `20261127163256`); owner authorization unconfirmed | — | `engineering/reviews/pr164-migration-approval-brief.md`, `pr164-staging-migration-verification-20261127.md` (branch `devin/1795797327-launch-prep`) |
 | B | `migrations_pending_approval/reconcile_skip_live_analyzer_jobs.sql` (+ index `analyzer_jobs_live_reservation_idx`) | Applied 16:33:09 UTC (`20261127163309`); authorization unconfirmed | A | same as A |
 | C | `migrations_pending_approval/create_navigator_rate_limit_hits.sql` | Not applied: table and function absent, no history row | — | [#174](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/174), `engineering/reviews/pr168-rate-limit-qualification-20261127.md` |
@@ -32,27 +32,34 @@ database behind production Cloudflare Pages (`cyfsa-navigator-git-staging`, depl
   replaces the RPC; no row changes.
 - **What P does:** `add column if not exists redeemed_session_id uuid references navigator_paid_sessions(id)` and
   `create or replace redeem_access_code_atomic(text,text,text)`, which adds 30 days on a monthly renewal instead of replacing the entitlement.
-- **Prerequisites:**
-  1. Save the live function (`select pg_get_functiondef('public.redeem_access_code_atomic(text,text,text)'::regprocedure)`),
-     because P's rollback is that saved text plus `drop column redeemed_session_id`.
-  2. Find which file produced fingerprint `ca9f13a8…`. Likely candidates are `migrations_pending_approval/20261030_reconcile_access_codes_and_atomic_rpc.sql`,
-     version `20261030182320` in live history. Confirm the column has no dependants before dropping it in a rollback.
-  3. Run P, then D's preflight, on disposable PostgreSQL built to the live schema.
-- **Order:** P before D. D's rollback restores P's version, so D must never be applied while P is missing.
+- **Rollback readiness (done 2026-11-27, read-only capture):**
+  - The live RPC is the comment-stripped `20261030182320` version (`md5(prosrc)` = `ca9f13a8…`). The repo file of that name has md5 `da9c7103…` because it keeps its comments, so it is **not** a valid rollback source.
+  - `preserve_monthly_renewal_P.rollback.sql` embeds the exact `pg_get_functiondef` taken from live. The disposable test applies P and then this rollback, and gets `ca9f13a8…` back.
+  - Dependants of `access_codes`: one view (`navigator_payment_summary`), which does not use the new column; no triggers; RLS on; table grants to `service_role` only.
+  - The rollback refuses if D's index exists, if the RPC is not P's version, or if dropping the column would lose renewal links. A session setting is needed to accept that loss deliberately.
+  - Tests: 7/7 on disposable PostgreSQL. Each of the three guards fails at least one test when removed.
 
-## Release order
+## Execution sequence and owner approval checklist
 
-1. Owner decides on the authorization for A/B, which are already live.
-2. Backup or PITR.
-3. P, then D's preflight.
-4. D.
-5. E.
-6. C, with the flag off; activate later per the #174 brief.
-7. F.
+Single owner approval covers the whole sequence; each step still stops on a failed check. Target: `nxfhvebzzobegubefcda` only.
 
-C and F have no data dependency on the others and can move if needed.
-Before each step, re-run its read-only preflight and these aggregate checks:
-`select max(version) from supabase_migrations.schema_migrations`, and the column and fingerprint checks above.
+| Step | Action | Gate (must be true to continue) | Rollback |
+|---|---|---|---|
+| 0 | Owner ratifies A/B as applied (owner 14:26: preserve; no rollback) | Claude's A/B integrity and authorization note | none planned |
+| 1 | Confirm PITR or take a backup | Backup id or PITR window recorded | — |
+| 2 | P preflight (`preserve_monthly_renewal_P.preflight.sql`) | All blocking rows `ok` | — |
+| 3 | Apply P (`supabase/migrations/20261110004740_preserve_monthly_renewal.sql`) | `preserve_monthly_renewal_P.postcheck.sql` all `ok` | `preserve_monthly_renewal_P.rollback.sql` |
+| 4 | D preflight, then apply D | D preflight blocking rows `ok`; D brief postchecks | D `.rollback.sql`, then P's if needed |
+| 5 | Apply E | The #171 refund reverses `granted_credits` (owner 14:26); E preflight `ok` | E `.rollback.sql` |
+| 6 | Apply C, with `PERSISTENT_RATE_LIMITS` unset | #174 brief checks | `rollback_navigator_rate_limit_hits.sql` |
+| 7 | Apply F | F preflight `ok`; no sends (owner 14:26) | F `.down.sql` |
+| 8 | Deploy the RC to Cloudflare production (separate owner approval in `RELEASE_CANDIDATE_20261127.md`) | RELEASE_CHECKLIST smoke tests | Cloudflare rollback to `0cc59589` |
+
+**Rollback order:** reverse order only: F, C, E, D, P. Never run `free_scan_reservation_functions.down.sql` on this database.
+
+Every step needs Claude's qualification of that entry. Before each step, record `select max(version) from supabase_migrations.schema_migrations`.
+Apply through Supabase `apply_migration` so a history row is written. The recorded version will be the apply time, not the
+repo filename, so note both in this register.
 
 ## Out of scope for this release
 
