@@ -4,7 +4,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { ASSESSMENT_REQUEST_MAX_BYTES, sourceRequestBody, sourceUploadProblem, utf8ByteLength } from "../../shared/assessmentLimits";
+import { ASSESSMENT_REQUEST_MAX_BYTES, SOURCE_SET_LIMIT_MESSAGE, SOURCE_SET_NOTICE, sourceRequestBody, sourceUploadProblem, utf8ByteLength } from "../../shared/assessmentLimits";
 
 const MATTER = { id: "11111111-1111-4111-8111-111111111111", title: "Synthetic matter" };
 const apiFetch = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
@@ -50,22 +50,40 @@ describe("Final Case Assessment source size limits", () => {
     expect(sourceUploadProblem("a.txt", emoji)).toContain("bytes as sent");
   });
 
-  it("enforces the server's 75,000-character limit per document", () => {
+  it("for the character limit, says the matter's total is the limit and does not suggest splitting", () => {
     const message = sourceUploadProblem("a.txt", "a".repeat(75001));
-    expect(message).toContain("75,001 characters; the limit is 75,000 characters per document");
-    // Parts in the same matter would still exceed the matter's 75,000-character total.
-    expect(message).toContain("put the parts in separate matters");
-    expect(message).not.toContain("to this matter");
+    expect(message).toBe(
+      "This document has 75,001 characters. One assessment reads about 75,000 characters in total across all of a matter's documents, so splitting it will not help. Remove pages that are not evidence for this matter, or move them to a separate matter, then add it again"
+    );
+  });
+
+  it("gives the character message, not split advice, when both limits are exceeded", () => {
+    const message = sourceUploadProblem("a.txt", "é".repeat(80000));
+    expect(message).toContain("splitting it will not help");
+    expect(message).not.toContain("Split the document");
+  });
+
+  it("suggests splitting only when the byte limit is the cause", () => {
+    const message = sourceUploadProblem("a.txt", "😀".repeat(37500)); // 75,000 characters, 150,000+ bytes
+    expect(message).toContain("bytes as sent");
+    expect(message).toContain("Split the document into several .txt files and add each one to this matter");
+  });
+
+  it("explains the matter-wide limit when the server reports SOURCE_SET_TOO_LARGE", () => {
+    expect(SOURCE_SET_LIMIT_MESSAGE).toBe(
+      "This matter has more source text than one assessment can read: about 75,000 characters in total, including each document's name, across up to 20 documents. Remove pages that are not evidence for this matter, or move them to a separate matter"
+    );
+    expect(SOURCE_SET_NOTICE).toBe("One assessment reads about 75,000 characters in total across up to 20 documents in a matter.");
   });
 
   it("rejects a file name over 255 characters before sending", () => {
     expect(sourceUploadProblem("n".repeat(252) + ".txt", "text")).toContain("256 characters; the limit is 255");
   });
 
-  it("never suggests removing evidence", () => {
-    for (const msg of [sourceUploadProblem("a.txt", "a".repeat(75001)), sourceUploadProblem("a.txt", "😀".repeat(37500))]) {
-      expect(msg).toContain("Split the document into several .txt files");
-      expect(msg).not.toMatch(/shorten|remove|cut|delete/i);
+  it("only ever suggests removing pages that are not evidence", () => {
+    for (const msg of [sourceUploadProblem("a.txt", "a".repeat(75001)), sourceUploadProblem("a.txt", "😀".repeat(37500)), SOURCE_SET_LIMIT_MESSAGE]) {
+      expect(msg).not.toMatch(/shorten|cut|delete/i);
+      if (/remove/i.test(msg!)) expect(msg).toContain("Remove pages that are not evidence for this matter");
     }
   });
 

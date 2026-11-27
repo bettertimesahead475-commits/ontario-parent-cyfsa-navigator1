@@ -4,7 +4,7 @@ import { finishPrintWindow } from '../utils/printWindow';
 import { renderFinalAssessmentHtml } from '../utils/finalAssessmentExport';
 import { useRedaction } from '../utils/redaction';
 import type { AssessmentReport } from '../../functions/api/final-case-assessment';
-import { INPUT_TOO_LARGE_MESSAGE, SOURCE_SET_LIMIT_MESSAGE, sourceRequestBody, sourceUploadProblem } from '../../shared/assessmentLimits';
+import { INPUT_TOO_LARGE_MESSAGE, SOURCE_SET_LIMIT_MESSAGE, SOURCE_SET_NOTICE, sourceRequestBody, sourceUploadProblem } from '../../shared/assessmentLimits';
 
 const ERROR_MESSAGES: Record<string, string> = {
   INDIVIDUAL_CASE_ACCESS_REQUIRED: 'The Final Case Assessment requires active Individual Case Access',
@@ -98,7 +98,7 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
       {!busy && !matters.length && !error && <p>Create a matter above to start your assessment.</p>}
       {notice && <p role="status">{notice}</p>}
       <label className="block text-sm">Add a text document to this matter <input type="file" accept=".txt,text/plain" disabled={busy || !matterId} onChange={e => { const file = e.target.files?.[0]; if (file) void upload(file); e.target.value = ''; }} /></label>
-      <p className="text-sm">Add every document you want assessed. Text documents are shown as one source page. The saved report lists exactly which sources were reviewed.</p>
+      <p className="text-sm">Add every document you want assessed. Text documents are shown as one source page. The saved report lists exactly which sources were reviewed. {SOURCE_SET_NOTICE}</p>
       <div className="flex gap-3"><button type="button" disabled={busy || !matterId} onClick={() => void load(matterId, true)} className="rounded bg-indigo-900 text-white px-4 py-2 disabled:opacity-50">{busy ? 'Loading assessment…' : 'Generate assessment / retry'}</button>
       <button type="button" disabled={busy || !matterId} onClick={() => void load(matterId)} className="border rounded px-4 py-2">Reopen saved report</button></div>
       {error && <p role="alert">{error.replace(/\.$/, '')}. Your saved documents remain available.</p>}
