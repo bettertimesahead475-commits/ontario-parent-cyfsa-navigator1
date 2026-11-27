@@ -33,7 +33,6 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
   const applicant = isRedacted ? "[REDACTED]" : (metadata.applicantName || NOT_STATED);
   const respondent = isRedacted ? "[REDACTED]" : (metadata.respondentName || NOT_STATED);
   const hearingDate = isRedacted ? "[REDACTED]" : (metadata.hearingDate || NOT_STATED);
-  const auditDate = new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
 
   const esi = report.evidenceStrengthIndex || { components: {} };
   const esiScored = isScored(esi.score);
@@ -469,7 +468,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
           </div>
           <div class="case-meta-item">
             <span class="case-meta-label">Analysis Date</span>
-            <span class="case-meta-value">${escapeHtml(report.analysisDate ? String(report.analysisDate) : auditDate)}</span>
+            <span class="case-meta-value">${escapeHtml(report.analysisDate ? String(report.analysisDate) : "Not recorded")}</span>
           </div>
         </div>
 
