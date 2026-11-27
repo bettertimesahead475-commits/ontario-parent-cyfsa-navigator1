@@ -77,6 +77,17 @@ describe("Final Case Assessment PDF", () => {
       expect(redacted).toContain("Call [PHONE] about [FILE], born [DATE].");
     });
 
+    it("masks parenthesized phone numbers and written-out dates", () => {
+      const written = renderFinalAssessmentHtml(
+        { ...pii, sections: { ...pii.sections, overview: [{ text: "Call (416) 555-0199; born April 3, 2019; seen 3 April 2019 and Sept. 14th, 2026.", sources: ["s-a"] }] } },
+        { redact: true }
+      );
+      for (const value of ["(416) 555-0199", "555-0199", "April 3, 2019", "3 April 2019", "Sept. 14th, 2026"]) {
+        expect(written).not.toContain(value);
+      }
+      expect(written).toContain("Call [PHONE]; born [DATE]; seen [DATE] and [DATE].");
+    });
+
     it("says what was masked and does not change the unredacted copy or the input", () => {
       expect(redacted).toContain(FINAL_ASSESSMENT_REDACTED_NOTICE);
       expect(html).not.toContain(FINAL_ASSESSMENT_REDACTED_NOTICE);
