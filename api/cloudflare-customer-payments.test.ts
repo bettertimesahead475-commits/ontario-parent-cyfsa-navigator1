@@ -187,6 +187,17 @@ describe('POST /api/claim-purchase', () => {
     expect(db.codes.every((c) => c.expires_at === 'now')).toBe(true);
   });
 
+  it('a refund racing an administrator reissue also retires the reissued code', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue(OWNER);
+    db.onCodeInsert = () => {
+      db.codes.push({ reference_number: 'PS-ABCD2345', code_hash: 'admin-reissued', used_at: null, expires_at: '2099-01-01' });
+      db.audit = [refundRecord('PS-ABCD2345')];
+    };
+    expect((await claimReq()).status).toBe(409);
+    expect(db.rpc).toHaveLength(0);
+    expect(db.codes.find((c) => c.code_hash === 'admin-reissued')?.expires_at).toBe('now');
+  });
+
   it('retires any other unused code of the order after activating', async () => {
     vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue(OWNER);
     db.onCodeInsert = () => { db.codes.push({ reference_number: 'PS-ABCD2345', used_at: null, expires_at: '2099-01-01', reissued: true }); };

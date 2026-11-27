@@ -91,9 +91,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     const code = await orderCode(reference, env.SESSION_SECRET!);
     const codeHash = await sha256Hex(code);
     const ref = encodeURIComponent(reference);
-    const expire = (filter: string) => rest(env, `access_codes?reference_number=eq.${ref}&used_at=is.null&${filter}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' });
+    const expire = (filter = '') => rest(env, `access_codes?reference_number=eq.${ref}&used_at=is.null${filter && `&${filter}`}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' });
     const expireOthers = () => expire(`code_hash=neq.${codeHash}`);
-    const expireOwn = () => expire(`code_hash=eq.${codeHash}`);
     const own = (await rest<Array<{ used_at: string | null; expires_at: string | null }>>(env, `access_codes?select=used_at,expires_at&reference_number=eq.${ref}&code_hash=eq.${codeHash}&limit=1`))[0];
     if (own?.used_at) return await restore();
     if (own && own.expires_at && !(Date.parse(own.expires_at) > now.getTime())) {
@@ -111,8 +110,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     }
     // A refund writes its audit record before it expires unused codes, so checking after the code exists closes the
     // race: a refund recorded later expires this code before redemption, or revokes the entitlement after it.
+    // A refunded order retires every unused code, including one an administrator reissued concurrently.
     // Unreadable refund history fails closed but keeps the code, so a retry can finish once it is readable.
-    if ((await refundedReferences(env)).has(safeSegment(reference))) { await expireOwn(); return fail(409, 'ORDER_CLOSED', 'This order was cancelled or refunded.'); }
+    if ((await refundedReferences(env)).has(safeSegment(reference))) { await expire(); return fail(409, 'ORDER_CLOSED', 'This order was cancelled or refunded.'); }
     const result = await rest<{ status?: string; session_id?: string; tier?: string; expires_at?: string }>(env, 'rpc/redeem_access_code_atomic', {
       method: 'POST', body: { p_firebase_uid: identity.uid, p_code: code, p_email: email },
     });
