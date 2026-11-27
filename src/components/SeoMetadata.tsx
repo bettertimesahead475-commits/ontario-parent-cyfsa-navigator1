@@ -60,11 +60,13 @@ export type ResolvedMeta = PageMeta & { canonicalUrl: string; index: boolean };
 
 export function resolveRouteMeta(location: string): ResolvedMeta {
   const path = location === "/" ? "/" : (location || "/").replace(/\/+$/, "") || "/";
+  // Wouter matches routes case-insensitively, so /Rights renders /rights: canonicalize to the lower-case route.
+  const routeKey = path.toLowerCase();
+  const publicMeta = PUBLIC_ROUTE_META[routeKey];
+  if (publicMeta) return { ...publicMeta, canonicalUrl: `${SITE_URL}${routeKey}`, index: true };
   const canonicalUrl = `${SITE_URL}${path}`;
-  const publicMeta = PUBLIC_ROUTE_META[path];
-  if (publicMeta) return { ...publicMeta, canonicalUrl, index: true };
   const privateKey = Object.keys(NOINDEX_ROUTE_META).find(
-    (key) => (key.endsWith("/") ? path.startsWith(key) : path === key || path.startsWith(`${key}/`)),
+    (key) => (key.endsWith("/") ? routeKey.startsWith(key) : routeKey === key || routeKey.startsWith(`${key}/`)),
   );
   if (privateKey) return { ...NOINDEX_ROUTE_META[privateKey], canonicalUrl, index: false };
   // Unknown paths redirect to "/" in App; until then, point search engines at the home page.

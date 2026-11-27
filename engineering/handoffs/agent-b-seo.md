@@ -17,7 +17,7 @@ Branch `devin/1795800705-seo-indexability`, based on `engineering/integration` `
 
 - 17 indexable routes: 17 unique titles, 17 unique descriptions, 17 unique canonicals; canonical and `og:url` equal the route; exactly one robots and one canonical element per page.
 - Noindex (`noindex,nofollow`): `/document-analyzer`, `/templates`, `/signup`, `/review`, `/professional-workspace`, `/case-workspace`, `/accept-invitation`, `/admin`, `/admin/payments`, `/voice-assistant`, `/lawyers/abc`, `/cloudflare-auth-diagnostic`.
-- `/upgrade` → `/pricing`, unknown path → `/`, `/rights/` → canonical `/rights`.
+- `/upgrade` → `/pricing`, unknown path → `/`, `/rights/` and `/Rights` → canonical `/rights` (wouter matches case-insensitively).
 - `/robots.txt` 200 `text/plain`, `/sitemap.xml` 200 `text/xml`; sitemap URLs = the 17 indexable routes; no indexable route is disallowed.
 - Visual: full-page screenshots of `/`, `/rights`, `/pricing`, `/five-day-rule`, `/lawyers`, `/document-analyzer` from integration vs this branch differ by 0 pixels (`compare -metric AE`).
 - Test: `src/components/SeoMetadata.test.tsx` (5) checks uniqueness and length (title ≤ 60, description ≤ 160), banned claims, sitemap = indexable routes, robots.txt vs noindex, every `<Route>` in App.tsx classified, and the DOM tags written.

@@ -56,6 +56,12 @@ describe("route metadata", () => {
     }
   });
 
+  it("canonicalizes mixed-case public URLs to the lower-case route, as wouter renders them", () => {
+    expect(resolveRouteMeta("/Rights/")).toEqual({ ...PUBLIC_ROUTE_META["/rights"], canonicalUrl: `${SITE_URL}/rights`, index: true });
+    expect(resolveRouteMeta("/Admin/Payments").index).toBe(false);
+    expect(resolveRouteMeta("/lawyers/AbC").canonicalUrl).toBe(`${SITE_URL}/lawyers/AbC`);
+  });
+
   it("writes title, description, robots, canonical and Open Graph tags for the current route", () => {
     window.history.pushState({}, "", "/five-day-rule/");
     render(<SeoMetadata />);
