@@ -21,19 +21,31 @@ from pathlib import Path
 from runpy import run_path
 import sys
 
-schema_digest = run_path("scripts/db/recovery.py")["schema_digest"]
+recovery = run_path("scripts/db/recovery.py")
+schema_digest = recovery["schema_digest"]
+approved_schemas = recovery["approved_schemas"]
 schema = Path(sys.argv[1]) / "schema-test.sql"
-header = "-- PostgreSQL database dump\n-- Dumped from database version {}\n-- Dumped by pg_dump version {}\n"
+header = "-- PostgreSQL database dump\n\\restrict {}\n-- Dumped from database version {}\n-- Dumped by pg_dump version {}\n"
 body = "SET statement_timeout = 0;\nCREATE TABLE test (id int);\n-- Dumped from database version function body\n"
-schema.write_text(header.format("17.11", "17.11") + body)
-expected = schema_digest(schema)
-schema.write_text(header.format("17.12", "17.12") + body)
-assert schema_digest(schema) == expected
-schema.write_text(header.format("17.12", "17.12") + body.replace("int", "text"))
-assert schema_digest(schema) != expected
-schema.write_text(header.format("17.12", "17.12") + body.replace("function body", "changed body"))
-assert schema_digest(schema) != expected
-print("PASS: schema fingerprint ignores patch-version headers, not SQL body changes")
+
+def fingerprint(key, version, sql):
+    schema.write_text(header.format(key, version, version) + sql + f"\\unrestrict {key}\n")
+    return schema_digest(schema, key)
+
+expected = fingerprint("a" * 64, "17.11", body)
+assert fingerprint("b" * 64, "17.12", body) == expected
+assert fingerprint("b" * 64, "17.12", body.replace("int", "text")) != expected
+assert fingerprint("b" * 64, "17.12", body.replace("function body", "changed body")) != expected
+print("PASS: schema fingerprint ignores version banners and generated restrict keys, not SQL body changes")
+
+assert approved_schemas(["public", "auth", "public"]) == ["auth", "public"]
+for requested in ([], ["public", "unapproved"], ["--format=plain"], "public"):
+    try:
+        approved_schemas(requested)
+    except ValueError:
+        continue
+    raise AssertionError(f"Expected refusal of schema scope: {requested!r}")
+print("PASS: schema allowlist refuses unsupported scopes")
 PY
 
 mkdir "$work/bin" "$work/gnupg"

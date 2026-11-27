@@ -16,6 +16,7 @@ import zipfile
 
 
 FILES = ("database.dump", "schema.sql", "tables.json", "manifest.json")
+APPROVED_SCHEMAS = ("auth", "extensions", "public", "storage", "supabase_migrations")
 NAME = r"[a-z_][a-z0-9_]{0,62}"
 SCRATCH = r"recovery_scratch_[a-z0-9_]{1,45}"
 READ_ONLY = " -c default_transaction_read_only=on"
@@ -68,17 +69,25 @@ def digest(path):
     return hasher.hexdigest()
 
 
-def schema_digest(path):
+def schema_digest(path, restrict_key):
     hasher = hashlib.sha256()
     versions = (b"-- Dumped from database version ", b"-- Dumped by pg_dump version ")
+    key = restrict_key.encode("ascii")
+    directives = (b"\\restrict " + key + b"\n", b"\\unrestrict " + key + b"\n")
     header = True
     with path.open("rb") as data:
         for line in data:
             if line.startswith(b"SET "):
                 header = False
-            if not header or not line.startswith(versions):
+            if line not in directives and (not header or not line.startswith(versions)):
                 hasher.update(line)
     return hasher.hexdigest()
+
+
+def approved_schemas(requested):
+    if not isinstance(requested, list) or not requested or any(name not in APPROVED_SCHEMAS for name in requested):
+        raise ValueError("Specify one or more supported schemas: " + ", ".join(APPROVED_SCHEMAS))
+    return [name for name in APPROVED_SCHEMAS if name in requested]
 
 
 def approved_migration(path):
@@ -229,8 +238,7 @@ def migration(args):
     return {"version": args.version, "file": args.migration.name, "sha256": digest(args.migration)}
 
 
-def backup(args, env, server, directory, backup_root):
-    schemas = sorted(set(args.schema))
+def backup(args, env, server, directory, backup_root, schemas):
     major = int(server["server_version_num"]) // 10000
     version = client_version("pg_dump", major)
     if not re.fullmatch(r"[0-9A-Fa-f]{40}|[0-9A-Fa-f]{64}", args.recipient):
@@ -246,7 +254,7 @@ def backup(args, env, server, directory, backup_root):
         "restrict_key": restrict_key,
         "completed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "sha256": {name: digest(directory / name) for name in FILES[:3]},
-        "schema_sha256": schema_digest(directory / FILES[1]),
+        "schema_compare_sha256": schema_digest(directory / FILES[1], restrict_key),
     })
     plain = directory / "bundle.zip"
     with zipfile.ZipFile(plain, "w") as bundle:
@@ -278,11 +286,7 @@ def restore(args, env, directory):
     require(manifest["format"] == 1 and manifest["migration"] == migration(args), "Backup migration identity mismatch.")
     for name in FILES[:3]:
         require(digest(directory / name) == manifest["sha256"][name], f"{name} SHA-256 mismatch.")
-    schemas = manifest["schemas"]
-    require(schemas, "Empty backup schema scope.")
-    for name in schemas:
-        if not re.fullmatch(NAME, name):
-            raise ValueError("Invalid backup schema scope.")
+    schemas = approved_schemas(manifest["schemas"])
     restrict_key = manifest["restrict_key"]
     if not re.fullmatch(r"[0-9a-f]{64}", restrict_key):
         raise ValueError("Invalid schema dump restrict key.")
@@ -305,9 +309,10 @@ def restore(args, env, directory):
     expected = json.loads((directory / FILES[2]).read_text())
     with snapshot(env) as token:
         require(table_fingerprints(env, schemas, token) == expected, "Restored table or sequence fingerprints differ.")
-        expected_schema = manifest.get("schema_sha256") or schema_digest(directory / FILES[1])
-        dump(env, schemas, token, directory, restrict_key, include_data=False)
-        require(schema_digest(directory / FILES[1]) == expected_schema, "Restored schema SQL differs.")
+        expected_schema = manifest.get("schema_compare_sha256") or schema_digest(directory / FILES[1], restrict_key)
+        scratch_key = secrets.token_hex(32)
+        dump(env, schemas, token, directory, scratch_key, include_data=False)
+        require(schema_digest(directory / FILES[1], scratch_key) == expected_schema, "Restored schema SQL differs.")
     print("Scratch restore verified: schema SQL, per-table counts and SHA-256, sequence states.")
 
 
@@ -341,10 +346,9 @@ def main():
         with tempfile.TemporaryDirectory(dir=args.work_dir, prefix="recovery-") as temp:
             directory = Path(temp)
             if args.action == "backup":
-                require(args.schema and all(re.fullmatch(NAME, name) for name in args.schema),
-                        "Specify the approved scope as one or more --schema names.")
+                schemas = approved_schemas(args.schema)
                 require(args.recipient and not args.artifact.exists(), "Require a recipient and a new artifact path.")
-                backup(args, env, identity(env, args), directory, backup_root)
+                backup(args, env, identity(env, args), directory, backup_root, schemas)
             else:
                 require(args.artifact_sha256 and not args.schema, "Require --artifact-sha256; scope is read from the backup.")
                 restore(args, env, directory)
