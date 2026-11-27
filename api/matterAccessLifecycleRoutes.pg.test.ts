@@ -112,6 +112,8 @@ d('Stage 10 slice 6 -- unmounted lifecycle HTTP adapter on real PostgreSQL', () 
     const u = new URL(ADMIN_URL!);
     u.pathname = `/${dbName}`;
     db = new pg.Pool({ connectionString: u.toString(), max: 12 });
+    // The forced drop in afterAll terminates idle pooled clients (57P01); without a listener that is an unhandled error.
+    db.on('error', () => {});
     await db.query(`do $$ begin
       if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
       if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
