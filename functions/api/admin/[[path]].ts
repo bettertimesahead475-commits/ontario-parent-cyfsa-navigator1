@@ -513,18 +513,23 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   }
   // A customer can self-activate the moment the status flips (claim-purchase); if that happened before this code was
   // inserted, the claim's cleanup missed it, so retire it here. Either order leaves at most one redeemable code.
-  const customerActivated = (await usedCodeIds(env, reference, fetcher).catch(() => { console.error('[ADMIN_APPROVE_ACTIVATION_CHECK_FAILED]', JSON.stringify({ reference })); return usedBefore; })).some((id) => !usedBefore.includes(id));
-  if (customerActivated) await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' }, fetcher);
-  const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, ...(customerActivated ? { customerActivated: true } : { codeExpiresAt: issued.expiresAt }) }, fetcher);
+  let activated: boolean | null;
+  try { activated = (await usedCodeIds(env, reference, fetcher)).some((id) => !usedBefore.includes(id)); }
+  catch { console.error('[ADMIN_APPROVE_ACTIVATION_CHECK_FAILED]', JSON.stringify({ reference })); activated = null; }
+  // Fail closed: unless it is certain no redemption happened during approval, retire this code (Reissue recovers it).
+  if (activated !== false) await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' }, fetcher);
+  const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, ...(activated !== false ? { customerActivated: activated ?? 'unknown' } : { codeExpiresAt: issued.expiresAt }) }, fetcher);
   // Enqueue only: each call is a no-op unless transactional email is enabled, and a failure never undoes the approval.
   const data = { plan: String(payment.plan), amount: received, approvedAt: now.toISOString(), expiresAt: issued.expiresAt };
   const base = { reference, email };
   const confirmationQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'payment_confirmation', dedupeKey: reference, data }, fetcher);
   const receiptQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'purchase_receipt', dedupeKey: reference, data }, fetcher);
-  if (customerActivated) {
-    return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: null, alreadyActivated: true, auditRecorded: audited,
+  if (activated !== false) {
+    return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: null, ...(activated ? { alreadyActivated: true } : { activationUnknown: true }), auditRecorded: audited,
       emailsQueued: { confirmation: confirmationQueued, receipt: receiptQueued, accessCode: false },
-      note: 'Approved. The customer already activated this order from their account, so no code needs to be sent.' });
+      note: activated
+        ? 'Approved. The customer already activated this order from their account, so no code needs to be sent.'
+        : 'Approved, but the activation check failed, so this code was withheld to avoid giving access twice. Use "Reissue code" to send the customer a code.' });
   }
   const codeEmailQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'access_code', dedupeKey: reference, data, accessCode: issued.code }, fetcher);
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt, auditRecorded: audited,
