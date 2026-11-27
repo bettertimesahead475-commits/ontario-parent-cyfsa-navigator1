@@ -530,7 +530,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
                     <td><strong>${isScored(c?.score) ? `${Number(c.score)} / ${c.maxScore || c.max || 15}` : "Not scored"}</strong></td>
                     <td>${escapeHtml(c.explanation || "No explanation was returned.")}</td>
                   </tr>
-                `).join("")}
+                `).join("") || `<tr><td colspan="3" style="color:#64748b;">No dimension scores were recorded for this report.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -668,7 +668,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
               ` : ""}
             </div>
           `;
-        }).join("") : "<p>No threshold analysis recorded.</p>"}
+        }).join("") || `<p class="prose-text" style="color:#64748b;">Not assessed in this report.</p>` : `<p class="prose-text" style="color:#64748b;">Not assessed in this report.</p>`}
 
         <h3 style="font-size:11px; font-weight:700; color:#1e293b; margin:14px 0 6px 0;">B. Procedural Timelines & Statutory Protections</h3>
         ${Array.isArray(report.proceduralTimelineViolations) ? report.proceduralTimelineViolations.map((p: any, idx: number) => {
@@ -690,7 +690,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
               </div>
             </div>
           `;
-        }).join("") : ""}
+        }).join("") || `<p class="prose-text" style="color:#64748b;">Not assessed in this report.</p>` : `<p class="prose-text" style="color:#64748b;">Not assessed in this report.</p>`}
       </section>
 
       <!-- 7. CONTRADICTIONS & DISCREPANCIES -->
@@ -767,9 +767,9 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
         </section>
       ` : ""}
 
-      <!-- 11. DIRECTORY OF VERIFIED LEGAL AUTHORITIES -->
+      <!-- 11. REFERENCE LIST OF LEGAL AUTHORITIES -->
       <section class="section-block">
-        <h2 class="section-heading">10. Directory of Verified Legal Authorities</h2>
+        <h2 class="section-heading">10. Reference List of Legal Authorities</h2>
         <p class="prose-text">Reference list: core CYFSA provisions commonly relevant to child-protection reviews, plus provisions cited in this report that match the app's authority registry. Inclusion here does not mean the provision applies to this case. Check the current text on Ontario e-Laws before relying on it.</p>
         <table class="data-table">
           <thead>
@@ -833,7 +833,8 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
                   ${item.evidence?.corroboratingEvidence?.length ? `<div style="font-style:italic; color:#64748b; margin-top:4px;">\"${escapeHtml(item.evidence.corroboratingEvidence[0])}\"</div>` : ""}
                 </td>
                 <td style="font-size:8.5px; color:#1e293b;">
-                  ${escapeHtml(item.presentation?.courtroomMode?.evidentiaryFraming || "")}
+                  ${escapeHtml(item.presentation?.courtroomMode?.evidentialGapOrInconsistency || "Not stated.")}
+                  ${item.presentation?.courtroomMode?.targetedDisclosureOrClarificationRequest?.length ? `<div style="color:#475569; margin-top:4px;"><strong>Request:</strong> ${escapeHtml(item.presentation.courtroomMode.targetedDisclosureOrClarificationRequest[0])}</div>` : ""}
                 </td>
               </tr>
             `).join("")}

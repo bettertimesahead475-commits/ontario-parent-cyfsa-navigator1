@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isScored, renderForensicReportHtml } from "./forensicPdfRenderer";
+import { buildComplianceMatrixFromReport } from "../../shared/complianceMatrixEngine";
+import { escapeHtml } from "./reportSectionsHtml";
 
 describe("forensic PDF renderer with missing data", () => {
   const html = renderForensicReportHtml({
@@ -57,5 +59,31 @@ describe("isScored", () => {
   it("accepts numbers and numeric strings only", () => {
     expect([0, 55, "40"].map(isScored)).toEqual([true, true, true]);
     expect([undefined, null, "", "n/a", true, NaN].map(isScored)).toEqual([false, false, false, false, false, false]);
+  });
+});
+
+describe("forensic PDF renderer with sparse sections", () => {
+  const report: any = {
+    documentTitle: "Synthetic affidavit",
+    thresholdAnalysis: [],
+    contradictions: [{ claim: "Visit dated October 3 and October 5", sourcePage: 1 }],
+  };
+  report.complianceMatrix = buildComplianceMatrixFromReport(report, "SYNTHETIC TEST ONLY. Worker affidavit. Visit on October 3.");
+  const html = renderForensicReportHtml(report);
+
+  it("says when the strength dimensions and statutory checks were not assessed", () => {
+    expect(html).toContain("No dimension scores were recorded for this report.");
+    expect(html.match(/Not assessed in this report\./g)?.length).toBe(2);
+  });
+
+  it("fills the courtroom framing column from the matrix engine and leaves no dangling 'vs.'", () => {
+    const framing = report.complianceMatrix.items[0].presentation.courtroomMode.evidentialGapOrInconsistency;
+    expect(html).toContain(escapeHtml(framing));
+    expect(html).not.toMatch(/October 5 vs\.\s*</);
+  });
+
+  it("does not call the reference list verified", () => {
+    expect(html).not.toContain("Directory of Verified Legal Authorities");
+    expect(html).toContain("Reference List of Legal Authorities");
   });
 });

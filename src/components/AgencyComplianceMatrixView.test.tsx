@@ -344,4 +344,17 @@ describe("Milestone 2 Audit Remediation: AgencyComplianceMatrixView & PDF", () =
     );
     expect(parsed.neutralityAndMethodologyDisclaimer).toBe(mock.neutralityAndMethodologyDisclaimer);
   });
+  it("11. Expands an engine-built matrix item in both presentation modes without crashing", () => {
+    const matrix = buildComplianceMatrixFromReport(
+      { documentTitle: "Synthetic affidavit", contradictions: [{ claim: "Visit dated October 3" }] } as any,
+      "SYNTHETIC TEST ONLY. Worker affidavit. The visit occurred on October 3."
+    );
+    render(<AgencyComplianceMatrixView matrix={matrix} />);
+    fireEvent.click(screen.getAllByText(/View Evidence & Analysis/i)[0]);
+    expect(screen.getByText(/Plain-Language Educational Guidance/i)).toBeDefined();
+    fireEvent.click(screen.getByText(/Courtroom Mode/i));
+    expect(screen.getByText(/Courtroom-Style Evidentiary Framing/i)).toBeDefined();
+    const item = matrix.items[0];
+    expect(screen.getAllByText(item.presentation.courtroomMode.evidentialGapOrInconsistency).length).toBeGreaterThan(0);
+  });
 });
