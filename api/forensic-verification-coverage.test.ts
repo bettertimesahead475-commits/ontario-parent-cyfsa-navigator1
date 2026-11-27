@@ -59,6 +59,20 @@ describe("Forensic verification coverage", () => {
     }
   });
 
+  it("with no red flags, a reply that covers none of the threshold rows is incomplete (0 of 4), never completed", async () => {
+    const saved = SECTIONS["section:redFlags"];
+    SECTIONS["section:redFlags"] = JSON.stringify({ redFlags: [] });
+    try {
+      const report = await run((o) => ({ findings: [], thresholds: [], overallAssessment: "Nothing to add." }));
+      expect(report.redFlags).toEqual([]);
+      expect(report.forensicVerification).toMatchObject({ status: "incomplete", checkedFindings: 0, totalFindings: 4 });
+      const covered = await run(ALL);
+      expect(covered.forensicVerification).toMatchObject({ status: "completed", checkedFindings: 4, totalFindings: 4 });
+    } finally {
+      SECTIONS["section:redFlags"] = saved;
+    }
+  });
+
   it("an already-saved report marked completed but covering fewer findings than it was sent is not shown as complete", () => {
     expect(isSecondReviewComplete({ status: "completed", checkedFindings: 0, totalFindings: 3 })).toBe(false);
     expect(isSecondReviewComplete({ status: "completed", checkedFindings: 2, totalFindings: 3 })).toBe(false);

@@ -247,14 +247,6 @@ export interface AdaptOptions {
   documentId?: string;
 }
 
-/**
- * Converts a saved legacy analyzer report into the contract.
- *
- * Every legacy item in a list field becomes exactly one finding, so nothing is dropped. Red flags
- * are placed in one section each, by the rules in `placeRedFlag`. The original object is not
- * modified.
- */
-
 /** A second review is complete only when it says so and gave a result for every finding it was sent (saved reports included). */
 export function isSecondReviewComplete(verification: unknown): boolean {
   if (!verification || typeof verification !== "object") return false;
@@ -264,6 +256,13 @@ export function isSecondReviewComplete(verification: unknown): boolean {
   return !(v.totalFindings != null && Number.isFinite(total) && Number(v.checkedFindings) < total);
 }
 
+/**
+ * Converts a saved legacy analyzer report into the contract.
+ *
+ * Every legacy item in a list field becomes exactly one finding, so nothing is dropped. Red flags
+ * are placed in one section each, by the rules in `placeRedFlag`. The original object is not
+ * modified.
+ */
 export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): ReportContract {
   const report: Loose = legacy && typeof legacy === "object" && !Array.isArray(legacy) ? (legacy as Loose) : {};
   const documentId = options.documentId || PRIMARY_DOCUMENT_ID;
