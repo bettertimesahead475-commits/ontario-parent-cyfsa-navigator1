@@ -11,16 +11,16 @@ Status: todo · doing · review · done · blocked. One owner per task. Pick the
 | T-17 | P2 | Remove dead Vercel analytics from Cloudflare site (touches shared src/App.tsx) | Claude | done | | 002ba9a; Antigravity informed via this register; deploy with next release |
 | T-05 | P1 | Persistent rate limiting options with exact costs | Claude | todo | Owner | → SECURITY_REGISTER S-RL, B-3 |
 | T-06 | P1 | Queue dead-letter verification and stuck-job recovery | Claude | done | | DLQ live with relay consumer; max_retries 5; worker DLQ tests |
-| T-07 | P1 | Database audit (RLS, indexes, constraints) read-only; prepare reversible migrations | Claude | todo | | no production DDL without approval |
+| T-07 | P1 | Database audit (RLS, indexes, constraints) read-only; prepare reversible migrations | Claude | todo | | no production DDL without approval. 2026-11-27: Devin's Supabase MCP cannot read project `nxfhvebzzobegubefcda` (permission denied; it only lists the inactive Vercel-org projects) |
 | T-08 | P1 | Synthetic analyzer evaluation set and metrics harness (mocked provider) | Claude | done | | eval/analyzer-guards; found S-15 |
 | T-09 | P1 | Alerting on failed jobs / health on existing infrastructure | Claude | todo | | no paid services |
 | T-10 | P1 | Visual-regression baselines for all public pages (desktop + mobile) | Antigravity | todo | Owner | against production `7d57b59b` |
-| T-11 | P1 | PDF export verification: Quick, guide, templates (real PDF bytes, text inspected) | Antigravity | todo | Owner | reuse approach of harness `pdf-export-check.mjs` |
-| T-12 | P1 | Accessibility audit (axe) of key pages; fix violations without visual change | Antigravity | todo | | |
+| T-11 | P1 | PDF export verification: Quick, guide, templates (real PDF bytes, text inspected) | Devin Agent B | doing | Owner | reuse approach of harness `pdf-export-check.mjs` |
+| T-12 | P1 | Accessibility audit (axe) of key pages; fix violations without visual change | Devin Agent B | doing | | |
 | T-13 | P2 | Admin console usability/accessibility pass | Antigravity | todo | Claude | API contract fixed in API_CONTRACTS.md; edits via request |
-| T-14 | P1 | Adversarial tests: authz bypass, IDOR on jobs/reports, upload abuse, prompt injection | Codex | todo | Owner | findings → engineering/security/ |
-| T-18 | P2 | Upload-limit error box in DocumentAnalyzerTab (line ~3412) lacks role="alert": screen readers do not announce "maximum allowed limit of 20 files" | Antigravity | todo | Claude | accessibility; no visual change |
-| T-19 | P3 | Owner workspace holds 20 synthetic harness files; remove them (owner decision) so uploads can be re-measured | Owner | todo | Claude | |
+| T-14 | P1 | Adversarial tests: authz bypass, IDOR on jobs/reports, upload abuse, prompt injection | Devin Agent A | doing | Owner | findings → engineering/security/ |
+| T-18 | P2 | Upload-limit error box in DocumentAnalyzerTab (line ~3412) lacks role="alert": screen readers do not announce "maximum allowed limit of 20 files" | Devin Agent B | doing | Claude | accessibility; no visual change |
+| T-19 | P3 | Owner workspace holds 20 synthetic harness files; remove them (owner decision) so uploads can be re-measured | Owner | todo | Claude | 2026-11-27 Devin removed 3 duplicate `synthetic-native.pdf` copies to run the release smoke; cabinet is back at 20 after the 3 test uploads |
 | T-16 | P1 | Unique index on payments.reference_number (reversible migration, owner approval) | Claude | todo | review S-11 | |
 | T-20 | P2 | Direct-path create-once claim of `<id>.json` before credit reservation (S-19) | Claude | done | review | 8606a0b + 88ac7be (queued producer claims too); two independent re-reviews |
 | T-26 | P2 | Per-payment index for the admin audit trail (decisions currently read the whole trail; refused beyond 20,000 records, console warns at 16,000; production 0 today) | Claude | todo | review | before the warning appears |
@@ -31,3 +31,5 @@ Status: todo · doing · review · done · blocked. One owner per task. Pick the
 | T-24 | P2 | Worktree isolation: a concurrent session edited AdminConsole.tsx/.test.tsx in Claude's worktree (2026-11-26); change reviewed and kept (847c4e0) | All agents | done | Claude | agents must use their own worktree |
 | T-25 | P2 | Re-run SonarCloud on the integration code: PR #115 head is the production branch (only updated on release); open a PR engineering/integration → main for analysis | Owner/Claude | todo | | gh CLI not available to the agent |
 | T-15 | P2 | Flaky tests under full-suite load | Claude | done | | cause: unmocked real-network calls; fixed 105a47b + c82e971 |
+
+Reassigned 2026-11-27 by the lead engineer: T-11, T-12, T-18 and T-14 had no activity on their Antigravity/Codex branches since 2026-11-25 and moved to Devin Agents B and A. FILE_OWNERSHIP rules still apply: T-14 adds tests and findings only; production fixes go through the lead.
