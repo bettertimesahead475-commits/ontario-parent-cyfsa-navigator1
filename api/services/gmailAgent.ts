@@ -77,7 +77,7 @@ async function sendAdminAlert(subject: string, text: string): Promise<boolean> {
     });
     return true;
   } catch (mailErr) {
-    console.error("[gmail-agent alert] email send failed", mailErr);
+    console.error("[gmail-agent alert] email send failed", JSON.stringify({ errorName: mailErr instanceof Error ? mailErr.name : "unknown", code: (mailErr as { code?: unknown } | null)?.code ?? null })); // SMTP errors can carry recipient addresses
     return false;
   }
 }
