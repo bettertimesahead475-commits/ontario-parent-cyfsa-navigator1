@@ -15,6 +15,9 @@ Nothing has been migrated, deployed, sent or spent. Live checks were aggregate-o
 | [#188](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/188) (via #171) | Pre-P fail-closed My Orders/refund; reissue-vs-refund race; G files | Payment integrity |
 | [#185](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/185) (via #171) | e-Transfer checkout shows server `payTo` | Payment copy |
 | [#174](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/174) | 429 vs 503 rate-limit responses, C files | Migration C |
+| [#194](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/194) | Free-trial policy (1 Quick + 1 Forensic lifetime), spend caps, paid transcription/OCR daily caps | Owner policy, P0 spend safeguards |
+| [#191](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/191) (+ [#206](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/206)) | Approve-versus-refund race fix, G least-privilege harness | Required payment lifecycle test |
+| [#196](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/196) | Local backup/restore scripts (owner's computer) | Item 3 |
 
 - Out of this release: #181 / Migration E (feature).
 - The production rollback target is `0cc59589` (`82dfe65`), the deployment live today. The RC doc's `4c902955` is the deployment before that.
@@ -72,6 +75,8 @@ Live state (read-only, 2026-11-27):
 | P / execution sequence (#187), register (#180, #189) | pending |
 | D (#175), F (#182), G (#188), C and T-05 (#168 `5f57810`, #174) | pending |
 | A/B authorization and integrity | pending |
+| Free-trial policy G-1..G-7 (#194) | pending. The `e6da09d` qualification file is not in the repo, so qualify against the owner's decision list |
+| G least privilege + approve-versus-refund (#191) | pending (second-session check passed, #206: mutations caught) |
 | #164 audit remediation, #176, #178 | pending |
 
 Devin-side evidence: disposable-PG suites for P (7/7), D, E, F and the harness (27/27), plus full Vitest on this branch (`23217bd` + register merge): 5,318 passed, 0 failed, 461 skipped. It must be re-run on the frozen head.
@@ -106,7 +111,7 @@ None expected.
 |---|---|
 | Migrations, deployment, smoke checks (`RELEASE_CHECKLIST` step 9: health, status, CSP, sign-in, synthetic extraction, admin 401) | **$0** |
 | Minimum paid acceptance on production (test account, synthetic documents): 1 Quick, 1 Forensic (3 pages), 1 Final Case Assessment | **≈ $0.95** estimate ($0.10 + $0.45 + $0.40, `live-acceptance-plan-5usd.md`) |
-| Full plan (7 runs + 1 contingency) | **≤ $4.10** cap; stop at $4.00 |
+| Full plan (9 runs + 1 contingency, incl. production Gemini OCR and transcription): `engineering/reviews/acceptance-plan-4usd10-20261127.md` | **≈ $3.87**, **≤ $4.10** cap; stop at $4.00 |
 
 - Exact cost is only known after the runs: provider tokens vary with output.
 - The control is a hard cap. Every run's tokens and cost go in `TEST_REGISTER.md`.
@@ -114,10 +119,18 @@ None expected.
 - Authorized budget remaining is about $0.40. Any paid acceptance needs a new owner amount.
 - The plan's Preview step no longer applies: Preview stays not-ready.
 
-## Owner approvals (one sign-off once items 1 and 5 close)
+## Owner approvals: the single list of owner-dependent actions
 
-- [ ] Ratify A/B.
-- [ ] Provide or run the database dump (item 3).
-- [ ] Execute steps 2–6 (G, P, D, C flag off, F).
-- [ ] Deploy the frozen commit (step 7).
-- [ ] Paid acceptance amount: $0, $0.95 or up to $4.10.
+Before sign-off (no spending):
+- [ ] Point Claude at every pending item in section 5.
+- [ ] Ratify A/B (do not roll back).
+- [ ] Free trial: the legacy-account backfill (one live data change; closes a gap worth at most $1.63 per re-created account) or accept the gap.
+- [ ] Free trial: approve creating a free Cloudflare Turnstile key and widget. The server check stays off until then.
+- [ ] Merge the section 1 PRs into the RC, or name the ones to exclude. Devin then freezes the head and re-runs the full suite on that SHA.
+
+One sign-off, once items 1 and 5 close:
+- [ ] Run the backup on your computer with Claude Code (`engineering/runbooks/DATABASE_BACKUP_RESTORE.md`, #196); the password is typed at runtime.
+- [ ] Execute G, P, D, C (flag off) and F, in that order, each after its preflight (section 2).
+- [ ] Deploy the frozen commit through Cloudflare.
+- [ ] Authorize paid acceptance: $4.10 (the plan above), or a lower amount.
+- [ ] Later: apply E after its qualification (forward-fix only; see the rollback matrix).
