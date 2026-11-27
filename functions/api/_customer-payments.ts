@@ -2,7 +2,7 @@
  * Shared reads for the customer payment endpoints (/api/my-payments, /api/claim-purchase).
  * Every read is scoped to the verified Firebase uid of the caller; nothing here can change a payment's status.
  */
-import { listAllAuditNames, rest, safeSegment, settlementByReference, type AdminStoreEnv } from './_admin-store';
+import { AdminStoreError, listAllAuditNames, rest, safeSegment, settlementByReference, type AdminStoreEnv } from './_admin-store';
 
 export type CustomerPayment = {
   id?: string; reference_number: string; plan: string; amount: number | string; status: string;
@@ -27,10 +27,23 @@ export async function paymentsOf(env: AdminStoreEnv, uid: string, fetcher: typeo
   return rest<CustomerPayment[]>(env, `payments?select=id,reference_number,plan,amount,status,submitted_at,approved_at,notes,firebase_uid&firebase_uid=eq.${encodeURIComponent(uid)}&order=submitted_at.desc&limit=20`, {}, fetcher);
 }
 
-export async function codesOf(env: AdminStoreEnv, references: string[], fetcher: typeof fetch = fetch): Promise<CustomerCode[]> {
+export async function codesOf(env: AdminStoreEnv, references: string[], fetcher: typeof fetch = fetch, columns = 'id,reference_number,used_at,expires_at,redeemed_session_id'): Promise<CustomerCode[]> {
   const safe = references.filter((r) => PAYMENT_REFERENCE.test(r));
   if (!safe.length) return [];
-  return rest<CustomerCode[]>(env, `access_codes?select=id,reference_number,used_at,expires_at,redeemed_session_id&reference_number=in.(${safe.join(',')})&limit=200`, {}, fetcher);
+  return rest<CustomerCode[]>(env, `access_codes?select=${columns}&reference_number=in.(${safe.join(',')})&limit=200`, {}, fetcher);
+}
+
+/**
+ * Like codesOf, but on a database without access_codes.redeemed_session_id (before 20261110004740) it returns the codes
+ * without their entitlement link and `linked: false`, so a caller can omit what it cannot know instead of failing.
+ */
+export async function codesWithLinks(env: AdminStoreEnv, references: string[], fetcher: typeof fetch = fetch): Promise<{ codes: CustomerCode[]; linked: boolean }> {
+  try {
+    return { codes: await codesOf(env, references, fetcher), linked: true };
+  } catch (error) {
+    if (!(error instanceof AdminStoreError) || error.pgCode !== '42703') throw error;
+    return { codes: await codesOf(env, references, fetcher, 'id,reference_number,used_at,expires_at'), linked: false };
+  }
 }
 
 /** References whose latest settlement is a recorded refund. Throws when the audit trail cannot be read completely. */

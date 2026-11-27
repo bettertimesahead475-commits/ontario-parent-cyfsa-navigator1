@@ -8,7 +8,7 @@
 import { verifyFirebaseRequest } from './_auth-check';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
 import { rest, type AdminStoreEnv } from './_admin-store';
-import { amountOf, codesOf, paymentState, paymentsOf, refundedReferences } from './_customer-payments';
+import { amountOf, codesWithLinks, paymentState, paymentsOf, refundedReferences } from './_customer-payments';
 import { getInstructions } from './request-access';
 import { TIER_PRICES } from './access-pricing';
 
@@ -32,8 +32,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
   const now = Date.now();
   try {
     const payments = await paymentsOf(env, identity.uid);
-    const [codes, sessions] = await Promise.all([
-      codesOf(env, payments.map((p) => p.reference_number)),
+    const [{ codes, linked }, sessions] = await Promise.all([
+      codesWithLinks(env, payments.map((p) => p.reference_number)),
       rest<SessionRow[]>(env, `navigator_paid_sessions?select=id,tier,issued_at,expires_at&firebase_uid=eq.${encodeURIComponent(identity.uid)}&revoked_at=is.null&expires_at=gt.${encodeURIComponent(new Date(now).toISOString())}&order=expires_at.desc&limit=20`),
     ]);
     // A refund is recorded in the audit trail. If it cannot be read, approved orders show "unknown" rather than a guess.
@@ -47,8 +47,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
         // Orders recorded before prices were unified may hold an amount that differs from the advertised price;
         // they get no payment instructions, so nobody is told to send a different amount than checkout showed.
         const priceOutdated = state === 'awaiting_verification' && !(Math.abs(amount - (TIER_PRICES[p.plan] ?? Number.NaN)) < 0.005);
-        // Whether this order's own entitlement is still active (so it can be restored on another browser).
-        const accessActive = state === 'activated' && codes.some((c) => c.reference_number === p.reference_number && c.redeemed_session_id && activeSessionIds.has(c.redeemed_session_id));
+        // Whether this order's own entitlement is still active (so it can be restored on another browser). Omitted when
+        // the database cannot link codes to entitlements yet (before 20261110004740): unknown, never guessed.
+        const accessActive = linked && state === 'activated' && codes.some((c) => c.reference_number === p.reference_number && c.redeemed_session_id && activeSessionIds.has(c.redeemed_session_id));
         return {
           referenceNumber: p.reference_number, plan: p.plan, amount, currency: 'CAD', state,
           ...(accessActive ? { accessActive: true } : {}),

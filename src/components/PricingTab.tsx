@@ -65,6 +65,8 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
   const [stage, setStage] = useState<CheckoutStage>("idle");
   const [email, setEmail] = useState(userEmail);
   const [referenceNumber, setReferenceNumber] = useState("");
+  // Destination returned by /api/request-access (env.PAYMENT_EMAIL on the server); the constant is only a fallback.
+  const [payTo, setPayTo] = useState(PAYMENT_EMAIL);
   const [codeInput, setCodeInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -194,6 +196,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
         throw new Error(data.error || "Request failed.");
       }
       setReferenceNumber(data.referenceNumber);
+      setPayTo(typeof data.payTo === "string" && data.payTo.trim() ? data.payTo.trim() : PAYMENT_EMAIL);
       setStage("awaiting-code");
     } catch (err: any) {
       setErrorMessage(err.message || "Something went wrong. Try again.");
@@ -1284,11 +1287,11 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="bg-slate-900 text-white font-sans text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-950 select-all tracking-wide">
-                        {PAYMENT_EMAIL}
+                        {payTo}
                       </span>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(PAYMENT_EMAIL, "email")}
+                        onClick={() => copyToClipboard(payTo, "email")}
                         className="p-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-md text-slate-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
                         title="Copy email"
                       >

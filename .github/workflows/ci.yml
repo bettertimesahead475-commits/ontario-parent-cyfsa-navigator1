@@ -45,6 +45,13 @@ jobs:
         shell: pwsh
         run: ./scripts/Test-AnalyzerStaging.Tests.ps1
 
+      - name: PostgREST for the payment-schema qualification (free, pinned)
+        run: |
+          curl --proto "=https" --tlsv1.2 -fsSL -o "$RUNNER_TEMP/postgrest.tar.xz" https://github.com/PostgREST/postgrest/releases/download/v12.2.3/postgrest-v12.2.3-linux-static-x64.tar.xz
+          echo "9f71269e61ac3a940281e93ff415760f5957e430e475ba4c3889f3ede7d5527c  $RUNNER_TEMP/postgrest.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/postgrest.tar.xz" -C "$RUNNER_TEMP"
+          echo "POSTGREST_BIN=$RUNNER_TEMP/postgrest" >> "$GITHUB_ENV"
+
       - name: Test
         env:
           NAVIGATOR_PG_TEST_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
