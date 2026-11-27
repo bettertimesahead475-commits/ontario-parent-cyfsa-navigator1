@@ -7,8 +7,10 @@
 -- decided each case.
 begin;
 
--- Blocks new top-ups and waits for in-flight ones to commit, so the check below sees every credit the drop removes.
-lock table public.navigator_paid_sessions in share row exclusive mode;
+-- Waits for in-flight redemptions to finish and holds off new ones (and reads) until commit, so the check below sees
+-- every credit the drop removes. Taken up front in the mode the column drop needs: a weaker lock here would deadlock
+-- with a redemption that holds a row lock and still has to update that row.
+lock table public.navigator_paid_sessions in access exclusive mode;
 
 do $$
 declare v_active integer;

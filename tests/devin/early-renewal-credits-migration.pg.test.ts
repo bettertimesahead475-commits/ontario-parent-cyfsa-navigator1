@@ -267,4 +267,21 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     await db.query(UP);
     expect(await fp("paid_reserve_credit_tier_default")).toBe(reserveFingerprint);
   });
+  it("rollback waits for a redemption that holds a session row lock instead of deadlocking with it", async () => {
+    const email = "rbdl@example.test";
+    const s = await redeem(db, "uid-rb-dl", await issue(ref(), email), email);
+    const holder = await connect(); const roller = await connect();
+    await holder.query("begin");
+    await holder.query("select id from public.navigator_paid_sessions where id = $1 for update", [s.session_id]);
+    await roller.query("set navigator.allow_credit_reduction = 'on'");
+    const pending = roller.query(DOWN);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await count("select count(*) as n from pg_locks where not granted")).toBeGreaterThan(0);
+    await holder.query("update public.navigator_paid_sessions set expires_at = expires_at + interval '30 days' where id = $1", [s.session_id]);
+    await holder.query("commit");
+    await pending;
+    expect(await count("select count(*) as n from information_schema.columns where table_name = 'navigator_paid_sessions' and column_name = 'granted_credits'")).toBe(0);
+    expect(await fp("redeem_access_code_atomic")).toBe(dFingerprint);
+    await db.query(UP);
+  });
 });
