@@ -511,7 +511,7 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   }
   // A customer can self-activate the moment the status flips (claim-purchase); if that happened before this code was
   // inserted, the claim's cleanup missed it, so retire it here. Either order leaves at most one redeemable code.
-  if ((await usedCodeIds(env, reference, fetcher)).some((id) => !usedBefore.includes(id))) {
+  if ((await usedCodeIds(env, reference, fetcher).catch(() => { console.error('[ADMIN_APPROVE_ACTIVATION_CHECK_FAILED]', JSON.stringify({ reference })); return usedBefore; })).some((id) => !usedBefore.includes(id))) {
     await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' }, fetcher);
     await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, customerActivated: true }, fetcher);
     return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: null, alreadyActivated: true,
