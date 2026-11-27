@@ -154,8 +154,18 @@ describe.skipIf(!isLocal)("free-trial entitlements on a real PostgreSQL server",
     }
     expect(outcomes).toEqual(["reserved", "reserved", "reserved", "attempt_limit"]);
     expect(await used(await freeTrialKey("forensic", "f@example.com"))).toBe(0);
-    // A retry of an earlier request joins it and does not spend another run.
-    expect((await attempt("forensic", "uid-f", "f@example.com", { requestId: "req_attempt_0_padding" })).status).toBe("reserved");
+    // Re-sending a released request id is a new provider run, so it is refused too.
+    expect((await attempt("forensic", "uid-f", "f@example.com", { requestId: "req_attempt_0_padding" })).status).toBe("attempt_limit");
+  });
+
+  it("refusals spend no run, and a retry of a request still running joins it without spending one", async () => {
+    await pool.query("insert into free_usage (uid, analyses_used) values ($1, 200)", [platformDailyKey("paid", new Date())]);
+    for (let i = 0; i < 4; i++) expect((await attempt("quick", "uid-p", "p@example.com", { requestId: `req_paused_${i}_padding` })).status).toBe("paused");
+    await pool.query("delete from free_usage where uid = $1", [platformDailyKey("paid", new Date())]);
+    const first = await attempt("quick", "uid-p", "p@example.com", { requestId: "req_running_padding" });
+    expect(first.status).toBe("reserved");
+    expect((await attempt("quick", "uid-p", "p@example.com", { requestId: "req_running_padding" })).status).toBe("joined");
+    expect(await used(`fat:${await freeTrialKey("quick", "p@example.com")}`)).toBe(1);
   });
 
   it("repeated account creation from one network is capped per day", async () => {

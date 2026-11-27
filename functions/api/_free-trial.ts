@@ -36,7 +36,7 @@ export const FREE_TRIAL_MAX_CHARS: Record<FreeTrialKind, number> = { quick: 75_0
 export const FREE_OCR_LIFETIME_LIMIT = 2;
 /**
  * Provider runs one free entitlement may start in its lifetime. A failed run returns the entitlement, so without this
- * a document that always fails could be retried at our expense forever. Retries of the same request join and are free.
+ * a document that always fails could be retried at our expense forever. A request still running is joined and spends nothing.
  */
 export const FREE_TRIAL_MAX_ATTEMPTS = 3;
 /** The run-count key of a free reservation; queue redeliveries spend from the same lifetime budget. */
@@ -227,9 +227,6 @@ export async function reserveFreeTrial(req: FreeTrialRequest): Promise<FreeTrial
     return { status } as FreeTrialReservation;
   };
 
-  const attempts = await takeCapUnit(`fat:${key}`, requestId, spendLimit(env, 'FREE_TRIAL_MAX_ATTEMPTS'), rpc);
-  if (attempts !== 'ok') return refuse(attempts === 'limit' ? 'attempt_limit' : 'unavailable');
-
   if (captchaRequired(env)) {
     const secret = normalizeApiKey(env.TURNSTILE_SECRET_KEY);
     if (!secret) return refuse('unavailable');
@@ -252,6 +249,11 @@ export async function reserveFreeTrial(req: FreeTrialRequest): Promise<FreeTrial
       if (unit !== 'ok') return refuse(unit === 'limit' ? 'ip_limit' : 'unavailable');
     }
   }
+  // Last, so a refusal above spends no run. Every fresh reservation is a new provider run, including a released
+  // request id sent again, so the unit id is unique per reservation; a request still running joined above instead.
+  const runId = `${requestId.slice(0, 80)}_run_${crypto.randomUUID().replace(/-/g, '')}`;
+  const attempts = await takeCapUnit(`fat:${key}`, runId, spendLimit(env, 'FREE_TRIAL_MAX_ATTEMPTS'), rpc);
+  if (attempts !== 'ok') return refuse(attempts === 'limit' ? 'attempt_limit' : 'unavailable');
   return { status: 'reserved', reservationId };
 }
 
