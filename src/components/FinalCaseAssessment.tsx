@@ -50,9 +50,12 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
   }
   function downloadPdf() {
     if (!report) return;
+    let html: string;
+    try { html = renderFinalAssessmentHtml(report, { redact }); }
+    catch { setError(redact ? 'The redacted copy could not be prepared, so nothing was exported' : 'The PDF could not be prepared'); return; }
     const printWindow = window.open('', '_blank');
     if (!printWindow) { setError('Allow pop-ups for this site to save the assessment as a PDF'); return; }
-    printWindow.document.write(renderFinalAssessmentHtml(report, { redact }));
+    printWindow.document.write(html);
     printWindow.document.close();
     finishPrintWindow(printWindow);
   }

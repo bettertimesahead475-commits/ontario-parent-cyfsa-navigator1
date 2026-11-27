@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { FINAL_ASSESSMENT_REDACTED_NOTICE, renderFinalAssessmentHtml } from "./finalAssessmentExport";
+import { assertFinalAssessmentRedacted, FINAL_ASSESSMENT_REDACTED_NOTICE, renderFinalAssessmentHtml } from "./finalAssessmentExport";
+import { REDACTED_TEXT } from "../../shared/exportRedaction";
 
 const report = {
   reportId: "r1",
@@ -69,23 +70,21 @@ describe("Final Case Assessment PDF", () => {
       expect(redacted).toContain("S1. Source document 1 — page 2");
     });
 
-    it("masks phone numbers, dates and court file numbers in findings and source text", () => {
-      for (const value of ["416-555-0199", "416 555 0199", "03/02/2026", "2019-04-03", "FC-26-00001234-0000"]) {
-        expect(redacted).not.toContain(value);
-      }
-      expect(redacted).toContain("Worker phoned [PHONE] on [DATE].");
-      expect(redacted).toContain("Call [PHONE] about [FILE], born [DATE].");
-    });
-
-    it("masks parenthesized phone numbers and written-out dates", () => {
-      const written = renderFinalAssessmentHtml(
-        { ...pii, sections: { ...pii.sections, overview: [{ text: "Call (416) 555-0199; born April 3, 2019; seen 3 April 2019 and Sept. 14th, 2026.", sources: ["s-a"] }] } },
+    it("removes findings and source text, including names that no pattern can detect", () => {
+      const named = renderFinalAssessmentHtml(
+        { ...pii, sections: { ...pii.sections, chronology: [{ text: "Jane Smith told the worker that Liam Smith missed school.", sources: ["s-a"] }] } },
         { redact: true }
       );
-      for (const value of ["(416) 555-0199", "555-0199", "April 3, 2019", "3 April 2019", "Sept. 14th, 2026"]) {
-        expect(written).not.toContain(value);
+      for (const value of ["Jane Smith", "Liam", "416-555-0199", "416 555 0199", "03/02/2026", "2019-04-03", "FC-26-00001234-0000", "Worker phoned", "Call "]) {
+        expect(named).not.toContain(value);
       }
-      expect(written).toContain("Call [PHONE]; born [DATE]; seen [DATE] and [DATE].");
+      expect(named).toContain(REDACTED_TEXT);
+      expect(named).toContain("[S1: Source document 1, p. 2]");
+    });
+
+    it("fails closed when any sensitive text would survive", () => {
+      expect(() => assertFinalAssessmentRedacted("<p>smith-affidavit.txt</p>", pii)).toThrow("REDACTION_INCOMPLETE");
+      expect(() => assertFinalAssessmentRedacted(redacted, pii)).not.toThrow();
     });
 
     it("says what was masked and does not change the unredacted copy or the input", () => {

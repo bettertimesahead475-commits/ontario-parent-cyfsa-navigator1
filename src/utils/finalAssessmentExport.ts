@@ -1,6 +1,6 @@
 import { escapeHtml } from "./reportSectionsHtml";
 import { printDocumentStyles } from "./caseBriefExport";
-import { redactPiiText } from "./redaction";
+import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 import type { AssessmentReport } from "../../functions/api/final-case-assessment";
 
 export const FINAL_ASSESSMENT_SECTIONS = [
@@ -16,8 +16,7 @@ export const FINAL_ASSESSMENT_NOTICE =
   "It is not legal advice, not a court filing, and not certified. Findings are preliminary: check each one against the cited source page before relying on it.";
 
 export const FINAL_ASSESSMENT_REDACTED_NOTICE =
-  "Redacted copy: the matter title and source file names are replaced, and phone numbers, dates and Ontario court file numbers are masked in findings and source text. " +
-  "Names and other identifying details in free text may remain. This copy is not guaranteed to be anonymous. Review it before sharing.";
+  REDACTED_COPY_NOTICE + " The matter title and source file names are replaced with neutral labels; page numbers are kept.";
 
 export const REDACTED_MATTER_TITLE = "Redacted matter";
 
@@ -27,20 +26,37 @@ export interface FinalAssessmentExportOptions {
   redact?: boolean;
 }
 
-/** Copy of the report with the matter title, source file names and PII patterns in findings and source text masked. */
+/**
+ * Redacted copy built with the shared export redaction (every free-text string removed), so the FCA follows the same
+ * rule as the Quick Review and Forensic exports. Only source ids, page numbers and the save time survive. The input is not modified.
+ */
 export function redactFinalAssessment(report: AssessmentReport): AssessmentReport {
   const sources = Array.isArray(report.sources) ? report.sources : [];
-  const sections = { ...report.sections } as AssessmentReport["sections"];
+  const sections = {} as AssessmentReport["sections"];
   for (const [key] of FINAL_ASSESSMENT_SECTIONS) {
     const points = Array.isArray(report.sections?.[key]) ? report.sections[key] : [];
-    sections[key] = points.map((p) => ({ ...p, text: redactPiiText(p.text) }));
+    sections[key] = points.map((p) => ({ ...redactForExport(p), sources: Array.isArray(p.sources) ? [...p.sources] : [] }));
   }
   return {
-    ...report,
+    ...redactForExport(report),
     title: REDACTED_MATTER_TITLE,
-    sources: sources.map((s, i) => ({ ...s, document: `Source document ${i + 1}`, text: redactPiiText(s.text) })),
+    createdAt: report.createdAt,
+    sources: sources.map((s, i) => ({ ...redactForExport(s), id: s.id, page: s.page, document: `Source document ${i + 1}` })),
     sections,
   };
+}
+
+/** Fails closed: throws if any title, file name, finding or source text of the original report survives in the redacted HTML. */
+export function assertFinalAssessmentRedacted(html: string, original: AssessmentReport): void {
+  const sources = Array.isArray(original.sources) ? original.sources : [];
+  const points = FINAL_ASSESSMENT_SECTIONS.flatMap(([key]) => (Array.isArray(original.sections?.[key]) ? original.sections[key] : []));
+  const sensitive = [original.title, ...sources.flatMap((s) => [s.document, s.text]), ...points.map((p) => p.text)];
+  for (const value of sensitive) {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (text.length >= 6 && (html.includes(text) || html.includes(escapeHtml(text)))) {
+      throw new Error("REDACTION_INCOMPLETE");
+    }
+  }
 }
 
 const EXTRA_STYLES = `
@@ -57,7 +73,13 @@ const dateText = (value: string | Date) => {
 };
 
 export function renderFinalAssessmentHtml(input: AssessmentReport, options: FinalAssessmentExportOptions = {}): string {
-  const report = options.redact ? redactFinalAssessment(input) : input;
+  if (!options.redact) return renderHtml(input, options);
+  const html = renderHtml(redactFinalAssessment(input), options);
+  assertFinalAssessmentRedacted(html, input);
+  return html;
+}
+
+function renderHtml(report: AssessmentReport, options: FinalAssessmentExportOptions): string {
   const sources = Array.isArray(report.sources) ? report.sources : [];
   const sourceIndex = new Map(sources.map((s, i) => [s.id, i + 1]));
   const sourceLabel = (id: string) => {
