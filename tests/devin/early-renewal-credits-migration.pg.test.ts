@@ -493,4 +493,15 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     expect(await refundPack(db, first.session_id!, "over-2")).toMatchObject({ status: "already_applied", used_beyond_remaining: 5 });
     expect(await refundPack(db, first.session_id!, "over-3")).toMatchObject({ status: "applied", granted_after: 0, used_beyond_remaining: 5 });
   });
+
+  it("handler: both packs refunded one after the other, 7 used: overage 2 then 5, access ends", async () => {
+    const email = "seq@example.test"; const uid = "uid-seqpacks"; const origRef = ref(); const topRef = ref();
+    const refund = adminHarness({ [origRef]: { plan: "Premium", email, uid }, [topRef]: { plan: "Premium", email, uid } });
+    const first = await redeem(db, uid, await issue(origRef, email), email);
+    await redeem(db, uid, await issue(topRef, email), email);
+    for (let i = 0; i < 7; i++) expect(await analyse(first.session_id!, "Premium")).toBe("reserved");
+    expect(await refund(topRef)).toMatchObject({ success: true, sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 2 });
+    expect(await refund(origRef)).toMatchObject({ success: true, sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 5 });
+    expect((await one("select expires_at <= now() as ended from public.navigator_paid_sessions where id = $1", [first.session_id])).ended).toBe(true);
+  });
 });

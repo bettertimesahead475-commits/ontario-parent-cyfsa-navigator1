@@ -837,21 +837,12 @@ describe('refund of an early one-off re-purchase (Migration E granted_credits)',
     }
   });
 
-  it('E8 a top-up that lands while a one-pack refund is shortening hands the refund to the database function', async () => {
+  it('E8 the last pack of a topped-up session (granted_credits null after earlier refunds) also goes through the function', async () => {
     const db = topUpFixture(null);
-    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 0 }));
-    const impl = db.fetcher.getMockImplementation()!;
-    let landed = false;
-    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
-      if (!landed && (init.method || 'GET') === 'PATCH' && String(input).includes('/rest/v1/navigator_paid_sessions')) {
-        landed = true; // a new top-up is redeemed between this refund's read and its write
-        Object.assign(db.tables.navigator_paid_sessions[0], { expires_at: '2027-01-31T00:00:00.000Z', granted_credits: 10 });
-      }
-      return impl(input, init);
-    });
-    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0 });
+    const rpc = withRefundRpc(db, () => ({ status: 'applied', used_beyond_remaining: 4 }));
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, shorteningsForReview: 0, packAnalysesAlreadyUsed: 4 });
     expect(rpc).toEqual([{ p_session: S1, p_refund_key: `PS-TOPUP1:${TOPUP}`, p_days: 30 }]);
-    expect(sessionPatches(db)).toHaveLength(1);
+    expect(sessionPatches(db)).toHaveLength(0);
   });
 
   it('E5 before E (no granted_credits column) and on monthly tiers the refund sends exactly the request it sent before', async () => {

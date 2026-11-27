@@ -607,7 +607,9 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
       // Migration E one-off top-up: one database function takes back this pack's analyses and 30 days under the
       // reservation lock, never below the tier default, once per code (a retry gets the first result back), so
       // concurrent refunds and retries cannot lose or repeat a deduction. Before E granted_credits is absent.
-      const toppedUp = (s: Session) => { const pack = LIMITS[String(s.tier)]; return typeof s.granted_credits === 'number' && !!pack && !pack.monthly; };
+      // A topped-up one-off session after E: granted_credits is set, or null (the column exists) once earlier packs were
+      // refunded, so the last pack's refund also goes through the function.
+      const toppedUp = (s: Session) => { const pack = LIMITS[String(s.tier)]; return !!pack && !pack.monthly && (typeof s.granted_credits === 'number' || (s.granted_credits === null && 'granted_credits' in s)); };
       const refundPack = async () => {
         const r = await rest<{ status?: string; used_beyond_remaining?: number }>(env, 'rpc/paid_refund_one_off_pack', {
           method: 'POST', body: { p_session: session.id, p_refund_key: `${reference}:${code.id}`, p_days: RENEWAL_DAYS },
@@ -624,10 +626,8 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
         // Compare-and-set on the row as read. Another refund of the same entitlement (for example the original pack and
         // its top-up refunded together) can change it in between; this refund then re-reads and takes back its own 30
         // days and pack from the new values instead of losing them. Still contended after the retries: manual review.
-        let current: Session | undefined = session; let landed = false; let handedOver = false;
+        let current: Session | undefined = session; let landed = false;
         for (let attempt = 0; attempt < REFUND_CAS_ATTEMPTS && current?.expires_at; attempt++) {
-          // A top-up landed after the read: the pack's analyses must go too, so the database function takes over.
-          if (toppedUp(current)) { await refundPack(); handedOver = true; break; }
           const shortened = new Date(Date.parse(current.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
           const change: Record<string, unknown> = { expires_at: shortened };
           const filter = `navigator_paid_sessions?id=eq.${current.id}&expires_at=eq.${enc(current.expires_at)}`;
@@ -636,7 +636,7 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
           current = (await rest<Session[]>(env, `navigator_paid_sessions?select=*&id=eq.${session.id}&limit=1`, {}, fetcher))[0];
         }
         if (landed) sessionsShortened++;
-        else if (current && !handedOver) shorteningsForReview++;
+        else if (current) shorteningsForReview++;
       } else {
         // Overwrites any earlier revocation time too, so an earlier console suspension can no longer be "restored".
         const n = (await rest<Session[]>(env, `navigator_paid_sessions?id=eq.${session.id}`, { method: 'PATCH', body: { revoked_at: stamp }, prefer: 'return=representation' }, fetcher)).length;
