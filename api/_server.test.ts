@@ -842,7 +842,7 @@ describe("POST /api/analyze", () => {
   });
 
   it("routes Forensic sections to Sonnet and the independent verification pass to Opus", async () => {
-    mockCreateMessage.mockImplementation(sectionResponder());
+    mockCreateMessage.mockImplementation(sectionResponder(undefined, undefined, true));
     const res = await request(app)
       .post("/api/analyze")
       .set(paid())

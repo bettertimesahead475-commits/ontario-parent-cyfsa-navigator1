@@ -1268,6 +1268,16 @@ async function runForensicVerification(
         continue;
       }
       const checked = mergeVerification(report, parsed, model);
+      // A parsed reply that leaves findings without a verdict is not a completed review of the report.
+      if (checked < findingCount) {
+        return {
+          status: "incomplete",
+          checkedFindings: checked,
+          totalFindings: findingCount,
+          reason: `Independent verification returned a result for ${checked} of ${findingCount} findings. The others have not been second-reviewed.`,
+          durationMs: now() - started,
+        };
+      }
       return {
         status: "completed",
         checkedFindings: checked,

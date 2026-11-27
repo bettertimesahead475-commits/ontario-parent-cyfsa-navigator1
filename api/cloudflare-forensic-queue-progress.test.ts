@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleAnalyzeRequest, type AnalyzerEnv } from '../functions/api/analyze';
 import type { GenerateFn } from './services/analyzerSections';
+import { completeVerification } from './analyzerTestFixtures';
 
 // Synthetic, non-identifying fixture text only.
 const DOC = `SUPERIOR COURT OF JUSTICE (FAMILY COURT)
@@ -45,7 +46,7 @@ const SECTIONS: Record<string, unknown> = {
 };
 
 const generate: GenerateFn = vi.fn(async (options: any) => ({
-  text: JSON.stringify(SECTIONS[options.stage] ?? {}),
+  text: JSON.stringify(options.stage === 'forensic_verification' ? completeVerification(SECTIONS[options.stage] as any, options) : SECTIONS[options.stage] ?? {}),
   usage: { input_tokens: 1, output_tokens: 1 },
   model: 'synthetic-opus',
   durationMs: 1,

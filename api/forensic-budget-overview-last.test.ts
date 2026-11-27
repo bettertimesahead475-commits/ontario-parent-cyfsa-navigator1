@@ -13,6 +13,12 @@ const OK: Record<string, string> = {
   "section:thresholds": JSON.stringify({ thresholdAnalysis: [{ thresholdChecked: "Physical Harm Risk", isMet: "Not Met", reasoning: "No harm described." }] }),
   "section:timeline": JSON.stringify({ proceduralTimelineViolations: [{ timelineRule: "30-Day Adjournment Limit", documentAssertion: "None.", evaluation: "Not applicable." }], charterAndHumanRightsIssues: [] }),
 };
+// A complete verifier reply: a verdict for the finding and for every threshold row named in the prompt. (Previously
+// { verdicts: [] }, which checked nothing but was still reported as a completed second review.)
+const verifierReply = (o: any) => ({
+  findings: [{ id: "rf1", verdict: "SUPPORTED" }],
+  thresholds: [...JSON.stringify(o.messages).matchAll(/\\"thresholdChecked\\": \\"([^\\]+)\\"/g)].map((m) => ({ thresholdChecked: m[1], verdict: "SUPPORTED" })),
+});
 const DOC = "Synthetic affidavit. The school concern was relayed to me by the intake worker, Morgan Placeholder.";
 const PRODUCTION_MS: Record<string, number> = {
   "section:redFlags": 92_500, "section:thresholds": 37_700, "section:chronology": 1_500 + (7_500 / 94) * 1000,
@@ -36,7 +42,7 @@ async function replay(durations: Record<string, number>) {
     }
     await sleep(dur);
     calls.push({ stage: o.stage, start, end: Date.now(), timeoutMs: o.timeoutMs, ok: true });
-    const text = o.stage === "forensic_verification" ? JSON.stringify({ verdicts: [] }) : OK[o.stage];
+    const text = o.stage === "forensic_verification" ? JSON.stringify(verifierReply(o)) : OK[o.stage];
     return { text, model: "m", durationMs: dur, stopReason: "end_turn" };
   };
   let ok = false, finishedAt = 0, result: any = null;
