@@ -1,0 +1,30 @@
+# CodeRabbit review configuration (takes effect once the CodeRabbit GitHub App is installed on this repository).
+language: en-CA
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/*.pdf"
+    - "!**/package-lock.json"
+    - "!dist/**"
+  path_instructions:
+    - path: "functions/api/**"
+      instructions: "Every user-data endpoint must verify the Firebase token and the owner, and fail closed on lookup errors. Credits: job record created once before reservation; refund on failure."
+    - path: "workers/**"
+      instructions: "Queue consumer: check idempotency, retry limits, truncation handling and that credits are never deducted twice."
+    - path: "shared/quoteVerification.ts"
+      instructions: "Quotation matching must stay strict (no verified quote after negations or inside hyphenated words) and run in linear time."
+    - path: "src/utils/*Export*.ts"
+      instructions: "Exports use saved analyses only, escape all report text, contain no inline scripts or event handlers, never invent metadata or scores, and keep the not-legal-advice notice."
+    - path: "src/utils/forensicPdfRenderer.ts"
+      instructions: "Missing values must read 'Not stated in the document', 'Not recorded' or 'Not scored'; no claims of e-Laws verification or second-model review unless recorded."
+    - path: "supabase/**"
+      instructions: "Migrations are never applied without owner approval; flag any change to RLS or credit tables."
+    - path: "**/*vercel*"
+      instructions: "Vercel is obsolete; flag any change that configures or deploys through Vercel."
+chat:
+  auto_reply: true
