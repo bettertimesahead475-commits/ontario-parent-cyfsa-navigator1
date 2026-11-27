@@ -5,6 +5,8 @@
  * Returns verified tier prices, product descriptions, and feature entitlements.
  */
 
+import { FREE_SCAN_LIMIT } from './_free-credit-reservation';
+
 const DEFAULT_HEADERS = {
   'Cache-Control': 'public, max-age=3600',
   'X-Content-Type-Options': 'nosniff',
@@ -56,10 +58,9 @@ export const onRequestGet = async (): Promise<Response> => {
             interval: 'one-time',
             scope: 'analyzer_only',
             forensicLimit: 5,
-            description: 'Premium Document Analyzer access with 5 Forensic In-Depth Dual-Pass analyses.',
+            description: 'Premium Document Analyzer access with 5 analyses in total, each a Forensic In-Depth Dual-Pass analysis or a Quick Document Review.',
             features: [
-              '5 Forensic In-Depth Dual-Pass Analyses included',
-              'Standard Quick Document Reviews included',
+              '5 analyses included: Forensic In-Depth Dual-Pass or Quick Document Review',
               'Cross-examination vulnerability scanner',
               'Evidentiary Weight & Hearsay objection audit',
               'Priority document analysis processing',
@@ -138,7 +139,7 @@ export const onRequestGet = async (): Promise<Response> => {
           ],
           restrictions: [
             'No premium report download/export/print unless included in paid access',
-            '1 Free Quick Document Review',
+            `${FREE_SCAN_LIMIT} Free Quick Document Reviews`,
           ],
         },
       },

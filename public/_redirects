@@ -1,0 +1,15 @@
+# Every app path has its own HTML file in dist (scripts/prerender.mjs), and dist/404.html answers any other path
+# with HTTP 404. These rewrites serve the app shell only for the dynamic paths App.tsx actually routes, and send
+# their trailing-slash forms to the slash-less URL (as Pages already does for the generated HTML files).
+# Rules with placeholders come last (Pages matches static rules faster).
+/upgrade                /pricing                301
+/admin/payments/        /admin/payments         301
+/admin/system-health/   /admin/system-health    301
+/admin/monitoring/      /admin/monitoring       301
+/admin/marketing/       /admin/marketing        301
+/admin/payments         /admin                  200
+/admin/system-health    /admin                  200
+/admin/monitoring       /admin                  200
+/admin/marketing        /admin                  200
+/lawyers/:id/           /lawyers/:id            301
+/lawyers/:id            /app-shell              200

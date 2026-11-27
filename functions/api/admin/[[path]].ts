@@ -18,10 +18,12 @@ import { monthlyCreditScope } from '../_monthly-credit-scope';
 import { statusResponse, type StatusEnv } from '../_status';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitedResponse } from '../_rate-limit';
 import { trimCharacters } from '../../../shared/linearText';
+import { enqueueTransactionalEmail, enqueueRenewalReminders, outboxSummary, processOutbox } from '../_email-outbox';
+import { gmailMailer, transactionalEmailEnabled, type TransactionalEmailEnv, type TransactionalMailer } from '../_mailer';
 
-export type AdminEnv = AdminAuthEnv & AdminStoreEnv & StatusEnv;
+export type AdminEnv = AdminAuthEnv & AdminStoreEnv & StatusEnv & TransactionalEmailEnv;
 type Context = { request: Request; env: AdminEnv };
-type Deps = { requireAdmin?: typeof requireAdmin; fetcher?: typeof fetch; now?: () => Date };
+type Deps = { requireAdmin?: typeof requireAdmin; fetcher?: typeof fetch; now?: () => Date; mailer?: TransactionalMailer };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REFERENCE = /^PS-[A-Z0-9]{4,12}$/;
@@ -34,7 +36,7 @@ const ok = (body: unknown, status = 200) => Response.json(body, { status, header
 const enc = encodeURIComponent;
 
 type Payment = Record<string, unknown> & { reference_number?: string; notes?: string | null; plan?: string; amount?: number | string; status?: string; submitted_at?: string; approved_at?: string | null; firebase_uid?: string | null };
-type Session = Record<string, unknown> & { id: string; firebase_uid?: string; tier?: string; issued_at?: string; expires_at?: string; revoked_at?: string | null; access_code_id?: string | null; email?: string | null };
+type Session = Record<string, unknown> & { id: string; firebase_uid?: string; tier?: string; issued_at?: string; expires_at?: string; revoked_at?: string | null; access_code_id?: string | null; email?: string | null; granted_credits?: number | null };
 type AccessCode = Record<string, unknown> & { id?: string; email?: string | null; tier?: string; reference_number?: string | null; used_at?: string | null; expires_at?: string | null };
 type Counter = { uid: string; analyses_used: number | null; last_analysis_at?: string | null };
 
@@ -476,6 +478,10 @@ async function issueCode(env: AdminEnv, payment: Payment, email: string, amount:
   return { code, expiresAt };
 }
 
+async function usedCodeIds(env: AdminEnv, reference: string, fetcher: typeof fetch): Promise<string[]> {
+  return (await rest<AccessCode[]>(env, `access_codes?select=id&reference_number=eq.${enc(reference)}&used_at=not.is.null`, {}, fetcher)).map((c) => String(c.id));
+}
+
 async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
   const reference = typeof body.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
   const received = typeof body.amountReceived === 'number' ? body.amountReceived : Number.NaN;
@@ -488,6 +494,7 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   const { email } = parsePaymentNotes(payment.notes);
   if (!email || !LIMITS[String(payment.plan)]) return adminError('PAYMENT_INCOMPLETE', 422, 'This payment request has no customer email or a package that cannot be activated.');
 
+  const usedBefore = await usedCodeIds(env, reference, fetcher);
   // Compare-and-set on this exact row: only one approval can move it out of 'pending', so a code is never issued twice.
   const claimed = await rest<Payment[]>(env, `payments?${paymentFilter(payment)}&status=eq.pending`, {
     method: 'PATCH', body: { status: 'approved', approved_at: now.toISOString() }, prefer: 'return=representation',
@@ -504,9 +511,34 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
       .catch(() => console.error('[ADMIN_APPROVE_ROLLBACK_FAILED]', JSON.stringify({ reference })));
     throw error;
   }
-  const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeExpiresAt: issued.expiresAt }, fetcher);
+  // A customer can self-activate the moment the status flips (claim-purchase); if that happened before this code was
+  // inserted, the claim's cleanup missed it, so retire it here. Either order leaves at most one redeemable code.
+  let activated: boolean | null;
+  try { activated = (await usedCodeIds(env, reference, fetcher)).some((id) => !usedBefore.includes(id)); }
+  catch { console.error('[ADMIN_APPROVE_ACTIVATION_CHECK_FAILED]', JSON.stringify({ reference })); activated = null; }
+  // Fail closed: unless it is certain no redemption happened during approval, retire this code (Reissue recovers it).
+  if (activated !== false) await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' }, fetcher);
+  const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, ...(activated !== false ? { customerActivated: activated ?? 'unknown' } : { codeExpiresAt: issued.expiresAt }) }, fetcher);
+  // Enqueue only: each call is a no-op unless transactional email is enabled, and a failure never undoes the approval.
+  const data = { plan: String(payment.plan), amount: received, approvedAt: now.toISOString(), expiresAt: issued.expiresAt };
+  const base = { reference, email };
+  if (activated !== false) {
+    const receiptQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'purchase_receipt', dedupeKey: reference, data }, fetcher);
+    return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: null, ...(activated ? { alreadyActivated: true } : { activationUnknown: true }), auditRecorded: audited,
+      emailsQueued: { confirmation: false, receipt: receiptQueued, accessCode: false },
+      note: activated
+        ? 'Approved. The customer already activated this order from their account, so no code needs to be sent.'
+        : 'Approved, but the activation check failed, so this code was withheld to avoid giving access twice. Use "Reissue code" to send the customer a code.' });
+  }
+  // The confirmation says "activate now", so it is only sent with a code.
+  const confirmationQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'payment_confirmation', dedupeKey: reference, data }, fetcher);
+  const receiptQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'purchase_receipt', dedupeKey: reference, data }, fetcher);
+  const codeEmailQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'access_code', dedupeKey: reference, data, accessCode: issued.code }, fetcher);
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt, auditRecorded: audited,
-    note: 'Send this code to the customer now. It is shown once and only its hash is stored.' });
+    emailsQueued: { confirmation: confirmationQueued, receipt: receiptQueued, accessCode: codeEmailQueued },
+    note: codeEmailQueued
+      ? 'The code was queued for email to the customer. It is shown once and only its hash is stored; check the email outbox before sending it yourself.'
+      : 'Send this code to the customer now. It is shown once and only its hash is stored.' });
 }
 
 /** Replaces an undelivered or lost code of an approved payment. Refused once the payment's code was redeemed or refunded. */
@@ -536,6 +568,15 @@ async function reissueCode(env: AdminEnv, admin: AdminIdentity, body: Record<str
   const after = await rest<AccessCode[]>(env, `access_codes?select=id,used_at&reference_number=eq.${enc(reference)}&used_at=not.is.null&limit=1`, {}, fetcher);
   if (after.length) return adminError('CODE_ALREADY_REDEEMED', 409, 'The customer redeemed the earlier code just now; no new code was issued.');
   const issued = await issueCode(env, payment, email, amountOf(payment.amount), fetcher, now);
+  // A refund recorded while this code was being issued may have retired the unused codes before it was inserted. The
+  // refund writes its record first, so checking after the insert closes the race; unreadable history fails closed.
+  const settled = await settlementOf(env, reference, fetcher).catch(() => null);
+  if (settled === 'refunded' || settled === null) {
+    await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
+    return settled === 'refunded'
+      ? adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded while the code was being issued. The new code was cancelled.')
+      : adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund history could not be read, so the new code was cancelled. Try again.');
+  }
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt,
     note: 'Send this code to the customer now. It is shown once; earlier unused codes for this payment no longer work.' });
 }
@@ -556,6 +597,7 @@ async function settlementAction(env: AdminEnv, admin: AdminIdentity, action: 'co
 }
 
 const RENEWAL_DAYS = 30;
+const REFUND_CAS_ATTEMPTS = 5;
 
 async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
   const reference = typeof body.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
@@ -583,7 +625,7 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
   const firstApplication = await acquireOnce(env, `refund__${reference}`, fetcher);
 
   const stamp = now.toISOString();
-  let rejected = false; let codesExpired = 0; let sessionsRevoked = 0; let sessionsShortened = 0; let shorteningsForReview = 0; const revokedSessionIds: string[] = [];
+  let rejected = false; let codesExpired = 0; let sessionsRevoked = 0; let sessionsShortened = 0; let shorteningsForReview = 0; let packAnalysesAlreadyUsed = 0; const revokedSessionIds: string[] = [];
   if (payment.status === 'pending') {
     rejected = (await rest<Payment[]>(env, `payments?${paymentFilter(payment)}&status=eq.pending`, { method: 'PATCH', body: { status: 'rejected' }, prefer: 'return=representation' }, fetcher)).length > 0;
   }
@@ -600,16 +642,43 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
       // Monthly renewals extend one entitlement by 30 days per code. Refunding one month (the renewal itself, or the
       // original purchase of an entitlement that has paid renewals) takes back those 30 days; refunding a purchase
       // with no renewals revokes it.
-      const renewals = (await rest<CodeLink[]>(env, `access_codes?select=id&redeemed_session_id=eq.${session.id}&used_at=not.is.null&limit=50`, {}, fetcher))
+      // Before 20261110004740 there is no redeemed_session_id: every redemption had its own entitlement, so no renewals.
+      const renewals = (await restOptional<CodeLink[]>(env, `access_codes?select=id&redeemed_session_id=eq.${session.id}&used_at=not.is.null&limit=50`, [], fetcher)).data
         .filter((c) => c.id !== session.access_code_id);
       const isRenewal = session.access_code_id !== code.id;
-      if ((isRenewal || renewals.length > 0) && session.expires_at && !firstApplication) {
+      // Migration E one-off top-up: one database function takes back this pack's analyses and 30 days under the
+      // reservation lock, never below the tier default, once per code (a retry gets the first result back), so
+      // concurrent refunds and retries cannot lose or repeat a deduction. Before E granted_credits is absent.
+      // A topped-up one-off session after E: granted_credits is set, or null (the column exists) once earlier packs were
+      // refunded, so the last pack's refund also goes through the function.
+      const toppedUp = (s: Session) => { const pack = LIMITS[String(s.tier)]; return !!pack && !pack.monthly && (typeof s.granted_credits === 'number' || (s.granted_credits === null && 'granted_credits' in s)); };
+      const refundPack = async () => {
+        const r = await rest<{ status?: string; used_beyond_remaining?: number }>(env, 'rpc/paid_refund_one_off_pack', {
+          method: 'POST', body: { p_session: session.id, p_refund_key: `${reference}:${code.id}`, p_days: RENEWAL_DAYS },
+        }, fetcher);
+        if (r.status === 'applied' || r.status === 'already_applied') { sessionsShortened++; packAnalysesAlreadyUsed += r.used_beyond_remaining ?? 0; }
+        else if (r.status !== 'not_found') shorteningsForReview++;
+      };
+      if ((isRenewal || renewals.length > 0) && toppedUp(session)) {
+        await refundPack();
+      } else if ((isRenewal || renewals.length > 0) && session.expires_at && !firstApplication) {
         // Not the first application of this refund: shortening is not idempotent, so it is left for manual review.
         shorteningsForReview++;
       } else if ((isRenewal || renewals.length > 0) && session.expires_at) {
-        const shortened = new Date(Date.parse(session.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
-        const rows = await rest<Session[]>(env, `navigator_paid_sessions?id=eq.${session.id}&expires_at=eq.${enc(session.expires_at)}`, { method: 'PATCH', body: { expires_at: shortened }, prefer: 'return=representation' }, fetcher);
-        sessionsShortened += rows.length;
+        // Compare-and-set on the row as read. Another refund of the same entitlement (for example the original pack and
+        // its top-up refunded together) can change it in between; this refund then re-reads and takes back its own 30
+        // days and pack from the new values instead of losing them. Still contended after the retries: manual review.
+        let current: Session | undefined = session; let landed = false;
+        for (let attempt = 0; attempt < REFUND_CAS_ATTEMPTS && current?.expires_at; attempt++) {
+          const shortened = new Date(Date.parse(current.expires_at) - RENEWAL_DAYS * 86400000).toISOString();
+          const change: Record<string, unknown> = { expires_at: shortened };
+          const filter = `navigator_paid_sessions?id=eq.${current.id}&expires_at=eq.${enc(current.expires_at)}`;
+          const rows = await rest<Session[]>(env, filter, { method: 'PATCH', body: change, prefer: 'return=representation' }, fetcher);
+          if (rows.length > 0) { landed = true; break; }
+          current = (await rest<Session[]>(env, `navigator_paid_sessions?select=*&id=eq.${session.id}&limit=1`, {}, fetcher))[0];
+        }
+        if (landed) sessionsShortened++;
+        else if (current) shorteningsForReview++;
       } else {
         // Overwrites any earlier revocation time too, so an earlier console suspension can no longer be "restored".
         const n = (await rest<Session[]>(env, `navigator_paid_sessions?id=eq.${session.id}`, { method: 'PATCH', body: { revoked_at: stamp }, prefer: 'return=representation' }, fetcher)).length;
@@ -618,9 +687,14 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
       }
     }
   }
-  const result = { paymentRejected: rejected, codesExpired, sessionsRevoked, sessionsShortened, shorteningsForReview, resumed: recorded };
+  const result = { paymentRejected: rejected, codesExpired, sessionsRevoked, sessionsShortened, shorteningsForReview, packAnalysesAlreadyUsed, resumed: recorded };
   const auditRecorded = await audit(env, admin, 'refund-applied', reference, null, { ...result, revokedSessionIds }, fetcher);
-  return ok({ success: true, referenceNumber: reference, amount: amountOf(payment.amount), ...result, auditRecorded,
+  // Only a payment that was received is refunded to the customer; rejecting a pending order sends nothing.
+  const { email } = parsePaymentNotes(payment.notes);
+  const refundEmailQueued = payment.status === 'approved' && email
+    ? await enqueueTransactionalEmail(env, { kind: 'refund_confirmation', dedupeKey: reference, reference, email, data: { plan: String(payment.plan), amount: amountOf(payment.amount) } }, fetcher)
+    : false;
+  return ok({ success: true, referenceNumber: reference, amount: amountOf(payment.amount), ...result, auditRecorded, refundEmailQueued,
     note: 'Recorded only. Return the funds to the customer by Interac e-Transfer; this application never moves money.' });
 }
 
@@ -710,8 +784,8 @@ async function restoreCredits(env: AdminEnv, admin: AdminIdentity, body: Record<
 
 // ---------------------------------------------------------------- router
 
-const GET_ROUTES = ['session', 'payments/overview', 'payments/audit-history', 'customers', 'access-codes', 'jobs', 'usage', 'revenue', 'audit', 'monitoring/status'];
-const POST_ROUTES = ['payments/approve', 'payments/confirm-bank', 'payments/dispute', 'payments/reset-settlement', 'payments/refund', 'payments/reissue-code', 'payments/suspend', 'payments/restore', 'access-codes/revoke', 'credits/restore', 'monitoring/run'];
+const GET_ROUTES = ['session', 'payments/overview', 'payments/audit-history', 'customers', 'access-codes', 'jobs', 'usage', 'revenue', 'audit', 'monitoring/status', 'email-outbox'];
+const POST_ROUTES = ['payments/approve', 'payments/confirm-bank', 'payments/dispute', 'payments/reset-settlement', 'payments/refund', 'payments/reissue-code', 'payments/suspend', 'payments/restore', 'access-codes/revoke', 'credits/restore', 'monitoring/run', 'email-outbox/process'];
 
 export async function handleAdminRequest(request: Request, env: AdminEnv, deps: Deps = {}): Promise<Response> {
   const fetcher = deps.fetcher ?? fetch;
@@ -767,6 +841,7 @@ export async function handleAdminRequest(request: Request, env: AdminEnv, deps: 
           return ok({ total: names.length, events: events.filter(Boolean) });
         }
         case 'monitoring/status': return ok(await monitoringStatus(request, env, fetcher, now));
+        case 'email-outbox': return ok(await outboxSummary(env, fetcher));
       }
     }
     const body = await readJson(request);
@@ -783,6 +858,12 @@ export async function handleAdminRequest(request: Request, env: AdminEnv, deps: 
       case 'access-codes/revoke': return await revokeAccessCode(env, admin, body, fetcher, now);
       case 'credits/restore': return await restoreCredits(env, admin, body, fetcher, now);
       case 'monitoring/run': return ok(await monitoringStatus(request, env, fetcher, now));
+      case 'email-outbox/process': {
+        if (!transactionalEmailEnabled(env)) return adminError('EMAIL_DISABLED', 409, 'Transactional email is turned off (TRANSACTIONAL_EMAIL_ENABLED is not "true"). Nothing was sent.');
+        const remindersQueued = await enqueueRenewalReminders(env, fetcher, now);
+        const result = await processOutbox(env, deps.mailer ?? gmailMailer(env, fetcher), fetcher, now);
+        return ok({ success: true, remindersQueued, ...result });
+      }
     }
     return adminError('API_ROUTE_NOT_FOUND', 404, 'No administrator endpoint matches this request.');
   } catch (error) {
