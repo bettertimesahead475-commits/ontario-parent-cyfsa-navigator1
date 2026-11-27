@@ -234,12 +234,16 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     const now = due();
     let admin = 0;
     const send = vi.fn().mockResolvedValue({ id: 'synthetic-sent' });
-    const call = (route: string, body: Record<string, unknown>) => handleAdminRequest(new Request(`https://app.test/api/admin/${route}`, {
-      method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
-    }), env, {
-      fetcher: h.fetch, now: () => route === 'email-outbox/process' ? due() : now, mailer: { send },
-      requireAdmin: async () => ({ admin: { uid: `synthetic-admin-${++admin}`, email: 'operator@example.test' } }),
-    });
+    const call = (route: string, body: Record<string, unknown>) => {
+      const start = new Date(Date.now() - 1_000);
+      let clockReads = 0;
+      return handleAdminRequest(new Request(`https://app.test/api/admin/${route}`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+      }), env, {
+        fetcher: h.fetch, now: () => route !== 'email-outbox/process' ? now : clockReads++ === 0 ? start : due(), mailer: { send },
+        requireAdmin: async () => ({ admin: { uid: `synthetic-admin-${++admin}`, email: 'operator@example.test' } }),
+      });
+    };
     h.hooks.push((hop, phase) => {
       if (phase === 'before' && hop.target === OUTBOX_TABLE && hop.method === 'POST') {
         const body = hop.body as { dedupe_key: string; kind: string };

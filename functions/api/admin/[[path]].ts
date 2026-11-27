@@ -925,7 +925,7 @@ export async function handleAdminRequest(request: Request, env: AdminEnv, deps: 
         if (!transactionalEmailEnabled(env)) return adminError('EMAIL_DISABLED', 409, 'Transactional email is turned off (TRANSACTIONAL_EMAIL_ENABLED is not "true"). Nothing was sent.');
         await reconcilePaymentEmails(env, fetcher, now).catch(() => console.warn('[EMAIL_RECONCILE_UNAVAILABLE]'));
         const remindersQueued = await enqueueRenewalReminders(env, fetcher, now);
-        const result = await processOutbox(env, deps.mailer ?? gmailMailer(env, fetcher), fetcher, now);
+        const result = await processOutbox(env, deps.mailer ?? gmailMailer(env, fetcher), fetcher, deps.now?.() ?? new Date());
         return ok({ success: true, remindersQueued, ...result });
       }
     }
