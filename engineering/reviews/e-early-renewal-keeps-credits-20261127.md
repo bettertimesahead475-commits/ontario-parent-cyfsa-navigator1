@@ -45,9 +45,20 @@ its guard (1 fails).
   After E they should show `granted_credits ?? LIMITS[tier]`. Their selects can only add `granted_credits` once E is
   live (PostgREST rejects unknown columns).
 - Pricing UI: allow an early re-purchase of the same one-off pack only after E is applied.
-- Refund of a top-up (blocking for E): `refundPayment` in `functions/api/admin/[[path]].ts` treats a topped-up code as a
-  renewal and only takes back 30 days; it must also take back the pack (`granted_credits - pack`, null once it reaches
-  the tier default), or the refunded analyses stay usable while the session is active. Needs the #171 owner.
+
+## Refund of a top-up (was blocking for E; fixed in this PR)
+`refundPayment` in `functions/api/admin/[[path]].ts` used to take back only the 30 days of a refunded top-up, so the
+refunded analyses stayed usable. It now also sets `granted_credits` to `granted_credits - pack` (null once back at the
+tier default), in the same conditional PATCH as the expiry (`expires_at=eq.…&granted_credits=eq.…`). Refunding the
+original pack of a topped-up session does the same, so the paid top-up survives and the refunded pack does not.
+- Before E (no column) and on monthly tiers, the request is byte-for-byte unchanged (`api/cloudflare-admin-api.test.ts` E5).
+- Only the first application of a refund takes analyses back; a repeat is counted in `shorteningsForReview` (E4).
+- If the customer already used more than the remaining allowance, nothing goes negative: further reservations are refused.
+- As before for `expires_at`, a top-up redeemed between the refund's read and its write makes the write miss
+  (`sessionsShortened: 0`); the admin repeats the refund review manually. Unchanged behaviour, noted for Claude.
+- Evidence: 5 unit tests (E1–E5; E1–E4 fail on the previous code) and one disposable-PG test running the real refund
+  handler against P + D + E (2 of 5 used + top-up = 8 left; after the refund 3 left; it fails on the previous code with
+  `granted_credits` still 10).
 
 ## Claude handoff: please qualify independently
 1. Lock order: code row → reference lock (D) → renewal lock → session row; the reserve wrapper reads the session
@@ -55,3 +66,4 @@ its guard (1 fails).
 2. The wrapper (`language sql`, security invoker) and the rename keep grants: service_role only.
 3. Rollback equality with D and with `paid_credit_reservation_functions.sql` (fingerprints above).
 4. Whether +30 days from the current expiry is the intended one-off extension, and exact-tier matching for aliases.
+5. The top-up refund above: pack size per tier (`LIMITS`), null at the tier default, and the missed-write case.

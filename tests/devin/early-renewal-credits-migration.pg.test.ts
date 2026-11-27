@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { handleAdminRequest } from "../../functions/api/admin/[[path]]";
 
 const url = process.env.CREDIT_PG_URL;
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -283,5 +284,68 @@ describe.skipIf(!url)("Migration E: an early one-off re-purchase keeps unused an
     expect(await count("select count(*) as n from information_schema.columns where table_name = 'navigator_paid_sessions' and column_name = 'granted_credits'")).toBe(0);
     expect(await fp("redeem_access_code_atomic")).toBe(dFingerprint);
     await db.query(UP);
+  });
+  // The admin refund (functions/api/admin/[[path]].ts) against this database through a minimal PostgREST
+  // (select / eq / is.null / not.is.null / or=(a.eq.x,...) / limit, PATCH returning rows); payments and storage in memory.
+  it("admin refund of the top-up takes back its 5 analyses and 30 days: 2 of 5 used + top-up = 8 left, refunded = 3 left", async () => {
+    const email = "refund@example.test"; const uid = "uid-refund"; const topRef = ref();
+    const storage = new Map<string, string>();
+    const where = (u: URL) => {
+      const w: string[] = []; const params: unknown[] = [];
+      const cond = (col: string, expr: string) => {
+        if (!/^[a-z_]+$/.test(col)) throw new Error(`bad column ${col}`);
+        if (expr === "is.null") return `${col} is null`;
+        if (expr === "not.is.null") return `${col} is not null`;
+        if (!expr.startsWith("eq.")) throw new Error(`bad filter ${expr}`);
+        params.push(expr.slice(3)); return `${col} = $${params.length}`;
+      };
+      for (const [k, v] of u.searchParams) {
+        if (["select", "order", "limit", "offset"].includes(k)) continue;
+        if (k === "or") w.push("(" + v.slice(1, -1).split(",").map((part) => { const [c, ...r] = part.split("."); return cond(c, r.join(".")); }).join(" or ") + ")");
+        else w.push(cond(k, v));
+      }
+      return { sql: w.length ? ` where ${w.join(" and ")}` : "", params, limit: u.searchParams.get("limit") };
+    };
+    const fetcher = async (input: string | URL | Request, init: RequestInit = {}) => {
+      const u = new URL(String(input)); const method = (init.method ?? "GET").toUpperCase();
+      const body = init.body ? JSON.parse(String(init.body)) : undefined;
+      if (u.pathname.startsWith("/storage/v1/object/list/")) {
+        const prefix = `${body.prefix}/`;
+        return Response.json([...storage.keys()].filter((k) => k.startsWith(prefix)).map((k) => ({ name: k.slice(prefix.length) })).slice(Number(body.offset || 0), Number(body.offset || 0) + Number(body.limit || 100)));
+      }
+      if (u.pathname.startsWith("/storage/v1/object/")) {
+        const key = decodeURIComponent(u.pathname.split("/analysis_jobs/")[1]);
+        if (storage.has(key)) return Response.json({ statusCode: "409" }, { status: 400 });
+        storage.set(key, String(init.body)); return Response.json({ Key: key });
+      }
+      const table = u.pathname.replace("/rest/v1/", "");
+      if (table === "payments") return Response.json(u.searchParams.get("reference_number") === `eq.${topRef}`
+        ? [{ id: randomUUID(), reference_number: topRef, plan: "Premium", amount: 49.99, status: "approved", notes: `email:${email};uid:${uid}` }] : []);
+      if (table !== "access_codes" && table !== "navigator_paid_sessions") return new Response("unexpected", { status: 500 });
+      const w = where(u);
+      // row_to_json: timestamps come back as PostgREST sends them (ISO 8601, microseconds), so eq filters on them round-trip.
+      if (method === "GET") return Response.json((await db.query(`select row_to_json(t) as r from (select * from public.${table}${w.sql}${w.limit ? ` limit ${Number(w.limit)}` : ""}) t`, w.params)).rows.map((x) => x.r));
+      if (method === "PATCH") {
+        const sets = Object.keys(body).map((k, i) => `${k} = $${w.params.length + i + 1}`);
+        return Response.json((await db.query(`with t as (update public.${table} set ${sets.join(", ")}${w.sql} returning *) select row_to_json(t) as r from t`, [...w.params, ...Object.values(body)])).rows.map((x) => x.r));
+      }
+      return new Response("unexpected", { status: 500 });
+    };
+    const env = { FIREBASE_PROJECT_ID: "p", STAGING_SUPABASE_URL: "https://db.test", STAGING_SUPABASE_SERVICE_ROLE_KEY: "k" };
+    const refund = async () => (await handleAdminRequest(new Request("https://cyfsanavigator.com/api/admin/payments/refund", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ referenceNumber: topRef, reason: "Customer request" }) }),
+      env as never, { requireAdmin: (async () => ({ admin: { uid: "admin-uid", email: "ops@example.test" } })) as never, fetcher: fetcher as never })).json() as Promise<Record<string, unknown>>;
+
+    const first = await redeem(db, uid, await issue(ref(), email), email);
+    expect(await analyse(first.session_id!, "Premium")).toBe("reserved");
+    expect(await analyse(first.session_id!, "Premium")).toBe("reserved");
+    const top = await redeem(db, uid, await issue(topRef, email), email);
+    expect(top).toMatchObject({ session_id: first.session_id, granted_credits: 10 });
+
+    expect(await refund()).toMatchObject({ success: true, sessionsShortened: 1, sessionsRevoked: 0 });
+    const s = await one("select expires_at, granted_credits, revoked_at from public.navigator_paid_sessions where id = $1", [first.session_id]);
+    expect(s).toMatchObject({ granted_credits: null, revoked_at: null });
+    expect(new Date(s.expires_at).toISOString()).toBe(new Date(first.expires_at!).toISOString());
+    expect(await analyseUntilLimit(first.session_id!, "Premium")).toBe(3);
   });
 });

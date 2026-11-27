@@ -765,3 +765,64 @@ describe('shared references detected across the whole payments table (re-review 
     expect(c.body.reporting.warnings.join(' ')).toMatch(/also used by another payment/);
   });
 });
+
+describe('refund of an early one-off re-purchase (Migration E granted_credits)', () => {
+  const TOPUP = '44444444-4444-4444-8444-444444444444';
+  // S1 is an active Premium pack (C1, PS-AAAAA) topped up early by PS-TOPUP1. With E applied the session row carries
+  // granted_credits (5 per Premium pack); before E the column does not exist at all.
+  function topUpFixture(granted?: number | null) {
+    const db = fakeSupabase(seed());
+    const session: Row = { ...db.tables.navigator_paid_sessions[0], expires_at: '2027-01-01T00:00:00.000Z' };
+    if (granted !== undefined) session.granted_credits = granted;
+    db.tables.navigator_paid_sessions[0] = session;
+    db.tables.access_codes[0].redeemed_session_id = S1;
+    db.tables.access_codes.push({ id: TOPUP, email: 'a_b@x.com', tier: 'Premium', reference_number: 'PS-TOPUP1', used_at: '2026-12-01T00:00:00Z', expires_at: '2026-12-15T00:00:00Z', redeemed_session_id: S1 });
+    db.tables.payments.push({ reference_number: 'PS-TOPUP1', plan: 'Premium', amount: 49.99, status: 'approved', notes: 'email:a_b@x.com;uid:uidA00001' });
+    return db;
+  }
+  const refund = (db: ReturnType<typeof fakeSupabase>, referenceNumber: string) =>
+    call(db, 'payments/refund', { method: 'POST', body: { referenceNumber, reason: 'Customer request' } });
+  const sessionPatches = (db: ReturnType<typeof fakeSupabase>) =>
+    db.calls.filter((c) => c.method === 'PATCH' && c.url.includes('/rest/v1/navigator_paid_sessions'));
+
+  it('E1 refunding the top-up takes back its 5 analyses with its 30 days (10 -> tier default)', async () => {
+    const db = topUpFixture(10);
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0 });
+    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-12-02T00:00:00.000Z', granted_credits: null, revoked_at: null });
+    // Conditional on the value it read, like expires_at: a top-up landing in between makes this write miss, never undercount.
+    expect(decodeURIComponent(sessionPatches(db)[0].url)).toContain('granted_credits=eq.10');
+  });
+
+  it('E2 with two top-ups, refunding one leaves the other pack (15 -> 10)', async () => {
+    const db = topUpFixture(15);
+    await refund(db, 'PS-TOPUP1');
+    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-12-02T00:00:00.000Z', granted_credits: 10 });
+  });
+
+  it('E3 refunding the original pack of a topped-up session keeps the paid top-up, not both packs', async () => {
+    const db = topUpFixture(10);
+    expect((await refund(db, 'PS-AAAAA')).body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0 });
+    expect(db.tables.navigator_paid_sessions[0]).toMatchObject({ expires_at: '2026-12-02T00:00:00.000Z', granted_credits: null, revoked_at: null });
+  });
+
+  it('E4 a repeated refund run never takes the analyses back twice', async () => {
+    const db = topUpFixture(15);
+    await refund(db, 'PS-TOPUP1');
+    for (const key of [...db.storage.keys()]) if (key.startsWith('admin-audit/')) db.storage.delete(key);
+    expect((await refund(db, 'PS-TOPUP1')).body).toMatchObject({ sessionsShortened: 0, shorteningsForReview: 1 });
+    expect(db.tables.navigator_paid_sessions[0].granted_credits).toBe(10);
+  });
+
+  it('E5 before E (no granted_credits column) and on monthly tiers the refund sends exactly the request it sent before', async () => {
+    const before = topUpFixture();
+    await refund(before, 'PS-TOPUP1');
+    const [patch] = sessionPatches(before);
+    expect(patch.body).toEqual({ expires_at: '2026-12-02T00:00:00.000Z' });
+    expect(decodeURIComponent(patch.url)).not.toContain('granted_credits');
+
+    const monthly = topUpFixture(null);
+    monthly.tables.navigator_paid_sessions[0].tier = 'Pro';
+    await refund(monthly, 'PS-TOPUP1');
+    expect(sessionPatches(monthly)[0].body).toEqual({ expires_at: '2026-12-02T00:00:00.000Z' });
+  });
+});
