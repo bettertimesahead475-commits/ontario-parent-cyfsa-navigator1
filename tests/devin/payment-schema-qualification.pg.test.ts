@@ -316,6 +316,37 @@ describe.skipIf(!enabled).each(variants)('post-$name: one activation per approve
     expect(await t.live()).toHaveLength(0);
   });
 
+  it('approve versus refund of a pending order: a refund that lands while approval issues its code leaves no working code or access', async () => {
+    const ref = await t.order();
+    const g = gateFor(isCodePost);
+    const approving = t.approve(ref);
+    await g.reached; // approval moved the payment to approved; its code is not inserted yet
+    const r = await t.refund(ref);
+    expect(r.status).toBe(200);
+    g.release();
+    const a = await approving;
+    expect(a.status).not.toBe(500);
+    if (a.body?.accessCode) expect((await t.activate(a.body.accessCode)).status).not.toBe(200);
+    expect(await t.redeemableCodes(ref)).toBe(0);
+    expect((await t.claim(ref)).body.code).toBe('ORDER_CLOSED');
+    expect(await t.live()).toHaveLength(0);
+  });
+
+  it('approve versus refund of a pending order: an approval that lands while the refund runs is cancelled with it', async () => {
+    const ref = await t.order();
+    const g = gateFor((hop) => hop.method === 'PATCH' && hop.target === 'payments');
+    const refunding = t.refund(ref);
+    await g.reached; // the refund is recorded and read the payment as pending; it has not cancelled it yet
+    const a = await t.approve(ref);
+    expect(a.status).not.toBe(500);
+    g.release();
+    expect((await refunding).status).toBe(200);
+    if (a.body?.accessCode) expect((await t.activate(a.body.accessCode)).status).not.toBe(200);
+    expect(await t.redeemableCodes(ref)).toBe(0);
+    expect((await t.claim(ref)).body.code).toBe('ORDER_CLOSED');
+    expect(await t.live()).toHaveLength(0);
+  });
+
   it('a monthly renewal (new verified payment) extends the one entitlement by 30 days; refunding it takes the 30 days back', async () => {
     const a = await t.order('Pro'); const b = await t.order('Pro');
     await t.approve(a, 'Pro'); await t.approve(b, 'Pro');

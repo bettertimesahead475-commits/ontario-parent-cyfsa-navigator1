@@ -509,6 +509,15 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
       .catch(() => console.error('[ADMIN_APPROVE_ROLLBACK_FAILED]', JSON.stringify({ reference })));
     throw error;
   }
+  // A refund recorded while this code was being issued retired the unused codes before it existed. The refund writes
+  // its record first, so checking after the insert closes the race; unreadable history fails closed (Reissue recovers it).
+  const settled = await settlementOf(env, reference, fetcher).catch(() => null);
+  if (settled === 'refunded' || settled === null) {
+    await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
+    return settled === 'refunded'
+      ? adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded while it was being approved. The code was cancelled.')
+      : adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund history could not be read, so the code was cancelled. Use "Reissue code" once it is readable.');
+  }
   // A customer can self-activate the moment the status flips (claim-purchase); if that happened before this code was
   // inserted, the claim's cleanup missed it, so retire it here. Either order leaves at most one redeemable code.
   let activated: boolean | null;
