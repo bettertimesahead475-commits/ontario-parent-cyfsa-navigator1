@@ -39,12 +39,24 @@ export function useAccountStorage<T>(baseKey: string, fallback: () => T): [T, Di
     }
   }, [baseKey, state, uid]);
 
-  const setValue = useCallback<Dispatch<SetStateAction<T>>>((action) => {
-    setState((prev) => ({
-      owner: prev.owner,
-      value: typeof action === "function" ? (action as (p: T) => T)(prev.value) : action,
-    }));
-  }, []);
+  // Bound to the account that rendered it, so a late update (e.g. a coach reply
+  // that arrives after sign-out or an account switch) is dropped, not merged.
+  const setValue = useCallback<Dispatch<SetStateAction<T>>>(
+    (action) => {
+      setState((prev) =>
+        prev.owner !== uid
+          ? prev
+          : {
+              owner: prev.owner,
+              value:
+                typeof action === "function"
+                  ? (action as (p: T) => T)(prev.value)
+                  : action,
+            }
+      );
+    },
+    [uid]
+  );
 
   return [state.owner === uid ? state.value : read(baseKey, uid, fallback), setValue];
 }

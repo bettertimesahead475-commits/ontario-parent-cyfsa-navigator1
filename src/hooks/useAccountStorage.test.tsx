@@ -70,6 +70,21 @@ describe("useAccountStorage", () => {
     expect(result.current[0]).toEqual(["a's bookmark"]);
   });
 
+  it("drops a late update from the previous account after a switch", () => {
+    authState.currentUser = { uid: "user-a" };
+    const { result } = renderHook(() => useAccountStorage<string[]>(KEY, () => []));
+    const setAsA = result.current[1];
+
+    switchTo("user-b");
+    act(() => setAsA((prev) => [...prev, "a's late reply"]));
+    expect(result.current[0]).toEqual([]);
+    expect(localStorage.getItem(`${KEY}_user-b`)).toBe("[]");
+
+    switchTo(null);
+    act(() => setAsA(["a's late reply"]));
+    expect(result.current[0]).toEqual([]);
+  });
+
   it("keeps signed-out state in memory only", () => {
     const { result } = renderHook(() => useAccountStorage<string[]>(KEY, () => []));
     act(() => result.current[1](["anonymous"]));
