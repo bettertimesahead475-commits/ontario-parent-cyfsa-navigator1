@@ -17,6 +17,7 @@ npx tsc --noEmit -p .                                         # type check
 | 2026-11-25 | a7c6b47 (eval, injection fix) | 4,281 passed / 0 failed / 478 skipped | vitest now also runs src/**/*.test.ts and eval/** |
 | 2026-11-25 | c82e971 (review fixes, network guard) | 4,265 passed / 0 failed / 478 skipped | tsc clean; no test reaches an external host |
 | 2026-11-25 | fc8b31c (admin) | 4,252 passed / 2 failed / 478 skipped; both failures pass in isolation with and without the change | flaky under full-suite load (T-15) |
+| 2026-11-27 | 82dfe65 (release round 2: PRs #147-#160) | 4,870 passed / 0 failed / 512 skipped | tsc clean; `npm run build` OK; CI whole-app coverage 74.4% lines; critical analyzer/credit files ≥96% (PR #160) |
 
 ## Known flaky tests (T-15)
 
