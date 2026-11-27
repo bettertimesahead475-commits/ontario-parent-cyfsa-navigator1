@@ -74,3 +74,49 @@ Tests: `tests/devin/queue-progress-heartbeat.test.ts` (4 tests; all 4 fail on th
 - Cause of the 14:51 redeliveries: needs Workers logs (BLOCKERS). After this PR deploys, the new claim/retry lines answer
   it for the next occurrence.
 - Staging validation of the locator's isolate memory and of a real Forensic run (needs approved inference budget).
+
+## Follow-up 2026-11-26: Forensic overview-last budget and preview readiness
+
+### 1. Can overview, dispatched last, exceed the Forensic budget? (evidence only, no code change)
+
+Test: `api/forensic-budget-overview-last.test.ts` (mocked inference, fake timers; same model as
+`api/forensic-budget-replay.test.ts`: incident section durations, chronology 1.5 s TTFT + 94 tok/s, 30 s verification,
+178 s AI deadline; real dispatch order redFlags, thresholds, chronology, guidance, timeline, overview; concurrency 3).
+
+| Scenario | Result |
+| --- | --- |
+| Production timings | Overview starts at 92.5 s (in the slot redFlags frees) with an 82.5 s timeout (178 − 92.5 − 3); needs 36.7 s. Run finishes ~45 s inside the budget. |
+| Overview alone slower | Overview fails only at ≥ 2.25× its production duration (> 82.5 s). |
+| Every section uniformly slower | First loss is **redFlags** at 1.20×: attempt 1 hits the 110 s `SECTION_TIMEOUT_MS.full`, its retry gets ~64 s. Overview still completes. |
+
+Conclusion: at the recorded production timings overview-last cannot exceed the budget, and under a uniform slowdown it
+is not the section that fails first. A last-section floor or duration-based dispatch would not change either result, so
+no scheduling fix is made. The section most exposed is redFlags (92.5 s of a fixed 110 s timeout, 84 %); any change
+there is a timeout-policy decision for the lead engineer, not part of this evidence PR.
+
+### 2. Preview `/api/status` reports `analyzerReady:false`, `forensicQueueReady:false` (read-only; nothing changed)
+
+`analyzerReady` = `ANALYZER_ENABLED === "true"` and `FIREBASE_PROJECT_ID`, `STAGING_SUPABASE_URL` set and
+`STAGING_SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` in their public key formats (`providerKeyStatus` in
+`functions/api/_status.ts`). `forensicQueueReady` = `analyzerReady` and the `ANALYZER_JOBS_QUEUE` producer binding.
+
+Read-only Cloudflare API check of Pages project `cyfsa-navigator-git-staging`, preview environment (names and types
+only; secret values are not readable):
+- Present: `ANALYZER_ENABLED` (`"true"`), `FIREBASE_PROJECT_ID`, `STAGING_SUPABASE_URL` (both non-empty),
+  secrets `ANTHROPIC_API_KEY`, `STAGING_SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `SESSION_SECRET`, queue producer
+  `ANALYZER_JOBS_QUEUE`. The latest preview deployment (`a548d5f2`, commit `732c735`) was built with all of them.
+- Not present in preview (present in production): `ADMIN_SECRET`, `GEMINI_OCR_MODEL`. Neither affects readiness.
+
+No variable or binding is missing. Every non-secret condition passes, so `analyzerReady:false` means
+`STAGING_SUPABASE_SERVICE_ROLE_KEY` and/or `ANTHROPIC_API_KEY` holds a value that is not a valid key, matching
+BLOCKERS B-4 ("Preview environment secrets are placeholders"). `forensicQueueReady:false` follows from it; the queue
+binding itself is present. This is expected for preview, not a code defect. Which of the two secrets it is appears in
+the `[CONFIG_SECRET_UNUSABLE]` log line `/api/status` writes (Pages Functions logs), or in the admin diagnostics,
+which need `ADMIN_SECRET` (not set in preview). Fix = B-4: set real test-scoped values for those secrets (owner approval).
+
+### Verification (this follow-up)
+
+- Test commit `c3021d4` on `devin/1795745198-analyzer-forensic-budget-evidence` (base `772eacf`, with #148 and #149
+  merged): `npx tsc --noEmit -p .` clean; full Vitest **314 files passed, 15 skipped (329); 4,699 tests passed,
+  512 skipped (5,211)**; the new file passes 3/3.
+- No Cloudflare, Supabase, secret, binding or deployment change; Cloudflare access was GET-only.
