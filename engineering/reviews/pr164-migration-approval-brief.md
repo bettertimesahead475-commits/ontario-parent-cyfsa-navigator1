@@ -1,6 +1,8 @@
 # Pending database migrations: approval brief (2026-11-27)
 
-Status: **Devin has not applied either migration.** However, Claude's branch `audit/pr164-final-067446a`
+Status update (17:45 UTC): **verified applied** to `nxfhvebzzobegubefcda` at 16:32:56 and 16:33:09 UTC; see `pr164-staging-migration-verification-20261127.md`. Devin applied neither.
+
+Original status: **Devin has not applied either migration.** However, Claude's branch `audit/pr164-final-067446a`
 (commit `0888970`, 11:33 EST) records that **both were applied to `nxfhvebzzobegubefcda`**, citing "owner authorization received
 2026-11-27: D1 and D2 confirmed". That conflicts with the owner's 11:33 directive not to apply them. Devin cannot verify the
 database state (no Supabase access). The owner needs to confirm which is true. This brief is based on [PR #164](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/164) at `067446a`.
