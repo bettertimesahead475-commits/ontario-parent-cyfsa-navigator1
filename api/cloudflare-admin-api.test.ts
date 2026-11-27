@@ -112,8 +112,8 @@ function req(path: string, init: { method?: string; body?: unknown; headers?: Re
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
 }
-async function call(db: ReturnType<typeof fakeSupabase>, path: string, init: Parameters<typeof req>[1] = {}, auth: any = allowAdmin) {
-  const response = await handleAdminRequest(req(path, init), env, { requireAdmin: auth, fetcher: db.fetcher as any, now: () => NOW });
+async function call(db: ReturnType<typeof fakeSupabase>, path: string, init: Parameters<typeof req>[1] = {}, auth: any = allowAdmin, adminEnv: AdminEnv = env) {
+  const response = await handleAdminRequest(req(path, init), adminEnv, { requireAdmin: auth, fetcher: db.fetcher as any, now: () => NOW });
   return { status: response.status, body: await response.json() as any };
 }
 
@@ -763,5 +763,53 @@ describe('shared references detected across the whole payments table (re-review 
     expect(c.body.payments.map((p: any) => p.referenceNumber)).toEqual(['PS-BBBBB']);
     expect(c.body.payments[0].bankSettlementStatus).toBe('unknown');
     expect(c.body.reporting.warnings.join(' ')).toMatch(/also used by another payment/);
+  });
+});
+
+describe('transactional email hooks (enqueue only)', () => {
+  const PAYLOAD_KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
+  const emailEnv: AdminEnv = { ...env, TRANSACTIONAL_EMAIL_ENABLED: 'true', TRANSACTIONAL_EMAIL_PAYLOAD_KEY: PAYLOAD_KEY };
+
+  it('approval queues confirmation, receipt and a sealed access-code email; the code is never stored in plain text', async () => {
+    const db = fakeSupabase({ ...seed(), transactional_email_outbox: [] });
+    const r = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } }, allowAdmin, emailEnv);
+    expect(r.status).toBe(200);
+    expect(r.body.emailsQueued).toEqual({ confirmation: true, receipt: true, accessCode: true });
+    const rows = db.tables.transactional_email_outbox;
+    expect(rows.map((row) => row.kind)).toEqual(['payment_confirmation', 'purchase_receipt', 'access_code']);
+    expect(rows.every((row) => row.dedupe_key === 'PS-AAAAA' && row.recipient_email === 'a_b@x.com')).toBe(true);
+    expect(JSON.stringify(rows)).not.toContain(r.body.accessCode);
+    expect(rows[2].secret_payload).toMatch(/^[A-Za-z0-9+/=]+\.[A-Za-z0-9+/=]+$/);
+  });
+
+  it('approval still succeeds when the outbox table does not exist yet, and nothing is queued while email is off', async () => {
+    const missing = fakeSupabase(seed());
+    const r = await call(missing, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } }, allowAdmin, emailEnv);
+    expect(r.status).toBe(200);
+    expect(r.body.emailsQueued).toEqual({ confirmation: false, receipt: false, accessCode: false });
+    expect(r.body.note).toMatch(/Send this code to the customer now/);
+
+    const off = fakeSupabase({ ...seed(), transactional_email_outbox: [] });
+    expect((await call(off, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } })).status).toBe(200);
+    expect(off.tables.transactional_email_outbox).toHaveLength(0);
+    expect(off.calls.some((c) => c.url.includes('transactional_email_outbox'))).toBe(false);
+  });
+
+  it('refund of a received payment queues one refund confirmation; rejecting a pending order sends nothing', async () => {
+    const db = fakeSupabase({ ...seed(), transactional_email_outbox: [] });
+    const r = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer request' } }, allowAdmin, emailEnv);
+    expect(r.status).toBe(200);
+    expect(r.body.refundEmailQueued).toBe(true);
+    expect(db.tables.transactional_email_outbox).toMatchObject([{ kind: 'refund_confirmation', dedupe_key: 'PS-BBBBB', recipient_email: 'axb@x.com' }]);
+    const pending = await call(db, 'payments/refund', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', reason: 'Customer request' } }, allowAdmin, emailEnv);
+    expect(pending.body.refundEmailQueued).toBe(false);
+    expect(db.tables.transactional_email_outbox).toHaveLength(1);
+  });
+
+  it('the process endpoint refuses to run while email is off', async () => {
+    const db = fakeSupabase({ ...seed(), transactional_email_outbox: [] });
+    const r = await call(db, 'email-outbox/process', { method: 'POST', body: {} });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe('EMAIL_DISABLED');
   });
 });
