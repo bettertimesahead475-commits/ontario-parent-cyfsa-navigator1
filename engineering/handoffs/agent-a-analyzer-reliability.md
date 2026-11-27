@@ -212,3 +212,8 @@ verification, which is the likely shape of the 18-minute, four-attempt incident 
 verification result, to the job's Storage object (`onSectionComplete`) and pass them back as `initialSections` on
 redelivery. Each attempt would then only spend budget on what is missing. This needs a new Storage object layout,
 cleanup and ownership checks; it is not a small change, so it is left for the lead engineer.
+
+Verification: commits `df92cce` (fix + coverage tests + fixtures) and `cc78b7a` (lifecycle replay + handoff) on
+`devin/1795746866-analyzer-verification-lifecycle`, base `engineering/integration` `0a7c680` (includes #147, #152).
+`npx tsc --noEmit -p .` clean; full Vitest **321 files passed, 15 skipped (336); 4,755 tests passed, 512 skipped
+(5,267)**. No paid inference, migration, binding, Cloudflare or customer-data change.
