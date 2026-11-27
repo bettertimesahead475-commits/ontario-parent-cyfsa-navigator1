@@ -146,7 +146,10 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
   console.info('[ANALYZER_JOB_CLAIMED]', JSON.stringify({ mode: job.mode, jobAttempt: job.attempt_count ?? null, deliveryAttempt: message.attempts, paid: Boolean(job.session_id) }));
 
   try {
-    const recoveredReport = await loadPersistedReport(env, job.job_id, fetch, job.owner_uid);
+    // Only check Storage for a previously persisted report on retries/redeliveries; a fresh first
+    // attempt (attempt_count === 1 && delivery attempt === 1) cannot have an earlier completed report.
+    const isRetry = (job.attempt_count ?? 2) > 1 || message.attempts > 1;
+    const recoveredReport = isRetry ? await loadPersistedReport(env, job.job_id, fetch, job.owner_uid) : null;
     if (recoveredReport) {
       if (!await finalizeReservation(env, job)) throw Object.assign(new Error('Credit finalization is not yet confirmed.'), { retryable: true, code: 'CREDIT_FINALIZATION_UNAVAILABLE' });
       await persistJobUpdate(env, { jobId: job.job_id, workerToken: token, status: 'completed', progress: 100, stage: 'complete' });

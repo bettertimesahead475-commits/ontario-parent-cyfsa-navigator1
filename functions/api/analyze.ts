@@ -45,7 +45,6 @@ import {
 import {
   runSectionedAnalysis,
   sectionTitle,
-  applyReportGuards,
   type SectionKey,
   type SectionRunResult,
   type GenerateFn,
@@ -496,6 +495,7 @@ export async function handleAnalyzeRequest(
         generate,
         deadlineAt: aiDeadlineAt,
         requestId,
+        skipComplianceMatrix: true,
         onSectionComplete: async (key, value, completed, total) => {
           const percent = 35 + Math.round((completed / total) * 60);
           await onSection?.(key, value);
@@ -518,6 +518,7 @@ export async function handleAnalyzeRequest(
         generate,
         deadlineAt: aiDeadlineAt,
         requestId,
+        skipComplianceMatrix: true,
         onSectionComplete: async (key, value, completed, total) => {
           const span = 50;
           const sectionPercent = 35 + Math.round((completed / total) * span);
@@ -591,7 +592,8 @@ export async function handleAnalyzeRequest(
       console.warn('[compliance_matrix] Non-fatal evaluation error:', matrixErr);
     }
 
-    applyReportGuards(report, documentText);
+    // runSectionedAnalysis already ran applyReportGuards on run.report with documentText;
+    // modelMetadata, _metadata, and complianceMatrix do not alter quotes or citations.
     return report;
   };
 
