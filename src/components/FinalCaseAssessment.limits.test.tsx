@@ -51,7 +51,11 @@ describe("Final Case Assessment source size limits", () => {
   });
 
   it("enforces the server's 75,000-character limit per document", () => {
-    expect(sourceUploadProblem("a.txt", "a".repeat(75001))).toContain("75,001 characters; the limit is 75,000 characters per document");
+    const message = sourceUploadProblem("a.txt", "a".repeat(75001));
+    expect(message).toContain("75,001 characters; the limit is 75,000 characters per document");
+    // Parts in the same matter would still exceed the matter's 75,000-character total.
+    expect(message).toContain("put the parts in separate matters");
+    expect(message).not.toContain("to this matter");
   });
 
   it("rejects a file name over 255 characters before sending", () => {

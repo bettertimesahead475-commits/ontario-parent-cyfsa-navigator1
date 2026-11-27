@@ -25,7 +25,7 @@ export function sourceUploadProblem(filename: string, text: string): string | nu
   if (!text.trim()) return 'This file has no text. Choose a .txt file that contains the document text';
   const bytes = utf8ByteLength(sourceRequestBody(filename, text));
   if (bytes > ASSESSMENT_REQUEST_MAX_BYTES) return `This document is ${n(bytes)} bytes as sent (file name and text); the limit is ${n(ASSESSMENT_REQUEST_MAX_BYTES)} bytes per document. ${SPLIT}`;
-  if (text.length > ASSESSMENT_SOURCE_MAX_CHARS) return `This document has ${n(text.length)} characters; the limit is ${n(ASSESSMENT_SOURCE_MAX_CHARS)} characters per document. ${SPLIT}`;
+  if (text.length > ASSESSMENT_SOURCE_MAX_CHARS) return `This document has ${n(text.length)} characters; the limit is ${n(ASSESSMENT_SOURCE_MAX_CHARS)} characters per document, and one assessment reads up to ${n(ASSESSMENT_SOURCE_SET_MAX_CHARS)} characters across all of a matter's documents. Split the document into several .txt files and put the parts in separate matters`;
   return null;
 }
 
