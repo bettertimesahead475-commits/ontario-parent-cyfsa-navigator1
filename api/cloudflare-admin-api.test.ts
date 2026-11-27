@@ -262,6 +262,40 @@ describe('admin state changes', () => {
     expect(db.tables.access_codes).toHaveLength(1);
   });
 
+  it('withholds its code when the activation check fails after issuing it (fails closed; Reissue recovers)', async () => {
+    const db = fakeSupabase(seed());
+    const original = db.fetcher.getMockImplementation()!;
+    let checks = 0;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      if ((init.method || 'GET') === 'GET' && String(input).includes('used_at=not.is.null') && ++checks === 2) return new Response('down', { status: 503 });
+      return original(input, init);
+    });
+    const res = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ activationUnknown: true, accessCode: null });
+    expect(db.tables.payments[0].status).toBe('approved');
+    const issued = db.tables.access_codes.at(-1)!;
+    expect(Date.parse(issued.expires_at)).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
+  it('retires its own code when the customer self-activated while the approval was issuing it', async () => {
+    const db = fakeSupabase(seed());
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      const res = await original(input, init);
+      if (init.method === 'POST' && String(input).endsWith('/rest/v1/access_codes')) {
+        db.tables.access_codes.push({ id: crypto.randomUUID(), email: 'a_b@x.com', tier: 'Premium', reference_number: 'PS-AAAAA', code_hash: 'claim', used_at: '2999-01-01T00:00:00Z', expires_at: '2999-01-15T00:00:00Z' });
+      }
+      return res;
+    });
+    const res = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ alreadyActivated: true, accessCode: null });
+    const adminCode = db.tables.access_codes.find((c: any) => c.code_hash !== 'claim' && c.id !== db.tables.access_codes[0].id)!;
+    expect(adminCode.used_at ?? null).toBeNull();
+    expect(Date.parse(adminCode.expires_at)).toBeLessThanOrEqual(Date.now() + 1000);
+  });
+
   it('approval rolls the payment back to pending when the code cannot be stored', async () => {
     const db = fakeSupabase(seed());
     const original = db.fetcher.getMockImplementation()!;

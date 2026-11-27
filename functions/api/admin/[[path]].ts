@@ -476,6 +476,10 @@ async function issueCode(env: AdminEnv, payment: Payment, email: string, amount:
   return { code, expiresAt };
 }
 
+async function usedCodeIds(env: AdminEnv, reference: string, fetcher: typeof fetch): Promise<string[]> {
+  return (await rest<AccessCode[]>(env, `access_codes?select=id&reference_number=eq.${enc(reference)}&used_at=not.is.null`, {}, fetcher)).map((c) => String(c.id));
+}
+
 async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
   const reference = typeof body.referenceNumber === 'string' ? body.referenceNumber.trim().toUpperCase() : '';
   const received = typeof body.amountReceived === 'number' ? body.amountReceived : Number.NaN;
@@ -488,6 +492,7 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   const { email } = parsePaymentNotes(payment.notes);
   if (!email || !LIMITS[String(payment.plan)]) return adminError('PAYMENT_INCOMPLETE', 422, 'This payment request has no customer email or a package that cannot be activated.');
 
+  const usedBefore = await usedCodeIds(env, reference, fetcher);
   // Compare-and-set on this exact row: only one approval can move it out of 'pending', so a code is never issued twice.
   const claimed = await rest<Payment[]>(env, `payments?${paymentFilter(payment)}&status=eq.pending`, {
     method: 'PATCH', body: { status: 'approved', approved_at: now.toISOString() }, prefer: 'return=representation',
@@ -503,6 +508,20 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
     await rest(env, `payments?${paymentFilter(payment)}&status=eq.approved`, { method: 'PATCH', body: { status: 'pending', approved_at: null }, prefer: 'return=minimal' }, fetcher)
       .catch(() => console.error('[ADMIN_APPROVE_ROLLBACK_FAILED]', JSON.stringify({ reference })));
     throw error;
+  }
+  // A customer can self-activate the moment the status flips (claim-purchase); if that happened before this code was
+  // inserted, the claim's cleanup missed it, so retire it here. Either order leaves at most one redeemable code.
+  let activated: boolean | null;
+  try { activated = (await usedCodeIds(env, reference, fetcher)).some((id) => !usedBefore.includes(id)); }
+  catch { console.error('[ADMIN_APPROVE_ACTIVATION_CHECK_FAILED]', JSON.stringify({ reference })); activated = null; }
+  // Fail closed: unless it is certain no redemption happened during approval, retire this code (Reissue recovers it).
+  if (activated !== false) {
+    await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' }, fetcher);
+    await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, customerActivated: activated ?? 'unknown' }, fetcher);
+    return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: null, ...(activated ? { alreadyActivated: true } : { activationUnknown: true }),
+      note: activated
+        ? 'Approved. The customer already activated this order from their account, so no code needs to be sent.'
+        : 'Approved, but the activation check failed, so this code was withheld to avoid giving access twice. Use "Reissue code" to send the customer a code.' });
   }
   const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeExpiresAt: issued.expiresAt }, fetcher);
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt, auditRecorded: audited,
@@ -536,6 +555,15 @@ async function reissueCode(env: AdminEnv, admin: AdminIdentity, body: Record<str
   const after = await rest<AccessCode[]>(env, `access_codes?select=id,used_at&reference_number=eq.${enc(reference)}&used_at=not.is.null&limit=1`, {}, fetcher);
   if (after.length) return adminError('CODE_ALREADY_REDEEMED', 409, 'The customer redeemed the earlier code just now; no new code was issued.');
   const issued = await issueCode(env, payment, email, amountOf(payment.amount), fetcher, now);
+  // A refund recorded while this code was being issued may have retired the unused codes before it was inserted. The
+  // refund writes its record first, so checking after the insert closes the race; unreadable history fails closed.
+  const settled = await settlementOf(env, reference, fetcher).catch(() => null);
+  if (settled === 'refunded' || settled === null) {
+    await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
+    return settled === 'refunded'
+      ? adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded while the code was being issued. The new code was cancelled.')
+      : adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund history could not be read, so the new code was cancelled. Try again.');
+  }
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt,
     note: 'Send this code to the customer now. It is shown once; earlier unused codes for this payment no longer work.' });
 }
@@ -600,7 +628,8 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
       // Monthly renewals extend one entitlement by 30 days per code. Refunding one month (the renewal itself, or the
       // original purchase of an entitlement that has paid renewals) takes back those 30 days; refunding a purchase
       // with no renewals revokes it.
-      const renewals = (await rest<CodeLink[]>(env, `access_codes?select=id&redeemed_session_id=eq.${session.id}&used_at=not.is.null&limit=50`, {}, fetcher))
+      // Before 20261110004740 there is no redeemed_session_id: every redemption had its own entitlement, so no renewals.
+      const renewals = (await restOptional<CodeLink[]>(env, `access_codes?select=id&redeemed_session_id=eq.${session.id}&used_at=not.is.null&limit=50`, [], fetcher)).data
         .filter((c) => c.id !== session.access_code_id);
       const isRenewal = session.access_code_id !== code.id;
       if ((isRenewal || renewals.length > 0) && session.expires_at && !firstApplication) {

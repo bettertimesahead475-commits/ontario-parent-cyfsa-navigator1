@@ -30,6 +30,8 @@ export const RATE_LIMIT_STORE_FAILURE_MODE: Record<RateLimitBucket, 'open' | 'cl
   adminWrite: 'open',
   activateCode: 'closed',
   requestAccess: 'closed',
+  myPayments: 'open',
+  claimPurchase: 'closed',
 };
 
 export const RATE_LIMIT_STORE_TIMEOUT_MS = 1_500;
