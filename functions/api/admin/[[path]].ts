@@ -18,7 +18,7 @@ import { monthlyCreditScope } from '../_monthly-credit-scope';
 import { statusResponse, type StatusEnv } from '../_status';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitedResponse } from '../_rate-limit';
 import { trimCharacters } from '../../../shared/linearText';
-import { enqueueTransactionalEmail, enqueueRenewalReminders, outboxSummary, processOutbox } from '../_email-outbox';
+import { canQueueEmail, checkoutEmailItem, CHECKOUT_EMAIL_INTENT, enqueueTransactionalEmail, enqueueRenewalReminders, OUTBOX_TABLE, outboxSummary, paymentAlreadyActivated, processOutbox, type EnqueueItem } from '../_email-outbox';
 import { gmailMailer, transactionalEmailEnabled, type TransactionalEmailEnv, type TransactionalMailer } from '../_mailer';
 
 export type AdminEnv = AdminAuthEnv & AdminStoreEnv & StatusEnv & TransactionalEmailEnv;
@@ -518,7 +518,9 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   catch { console.error('[ADMIN_APPROVE_ACTIVATION_CHECK_FAILED]', JSON.stringify({ reference })); activated = null; }
   // Fail closed: unless it is certain no redemption happened during approval, retire this code (Reissue recovers it).
   if (activated !== false) await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: now.toISOString() }, prefer: 'return=minimal' }, fetcher);
-  const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, ...(activated !== false ? { customerActivated: activated ?? 'unknown' } : { codeExpiresAt: issued.expiresAt }) }, fetcher);
+  const audited = await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received,
+    ...(canQueueEmail(env, email) ? { outboxIntent: true } : {}),
+    ...(activated !== false ? { customerActivated: activated ?? 'unknown' } : { codeExpiresAt: issued.expiresAt }) }, fetcher);
   // Enqueue only: each call is a no-op unless transactional email is enabled, and a failure never undoes the approval.
   const data = { plan: String(payment.plan), amount: received, approvedAt: now.toISOString(), expiresAt: issued.expiresAt };
   const base = { reference, email };
@@ -688,14 +690,78 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
     }
   }
   const result = { paymentRejected: rejected, codesExpired, sessionsRevoked, sessionsShortened, shorteningsForReview, packAnalysesAlreadyUsed, resumed: recorded };
-  const auditRecorded = await audit(env, admin, 'refund-applied', reference, null, { ...result, revokedSessionIds }, fetcher);
   // Only a payment that was received is refunded to the customer; rejecting a pending order sends nothing.
   const { email } = parsePaymentNotes(payment.notes);
+  const auditRecorded = await audit(env, admin, 'refund-applied', reference, null, { ...result, revokedSessionIds,
+    ...(payment.status === 'approved' && email && canQueueEmail(env, email) ? { outboxIntent: true } : {}) }, fetcher);
   const refundEmailQueued = payment.status === 'approved' && email
     ? await enqueueTransactionalEmail(env, { kind: 'refund_confirmation', dedupeKey: reference, reference, email, data: { plan: String(payment.plan), amount: amountOf(payment.amount) } }, fetcher)
     : false;
   return ok({ success: true, referenceNumber: reference, amount: amountOf(payment.amount), ...result, auditRecorded, refundEmailQueued,
     note: 'Recorded only. Return the funds to the customer by Interac e-Transfer; this application never moves money.' });
+}
+
+async function reconcilePaymentEmails(env: AdminEnv, fetcher: typeof fetch, now: Date): Promise<void> {
+  if (!transactionalEmailEnabled(env)) return;
+  const cutoff = new Date(now.getTime() - 7 * 86_400_000).toISOString();
+  const checkout = await rest<Array<Payment & { payment_email?: string | null }>>(env,
+    `payments?select=reference_number,status,notes,plan,amount,payment_email&status=eq.pending&submitted_at=gte.${enc(cutoff)}&notes=like.${enc(`*;${CHECKOUT_EMAIL_INTENT}*`)}&order=submitted_at.desc,id.desc&limit=100`, {}, fetcher);
+  const candidates = checkout.map((p) => checkoutEmailItem(p)).filter((item): item is EnqueueItem => item !== null);
+
+  try {
+    const names = await listAuditNames(env, 1000, fetcher);
+    const events = new Map<string, { name: string; action: string; at: string }>();
+    const refunds = settlementByReference(names);
+    for (const name of names) {
+      const event = parseAuditObjectName(name);
+      if (!event || event.at < cutoff || !REFERENCE.test(event.target) || events.has(event.target)) continue;
+      if (event.action === 'refund-applied' || (event.action === 'approve' && refunds.get(event.target)?.status !== 'refunded')) {
+        events.set(event.target, { name, action: event.action, at: event.at });
+        if (events.size === 100) break;
+      }
+    }
+    if (events.size) {
+      const rows = await rest<Payment[]>(env, `payments?select=reference_number,status,notes,plan,amount,approved_at&status=eq.approved&reference_number=in.(${[...events.keys()].join(',')})&limit=1000`, {}, fetcher);
+      for (let i = 0; i < rows.length; i += 10) await Promise.all(rows.slice(i, i + 10).map(async (row) => {
+        const ref = row.reference_number!;
+        const { name, action, at } = events.get(ref)!;
+        const { email } = parsePaymentNotes(row.notes);
+        if (!email || !row.plan || !canQueueEmail(env, email)) return;
+        const auditEvent = await readAuditEvent(env, name, fetcher);
+        if (auditEvent?.target !== ref || auditEvent.action !== action || auditEvent.details?.outboxIntent !== true) return;
+        const amount = action === 'approve' ? Number(auditEvent.details.amountReceived) : amountOf(row.amount);
+        if (!Number.isFinite(amount) || amount <= 0) return;
+        const base = { reference: ref, dedupeKey: ref, email, data: { plan: row.plan, amount, approvedAt: row.approved_at || at } };
+        candidates.push({ ...base, kind: action === 'approve' ? 'purchase_receipt' : 'refund_confirmation' });
+        // Confirmation accompanied the original access-code email. Never regenerate a code from a hash.
+        if (action === 'approve' && typeof auditEvent.details.codeExpiresAt === 'string' && auditEvent.details.codeExpiresAt > now.toISOString()) {
+          candidates.push({ ...base, kind: 'payment_confirmation' });
+        }
+      }));
+    }
+  } catch {
+    console.warn('[EMAIL_RECONCILE_AUDIT_UNAVAILABLE]');
+  }
+
+  const references = [...new Set(candidates.map((item) => item.dedupeKey))];
+  const ambiguous = await sharedReferencesInDb(env, references, fetcher);
+  for (let i = 0; i < references.length; i += 100) {
+    const batch = references.slice(i, i + 100).filter((ref) => !ambiguous.has(ref));
+    if (!batch.length) continue;
+    const existing = await rest<Array<{ kind: string; dedupe_key: string; status: string }>>(env,
+      `${OUTBOX_TABLE}?select=kind,dedupe_key,status&dedupe_key=in.(${batch.join(',')})&limit=600`, {}, fetcher);
+    const seen = new Set(existing.map((row) => `${row.kind}:${row.dedupe_key}`));
+    const queuedCodes = new Set(existing.filter((row) => row.kind === 'access_code' && ['pending', 'sending', 'sent'].includes(row.status)).map((row) => row.dedupe_key));
+    const wanted = new Set(batch);
+    const missing = candidates.filter((item) => wanted.has(item.dedupeKey) && !seen.has(`${item.kind}:${item.dedupeKey}`) &&
+      (item.kind !== 'payment_confirmation' || queuedCodes.has(item.dedupeKey)));
+    for (let j = 0; j < missing.length; j += 10) {
+      await Promise.all(missing.slice(j, j + 10).map(async (item) => {
+        if (item.kind === 'payment_confirmation' && (await paymentAlreadyActivated(env, item.dedupeKey, fetcher))) return;
+        await enqueueTransactionalEmail(env, item, fetcher);
+      }));
+    }
+  }
 }
 
 async function suspendOrRestore(env: AdminEnv, admin: AdminIdentity, action: 'suspend' | 'restore', body: Record<string, unknown>, fetcher: typeof fetch, now: Date): Promise<Response> {
@@ -860,8 +926,9 @@ export async function handleAdminRequest(request: Request, env: AdminEnv, deps: 
       case 'monitoring/run': return ok(await monitoringStatus(request, env, fetcher, now));
       case 'email-outbox/process': {
         if (!transactionalEmailEnabled(env)) return adminError('EMAIL_DISABLED', 409, 'Transactional email is turned off (TRANSACTIONAL_EMAIL_ENABLED is not "true"). Nothing was sent.');
+        await reconcilePaymentEmails(env, fetcher, now).catch(() => console.warn('[EMAIL_RECONCILE_UNAVAILABLE]'));
         const remindersQueued = await enqueueRenewalReminders(env, fetcher, now);
-        const result = await processOutbox(env, deps.mailer ?? gmailMailer(env, fetcher), fetcher, now);
+        const result = await processOutbox(env, deps.mailer ?? gmailMailer(env, fetcher), fetcher, deps.now?.() ?? new Date());
         return ok({ success: true, remindersQueued, ...result });
       }
     }

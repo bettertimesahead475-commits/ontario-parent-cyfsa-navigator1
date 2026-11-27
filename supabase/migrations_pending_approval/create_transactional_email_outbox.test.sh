@@ -33,11 +33,18 @@ psql_q "$HERE/create_transactional_email_outbox.test.sql"
 echo "PASS: migration + assertions"
 psql_q "$HERE/create_transactional_email_outbox.sql"
 echo "PASS: migration is re-runnable"
+if refused=$(psql_q "$HERE/create_transactional_email_outbox.down.sql" 2>&1); then
+  echo "FAIL: rollback removed a populated outbox"; exit 1
+fi
+[[ "$refused" == *"Transactional email outbox is not empty"* ]] || { echo "$refused"; exit 1; }
+echo "PASS: rollback refuses a populated outbox"
+# These rows are disposable SQL assertions, not delivery history.
+$P "$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c 'truncate public.transactional_email_outbox'"
 psql_q "$HERE/create_transactional_email_outbox.down.sql"
 kept=$($P "$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres -tAc \"select count(*) from payments where reference_number='PS-KEEP0001'\"")
 [[ "$(echo $kept)" = "1" ]] || { echo "FAIL: rollback touched payments"; exit 1; }
 pre=$(psql_v "$HERE/create_transactional_email_outbox.preflight.sql")
 [[ "$pre" == postgres,f,* ]] || { echo "FAIL: rollback left the outbox: $pre"; exit 1; }
-echo "PASS: rollback drops only the outbox"
+echo "PASS: rollback drops only the empty outbox"
 psql_q "$HERE/create_transactional_email_outbox.sql"
 echo "PASS: re-apply after rollback"

@@ -24,6 +24,7 @@ function fakeDb(seed: Record<string, Row[]> = {}) {
     if (op === 'lte') return String(row[col]) <= v;
     if (op === 'gt') return String(row[col]) > v;
     if (expr === 'is.null') return row[col] == null;
+    if (expr === 'not.is.null') return row[col] != null;
     throw new Error('unsupported ' + expr);
   };
   const auditNames: string[] = [];
@@ -286,6 +287,19 @@ describe('outbox processing', () => {
     expect(await processOutbox(ON, mailer, db.fetcher, NOW)).toMatchObject({ sent: 1, skipped: 2 });
     expect(sent.map((m) => m.subject)).toEqual(['Refund recorded for order PS-1']);
     expect(db.mock.mock.calls.filter(([u]) => String(u).includes('/storage/v1/object/list/'))).toHaveLength(1);
+  });
+
+  it('sends only the receipt if the customer activates after the confirmation is queued', async () => {
+    const db = fakeDb();
+    await queue(db);
+    await queue(db, { kind: 'payment_confirmation' });
+    db.tables.access_codes.push({ id: 'used', reference_number: 'PS-1', used_at: NOW.toISOString() });
+    const { mailer, sent } = fakeMailer();
+    expect(await processOutbox(ON, mailer, db.fetcher, NOW)).toMatchObject({ sent: 1, skipped: 1 });
+    expect(sent).toHaveLength(1);
+    expect(db.tables.transactional_email_outbox.find((row) => row.kind === 'payment_confirmation')).toMatchObject({
+      status: 'skipped', last_error: 'NO_LONGER_APPLICABLE',
+    });
   });
 
   it('drops a reminder whose end date has passed by the time it is processed', async () => {
