@@ -14,3 +14,21 @@ describe("redactPiiText court file numbers", () => {
     expect(redactPiiText("FC-19-1234-Denied without prejudice")).toBe("[FILE]-Denied without prejudice");
   });
 });
+
+describe("redactPiiText known names", () => {
+  it("masks names with accents at either end", () => {
+    expect(redactPiiText("Zoë said Éloïse and Chloé were present.", ["Zoë", "Éloïse", "Chloé"])).toBe(
+      "[NAME] said [NAME] and [NAME] were present."
+    );
+  });
+
+  it("treats punctuation in a name literally instead of throwing or over-matching", () => {
+    expect(redactPiiText("Mary (MJ) O'Brien met J.R. Smith; JxR Smith was absent.", ["Mary (MJ) O'Brien", "J.R. Smith"])).toBe(
+      "[NAME] met [NAME]; JxR Smith was absent."
+    );
+  });
+
+  it("does not mask a name inside a longer word, and ignores blank or non-string entries", () => {
+    expect(redactPiiText("Ann and Annette", ["Ann", "  ", undefined as never])).toBe("[NAME] and Annette");
+  });
+});
