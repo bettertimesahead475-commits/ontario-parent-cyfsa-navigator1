@@ -41,16 +41,11 @@ describe.skipIf(!url)("navigator_rate_limit_hits migration", () => {
     for (const role of ["anon", "authenticated", "service_role"]) {
       await db.query(`do $$ begin if not exists (select 1 from pg_roles where rolname = '${role}') then create role ${role} nologin; end if; end $$;`);
     }
-    // Simulate Supabase default privileges on public schema to verify Migration C's explicit revokes override them.
-    await db.query("alter default privileges in schema public grant all on tables to anon, authenticated, service_role");
-    await db.query("alter default privileges in schema public grant execute on functions to anon, authenticated, service_role");
     await db.query(UP);
   });
   beforeEach(async () => { await db.query("delete from public.navigator_rate_limit_hits"); });
   afterAll(async () => {
     await db.query(DOWN);
-    await db.query("alter default privileges in schema public revoke all on tables from anon, authenticated, service_role");
-    await db.query("alter default privileges in schema public revoke execute on functions from anon, authenticated, service_role");
     await db.end();
   });
 
@@ -167,25 +162,40 @@ describe.skipIf(!url)("navigator_rate_limit_hits migration", () => {
   });
 
   it("is callable only by service_role; anon and authenticated cannot call it or read/write the table even with Supabase default privileges", async () => {
-    for (const role of ["anon", "authenticated"]) {
-      for (const stmt of [
-        ["select * from public.navigator_rate_limit_hit($1, 3, 60)", [KEY("a")]],
-        ["select * from public.navigator_rate_limit_hits", []],
-        ["insert into public.navigator_rate_limit_hits (key_hash, window_start, hits) values ($1, now(), 1)", [KEY("4")]],
-        ["delete from public.navigator_rate_limit_hits", []],
-      ] as Array<[string, unknown[]]>) {
-        await db.query("begin");
-        try {
-          await db.query(`set local role ${role}`);
-          await expect(db.query(stmt[0], stmt[1])).rejects.toThrow(/permission denied/);
-        } finally { await db.query("rollback"); }
-      }
-    }
-    await db.query("begin");
+    // Run inside an isolated database so ALTER DEFAULT PRIVILEGES never mutates the shared test database.
+    const isoName = `rate_limit_priv_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const isoUrl = new URL(url!);
+    isoUrl.pathname = `/${isoName}`;
+    await db.query(`create database ${isoName}`);
+    const iso = new pg.Client({ connectionString: isoUrl.toString() });
+    await iso.connect();
     try {
-      await db.query("set local role service_role");
-      expect((await hit(KEY("a"), 3, 60)).allowed).toBe(true);
-    } finally { await db.query("rollback"); }
+      await iso.query("alter default privileges in schema public grant all on tables to anon, authenticated, service_role");
+      await iso.query("alter default privileges in schema public grant execute on functions to anon, authenticated, service_role");
+      await iso.query(UP);
+      for (const role of ["anon", "authenticated"]) {
+        for (const stmt of [
+          ["select * from public.navigator_rate_limit_hit($1, 3, 60)", [KEY("a")]],
+          ["select * from public.navigator_rate_limit_hits", []],
+          ["insert into public.navigator_rate_limit_hits (key_hash, window_start, hits) values ($1, now(), 1)", [KEY("4")]],
+          ["delete from public.navigator_rate_limit_hits", []],
+        ] as Array<[string, unknown[]]>) {
+          await iso.query("begin");
+          try {
+            await iso.query(`set local role ${role}`);
+            await expect(iso.query(stmt[0], stmt[1])).rejects.toThrow(/permission denied/);
+          } finally { await iso.query("rollback"); }
+        }
+      }
+      await iso.query("begin");
+      try {
+        await iso.query("set local role service_role");
+        expect((await hit(KEY("a"), 3, 60, iso)).allowed).toBe(true);
+      } finally { await iso.query("rollback"); }
+    } finally {
+      await iso.end();
+      await db.query(`drop database if exists ${isoName} with (force)`);
+    }
   });
 
   it("migration reapplication fails cleanly inside its transaction and preserves existing data", async () => {
