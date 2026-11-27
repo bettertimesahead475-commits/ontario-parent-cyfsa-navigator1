@@ -78,6 +78,8 @@ Devin-side evidence: disposable-PG suites for P (7/7), D, E, F and the harness (
 
 ## 6. Production rollback procedure
 
+Rollback compatibility at every intermediate state, after customer transactions: `engineering/reviews/rollback-compatibility-matrix-20261127.md`. Roll back the app first. G, C and D are reversible. P is reversible only with no renewal links. F needs unsent rows exported first. E is forward-fix only.
+
 1. App: `POST /accounts/6dea4d69…/pages/projects/cyfsa-navigator-git-staging/deployments/0cc59589-2be1-43d9-b41f-ff0c0c048792/rollback`. Takes effect in seconds; no DB change needed (item 2).
 2. Database, only if a migration itself is faulty: run the rollbacks in reverse order, F, C, D, P, G, each with its own script and guards. Never run `free_scan_reservation_functions.down.sql`.
 3. Data loss, last resort: the site keeps taking orders, sign-ups and analyses after the dump, so a full restore would discard them.
