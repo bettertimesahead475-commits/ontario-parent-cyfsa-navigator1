@@ -14,6 +14,7 @@ import {
   AdminStoreError, acquireOnce, restPage, type AdminStoreEnv,
 } from '../_admin-store';
 import { LIMITS } from '../_paid-credit-reservation';
+import { appendPaymentAccountingEvent, isPaymentAccountingEvent, ledgerRefundBlocksRestore, paymentAccountingAudit, paymentAccountingStates, paymentLedgerEnabled } from '../_payment-accounting';
 import { monthlyCreditScope } from '../_monthly-credit-scope';
 import { statusResponse, type StatusEnv } from '../_status';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitedResponse } from '../_rate-limit';
@@ -106,6 +107,9 @@ const SETTLEMENT_READ_LIMIT = 20_000;
 const AUDIT_CAPACITY_WARNING_AT = Math.floor(SETTLEMENT_READ_LIMIT * 0.8);
 async function readSettlements(env: AdminEnv, fetcher: typeof fetch): Promise<Settlements> {
   try {
+    if (paymentLedgerEnabled(env)) {
+      return { byReference: await paymentAccountingStates(env, fetcher), names: [], available: true, truncated: false, complete: true };
+    }
     const { names, exhausted } = await listAuditNamesWithCompleteness(env, SETTLEMENT_READ_LIMIT, fetcher);
     const truncated = !exhausted;
     return { byReference: settlementByReference(names), names, available: true, truncated, complete: !truncated };
@@ -230,7 +234,7 @@ async function restAll<T>(env: AdminEnv, path: string, fetcher: typeof fetch, ma
 /** Latest settlement state of one payment, from the audit trail. */
 async function settlementOf(env: AdminEnv, reference: string, fetcher: typeof fetch): Promise<string | undefined> {
   // Guards refunds, reissues and settlement changes: an incomplete history refuses the action (503), never "not refunded".
-  return settlementByReference(await listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher)).get(safeSegment(reference))?.status;
+  return (await paymentAccountingStates(env, fetcher, reference)).get(safeSegment(reference))?.status;
 }
 
 type CodeLink = AccessCode & { redeemed_session_id?: string | null };
@@ -330,9 +334,20 @@ async function customerDetail(env: AdminEnv, q: string, fetcher: typeof fetch, n
   ]);
   const ownSessions = sessions.filter((s) => s.firebase_uid === uid);
   const counters = await countersFor(env, ownSessions.map((s) => s.id), fetcher);
-  const auditNames = settlements.names;
+  const ledger = paymentLedgerEnabled(env);
+  const auditNames = ledger ? await listAuditNames(env, 1000, fetcher).catch(() => []) : settlements.names;
   const sharedInView = await sharedReferencesInDb(env, payments.map((p) => String(p.reference_number || '')), fetcher);
   const targets = new Set([...ownSessions.map((s) => safeSegment(s.id)), ...payments.map((p) => safeSegment(String(p.reference_number || ''))), ...codes.map((c) => safeSegment(String(c.id || '')))]);
+  const auditTrail = auditNames.flatMap((name) => {
+    const event = parseAuditObjectName(name);
+    return event && targets.has(event.target) && !(ledger && isPaymentAccountingEvent(event.action)) ? [event] : [];
+  });
+  if (ledger) {
+    const ids = payments.map((p) => p.id).filter((id): id is string => typeof id === 'string' && UUID.test(id));
+    const { events } = await paymentAccountingAudit(env, fetcher, 50, ids);
+    auditTrail.push(...events.map(({ at, action, target }) => ({ at, action, target })));
+    auditTrail.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  }
   return {
     identity: { email, firebaseUid: uid },
     reporting: {
@@ -345,7 +360,7 @@ async function customerDetail(env: AdminEnv, q: string, fetcher: typeof fetch, n
     accessCodes: codes.filter((c) => (c.email || '').toLowerCase() === email).map(publicCode),
     jobs,
     freeUsage: freeUsage.filter((r) => r.uid === uid).map((r) => ({ analysesUsed: r.analyses_used ?? 0, lastAnalysisAt: r.last_analysis_at ?? null }))[0] ?? null,
-    auditTrail: auditNames.map((n) => ({ name: n, parsed: parseAuditObjectName(n) })).filter((x) => x.parsed && targets.has(x.parsed.target)).slice(0, 50).map((x) => x.parsed),
+    auditTrail: auditTrail.slice(0, 50),
   };
 }
 
@@ -588,9 +603,19 @@ async function settlementAction(env: AdminEnv, admin: AdminIdentity, action: 'co
   if (reason instanceof Response) return reason;
   const payment = await paymentByReference(env, reference, fetcher);
   if (!payment) return adminError('PAYMENT_NOT_FOUND', 404, 'No payment request has that reference number.');
+  const details = { amount: amountOf(payment.amount), plan: payment.plan };
+  if (paymentLedgerEnabled(env)) {
+    const key = body.idempotencyKey ?? crypto.randomUUID();
+    if (typeof key !== 'string' || !UUID.test(key)) return adminError('INVALID_REQUEST', 400, 'idempotencyKey must be a UUID.');
+    const result = await appendPaymentAccountingEvent(env, payment.id, action, key, admin.email, reason, details, fetcher);
+    if (result === 'refunded') return adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded; its settlement can no longer change.');
+    if (result === 'not_found') return adminError('PAYMENT_NOT_FOUND', 404, 'No payment request has that reference number.');
+    if (result !== 'appended' && result !== 'unchanged') return adminError('PAYMENT_LEDGER_UNAVAILABLE', 503, 'The settlement outcome could not be verified.');
+    return ok({ success: true, referenceNumber: reference, bankSettlementStatus: await settlementOf(env, reference, fetcher) });
+  }
   // A refund is final: changing the settlement afterwards would drop it from revenue and allow a second refund.
   if (await settlementOf(env, reference, fetcher) === 'refunded') return adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded; its settlement can no longer change.');
-  if (!(await audit(env, admin, action, reference, reason, { amount: amountOf(payment.amount), plan: payment.plan }, fetcher))) {
+  if (!(await audit(env, admin, action, reference, reason, details, fetcher))) {
     return adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The settlement change could not be recorded. Nothing was changed.');
   }
   return ok({ success: true, referenceNumber: reference, bankSettlementStatus: action === 'confirm-bank' ? 'bank_confirmed' : action === 'dispute' ? 'missing_or_disputed' : 'pending_settlement' });
@@ -607,22 +632,28 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
   const revokeAccess = body.revokeAccess !== false;
   const payment = await paymentByReference(env, reference, fetcher);
   if (!payment) return adminError('PAYMENT_NOT_FOUND', 404, 'No payment request has that reference number.');
-  const names = await listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher);
-  const target = safeSegment(reference);
-  const recorded = names.some((n) => { const p = parseAuditObjectName(n); return p?.target === target && p.action === 'refund'; });
-  const applied = names.some((n) => { const p = parseAuditObjectName(n); return p?.target === target && p.action === 'refund-applied'; });
-  if (recorded && applied) return adminError('ALREADY_REFUNDED', 409, 'This payment is already recorded as refunded.');
-
-  // The audit record IS the refund record (it drives revenue and the duplicate guard), so it is written first: if it
-  // cannot be written, nothing else changes. A refund recorded but interrupted before 'refund-applied' is resumed
-  // (every step below is idempotent) instead of being refused.
-  if (!recorded && !(await audit(env, admin, 'refund', reference, reason, { amount: amountOf(payment.amount), plan: payment.plan, revokeAccess }, fetcher))) {
-    return adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund could not be recorded. Nothing was changed.');
+  const ledger = paymentLedgerEnabled(env);
+  const details = { amount: amountOf(payment.amount), plan: payment.plan, revokeAccess };
+  let recorded = false;
+  let firstApplication: boolean;
+  if (ledger) {
+    const result = await appendPaymentAccountingEvent(env, payment.id, 'refund', 'refund', admin.email, reason, details, fetcher);
+    if (result === 'already_applied') return adminError('ALREADY_REFUNDED', 409, 'This payment is already recorded as refunded.');
+    if (result === 'already_recorded') return adminError('REFUND_REQUIRES_REVIEW', 409, 'A refund was recorded but its application is in progress or unverified. Do not repeat the refund; reconcile it first.');
+    if (result === 'not_found') return adminError('PAYMENT_NOT_FOUND', 404, 'No payment request has that reference number.');
+    if (result !== 'appended') return adminError('PAYMENT_LEDGER_UNAVAILABLE', 503, 'The refund outcome could not be verified.');
+    firstApplication = true;
+  } else {
+    const names = await listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher);
+    const target = safeSegment(reference);
+    recorded = names.some((n) => { const p = parseAuditObjectName(n); return p?.target === target && p.action === 'refund'; });
+    const applied = names.some((n) => { const p = parseAuditObjectName(n); return p?.target === target && p.action === 'refund-applied'; });
+    if (recorded && applied) return adminError('ALREADY_REFUNDED', 409, 'This payment is already recorded as refunded.');
+    if (!recorded && !(await audit(env, admin, 'refund', reference, reason, details, fetcher))) {
+      return adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund could not be recorded. Nothing was changed.');
+    }
+    firstApplication = await acquireOnce(env, `refund__${reference}`, fetcher);
   }
-
-  // Exactly one request ever holds this lock. Only that request may take back renewal days (not idempotent); a retry,
-  // a resumed refund or a concurrent duplicate repeats only the idempotent steps.
-  const firstApplication = await acquireOnce(env, `refund__${reference}`, fetcher);
 
   const stamp = now.toISOString();
   let rejected = false; let codesExpired = 0; let sessionsRevoked = 0; let sessionsShortened = 0; let shorteningsForReview = 0; let packAnalysesAlreadyUsed = 0; const revokedSessionIds: string[] = [];
@@ -688,7 +719,15 @@ async function refundPayment(env: AdminEnv, admin: AdminIdentity, body: Record<s
     }
   }
   const result = { paymentRejected: rejected, codesExpired, sessionsRevoked, sessionsShortened, shorteningsForReview, packAnalysesAlreadyUsed, resumed: recorded };
-  const auditRecorded = await audit(env, admin, 'refund-applied', reference, null, { ...result, revokedSessionIds }, fetcher);
+  const appliedDetails = { ...result, revokedSessionIds };
+  let auditRecorded: boolean;
+  if (ledger) {
+    const completed = await appendPaymentAccountingEvent(env, payment.id, 'refund-applied', 'refund', admin.email, null, appliedDetails, fetcher);
+    if (completed !== 'appended') return adminError('REFUND_REQUIRES_REVIEW', 409, 'The refund was recorded but its application could not be verified.');
+    auditRecorded = true;
+  } else {
+    auditRecorded = await audit(env, admin, 'refund-applied', reference, null, appliedDetails, fetcher);
+  }
   // Only a payment that was received is refunded to the customer; rejecting a pending order sends nothing.
   const { email } = parsePaymentNotes(payment.notes);
   const refundEmailQueued = payment.status === 'approved' && email
@@ -733,7 +772,10 @@ async function suspendOrRestore(env: AdminEnv, admin: AdminIdentity, action: 'su
   }
   if (!lastName || !last || !revokedAt) return adminError('NOT_ADMIN_SUSPENDED', 409, 'Only an entitlement suspended from this console can be restored here.');
   // A refund that revoked this entitlement after the suspension is final, even if its timestamp happens to match.
-  const laterRefunds = names.filter((n) => { const p = parseAuditObjectName(n); return !!p && p.action === 'refund-applied' && p.at >= last.at; });
+  if (paymentLedgerEnabled(env) && await ledgerRefundBlocksRestore(env, sessionId, last.at, fetcher)) {
+    return adminError('REFUND_REQUIRES_REVIEW', 409, 'A recorded or unverified refund prevents restoring this entitlement.');
+  }
+  const laterRefunds = paymentLedgerEnabled(env) ? [] : names.filter((n) => { const p = parseAuditObjectName(n); return !!p && p.action === 'refund-applied' && p.at >= last.at; });
   for (const n of laterRefunds.slice(0, 20)) {
     const e = await readAuditEvent(env, n, fetcher);
     if (Array.isArray(e?.details?.revokedSessionIds) && (e!.details.revokedSessionIds as unknown[]).includes(session.id)) {
@@ -836,9 +878,16 @@ export async function handleAdminRequest(request: Request, env: AdminEnv, deps: 
         case 'audit':
         case 'payments/audit-history': {
           const limit = Math.min(40, Math.max(1, Number(url.searchParams.get('limit')) || 40));
-          const names = await listAuditNames(env, 1000, fetcher);
+          const ledger = paymentLedgerEnabled(env);
+          const [storage, accounting] = await Promise.all([
+            listAuditNames(env, 1000, fetcher),
+            ledger ? paymentAccountingAudit(env, fetcher, Math.trunc(limit)) : Promise.resolve({ events: [], total: 0 }),
+          ]);
+          const names = ledger ? storage.filter((name) => !isPaymentAccountingEvent(parseAuditObjectName(name)?.action ?? '')) : storage;
           const events = await Promise.all(names.slice(0, limit).map((n) => readAuditEvent(env, n, fetcher)));
-          return ok({ total: names.length, events: events.filter(Boolean) });
+          const combined = [...events.flatMap((event) => event ? [event] : []), ...accounting.events];
+          if (ledger) combined.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+          return ok({ total: names.length + accounting.total, events: combined.slice(0, limit) });
         }
         case 'monitoring/status': return ok(await monitoringStatus(request, env, fetcher, now));
         case 'email-outbox': return ok(await outboxSummary(env, fetcher));

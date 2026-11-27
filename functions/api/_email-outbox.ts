@@ -6,7 +6,8 @@
  * Delivery is at most once: a row whose send outcome is unknown (the run stopped mid-send, or Gmail did not answer)
  * becomes 'unknown' for an administrator to check in the Sent folder, never an automatic resend.
  */
-import { rest, AdminStoreError, listAllAuditNames, safeSegment, settlementByReference, type AdminStoreEnv } from './_admin-store';
+import { rest, AdminStoreError, safeSegment, type AdminStoreEnv } from './_admin-store';
+import { paymentAccountingStates, paymentLedgerEnabled } from './_payment-accounting';
 import { renderTransactionalEmail, type TemplateData, type TransactionalKind } from './_email-templates';
 import {
   MailerError, isValidRecipient, openPayload, recipientAllowed, sealPayload, transactionalEmailEnabled,
@@ -86,7 +87,6 @@ async function sha256Hex(text: string): Promise<string> {
  * or revoked since the row was queued gets no email.
  */
 // Refunds live only in the administrator audit trail (payments.status stays 'approved'); read it whole, once per run.
-const SETTLEMENT_READ_LIMIT = 20_000;
 type RunState = { refunds?: Promise<Map<string, { status: string }>> };
 
 async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | undefined, fetcher: typeof fetch, now: Date, run: RunState): Promise<boolean> {
@@ -96,7 +96,7 @@ async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | un
     return rows.length === 1 && rows[0].status === status;
   };
   const refunded = async () => {
-    run.refunds ??= listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher).then(settlementByReference);
+    run.refunds ??= paymentAccountingStates(env, fetcher);
     return (await run.refunds).get(safeSegment(row.payment_reference || ''))?.status === 'refunded';
   };
   switch (row.kind) {
@@ -106,7 +106,7 @@ async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | un
     case 'access_code': {
       if (!code) return false;
       const live = await rest<unknown[]>(env, `access_codes?select=id&reference_number=eq.${ref}&code_hash=eq.${await sha256Hex(code)}&used_at=is.null&expires_at=gt.${enc(now.toISOString())}&limit=1`, {}, fetcher);
-      return live.length === 1;
+      return live.length === 1 && (!paymentLedgerEnabled(env) || !(await refunded()));
     }
     case 'renewal_reminder': {
       const sessionId = row.dedupe_key.split(':')[0];
