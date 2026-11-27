@@ -6,7 +6,7 @@ Last verified: 2026-11-27 ~21:00 UTC. Repo state verified: `release/rc-20261127`
 **This is the single authoritative register.** [#187](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/187) no longer edits it (reverted at `063d30b` after the Chief of Staff confirmed #195 at `d322c68` carries all of #187's register content). The P package files it cites (`preserve_monthly_renewal_P.*`, `migration-p-preserve-monthly-renewal.pg.test.ts`) land with #187, and the #198/#199/#200/#202/#211 artifacts with those PRs; this register adds no SQL.
 
 **Rules:** nothing is applied without the owner's written approval and Claude's qualification of that entry. Take a backup first
-(Free plan: no PITR; none was taken for A/B). Every SQL file runs first on disposable PostgreSQL only. Never weaken grants or RLS.
+(hosted backups/PITR on `nxfhvebzzobegubefcda`: owner-confirmed 2026-11-27, not tool-verified; no snapshot was taken for A/B). Every SQL file runs first on disposable PostgreSQL only. Never weaken grants or RLS.
 
 ## Status key
 
@@ -31,7 +31,7 @@ Last verified: 2026-11-27 ~21:00 UTC. Repo state verified: `release/rc-20261127`
 | Spending-reservation / refund ledger | No currency spend reservations exist: analysis units go through `free_usage`, inference cost is telemetry only. Gap: refund and settlement history is written to Storage non-atomically (read, then append) | — | — | — | **BLOCKED** pending the Postgres refund/settlement ledger package (with a write-pause cutover), being drafted by the E session | E session: deliver the package for qualification |
 
 **Release as a whole: BLOCKED** on owner decisions: (1) ratify A/B or recover their prior definitions, (2) A re-apply safety and the free-counter worker-first cutover (#192),
-(3) a verified backup (step 1; procedure PASS in #196, owner to confirm Supabase PITR/backups), (4) written approval of steps 2–6, (5) before any live email: backend review and merge of F's fix (#211, on #193), a live F preflight and owner authorization. Claude qualification: **requested 2026-11-27** (owner handed Claude `engineering/handoffs/devin-migration-register-qualification-request-2026-11-27.md`), **verdict PENDING** for every entry.
+(3) a verified backup (step 1; procedure PASS in #196; hosted PITR/backups owner-confirmed, not tool-verified), (4) written approval of steps 2–6, (5) before any live email: backend review and merge of F's fix (#211, on #193), a live F preflight and owner authorization. Claude qualification: **requested 2026-11-27** (owner handed Claude `engineering/handoffs/devin-migration-register-qualification-request-2026-11-27.md`), **verdict PENDING** for every entry.
 
 Disposable run: `npx vitest run tests/devin/*.pg.test.ts api/services/*free*` on PostgreSQL 16 (`en_US.utf8`) + PostgREST 12.2.3
 (CI-pinned checksum): 8 files, 100/100 passed. A's and F's SQL scripts were run with `psql` on the same server. Live state above comes from
@@ -44,7 +44,7 @@ Project names are misleading: everything live uses the Supabase project **named*
 | Cloudflare resource | Role | Supabase project it uses |
 |---|---|---|
 | Pages `cyfsa-navigator-git-staging`, production branch `migration/cloudflare-staging-20261029`, deployment `0cc59589-2be1-43d9-b41f-ff0c0c048792` (commit `82dfe65`) | Serves `cyfsanavigator.com`, `www.cyfsanavigator.com`, `cyfsa-navigator-git-staging.pages.dev` | `nxfhvebzzobegubefcda` (production and preview `STAGING_SUPABASE_URL`) |
-| Pages `cyfsa-navigator-git-staging`, preview deployments | Every branch preview | `nxfhvebzzobegubefcda`: previews share the live ledger |
+| Pages `cyfsa-navigator-git-staging`, preview deployments | Automatic previews set from all branches to **none** (2026-11-27; read-only check confirms `preview_deployment_setting: none`; production `0cc59589`, domains, credentials and queue bindings unchanged; home and health 200 before/after). Three pre-existing previews still serve | `nxfhvebzzobegubefcda` with analyzer enabled: the 3 remaining previews share the live ledger; **retirement PENDING owner decision** |
 | Worker `cyfsa-analyzer-queue-consumer` (queue `cyfsa-staging-analyzer-jobs`) | Analyzer jobs | `nxfhvebzzobegubefcda` |
 | Worker `cyfsa-production-analyzer-queue-consumer` | Analyzer flag off | `nxfhvebzzobegubefcda` |
 | Pages `cyfsa-navigator-staging` | Unused | none (`https://unconfigured.invalid`) |
@@ -75,7 +75,7 @@ Recompute before applying: `sha256sum <file>` must equal the forward value above
 This register replaces #187's copy; these differences are deliberate, from later evidence:
 - **G and P in one window** (step 2), both preflights first, G revoked directly if P does not commit: #200 showed `82dfe65` on G without P records an activated-order refund, returns 501 and leaves access. #187 had G and P as separate steps.
 - **F is forward-repair only** (step 5): its `.down.sql` deletes delivery history and dedupe state (#193). #187 listed `.down.sql` as F's rollback.
-- **Backup** (step 1): Supabase-managed PITR/backups on `nxfhvebzzobegubefcda` are **PENDING owner confirmation**; the register still assumes Free plan (none). #187 stated Free plan as fact.
+- **Backup** (step 1): hosted backups/PITR on `nxfhvebzzobegubefcda` are **owner-confirmed** (2026-11-27 attestation, not tool-verified). #187 stated Free plan (none) as fact.
 - **E order**: writes-paused E, then the combined app (E row of the sequence), replacing #187's "deploy #181's handler first"; #187's #181 qualification gate is kept.
 - Steps renumbered (G+P merged), so #187's step 7 is step 6 here.
 
@@ -135,7 +135,7 @@ Single owner approval covers the whole sequence; each step still stops on a fail
 | Step | Action | Gate (must be true to continue) | Rollback |
 |---|---|---|---|
 | 0 | Owner ratifies A/B as applied (owner 14:26: preserve; no rollback) | Claude's A/B integrity and authorization note; re-apply only `0888970` A, then B (#192) | forward repair only |
-| 1 | Logical backup per `engineering/runbooks/` ([#196](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/196)): `supabase db dump` (schema, then `--data-only`) stored off-site. Procedure **PASS** on a disposable PostgreSQL 17 drill (`engineering/runbooks/DATABASE_BACKUP_RESTORE_EVIDENCE.md`). Supabase-managed PITR/backups on `nxfhvebzzobegubefcda`: **PENDING** owner confirmation (register assumes Free plan, none) | Dump files exist, are non-empty and were taken after the last write | Last resort only: restore from the dump, then reconcile rows written after it **by stable key, not by timestamp** (the drill showed a late-committing payment is missed by timestamp), with downtime while restoring |
+| 1 | Logical backup per `engineering/runbooks/` ([#196](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/196)): `supabase db dump` (schema, then `--data-only`) stored off-site. Procedure **PASS** on a disposable PostgreSQL 17 drill (`engineering/runbooks/DATABASE_BACKUP_RESTORE_EVIDENCE.md`). Supabase-managed backups/PITR on `nxfhvebzzobegubefcda`: **owner-confirmed** 2026-11-27 (owner attestation, not tool-verified; record the restore point before step 2) | Dump files exist, are non-empty and were taken after the last write | Last resort only: restore from the dump, then reconcile rows written after it **by stable key, not by timestamp** (the drill showed a late-committing payment is missed by timestamp), with downtime while restoring |
 | 2 | One window, no gap: run G and P preflights (both read-only) first; only if both are `ok`, apply G (`payments_service_role_review_update.sql`), then P (`supabase/migrations/20261110004740_preserve_monthly_renewal.sql`), per [#200](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/200). G must not be live without P (or the release-branch app): app `82dfe65` on a pre-P schema refunds activated orders with a 501 and leaves access | G preflight `ok`; `has_column_privilege('service_role','public.payments','status','UPDATE')` true; P preflight blocking rows `ok`; `preserve_monthly_renewal_P.postcheck.sql` all `ok` | If P fails or does not commit after G: G `.rollback.sql` straight away (P's rollback refuses when P never applied). After P committed: P rollback (#200), then G `.rollback.sql`; forward repair once customers have new P transactions. If P is re-applied, run `preserve_monthly_renewal_P.reapply_backfill.sql` straight after it |
 | 3 | D preflight, then apply D | D preflight blocking rows `ok`; D brief postchecks | D `.rollback.sql`, then P's if needed |
 | 4 | Apply C, with `PERSISTENT_RATE_LIMITS` unset | #174 brief checks | `rollback_navigator_rate_limit_hits.sql` |
