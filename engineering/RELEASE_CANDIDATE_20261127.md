@@ -7,6 +7,7 @@ Production stays `0cc59589` / `82dfe65` (rollback `4c902955` / `b9617a8`) until 
 routes depend on `access_codes.redeemed_session_id`, which only migration P adds, and P is missing on the operational `nxfh` ledger. The
 RC is not releasable until the disposable-PostgreSQL + PostgREST qualification of P, D and one-activation-per-payment passes (Agent A, in
 progress) and the pre-P payment paths fail closed. E additionally needs an atomic top-up refund that accounts for consumed and reserved credits.
+A/B were applied without the snapshot their approval required (incident: `engineering/incidents/2026-11-27-migrations-a-b-applied-without-snapshot.md`).
 Never run `free_scan_reservation_functions.down.sql` on the operational database; any rollback of A/B needs reviewed saved prior definitions.
 
 ## Contents
