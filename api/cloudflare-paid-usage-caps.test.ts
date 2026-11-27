@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { platformDailyKey, takePaidUsageUnit } from '../functions/api/_free-trial';
+import { classifyFailure } from '../shared/analyzerRetryPolicy';
 
 const now = new Date('2026-11-27T12:00:00Z');
 const counters = (full: string[]) => vi.fn(async (name: string, args: Record<string, unknown>) =>
@@ -29,5 +30,10 @@ describe('paid transcription and OCR daily caps', () => {
     expect(await takePaidUsageUnit({ PAID_OCR_ACCOUNT_DAILY_LIMIT: 'off', PAID_OCR_PLATFORM_DAILY_LIMIT: 'off' }, 'pocr', 'u1', off, now)).toBe('ok');
     expect(off).not.toHaveBeenCalled();
     expect(await takePaidUsageUnit({}, 'tr', 'u1', vi.fn(async () => { throw new Error('down'); }), now)).toBe('ok');
+  });
+  it('a daily-cap refusal is permanent for the client retry policy, so a bulk scan does not keep retrying it', () => {
+    for (const code of ['ACCOUNT_DAILY_LIMIT', 'PLATFORM_DAILY_LIMIT', 'FREE_TRIAL_PAUSED']) {
+      expect(classifyFailure({ status: 503, code, retryable: false }).action).toBe('STOP');
+    }
   });
 });

@@ -75,7 +75,7 @@ export async function handleExtractRequest(
       const usage = await takePaidUsageUnit(env, 'pocr', identity.uid, deps.rpc ?? createStagingCreditRpc(env, fetcher));
       if (usage !== 'ok') {
         const [code, message] = PAID_USAGE_REFUSAL[usage];
-        throw new ExtractionError(429, code, message);
+        throw new ExtractionError(503, code, message, false);
       }
     },
   } : {
@@ -86,7 +86,7 @@ export async function handleExtractRequest(
       const outcome = await authorizeFreeOcr(env, identity.uid, identity.email ?? null, identity.emailVerified, rpc, fetcher);
       if (outcome !== 'ok') {
         const [status, code, message] = FREE_OCR_REFUSAL[outcome];
-        throw new ExtractionError(status, code, message);
+        throw new ExtractionError(status, code, message, outcome === 'unavailable' ? undefined : false);
       }
     },
   };
@@ -154,7 +154,7 @@ export async function handleExtractRequest(
     );
   } catch (err) {
     if (err instanceof ExtractionError) {
-      return Response.json({ error: err.publicMessage, code: err.code }, { status: err.status, headers: DEFAULT_HEADERS });
+      return Response.json({ error: err.publicMessage, code: err.code, retryable: err.retryable }, { status: err.status, headers: DEFAULT_HEADERS });
     }
     if (err instanceof GeminiError) {
       const r = GEMINI_ERROR_RESPONSE[err.kind];

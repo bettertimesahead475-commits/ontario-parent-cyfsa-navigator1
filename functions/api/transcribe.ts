@@ -111,7 +111,7 @@ export const onRequestPost = async ({
     const usage = await takePaidUsageUnit(env as FreeTrialEnv, 'tr', authResult.uid, createStagingCreditRpc(env as any));
     if (usage !== 'ok') {
       const [code, error] = PAID_USAGE_REFUSAL[usage];
-      return Response.json({ error, code, retryable: false }, { status: 429, headers: DEFAULT_HEADERS });
+      return Response.json({ error, code, retryable: false }, { status: 503, headers: DEFAULT_HEADERS });
     }
   }
   let cleanedBase64 = audioData.trim();

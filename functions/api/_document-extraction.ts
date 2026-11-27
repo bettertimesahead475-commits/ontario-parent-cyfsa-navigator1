@@ -62,7 +62,7 @@ export interface ExtractionResult {
 }
 
 export class ExtractionError extends Error {
-  constructor(readonly status: number, readonly code: string, readonly publicMessage: string) {
+  constructor(readonly status: number, readonly code: string, readonly publicMessage: string, readonly retryable?: boolean) {
     super(code);
   }
 }
