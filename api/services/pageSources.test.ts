@@ -1,4 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
+import {tjArrayContents, pdfTextObjects} from "./pageSources.js";
 import {PDFDocument} from 'pdf-lib';
 import {decodeSource,extractPages,verifyQuote,validateEvidence,validateQuoteCoordinates,normalizeQuoteWhitespace,SOURCE_SYSTEM,hash} from './pageSources.js';
 
@@ -119,5 +120,53 @@ describe('untrusted evidence contract',()=>{
    expect(pages[0].extractionMethod).toBe('gemini-page-ocr');
    expect(pages[0].text).toBe('OCR Extracted Content from Scanned Affidavit Page');
    expect(ocr).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('tjArrayContents (S8786 linear rewrite of the TJ-array pattern)', () => {
+  const old = (block: string) => [...block.matchAll(/\[([\s\S]*?)\]\s*TJ/g)].map((m) => m[1]);
+  it('returns the same TJ array contents as the former pattern', () => {
+    for (const b of ['[(Hello) -20 (World)] TJ', '[(a)]TJ [(b)]\nTJ', '[(x)] Tj [(y)] TJ', '[[(n)]] TJ', '[(a)] ] TJ', '[(unclosed', '] TJ [', '[]TJ']) expect(tjArrayContents(b), b).toEqual(old(b));
+    const alphabet = ['[', ']', ' ', '\n', 'T', 'J', 'TJ', '(a)'];
+    let seed = 11;
+    for (let i = 0; i < 10_000; i++) {
+      let b = '';
+      for (let j = 0; j < 10; j++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; b += alphabet[seed % alphabet.length]; }
+      expect(tjArrayContents(b), JSON.stringify(b)).toEqual(old(b));
+    }
+  });
+  it('is linear on 25,000 "[]" pairs with no TJ (quadratic for the former pattern)', () => {
+    const t0 = performance.now();
+    expect(tjArrayContents('[]'.repeat(25_000))).toEqual([]);
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+});
+
+describe("pdfTextObjects (linear replacement for /BT([\s\S]*?)ET/g)", () => {
+  const legacy = (s: string) => [...s.matchAll(/BT([\s\S]*?)ET/g)].map((m) => m[1]);
+  it("returns exactly what the former regex returned", () => {
+    const samples = ["", "BT", "ET", "BTET", "BT (a) Tj ET", "xBT 1 ET yBT 2 ETz", "BT BT a ET ET", "BTxETBTyETBT", "BET", "BTE T ET", "q BT /F1 12 Tf (Hi) Tj ET Q BT [(A) 3 (B)] TJ ET"];
+    for (let i = 0; i < 2000; i++) {
+      let t = "";
+      for (let k = 0; k < 20; k++) t += ["B", "T", "E", " ", "x", "BT", "ET"][Math.floor(Math.random() * 7)];
+      samples.push(t);
+    }
+    for (const s of samples) expect(pdfTextObjects(s)).toEqual(legacy(s));
+  });
+  it("stays linear on a crafted stream with many BT and no ET", () => {
+    const attack = "BT ".repeat(60000);
+    const t0 = Date.now();
+    expect(pdfTextObjects(attack)).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(100);
+  });
+});
+
+describe("verifyQuote word boundaries (DEVIN-P2-04)", () => {
+  it("does not verify a fragment cut from inside a word or a contraction", () => {
+    expect(verifyQuote("It is untrue that he struck the child.", "true that he struck").status).toBe("ABSENT");
+    expect(verifyQuote("She can't attend the meeting.", "She can").status).toBe("ABSENT");
+    expect(verifyQuote("The worker visited the homestead.", "the home").status).toBe("ABSENT");
+    expect(verifyQuote("It is untrue that he struck the child.", "untrue that he struck").status).toBe("EXACT");
+    expect(verifyQuote("He said: \"no\". Then he left.", "no").status).toBe("EXACT");
   });
 });

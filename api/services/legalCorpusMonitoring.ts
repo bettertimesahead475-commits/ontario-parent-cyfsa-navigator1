@@ -14,6 +14,7 @@ import {
   type ParseResult,
   type ParseStatus,
 } from "./legalCorpusIngestion.js";
+import { byCodeUnit } from "../../shared/codeUnitOrder.js";
 
 // ---------------------------------------------------------------------------
 // Monitoring input — bounded, provider-independent. No network access is performed here;
@@ -186,7 +187,7 @@ export function observeSourceChange(input: MonitoringInput): MonitoringObservati
     }),
   );
 
-  const allCitations = [...new Set([...priorByCitation.keys(), ...newByCitation.keys()])].sort();
+  const allCitations = [...new Set([...priorByCitation.keys(), ...newByCitation.keys()])].sort(byCodeUnit);
   const provisionChanges: ObservedProvisionChange[] = [];
   for (const citation of allCitations) {
     const prior = priorByCitation.get(citation) ?? null;

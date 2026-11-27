@@ -57,3 +57,15 @@ describe("Monitoring Sanitizer", () => {
     expect(sanitized.nested[0].name).toBe("db_pool");
   });
 });
+
+describe("email scrubbing (S8786 linear rewrite)", () => {
+  it("scrubs the same addresses as before and stays linear on long address-like runs", () => {
+    expect(sanitizeText("Contact ops.team+alerts@example.co.uk now")).toBe("Contact [REDACTED] now");
+    expect(sanitizeText("x@y.comz@w.org and a@b.cc1@d.ee")).toBe("[REDACTED]@w.org and [REDACTED][REDACTED]");
+    expect(sanitizeText("user@localhost")).toBe("user@localhost");
+    const attack = "a".repeat(50_000) + "!";
+    const t0 = performance.now();
+    expect(sanitizeText(attack)).toBe(attack);
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+});

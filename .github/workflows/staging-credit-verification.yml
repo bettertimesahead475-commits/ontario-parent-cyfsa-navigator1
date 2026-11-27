@@ -75,17 +75,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
           cache: "npm"
 
       # Dependency install runs without staging secrets.
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Run the six staging scenarios
         env:
           STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-        run: npx vitest run api/services/creditStaging.test.ts --reporter=json --outputFile=staging-results.json
+        run: npx --no-install vitest run api/services/creditStaging.test.ts --reporter=json --outputFile=staging-results.json
 
       - name: Confirm all six scenarios actually executed and passed
         if: always()

@@ -12,6 +12,7 @@
  * Only EXACT and NORMALIZED_WHITESPACE count as "verified": the quoted words are in the document. Everything else
  * is shown as a qualified match, and nothing says "word-for-word" unless the match is EXACT.
  */
+import { trimCharacters } from "./linearText";
 
 export const QUOTE_MATCH_STATUSES = [
   "EXACT",
@@ -45,76 +46,210 @@ const PUNCTUATION_MAP: Record<string, string> = {
   "–": "-", "—": "-",
 };
 
+/**
+ * Canonical form with a source map, stored compactly: `text` is the canonical string and, for every UTF-16 unit of it,
+ * `starts`/`ends` give the code-point span in the input that the unit's code point came from (both units of an astral
+ * code point carry the same span). "whitespace" collapses runs of whitespace to one space. "variant" also lowercases
+ * and maps punctuation. Typed arrays keep a 200-page document's maps at 8 bytes per character instead of three
+ * pointer arrays plus a per-character string array.
+ */
 interface Canonical {
-  chars: string[];
-  starts: number[];
-  ends: number[];
+  text: string;
+  starts: Int32Array;
+  ends: Int32Array;
+}
+
+function unitsToString(units: Uint16Array, from: number, to: number): string {
+  // String.fromCharCode keeps lone surrogates exactly; TextDecoder would replace them.
+  const parts: string[] = [];
+  for (let i = from; i < to; i += 8192) parts.push(String.fromCharCode.apply(null, units.subarray(i, Math.min(i + 8192, to)) as unknown as number[]));
+  return parts.join("");
+}
+
+function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical {
+  let cap = Math.max(16, input.length);
+  let units = new Uint16Array(cap);
+  let starts = new Int32Array(cap);
+  let ends = new Int32Array(cap);
+  let len = 0;
+  const push = (out: string, k: number) => {
+    if (len + out.length > cap) {
+      cap = cap * 2 + out.length;
+      const u = new Uint16Array(cap); u.set(units.subarray(0, len)); units = u;
+      const st = new Int32Array(cap); st.set(starts.subarray(0, len)); starts = st;
+      const en = new Int32Array(cap); en.set(ends.subarray(0, len)); ends = en;
+    }
+    for (let j = 0; j < out.length; j++) {
+      units[len] = out.charCodeAt(j);
+      starts[len] = k;
+      ends[len] = k + 1;
+      len++;
+    }
+  };
+  let k = 0;
+  for (const c of input) {
+    const code = c.charCodeAt(0);
+    // ASCII fast path: in ASCII, \s is exactly tab, line feed, vertical tab, form feed, carriage return and space.
+    const isSpace = code < 128 ? code === 32 || (code >= 9 && code <= 13) : SPACE.test(c);
+    if (isSpace) {
+      // The last unit is a space only when the last element is a collapsed space (an astral element ends in a surrogate).
+      if (len > 0 && units[len - 1] === 32) ends[len - 1] = k + 1;
+      else push(" ", k);
+    } else if (mode === "variant") {
+      if (code < 128) {
+        // No ASCII character is dropped or mapped; only capitals change.
+        push(code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : c, k);
+      } else if (!DROPPED.has(c)) {
+        const mapped = PUNCTUATION_MAP[c] ?? c.toLowerCase();
+        // Only single code points are kept, so every element maps to exactly one source position.
+        push(Array.from(mapped).length === 1 ? mapped : c, k);
+      }
+    } else {
+      push(c, k);
+    }
+    k++;
+  }
+  // Trim the leading and trailing space so a quote and its source compare on content only.
+  let from = 0;
+  let to = len;
+  while (from < to && units[from] === 32) from++;
+  while (to > from && units[to - 1] === 32) to--;
+  return { text: unitsToString(units, from, to), starts: starts.subarray(from, to), ends: ends.subarray(from, to) };
+}
+
+// Combining marks continue a word ("cafe\u0301"), and soft hyphens and zero-width marks (DROPPED) are skipped when
+// reading a match's neighbours, so "un\u00ADtrue" is one word and "can't\u200B" still ends a contraction (DEVIN-P2-01b).
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
+const APOSTROPHE = /^['\u2018\u2019\u201B\u02BC\uFF07]$/u;
+const HYPHEN = /^[-\u2010\u2011]$/u;
+const LETTER = /[\p{L}\p{M}]/u;
+/** Words whose omission inverts the meaning of the words that follow them. */
+const NEGATORS = new Set(["not", "no", "nor", "never", "without", "non"]);
+
+// Positions below are UTF-16 indices of code-point starts; -1 is "before the text" and >= length is "after it".
+
+/** The code point starting at UTF-16 index `i`, or undefined outside the text. */
+function codePointAtIndex(h: string, i: number): string | undefined {
+  if (i < 0 || i >= h.length) return undefined;
+  return String.fromCodePoint(h.codePointAt(i) as number);
+}
+
+/** Start of the code point that ends at UTF-16 index `i`, or -1 at the start. */
+function previousStart(h: string, i: number): number {
+  if (i <= 0) return -1;
+  const lo = h.charCodeAt(i - 1);
+  if (lo >= 0xdc00 && lo <= 0xdfff && i >= 2) {
+    const hi = h.charCodeAt(i - 2);
+    if (hi >= 0xd800 && hi <= 0xdbff) return i - 2;
+  }
+  return i - 1;
+}
+
+/** Start of the code point after the one at `i`. */
+function nextStart(h: string, i: number): number {
+  if (i < 0) return 0;
+  if (i >= h.length) return i + 1;
+  const c = h.codePointAt(i) as number;
+  return i + (c > 0xffff ? 2 : 1);
+}
+
+/** First position from i, moving by step, that is not a soft hyphen or zero-width mark (all single UTF-16 units). */
+function skipDropped(h: string, i: number, step: 1 | -1): number {
+  while (i >= 0 && i < h.length && DROPPED.has(h[i])) i = step === 1 ? i + 1 : previousStart(h, i);
+  return i;
+}
+
+function splitsSurrogatePair(h: string, i: number): boolean {
+  if (i <= 0 || i >= h.length) return false;
+  const hi = h.charCodeAt(i - 1);
+  const lo = h.charCodeAt(i);
+  return hi >= 0xd800 && hi <= 0xdbff && lo >= 0xdc00 && lo <= 0xdfff;
 }
 
 /**
- * Canonical form with a source map. Each element is one code point; starts/ends map it back to the original text.
- * "whitespace" collapses runs of whitespace to one space. "variant" also lowercases and maps punctuation.
+ * The whole word immediately before position i (scanning back over spaces and hyphens, lowercased), or "" when there
+ * is none. Used to see whether a quotation starts right after a negating word.
  */
-function canonicalize(input: string, mode: "whitespace" | "variant"): Canonical {
-  const chars: string[] = [];
-  const starts: number[] = [];
-  const ends: number[] = [];
-  const codePoints = Array.from(input);
-  for (let k = 0; k < codePoints.length; k++) {
-    const c = codePoints[k];
-    if (SPACE.test(c)) {
-      if (chars.length > 0 && chars[chars.length - 1] === " ") {
-        ends[ends.length - 1] = k + 1;
-      } else {
-        chars.push(" ");
-        starts.push(k);
-        ends.push(k + 1);
-      }
-      continue;
-    }
-    if (mode === "variant") {
-      if (DROPPED.has(c)) continue;
-      const mapped = PUNCTUATION_MAP[c] ?? c.toLowerCase();
-      // Only single code points are kept, so every element maps to exactly one source position.
-      const out = Array.from(mapped).length === 1 ? mapped : c;
-      chars.push(out);
-    } else {
-      chars.push(c);
-    }
-    starts.push(k);
-    ends.push(k + 1);
-  }
-  // Trim the leading and trailing space so a quote and its source compare on content only.
-  while (chars.length > 0 && chars[0] === " ") {
-    chars.shift();
-    starts.shift();
-    ends.shift();
-  }
-  while (chars.length > 0 && chars[chars.length - 1] === " ") {
-    chars.pop();
-    starts.pop();
-    ends.pop();
-  }
-  return { chars, starts, ends };
+function precedingWord(h: string, i: number, sourceChar?: (i: number) => string | undefined): string {
+  // Only a real hyphen (in the source text) continues a negated word. An em dash mapped to "-" for variant matching is
+  // a separator, not a hyphen: "non- — CAFÉ" must not make "CAFÉ" the object of "non".
+  const realHyphen = (k: number) => HYPHEN.test(sourceChar ? sourceChar(k) ?? "" : codePointAtIndex(h, k) ?? "");
+  let j = i;
+  while (j >= 0 && (/\s/u.test(codePointAtIndex(h, j) ?? "") || realHyphen(j))) j = previousStart(h, j);
+  const end = j;
+  while (j >= 0 && LETTER.test(codePointAtIndex(h, j) ?? "")) j = previousStart(h, j);
+  if (end < 0 || end === j) return "";
+  return h.slice(nextStart(h, j), nextStart(h, end)).toLowerCase();
 }
 
-/** Start indices (in elements) of every occurrence, counting overlaps. Stops at 2: more than one is already ambiguous. */
-function occurrences(haystack: string[], needle: string[]): number[] {
-  if (needle.length === 0) return [];
-  const h = haystack.join("");
-  const n = needle.join("");
+/**
+ * UTF-16 start indices of every occurrence of n in h, counting overlaps. Stops at 2: more than one is already
+ * ambiguous. A match must not start or end inside a word, a hyphenated compound or a surrogate pair, and must not cut a
+ * contraction: "true that he struck" is not a quotation of "untrue that he struck" (DEVIN-P2-01). sourceChar returns
+ * the source character behind a position when h is a variant form (dashes mapped to "-").
+ */
+function occurrences(h: string, n: string, sourceChar?: (i: number) => string | undefined): number[] {
+  if (n.length === 0) return [];
+  const first = codePointAtIndex(n, skipDropped(n, 0, 1)) ?? "";
+  const last = codePointAtIndex(n, skipDropped(n, previousStart(n, n.length), -1)) ?? "";
+  const boundedStart = WORD_CHAR.test(first);
+  const boundedEnd = WORD_CHAR.test(last);
+  const startsWithLetter = LETTER.test(first);
+  const endsWithLetter = LETTER.test(last);
   const hits: number[] = [];
+  let negatedOccurrence = false;
   let at = h.indexOf(n);
   while (at >= 0 && hits.length < 2) {
-    hits.push(Array.from(h.slice(0, at)).length);
+    const beforeAt = skipDropped(h, previousStart(h, at), -1);
+    const before = codePointAtIndex(h, beforeAt);
+    const afterAt = skipDropped(h, at + n.length, 1);
+    const after = codePointAtIndex(h, afterAt);
+    const tAt = skipDropped(h, nextStart(h, afterAt), 1);
+    // A hyphen between two letters joins one compound word: "violent" is not a quotation of "non-violent".
+    // Only a real hyphen between letters joins a compound: a dash mapped to "-" for variant matching, or a list
+    // separator such as "1-Child", still ends a word.
+    const cutsCompoundStart = startsWithLetter && HYPHEN.test(sourceChar ? sourceChar(beforeAt) ?? "" : before ?? "") &&
+      LETTER.test(codePointAtIndex(h, skipDropped(h, previousStart(h, beforeAt), -1)) ?? "");
+    const cutsCompoundEnd = endsWithLetter && HYPHEN.test(sourceChar ? sourceChar(afterAt) ?? "" : after ?? "") &&
+      LETTER.test(codePointAtIndex(h, tAt) ?? "");
+    const cutsWordStart = boundedStart && before !== undefined && (WORD_CHAR.test(before) || cutsCompoundStart);
+    // "can" followed by "'t" is the start of "can't": cutting there drops the negation.
+    const cutsContraction = APOSTROPHE.test(after ?? "") && /^t$/i.test(codePointAtIndex(h, tAt) ?? "") &&
+      !WORD_CHAR.test(codePointAtIndex(h, skipDropped(h, nextStart(h, tAt), 1)) ?? "");
+    const cutsWordEnd = boundedEnd && after !== undefined && (WORD_CHAR.test(after) || cutsContraction || cutsCompoundEnd);
+    // A quotation that starts right after a negating word ("Not guilty" -> "guilty", "No evidence" -> "evidence", or
+    // "non - violent" split by OCR) drops the negation. It is not a faithful quotation, so the match is not counted;
+    // the finding is then reported as not located (unverified), never silently removed.
+    const cutsNegation = startsWithLetter && NEGATORS.has(precedingWord(h, beforeAt, sourceChar));
+    // Half of an emoji or other astral character is never a quotation of the whole character.
+    const splitsCharacter = splitsSurrogatePair(h, at) || splitsSurrogatePair(h, at + n.length);
+    if (!cutsWordStart && !cutsWordEnd && !splitsCharacter) {
+      // An occurrence that follows a negating word is not a valid match, but it is still an occurrence of the words:
+      // see below, where it makes a single valid match ambiguous instead of unique.
+      if (cutsNegation) negatedOccurrence = true;
+      else hits.push(at);
+    }
     at = h.indexOf(n, at + 1);
   }
+  // One valid match plus a negated occurrence: the quotation is not located uniquely, so it is ambiguous and cannot verify.
+  // A negated occurrence alone is not located at all (no valid hit).
+  if (negatedOccurrence && hits.length === 1) hits.push(hits[0]);
   return hits;
+}
+
+/** True when the quote occurs in the source on word boundaries, after whitespace is collapsed. Uniqueness is not required. */
+export function containsQuoteOnWordBoundaries(source: string, quote: string): boolean {
+  const s = canonicalize(source || "", "whitespace").text;
+  const q = canonicalize(quote || "", "whitespace").text;
+  return occurrences(s, q).length > 0;
 }
 
 /** Strips quotation marks wrapped around the whole quote, then trims. */
 function unwrapQuote(quote: string): string {
-  return (quote || "").trim().replace(/^["'“‘]+|["'”’]+$/g, "").trim();
+  // Same result as .replace(/^["'“‘]+|["'”’]+$/g, ""), whose trailing alternative was retried from every position
+  // of a long run of quotation marks inside the quote.
+  const unquoted = trimCharacters(trimCharacters((quote || "").trim(), "\"'“‘", { start: true }), "\"'”’", { end: true });
+  return unquoted.trim();
 }
 
 /** The "[Page N]" marker that most recently precedes a code-point offset, or null when there is none. */
@@ -126,72 +261,196 @@ export function pageAtOffset(source: string, codePointOffset: number): number | 
   return page;
 }
 
-/**
- * The source with "[Page N]" markers removed, and the original code-point index of each remaining character. A
- * quotation that runs across a page break has no marker inside it, so it can only be matched on this text.
- */
-function withoutPageMarkers(source: string): { body: string; originalIndex: number[] } {
-  const cps = Array.from(source);
-  const kept: string[] = [];
-  const originalIndex: number[] = [];
-  for (let k = 0; k < cps.length; ) {
-    if (cps[k] === "[") {
-      const marker = cps.slice(k, k + 20).join("").match(/^\[Page \d+\]/);
-      if (marker) {
-        k += Array.from(marker[0]).length;
-        continue;
+// "[Page N]" markers are removed before matching, so a quotation that runs across a page break can still match. A
+// marker is at most 20 characters, so N has at most 13 digits; longer runs are ordinary text.
+const PAGE_MARKER = /\[Page \d{1,13}\]/g;
+
+function stripPageMarkers(text: string): string {
+  return text.replace(PAGE_MARKER, "");
+}
+
+/** Sorted UTF-16 indices of the first unit of every astral code point (a valid surrogate pair). */
+function astralStarts(text: string): Int32Array {
+  const found: number[] = [];
+  for (let i = 0; i + 1 < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const d = text.charCodeAt(i + 1);
+      if (d >= 0xdc00 && d <= 0xdfff) {
+        found.push(i);
+        i++;
       }
     }
-    kept.push(cps[k]);
-    originalIndex.push(k);
-    k++;
   }
-  return { body: kept.join(""), originalIndex };
+  return Int32Array.from(found);
+}
+
+/** Number of entries in a sorted array that are <= value (or < value when `strict`). */
+function countUpTo(sorted: Int32Array, value: number, strict = false): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (strict ? sorted[mid] < value : sorted[mid] <= value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** The body code point at a code-point offset. The j-th astral code point starts at code point astral[j] - j. */
+function bodyCodePointAt(doc: PreparedBody, codePoint: number): string | undefined {
+  let lo = 0;
+  let hi = doc.astral.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (doc.astral[mid] - mid < codePoint) lo = mid + 1;
+    else hi = mid;
+  }
+  return codePointAtIndex(doc.body, codePoint + lo);
+}
+
+/**
+ * The source without page markers plus a compact map back to source code-point offsets: removed markers are recorded
+ * by the body code-point offset where they stood and the running total of removed characters (markers are ASCII).
+ */
+interface PreparedBody {
+  body: string;
+  astral: Int32Array;
+  markerAt: Int32Array;
+  removedThrough: Int32Array;
+}
+
+function prepareBody(source: string): PreparedBody {
+  const parts: string[] = [];
+  const atUnits: number[] = [];
+  const removed: number[] = [];
+  let last = 0;
+  let bodyUnits = 0;
+  let total = 0;
+  for (const m of source.matchAll(PAGE_MARKER)) {
+    const index = m.index ?? 0;
+    parts.push(source.slice(last, index));
+    bodyUnits += index - last;
+    total += m[0].length;
+    atUnits.push(bodyUnits);
+    removed.push(total);
+    last = index + m[0].length;
+  }
+  parts.push(source.slice(last));
+  const body = parts.join("");
+  const astral = astralStarts(body);
+  const markerAt = Int32Array.from(atUnits, (u) => u - countUpTo(astral, u, true));
+  return { body, astral, markerAt, removedThrough: Int32Array.from(removed) };
+}
+
+/** End offset (in code points) and number of every "[Page N]" marker, in document order. */
+function pageMarkerEnds(source: string): { ends: number[]; pages: number[] } {
+  const ends: number[] = [];
+  const pages: number[] = [];
+  let utf16 = 0;
+  let codePoints = 0;
+  for (const m of source.matchAll(/\[Page (\d+)\]/g)) {
+    const matchEnd = (m.index ?? 0) + m[0].length;
+    codePoints += Array.from(source.slice(utf16, matchEnd)).length;
+    utf16 = matchEnd;
+    ends.push(codePoints);
+    pages.push(Number(m[1]));
+  }
+  return { ends, pages };
+}
+
+/**
+ * Prepares a source document once and returns a function that locates quotations in it. Same result as calling
+ * locateQuote(source, quote) for each quote, but the document is canonicalized once instead of once per quote, which
+ * keeps report guards linear in document size (a 25-finding report on a 200-page document re-scanned it 25 times).
+ * Holds no state outside the returned closure.
+ */
+export function createQuoteLocator(source: string): (quote: string) => QuoteLocation {
+  const absent: QuoteLocation = { status: "ABSENT", page: null, startOffset: null, endOffset: null };
+  const ambiguous: QuoteLocation = { status: "AMBIGUOUS", page: null, startOffset: null, endOffset: null };
+  if (!source || !source.trim()) return () => ({ ...absent });
+  // Nothing is prepared until the first quote arrives: a report with no quotes costs no memory or CPU here.
+  let prepared: PreparedBody | null | undefined;
+  const prepare = () => {
+    if (prepared === undefined) {
+      const p = prepareBody(source);
+      prepared = p.body.trim() ? p : null;
+    }
+    return prepared;
+  };
+  let ws: Canonical | undefined;
+  let vs: Canonical | undefined;
+  let markers: { ends: number[]; pages: number[] } | undefined;
+  const pageAt = (codePointOffset: number): number | null => {
+    markers ??= pageMarkerEnds(source);
+    let lo = 0;
+    let hi = markers.ends.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (markers.ends[mid] <= codePointOffset) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo === 0 ? null : markers.pages[lo - 1];
+  };
+  // Body code-point offset -> source code-point offset: add every marker removed at or before it.
+  const toSource = (doc: PreparedBody, bodyCodePoint: number): number => {
+    const j = countUpTo(doc.markerAt, bodyCodePoint);
+    return bodyCodePoint + (j === 0 ? 0 : doc.removedThrough[j - 1]);
+  };
+  // Offsets in the matching text are mapped back to the original source, so the page and span refer to the document.
+  const found = (doc: PreparedBody, status: QuoteMatchStatus, start: number, end: number): QuoteLocation => {
+    const from = toSource(doc, start);
+    const to = toSource(doc, end - 1) + 1;
+    return { status, page: pageAt(from), startOffset: from, endOffset: to };
+  };
+
+  return (quote: string): QuoteLocation => {
+    const q = stripPageMarkers(unwrapQuote(quote)).trim();
+    if (!q) return { ...absent };
+    const doc = prepare();
+    if (!doc) return { ...absent };
+
+    const exact = occurrences(doc.body, q);
+    if (exact.length === 1) {
+      const start = exact[0] - countUpTo(doc.astral, exact[0], true);
+      return found(doc, "EXACT", start, start + Array.from(q).length);
+    }
+    if (exact.length > 1) return { ...ambiguous };
+
+    ws ??= canonicalize(doc.body, "whitespace");
+    const wq = canonicalize(q, "whitespace").text;
+    const wsHits = occurrences(ws.text, wq);
+    if (wsHits.length === 1) {
+      const h = wsHits[0];
+      return found(doc, "NORMALIZED_WHITESPACE", ws.starts[h], ws.ends[h + wq.length - 1]);
+    }
+    if (wsHits.length > 1) return { ...ambiguous };
+
+    const variant = (vs ??= canonicalize(doc.body, "variant"));
+    const vq = canonicalize(q, "variant").text;
+    // Compound and negation rules read the source character behind a variant position (an em dash is not a hyphen).
+    const vHits = occurrences(variant.text, vq, (i) => {
+      const cp = variant.starts[i];
+      return cp === undefined ? undefined : bodyCodePointAt(doc, cp);
+    });
+    if (vHits.length === 1) {
+      const h = vHits[0];
+      return found(doc, "CASE_OR_PUNCTUATION_VARIANT", vs.starts[h], vs.ends[h + vq.length - 1]);
+    }
+    if (vHits.length > 1) return { ...ambiguous };
+    return { ...absent };
+  };
 }
 
 /** Locates a quotation in the source text and reports the strictest match type that applies. */
 export function locateQuote(source: string, quote: string): QuoteLocation {
-  const absent: QuoteLocation = { status: "ABSENT", page: null, startOffset: null, endOffset: null };
-  const q = withoutPageMarkers(unwrapQuote(quote)).body.trim();
-  if (!q || !source || !source.trim()) return absent;
-  const { body, originalIndex } = withoutPageMarkers(source);
-  if (!body.trim()) return absent;
-
-  const bodyCp = Array.from(body);
-  const quoteCp = Array.from(q);
-  // Offsets in the matching text are mapped back to the original source, so the page and span refer to the document.
-  const found = (status: QuoteMatchStatus, start: number, end: number): QuoteLocation => {
-    const from = originalIndex[start];
-    const to = originalIndex[end - 1] + 1;
-    return { status, page: pageAtOffset(source, from), startOffset: from, endOffset: to };
-  };
-  const ambiguous: QuoteLocation = { status: "AMBIGUOUS", page: null, startOffset: null, endOffset: null };
-
-  const exact = occurrences(bodyCp, quoteCp);
-  if (exact.length === 1) return found("EXACT", exact[0], exact[0] + quoteCp.length);
-  if (exact.length > 1) return ambiguous;
-
-  const ws = canonicalize(body, "whitespace");
-  const wq = canonicalize(q, "whitespace");
-  const wsHits = occurrences(ws.chars, wq.chars);
-  if (wsHits.length === 1) {
-    const h = wsHits[0];
-    return found("NORMALIZED_WHITESPACE", ws.starts[h], ws.ends[h + wq.chars.length - 1]);
+  // An empty quote is absent without preparing the source.
+  if (!stripPageMarkers(unwrapQuote(quote)).trim()) {
+    return { status: "ABSENT", page: null, startOffset: null, endOffset: null };
   }
-  if (wsHits.length > 1) return ambiguous;
-
-  const vs = canonicalize(body, "variant");
-  const vq = canonicalize(q, "variant");
-  const vHits = occurrences(vs.chars, vq.chars);
-  if (vHits.length === 1) {
-    const h = vHits[0];
-    return found("CASE_OR_PUNCTUATION_VARIANT", vs.starts[h], vs.ends[h + vq.chars.length - 1]);
-  }
-  if (vHits.length > 1) return ambiguous;
-  return absent;
+  return createQuoteLocator(source)(quote);
 }
 
-/** Whether the quoted words are in the document (exact, or equal after whitespace only). Drives "verified". */
 export function isVerbatimQuoteStatus(status: string): boolean {
   return status === "EXACT" || status === "NORMALIZED_WHITESPACE";
 }

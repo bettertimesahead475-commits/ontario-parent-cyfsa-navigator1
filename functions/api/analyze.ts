@@ -1,0 +1,775 @@
+/**
+ * Cloudflare Pages Functions - Production-Ready Document Analyzer API.
+ *
+ * Implements the Direct-First Core Analyzer with:
+ * - Single-pass structured Quick Review analysis (overview, redFlags, chronology, guidance).
+ * - Controlled fallback to established sectioned analysis for oversized documents (>75k chars) or failures.
+ * - Forensic In-Depth mode with Claude Opus verification.
+ * - Pure Web Crypto token verification via Google JWKS.
+ * - Strict database-backed entitlement & credit lifecycle (reserve -> analyze -> finalize/release).
+ * - Real-time Server-Sent Events (SSE) streaming and REST JSON responses.
+ * - Calibrated fail-closed guards for unconfigured or disabled staging environments.
+ */
+
+import { verifyFirebaseRequest } from './_auth-check';
+import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
+import { readVerifiedPaidSession } from './_supabase-paid-session';
+import { reserveVerifiedPaidCredit, type CreditRpc } from './_paid-credit-reservation';
+import { finalizePaidReservation, releasePaidReservation } from './_paid-credit-lifecycle';
+import { reserveFreeScan } from './_free-credit-reservation';
+import { finalizeFreeScan, releaseFreeScan } from './_free-credit-lifecycle';
+import { claimJobRecord, saveCompletedJob, saveJobState } from './_analysis-jobs';
+import { createDurableJob, DurableJobStorageError, jobOwnership, nextAttemptId, type JobOwnership, readDurableJob, saveDurableInput, updateDurableJob, type AnalyzerQueueBinding, type DurableJobRecord } from './_durable-analysis-jobs';
+import { createAnalyzerQueueMessage } from './_analyzer-queue-contract';
+
+/** The queued job's report object is held by another account (or its ownership could not be established). */
+class OwnershipClaimRefused extends Error {
+  constructor(readonly outcome: 'conflict' | 'unavailable') { super('analysis id claim refused'); }
+}
+
+/** Server-generated analysis id in the client format, from a cryptographic random source. */
+function serverAnalysisId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return `req_${Date.now()}_${[...bytes].map((x) => (x % 36).toString(36)).join('')}`;
+}
+import { createStagingCreditRpc } from './_staging-credit-rpc';
+import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
+import { DEFAULT_QUICK_MODEL, DEFAULT_FORENSIC_MODEL } from '../../api/services/analyzerModels';
+import {
+  runDirectAnalysis,
+  isEligibleForDirectAnalysis,
+  salvagePartialDirectSections,
+  DIRECT_ANALYSIS_MAX_CHARS,
+  type DirectFailurePartialData,
+} from '../../api/services/directAnalyzer';
+import {
+  runSectionedAnalysis,
+  sectionTitle,
+  applyReportGuards,
+  type SectionKey,
+  type SectionRunResult,
+  type GenerateFn,
+} from '../../api/services/analyzerSections';
+import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyzerErrors';
+import { buildComplianceMatrixFromReport } from '../../shared/complianceMatrixEngine';
+
+/**
+ * Extracts a valid 36-char UUID session ID from either a raw UUID string,
+ * a query param, an X-PS-Session header, or an HMAC-signed session token (payload.signature).
+ */
+export function extractSessionId(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (/^[0-9a-f-]{36}$/i.test(trimmed)) return trimmed;
+  if (trimmed.includes('.')) {
+    try {
+      const part = trimmed.split('.')[0];
+      const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+      const decoded = atob(padded);
+      const parsed = JSON.parse(decoded);
+      if (typeof parsed?.jti === 'string' && /^[0-9a-f-]{36}$/i.test(parsed.jti)) {
+        return parsed.jti;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+export interface AnalyzerEnv {
+  ANALYZER_ENABLED?: string; // 'true' enables execution; otherwise fails closed with 503
+  FIREBASE_PROJECT_ID?: string;
+  STAGING_SUPABASE_URL?: string;
+  STAGING_SUPABASE_READ_KEY?: string;
+  STAGING_SUPABASE_SERVICE_ROLE_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_API_URL?: string;
+  ANTHROPIC_QUICK_MODEL?: string;
+  ANTHROPIC_FORENSIC_MODEL?: string;
+  ANTHROPIC_FORENSIC_PRIMARY_MODEL?: string;
+  QUICK_ANALYSIS_BUDGET_MS?: string;
+  FORENSIC_ANALYSIS_BUDGET_MS?: string;
+  DIRECT_ANALYZER_DISABLED?: string;
+  FORENSIC_REQUIRE_QUEUE?: string;
+  // Keep the already-working direct Quick Review path unless explicitly opted in.
+  QUEUE_QUICK_ANALYSIS?: string;
+  ANALYZER_JOBS_QUEUE?: AnalyzerQueueBinding;
+}
+
+const DEFAULT_HEADERS = {
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+};
+
+export interface AnalyzeDependencies {
+  rpc?: CreditRpc;
+  generate?: GenerateFn;
+  fetcher?: typeof fetch;
+  /** Set only by the private queue consumer after loading the job from the server-side job ledger. */
+  trustedJob?: Pick<DurableJobRecord, 'owner_uid' | 'session_id' | 'reservation_id' | 'owner_bypass'> & {
+    workerToken: string;
+    onProgress?: (stage: string, percent: number, message: string) => Promise<void> | void;
+  };
+}
+
+/** A budget from configuration, bounded so a typo cannot disable the limit or remove it entirely. */
+function clampBudget(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 10_000 && n <= 300_000 ? n : fallback;
+}
+
+/** Time allowed past the latency budget before the pipeline is stopped regardless of what it is waiting on. */
+const HARD_DEADLINE_GRACE_MS = 5_000;
+/** How often the stream confirms the worker is alive. */
+const HEARTBEAT_INTERVAL_MS = 5_000;
+
+/** Rejects with makeError() if work does not settle within ms. The work is abandoned, not cancelled, so its late result is ignored. */
+export function withHardDeadline<T>(work: Promise<T>, ms: number, makeError: () => Error): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(makeError()), ms);
+  });
+  return Promise.race([work, expired]).finally(() => clearTimeout(timer));
+}
+
+export async function handleAnalyzeRequest(
+  request: Request,
+  env: AnalyzerEnv,
+  deps: AnalyzeDependencies = {},
+  waitUntil?: (promise: Promise<unknown>) => void
+): Promise<Response> {
+  const pipelineStartedAt = Date.now();
+  // Fail-closed guard: Staging analyzer disabled unless explicitly authorized
+  if (env.ANALYZER_ENABLED !== 'true') {
+    return Response.json(
+      { code: 'STAGING_ANALYZER_NOT_READY', analyzerReady: false },
+      { status: 503, headers: DEFAULT_HEADERS }
+    );
+  }
+
+  // Verify core platform configuration
+  if (!env.FIREBASE_PROJECT_ID || !env.ANTHROPIC_API_KEY) {
+    return Response.json(
+      { error: 'Analyzer service configuration is incomplete.', code: 'CONFIGURATION_ERROR', analyzerReady: false },
+      { status: 503, headers: DEFAULT_HEADERS }
+    );
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json(
+      { error: 'Invalid JSON request body.', code: 'INVALID_REQUEST' },
+      { status: 400, headers: DEFAULT_HEADERS }
+    );
+  }
+
+  let rawText = body?.documentText ?? body?.textContent ?? body?.text ?? '';
+  if (!rawText && body?.fileData?.base64 && (body?.fileData?.mimeType === 'text/plain' || !body?.fileData?.mimeType)) {
+    try {
+      let b64 = String(body.fileData.base64);
+      if (b64.includes(',')) b64 = b64.split(',')[1];
+      rawText = atob(b64);
+    } catch {}
+  }
+  const documentText = typeof rawText === 'string' ? rawText.trim() : '';
+  if (!documentText) {
+    return Response.json(
+      { error: 'Missing or empty documentText.', code: 'INVALID_REQUEST' },
+      { status: 400, headers: DEFAULT_HEADERS }
+    );
+  }
+
+  if (body?.mode !== undefined && body?.mode !== null && body.mode !== 'fast' && body.mode !== 'full') {
+    return Response.json({ error: 'Analysis mode must be fast or full.', code: 'INVALID_ANALYSIS_MODE' }, { status: 400, headers: DEFAULT_HEADERS });
+  }
+
+  if (
+    documentText.startsWith('%PDF-') ||
+    documentText.startsWith('JVBER') ||
+    documentText.startsWith('UEsDB') ||
+    /^data:application\/(pdf|vnd|octet-stream)/i.test(documentText)
+  ) {
+    return Response.json(
+      { error: 'Document contains unextracted binary or base64 data. Please run text extraction first.', code: 'DOCUMENT_UNEXTRACTED' },
+      { status: 400, headers: DEFAULT_HEADERS }
+    );
+  }
+
+  const mode: 'fast' | 'full' = body?.mode === 'full' ? 'full' : 'fast';
+  const isForensic = mode === 'full';
+  const rawSession = body?.sessionId || request.headers.get('x-ps-session') || request.headers.get('x-session-id');
+  const sessionId = deps.trustedJob ? deps.trustedJob.session_id : extractSessionId(rawSession);
+  const rawRequestId = request.headers.get('X-Analysis-Id') || body?.analysisId || '';
+  // Ids double as Storage keys. Reserved prefixes of other object families (assessment_*) are never
+  // accepted from a client, and ids owned by another user are refused below (jobOwnership).
+  const clientSuppliedId = !deps.trustedJob && /^[A-Za-z0-9_-]{8,128}$/.test(rawRequestId) && !/^assessment/i.test(rawRequestId);
+  let requestId = deps.trustedJob ? rawRequestId : clientSuppliedId ? rawRequestId : serverAnalysisId();
+
+  const acceptHeader = request.headers.get('accept') || '';
+  const wantsStream = body?.stream !== false && acceptHeader.includes('text/event-stream');
+
+  // On a Queue-required deployment, never silently fall back to an HTTP-long
+  // forensic run when the Pages producer binding is missing. This check runs
+  // before reserving paid credits, preventing a stranded paid analysis.
+  if (isForensic && env.FORENSIC_REQUIRE_QUEUE === 'true' && !env.ANALYZER_JOBS_QUEUE && !deps.trustedJob) {
+    return Response.json(
+      { error: 'Forensic processing is temporarily unavailable. No analysis credits were reserved.',
+        code: 'FORENSIC_QUEUE_UNAVAILABLE', retryable: true },
+      { status: 503, headers: DEFAULT_HEADERS }
+    );
+  }
+
+  // Authenticate user via Firebase JWT
+  const authFetcher = deps.fetcher || fetch;
+  const identity = deps.trustedJob
+    ? { status: 'verified' as const, uid: deps.trustedJob.owner_uid, emailVerified: false, email: null }
+    : await verifyFirebaseRequest(request, env);
+  if (identity.status !== 'verified') {
+    const status = identity.status === 'unavailable' ? 503 : 401;
+    return Response.json(
+      { error: 'Authentication required to run document analysis.', code: 'SIGN_IN_REQUIRED' },
+      { status, headers: DEFAULT_HEADERS }
+    );
+  }
+  const uid = identity.uid;
+
+  if (!deps.trustedJob) {
+    const retryAfter = rateLimitRetryAfter('analyze', rateLimitSubject(request, uid), RATE_LIMITS.analyze);
+    if (retryAfter) return rateLimitedResponse(retryAfter);
+  }
+
+  // An analysis id is also a Storage key that is written with upsert. Refuse ids already owned by someone
+  // else before reserving any credit, so no user can overwrite or adopt another user's report. A fresh
+  // server-generated id (crypto-random) cannot collide, so it skips the two database reads.
+  const ownershipRefusal = (ownership: JobOwnership): Response | null => ownership === 'clear' ? null
+    : ownership === 'conflict'
+      ? Response.json({ error: 'This analysis could not be started. Please start a new analysis.', code: 'ANALYSIS_ID_CONFLICT', retryable: false }, { status: 409, headers: DEFAULT_HEADERS })
+      : Response.json({ error: 'The analysis service is temporarily unavailable. Please try again in a moment - your document is safe.', code: 'OWNERSHIP_CHECK_UNAVAILABLE', retryable: true }, { status: 503, headers: DEFAULT_HEADERS });
+  if (clientSuppliedId && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    const refusal = ownershipRefusal(await jobOwnership(env, requestId, uid, authFetcher));
+    if (refusal) return refusal;
+  }
+  // A Retry of a document whose queued job failed continues under the next attempt id (before any credit is
+  // reserved, so the reservation, the job and the polled id all agree). The response carries the id to poll.
+  if (clientSuppliedId && env.ANALYZER_JOBS_QUEUE && (isForensic || env.QUEUE_QUICK_ANALYSIS === 'true')
+      && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    const attemptId = await nextAttemptId(env, requestId, uid, authFetcher);
+    // The attempt id is also a Storage key: apply the same ownership check to it.
+    const refusal = attemptId !== requestId ? ownershipRefusal(await jobOwnership(env, attemptId, uid, authFetcher)) : null;
+    if (refusal) return refusal;
+    requestId = attemptId;
+  }
+  // Direct (non-queued) path: claim "<id>.json" create-once before any credit is reserved. The ownership read above
+  // cannot stop two accounts racing for the same never-used id (both read "absent"); exactly one create succeeds.
+  // The queued path gets the same guarantee from the job ledger's unique insert.
+  const queuedPath = Boolean(env.ANALYZER_JOBS_QUEUE) && (isForensic || env.QUEUE_QUICK_ANALYSIS === 'true');
+  if (clientSuppliedId && !queuedPath && env.STAGING_SUPABASE_URL && env.STAGING_SUPABASE_SERVICE_ROLE_KEY) {
+    const claim = await claimJobRecord(env, requestId, uid, authFetcher);
+    const refusal = ownershipRefusal(claim === 'claimed' ? 'clear' : claim);
+    if (refusal) return refusal;
+  }
+  // Only a cryptographically verified Firebase ID token with a verified owner email qualifies.
+  // No client-supplied role, email or session can grant this entitlement.
+  const isOwner = deps.trustedJob ? deps.trustedJob.owner_bypass : identity.emailVerified && identity.email?.trim().toLowerCase() === 'mr.pelkie@gmail.com';
+
+  // Set up RPC transport
+  const rpc = deps.rpc || createStagingCreditRpc(env, authFetcher);
+
+  // Reserve credits according to user tier
+  let reservationId: string | null = null;
+  if (deps.trustedJob) {
+    reservationId = deps.trustedJob.reservation_id;
+  } else if (isOwner) {
+    // Owner requests have no paid/free credit reservation; normal authentication and AI limits still apply.
+  } else if (sessionId) {
+    const sessionRead = await readVerifiedPaidSession(env, uid, sessionId, authFetcher);
+    if (sessionRead.status !== 'verified') {
+      return Response.json(
+        { error: 'Paid session is invalid, expired, or revoked.', code: 'SESSION_INVALID' },
+        { status: sessionRead.status === 'unavailable' ? 503 : 403, headers: DEFAULT_HEADERS }
+      );
+    }
+
+    const reservation = await reserveVerifiedPaidCredit(sessionRead.session, isForensic ? 'forensic' : 'quick', requestId, rpc);
+    if (reservation.status === 'limit') {
+      return Response.json(
+        { error: 'Plan credit limit reached for this billing period.', code: 'CREDIT_LIMIT_REACHED' },
+        { status: 402, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (reservation.status === 'in_progress' || reservation.status === 'joined' || reservation.status === 'consumed') {
+      return Response.json(
+        { error: 'This analysis is already running. Results will display shortly.', code: 'ANALYSIS_IN_PROGRESS', jobId: requestId },
+        { status: 409, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (reservation.status !== 'reserved' || !reservation.reservation_id) {
+      return Response.json(
+        { error: 'Credit reservation service is temporarily unavailable.', code: 'RESERVATION_UNAVAILABLE' },
+        { status: reservation.status === 'denied' ? 403 : 503, headers: DEFAULT_HEADERS }
+      );
+    }
+    reservationId = reservation.reservation_id;
+  } else {
+    // Free user scan
+    if (isForensic) {
+      return Response.json(
+        { error: 'Forensic In-Depth analysis requires a paid plan.', code: 'UPGRADE_REQUIRED' },
+        { status: 403, headers: DEFAULT_HEADERS }
+      );
+    }
+    const reservation = await reserveFreeScan(uid, requestId, rpc);
+    if (reservation.status === 'limit') {
+      return Response.json(
+        { error: "You've used your free analysis. Upgrade to continue.", code: 'FREE_LIMIT_REACHED' },
+        { status: 402, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (reservation.status === 'joined' || reservation.status === 'consumed') {
+      return Response.json(
+        { error: 'This analysis is already running or completed.', code: 'ANALYSIS_IN_PROGRESS', jobId: requestId },
+        { status: 409, headers: DEFAULT_HEADERS }
+      );
+    }
+    if (reservation.status !== 'reserved' || !reservation.reservation_id) {
+      // PostgreSQL diagnostics can expose schema details and internal queries.
+      // Keep diagnostic context server-side; clients receive a stable, minimal error.
+      console.error('[FREE_SCAN_RESERVATION_UNAVAILABLE]', JSON.stringify({
+        status: reservation.status,
+        httpStatus: reservation.httpStatus,
+        pgCode: reservation.pgCode,
+      }));
+
+      return Response.json({
+        error: 'Free scan reservation unavailable.',
+        code: 'RESERVATION_UNAVAILABLE',
+      }, {
+        status: reservation.status === 'denied' ? 403 : 503,
+        headers: DEFAULT_HEADERS,
+      });
+    }
+    reservationId = reservation.reservation_id;
+  }
+
+  // Forensic scans use durable Queue processing; keep Quick Review on its
+  // existing fast direct path unless an operator explicitly opts into queuing
+  // Quick Review. Binding a production Queue must not silently change the
+  // already-proven Quick Review latency or credit lifecycle.
+  const shouldQueue = isForensic || env.QUEUE_QUICK_ANALYSIS === 'true';
+  if (!deps.trustedJob && env.ANALYZER_JOBS_QUEUE && shouldQueue) {
+    const inputKey = `inputs/${requestId}.json`;
+    const job: Omit<DurableJobRecord, 'status'> = {
+      job_id: requestId,
+      owner_uid: uid,
+      mode,
+      input_key: inputKey,
+      session_id: sessionId,
+      reservation_id: reservationId,
+      owner_bypass: isOwner,
+    };
+    let jobCreated = false;
+    try {
+      await createDurableJob(env, job, authFetcher);
+      jobCreated = true;
+      // The ledger insert is unique among queued jobs, but a direct-path request by another account may hold the same
+      // id's report object: claim it too, so the queued worker can never overwrite another account's record.
+      if (clientSuppliedId) {
+        const claim = await claimJobRecord(env, requestId, uid, authFetcher);
+        if (claim !== 'claimed') throw new OwnershipClaimRefused(claim);
+      }
+      await saveDurableInput(env, inputKey, { documentText, fileName: typeof body?.documentName === 'string' ? body.documentName : undefined }, authFetcher);
+      await env.ANALYZER_JOBS_QUEUE.send(createAnalyzerQueueMessage(requestId));
+      return Response.json({
+        jobId: requestId,
+        status: 'queued',
+        statusUrl: `/api/analyze/job/${encodeURIComponent(requestId)}`,
+        stream: wantsStream ? 'poll' : undefined,
+      }, { status: 202, headers: DEFAULT_HEADERS });
+    } catch (enqueueError) {
+      const releaseFreshReservation = async () => {
+        if (isOwner || !reservationId) return;
+        try {
+          if (sessionId) await releasePaidReservation(sessionId, requestId, reservationId, rpc);
+          else await releaseFreeScan(uid, requestId, reservationId, rpc);
+        } catch (releaseError) { console.error('[ANALYZER_ENQUEUE_RELEASE_FAILED]', releaseError instanceof Error ? releaseError.name : 'error'); }
+      };
+      // Only a confirmed unique violation (PostgREST HTTP 409) proves the row existed before this
+      // request. A timeout or undecodable reply may mean this request's own insert committed, and
+      // that row has no saved input or queue delivery, so it must not be reported as running.
+      const duplicateInsert = !jobCreated && enqueueError instanceof DurableJobStorageError && enqueueError.status === 409;
+      if (duplicateInsert) {
+        // The browser reuses one analysis id for every retry of a click. Point the caller at their
+        // existing job; never mark someone else's (or this caller's earlier) job as failed.
+        // A failed existing job falls through: its own reservation was already settled.
+        const existing = await readDurableJob(env, requestId, authFetcher).catch(() => null);
+        if (existing && existing.owner_uid === uid && existing.status !== 'failed') {
+          // A reservation taken by this request (for example under a different paid session) is not
+          // the one the existing job will settle, so release it now.
+          // A completed job never settles a reservation again, so one re-claimed by this request (same marker id) is
+          // released too; otherwise it would be held until a reconcile 15 minutes later.
+          if (existing.status === 'completed' || existing.reservation_id !== reservationId) await releaseFreshReservation();
+          const completed = existing.status === 'completed';
+          return Response.json({
+            error: completed ? 'This analysis already finished.' : 'This analysis is already running. Results will display shortly.',
+            code: completed ? 'ANALYSIS_ALREADY_COMPLETED' : 'ANALYSIS_IN_PROGRESS',
+            jobId: requestId,
+            statusUrl: `/api/analyze/job/${encodeURIComponent(requestId)}`,
+          }, { status: 409, headers: DEFAULT_HEADERS });
+        }
+      }
+      // This request id is now a terminal failed job, and its reservation is released below.
+      // The user can start a fresh request; silently retrying the same id would be rejected as a duplicate.
+      const retryable = false;
+      if (!duplicateInsert) {
+        // Covers a confirmed insert and an unconfirmed one that may have committed. A pre-existing
+        // row would have produced a 409 and is never touched here.
+        try {
+          await updateDurableJob(env, { jobId: requestId, status: 'failed', errorCode: 'ANALYSIS_ENQUEUE_FAILED', errorMessage: 'The analysis could not be placed in the queue. Please retry.', retryable }, authFetcher);
+        } catch { /* The producer still releases its reservation below. */ }
+      }
+      await releaseFreshReservation();
+      // The job was marked failed and its reservation released above; report the actual reason.
+      if (enqueueError instanceof OwnershipClaimRefused) {
+        const refusal = ownershipRefusal(enqueueError.outcome);
+        if (refusal) return refusal;
+      }
+      return Response.json({
+        error: 'The analysis could not be queued. Your reserved credit was released when possible.',
+        code: 'ANALYSIS_ENQUEUE_FAILED',
+        retryable,
+      }, { status: 503, headers: DEFAULT_HEADERS });
+    }
+  }
+
+  // Model selection:
+  // Deep Scan uses the configured Opus for primary sections and verification.
+  // A legacy primary override cannot silently downgrade a Deep Scan to Sonnet.
+  const verificationModel = env.ANTHROPIC_FORENSIC_MODEL || DEFAULT_FORENSIC_MODEL;
+  const primaryModel = isForensic
+    ? verificationModel
+    : (env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL);
+  const generate = deps.generate || createCloudflareGenerateFn(env, authFetcher);
+
+  // Product latency budgets. Leave a small margin for report guards,
+  // credit finalization and persistence; a deadline is not a completion guarantee.
+  // The budgets are configurable because the right value is a measurement, not a guess: a 15-second window left the
+  // direct call about 8 seconds, which a multi-thousand-token report cannot finish, so every real Quick Review aborted
+  // and released its credit. The defaults below are the smallest values where a complete call can finish; the product
+  // targets (15 s Quick, 60 s Forensic) are reported as not met until staging measurements say otherwise.
+  const analysisBudgetMs = isForensic
+    ? clampBudget(env.FORENSIC_ANALYSIS_BUDGET_MS, 180_000)
+    : clampBudget(env.QUICK_ANALYSIS_BUDGET_MS, 100_000);
+  const aiDeadlineAt = Date.now() + analysisBudgetMs - 2_000;
+
+  // The job exists from this point on, so a refreshed or reconnected browser sees it as running (not missing).
+  await saveJobState(env, { jobId: requestId, uid, status: 'running', percent: 35, message: 'Analysis started.' }, deps.fetcher || fetch);
+
+  // Execute Analysis Pipeline
+  const executeAnalysis = async (
+    onProgress?: (stage: string, percent: number, message: string) => Promise<void> | void,
+    onSection?: (key: SectionKey, value: Record<string, any>) => Promise<void> | void
+  ): Promise<Record<string, any>> => {
+    let run: SectionRunResult | null = null;
+
+    if (!isForensic) {
+      // Quick Review: generate independently bounded, validated sections from the outset.
+      // Do not spend the shared deadline on an oversized direct JSON response first.
+      if (documentText.length > DIRECT_ANALYSIS_MAX_CHARS) {
+        throw new AnalyzerError(
+          'AI_REQUEST_REJECTED',
+          400,
+          `This document exceeds the 75,000 character limit for Quick Review. Please select Forensic In-Depth mode for comprehensive analysis of larger records. Nothing was charged.`,
+          false
+        );
+      }
+      if (aiDeadlineAt - Date.now() < 10_000) {
+        throw new AnalyzerError('ANALYSIS_TIMED_OUT', 408, 'Not enough time remains to start Quick Review. Nothing was charged.', true);
+      }
+      const sectionedStartedAt = Date.now();
+      await onProgress?.('reviewing_evidence', 35, 'Analyzing four independent evidence sections...');
+      run = await runSectionedAnalysis({
+        mode: 'fast',
+        documentText,
+        primaryModel,
+        generate,
+        deadlineAt: aiDeadlineAt,
+        requestId,
+        onSectionComplete: async (key, value, completed, total) => {
+          const percent = 35 + Math.round((completed / total) * 60);
+          await onSection?.(key, value);
+          await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent,
+            `Validated ${completed} of ${total} evidence sections: ${sectionTitle(key)}.`);
+        },
+      });
+      console.info('[analyzer_latency]', JSON.stringify({ path: 'quick_sectioned', elapsedMs: Date.now() - sectionedStartedAt, outcome: 'success' }));
+    } else {
+      // Forensic In-Depth mode: multi-pass sectioned pipeline with Opus verification
+      const sectionedStartedAt = Date.now();
+      // Verification can start while sections are still running; progress must never go backwards.
+      let verificationStarted = false;
+      await onProgress?.('reviewing_evidence', 35, 'Analyzing document across evidence sections...');
+      run = await runSectionedAnalysis({
+        mode,
+        documentText,
+        primaryModel,
+        verificationModel,
+        generate,
+        deadlineAt: aiDeadlineAt,
+        requestId,
+        onSectionComplete: async (key, value, completed, total) => {
+          const span = 50;
+          const sectionPercent = 35 + Math.round((completed / total) * span);
+          const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;
+          await onSection?.(key, value);
+          if (verificationStarted) {
+            await onProgress?.('verifying_findings', Math.max(88, sectionPercent), message);
+          } else {
+            await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', sectionPercent, message);
+          }
+        },
+        onVerificationStart: () => {
+          verificationStarted = true;
+          // Fire-and-forget progress. In the queue Worker this writes the job ledger and can reject
+          // (for example after a lost lease); never leave that as an unhandled rejection.
+          void Promise.resolve()
+            .then(() => onProgress?.('verifying_findings', 88, 'Independent Claude Opus verification of high-impact findings...'))
+            .catch((error: unknown) => {
+              console.warn('[FORENSIC_VERIFICATION_PROGRESS_FAILED]', error instanceof Error ? error.name : 'unknown');
+            });
+        },
+      });
+      console.info('[analyzer_latency]', JSON.stringify({ path: 'sectioned', elapsedMs: Date.now() - sectionedStartedAt, outcome: 'success' }));
+    }
+
+    await onProgress?.('preparing_report', 96, 'Validating quotations and assembling the report...');
+
+    const report: Record<string, any> = {
+      ...run.report,
+      modelMetadata: {
+        engineName: isForensic ? 'Claude Opus' : 'Claude Sonnet',
+        mode,
+        modeName: isForensic ? 'Forensic In-Depth Scan' : 'Quick Document Review',
+        durationMs: Date.now() - pipelineStartedAt,
+      },
+      _metadata: {
+        requestId,
+        analysisMode: mode,
+        modelUsed: primaryModel,
+        verificationModelUsed: isForensic ? verificationModel : undefined,
+        analyzedAt: new Date().toISOString(),
+      },
+    };
+
+    try {
+      report.complianceMatrix = buildComplianceMatrixFromReport(
+        {
+          documentType: report.documentType,
+          executiveSummary: report.fileSummary,
+          statutoryFindings: (report.redFlags || []).map((rf: any) => ({
+            title: rf.category,
+            statute: rf.legalReference,
+            description: rf.explanation,
+            severity: rf.severity,
+            evidenceQuotes: rf.phraseDetected ? [rf.phraseDetected] : [],
+            pageNumber: rf.locationInDocument ? Number.parseInt(rf.locationInDocument.match(/\d+/)?.[0] || '1', 10) : 1,
+            paragraphReference: rf.locationInDocument,
+          })),
+          contradictions: (report.contradictions || []).map((c: any) => ({
+            claim: c.statementA || c.description,
+            counterEvidence: c.statementB || c.counterEvidence,
+            significance: c.explanation || c.significance,
+          })),
+        },
+        documentText,
+        {
+          documentTitle: report.documentTitle || 'Uploaded Record',
+        }
+      );
+    } catch (matrixErr) {
+      console.warn('[compliance_matrix] Non-fatal evaluation error:', matrixErr);
+    }
+
+    applyReportGuards(report, documentText);
+    return report;
+  };
+
+  // Helper to finalize credits
+  // Runs only after the completed report is saved. Finalization is idempotent, so an unknown outcome (a lost reply)
+  // is retried. A reservation already returned to the customer (released/missing) is not an error: the saved report is
+  // delivered uncharged. Returns false only when the outcome stays unknown; callers still deliver the saved report and
+  // never release the credit or overwrite the report, because the credit may already be consumed.
+  const finalize = async (): Promise<boolean> => {
+    if (deps.trustedJob) return true; // the queue consumer finalizes after persisting and reconciling the report
+    if (isOwner) return true;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((resolve) => setTimeout(resolve, 300 * 3 ** (attempt - 1)));
+      const res = sessionId ? await finalizePaidReservation(sessionId, requestId, rpc) : await finalizeFreeScan(uid, requestId, rpc);
+      if (res.status === 'consumed') return true;
+      if (res.status === 'released' || res.status === 'missing') {
+        console.warn('[ANALYZER_DELIVERED_UNCHARGED]', JSON.stringify({ paid: Boolean(sessionId), reservation: res.status }));
+        return true;
+      }
+      if (res.status !== 'unavailable') break;
+    }
+    console.error('[ANALYZER_FINALIZE_UNCONFIRMED]', JSON.stringify({ paid: Boolean(sessionId) }));
+    return false;
+  };
+
+  // Helper to release credits on error
+  const release = async (): Promise<void> => {
+    if (deps.trustedJob) return; // transient failures keep the reservation for a queue retry
+    if (isOwner || !reservationId) return;
+    try {
+      if (sessionId) {
+        await releasePaidReservation(sessionId, requestId, reservationId, rpc);
+      } else {
+        await releaseFreeScan(uid, requestId, reservationId, rpc);
+      }
+    } catch (e) {
+      console.error('[ANALYZER_RELEASE_FAILED]', e);
+    }
+  };
+
+  // A completed report must be recoverable before the credit is consumed.
+  // Never advertise success when Supabase Storage rejects or times out on the write.
+  const persistBeforeFinalization = async (report: Record<string, any>): Promise<void> => {
+    const saved = await saveCompletedJob(env, { jobId: requestId, uid, report }, deps.fetcher || fetch);
+    if (!saved) {
+      throw new AnalyzerError(
+        'ANALYSIS_PERSISTENCE_FAILED',
+        503,
+        'The completed report could not be saved. Your credit was not finalized. Please retry.',
+        true
+      );
+    }
+  };
+
+  // Streaming SSE response
+  if (wantsStream) {
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const readable = new ReadableStream<Uint8Array>({
+      start(controller) { streamController = controller; },
+      cancel() { streamController = undefined; },
+    });
+    const encoder = new TextEncoder();
+
+    // A slow or disconnected reader must never hold up analysis or settlement.
+    const sendEvent = (event: string, data: unknown) => {
+      if (!streamController) return;
+      if (event === 'heartbeat' && (streamController.desiredSize ?? 0) <= 0) return;
+      streamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+    };
+
+    const streamStartedAt = Date.now();
+    const stageLog = (stage: string, extra: Record<string, unknown> = {}) => {
+      console.info('[analyzer_stage]', JSON.stringify({ requestId, mode, path: isForensic ? 'forensic' : 'quick', stage, elapsedMs: Date.now() - streamStartedAt, ...extra }));
+    };
+
+    // Liveness signal. A browser that stops receiving these knows the worker is gone, not just slow. Heartbeats carry
+    // no progress value, so the displayed percentage still moves only on real stage events.
+    const heartbeat = setInterval(() => {
+      void sendEvent('heartbeat', { requestId, elapsedMs: Date.now() - streamStartedAt });
+    }, HEARTBEAT_INTERVAL_MS);
+
+    // Run execution in background stream writer
+    const analysisTask = (async () => {
+      stageLog('started');
+      try {
+        await sendEvent('stage', { requestId, stage: 'verifying_access', percent: 30, message: 'Verifying account authorization & entitlements...' });
+
+        // Hard ceiling over the whole pipeline. The provider call has its own timeout, but the pipeline must end even if a
+        // step ignores its timeout. Without this ceiling the browser stays at its last percentage with no error and no result.
+        const report = await withHardDeadline(
+          executeAnalysis(
+            async (stage, percent, message) => {
+              stageLog('progress', { progressStage: stage, percent });
+              await sendEvent('stage', { requestId, stage, percent, message });
+            },
+            async (key, value) => {
+              await sendEvent('section', { requestId, section: key, ...value });
+            }
+          ),
+          analysisBudgetMs + HARD_DEADLINE_GRACE_MS,
+          () => new AnalyzerError('ANALYSIS_TIMED_OUT', 504, 'The analysis did not finish in time. Nothing was charged. Please try again.', true)
+        );
+        stageLog('analysis_done');
+
+        await persistBeforeFinalization(report);
+        stageLog('persisted');
+
+        // Only consume the reserved credit after a recoverable report exists.
+        // The report is saved: deliver it even if the charge could not be confirmed (see finalize()).
+        stageLog((await finalize()) ? 'finalized' : 'finalize_unconfirmed');
+
+        // The report itself is sent unchanged, so the saved and streamed shapes stay identical.
+        await sendEvent('complete', report);
+        stageLog('complete');
+      } catch (err: any) {
+        const code = err instanceof AnalyzerError ? err.code : 'ANALYSIS_FAILED';
+        const message = err instanceof AnalyzerError ? err.userMessage : 'The analysis could not be completed. Nothing was charged. Please try again.';
+        const retryable = err instanceof AnalyzerError ? err.retryable : true;
+        stageLog('failed', { code, retryable, errorName: err?.name ?? 'unknown' });
+        // Each step is guarded so the error event is always sent, even if releasing the credit or saving the job fails.
+        try { await release(); } catch (e) { console.error('[ANALYZER_RELEASE_FAILED]', e); }
+        try {
+          // The failure reason is saved, so a refreshed page shows it instead of a missing or stuck job.
+          await saveJobState(env, { jobId: requestId, uid, status: 'failed', error: { code, message, retryable } }, deps.fetcher || fetch);
+        } catch (e) { console.error('[ANALYSIS_JOB_SAVE_FAILED]', e instanceof Error ? e.name : 'error'); }
+        await sendEvent('error', { requestId, error: message, code, retryable });
+      } finally {
+        clearInterval(heartbeat);
+        streamController?.close();
+        streamController = undefined;
+      }
+    })();
+    // Keep the long-running AI operation alive after the Pages handler returns.
+    // Otherwise the runtime may terminate the detached async task mid-analysis.
+    waitUntil?.(analysisTask);
+
+    return new Response(readable, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  }
+
+  // Synchronous JSON response
+  try {
+    const report = await withHardDeadline(
+      executeAnalysis(deps.trustedJob?.onProgress),
+      analysisBudgetMs + HARD_DEADLINE_GRACE_MS,
+      () => new AnalyzerError('ANALYSIS_TIMED_OUT', 504, 'The analysis did not finish in time. Your document is safe. Please retry.', true)
+    );
+    await persistBeforeFinalization(report);
+    // The report is saved: deliver it even if the charge could not be confirmed (see finalize()).
+    await finalize();
+    return Response.json(report, { status: 200, headers: DEFAULT_HEADERS });
+  } catch (err: any) {
+    await release();
+    const status = err instanceof AnalyzerError ? err.statusCode : 500;
+    const code = err instanceof AnalyzerError ? err.code : 'ANALYSIS_FAILED';
+    const message = err instanceof AnalyzerError ? err.userMessage : 'The analysis could not be completed. Nothing was charged. Please try again.';
+    const retryable = err instanceof AnalyzerError ? err.retryable : true;
+    await saveJobState(env, { jobId: requestId, uid, status: 'failed', error: { code, message, retryable } }, deps.fetcher || fetch);
+    return Response.json(
+      { error: message, code, retryable },
+      { status, headers: DEFAULT_HEADERS }
+    );
+  }
+}
+
+export const onRequestPost = async (context?: { request: Request; env: AnalyzerEnv; waitUntil?: (promise: Promise<unknown>) => void }): Promise<Response> => {
+  if (!context || !context.env || context.env.ANALYZER_ENABLED !== 'true') {
+    return Response.json(
+      { code: 'STAGING_ANALYZER_NOT_READY', analyzerReady: false },
+      { status: 503, headers: DEFAULT_HEADERS }
+    );
+  }
+  return handleAnalyzeRequest(context.request, context.env, {}, context.waitUntil?.bind(context));
+};

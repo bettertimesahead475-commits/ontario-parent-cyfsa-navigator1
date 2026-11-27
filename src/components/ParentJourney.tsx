@@ -300,7 +300,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
       </div>
 
       {/* Hero Content Left Column */}
-      <div className="relative z-10 px-6 py-12 sm:px-10 sm:py-16 md:py-20 lg:px-14 lg:py-24">
+      <div className="relative z-10 px-6 py-10 sm:px-10 sm:py-12 md:py-14 lg:px-14 lg:py-16">
         <div className="max-w-2xl lg:max-w-xl xl:max-w-2xl">
           {/* Eyebrow */}
           <div className="flex items-center gap-2 text-xs sm:text-[13px] font-bold uppercase tracking-[0.18em] text-blue-400">
@@ -350,7 +350,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     </section>
 
     {/* FIRST FIVE DAYS — urgency that opens into the whole journey */}
-    <section className="px-6 py-14 sm:px-10 md:py-20 bg-amber-50 border-y border-amber-200">
+    <section className="px-6 py-10 sm:px-10 md:py-12 bg-amber-50 border-y border-amber-200">
       <div className="mx-auto max-w-5xl">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-800">The first five days are crucial. Your journey doesn't end there.</p>
         <h2 className="mt-3 max-w-4xl font-display text-3xl font-black leading-tight text-slate-950 md:text-4xl">Be prepared for the first hearing — and for what comes next.</h2>
@@ -377,7 +377,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     </section>
 
     {/* ANALYZER DEPTH TEASER */}
-    <section className="px-6 py-16 sm:px-10 md:py-20 bg-white">
+    <section className="px-6 py-10 sm:px-10 md:py-12 bg-white">
       <div className="mx-auto max-w-5xl rounded-2xl border border-brand-200 bg-brand-50 p-6 md:p-8">
         <p className="text-xs font-bold uppercase tracking-widest text-brand-700">CYFSA Document Analyzer &amp; Parent Educator</p>
         <h2 className="mt-3 font-display text-3xl font-black text-slate-950">Understand the documents. Understand the allegations. Understand the process. Be prepared.</h2>
@@ -393,10 +393,10 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     </section>
 
     {/* WHAT THIS IS / ISN'T */}
-    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-slate-50">
+    <section className="space-y-5 px-6 py-10 sm:px-10 md:py-12 bg-slate-50">
       <div className="mx-auto max-w-5xl">
         <h2 className="text-center font-display text-3xl font-bold text-slate-900">Straight answers about what this is</h2>
-        <div className="mt-10 grid gap-6 md:grid-cols-2">
+        <div className="mt-6 grid gap-5 md:grid-cols-2">
           <div className="rounded-xl border border-emerald-200 bg-white p-6">
             <p className="font-display text-lg font-bold text-emerald-900">What it does</p>
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
@@ -418,20 +418,20 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     </section>
 
     {/* PRIVACY */}
-    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-white">
+    <section className="space-y-5 px-6 py-10 sm:px-10 md:py-12 bg-white">
       <div className="mx-auto max-w-5xl">
         <div className="flex items-center justify-center gap-3">
           <Lock className="h-6 w-6 text-brand-600" />
           <h2 className="font-display text-3xl font-bold text-slate-900">How your documents are handled</h2>
         </div>
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
+        <div className="mt-6 grid gap-5 md:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-            <p className="font-bold text-slate-900">Your progress saves on your device</p>
-            <p className="mt-2 text-sm text-slate-600">Your analyzer progress and saved reports are kept in your own browser.</p>
+            <p className="font-bold text-slate-900">Your documents and reports</p>
+            <p className="mt-2 text-sm text-slate-600">Depending on the feature and sign-in state, information may be stored in your browser and in the service's protected account storage. Review the privacy notice before uploading.</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
             <p className="font-bold text-slate-900">AI analysis uses an outside service</p>
-            <p className="mt-2 text-sm text-slate-600">To read a document, its text is sent to Google's Gemini AI. Do not upload anything you are not comfortable sending to an AI service.</p>
+            <p className="mt-2 text-sm text-slate-600">Document processing can use third-party AI providers. Do not upload anything you are not comfortable sharing for automated analysis; see the privacy notice for current processing details.</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
             <p className="font-bold text-slate-900">Protect names before you upload</p>
@@ -442,10 +442,10 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     </section>
 
     {/* PROCESS */}
-    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-slate-50">
+    <section className="space-y-5 px-6 py-10 sm:px-10 md:py-12 bg-slate-50">
       <div className="mx-auto max-w-5xl">
         <h2 className="text-center font-display text-3xl font-bold text-slate-900">How it works</h2>
-        <div className="mt-12 grid gap-8 md:grid-cols-3">
+        <div className="mt-6 grid gap-5 md:grid-cols-3">
           {[
             ["1", "Learn your rights first", "Short guides on the CYFSA, the court process, and what CAS must show, so the paperwork makes sense."],
             ["2", "Upload a document", "Affidavits, CAS letters, notices, reports. The analyzer reads it and lists what it finds."],
@@ -462,10 +462,10 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     </section>
 
     {/* WHAT WE CHECK FOR */}
-    <section className="space-y-8 px-6 py-16 sm:px-10 md:py-20 bg-white">
+    <section className="space-y-5 px-6 py-10 sm:px-10 md:py-12 bg-white">
       <div className="mx-auto max-w-5xl">
         <h2 className="text-center font-display text-3xl font-bold text-slate-900">What the analyzer looks at</h2>
-        <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[
             ["🔗 Supporting documents", "Which statements have an attached document behind them, and which do not"],
             ["📄 Where information came from", "Whether the writer saw it directly or heard it from someone else"],
@@ -485,7 +485,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     </section>
 
     {/* REAL HELP */}
-    <section className="space-y-6 px-6 py-16 sm:px-10 md:py-20 bg-brand-50">
+    <section className="space-y-5 px-6 py-10 sm:px-10 md:py-12 bg-brand-50">
       <div className="mx-auto max-w-3xl text-center">
         <h2 className="font-display text-3xl font-bold text-slate-900">Need a lawyer?</h2>
         <p className="mt-4 text-base text-slate-700">If CAS has contacted you or there is a court date, speak to a lawyer as soon as you can. Legal Aid Ontario can tell you if you qualify for a certificate, and duty counsel is available at family court.</p>
@@ -501,7 +501,7 @@ export default function ParentJourney({ page }: { page: JourneyPage }) {
     </section>
 
     {/* FINAL CTA */}
-    <section className="space-y-6 px-6 py-16 text-center sm:px-10 md:py-20 bg-gradient-to-br from-brand-600 to-brand-700">
+    <section className="space-y-5 px-6 py-10 text-center sm:px-10 md:py-12 bg-gradient-to-br from-brand-600 to-brand-700">
       <div className="mx-auto max-w-3xl text-white">
         <h2 className="font-display text-3xl font-black md:text-4xl">Don't read your paperwork alone.</h2>
         <p className="mt-4 text-lg text-brand-100">Go into your next meeting with your lawyer knowing what your documents say and what to ask.</p>

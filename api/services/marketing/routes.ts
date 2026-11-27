@@ -309,7 +309,7 @@ marketingRouter.post("/posts/:id/schedule", requireAdmin, async (req, res) => {
     const scheduledFor = req.body?.scheduledFor;
     if (!scheduledFor) return res.status(400).json({ error: "scheduledFor (ISO timestamp) is required." });
     const when = new Date(scheduledFor);
-    if (isNaN(when.getTime())) return res.status(400).json({ error: "scheduledFor is not a valid timestamp." });
+    if (Number.isNaN(when.getTime())) return res.status(400).json({ error: "scheduledFor is not a valid timestamp." });
     await doTransition(req, res, "scheduled", "schedule", () => ({ scheduled_for: when.toISOString() }));
   } catch (err) {
     handleError(err, res, "schedule post");

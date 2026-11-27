@@ -2,27 +2,83 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/durable-analyzer-queue-20261104]
   pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    # A disposable PostgreSQL for the *.pg.test.ts suites (359 tests that otherwise skip). It lives only for this
+    # job, holds only synthetic data, and the suites refuse any host other than 127.0.0.1/localhost.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: credit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
           cache: "npm"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Type-check
         run: npm run lint
 
+      - name: Live runner evidence regressions (offline)
+        shell: pwsh
+        run: ./scripts/Test-AnalyzerStaging.Tests.ps1
+
       - name: Test
-        run: npm test
+        env:
+          NAVIGATOR_PG_TEST_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          CREDIT_PG_URL: postgres://postgres:postgres@127.0.0.1:5432/credit_test
+        run: npx vitest run --coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+          retention-days: 14
+
 
       - name: Build
         run: npm run build
+
+      - name: Package staging Pages Functions
+        if: github.ref == 'refs/heads/feature/durable-analyzer-queue-20261104'
+        run: npx --no-install wrangler pages functions build functions --outdir=dist/_worker.js --build-output-directory=dist --compatibility-date=2026-11-04
+
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/feature/durable-analyzer-queue-20261104'
+        with:
+          name: isolated-staging-pages-release
+          path: dist
+          retention-days: 3
+
+      # CI-based SonarCloud analysis is the only way to import coverage (automatic analysis cannot).
+      # Runs last, once SONAR_TOKEN is set and automatic analysis is switched off in SonarCloud.
+      - name: SonarCloud scan (with coverage)
+        if: env.SONAR_TOKEN != ''
+        # Reporting only: its quality gate is a separate check, and a scan failure must not fail the build or skip packaging.
+        continue-on-error: true
+        uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

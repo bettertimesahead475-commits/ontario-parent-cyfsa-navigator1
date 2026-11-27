@@ -103,16 +103,34 @@ begin
  elsif jsonb_typeof(obj->key) is distinct from kind then raise exception 'Invalid field type'; end if;
 end $$;
 -- Counts overlapping matches, bounded at two; exact matches take precedence.
+-- Mirrors pageSources.ts verifyQuote (DEVIN-P2-01/P2-04): a match may not start or end inside a word, and may not stop
+-- just before "'t" (cutting "can't" to "can" drops the negation). Word characters use [[:alnum:]]; the database must use
+-- a UTF-8 collation that classifies letters and digits the way JavaScript \p{L}\p{N} does (verify before applying).
 create function public.navigator_quote_hits(source text,quote text) returns integer
 language plpgsql immutable strict security invoker set search_path=pg_catalog,public,pg_temp as $$
-declare at_pos integer; start_pos integer:=1; hits integer:=0;
+declare
+ qlen integer:=char_length(quote); pos integer:=1; rel integer; at integer; hits integer:=0;
+ before_c text; after_c text; after2 text; after3 text;
+ bounded_start boolean; bounded_end boolean; cuts_start boolean; cuts_end boolean; contraction boolean;
 begin
- if quote='' then return 0; end if;
+ if qlen=0 then return 0; end if;
+ bounded_start:=left(quote,1)~'^[[:alnum:]]$';
+ bounded_end:=right(quote,1)~'^[[:alnum:]]$';
  loop
-  at_pos:=strpos(substring(source from start_pos),quote);
-  exit when at_pos=0;
-  hits:=hits+1; exit when hits=2;
-  start_pos:=start_pos+at_pos;
+  rel:=strpos(substring(source from pos),quote);
+  exit when rel=0;
+  at:=pos+rel-1;
+  before_c:=case when at>1 then substr(source,at-1,1) else null end;
+  after_c:=substr(source,at+qlen,1);
+  after2:=substr(source,at+qlen+1,1);
+  after3:=substr(source,at+qlen+2,1);
+  cuts_start:=bounded_start and before_c is not null and before_c~'^[[:alnum:]]$';
+  contraction:=after_c in ('''','’') and lower(after2)='t' and after3!~'^[[:alnum:]]$';
+  cuts_end:=bounded_end and after_c<>'' and (after_c~'^[[:alnum:]]$' or contraction);
+  if not cuts_start and not cuts_end then
+   hits:=hits+1; exit when hits=2;
+  end if;
+  pos:=at+1;
  end loop;
  return hits;
 end $$;

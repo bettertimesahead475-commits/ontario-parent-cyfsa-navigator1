@@ -18,6 +18,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Platform } from "./types.js";
 import { getAdapter } from "./adapters/registry.js";
+import { extractFencedBlock } from "../../../shared/linearText.js";
 
 const CLAUDE_MODELS = new Set(["claude-sonnet-5", "claude-haiku-4-5-20251001"]);
 const DEFAULT_MODEL = "claude-sonnet-5";
@@ -75,10 +76,11 @@ function extractJson(text: string): any {
   } catch {
     /* try fenced */
   }
-  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (fence) {
+  // Linear equivalent of /```(?:json)?\s*([\s\S]*?)\s*```/, which backtracked polynomially on an unclosed fence.
+  const fence = extractFencedBlock(trimmed, { trimTrailingWhitespace: true });
+  if (fence !== null) {
     try {
-      return JSON.parse(fence[1].trim());
+      return JSON.parse(fence.trim());
     } catch {
       /* keep trying */
     }

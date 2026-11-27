@@ -26,6 +26,7 @@ import {
   type MatterAccessEventOutcome,
   type MatterAccessEventType,
 } from './matterAccessEvents.js';
+import { byCodeUnit } from "../../shared/codeUnitOrder.js";
 
 export const DEFAULT_HISTORY_PAGE_SIZE = 25;
 export const MAX_HISTORY_PAGE_SIZE = 100;
@@ -90,7 +91,7 @@ export function decodeHistoryCursor(cursor: unknown, canonicalMatterId: string):
     throw invalidCursor();
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw invalidCursor();
-  const keys = Object.keys(parsed).sort();
+  const keys = Object.keys(parsed).sort(byCodeUnit);
   if (keys.length !== 2 || keys[0] !== 'm' || keys[1] !== 's') throw invalidCursor();
   const { m, s } = parsed as { m: unknown; s: unknown };
   if (typeof m !== 'string' || m !== canonicalMatterId) throw invalidCursor();

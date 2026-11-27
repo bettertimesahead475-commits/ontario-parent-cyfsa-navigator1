@@ -17,14 +17,27 @@ export function isAnalysisJobId(id: unknown): id is string {
 }
 
 /**
- * A new analysis id in the server's format. The random part is always at least 8 characters, so the id is never rejected
- * and silently replaced (which would defeat the retry protection).
+ * Uniform [0, 1) from the platform's Web Crypto generator. Analysis ids are Storage keys and must not be predictable,
+ * so there is NO Math.random fallback: when Web Crypto is unavailable this throws and the caller fails closed.
  */
-export function newAnalysisJobId(now: number = Date.now(), random: () => number = Math.random): string {
+export function cryptoRandom(): number {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (!c || typeof c.getRandomValues !== "function") {
+    throw new Error("Web Crypto is unavailable; refusing to generate an unpredictable identifier.");
+  }
+  return c.getRandomValues(new Uint32Array(1))[0] / 0x1_0000_0000;
+}
+
+/**
+ * A new analysis id in the server's format. The random part is at least 8 characters. If the random source cannot
+ * supply that, this throws rather than padding with a fixed string (a predictable id would defeat both the uniqueness
+ * and the ownership protection).
+ */
+export function newAnalysisJobId(now: number = Date.now(), random: () => number = cryptoRandom): string {
   let token = "";
-  // Bounded, so a degenerate random source cannot loop forever; the fallback still yields a valid id.
+  // Bounded, so a degenerate random source cannot loop forever.
   for (let i = 0; i < 16 && token.length < 8; i++) token += random().toString(36).slice(2);
-  if (token.length < 8) token = token.padEnd(8, "x");
+  if (token.length < 8) throw new Error("Random source produced too little entropy for an analysis id.");
   return `req_${now}_${token.slice(0, 12)}`;
 }
 
@@ -71,6 +84,11 @@ export function classifyFailure(f: FailureInput): FailureDecision {
   }
   if (f.network || code === "STREAM_INTERRUPTED" || code === "NETWORK_ERROR") {
     return { kind: "NETWORK_INTERRUPTED", action: "RECOVER_JOB", reason: "The connection was interrupted. The analysis may still be running." };
+  }
+  // Cloudflare 524 means the upstream accepted the connection but failed to respond in time.
+  // The analysis may still be running or saved; never start another paid AI request blindly.
+  if (status === 524) {
+    return { kind: "NETWORK_INTERRUPTED", action: "RECOVER_JOB", reason: "The upstream timed out; check the existing analysis job before attempting another run." };
   }
   if (status === 409 && code === "ANALYSIS_IN_PROGRESS") {
     return { kind: "ALREADY_RUNNING", action: "RECOVER_JOB", reason: "This analysis is already running on the server." };

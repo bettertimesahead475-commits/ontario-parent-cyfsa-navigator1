@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { byCodeUnit } from "./codeUnitOrder";
 
 export type DatePrecision =
   | 'EXACT_DATETIME'
@@ -83,7 +84,7 @@ export function validateStructuredDate(date: StructuredDate): void {
     }
     const l = new Date(date.lowerBound).getTime();
     const u = new Date(date.upperBound).getTime();
-    if (isNaN(l) || isNaN(u)) {
+    if (Number.isNaN(l) || Number.isNaN(u)) {
       throw new Error('Bounds must be valid ISO strings');
     }
     if (l > u) {
@@ -104,7 +105,7 @@ function stableStringify(obj: any): string {
   if (Array.isArray(obj)) {
     return '[' + obj.map(stableStringify).join(',') + ']';
   }
-  const keys = Object.keys(obj).sort();
+  const keys = Object.keys(obj).sort(byCodeUnit);
   const parts = keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k]));
   return '{' + parts.join(',') + '}';
 }

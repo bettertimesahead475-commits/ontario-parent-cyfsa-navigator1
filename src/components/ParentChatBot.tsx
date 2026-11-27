@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { getUserKey } from "../utils/storage";
+import { useAccountStorage } from "../hooks/useAccountStorage";
 
 interface LocalFile {
   name: string;
@@ -40,14 +41,7 @@ export default function ParentChatBot() {
   }, [isOpen]);
 
   const [files, setFiles] = useState<LocalFile[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    try {
-      const saved = localStorage.getItem("OPA_COACH_CHAT_MESSAGES");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.warn("Failed to load coach chat history:", e);
-    }
-    return [
+  const [messages, setMessages] = useAccountStorage<ChatMessage[]>("OPA_COACH_CHAT_MESSAGES", () => [
       {
         id: "coach-welcome",
         sender: "ai",
@@ -56,8 +50,7 @@ export default function ParentChatBot() {
               "How can I help you understand your rights or analyze your case files today?",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
-    ];
-  });
+  ]);
   
   const [input, setInput] = useState<string>("");
   const [isQuerying, setIsQuerying] = useState<boolean>(false);
@@ -100,14 +93,7 @@ export default function ParentChatBot() {
     };
   }, []);
 
-  // Persist messages
   useEffect(() => {
-    try {
-      localStorage.setItem("OPA_COACH_CHAT_MESSAGES", JSON.stringify(messages));
-    } catch (e) {
-      console.warn("Failed to persist coach chat messages:", e);
-    }
-    // Scroll to bottom
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 

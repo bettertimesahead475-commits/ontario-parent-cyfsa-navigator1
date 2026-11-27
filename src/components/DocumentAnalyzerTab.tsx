@@ -3,12 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import FinalCaseAssessment from "./FinalCaseAssessment";
+import { finishPrintWindow } from "../utils/printWindow";
 import { useAppReset } from "../hooks/useAppReset";
 import { motion, AnimatePresence } from "motion/react";
-import React, { useState, useRef, useEffect } from "react";
+import PaperDocumentScanner from "./PaperDocumentScanner";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { AnalysisReport, SavedBrief } from "../types";
-import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
+import { apiFetch, safeReadJson, ApiResponseError, readAnalysisEventStream, readAnalysisResponse, pollAnalysisJob, STREAM_INTERRUPTED, type AnalysisJobSnapshot } from "../utils/api";
 import { signInMinimal } from "../utils/firebase";
+import { requireCompleteExtraction } from "../utils/extractionCompleteness";
 import {
   readSavedAnalysisJobId,
   saveAnalysisJobId,
@@ -23,6 +27,7 @@ import {
 import { runAnalysisWithRetry, recoverAnalysisReport } from "../utils/analysisRetry";
 import { newAnalysisJobId } from "../../shared/analyzerRetryPolicy";
 import { useLocation } from "wouter";
+import { creditPillLabel, normalizeCreditBalance, type CreditBalanceInfo } from "../utils/creditBalance";
 import RedactionToggle from "./RedactionToggle";
 import { useRedaction } from "../utils/redaction";
 import FormattedReportText from "./FormattedReportText";
@@ -75,8 +80,24 @@ import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
+import { isScored, renderForensicReportHtml } from "../utils/forensicPdfRenderer";
+import { evidenceLabel } from "../utils/parentReportView";
+import { formatLawyerCaseBriefText, renderLawyerCaseBriefHtml } from "../utils/caseBriefExport";
+import {
+  ParagraphListenButton,
+  SectionListenButton,
+  FullReportListenButton,
+  NarrationBar,
+} from "./narration";
+import { FindingPresentationCard } from "./FindingPresentationCard";
+import { AgencyComplianceMatrixView } from "./AgencyComplianceMatrixView";
+import { buildComplianceMatrixFromReport } from "../../shared/complianceMatrixEngine";
+import { useNarration } from "../hooks/useNarration";
+import { extractReportSegments } from "../utils/narration/reportSegments";
+import type { NarrationSegment } from "../utils/narration/types";
 import { effectiveCitationStatus } from "../../shared/citationVerification";
 import { effectiveQuoteStatus, QUOTE_DISPLAY } from "../../shared/quoteVerification";
+import { isSecondReviewComplete } from "../../shared/reportContract";
 
 /** Parent-facing names for the report sections the server validates and streams. */
 const REPORT_SECTION_LABELS: Record<string, string> = {
@@ -124,6 +145,7 @@ interface OrganizedFile {
   category: "CAS Correspondence" | "Court Filings" | "Evidence & Loggers" | "Children Services" | "Parenting Identity";
   uploadedAt: string;
   content: string; // Plaintext content or base64 representation
+  originalContent?: string; // Preserve uploaded bytes when content becomes extracted text.
   analysisStatus: "pending" | "analyzing" | "completed" | "failed";
   analysisReport?: AnalysisReport;
   // Why the last analysis attempt failed, as reported by the server (shown to the parent).
@@ -292,6 +314,14 @@ export default function DocumentAnalyzerTab() {
   const [bulkProgress, setBulkProgress] = useState<string>("");
   const [isBulkAnalyzing, setIsBulkAnalyzing] = useState<boolean>(false);
 
+  // Report Text-to-Speech Narration
+  const narration = useNarration();
+
+  // Stop playback if document selection changes
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("opa-doc-analyzer-file-changed"));
+  }, [selectedFileId]);
+
   // Case Chat Pipeline State
   const [ragChatMessages, setRAGChatMessages] = useState<RAGChatMessage[]>(() => {
     return parsedProg?.ragChatMessages || [
@@ -405,12 +435,17 @@ export default function DocumentAnalyzerTab() {
   const [jobResumeAttempt, setJobResumeAttempt] = useState(0);
   // Report sections the server has validated so far (real progress, from stream or job record).
   const [completedSections, setCompletedSections] = useState<string[]>([]);
+  const [preliminaryBrief, setPreliminaryBrief] = useState<string>("");
   // True while a reloaded page follows an analysis that was started before the reload.
   const [isRecoveringJob, setIsRecoveringJob] = useState<boolean>(false);
+  const [lastActivityAt, setLastActivityAt] = useState<number>(Date.now());
+  const [isProcessingStalled, setIsProcessingStalled] = useState<boolean>(false);
   // Synchronous guard against a double click starting two analyses before state re-renders.
   const analysisInFlightRef = useRef(false);
   const stopWaitingRef = useRef(false);
   const applyJobProgress = React.useCallback((job: AnalysisJobSnapshot) => {
+    setLastActivityAt(Date.now());
+    setIsProcessingStalled(false);
     setCompletedSections(Object.keys(job.sections || {}));
     setStreamingProgress(prev => ({
       stage: job.currentStage || prev.stage || "reviewing_evidence",
@@ -418,6 +453,22 @@ export default function DocumentAnalyzerTab() {
       message: job.message || prev.message || "Analyzing your document...",
     }));
   }, []);
+
+  // Stalled processing detection: monitors liveness during long analysis runs
+  useEffect(() => {
+    if (!isSingleAnalyzing && !isRecoveringJob) {
+      setIsProcessingStalled(false);
+      return;
+    }
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivityAt > 35_000) {
+        setIsProcessingStalled(true);
+      } else {
+        setIsProcessingStalled(false);
+      }
+    }, 5_000);
+    return () => clearInterval(timer);
+  }, [isSingleAnalyzing, isRecoveringJob, lastActivityAt]);
 
   // Countdown timer for rate-limit cooldown
   useEffect(() => {
@@ -448,10 +499,27 @@ export default function DocumentAnalyzerTab() {
         if (outcome.status === "completed") {
           setSelectedReport(outcome.report);
           setAnalyzerState("COMPLETE");
+          setIsRecoveringJob(false);
+          setIsSingleAnalyzing(false);
+          setIsProcessingStalled(false);
+          setOrganizedFiles(prev => prev.map(f =>
+            (f.id === selectedFileId || f.analysisStatus === "analyzing")
+              ? { ...f, analysisStatus: "completed", analysisReport: outcome.report, analysisError: undefined }
+              : f
+          ));
         } else {
           setAnalyzerState("ERROR");
           setSingleAnalysisErrorCode(outcome.error.code);
-          setSingleAnalysisError(outcome.error.message || "The analysis could not be completed. Please start it again.");
+          const errMsg = outcome.error.message || "The analysis could not be completed. Please start it again.";
+          setSingleAnalysisError(errMsg);
+          setIsRecoveringJob(false);
+          setIsSingleAnalyzing(false);
+          setIsProcessingStalled(false);
+          setOrganizedFiles(prev => prev.map(f =>
+            (f.id === selectedFileId || f.analysisStatus === "analyzing")
+              ? { ...f, analysisStatus: "failed", analysisError: errMsg }
+              : f
+          ));
         }
         clearActiveJob();
       })
@@ -459,12 +527,25 @@ export default function DocumentAnalyzerTab() {
         if (cancelled || err?.code === "CANCELLED") return;
         setAnalyzerState("ERROR");
         setSingleAnalysisErrorCode(err?.code || null);
-        setSingleAnalysisError(err?.message || "We couldn't check on your analysis. Your document is safe.");
+        const errMsg = err?.message || "We couldn't check on your analysis. Your document is safe.";
+        setSingleAnalysisError(errMsg);
+        setIsRecoveringJob(false);
+        setIsSingleAnalyzing(false);
+        setIsProcessingStalled(false);
+        setOrganizedFiles(prev => prev.map(f =>
+          (f.id === selectedFileId || f.analysisStatus === "analyzing")
+            ? { ...f, analysisStatus: "failed", analysisError: errMsg }
+            : f
+        ));
         // A sign-in problem keeps the saved job, so polling can resume it once the parent signs in again.
         if (!keepsSavedJobAfterError(err?.code)) clearActiveJob();
       })
       .finally(() => {
-        if (!cancelled) setIsRecoveringJob(false);
+        if (!cancelled) {
+          setIsRecoveringJob(false);
+          setIsSingleAnalyzing(false);
+          setIsProcessingStalled(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -472,17 +553,6 @@ export default function DocumentAnalyzerTab() {
   }, [activeJobId, jobResumeAttempt, setSelectedReport, applyJobProgress]);
 
   // Server-authoritative credit ledger balance
-  interface CreditBalanceInfo {
-    tier: string;
-    creditsRemaining: number;
-    creditsUsed: number;
-    creditsLimit: number;
-    isSuspended: boolean;
-    suspendedReason?: string | null;
-    allowsForensic: boolean;
-    isMonthly: boolean;
-    isAdminEntitled?: boolean;
-  }
   const [creditBalance, setCreditBalance] = useState<CreditBalanceInfo | null>(null);
 
   const fetchCreditBalance = React.useCallback(async () => {
@@ -490,7 +560,7 @@ export default function DocumentAnalyzerTab() {
       const res = await apiFetch("/api/analyzer-usage");
       if (res.ok) {
         const data = await res.json();
-        setCreditBalance(data);
+        setCreditBalance(normalizeCreditBalance(data));
       }
     } catch (e) {
       console.warn("Failed to fetch analyzer credit balance:", e);
@@ -505,6 +575,11 @@ export default function DocumentAnalyzerTab() {
   const [isDeepScanning, setIsDeepScanning] = useState<boolean>(false);
   const [deepScanFileId, setDeepScanFileId] = useState<string | null>(null);
   const [deepScanError, setDeepScanError] = useState<string | null>(null);
+  const [deepScanProgress, setDeepScanProgress] = useState<{ stage: string; percent: number; message: string }>({
+    stage: "started",
+    percent: 35,
+    message: "Initializing Forensic In-Depth scan...",
+  });
   const [deepScanReports, setDeepScanReports] = useState<{ [fileId: string]: any }>(() => {
     try {
       const saved = localStorage.getItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS");
@@ -519,6 +594,35 @@ export default function DocumentAnalyzerTab() {
     try { return JSON.parse(localStorage.getItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS") || "{}"); }
     catch { return {}; }
   });
+
+  // Professional 5-Tab Report Workspace state & independent report mode selection
+  const [reportWorkspaceTab, setReportWorkspaceTab] = useState<"brief" | "chronology" | "evidence" | "thresholds" | "findings" | "compliance">("brief");
+  const [activeReportMode, setActiveReportMode] = useState<"quick" | "deep">("quick");
+
+  // Helper to reliably detect whether any report is a Forensic In-Depth report
+  const isReportForensic = (rep: any): boolean => {
+    if (!rep || typeof rep !== "object") return false;
+    return rep.modelMetadata?.mode === "full" ||
+      rep._metadata?.analysisMode === "full" ||
+      rep.mode === "full" ||
+      Boolean(rep.forensicVerification) ||
+      (Array.isArray(rep.proceduralTimelineViolations) && rep.proceduralTimelineViolations.length > 0) ||
+      Boolean(rep.omissions);
+  };
+
+
+
+  const selectFileAndAlignMode = React.useCallback((fileId: string, fileReport?: any) => {
+    setSelectedFileId(fileId);
+    setSelectedReport(fileReport || null);
+    const hasDeep = Boolean(deepScanReports[fileId] || isReportForensic(fileReport));
+    const hasQuick = Boolean(quickReviewSnapshots[fileId] || (fileReport && !isReportForensic(fileReport)));
+    if (hasDeep && !hasQuick) {
+      setActiveReportMode("deep");
+    } else if (hasQuick && !hasDeep) {
+      setActiveReportMode("quick");
+    }
+  }, [deepScanReports, quickReviewSnapshots, setSelectedReport]);
 
   const triggerDeepScan = async (file: OrganizedFile) => {
     if (!file.content || !file.content.trim()) {
@@ -536,45 +640,142 @@ export default function DocumentAnalyzerTab() {
     setDeepScanFileId(file.id);
     setDeepScanError(null);
 
+    let documentTextToScan = file.content;
+    const isRawBase64 = file.mimeType !== "text/plain" &&
+      (documentTextToScan.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(documentTextToScan.slice(0, 100)));
+
+    if (isRawBase64) {
+      setDeepScanProgress({
+        stage: "extracting",
+        percent: 20,
+        message: "Extracting document text & verifying structure...",
+      });
+      try {
+        const extractResponse = await apiFetch("/api/extract-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileData: {
+              base64: file.content,
+              mimeType: file.mimeType,
+              fileName: file.name,
+            },
+          }),
+        });
+        const extractResult = await safeReadJson(extractResponse);
+        if (!extractResponse.ok) {
+          throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
+        }
+        requireCompleteExtraction(extractResult);
+        if (!extractResult.extractedText) {
+          throw new Error("No readable text could be extracted from this document.");
+        }
+        documentTextToScan = extractResult.extractedText;
+        setOrganizedFiles(prev => prev.map(f => f.id === file.id
+          ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
+      } catch (err: any) {
+        setIsDeepScanning(false);
+        setDeepScanFileId(null);
+        setDeepScanError(err.message || "Failed to extract text from document.");
+        return;
+      }
+    }
+
+    setDeepScanProgress({
+      stage: "started",
+      percent: 35,
+      message: "Starting Forensic In-Depth statutory scan...",
+    });
+
     try {
       // One id per Deep Scan click, reused by every retry, so the server answers a retry with the saved report or the
       // running job rather than running (and charging for) the scan again.
       const scanId = newAnalysisJobId();
+      const storedSessionToken = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token") || undefined;
       const data = await runAnalysisWithRetry({
         attempt: async () => {
           const response = await apiFetch("/api/deep-scan", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-Analysis-Id": scanId },
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "text/event-stream, application/json",
+              "X-Analysis-Id": scanId,
+            },
             body: JSON.stringify({
-              documentText: file.content,
+              documentText: documentTextToScan,
               documentName: file.name,
               category: file.category,
               model: claudeModel,
+              mode: "full",
+              stream: true,
+              analysisId: scanId,
+              sessionId: storedSessionToken,
               // Gives the deep scan the first-pass report already run for this file, so it can
               // dig into what that pass missed instead of re-finding the same red flags.
               priorAnalysis: file.analysisReport || null
             })
           });
-          // A non-2xx response throws an ApiResponseError that the shared policy classifies.
-          return safeReadJson(response);
+          if (response.status === 202) {
+            return readAnalysisResponse(response, {
+              onStage: (stage, percent, message) => setDeepScanProgress({ stage, percent, message }),
+            });
+          }
+          const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
+          if (!isStream) return safeReadJson(response);
+          return readAnalysisEventStream(response, {
+            onStage: (stage, percent, message) => {
+              setDeepScanProgress({ stage, percent, message });
+            },
+            onHeartbeat: () => {},
+            onError: () => {},
+          });
         },
         recover: () => recoverAnalysisReport(scanId),
       });
       const report = { ...data, timestamp: new Date().toLocaleDateString() };
+      if (!report.complianceMatrix) {
+        try {
+          report.complianceMatrix = buildComplianceMatrixFromReport(
+            {
+              documentType: report.documentType,
+              executiveSummary: report.fileSummary,
+              statutoryFindings: (report.redFlags || []).map((rf: any) => ({
+                title: rf.category,
+                statute: rf.legalReference,
+                description: rf.explanation,
+                severity: rf.severity,
+                evidenceQuotes: rf.phraseDetected ? [rf.phraseDetected] : [],
+              })),
+              contradictions: (report.contradictions || []).map((c: any) => ({
+                claim: c.statementA || c.description,
+                counterEvidence: c.statementB || c.counterEvidence,
+                significance: c.explanation || c.significance,
+              })),
+            },
+            documentTextToScan
+          );
+        } catch (e) {
+          console.warn("Unable to generate client fallback compliance matrix", e);
+        }
+      }
 
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
-      localStorage.setItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
+      try {
+        localStorage.setItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
+      } catch (err) {
+        console.warn("Unable to persist Deep Scan report", err);
+      }
 
-      // Merge Deep Scan findings into active report state
+      // Preserve Quick Review report, set Deep Scan as active view
+      setActiveReportMode("deep");
+      setSelectedReport(report);
       setOrganizedFiles(prev => prev.map(f => {
         if (f.id === file.id) {
-          const mergedReport = { ...(f.analysisReport || {}), ...report };
-          return { ...f, analysisReport: mergedReport };
+          return { ...f, analysisReport: report };
         }
         return f;
       }));
-      setSelectedReport(prev => prev ? { ...prev, ...report } : report);
     } catch (err: any) {
       console.error("[deep scan] request failed:", err);
       setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
@@ -642,6 +843,23 @@ export default function DocumentAnalyzerTab() {
   const [activeTab, setActiveTab] = useState<"organizer" | "rag-chat" | "saved-briefs">(() => {
     return parsedProg?.activeTab || "organizer";
   });
+
+  /**
+   * Clears the analysis on screen and any stale progress so a new analysis starts clean. Documents, saved reports and
+   * the server's job records are not touched. A running server job is not cancelled: this page only stops following it,
+   * and reopening the page recovers its result.
+   */
+  const startNewAnalysis = () => {
+    stopWaitingRef.current = true;
+    setIsSingleAnalyzing(false);
+    setIsBulkAnalyzing(false);
+    setAnalyzerState("IDLE");
+    setStreamingProgress({ stage: "", percent: 0, message: "" });
+    setSingleAnalysisError("");
+    setSingleAnalysisErrorCode("");
+    setSelectedReport(null);
+    setSaveStatus(null);
+  };
 
   // Save progress explicitly or display auto-save triggers safely
   const saveProgress = () => {
@@ -1499,23 +1717,22 @@ export default function DocumentAnalyzerTab() {
   };
 
     // Multiple File Uploader (Supports up to 15 concurrent slots)
-  const handleMultipleFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFiles = e.target.files;
-    if (!rawFiles || rawFiles.length === 0) return;
+  const handleMultipleFilesUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files as FileList | null ?? []);
+    event.currentTarget.value = "";
+    if (files.length) void uploadCaseFiles(files);
+  };
 
-    const filesArray: File[] = Array.from(rawFiles);
-      
+  const uploadCaseFiles = async (filesArray: File[]) => {
     // Tiered Limits check
     const customFilesCount = organizedFiles.filter(f => !f.id.startsWith("preloaded-")).length;
     if (customFilesCount + filesArray.length > 20) {
       setCustomUploadError("You have reached the maximum allowed limit of 20 files.");
-      e.target.value = "";
       return;
     }
 
     if (filesArray.length > 15) {
       setCustomUploadError("Bulk analyze limit: You can upload up to 15 concurrent files in a single batch for quick analyze. Please select fewer files to upload in this batch.");
-      e.target.value = "";
       return;
     }
 
@@ -1540,25 +1757,9 @@ export default function DocumentAnalyzerTab() {
         : "";
       let finalMimeType = f.type || inferredMimeType || "application/octet-stream";
 
-      let processedFile: File | Blob = f;
-      const isHEIC = nameL.endsWith(".heic") || nameL.endsWith(".heif") || f.type === "image/heic" || f.type === "image/heif";
-
-      if (isHEIC) {
-        try {
-          const heic2any = (await import("heic2any")).default;
-          const convertedBlob = await heic2any({
-            blob: f,
-            toType: "image/jpeg",
-            quality: 0.8
-          });
-          const singleBlob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-          processedFile = singleBlob;
-          finalName = f.name.replace(/\.(heic|heif)$/i, ".jpg");
-          finalMimeType = "image/jpeg";
-        } catch (err: any) {
-          console.error("HEIC conversion failed:", err);
-        }
-      }
+      // HEIC/HEIF photos are sent as uploaded: the server recognises them and OCRs them natively. (The former
+      // in-browser converter required 'unsafe-eval' in the Content Security Policy.)
+      const processedFile: File | Blob = f;
 
       const isAudio = finalMimeType.startsWith("audio/") || 
                       nameL.endsWith(".mp3") || 
@@ -1646,14 +1847,15 @@ export default function DocumentAnalyzerTab() {
     setOrganizedFiles(prev => [...prev, ...chunkedFiles]);
     setSelectedFileId(chunkedFiles[0]?.id || null);
     setSelectedReport(null);
-    e.target.value = "";
     // Single-file uploads use full streaming and stage callbacks; batches use parallel engine
     if (chunkedFiles.length === 1) {
+      // The single-file path shows its own progress, so the upload message is cleared once the file is read.
+      setBulkProgress("");
       await triggerSingleAnalysis(chunkedFiles[0]);
     } else if (chunkedFiles.length > 1) {
       await runParallelBulkAnalysis(chunkedFiles);
     } else {
-      setBulkProgress(null);
+      setBulkProgress("");
     }
   };
 
@@ -1723,13 +1925,14 @@ export default function DocumentAnalyzerTab() {
                       });
                       // safeReadJson throws an ApiResponseError (status, code, retryable) for any non-2xx response.
                       const extractResult = await safeReadJson(extractResponse);
+                      requireCompleteExtraction(extractResult);
                       if (!extractResult.extractedText) {
                         throw new Error("No readable text could be extracted from this document.");
                       }
                       payload.textContent = extractResult.extractedText;
                       extractedContentById[file.id] = extractResult.extractedText;
                       setOrganizedFiles(prev => prev.map(f => f.id === file.id
-                        ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+                        ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
                     }
                     textForFile = payload.textContent;
 
@@ -1837,6 +2040,7 @@ export default function DocumentAnalyzerTab() {
     stopWaitingRef.current = false;
     setIsSingleAnalyzing(true);
     setCompletedSections([]);
+    setPreliminaryBrief("");
     setSingleAnalysisErrorCode(null);
     setSingleAnalysisError("");
     setSelectedReport(null);
@@ -1884,12 +2088,13 @@ export default function DocumentAnalyzerTab() {
         if (!extractResponse.ok) {
           throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
         }
+        requireCompleteExtraction(extractResult);
         if (!extractResult.extractedText) {
           throw new Error("No readable text could be extracted from this document.");
         }
         payload.textContent = extractResult.extractedText;
         setOrganizedFiles(prev => prev.map(f => f.id === file.id
-          ? { ...f, sourcePages: extractResult.pages, content: extractResult.extractedText } : f));
+          ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
       }
 
       // One analysis per click, retried under the shared policy (shared/analyzerRetryPolicy.ts). Every attempt carries
@@ -1903,6 +2108,7 @@ export default function DocumentAnalyzerTab() {
       let report: any = null;
       setAnalyzerState("AUTHENTICATING");
       setStreamingProgress({ stage: "verifying_access", percent: 30, message: "Verifying account authorization & entitlements..." });
+      const storedSessionToken = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token") || undefined;
       const postAnalysis = () => apiFetch("/api/analyze", {
         method: "POST",
         headers: {
@@ -1916,16 +2122,28 @@ export default function DocumentAnalyzerTab() {
           model: claudeModel,
           stream: true,
           analysisId,
+          sessionId: storedSessionToken,
         })
       });
       report = await runAnalysisWithRetry({
         attempt: async () => {
           const response = await postAnalysis();
+          if (response.status === 202) {
+            return readAnalysisResponse(response, {
+              onStage: (stage, percent, message) => {
+                setLastActivityAt(Date.now());
+                setIsProcessingStalled(false);
+                setStreamingProgress(prev => ({ ...prev, stage, percent: Math.max(prev.percent, percent), message }));
+              },
+            }, { isCancelled: () => stopWaitingRef.current });
+          }
           const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
           // A JSON reply is a saved report (200) or an error (thrown by safeReadJson with its code and retryable flag).
           if (!isStream) return safeReadJson(response);
           return readAnalysisEventStream(response, {
             onStage: (stage, percent, message) => {
+              setLastActivityAt(Date.now());
+              setIsProcessingStalled(false);
               if (stage === "extracting") setAnalyzerState("EXTRACTING");
               else if (stage === "verifying_access") setAnalyzerState("VERIFYING_ACCESS");
               else if (stage === "reviewing_evidence" || stage === "identifying_legal_issues" || stage === "building_chronology") setAnalyzerState("ANALYZING");
@@ -1933,8 +2151,18 @@ export default function DocumentAnalyzerTab() {
               else if (stage === "preparing_report") setAnalyzerState("SAVING");
               setStreamingProgress(prev => ({ stage, percent: Math.max(prev.percent, percent), message }));
             },
-            onSection: (section) => {
+            onSection: (section, data) => {
+              setLastActivityAt(Date.now());
+              setIsProcessingStalled(false);
+              if (section === "preliminaryBrief" && typeof data?.text === "string") {
+                setPreliminaryBrief(data.text);
+                return;
+              }
               setCompletedSections(prev => (prev.includes(section) ? prev : [...prev, section]));
+            },
+            onHeartbeat: () => {
+              setLastActivityAt(Date.now());
+              setIsProcessingStalled(false);
             },
             onError: () => {
               setAnalyzerState("ERROR");
@@ -1948,10 +2176,57 @@ export default function DocumentAnalyzerTab() {
         },
       });
 
+      if (!report.complianceMatrix) {
+        try {
+          report.complianceMatrix = buildComplianceMatrixFromReport(
+            {
+              documentType: report.documentType,
+              executiveSummary: report.fileSummary,
+              statutoryFindings: (report.redFlags || []).map((rf: any) => ({
+                title: rf.category,
+                statute: rf.legalReference,
+                description: rf.explanation,
+                severity: rf.severity,
+                evidenceQuotes: rf.phraseDetected ? [rf.phraseDetected] : [],
+              })),
+              contradictions: (report.contradictions || []).map((c: any) => ({
+                claim: c.statementA || c.description,
+                counterEvidence: c.statementB || c.counterEvidence,
+                significance: c.explanation || c.significance,
+              })),
+            },
+            payload.textContent || file.content || ""
+          );
+        } catch (e) {
+          console.warn("Unable to generate client fallback compliance matrix", e);
+        }
+      }
+
       setSelectedReport(report);
       setAnalyzerState("COMPLETE");
       forgetAnalysisJobId();
       setActiveJobId(null);
+      setIsRecoveringJob(false);
+      setIsSingleAnalyzing(false);
+      setIsProcessingStalled(false);
+
+      if (analysisMode === "fast") {
+        setQuickReviewSnapshots(prev => {
+          const updated = { ...prev, [file.id]: report };
+          try { localStorage.setItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS", JSON.stringify(updated)); }
+          catch {}
+          return updated;
+        });
+        setActiveReportMode("quick");
+      } else {
+        setDeepScanReports(prev => {
+          const updated = { ...prev, [file.id]: report };
+          try { localStorage.setItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS", JSON.stringify(updated)); }
+          catch {}
+          return updated;
+        });
+        setActiveReportMode("deep");
+      }
 
       // BUG FIX (flagged in audit, same root cause as the bulk-upload path above): persist the
       // real extracted text onto content, not just the analysis report, so the Cross-Document
@@ -1984,12 +2259,17 @@ export default function DocumentAnalyzerTab() {
       }
       const errMsg = err.message || "Failed single scan.";
       setSingleAnalysisError(errMsg);
+      setIsRecoveringJob(false);
+      setIsSingleAnalyzing(false);
+      setIsProcessingStalled(false);
       setOrganizedFiles(prev => prev.map(f => 
         f.id === file.id ? { ...f, analysisStatus: "failed", analysisError: errMsg } : f
       ));
     } finally {
       analysisInFlightRef.current = false;
       setIsSingleAnalyzing(false);
+      setIsRecoveringJob(false);
+      setIsProcessingStalled(false);
       fetchCreditBalance();
     }
   };
@@ -2178,7 +2458,7 @@ export default function DocumentAnalyzerTab() {
           cursor: pointer;
           margin-bottom: 25px;
         }
-        @page { size: A4; margin: 13mm 12mm; }
+        @page { size: A4; margin: 13mm 12mm 16mm; @bottom-center { content: "CYFSA Navigator — Page " counter(page) " of " counter(pages); font-family: sans-serif; font-size: 8px; color: #64748b; } }
         @media print {
           .no-print-btn { display: none !important; }
           body { margin: 0; line-height: 1.35; font-size: 10px; }
@@ -2188,6 +2468,9 @@ export default function DocumentAnalyzerTab() {
           .data-table tr { break-inside: auto !important; }
           .finding { break-inside: avoid; margin: 5px 0; overflow-wrap: anywhere; }
           .section-title { break-after: avoid; margin-bottom: 8px !important; }
+          .end-matter .legal-notice { margin-top: 14px; padding: 8px 10px; font-size: 9px; }
+          .end-matter { break-before: avoid; page-break-before: avoid; break-inside: avoid; page-break-inside: avoid; }
+          .end-matter .footer-signature { margin-top: 8px; padding-top: 6px; font-size: 8.5px; }
         }
         .header-container {
           border-bottom: 3px double #4f46e5;
@@ -2416,7 +2699,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">🔍 Consultation Session Log</h3>
+          <h3 class="section-title">Consultation Session Log</h3>
           <div style="margin-top: 15px;">
             ${redactionEnabled ? "<p>The consultation transcript is not included in a redacted copy.</p>" : ragChatMessages.map(msg => {
               const author = msg.sender === "user" ? "Client (Parent)" : "CYFSA AI Statutory Assistant";
@@ -2442,7 +2725,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">🔗 Statute Links (check against e-Laws)</h3>
+          <h3 class="section-title">Statute Links (check against e-Laws)</h3>
           <p style="font-size:12px; color:#475569; margin-bottom:12px;">Only provisions whose text this app has checked against the bundled CYFSA text are listed. Check the current text on e-Laws before relying on it:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             ${Object.values(BUNDLED_STATUTE_ENTRIES).map((entry) => `<li><strong>${entry.citation} (${entry.heading}):</strong> <a href="${STATUTE_ROOT_URL}" target="_blank" style="color:#4f46e5; text-decoration:underline;">${STATUTE_ROOT_URL}</a></li>`).join("\n            ")}
@@ -2450,29 +2733,32 @@ export default function DocumentAnalyzerTab() {
         </div>
       `;
     } else if (activeTab === "organizer" && reportMode === "deep" && deepReport) {
-      title = `Forensic Deep Scan - ${displayFileName || "Document"}`;
-      const renderValue = (value: unknown): string => {
-        if (value === null || value === undefined) return "Not provided in this report";
-        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return escapeHtml(String(value));
-        if (Array.isArray(value)) return value.map((item, index) => `<div class="finding"><strong>${index + 1}.</strong> ${renderValue(item)}</div>`).join("");
-        return Object.entries(value as Record<string, unknown>).map(([key, entry]) => `<div class="finding"><strong>${escapeHtml(key.replace(/([A-Z])/g, " $1"))}:</strong> ${renderValue(entry)}</div>`).join("");
-      };
-      bodyContent = `<header class="header-container"><span class="platform-label">CYFSA Navigator • Forensic Deep Scan</span><h1 class="title-main">${escapeHtml(title)}</h1><p>Separate forensic findings. This report is not the original Quick Review.</p></header>${Object.entries(deepReport).filter(([key]) => !["timestamp", "documentText"].includes(key)).map(([key, value]) => `<section class="section-card"><h2 class="section-title">${escapeHtml(key.replace(/([A-Z])/g, " $1"))}</h2>${renderValue(value)}</section>`).join("")}`;
+      const fullHtml = renderForensicReportHtml(deepReport, {
+        fileName: displayFileName,
+        redactionEnabled,
+        audienceMode: "full"
+      });
+      printWindow.document.write(fullHtml);
+      printWindow.document.close();
+      finishPrintWindow(printWindow);
+      return;
     } else if (activeTab === "organizer" && reportForExport) {
       title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || displayFileName || "Report")}`;
       const evidenceIndex = reportForExport.evidenceStrengthIndex || {
-        score: 0,
+        score: null,
         components: {},
         limitations: "Evidence Strength Index data was not present in this report. Re-run the analysis with the current analyzer."
       };
 
-      const evidenceScore = Number(evidenceIndex.score) || 0;
+      const evidenceScored = isScored(evidenceIndex.score);
+      const evidenceScore = evidenceScored ? Number(evidenceIndex.score) : 0;
       const evidenceScoreColor =
         evidenceScore >= 80 ? "#16a34a" :
         evidenceScore >= 50 ? "#d97706" :
         "#dc2626";
 
-      const completenessScore = Number(reportForExport.completenessScore) || 0;
+      const completenessScored = isScored(reportForExport.completenessScore);
+      const completenessScore = completenessScored ? Number(reportForExport.completenessScore) : 0;
       const components = evidenceIndex.components || {};
 
       const evidenceComponents = [
@@ -2493,16 +2779,23 @@ export default function DocumentAnalyzerTab() {
 
           <div class="meta-bar">
             Document Checked:
-            <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "N/A")}</strong>
+            <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "Not stated in the document")}</strong>
             • Type:
-            <strong>${escapeHtml(reportForExport.documentType || "Casework Correspondence")}</strong>
+            <strong>${escapeHtml(reportForExport.documentType || "Not stated in the document")}</strong>
             • Date of Audit:
-            <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Current")}</strong>
+            <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Not recorded")}</strong>
           </div>
         </div>
 
+        ${reportForExport.fileSummary ? `
+          <div class="section-card">
+            <h3 class="section-title">Document Summary</h3>
+            <p style="margin:6px 0 0; white-space:pre-wrap;">${escapeHtml(String(reportForExport.fileSummary))}</p>
+          </div>
+        ` : ""}
+
         <div class="section-card">
-          <h3 class="section-title">📊 Educational Evidence Strength Summary</h3>
+          <h3 class="section-title">Educational Evidence Strength Summary</h3>
 
           <div style="display:flex; gap:40px; align-items:center; margin-top:10px; flex-wrap:wrap;">
             <div>
@@ -2511,8 +2804,8 @@ export default function DocumentAnalyzerTab() {
               </span>
 
               <div style="font-size:32px; font-weight:800; color:${evidenceScoreColor}; margin-top:5px;">
-                ${evidenceScore}
-                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
+                ${evidenceScored ? `${evidenceScore}
+                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>` : `<span style="font-size:18px; color:#64748b;">Not scored</span>`}
               </div>
             </div>
 
@@ -2540,14 +2833,14 @@ export default function DocumentAnalyzerTab() {
             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px;">
               ${evidenceComponents.map(([key, label, max]) => {
                 const component = components[key] || {};
-                const value = Number(component.score) || 0;
+                const value = isScored(component.score) ? `${Number(component.score)}/${max}` : "Not scored";
 
                 return `
                   <div style="border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc;">
                     <div style="display:flex; justify-content:space-between; gap:10px;">
                       <strong style="font-size:12px; color:#334155;">${label}</strong>
                       <span style="font-size:12px; font-weight:800; color:#475569;">
-                        ${value}/${max}
+                        ${value}
                       </span>
                     </div>
 
@@ -2566,7 +2859,7 @@ export default function DocumentAnalyzerTab() {
             </strong>
 
             <span style="font-size:12px; color:#475569;">
-              ${completenessScore}/100
+              ${completenessScored ? `${completenessScore}/100` : "Not scored"}
             </span>
 
             <div style="font-size:11px; color:#64748b; margin-top:4px;">
@@ -2585,7 +2878,7 @@ export default function DocumentAnalyzerTab() {
 
         ${reportForExport.redFlags && reportForExport.redFlags.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">⚠️ Hearsay & Subjective Opinion Red Flags</h3>
+            <h3 class="section-title">Hearsay & Subjective Opinion Red Flags</h3>
             <p style="font-size: 12.5px; color: #64748b; margin-bottom: 15px;">
               The following assertions or opinions extracted from this file carry an inherent risk of being unsworn out-of-court narratives. Direct parental counters are compiled inline to assist your counsel.
             </p>
@@ -2629,7 +2922,7 @@ export default function DocumentAnalyzerTab() {
           <div class="section-card">
             <h3 class="section-title">Independent second review</h3>
             <p style="font-size:12px; color:#334155;">
-              ${reportForExport.forensicVerification.status === "completed"
+              ${isSecondReviewComplete(reportForExport.forensicVerification)
                 ? `Completed: ${reportForExport.forensicVerification.checkedFindings ?? 0} findings checked against the document by a second model. ${escapeHtml(reportForExport.forensicVerification.overallAssessment || "")}`
                 : escapeHtml(reportForExport.forensicVerification.reason || "Not completed. The findings were not second-reviewed.")}
             </p>
@@ -2642,7 +2935,7 @@ export default function DocumentAnalyzerTab() {
             <table class="data-table">
               <thead><tr><th style="width:18%">Date</th><th>Event</th><th style="width:14%">Evidence</th><th style="width:18%">Source</th></tr></thead>
               <tbody>
-                ${reportForExport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(e.evidenceClassification || "")}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
+                ${reportForExport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(evidenceLabel(e.evidenceClassification))}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
               </tbody>
             </table>
           </div>
@@ -2657,7 +2950,7 @@ export default function DocumentAnalyzerTab() {
 
         ${reportForExport.thresholdAnalysis && reportForExport.thresholdAnalysis.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">⚖️ Statutory Protection Threshold Appraisals</h3>
+            <h3 class="section-title">Statutory Protection Threshold Appraisals</h3>
             <table class="data-table">
               <thead>
                 <tr>
@@ -2687,7 +2980,7 @@ export default function DocumentAnalyzerTab() {
 
         ${reportForExport.proceduralTimelineViolations && reportForExport.proceduralTimelineViolations.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">⏳ Statutory Timelines & Procedural Violations</h3>
+            <h3 class="section-title">Statutory Timelines & Procedural Violations</h3>
             <table class="data-table">
               <thead>
                 <tr>
@@ -2716,7 +3009,7 @@ export default function DocumentAnalyzerTab() {
 
         ${reportForExport.charterAndHumanRightsIssues && reportForExport.charterAndHumanRightsIssues.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">✊ Human & Charter Rights Observations</h3>
+            <h3 class="section-title">Human & Charter Rights Observations</h3>
             <ul class="bullet-list">
               ${reportForExport.charterAndHumanRightsIssues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
             </ul>
@@ -2724,7 +3017,10 @@ export default function DocumentAnalyzerTab() {
         ` : ""}
 
         <div class="section-card">
-          <h3 class="section-title">📋 Practical Verification & Next Steps Guide</h3>
+          <h3 class="section-title">Practical Verification & Next Steps Guide</h3>
+          ${![reportForExport.whatToVerify, reportForExport.whatToAskALawyer, reportForExport.whatIsMissing].some(list => Array.isArray(list) && list.length > 0) ? `
+            <p style="color:#64748b;">Not stated in the document.</p>
+          ` : ""}
           ${reportForExport.whatToVerify && reportForExport.whatToVerify.length > 0 ? `
             <div style="margin-bottom: 15px;">
               <strong style="font-size: 13px; color: #0f172a;">Information to Verify & Double-Check:</strong>
@@ -2767,7 +3063,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">📂 Document Repository Index</h3>
+          <h3 class="section-title">Document Repository Index</h3>
           <p style="font-size:12.5px; color:#475569; margin-bottom:15px;">The following catalog groups and archives parent-retained documents and affidavits in a structured, litigation-safe sequence.</p>
           
           <table class="data-table">
@@ -2810,30 +3106,27 @@ export default function DocumentAnalyzerTab() {
           ${sharedStyle}
         </head>
         <body>
-          <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
+          <button class="no-print-btn" data-print-button>Print / Save as PDF</button>
 
           ${redactionNotice}
           ${bodyContent}
 
-          <div class="legal-notice">
-            <strong>MANDATORY LEGAL EDUCATIONAL STATEMENT:</strong> This document is generated for informational/educational objectives only under secondary statutory guidelines of the Child, Youth and Family Services Act (CYFSA) S.O. 2017, Chapter 14. This does not represent formal counsel or legal aid representations. Please immediately secure local, verified counsel from the Law Society of Ontario or Legal Aid Ontario to represent your case before the Court.
-          </div>
+          <div class="end-matter">
+            <div class="legal-notice">
+              <strong>MANDATORY LEGAL EDUCATIONAL STATEMENT:</strong> This document is generated for informational/educational objectives only under secondary statutory guidelines of the Child, Youth and Family Services Act (CYFSA) S.O. 2017, Chapter 14. This does not represent formal counsel or legal aid representations. Please immediately secure local, verified counsel from the Law Society of Ontario or Legal Aid Ontario to represent your case before the Court.
+            </div>
 
-          <div class="footer-signature">
-            Statute entries in this report were not checked against the official text. Confirm them on e-Laws or with counsel. • Saved dynamically via OPA PDF Legal Desk.
+            <div class="footer-signature">
+              Statute entries in this report were not checked against the official text. Confirm them on e-Laws or with counsel. • Saved dynamically via OPA PDF Legal Desk.
+            </div>
           </div>
-
-          <script>
-            setTimeout(() => {
-              window.print();
-            }, 600);
-          </script>
         </body>
       </html>
     `;
 
     printWindow.document.write(htmlContent);
     printWindow.document.close();
+    finishPrintWindow(printWindow);
   };
 
   // Mount file select trigger shortcut to window scope
@@ -2857,6 +3150,41 @@ export default function DocumentAnalyzerTab() {
 
   const activeSelectedFile = organizedFiles.find(f => f.id === selectedFileId);
 
+  const hasTerminalFailure = Boolean(
+    singleAnalysisError ||
+    activeSelectedFile?.analysisStatus === "failed" ||
+    analyzerState === "ERROR"
+  );
+  const isActivelyAnalyzing = !hasTerminalFailure && Boolean(
+    activeSelectedFile?.analysisStatus === "analyzing" ||
+    isSingleAnalyzing ||
+    isRecoveringJob
+  );
+
+  const currentQuickReport = activeSelectedFile
+    ? (quickReviewSnapshots[activeSelectedFile.id] || (!isReportForensic(activeSelectedFile.analysisReport) ? activeSelectedFile.analysisReport : null))
+    : null;
+  const currentDeepReport = activeSelectedFile
+    ? (deepScanReports[activeSelectedFile.id] || (isReportForensic(activeSelectedFile.analysisReport) ? activeSelectedFile.analysisReport : null))
+    : null;
+
+  const displayedReport = (activeReportMode === "deep" && currentDeepReport)
+    ? currentDeepReport
+    : (currentQuickReport || currentDeepReport || selectedReport);
+
+  const briefExportOptions = {
+    fileName: activeSelectedFile?.name,
+    analyzerLabel: activeReportMode === "deep" && currentDeepReport ? "Forensic Deep Scan" : "Quick Document Review",
+  };
+
+  const reportSegments = useMemo<NarrationSegment[]>(() => {
+    return displayedReport ? extractReportSegments(displayedReport) : [];
+  }, [displayedReport]);
+
+  const getReportSegment = useCallback((id: string): NarrationSegment | null => {
+    return reportSegments.find(s => s.id === id) || null;
+  }, [reportSegments]);
+
   // Group files count by category for rendering directories
   const categoriesList: OrganizedFile["category"][] = [
     "CAS Correspondence",
@@ -2869,9 +3197,12 @@ export default function DocumentAnalyzerTab() {
   return (
     <div className="space-y-3 w-full max-w-full overflow-x-hidden break-words font-sans analyzer-reading-workspace" id="document-analyzer-tab">
       
+      <FinalCaseAssessment redactionEnabled={redactionEnabled} />
       {/* Platform Sub-Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 border-b border-gray-100 pb-4">
-        <div className="text-left">
+      {/* Title and introduction on their own full-width row, controls below. Side by side, the controls (four groups)
+          took their full width and squeezed the introduction into a ~120 px column at every desktop width. */}
+      <div className="flex flex-col gap-4 border-b border-gray-100 pb-4">
+        <div className="text-left min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="px-2.5 py-1 bg-brand-900 text-white rounded-lg text-xs font-sans font-bold tracking-wider uppercase flex items-center gap-1 shadow-xs">
               <Library className="w-3.5 h-3.5" /> Your case documents
@@ -2889,7 +3220,7 @@ export default function DocumentAnalyzerTab() {
                 <span className="px-2.5 py-1 bg-red-100 border border-red-300 text-red-900 rounded-lg text-xs font-sans font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
                   <AlertTriangle className="w-3.5 h-3.5 text-red-600" /> Account Suspended
                 </span>
-              ) : creditBalance.creditsRemaining <= 0 ? (
+              ) : creditBalance.creditsRemaining !== null && creditBalance.creditsRemaining <= 0 ? (
                 <div className="flex items-center gap-1.5" id="credit-status-pill">
                   <span className="px-2.5 py-1 bg-amber-100 border border-amber-300 text-amber-900 rounded-lg text-xs font-sans font-bold uppercase tracking-wider flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> 0 Analyses Remaining
@@ -2905,21 +3236,21 @@ export default function DocumentAnalyzerTab() {
               ) : (
                 <span className="px-2.5 py-1 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg text-xs font-sans font-bold uppercase tracking-wider flex items-center gap-1" id="credit-status-pill">
                   <CheckCircle className="w-3.5 h-3.5 text-indigo-600" />
-                  {creditBalance.tier === "free" ? "Free Account" : creditBalance.tier}: {creditBalance.creditsRemaining} of {creditBalance.creditsLimit} analyses remaining
+                  {creditPillLabel(creditBalance)}
                 </span>
               )
             )}
           </div>
           <h2 className="font-display text-2xl font-bold text-gray-900 mt-2">Ontario Child Welfare File Organizer & Case Assistant</h2>
-          <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
+          <p className="text-sm text-slate-600 mt-1 max-w-3xl leading-relaxed">
             Manage text logs, school journals, and CAS documents. Upload up to 15 files at a time to quick-analyze, then perform a deep scan on each to see if crucial evidence is missing. You can query your files instantly using the Case Assistant.
           </p>
         </div>
 
                 {/* Action tabs switcher & Session persistence */}
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center self-start">
+        <div className="flex flex-wrap gap-3 items-stretch sm:items-center min-w-0">
           {/* Analysis Mode Selector */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
+          <div className="flex min-w-0 max-w-full items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
             <span className="text-[10px] text-slate-500 font-sans pl-1 shrink-0 flex items-center gap-1 font-bold uppercase tracking-wider">
               Analysis Mode
             </span>
@@ -2930,7 +3261,7 @@ export default function DocumentAnalyzerTab() {
                 setAnalysisMode(nextMode);
                 setClaudeModel(nextMode === "full" ? "claude-3-opus-20240229" : "claude-sonnet-5");
               }}
-              className="text-[10px] font-sans bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors font-medium"
+              className="min-w-0 max-w-full truncate text-[10px] font-sans bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-700 cursor-pointer hover:border-brand-300 transition-colors font-medium"
               aria-label="Analysis Mode"
             >
               <option value="fast">Quick Document Review (Core Audit)</option>
@@ -2957,7 +3288,7 @@ export default function DocumentAnalyzerTab() {
           </div>
           
           {/* Active Session status & manual save controller */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-100 rounded-xl p-1.5 border border-slate-200">
             <span className="text-[10px] text-slate-500 font-sans pl-1 shrink-0 flex items-center gap-1">
               <span className={`w-1.5 h-1.5 rounded-full ${saveStatus ? "bg-brand-500 animate-bounce" : "bg-emerald-500 animate-pulse"}`} />
               {saveStatus ? saveStatus : "Auto-saved"}
@@ -2965,7 +3296,7 @@ export default function DocumentAnalyzerTab() {
 
             <button
               onClick={saveProgress}
-              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
+              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs whitespace-nowrap"
               title="Save all changes securely to browser storage"
             >
               <Save className="w-3 h-3 text-brand-600" />
@@ -2974,11 +3305,33 @@ export default function DocumentAnalyzerTab() {
 
             <button
               onClick={exportSummaryLog}
-              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
+              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs whitespace-nowrap"
               title="Export a summary log of all analyzed documents and chat history as a chronological text report"
             >
               <Download className="w-3 h-3 text-brand-600" />
               Export Summary Log
+            </button>
+
+            <button
+              type="button"
+              id="start-new-analysis-btn"
+              onClick={() => {
+                const running = isSingleAnalyzing || isBulkAnalyzing;
+                if (running) {
+                  setConfirmModal({
+                    message: "Stop waiting on the current analysis?",
+                    description: "The server keeps working on it. Reopen this page later to see the result. Your documents and saved reports are kept.",
+                    onConfirm: () => startNewAnalysis(),
+                  });
+                } else {
+                  startNewAnalysis();
+                }
+              }}
+              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs whitespace-nowrap"
+              title="Clears the report on screen and any stale progress. Documents, saved reports and running server jobs are not deleted."
+            >
+              <Sparkles className="w-3 h-3 text-brand-600" />
+              Start New Analysis
             </button>
 
             <button
@@ -2991,7 +3344,7 @@ export default function DocumentAnalyzerTab() {
                   }
                 });
               }}
-              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs"
+              className="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 font-sans font-bold text-[10px] rounded mr-1 cursor-pointer border border-slate-200 uppercase tracking-wide flex items-center gap-1 transition-all hover:shadow-2xs whitespace-nowrap"
               title="Wipe full stored cache"
               id="wipe-session-btn"
             >
@@ -3000,11 +3353,11 @@ export default function DocumentAnalyzerTab() {
             </button>
           </div>
 
-          <div className="flex p-1 bg-[#f1f5f9] rounded-xl">
+          <div className="flex flex-wrap p-1 bg-[#f1f5f9] rounded-xl">
             <button 
               type="button"
               onClick={() => setActiveTab("organizer")}
-              className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 activeTab === "organizer" 
                   ? "bg-white text-gray-900 shadow-xs" 
                   : "text-slate-600 hover:text-gray-900"
@@ -3015,7 +3368,7 @@ export default function DocumentAnalyzerTab() {
             <button 
               type="button"
               onClick={() => setActiveTab("rag-chat")}
-              className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 activeTab === "rag-chat" 
                   ? "bg-white text-gray-900 shadow-xs" 
                   : "text-slate-600 hover:text-gray-900"
@@ -3026,7 +3379,7 @@ export default function DocumentAnalyzerTab() {
             <button 
               type="button"
               onClick={() => setActiveTab("saved-briefs")}
-              className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-4 py-2 font-display font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 activeTab === "saved-briefs" 
                   ? "bg-white text-gray-900 shadow-xs" 
                   : "text-slate-600 hover:text-gray-900"
@@ -3080,6 +3433,7 @@ export default function DocumentAnalyzerTab() {
                   Supports PDF, DOCX, TXT, HEIC/HEIF, Photo, and Audio recordings • Auto-transcribed & Stored in PDF format
                 </span>
               </div>
+              <PaperDocumentScanner onUpload={uploadCaseFiles} disabled={Boolean(bulkProgress) || organizedFiles.filter(file => !file.id.startsWith("preloaded-")).length >= 20} />
             </div>
               
               {customUploadError && (
@@ -3133,8 +3487,7 @@ export default function DocumentAnalyzerTab() {
                               id={`file-item-${item.id}`}
                               key={item.id}
                               onClick={() => {
-                                setSelectedFileId(item.id);
-                                setSelectedReport(item.analysisReport || null);
+                                selectFileAndAlignMode(item.id, item.analysisReport);
                                 // Capture original document text for redaction
                                 if (item.content && typeof item.content === 'string') {
                                   // If it's base64 (PDF/image), decode first if possible; otherwise use as-is
@@ -3442,23 +3795,35 @@ export default function DocumentAnalyzerTab() {
 
                     {/* Automatic Pipeline Stage Indicator & Retry button */}
                     <div className="flex items-center gap-2 shrink-0">
-                      {(activeSelectedFile.analysisStatus === "analyzing" || isSingleAnalyzing || isRecoveringJob) && (
-                        <span className="px-3 py-1.5 bg-brand-50 text-brand-800 border border-brand-200 rounded-lg text-xs font-sans font-bold flex items-center gap-1.5">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-600" />
-                          <span>{streamingProgress.message || "Analyzing key issues & evidence strength..."}</span>
+                      {isActivelyAnalyzing && (
+                        <span className={`px-3 py-1.5 rounded-lg text-xs font-sans font-bold flex items-center gap-1.5 border ${
+                          isProcessingStalled
+                            ? "bg-amber-50 text-amber-800 border-amber-300"
+                            : "bg-brand-50 text-brand-800 border-brand-200"
+                        }`}>
+                          <Loader2 className={`w-3.5 h-3.5 animate-spin ${isProcessingStalled ? "text-amber-600" : "text-brand-600"}`} />
+                          <span>{isProcessingStalled ? "Waiting on server response..." : (streamingProgress.message || "Analyzing key issues & evidence strength...")}</span>
                         </span>
                       )}
 
-                      {activeSelectedFile.analysisStatus === "completed" && (
+                      {activeSelectedFile.analysisStatus === "completed" && !hasTerminalFailure && (
                         <span className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-sans font-bold flex items-center gap-1.5">
                           <Check className="w-4 h-4 text-emerald-600" />
-                          <span>Fast Analysis Complete</span>
+                          <span>{activeReportMode === "deep" ? "Forensic Deep Scan Complete" : "Fast Analysis Complete"}</span>
                         </span>
                       )}
 
-                      {activeSelectedFile.analysisStatus === "failed" && !isSingleAnalyzing && !isRecoveringJob && (
+                      {hasTerminalFailure && (
                         <button
-                          onClick={() => triggerSingleAnalysis(activeSelectedFile)}
+                          onClick={() => {
+                            setSingleAnalysisError("");
+                            setSingleAnalysisErrorCode(null);
+                            setAnalyzerState("IDLE");
+                            setIsProcessingStalled(false);
+                            setIsRecoveringJob(false);
+                            setIsSingleAnalyzing(false);
+                            triggerSingleAnalysis(activeSelectedFile);
+                          }}
                           className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
                         >
                           <RefreshCw className="w-3.5 h-3.5" />
@@ -3512,9 +3877,9 @@ export default function DocumentAnalyzerTab() {
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Word and Character Count Counter */}
                         <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded text-[10px] font-sans text-slate-600">
-                          <span>Characters: <strong>{activeSelectedFile.content.length.toLocaleString()}</strong></span>
+                          <span>Characters: <strong>{(activeSelectedFile.mimeType === "text/plain" || activeSelectedFile.sourcePages ? activeSelectedFile.content.length.toLocaleString() : "Pending extraction")}</strong></span>
                           <span className="text-slate-300">|</span>
-                          <span>Words: <strong>{activeSelectedFile.content ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length.toLocaleString() : "0"}</strong></span>
+                          <span>Words: <strong>{activeSelectedFile.mimeType === "text/plain" || activeSelectedFile.sourcePages ? activeSelectedFile.content.split(/\s+/).filter(Boolean).length.toLocaleString() : "Pending extraction"}</strong></span>
                         </div>
 
                         {activeSelectedFile.name.toLowerCase().includes("transcript") && (
@@ -3573,11 +3938,11 @@ export default function DocumentAnalyzerTab() {
                                         <div class="margin-line"></div>
                                         <pre>${escapeHtml(redactionEnabled ? "The document text is not included in a redacted copy." : activeSelectedFile.content)}</pre>
                                       </div>
-                                      <script>window.print();</script>
                                     </body>
                                   </html>
                                 `);
                                 printWindow.document.close();
+                                finishPrintWindow(printWindow);
                               } else if (redactionEnabled) {
                                 alert("Your browser blocked the print window. Allow pop-ups to print the redacted copy.");
                               } else {
@@ -3627,10 +3992,10 @@ export default function DocumentAnalyzerTab() {
                       // substantial it actually was. Real text extraction for those
                       // files happens server-side (Gemini OCR) during analysis, so we
                       // can't judge word density client-side before that runs.
-                      if (activeSelectedFile.mimeType !== "text/plain") {
+                      if (activeSelectedFile.mimeType !== "text/plain" && !activeSelectedFile.sourcePages) {
                         return (
                           <div className="p-2 border rounded-lg text-[10px] leading-relaxed flex items-center gap-1 px-3 bg-slate-50 text-slate-600 border-slate-200 select-none text-left">
-                            <span>📄 This document will be read via OCR text extraction when you run the audit — its content isn't previewable here beforehand.</span>
+                            <span>📄 Text will be extracted from this document when you run analysis. Scanned pages use OCR.</span>
                           </div>
                         );
                       }
@@ -3738,31 +4103,35 @@ export default function DocumentAnalyzerTab() {
                         <div className="bg-slate-900/60 border border-brand-500/20 rounded-xl p-4 space-y-3 animate-pulse">
                           <div className="flex items-center gap-2 text-xs text-brand-300 font-sans font-bold">
                             <Loader2 className="w-4 h-4 text-brand-400 animate-spin animate-infinite" />
-                            <span>Tracing omissions, evaluating CYFSA thresholds, and constructing defense retorts...</span>
+                            <span>{deepScanProgress.message || "Tracing omissions, evaluating CYFSA thresholds, and constructing defense retorts..."}</span>
                           </div>
                           <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-brand-500 h-full w-[65%] rounded-full" />
+                            <div className="bg-brand-500 h-full rounded-full transition-all duration-300" role="progressbar" aria-label={deepScanProgress.message || "Processing document"} />
                           </div>
                         </div>
                       )}
 
                       {/* Deep Scan Error State */}
                       {deepScanError && !isDeepScanning && !deepScanReports[activeSelectedFile.id] && (
-                        (deepScanError.includes("Purchase additional analyses to continue") || deepScanError.includes("ANALYSIS_LIMIT_REACHED")) ? (
+                        (deepScanError.includes("Purchase additional analyses to continue") || 
+                         deepScanError.includes("ANALYSIS_LIMIT_REACHED") ||
+                         deepScanError.includes("UPGRADE_REQUIRED") ||
+                         deepScanError.includes("requires a paid plan") ||
+                         deepScanError.includes("paid plan")) ? (
                           <div role="alert" className="bg-amber-950/70 border border-amber-400/40 rounded-xl p-4 text-xs text-amber-100 space-y-2" id="deep-scan-limit-reached-banner">
                             <div className="flex items-center gap-2 font-bold text-amber-300 text-sm">
                               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                              <span>Package Analysis Limit Reached</span>
+                              <span>Forensic In-Depth Scan Requires a Paid Plan</span>
                             </div>
                             <p className="leading-relaxed">
-                              You&apos;ve used all analyses included in your package. Purchase additional analyses to continue.
+                              Forensic In-Depth analysis provides comprehensive 6-section statutory assessment and independent verification. Upgrade your plan to continue.
                             </p>
                             <div className="pt-1">
                               <button
                                 onClick={() => setLocation("/pricing")}
                                 className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg transition text-xs flex items-center gap-1.5 cursor-pointer"
                               >
-                                <span>Purchase Additional Analyses</span>
+                                <span>View Plans &amp; Pricing</span>
                                 <ArrowRight className="w-3.5 h-3.5" />
                               </button>
                             </div>
@@ -3849,749 +4218,1163 @@ export default function DocumentAnalyzerTab() {
                   </div>
 
                   {/* Detailed AI Audit Section */}
-                  {selectedReport ? (
-                    <div className="bg-white rounded-2xl border border-[#e2e8f0] p-5 md:p-6 space-y-6 shadow-xs animate-fadeIn">
+                  {displayedReport ? (
+                    <div className="bg-white rounded-2xl border border-[#e2e8f0] p-5 md:p-6 space-y-6 shadow-xs animate-fadeIn text-left">
                       
-                      {/* Sub analysis title */}
-                      <div className="flex justify-between items-center pb-4 border-b border-gray-100">
-                        <div>
-                          <span className="text-[10px] font-sans font-bold uppercase text-brand-600 flex items-center gap-1 leading-none">
-                            <FileCheck className="w-3.5 h-3.5 text-emerald-600" /> Audited Findings
-                          </span>
-                          <h4 className="font-display font-bold text-[#0f172a] text-base mt-1">
-                            {selectedReport.documentTitle}
-                          </h4>
-                        </div>
-                        <div className="text-right flex items-center gap-2 p-2 bg-slate-50 border border-gray-100 rounded-xl shrink-0">
-                          <div>
-                            <span className="text-[8px] font-sans tracking-wider block text-slate-500 font-bold">INTEGRITY WEIGHT</span>
-                            <span className="text-xs text-slate-500">Credibility Index</span>
+                      {/* Top Header Row: Document Title, Credibility Score, Mode Switcher */}
+                      <div 
+                        id="report-overview-card"
+                        className={`flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-gray-100 gap-4 transition-all rounded-xl p-2 ${
+                          narration.isSegmentActive("header-title") ? "ring-2 ring-brand-500 bg-brand-50/50" : ""
+                        }`}
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-sans font-bold uppercase text-brand-600 flex items-center gap-1 leading-none">
+                              <FileCheck className="w-3.5 h-3.5 text-emerald-600" /> Audited Findings
+                            </span>
+                            {/* Mode Indicator Badge */}
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-sans font-bold uppercase tracking-wide border ${
+                              isReportForensic(displayedReport)
+                                ? "bg-purple-100 text-purple-900 border-purple-200"
+                                : "bg-blue-100 text-blue-900 border-blue-200"
+                            }`}>
+                              {isReportForensic(displayedReport) ? "Forensic In-Depth Scan" : "Quick Document Review"}
+                            </span>
                           </div>
-                          <div className="w-9 h-9 rounded-full bg-brand-900 flex items-center justify-center font-display font-extrabold text-white text-xs">
-                            {selectedReport.completenessScore}%
+                          <div className="flex items-center gap-2 mt-1">
+                            <h4 className="font-display font-bold text-[#0f172a] text-lg truncate">
+                              {displayedReport.documentTitle}
+                            </h4>
+                            <ParagraphListenButton 
+                              segment={getReportSegment("header-title") || {
+                                id: "header-title",
+                                sectionId: "overview",
+                                label: "Document Title",
+                                text: `Document Under Review: ${displayedReport.documentTitle || 'Ontario Court Record'}. Classification: ${displayedReport.documentType || 'Ontario Court Record'}.`
+                              }} 
+                              iconOnly 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 shrink-0">
+                          {/* Segmented Mode Switcher (if both Quick Review and Forensic Deep Scan reports exist) */}
+                          {currentQuickReport && currentDeepReport && (
+                            <div className="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200 shadow-2xs">
+                              <button
+                                type="button"
+                                onClick={() => setActiveReportMode("quick")}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                  activeReportMode === "quick" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                                }`}
+                              >
+                                ⚡ Quick Review
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setActiveReportMode("deep")}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                  activeReportMode === "deep" ? "bg-purple-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                                }`}
+                              >
+                                🔬 Forensic Deep Scan
+                              </button>
+                            </div>
+                          )}
+
+                          {/* "Run Deep Scan" action button if deep scan not yet run */}
+                          {!currentDeepReport && (
+                            <button
+                              type="button"
+                              onClick={() => triggerDeepScan(activeSelectedFile)}
+                              disabled={isDeepScanning}
+                              className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 text-white font-semibold text-xs rounded-xl transition shadow-xs hover:shadow-md cursor-pointer flex items-center gap-1.5 uppercase tracking-wide shrink-0 font-display"
+                            >
+                              {isDeepScanning ? (
+                                <>
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Scanning...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3.5 h-3.5 text-purple-200 animate-pulse" />
+                                  <span>Run Deep Scan</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+
+                          {/* Credibility Score Badge */}
+                          <div className="text-right flex items-center gap-2 p-2 bg-slate-50 border border-gray-100 rounded-xl shrink-0">
+                            <div>
+                              <span className="text-[8px] font-sans tracking-wider block text-slate-500 font-bold">INTEGRITY WEIGHT</span>
+                              <span className="text-xs text-slate-500">Credibility Index</span>
+                            </div>
+                            <div className="w-9 h-9 rounded-full bg-brand-900 flex items-center justify-center font-display font-extrabold text-white text-xs">
+                              {displayedReport.completenessScore}%
+                            </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Model & Execution Metadata Banner */}
-                      {selectedReport.modelMetadata && (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-sans font-bold tracking-tight border ${
-                              selectedReport.modelMetadata.mode === "full"
-                                ? "bg-purple-100 text-purple-900 border-purple-200"
-                                : "bg-blue-100 text-blue-900 border-blue-200"
-                            }`}>
-                              {selectedReport.modelMetadata.mode === "full" ? (
-                                <ShieldAlert className="w-3.5 h-3.5 text-purple-700" />
-                              ) : (
-                                <Sparkles className="w-3.5 h-3.5 text-blue-700" />
-                              )}
-                              {selectedReport.modelMetadata.engineName}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-4 text-[11px] font-sans text-slate-600">
-                            <span className="flex items-center gap-1" title="Server Analysis Processing Time">
-                              <Clock className="w-3 h-3 text-slate-400" />
-                              {(selectedReport.modelMetadata.durationMs / 1000).toFixed(1)}s
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 16-section report (feature-flagged). The existing report above is unchanged. */}
-                      {REPORT_SECTIONS_UI_ENABLED && (
-                        <>
-                          <div className="flex flex-wrap gap-2 mt-4">
-                            {(["parent", "professional"] as const).map((audience) => (
-                              <button
-                                key={audience}
-                                type="button"
-                                className="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2"
-                                onClick={() => {
-                                  const html = renderReportSectionsHtml(selectedReport, audience, selectedReport.documentTitle || "Analysis report", { redact: redactionEnabled });
-                                  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-                                  const link = document.createElement("a");
-                                  link.href = url;
-                                  link.download = audience === "parent" ? "cyfsa-report-parent.html" : "cyfsa-report-professional.html";
-                                  link.click();
-                                  URL.revokeObjectURL(url);
-                                }}
-                              >
-                                {audience === "parent" ? "Download parent report (HTML)" : "Download professional report (HTML)"}
-                              </button>
-                            ))}
-                          </div>
-                          <ReportSections report={selectedReport} />
-                        </>
-                      )}
                       {COURT_PREP_UI_ENABLED && (
                         <CourtPrepWorkspace report={selectedReport} documentTitle={selectedReport.documentTitle || "Analysis report"} redact={redactionEnabled} />
                       )}
                       <ParentReportSection report={selectedReport} enabled={PARENT_REPORT_UI_ENABLED} />
                       {PARENT_QA_UI_ENABLED && <EducationalQa report={selectedReport} />}
 
-                      {/* Redaction Toggle & Preview */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-slate-600">
-                            <span className="font-semibold">Preparing to share?</span> Hide names, dates, and file numbers before taking a screenshot or printing.
-                          </div>
-                          <RedactionToggle enabled={redactionEnabled} onToggle={toggleRedaction} />
-                        </div>
-                        
-                        {/* Document Preview with Redaction Applied */}
-                        {originalDocumentText && (
-                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                            <p className="text-[10px] font-sans font-bold uppercase text-slate-600 mb-2">
-                              {redactionEnabled ? "📄 Redacted Document Preview" : "📄 Document Preview"}
-                            </p>
-                            <div className="text-xs leading-relaxed text-slate-800 bg-white p-3 rounded border border-slate-200 font-sans max-h-40 overflow-auto whitespace-pre-wrap break-words">
-                              {redactionEnabled 
-                                ? redactDocumentText(originalDocumentText, knownNamesToRedact)
-                                : originalDocumentText
-                              }
-                              {originalDocumentText.length >= 5000 && <p className="text-slate-500 mt-2">... (document continues)</p>}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Educational disclaimer */}
-                      <div className="p-3 ml-0 bg-[#fffbeb] border border-[#fef3c7]/80 rounded-xl text-xs text-amber-900 flex gap-2">
-                        <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                        <span><strong>Regulatory Notice:</strong> {selectedReport.disclaimer}</span>
-                      </div>
-
-                      {/* Certified Citation & Source Backed Badge Alert */}
-                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 flex gap-2 items-start shadow-2xs">
-                        <Scale className="w-4 h-4 text-emerald-600 shrink-0 mt-1" />
-                        <div className="space-y-1">
-                          <p className="font-bold text-emerald-900 flex items-center gap-1.5">
-                            <span>⚖️</span> Citations & Analysis
-                          </p>
-                          <p className="text-[11px] text-emerald-800 leading-normal">
-                            Where the app has its own entry for a section, the button opens that entry. The entry was not checked against the official statute. The app checks citations only against its list of confirmed section numbers. Confirm every citation with counsel.
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* State-Managed Handover Section */}
-                      <div className="bg-brand-50 border border-brand-100 rounded-2xl p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-3xs">
-                        <div className="space-y-1 text-left">
-                          <h5 className="font-bold text-brand-950 flex items-center gap-1.5 text-xs uppercase tracking-wide leading-tight">
-                            <Sparkles className="w-4 h-4 text-brand-600 animate-pulse shrink-0" /> Auto-populate Legal Court Forms & Statements
-                          </h5>
-                          <p className="text-[11px] text-brand-800 leading-normal">
-                            Directly hand over these audited findings to automatically pre-fill your court reply forms, affidavits, and parental plan of care builders in the Draft Templates workspace.
-                          </p>
-                        </div>
-                        <button
-                          onClick={handleFormHandover}
-                          className="w-full md:w-auto px-4.5 py-2.5 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-brand-700 uppercase tracking-wider shrink-0 font-sans"
-                        >
-                          <FileText className="w-4 h-4" />
-                                                  <span>Handover to Templates</span>
-                        </button>
-                      </div>
-
-                      {/* Lawyer Detailed Case Brief in bullet-form structure */}
-                      {selectedReport.lawyerCaseBrief && selectedReport.lawyerCaseBrief.length > 0 && (
-                        <div className="bg-slate-900 text-white rounded-2xl p-5 md:p-6 space-y-4 shadow-md border border-slate-800 relative overflow-hidden" id="lawyer-detailed-case-brief">
-                          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/10 rounded-full blur-2xl pointer-events-none" />
-                          <div className="flex items-center gap-2 pb-2 border-b border-slate-800">
-                            <Briefcase className="w-5 h-5 text-brand-400" />
-                            <div>
-                              <h5 className="font-display font-bold text-sm tracking-wide text-white uppercase">
-                                Lawyer Detailed Case Brief
-                              </h5>
-                              <p className="text-[10px] text-brand-300 font-sans">
-                                Bullet Form Structure • Ready for Intake Sharing
-                              </p>
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-3.5 pt-1">
-                            {selectedReport.lawyerCaseBrief.map((bullet, idx) => {
-                              const parts = bullet.split("**");
-                              return (
-                                <div key={idx} className="flex items-start gap-3 text-slate-300 leading-relaxed text-xs">
-                                  <span className="text-brand-400 font-bold shrink-0 mt-0.5 select-none">▪</span>
-                                  <p className="text-slate-300">
-                                    {parts.map((part, index) => 
-                                      index % 2 === 1 ? (
-                                        <strong key={index} className="text-white font-semibold">{part}</strong>
-                                      ) : (
-                                        part
-                                      )
-            
-                                                                )}
-                              </p>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          {redactionEnabled && (
-                            <p className="text-[10.5px] text-slate-400">Copy and download are off while redaction is on, because the brief contains case text.</p>
-                          )}
-                          <div className="flex flex-wrap gap-2.5 pt-4 border-t border-slate-800/85">
-                            <button
-                              onClick={() => {
-                                const textToCopy = redactionEnabled ? undefined : selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
-                                if (textToCopy) {
-                                  navigator.clipboard.writeText(textToCopy).then(
-                                    () => alert("Success: Lawyer Case Brief copied to clipboard!"),
-                                    () => alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access.")
-                                  );
-                                }
-                              }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
-                              title="Copy brief text to clipboard"
-                            >
-                              <Copy className="w-3.5 h-3.5 text-brand-400" />
-                              <span>Copy Brief Text</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                const textToCopy = redactionEnabled ? undefined : selectedReport.lawyerCaseBrief?.map(b => b.replace(/\*\*/g, "")).join("\n\n");
-                                if (textToCopy) {
-                                  const blob = new Blob([textToCopy], { type: "text/plain" });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement("a");
-                                  a.href = url;
-                                  a.download = `Lawyer_Case_Brief_${selectedReport.documentTitle.replace(/\s+/g, "_")}.txt`;
-                                  document.body.appendChild(a);
-                                  a.click();
-                                  document.body.removeChild(a);
-                                  URL.revokeObjectURL(url);
-                                }
-                              }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
-                              title="Download brief as .txt"
-                            >
-                              <Download className="w-3.5 h-3.5 text-brand-400" />
-                              <span>Download .txt Brief</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                const isSaved = savedBriefs.some(
-                                  b => b.documentId === (selectedFileId || "unknown") && 
-                                  b.lawyerCaseBrief.join("\n") === selectedReport.lawyerCaseBrief.join("\n")
-                                );
-                                if (isSaved) {
-                                  alert("Notice: This brief is already saved in your Briefs Archive!");
-                                  return;
-                                }
-
-                                const newBrief: SavedBrief = {
-                                  id: "brief-" + Date.now(),
-                                  documentId: selectedFileId || "unknown",
-                                  documentTitle: selectedReport.documentTitle || "Untitled Document",
-                                  documentCategory: selectedReport.documentType || "General Document",
-                                  savedAt: new Date().toLocaleDateString(undefined, { 
-                                    year: 'numeric', 
-                                    month: 'short', 
-                                    day: 'numeric', 
-                                    hour: '2-digit', 
-                                    minute: '2-digit' 
-                                  }),
-                                  lawyerCaseBrief: selectedReport.lawyerCaseBrief,
-                                  notes: ""
-                                };
-
-                                setSavedBriefs(prev => [newBrief, ...prev]);
-                                alert("Success: This case brief has been archived in the Saved Briefs tab! You can add notes, delete, or switch between saved briefs there.");
-                              }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
-                              title="Archive this brief in the Saved Briefs tab"
-                            >
-                              <Save className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Archive Brief</span>
-                            </button>
-
-                            <button
-                              disabled={redactionEnabled}
-                              onClick={() => {
-                                if (redactionEnabled) return;
-                                const stateToSave = {
-                                  organizedFiles,
-                                  selectedFileId,
-                                  activeFolder,
-                                  ragChatMessages,
-                                  selectedReport,
-                                  activeTab,
-                                  savedBriefs
-                                };
-                                localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
-                                alert("Your case brief was saved on this device for the Templates and Chat tools.");
-                              }}
-                              className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 transition-colors border border-brand-700 cursor-pointer"
-                              title={redactionEnabled ? "Turn off redaction to save the full case on this device" : "Save the case brief on this device for the Templates and Chat tools"}
-                            >
-                              <Scale className="w-3.5 h-3.5 text-white" />
-                              <span>Save Brief on This Device</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {selectedReport.forensicVerification && (
-                        <div
-                          className={`rounded-xl border p-3.5 text-xs font-sans space-y-1 ${
-                            selectedReport.forensicVerification.status === "completed"
-                              ? "bg-emerald-50/60 border-emerald-200 text-emerald-950"
-                              : "bg-amber-50 border-amber-200 text-amber-950"
+                      {/* Executive File Summary Block */}
+                      {displayedReport.fileSummary && (
+                        <div 
+                          id="report-file-summary-block" 
+                          className={`p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs text-slate-800 transition-all ${
+                            narration.isSegmentActive("summary-main") ? "ring-2 ring-brand-500 bg-amber-50/60 shadow-sm" : ""
                           }`}
-                          id="forensic-verification-summary"
                         >
-                          <div className="font-bold">
-                            {selectedReport.forensicVerification.status === "completed"
-                              ? `Independent second review completed (${selectedReport.forensicVerification.checkedFindings ?? 0} findings checked)`
-                              : "Independent second review not completed"}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-sans font-bold text-[11px] uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-brand-600" /> Executive Case Summary
+                            </span>
+                            <ParagraphListenButton 
+                              segment={getReportSegment("summary-main") || {
+                                id: "summary-main",
+                                sectionId: "overview",
+                                label: "Executive Case Summary",
+                                text: String(displayedReport.fileSummary || "")
+                              }} 
+                            />
                           </div>
-                          <p>{selectedReport.forensicVerification.overallAssessment || selectedReport.forensicVerification.reason}</p>
+                          <p className="leading-relaxed text-slate-700 font-sans italic">
+                            {displayedReport.fileSummary}
+                          </p>
                         </div>
                       )}
 
-                      {((selectedReport.chronology?.length ?? 0) > 0 || (selectedReport.contradictions?.length ?? 0) > 0) && (
-                        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3 text-xs font-sans" id="report-chronology">
-                          {(selectedReport.chronology?.length ?? 0) > 0 && (
-                            <div className="space-y-2">
-                              <h4 className="font-display font-bold text-slate-900 text-sm">Chronology (as stated in the document)</h4>
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
-                                  <thead>
-                                    <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                                      <th className="py-1.5 pr-3 font-bold">Date</th>
-                                      <th className="py-1.5 pr-3 font-bold">Event</th>
-                                      <th className="py-1.5 pr-3 font-bold">Evidence</th>
-                                      <th className="py-1.5 font-bold">Source</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {selectedReport.chronology!.map((entry, i) => (
-                                      <tr key={i} className="border-b border-slate-100 align-top">
-                                        <td className="py-1.5 pr-3 whitespace-nowrap font-semibold text-slate-800">{entry.date}</td>
-                                        <td className="py-1.5 pr-3 text-slate-700">{entry.event}</td>
-                                        <td className="py-1.5 pr-3 text-[10px] font-bold text-slate-600">{entry.evidenceClassification}</td>
-                                        <td className="py-1.5 text-slate-500">{entry.locationInDocument}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          )}
-                          {(selectedReport.contradictions?.length ?? 0) > 0 && (
-                            <div className="space-y-2">
-                              <h4 className="font-display font-bold text-slate-900 text-sm">Internal contradictions</h4>
-                              <ul className="space-y-2">
-                                {selectedReport.contradictions!.map((c, i) => (
-                                  <li key={i} className="bg-amber-50/60 border border-amber-200 rounded-lg p-2.5 space-y-1">
-                                    <p className="text-slate-800">{c.description}</p>
-                                    {c.locations && c.locations.length > 0 && <p className="text-[10.5px] text-slate-500">Where: {c.locations.join("; ")}</p>}
-                                    {c.significance && <p className="text-[10.5px] text-slate-600">{c.significance}</p>}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
+                      {/* Export & Redaction Toolbar */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => printAnalyzer(activeReportMode === "deep" ? "deep" : "quick")}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-300 cursor-pointer transition-all"
+                          >
+                            <Download className="w-3.5 h-3.5 text-slate-600" />
+                            <span>Export Report PDF</span>
+                          </button>
+                          <FullReportListenButton report={displayedReport} />
+                          {currentDeepReport && (
+                            <button
+                              type="button"
+                              onClick={() => printAnalyzer("deep")}
+                              className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-900 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-purple-200 cursor-pointer transition-all"
+                            >
+                              <Download className="w-3.5 h-3.5 text-purple-600" />
+                              <span>Export Forensic Scan PDF</span>
+                            </button>
                           )}
                         </div>
-                      )}
-
-                      {/* Red Flags & Hearsay */}
-                      <FoldableSection 
-                        title={
-                          <div className="flex items-center justify-between w-full">
-                            <span>Evidence Objections & Hearsay ({selectedReport.redFlags.length})</span>
-                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                               <input type="checkbox" checked={factCheckEnabled} onChange={() => setFactCheckEnabled(!factCheckEnabled)} />
-                               <span className="text-[9px]">Fact-Check</span>
-                            </div>
-                          </div>
-                        }
-                        icon={<ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" />} 
-                        isOpen={openReportSections.redFlags}
-                        onToggle={() => setOpenReportSections(prev => ({ ...prev, redFlags: !prev.redFlags }))}
-                      >
-                        <div className="space-y-3.5">
-                          {selectedReport.redFlags.map((flag, idx) => (
-                            <div key={idx} className="bg-white border border-gray-200 p-4.5 rounded-xl space-y-3.5 text-xs shadow-xs hover:border-brand-200 transition-colors">
-                              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <span className={`px-2.5 py-1 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
-                                    flag.severity.includes("CRITICAL") ? "bg-rose-100 text-rose-800" : flag.severity.includes("Worth") ? "bg-amber-100 text-amber-800" : "bg-brand-100 text-brand-800"
-                                  }`}>
-                                    {flag.severity}
-                                  </span>
-                                  {flag.modelSeverity && flag.modelSeverity !== flag.severity && (
-                                    <span className="text-[10px] font-sans text-slate-600" title={flag.severityCapReason || ""}>
-                                      Model severity: {flag.modelSeverity}. {flag.severityCapReason || "Limited by the quotation check."}
-                                    </span>
-                                  )}
-                                  <span className="font-sans font-bold text-rose-800 text-xs px-2 py-0.5 bg-rose-50 rounded-md border border-rose-100">
-                                    {flag.category}
-                                  </span>
-                                  {flag.evidenceClassification && (
-                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-sans font-bold bg-slate-100 text-slate-800 border border-slate-200 uppercase tracking-wide">
-                                      Evidence: {flag.evidenceClassification}
-                                    </span>
-                                  )}
-                                  {factCheckEnabled && (() => {
-                                    // An internal-reference match is NOT verification against official legislation.
-                                    const status = effectiveCitationStatus(flag);
-                                    const matched = status === "INTERNAL_REFERENCE_MATCH";
-                                    const none = status === "NONE";
-                                    return (
-                                      <span
-                                        className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase ${
-                                          matched ? "bg-sky-100 text-sky-800" : none ? "bg-slate-100 text-slate-700" : "bg-rose-100 text-rose-800"
-                                        }`}
-                                        title={flag.citationReason || "Confirm this citation with counsel"}
-                                      >
-                                        {matched ? "Internal reference match (not verified)" : none ? "No statute cited" : "Citation unverified"}
-                                      </span>
-                                    );
-                                  })()}
-                                  {flag.forensicVerification && (
-                                    <span
-                                      className={`px-2 py-0.5 rounded-md text-[10px] font-sans font-bold tracking-wide uppercase border ${
-                                        flag.forensicVerification.verdict === "SUPPORTED"
-                                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                          : flag.forensicVerification.verdict === "NEEDS_CONTEXT"
-                                            ? "bg-slate-50 text-slate-700 border-slate-200"
-                                            : "bg-amber-50 text-amber-800 border-amber-200"
-                                      }`}
-                                      title={flag.forensicVerification.note || ""}
-                                    >
-                                      Second review: {flag.forensicVerification.verdict.replace("_", " ")}
-                                    </span>
-                                  )}
-                                </div>
-                                <button
-                                  onClick={() => openLegislativeReference(flag.legalReference)}
-                                  className="font-sans text-brand-700 hover:text-brand-900 font-bold text-xs bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                  title="Open the statute reference for this citation"
-                                >
-                                  <Scale className="w-3.5 h-3.5 text-brand-600" /> Statute reference: {flag.legalReference} ↗
-                                </button>
-                              </div>
-                              {flag.phraseDetected && (
-                                <div className="space-y-1.5 bg-slate-50/80 p-3 border border-slate-200/80 rounded-xl">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-[10px] font-sans font-bold text-slate-500 uppercase tracking-wider">Phrase in Document:</span>
-                                    <button
-                                      onClick={() => {
-                                        setSearchQuery(flag.phraseDetected);
-                                        const docViewer = document.getElementById("file-plain-viewer");
-                                        if (docViewer) {
-                                          docViewer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                        }
-                                      }}
-                                      className="text-xs font-sans text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 font-semibold px-2.5 py-1 rounded-md border border-brand-200 transition-colors cursor-pointer"
-                                    >
-                                      🔍 Locate Phrase
-                                    </button>
-                                  </div>
-                                  <p className="italic text-slate-800 leading-relaxed font-sans bg-white p-3 border-l-4 border-amber-400 rounded-r-lg border-y border-r border-slate-200 text-xs shadow-2xs">
-                                    "{flag.phraseDetected}"
-                                  </p>
-                                  {(() => {
-                                    const display = QUOTE_DISPLAY[effectiveQuoteStatus(flag)];
-                                    const page = flag.quoteLocation?.page;
-                                    return display.verified ? (
-                                      <p className="text-[10.5px] font-sans text-emerald-700 flex items-center gap-1">
-                                        <Check className="w-3 h-3 shrink-0" /> {display.label}{page ? ` (page ${page})` : ""}
-                                      </p>
-                                    ) : (
-                                      <p className="text-[10.5px] font-sans font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-                                        ⚠️ {display.label}{page ? ` (page ${page})` : ""}
-                                      </p>
-                                    );
-                                  })()}
-                                  {flag.verificationNote && (
-                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800">{flag.verificationNote}</p>
-                                  )}
-                                  {flag.classificationCaveat && (
-                                    <p className="text-[10.5px] font-sans font-semibold text-amber-800">{flag.classificationCaveat}</p>
-                                  )}
-                                </div>
-                              )}
-
-                              {flag.forensicVerification?.note && (
-                                <div className="text-[11px] font-sans text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                                  <strong>Independent second review:</strong> {flag.forensicVerification.note}
-                                  {flag.originalSeverity && flag.originalSeverity !== flag.severity && (
-                                    <span className="block mt-1 text-slate-500">Severity adjusted from "{flag.originalSeverity}" after review.</span>
-                                  )}
-                                </div>
-                              )}
-
-                              <div className="text-slate-700 leading-relaxed text-xs space-y-1 font-sans">
-                                <span className="font-bold text-slate-900 block text-xs">Evidentiary Assessment:</span>
-                                <FormattedReportText content={flag.explanation} />
-                              </div>
-
-                              {flag.locationInDocument && (
-                                <div className="flex items-center gap-1.5 p-2 bg-brand-50/50 border border-brand-100/60 rounded-lg text-xs font-sans text-brand-950">
-                                  <span className="shrink-0">📌</span>
-                                  <span><strong>Verification Locator:</strong> <span className="underline font-semibold">{flag.locationInDocument}</span></span>
-                                </div>
-                              )}
-
-                              <div className="p-3.5 bg-brand-50/70 border border-brand-100 rounded-xl text-xs text-brand-950 font-sans space-y-1.5">
-                                <div className="font-bold text-brand-900 border-b border-brand-100 pb-1 flex items-center gap-1.5 text-xs">
-                                  <span>💡</span> Parent Action &amp; Defense Step:
-                                </div>
-                                <FormattedReportText content={flag.parentActionStep || flag.verifyRequirement} />
-                              </div>
-                            </div>
-                          ))}
-                          {selectedReport.redFlags.length === 0 && (
-                            <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-100 font-medium flex items-center gap-2">
-                              <Check className="w-4 h-4" /> No severe hearsay or timeline objections flagged.
-                            </div>
-                          )}
-                        </div>
-                      </FoldableSection>
-
-                      {/* The 17 Statutory Things CAS Must Prove (Coaching Section) */}
-                      <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-2xl space-y-4">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 bg-brand-50 border border-brand-100 rounded-lg text-brand-700 shrink-0">
-                            <Scale className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h5 className="font-display font-extrabold text-[#0f172a] text-sm tracking-wide uppercase">
-                              The 17 Clauses CAS Must Prove Under (Section 74)
-                            </h5>
-                            <p className="text-[11px] text-slate-500 mt-0.5">
-                              Ontario Child, Youth and Family Services Act (CYFSA) s. 74(2) statutory evidentiary thresholds — a child is "in need of protection" only if at least one of these 17 clauses is met.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-                          {[
-                            { ground: "1. Physical Harm [s. 74(2)(a)]", desc: "The child has suffered physical harm inflicted by a parent, or due to parental failure." },
-                            { ground: "2. Risk of Physical Harm [s. 74(2)(b)]", desc: "A risk of physical harm of the same kind, that the parent fails/is unable to protect against." },
-                            { ground: "3. Sexual Abuse or Exploitation [s. 74(2)(c)]", desc: "The child has been sexually abused/exploited, or parent knew and failed to protect." },
-                            { ground: "4. Risk of Sexual Abuse or Exploitation [s. 74(2)(d)]", desc: "A risk of abuse or exploitation of the same kind, with parent unable or failing to protect." },
-                            { ground: "5. Child Sex Trafficking [s. 74(2)(d.1)]", desc: "The child has been sexually exploited through trafficking (added 2021)." },
-                            { ground: "6. Risk of Child Sex Trafficking [s. 74(2)(d.2)]", desc: "A risk of sexual exploitation through trafficking (added 2021)." },
-                            { ground: "7. Medical Neglect [s. 74(2)(e)]", desc: "Parent refuses or is unable to provide/consent to essential medical treatment." },
-                            { ground: "8. Emotional Harm [s. 74(2)(f)]", desc: "The child has suffered emotional harm (anxiety, withdrawal) linked to the caregiver's conduct." },
-                            { ground: "9. Emotional Harm, Services Refused [s. 74(2)(g)]", desc: "Emotional harm as above, and the caregiver refuses services or treatment to remedy it." },
-                            { ground: "10. Risk of Emotional Harm [s. 74(2)(h)]", desc: "A risk of emotional harm of the same kind as (f)." },
-                            { ground: "11. Risk of Emotional Harm, Services Refused [s. 74(2)(i)]", desc: "Risk of emotional harm as above, and the caregiver refuses preventive services or treatment." },
-                            { ground: "12. Developmental Impairment [s. 74(2)(j)]", desc: "A condition that could seriously impair development if untreated, and treatment is refused." },
-                            { ground: "13. Parental Death/Unavailability [s. 74(2)(k)]", desc: "The parent has died or is unavailable, with no adequate provision made for the child's care." },
-                            { ground: "14. Under 12, Serious Harm Caused [s. 74(2)(l)]", desc: "Child is under 12, has caused serious harm/damage, and needed services are refused." },
-                            { ground: "15. Under 12, Repeat Minor Harm [s. 74(2)(m)]", desc: "Child is under 12, has repeatedly caused minor harm through inadequate supervision." },
-                            { ground: "16. Brought With Consent [s. 74(2)(n)]", desc: "Parent can't care for the child, who is brought to court with the parent's (and child's) consent." },
-                            { ground: "17. Prescribed 16/17-Year-Old Circumstance [s. 74(2)(o)]", desc: "The child is 16 or 17 and a regulation-defined prescribed circumstance exists." }
-                          ].map((item, i) => (
-                            <div key={i} className="bg-white border border-slate-100 p-3 rounded-xl space-y-1 shadow-2xs hover:border-brand-100 transition-all">
-                              <span className="text-[11px] font-bold text-slate-900 block font-sans">{item.ground}</span>
-                              <p className="text-[10.5px] text-slate-500 leading-normal">{item.desc}</p>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Critical Warning / Call to Action to Read Documents Carefully */}
-                        <div className="bg-amber-50/70 border border-amber-200/80 p-4.5 rounded-xl space-y-2.5">
-                          <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs uppercase tracking-wide">
-                            <span className="text-sm">⚠️</span> Critical Parent Defense Action Tip:
-                          </div>
-                          <p className="text-amber-950 text-xs leading-relaxed">
-                            You must <strong>read through your CAS paperwork very carefully!</strong> Every letter, email, home observation note, or court application should be combed word-by-word. Look for subjective worker labels, uncorroborated rumors, missing timestamps, or violations of these 17 statutory clauses.
-                          </p>
-                          <p className="text-amber-900 text-[11px] leading-normal font-semibold">
-                            💡 <strong>The Analyzer Will Pick This Up!</strong> Simply upload your documents to the Case Cabinet and run our AI Evidentiary Audit. Our system will automatically detect these violations, extract the exact offending quotes, and map out your legal objections in real time!
-                          </p>
-                        </div>
+                        <RedactionToggle enabled={redactionEnabled} onToggle={toggleRedaction} />
                       </div>
 
-                      {/* Statutory Timeline & Procedural Violations */}
-                      {selectedReport.proceduralTimelineViolations && selectedReport.proceduralTimelineViolations.length > 0 && (
-                        <div className="space-y-3 pt-2 border-t border-gray-100">
-                          <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
-                            <Clock className="w-4 h-4 text-amber-600" /> Statutory Timeline & Procedural Defects ({selectedReport.proceduralTimelineViolations.length})
-                          </h5>
-                          <div className="space-y-3.5">
-                            {selectedReport.proceduralTimelineViolations.map((violation, idx) => (
-                              <div key={idx} className="bg-white border border-amber-200/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-colors">
-                                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-100">
-                                  <span className="px-2 py-0.5 rounded text-[9px] font-sans font-semibold tracking-wider bg-amber-100 text-amber-800 uppercase">
-                                    TIMELINE RULE
-                                  </span>
-                                  <span className="font-sans font-semibold text-amber-900 text-[11px]">{violation.timelineRule}</span>
-                                  <button
-                                    onClick={() => openLegislativeReference(violation.citation)}
-                                    className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                    title="Open the statute reference for this citation"
-                                  >
-                                    <Scale className="w-3 h-3 text-amber-600" /> Statute reference: {violation.citation} ↗
-                                  </button>
-                                </div>
-                                
-                                {violation.documentAssertion && (
-                                  <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-[9px] font-sans font-semibold text-slate-500 uppercase tracking-wider">Assertion in Document:</span>
-                                      <button
-                                        onClick={() => {
-                                          setSearchQuery(violation.documentAssertion);
-                                          const docViewer = document.getElementById("file-plain-viewer");
-                                          if (docViewer) {
-                                            docViewer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                          }
-                                        }}
-                                        className="text-[9px] font-sans text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 font-semibold px-2 py-0.5 rounded border border-brand-200 transition-colors cursor-pointer"
-                                      >
-                                        🔍 Locate Segment
-                                      </button>
-                                    </div>
-                                    <p className="italic text-slate-700 leading-relaxed font-normal bg-white p-2.5 border border-slate-100 rounded text-xs">
-                                      "{violation.documentAssertion}"
+                      {/* Document Preview with Redaction Applied */}
+                      {originalDocumentText && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <p className="text-[10px] font-sans font-bold uppercase text-slate-600 mb-2">
+                            {redactionEnabled ? "📄 Redacted Document Preview" : "📄 Document Preview"}
+                          </p>
+                          <div className="text-xs leading-relaxed text-slate-800 bg-white p-3 rounded border border-slate-200 font-sans max-h-36 overflow-auto whitespace-pre-wrap break-words">
+                            {redactionEnabled 
+                              ? redactDocumentText(originalDocumentText, knownNamesToRedact)
+                              : originalDocumentText
+                            }
+                            {originalDocumentText.length >= 5000 && <p className="text-slate-500 mt-2">... (document continues)</p>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 5-Tab Report Workspace Navigation Bar */}
+                      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto pt-2" role="tablist">
+                        {[
+                          { id: "brief", label: "Lawyer Brief", icon: Briefcase, count: displayedReport.lawyerCaseBrief?.length },
+                          { id: "chronology", label: "Chronology", icon: Clock, count: (displayedReport.chronology?.length || 0) + (displayedReport.proceduralTimelineViolations?.length || 0) },
+                          { id: "evidence", label: "Evidence & Hearsay", icon: ShieldAlert, count: displayedReport.redFlags?.length },
+                          { id: "thresholds", label: "CYFSA Thresholds", icon: Scale, count: displayedReport.thresholdAnalysis?.length },
+                          { id: "findings", label: "Findings & Legal Assessment", icon: FileCheck, count: (displayedReport.whatToVerify?.length || 0) + (displayedReport.whatIsMissing?.length || 0) + (displayedReport.whatToAskALawyer?.length || 0) },
+                          { id: "compliance", label: "Agency Compliance Matrix", icon: Scale, count: displayedReport.complianceMatrix?.items?.length },
+                        ].map(tab => {
+                          const Icon = tab.icon;
+                          const isActive = reportWorkspaceTab === tab.id;
+                          return (
+                            <button
+                              key={tab.id}
+                              role="tab"
+                              aria-selected={isActive}
+                              onClick={() => setReportWorkspaceTab(tab.id as any)}
+                              className={`px-4 py-2.5 text-xs font-sans font-bold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                                isActive
+                                  ? "border-brand-600 text-brand-700 bg-brand-50/50"
+                                  : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
+                              }`}
+                            >
+                              <Icon className={`w-3.5 h-3.5 ${isActive ? "text-brand-600" : "text-slate-500"}`} />
+                              <span>{tab.label}</span>
+                              {tab.count !== undefined && tab.count > 0 && (
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                                  isActive ? "bg-brand-600 text-white" : "bg-slate-200 text-slate-700"
+                                }`}>
+                                  {tab.count}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* ============================================================ */}
+                      {/* TAB 1: LAWYER BRIEF                                           */}
+                      {/* ============================================================ */}
+                      {reportWorkspaceTab === "brief" && (
+                        <div className="space-y-5 animate-fadeIn">
+                          {/* Educational Notice */}
+                          <div className="p-3 bg-[#fffbeb] border border-[#fef3c7]/80 rounded-xl text-xs text-amber-900 flex gap-2">
+                            <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                            <span><strong>Regulatory Notice:</strong> {displayedReport.disclaimer}</span>
+                          </div>
+
+                          {/* Certified Citation Notice */}
+                          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 flex gap-2 items-start shadow-2xs">
+                            <Scale className="w-4 h-4 text-emerald-600 shrink-0 mt-1" />
+                            <div className="space-y-1">
+                              <p className="font-bold text-emerald-900 flex items-center gap-1.5">
+                                <span>⚖️</span> Citations & Analysis
+                              </p>
+                              <p className="text-[11px] text-emerald-800 leading-normal">
+                                Where the app has its own entry for a section, the button opens that entry. The entry was not checked against the official statute. The app checks citations only against its list of confirmed section numbers. Confirm every citation with counsel.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Auto-populate Legal Court Forms & Statements Handover */}
+                          <div className="bg-brand-50 border border-brand-100 rounded-2xl p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-3xs">
+                            <div className="space-y-1 text-left">
+                              <h5 className="font-bold text-brand-950 flex items-center gap-1.5 text-xs uppercase tracking-wide leading-tight">
+                                <Sparkles className="w-4 h-4 text-brand-600 animate-pulse shrink-0" /> Auto-populate Legal Court Forms & Statements
+                              </h5>
+                              <p className="text-[11px] text-brand-800 leading-normal">
+                                Directly hand over these audited findings to automatically pre-fill your court reply forms, affidavits, and parental plan of care builders in the Draft Templates workspace.
+                              </p>
+                            </div>
+                            <button
+                              onClick={handleFormHandover}
+                              className="w-full md:w-auto px-4.5 py-2.5 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer border border-brand-700 uppercase tracking-wider shrink-0 font-sans"
+                            >
+                              <FileText className="w-4 h-4" />
+                              <span>Handover to Templates</span>
+                            </button>
+                          </div>
+
+                          {/* Lawyer Detailed Case Brief */}
+                          {displayedReport.lawyerCaseBrief && displayedReport.lawyerCaseBrief.length > 0 ? (
+                            <div className="bg-slate-900 text-white rounded-2xl p-5 md:p-6 space-y-4 shadow-md border border-slate-800 relative overflow-hidden" id="lawyer-detailed-case-brief">
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/10 rounded-full blur-2xl pointer-events-none" />
+                              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <Briefcase className="w-5 h-5 text-brand-400" />
+                                  <div>
+                                    <h5 className="font-display font-bold text-sm tracking-wide text-white uppercase">
+                                      Lawyer Detailed Case Brief
+                                    </h5>
+                                    <p className="text-[10px] text-brand-300 font-sans">
+                                      Bullet Form Structure • Ready for Intake Sharing
                                     </p>
                                   </div>
-                                )}
-          
-                                <div className="text-slate-700 leading-relaxed text-xs">
-                                  <strong>Evaluation:</strong> <FormattedReportText text={violation.evaluation} />
                                 </div>
-
-                                {violation.locationInDocument && (
-                                  <div className="flex items-center gap-1.5 p-2 bg-brand-50/50 border border-brand-100/40 rounded-lg text-xs font-sans text-brand-950">
-                                    <span className="shrink-0">📌</span>
-                                    <span><strong>Verification Locator:</strong> <span className="underline font-bold">{violation.locationInDocument}</span></span>
-                                  </div>
-                                )}
-
-                                <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-lg text-xs text-amber-950 font-medium space-y-1">
-                                  <div className="font-bold text-amber-900 border-b border-amber-200/50 pb-0.5 flex items-center gap-1">
-                                    <span>💡</span> Parent Action Plan:
-                                  </div>
-                                  <div className="text-xs leading-relaxed text-amber-950">
-                                    <FormattedReportText text={violation.parentActionStep || "Verify this schedule with the court register immediately."} />
-                                  </div>
-                                </div>
+                                <SectionListenButton 
+                                  sectionId="guidance" 
+                                  segments={reportSegments} 
+                                  sectionTitle="Lawyer Detailed Case Brief" 
+                                  label="Listen to Brief" 
+                                />
                               </div>
-                            ))}
-                          </div>
-                        
-                        </div>
-                      )}
+                              
+                              <div className="space-y-3.5 pt-1">
+                                {displayedReport.lawyerCaseBrief.map((bullet: string, idx: number) => {
+                                  const parts = bullet.split("**");
+                                  const isBulletActive = narration.isSegmentActive(`brief-bullet-${idx}`);
+                                  return (
+                                    <div 
+                                      key={idx} 
+                                      id={`lawyer-brief-bullet-${idx}`} 
+                                      className={`flex items-start justify-between gap-3 text-slate-300 leading-relaxed text-xs p-1.5 rounded-lg transition-all ${
+                                        isBulletActive ? "ring-2 ring-brand-400 bg-brand-500/20 text-white" : ""
+                                      }`}
+                                    >
+                                      <div className="flex items-start gap-3 flex-1">
+                                        <span className="text-brand-400 font-bold shrink-0 mt-0.5 select-none">▪</span>
+                                        <p className="text-slate-300">
+                                          {parts.map((part: string, index: number) => 
+                                            index % 2 === 1 ? (
+                                              <strong key={index} className="text-white font-semibold">{part}</strong>
+                                            ) : (
+                                              part
+                                            )
+                                          )}
+                                        </p>
+                                      </div>
+                                      <ParagraphListenButton 
+                                        segment={getReportSegment(`brief-bullet-${idx}`) || {
+                                          id: `brief-bullet-${idx}`,
+                                          sectionId: "guidance",
+                                          label: `Case Brief Point ${idx + 1}`,
+                                          text: bullet.replace(/\*\*/g, ""),
+                                          domId: `lawyer-brief-bullet-${idx}`,
+                                        }} 
+                                        iconOnly 
+                                        className="shrink-0 text-slate-400 hover:text-white mt-0.5" 
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
 
-                      {/* Immediate Removal Checks */}
-                      <div className="space-y-3 pt-2 border-t border-gray-100">
-                        <h5 className="font-display font-medium text-xs uppercase tracking-wider text-slate-700">
-                          Immediate Life-Safety Protection Thresholds
-                        </h5>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {selectedReport.thresholdAnalysis.map((thresh, idx) => (
-                            <div key={idx} className="p-3 bg-white border border-gray-100 rounded-lg space-y-1.5">
-                              <div className="flex justify-between items-center text-[10px] font-sans text-slate-600 font-semibold uppercase">
-                                <span>{thresh.thresholdChecked}</span>
-                                <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
-                                  Analyzer preliminary read (not a legal finding): {thresh.isMet}
-                                </span>
+                              {redactionEnabled && (
+                                <p className="text-[10.5px] text-slate-400">Copy and download are off while redaction is on, because the brief contains case text.</p>
+                              )}
+                              <div className="flex flex-wrap gap-2.5 pt-4 border-t border-slate-800/85">
+                                <button
+                                  onClick={() => {
+                                    const textToCopy = redactionEnabled ? undefined : displayedReport.lawyerCaseBrief?.map((b: string) => b.replace(/\*\*/g, "")).join("\n\n");
+                                    if (textToCopy) {
+                                      navigator.clipboard.writeText(textToCopy).then(
+                                        () => alert("Success: Lawyer Case Brief copied to clipboard!"),
+                                        () => alert("Couldn't copy to clipboard. Your browser may be blocking clipboard access.")
+                                      );
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                                  title="Copy brief text to clipboard"
+                                >
+                                  <Copy className="w-3.5 h-3.5 text-brand-400" />
+                                  <span>Copy Brief Text</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    if (redactionEnabled) return;
+                                    const printWindow = window.open("", "_blank");
+                                    if (!printWindow) {
+                                      alert("Please allow pop-ups to save the brief as a PDF.");
+                                      return;
+                                    }
+                                    printWindow.document.write(renderLawyerCaseBriefHtml(displayedReport, briefExportOptions));
+                                    printWindow.document.close();
+                                    finishPrintWindow(printWindow);
+                                  }}
+                                  className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-brand-500 cursor-pointer"
+                                  title="Open the formatted brief and save it as a PDF"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>Download PDF Brief</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    if (redactionEnabled) return;
+                                    const blob = new Blob([formatLawyerCaseBriefText(displayedReport, briefExportOptions)], { type: "text/plain;charset=utf-8" });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `Lawyer_Case_Brief_${(displayedReport.documentTitle || "document").replace(/\s+/g, "_")}.txt`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                                  title="Download an editable plain-text copy of the brief"
+                                >
+                                  <Download className="w-3.5 h-3.5 text-brand-400" />
+                                  <span>Download .txt Brief</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    const isSaved = savedBriefs.some(
+                                      b => b.documentId === (selectedFileId || "unknown") && 
+                                      b.lawyerCaseBrief.join("\n") === displayedReport.lawyerCaseBrief.join("\n")
+                                    );
+                                    if (isSaved) {
+                                      alert("Notice: This brief is already saved in your Briefs Archive!");
+                                      return;
+                                    }
+
+                                    const newBrief: SavedBrief = {
+                                      id: "brief-" + Date.now(),
+                                      documentId: selectedFileId || "unknown",
+                                      documentTitle: displayedReport.documentTitle || "Untitled Document",
+                                      documentCategory: displayedReport.documentType || "General Document",
+                                      savedAt: new Date().toLocaleDateString(undefined, { 
+                                        year: 'numeric', 
+                                        month: 'short', 
+                                        day: 'numeric', 
+                                        hour: '2-digit', 
+                                        minute: '2-digit' 
+                                      }),
+                                      lawyerCaseBrief: displayedReport.lawyerCaseBrief,
+                                      notes: ""
+                                    };
+
+                                    setSavedBriefs(prev => [newBrief, ...prev]);
+                                    alert("Success: This case brief has been archived in the Saved Briefs tab! You can add notes, delete, or switch between saved briefs there.");
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
+                                  title="Archive this brief in the Saved Briefs tab"
+                                >
+                                  <Save className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>Archive Brief</span>
+                                </button>
+
+                                <button
+                                  disabled={redactionEnabled}
+                                  onClick={() => {
+                                    if (redactionEnabled) return;
+                                    const stateToSave = {
+                                      organizedFiles,
+                                      selectedFileId,
+                                      activeFolder,
+                                      ragChatMessages,
+                                      selectedReport,
+                                      activeTab,
+                                      savedBriefs
+                                    };
+                                    localStorage.setItem(getUserKey("OPA_DOC_ANALYZER_PROGRESS") || "OPA_DOC_ANALYZER_PROGRESS", JSON.stringify(stateToSave));
+                                    alert("Your case brief was saved on this device for the Templates and Chat tools.");
+                                  }}
+                                  className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 transition-colors border border-brand-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title={redactionEnabled ? "Turn off redaction to save the full case on this device" : "Save the case brief on this device for the Templates and Chat tools"}
+                                >
+                                  <Scale className="w-3.5 h-3.5 text-white" />
+                                  <span>Save Brief on This Device</span>
+                                </button>
                               </div>
-                              <div className="text-xs text-slate-700 leading-relaxed">
-                                <FormattedReportText text={thresh.reasoning} />
-                              </div>
-                              <span className="text-[10px] text-brand-700 font-sans block font-semibold mt-1">Law: {thresh.primarySourceLaw}</span>
                             </div>
-                          ))}
-                        </div>
-                      </div>
+                          ) : (
+                            <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-600">
+                              No lawyer case brief generated for this document.
+                            </div>
+                          )}
 
-                      {/* Charter & Human Rights Issues */}
-                      {selectedReport.charterAndHumanRightsIssues && selectedReport.charterAndHumanRightsIssues.length > 0 && (
-                        <div className="space-y-3 pt-2 border-t border-gray-100">
-                          <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
-                            <ShieldAlert className="w-4 h-4 text-purple-600" /> Charter & Human Rights Issues ({selectedReport.charterAndHumanRightsIssues.length})
-                          </h5>
-                          <div className="space-y-2">
-                            {selectedReport.charterAndHumanRightsIssues.map((issue, idx) => (
-                              <div key={idx} className="p-3 bg-purple-50/50 border border-purple-200/70 rounded-xl text-xs text-purple-950 flex items-start gap-2.5">
-                                <span className="text-purple-600 font-bold shrink-0 mt-0.5">⚖️</span>
-                                <div className="text-slate-800 leading-relaxed flex-1">
-                                  <FormattedReportText text={issue} />
+                          {/* Forensic Verification Summary */}
+                          {displayedReport.forensicVerification && (
+                            <div
+                              className={`rounded-xl border p-3.5 text-xs font-sans space-y-1 ${
+                                isSecondReviewComplete(displayedReport.forensicVerification)
+                                  ? "bg-emerald-50/60 border-emerald-200 text-emerald-950"
+                                  : "bg-amber-50 border-amber-200 text-amber-950"
+                              }`}
+                              id="forensic-verification-summary"
+                            >
+                              <div className="font-bold">
+                                {isSecondReviewComplete(displayedReport.forensicVerification)
+                                  ? `Independent second review completed (${displayedReport.forensicVerification.checkedFindings ?? 0} findings checked)`
+                                  : "Independent second review not completed"}
+                              </div>
+                              <p>{displayedReport.forensicVerification.overallAssessment || displayedReport.forensicVerification.reason}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ============================================================ */}
+                      {/* TAB 2: CHRONOLOGY                                             */}
+                      {/* ============================================================ */}
+                      {reportWorkspaceTab === "chronology" && (
+                        <div className="space-y-5 animate-fadeIn">
+                          {((displayedReport.chronology?.length ?? 0) > 0 || (displayedReport.contradictions?.length ?? 0) > 0) ? (
+                            <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 text-xs font-sans" id="report-chronology">
+                              {(displayedReport.chronology?.length ?? 0) > 0 && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between gap-2 pb-1">
+                                    <h4 className="font-display font-bold text-slate-900 text-sm">Chronology (as stated in the document)</h4>
+                                    <SectionListenButton 
+                                      sectionId="chronology" 
+                                      segments={reportSegments} 
+                                      sectionTitle="Chronology & Contradictions" 
+                                      label="Listen to Chronology" 
+                                    />
+                                  </div>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                      <thead>
+                                        <tr className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                                          <th className="py-1.5 pr-3 font-bold">Date</th>
+                                          <th className="py-1.5 pr-3 font-bold">Event</th>
+                                          <th className="py-1.5 pr-3 font-bold">Evidence</th>
+                                          <th className="py-1.5 font-bold">Source</th>
+                                          <th className="py-1.5 font-bold w-8 text-right">Listen</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {displayedReport.chronology!.map((entry: any, i: number) => {
+                                          const isRowActive = narration.isSegmentActive(`chrono-${i}`);
+                                          return (
+                                            <tr 
+                                              key={i} 
+                                              id={`chronology-row-${i}`} 
+                                              className={`border-b border-slate-100 align-top transition-colors ${
+                                                isRowActive ? "bg-brand-50/80 ring-2 ring-brand-500 rounded font-medium" : ""
+                                              }`}
+                                            >
+                                              <td className="py-1.5 pr-3 whitespace-nowrap font-semibold text-slate-800">{entry.date}</td>
+                                              <td className="py-1.5 pr-3 text-slate-700">{entry.event}</td>
+                                              <td className="py-1.5 pr-3 text-[10px] font-bold text-slate-600">{entry.evidenceClassification}</td>
+                                              <td className="py-1.5 text-slate-500">{entry.locationInDocument}</td>
+                                              <td className="py-1.5 text-right">
+                                                <ParagraphListenButton 
+                                                  segment={getReportSegment(`chrono-${i}`) || {
+                                                    id: `chrono-${i}`,
+                                                    sectionId: "chronology",
+                                                    label: `Chronology: ${entry.date || `Event ${i + 1}`}`,
+                                                    text: `Date: ${entry.date || 'Undated'}. Event: ${entry.event || ''}. Evidence: ${entry.evidenceClassification || ''}. Location: ${entry.locationInDocument || ''}.`,
+                                                    domId: `chronology-row-${i}`,
+                                                  }} 
+                                                  iconOnly 
+                                                />
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
+                              {(displayedReport.contradictions?.length ?? 0) > 0 && (
+                                <div className="space-y-2 pt-2 border-t border-slate-100">
+                                  <h4 className="font-display font-bold text-slate-900 text-sm">Internal Contradictions</h4>
+                                  <ul className="space-y-2">
+                                    {displayedReport.contradictions!.map((c: any, i: number) => {
+                                      const isContraActive = narration.isSegmentActive(`contra-${i}`);
+                                      return (
+                                        <li 
+                                          key={i} 
+                                          id={`contradiction-item-${i}`} 
+                                          className={`bg-amber-50/60 border border-amber-200 rounded-lg p-2.5 space-y-1 transition-all ${
+                                            isContraActive ? "ring-2 ring-amber-500 bg-amber-100/80" : ""
+                                          }`}
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <p className="text-slate-800 flex-1">{c.description}</p>
+                                            <ParagraphListenButton 
+                                              segment={getReportSegment(`contra-${i}`) || {
+                                                id: `contra-${i}`,
+                                                sectionId: "chronology",
+                                                label: `Contradiction ${i + 1}`,
+                                                text: `Document Contradiction ${i + 1}: ${c.description || ''}. Significance: ${c.significance || ''}.`,
+                                                domId: `contradiction-item-${i}`,
+                                              }} 
+                                              iconOnly 
+                                              className="shrink-0" 
+                                            />
+                                          </div>
+                                          {c.locations && c.locations.length > 0 && <p className="text-[10.5px] text-slate-500">Where: {c.locations.join("; ")}</p>}
+                                          {c.significance && <p className="text-[10.5px] text-slate-600">{c.significance}</p>}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-600">
+                              No dated events or internal contradictions identified in this document.
+                            </div>
+                          )}
+
+                          {/* Statutory Timeline & Procedural Violations */}
+                          {displayedReport.proceduralTimelineViolations && displayedReport.proceduralTimelineViolations.length > 0 && (
+                            <div className="space-y-3 pt-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
+                                  <Clock className="w-4 h-4 text-amber-600" /> Statutory Timeline & Procedural Defects ({displayedReport.proceduralTimelineViolations.length})
+                                </h5>
+                                <SectionListenButton 
+                                  sectionId="timelines" 
+                                  segments={reportSegments} 
+                                  sectionTitle="Procedural Timelines" 
+                                  label="Listen to Timelines" 
+                                />
+                              </div>
+                              <div className="space-y-3.5">
+                                {displayedReport.proceduralTimelineViolations.map((violation: any, idx: number) => {
+                                  const isTlActive = narration.isSegmentActive(`timeline-${idx}`);
+                                  return (
+                                    <div 
+                                      key={idx} 
+                                      id={`timeline-card-${idx}`} 
+                                      className={`bg-white border border-amber-200/70 p-4 rounded-xl space-y-3 text-xs shadow-xs hover:border-amber-400 transition-all ${
+                                        isTlActive ? "ring-2 ring-amber-500 bg-amber-50/40 shadow-md" : ""
+                                      }`}
+                                    >
+                                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-100">
+                                        <div className="flex items-center gap-2">
+                                          <span className="px-2 py-0.5 rounded text-[9px] font-sans font-semibold tracking-wider bg-amber-100 text-amber-800 uppercase">
+                                            TIMELINE RULE
+                                          </span>
+                                          <span className="font-sans font-semibold text-amber-900 text-[11px]">{violation.timelineRule}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <ParagraphListenButton 
+                                            segment={getReportSegment(`timeline-${idx}`) || {
+                                              id: `timeline-${idx}`,
+                                              sectionId: "timelines",
+                                              label: `Timeline: ${violation.timelineRule || `Timeline ${idx + 1}`}`,
+                                              text: `Procedural Timeline: ${violation.timelineRule || ''}. Document Assertion: ${violation.documentAssertion || ''}. Legal Analysis: ${violation.evaluation || ''}. Citation: ${violation.citation || ''}. Action: ${violation.parentActionStep || ''}.`,
+                                              domId: `timeline-card-${idx}`,
+                                            }} 
+                                          />
+                                          <button
+                                            onClick={() => openLegislativeReference(violation.citation)}
+                                            className="font-sans text-amber-900 hover:text-amber-950 font-semibold text-[10px] bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                            title="Open the statute reference for this citation"
+                                          >
+                                            <Scale className="w-3 h-3 text-amber-600" /> Statute reference: {violation.citation} ↗
+                                          </button>
+                                        </div>
+                                      </div>
+                                    
+                                    {violation.documentAssertion && (
+                                      <div className="space-y-1 bg-slate-50 p-2.5 border border-slate-100 rounded-lg">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-[9px] font-sans font-semibold text-slate-500 uppercase tracking-wider">Assertion in Document:</span>
+                                          <button
+                                            onClick={() => {
+                                              setSearchQuery(violation.documentAssertion);
+                                              const docViewer = document.getElementById("file-plain-content-viewer");
+                                              if (docViewer) {
+                                                docViewer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                              }
+                                            }}
+                                            className="text-[9px] font-sans text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 font-semibold px-2 py-0.5 rounded border border-brand-200 transition-colors cursor-pointer"
+                                          >
+                                            🔍 Locate Segment
+                                          </button>
+                                        </div>
+                                        <p className="italic text-slate-700 leading-relaxed font-normal bg-white p-2.5 border border-slate-100 rounded text-xs">
+                                          "{violation.documentAssertion}"
+                                        </p>
+                                      </div>
+                                    )}
+              
+                                    <div className="text-slate-700 leading-relaxed text-xs">
+                                      <strong>Evaluation:</strong> <FormattedReportText text={violation.evaluation} />
+                                    </div>
+
+                                    {violation.locationInDocument && (
+                                      <div className="flex items-center gap-1.5 p-2 bg-brand-50/50 border border-brand-100/40 rounded-lg text-xs font-sans text-brand-950">
+                                        <span className="shrink-0">📌</span>
+                                        <span><strong>Verification Locator:</strong> <span className="underline font-bold">{violation.locationInDocument}</span></span>
+                                      </div>
+                                    )}
+
+                                    <div className="p-3 bg-amber-50/50 border border-amber-200 rounded-lg text-xs text-amber-950 font-medium space-y-1">
+                                      <div className="font-bold text-amber-900 border-b border-amber-200/50 pb-0.5 flex items-center gap-1">
+                                        <span>💡</span> Parent Action Plan:
+                                      </div>
+                                      <div className="text-xs leading-relaxed text-amber-950">
+                                        <FormattedReportText text={violation.parentActionStep || "Verify this schedule with the court register immediately."} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ============================================================ */}
+                      {/* TAB 3: EVIDENCE & HEARSAY                                     */}
+                      {/* ============================================================ */}
+                      {reportWorkspaceTab === "evidence" && (
+                        <div className="space-y-4 animate-fadeIn">
+                          <FoldableSection 
+                            title={
+                              <div className="flex items-center justify-between w-full">
+                                <span>Evidence Objections & Hearsay ({displayedReport.redFlags?.length || 0})</span>
+                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                   <SectionListenButton 
+                                     sectionId="redFlags" 
+                                     segments={reportSegments} 
+                                     sectionTitle="Evidence Findings" 
+                                     label="Listen to Findings" 
+                                   />
+                                   <input type="checkbox" checked={factCheckEnabled} onChange={() => setFactCheckEnabled(!factCheckEnabled)} />
+                                   <span className="text-[9px]">Fact-Check</span>
                                 </div>
                               </div>
-                            ))}
+                            }
+                            icon={<ShieldAlert className="w-4 h-4 text-rose-600 animate-pulse" />} 
+                            isOpen={openReportSections.redFlags}
+                            onToggle={() => setOpenReportSections(prev => ({ ...prev, redFlags: !prev.redFlags }))}
+                          >
+                            <div className="space-y-4">
+                              {/* Platform-Level Explanation: Parents Rights & Court Formalities */}
+                              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5 text-xs text-slate-700">
+                                <Info className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+                                <div className="leading-relaxed">
+                                  <strong className="text-slate-900 font-bold">Platform Educational Guidance:</strong> CYFSA Navigator analyzes document evidence and connects findings to official Ontario court forms for educational purposes. Parents have the legal right to represent themselves without a lawyer; legal representation is optional. However, specific court formalities are legally mandatory: affidavits (Forms 14A and 35.1A) must be sworn or affirmed before an authorized commissioner (available free of charge at Ontario family court counters), and all materials must adhere to strict Family Law Rules filing and service timelines.
+                                </div>
+                              </div>
+
+                              {(displayedReport.redFlags || []).map((flag: any, idx: number) => {
+                                const flagId = flag.id || `rf-${idx + 1}`;
+                                const isFlagActive = narration.isSegmentActive(`rf-${flagId}`);
+                                return (
+                                  <FindingPresentationCard
+                                    key={flagId}
+                                    flag={flag}
+                                    idx={idx}
+                                    narrationActive={isFlagActive}
+                                    factCheckEnabled={factCheckEnabled}
+                                    openLegislativeReference={openLegislativeReference}
+                                    setSearchQuery={setSearchQuery}
+                                  />
+                                );
+                              })}
+                              {(!displayedReport.redFlags || displayedReport.redFlags.length === 0) && (
+                                <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-100 font-medium flex items-center gap-2">
+                                  <Check className="w-4 h-4" /> No severe hearsay or timeline objections flagged.
+                                </div>
+                              )}
+                            </div>
+                          </FoldableSection>
+                        </div>
+                      )}
+
+                      {/* ============================================================ */}
+                      {/* TAB 4: CYFSA THRESHOLDS                                       */}
+                      {/* ============================================================ */}
+                      {reportWorkspaceTab === "thresholds" && (
+                        <div className="space-y-5 animate-fadeIn">
+                          {/* Immediate Life-Safety Protection Thresholds */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <h5 className="font-display font-medium text-xs uppercase tracking-wider text-slate-700">
+                                Immediate Life-Safety Protection Thresholds
+                              </h5>
+                              {displayedReport.thresholdAnalysis && displayedReport.thresholdAnalysis.length > 0 && (
+                                <SectionListenButton 
+                                  sectionId="thresholds" 
+                                  segments={reportSegments} 
+                                  sectionTitle="Statutory Thresholds" 
+                                  label="Listen to Thresholds" 
+                                />
+                              )}
+                            </div>
+                            {(!displayedReport.thresholdAnalysis || displayedReport.thresholdAnalysis.length === 0) ? (
+                              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 space-y-1">
+                                <p className="font-bold text-slate-800">
+                                  {isReportForensic(displayedReport) ? "No statutory thresholds flagged" : "Not analyzed in Quick Review"}
+                                </p>
+                                <p>
+                                  {isReportForensic(displayedReport)
+                                    ? "No immediate life-safety protection threshold violations identified in this document. Confirm with counsel."
+                                    : "Detailed statutory protection threshold assessment is generated in Forensic In-Depth mode. Click 'Run Deep Scan' above to assess against Ontario statutory removal thresholds."}
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {displayedReport.thresholdAnalysis.map((thresh: any, idx: number) => {
+                                  const isThActive = narration.isSegmentActive(`threshold-${idx}`);
+                                  return (
+                                  <div 
+                                    key={idx} 
+                                    id={`threshold-card-${idx}`} 
+                                    className={`p-3 bg-white border border-gray-100 rounded-lg space-y-1.5 transition-all ${
+                                      isThActive ? "ring-2 ring-brand-500 bg-brand-50/50 shadow-sm" : ""
+                                    }`}
+                                  >
+                                    <div className="flex justify-between items-center text-[10px] font-sans text-slate-600 font-semibold uppercase">
+                                      <span>{thresh.thresholdChecked}</span>
+                                      <div className="flex items-center gap-1.5">
+                                        <ParagraphListenButton 
+                                          segment={getReportSegment(`threshold-${idx}`) || {
+                                            id: `threshold-${idx}`,
+                                            sectionId: "thresholds",
+                                            label: `Threshold: ${thresh.thresholdChecked || `Threshold ${idx + 1}`}`,
+                                            text: `CYFSA Threshold Check: ${thresh.thresholdChecked || ''}. Status: ${thresh.isMet || ''}. Reasoning: ${thresh.reasoning || ''}. Law: ${thresh.primarySourceLaw || ''}.`,
+                                            domId: `threshold-card-${idx}`,
+                                          }} 
+                                          iconOnly 
+                                        />
+                                        <span className={`px-2 py-0.5 rounded font-bold ${thresh.isMet === "Yes" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800"}`}>
+                                          Analyzer read: {thresh.isMet}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="text-xs text-slate-700 leading-relaxed">
+                                      <FormattedReportText text={thresh.reasoning} />
+                                    </div>
+                                    <span className="text-[10px] text-brand-700 font-sans block font-semibold mt-1">Law: {thresh.primarySourceLaw}</span>
+                                  </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Charter & Human Rights Issues */}
+                          {displayedReport.charterAndHumanRightsIssues && displayedReport.charterAndHumanRightsIssues.length > 0 && (
+                            <div className="space-y-3 pt-2 border-t border-gray-100">
+                              <div className="flex items-center justify-between gap-2">
+                                <h5 className="font-display font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center gap-1.5 text-slate-700">
+                                  <ShieldAlert className="w-4 h-4 text-purple-600" /> Charter & Human Rights Issues ({displayedReport.charterAndHumanRightsIssues.length})
+                                </h5>
+                                <SectionListenButton 
+                                  sectionId="charter" 
+                                  segments={reportSegments} 
+                                  sectionTitle="Charter & Human Rights" 
+                                  label="Listen to Charter Issues" 
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                {displayedReport.charterAndHumanRightsIssues.map((issue: string, idx: number) => {
+                                  const isChActive = narration.isSegmentActive(`charter-${idx}`);
+                                  return (
+                                  <div 
+                                    key={idx} 
+                                    id={`charter-card-${idx}`} 
+                                    className={`p-3 bg-purple-50/50 border border-purple-200/70 rounded-xl text-xs text-purple-950 flex items-start justify-between gap-2.5 transition-all ${
+                                      isChActive ? "ring-2 ring-purple-500 bg-purple-100/70 shadow-sm" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-2.5 flex-1">
+                                      <span className="text-purple-600 font-bold shrink-0 mt-0.5">⚖️</span>
+                                      <div className="text-slate-800 leading-relaxed flex-1">
+                                        <FormattedReportText text={issue} />
+                                      </div>
+                                    </div>
+                                    <ParagraphListenButton 
+                                      segment={getReportSegment(`charter-${idx}`) || {
+                                        id: `charter-${idx}`,
+                                        sectionId: "charter",
+                                        label: `Charter: Issue ${idx + 1}`,
+                                        text: `Constitutional Protection ${idx + 1}: ${issue}`,
+                                        domId: `charter-card-${idx}`,
+                                      }} 
+                                      iconOnly 
+                                      className="shrink-0" 
+                                    />
+                                  </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* The 17 Clauses CAS Must Prove (Coaching Section) */}
+                          <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-2xl space-y-4">
+                            <div className="flex items-start gap-3">
+                              <div className="p-2 bg-brand-50 border border-brand-100 rounded-lg text-brand-700 shrink-0">
+                                <Scale className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h5 className="font-display font-extrabold text-[#0f172a] text-sm tracking-wide uppercase">
+                                  The 17 Clauses CAS Must Prove Under (Section 74)
+                                </h5>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  Ontario Child, Youth and Family Services Act (CYFSA) s. 74(2) statutory evidentiary thresholds — a child is "in need of protection" only if at least one of these 17 clauses is met.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                              {[
+                                { ground: "1. Physical Harm [s. 74(2)(a)]", desc: "The child has suffered physical harm inflicted by a parent, or due to parental failure." },
+                                { ground: "2. Risk of Physical Harm [s. 74(2)(b)]", desc: "A risk of physical harm of the same kind, that the parent fails/is unable to protect against." },
+                                { ground: "3. Sexual Abuse or Exploitation [s. 74(2)(c)]", desc: "The child has been sexually abused/exploited, or parent knew and failed to protect." },
+                                { ground: "4. Risk of Sexual Abuse or Exploitation [s. 74(2)(d)]", desc: "A risk of abuse or exploitation of the same kind, with parent unable or failing to protect." },
+                                { ground: "5. Child Sex Trafficking [s. 74(2)(d.1)]", desc: "The child has been sexually exploited through trafficking (added 2021)." },
+                                { ground: "6. Risk of Child Sex Trafficking [s. 74(2)(d.2)]", desc: "A risk of sexual exploitation through trafficking (added 2021)." },
+                                { ground: "7. Medical Neglect [s. 74(2)(e)]", desc: "Parent refuses or is unable to provide/consent to essential medical treatment." },
+                                { ground: "8. Emotional Harm [s. 74(2)(f)]", desc: "The child has suffered emotional harm (anxiety, withdrawal) linked to the caregiver's conduct." },
+                                { ground: "9. Emotional Harm, Services Refused [s. 74(2)(g)]", desc: "Emotional harm as above, and the caregiver refuses services or treatment to remedy it." },
+                                { ground: "10. Risk of Emotional Harm [s. 74(2)(h)]", desc: "A risk of emotional harm of the same kind as (f)." },
+                                { ground: "11. Risk of Emotional Harm, Services Refused [s. 74(2)(i)]", desc: "Risk of emotional harm as above, and the caregiver refuses preventive services or treatment." },
+                                { ground: "12. Developmental Impairment [s. 74(2)(j)]", desc: "A condition that could seriously impair development if untreated, and treatment is refused." },
+                                { ground: "13. Parental Death/Unavailability [s. 74(2)(k)]", desc: "The parent has died or is unavailable, with no adequate provision made for the child's care." },
+                                { ground: "14. Under 12, Serious Harm Caused [s. 74(2)(l)]", desc: "Child is under 12, has caused serious harm/damage, and needed services are refused." },
+                                { ground: "15. Under 12, Repeat Minor Harm [s. 74(2)(m)]", desc: "Child is under 12, has repeatedly caused minor harm through inadequate supervision." },
+                                { ground: "16. Brought With Consent [s. 74(2)(n)]", desc: "Parent can't care for the child, who is brought to court with the parent's (and child's) consent." },
+                                { ground: "17. Prescribed 16/17-Year-Old Circumstance [s. 74(2)(o)]", desc: "The child is 16 or 17 and a regulation-defined prescribed circumstance exists." }
+                              ].map((item, i) => (
+                                <div key={i} className="bg-white border border-slate-100 p-3 rounded-xl space-y-1 shadow-2xs hover:border-brand-100 transition-all">
+                                  <span className="text-[11px] font-bold text-slate-900 block font-sans">{item.ground}</span>
+                                  <p className="text-[10.5px] text-slate-500 leading-normal">{item.desc}</p>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )}
 
-                      {/* Tri checklists */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">1. Verify Checks</h6>
-                          <ul className="space-y-1.5">
-                            {selectedReport.whatToVerify.map((item, i) => (
-                              <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
-                                <span className="text-brand-600 font-bold shrink-0 mt-0.5">☐</span>
-                                <div className="flex-1">
-                                  <FormattedReportText text={item} />
+                      {/* ============================================================ */}
+                      {/* TAB 5: FINDINGS & LEGAL ASSESSMENT                            */}
+                      {/* ============================================================ */}
+                      {reportWorkspaceTab === "findings" && (
+                        <div className="space-y-5 animate-fadeIn">
+                          {/* Section Header Explanation */}
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <h5 className="font-display font-bold text-sm text-slate-900">Findings &amp; Legal Assessment</h5>
+                              <SectionListenButton 
+                                sectionId="guidance" 
+                                segments={reportSegments} 
+                                sectionTitle="Action Plan & Guidance" 
+                                label="Listen to Action Plan" 
+                              />
+                            </div>
+                            <p className="text-xs text-slate-600">The quick flags identify potential concerns. The following checks explain the relevant protection thresholds, evidence to verify, missing support, and questions for counsel. These are preliminary document observations, not court findings.</p>
+                          </div>
+
+                          {/* Tri-Checklists */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                            <div className="space-y-2 bg-white border border-gray-100 p-4 rounded-xl shadow-3xs">
+                              <h6 className="font-display font-bold text-gray-800 text-xs uppercase tracking-wider border-b pb-1 flex items-center gap-1.5">
+                                <Check className="w-3.5 h-3.5 text-brand-600" /> 1. Verify Checks
+                              </h6>
+                              <ul className="space-y-2">
+                                {(!displayedReport.whatToVerify || displayedReport.whatToVerify.length === 0) && (
+                                  <li className="text-xs text-slate-500">No verification checks supplied in this report; this is not a finding that none exist.</li>
+                                )}
+                                {(displayedReport.whatToVerify || []).map((item: string, i: number) => {
+                                  const isVerifyActive = narration.isSegmentActive(`verify-${i}`);
+                                  return (
+                                  <li 
+                                    key={i} 
+                                    id={`verify-item-${i}`} 
+                                    className={`text-xs text-slate-700 leading-relaxed flex items-start justify-between gap-1.5 p-1 rounded transition-all ${
+                                      isVerifyActive ? "ring-2 ring-brand-500 bg-brand-50/70" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-1.5 flex-1">
+                                      <span className="text-brand-600 font-bold shrink-0 mt-0.5">☐</span>
+                                      <div className="flex-1">
+                                        <FormattedReportText text={item} />
+                                      </div>
+                                    </div>
+                                    <ParagraphListenButton 
+                                      segment={getReportSegment(`verify-${i}`) || {
+                                        id: `verify-${i}`,
+                                        sectionId: "guidance",
+                                        label: `Verification Check ${i + 1}`,
+                                        text: `Item to verify: ${item}`,
+                                        domId: `verify-item-${i}`,
+                                      }} 
+                                      iconOnly 
+                                      className="shrink-0" 
+                                    />
+                                  </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+
+                            <div className="space-y-2 bg-white border border-gray-100 p-4 rounded-xl shadow-3xs">
+                              <h6 className="font-display font-bold text-gray-800 text-xs uppercase tracking-wider border-b pb-1 flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> 2. Elements Missing
+                              </h6>
+                              <ul className="space-y-2">
+                                {(!displayedReport.whatIsMissing || displayedReport.whatIsMissing.length === 0) && (
+                                  <li className="text-xs text-slate-500">No missing evidence supplied in this report; this is not a finding that none exist.</li>
+                                )}
+                                {(displayedReport.whatIsMissing || []).map((item: string, i: number) => {
+                                  const isMissingActive = narration.isSegmentActive(`missing-${i}`);
+                                  return (
+                                  <li 
+                                    key={i} 
+                                    id={`missing-item-${i}`} 
+                                    className={`text-xs text-slate-700 leading-relaxed flex items-start justify-between gap-1.5 p-1 rounded transition-all ${
+                                      isMissingActive ? "ring-2 ring-rose-500 bg-rose-50/70" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-1.5 flex-1">
+                                      <span className="text-rose-500 font-bold shrink-0 mt-0.5">⚠</span>
+                                      <div className="flex-1">
+                                        <FormattedReportText text={item} />
+                                      </div>
+                                    </div>
+                                    <ParagraphListenButton 
+                                      segment={getReportSegment(`missing-${i}`) || {
+                                        id: `missing-${i}`,
+                                        sectionId: "guidance",
+                                        label: `Missing Element ${i + 1}`,
+                                        text: `Missing evidentiary element: ${item}`,
+                                        domId: `missing-item-${i}`,
+                                      }} 
+                                      iconOnly 
+                                      className="shrink-0" 
+                                    />
+                                  </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+
+                            <div className="space-y-2 bg-white border border-gray-100 p-4 rounded-xl shadow-3xs">
+                              <h6 className="font-display font-bold text-gray-800 text-xs uppercase tracking-wider border-b pb-1 flex items-center gap-1.5">
+                                <HelpCircle className="w-3.5 h-3.5 text-brand-600" /> 3. Ask Attorney
+                              </h6>
+                              <ul className="space-y-2">
+                                {(!displayedReport.whatToAskALawyer || displayedReport.whatToAskALawyer.length === 0) && (
+                                  <li className="text-xs text-slate-500">No questions for counsel supplied in this report; this is not a finding that none exist.</li>
+                                )}
+                                {(displayedReport.whatToAskALawyer || []).map((item: string, i: number) => {
+                                  const isAskActive = narration.isSegmentActive(`ask-${i}`);
+                                  return (
+                                  <li 
+                                    key={i} 
+                                    id={`ask-item-${i}`} 
+                                    className={`text-xs text-brand-900 bg-brand-50/40 p-2.5 rounded-lg border border-brand-100 leading-relaxed flex items-start justify-between gap-1.5 transition-all ${
+                                      isAskActive ? "ring-2 ring-brand-500 bg-brand-100/70" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-1.5 flex-1">
+                                      <strong className="shrink-0 mt-0.5">Q:</strong>
+                                      <div className="flex-1">
+                                        <FormattedReportText text={item} />
+                                      </div>
+                                    </div>
+                                    <ParagraphListenButton 
+                                      segment={getReportSegment(`ask-${i}`) || {
+                                        id: `ask-${i}`,
+                                        sectionId: "guidance",
+                                        label: `Question for Counsel ${i + 1}`,
+                                        text: `Question for counsel: ${item}`,
+                                        domId: `ask-item-${i}`,
+                                      }} 
+                                      iconOnly 
+                                      className="shrink-0" 
+                                    />
+                                  </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          </div>
+
+                          {/* Deep Scan Specific Cards (Omissions & Defense Retorts) */}
+                          {(currentDeepReport || (displayedReport.retorts && displayedReport.retorts.length > 0)) ? (
+                            <div className="space-y-4 pt-4 border-t border-slate-200">
+                              {/* Statutory Omissions */}
+                              {((currentDeepReport?.gaps || displayedReport.gaps || []).length > 0) && (
+                                <div className="space-y-2">
+                                  <h5 className="text-xs text-rose-800 font-bold uppercase tracking-wider flex items-center gap-1.5 font-display">
+                                    <ShieldAlert className="w-3.5 h-3.5 text-rose-600 font-bold" />
+                                    <span>Statutory Omissions Identified (What CAS Omitted)</span>
+                                  </h5>
+                                  <div className="grid grid-cols-1 gap-2">
+                                    {(currentDeepReport?.gaps || displayedReport.gaps || []).map((gap: string, i: number) => (
+                                      <div key={i} className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-slate-800 text-xs font-sans leading-relaxed">
+                                        <strong>Omits Details:</strong> {gap}
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">2. Elements Missing</h6>
-                          <ul className="space-y-1.5">
-                            {selectedReport.whatIsMissing.map((item, i) => (
-                              <li key={i} className="text-xs text-slate-700 leading-relaxed flex items-start gap-1.5">
-                                <span className="text-rose-500 font-bold shrink-0 mt-0.5">⚠</span>
-                                <div className="flex-1">
-                                  <FormattedReportText text={item} />
+                              )}
+
+                              {/* Hearing Retorts */}
+                              {((currentDeepReport?.retorts || displayedReport.retorts || []).length > 0) && (
+                                <div className="space-y-2">
+                                  <h5 className="text-xs text-brand-800 font-bold uppercase tracking-wider flex items-center gap-1.5 font-display">
+                                    <Scale className="w-3.5 h-3.5 text-brand-600" />
+                                    <span>Avenue of Defense & Hearing Retorts</span>
+                                  </h5>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {(currentDeepReport?.retorts || displayedReport.retorts || []).map((ret: any, i: number) => (
+                                      <div key={i} className="bg-white border border-slate-200 p-3.5 rounded-xl space-y-2 text-xs shadow-3xs">
+                                        <div className="border-b border-slate-100 pb-1.5">
+                                          <span className="text-[10px] font-sans text-rose-700 font-bold uppercase">Society Assertion:</span>
+                                          <p className="text-slate-800 italic mt-0.5 font-medium">"{ret.claim}"</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                          <span className="text-[10px] font-sans text-brand-700 font-bold uppercase block">Legal Rebuttal Rule:</span>
+                                          <p className="text-slate-700">{ret.objection}</p>
+                                        </div>
+                                        <div className="bg-brand-50 border border-brand-100 p-2 rounded-lg text-brand-900 text-[11px] leading-relaxed">
+                                          <strong>Step Action:</strong> {ret.action}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              </li>
-                            ))}
-                          </ul>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="p-4 bg-purple-50/70 border border-purple-200/80 rounded-xl text-xs text-purple-950 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                              <div>
+                                <h6 className="font-bold text-purple-900">Unlock Statutory Omissions & Hearing Retorts</h6>
+                                <p className="text-purple-800 text-[11px] mt-0.5">Run Forensic Deep Scan to reveal what CAS omitted from the document and construct structured hearing objections.</p>
+                              </div>
+                              <button
+                                onClick={() => triggerDeepScan(activeSelectedFile)}
+                                disabled={isDeepScanning}
+                                className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer transition-all"
+                              >
+                                {isDeepScanning ? "Scanning..." : "Run Deep Scan"}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="space-y-2">
-                          <h6 className="font-display font-bold text-gray-800 text-[10px] uppercase tracking-wider border-b pb-1">3. Ask Attorney</h6>
-                          <ul className="space-y-1.5">
-                            {selectedReport.whatToAskALawyer.map((item, i) => (
-                              <li key={i} className="text-xs text-brand-900 bg-brand-50/40 p-2.5 rounded-lg border border-brand-100 leading-relaxed flex items-start gap-1.5">
-                                <strong className="shrink-0 mt-0.5">Q:</strong>
-                                <div className="flex-1">
-                                  <FormattedReportText text={item} />
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
+                      )}
+
+                      {/* ============================================================ */}
+                      {/* TAB 6: AGENCY COMPLIANCE MATRIX                              */}
+                      {/* ============================================================ */}
+                      {reportWorkspaceTab === "compliance" && (
+                        <div className="space-y-5 animate-fadeIn">
+                          <AgencyComplianceMatrixView
+                            matrix={displayedReport.complianceMatrix}
+                            openLegislativeReference={openLegislativeReference}
+                          />
                         </div>
-                      </div>
+                      )}
 
                     </div>
                   ) : (
                     <div className="bg-slate-50 border border-dashed border-gray-200 py-10 px-6 rounded-2xl text-center space-y-5">
-                      {isSingleAnalyzing || isRecoveringJob || (activeSelectedFile.analysisStatus === "analyzing") ? (
+                      {isActivelyAnalyzing ? (
                         <div className="space-y-4 max-w-md mx-auto">
                           <div className="relative inline-block">
                             <div className="w-14 h-14 rounded-full border-4 border-brand-100 border-t-brand-600 animate-spin" />
                             <Scale className="w-6 h-6 text-brand-600 absolute inset-0 m-auto animate-pulse" />
                           </div>
                           <div className="space-y-2">
-                            <div className="flex justify-between text-xs font-sans font-semibold text-slate-700">
-                              <span>{streamingProgress.message || "Auditing document against statutory thresholds..."}</span>
-                              <span className="text-brand-600">{`${streamingProgress.percent || 30}%`}</span>
+                            <div className="flex justify-between items-center text-xs font-sans font-semibold text-slate-700">
+                              <span className="flex items-center gap-1.5">
+                                <span className={`inline-block w-2 h-2 rounded-full ${isProcessingStalled ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
+                                <span>{isProcessingStalled ? "Processing taking longer than expected. Monitoring server connection..." : (streamingProgress.message || "Auditing document against statutory thresholds...")}</span>
+                              </span>
+                              <span className={isProcessingStalled ? "text-amber-600 font-medium" : "text-brand-600"}>{streamingProgress.stage === "extracting" ? "Reading pages" : "Processing"}</span>
                             </div>
                             <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                               <div
                                 className="bg-brand-600 h-2 rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${Math.max(10, streamingProgress.percent || 30)}%` }}
+                                role="progressbar" aria-label={streamingProgress.message || "Processing document"}
                               />
                             </div>
                           </div>
+                          {preliminaryBrief && (
+                            <section className="text-left bg-white border border-amber-300 rounded-lg p-3 max-h-80 overflow-y-auto" aria-label="Preliminary case brief">
+                              <h3 className="font-sans font-bold text-sm text-slate-900 mb-2">Preliminary case brief — not yet verified</h3>
+                              <p className="font-sans text-xs text-amber-800 mb-2">This early analysis may contain errors. Verify findings and citations in the completed report before relying on them.</p>
+                              <div className="font-sans text-xs whitespace-pre-wrap text-slate-800">{preliminaryBrief}</div>
+                            </section>
+                          )}
                           {completedSections.length > 0 && (
                             <ul className="text-left text-[11px] font-sans text-slate-600 space-y-1 bg-white border border-slate-200 rounded-lg p-2.5" aria-label="Completed report sections">
                               {completedSections.map(section => (
@@ -4627,7 +5410,7 @@ export default function DocumentAnalyzerTab() {
                             </button>
                           </div>
                         </div>
-                      ) : activeSelectedFile.analysisStatus === "failed" || analyzerState === "ERROR" ? (
+                      ) : hasTerminalFailure ? (
                         <div className="space-y-4 max-w-md mx-auto text-center" id="analysis-failed-view">
                           <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
                             <AlertTriangle className="w-6 h-6" />
@@ -4669,7 +5452,15 @@ export default function DocumentAnalyzerTab() {
                             </div>
                           ) : (
                             <button
-                              onClick={() => triggerSingleAnalysis(activeSelectedFile)}
+                              onClick={() => {
+                                setSingleAnalysisError("");
+                                setSingleAnalysisErrorCode(null);
+                                setAnalyzerState("IDLE");
+                                setIsProcessingStalled(false);
+                                setIsRecoveringJob(false);
+                                setIsSingleAnalyzing(false);
+                                triggerSingleAnalysis(activeSelectedFile);
+                              }}
                               className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-2 shadow-xs cursor-pointer transition-all"
                             >
                               <RefreshCw className="w-4 h-4" />
@@ -4882,7 +5673,7 @@ export default function DocumentAnalyzerTab() {
                                   <span>{file.name}</span>
                                 </h4>
                                 <p className="text-[10px] font-sans text-slate-500 mt-0.5">
-                                  Uploaded: {file.uploadedAt} • Size: {Math.round(file.content.length / 1024)} KB
+                                  Uploaded: {file.uploadedAt || "Not recorded"} • Size: {Number.isFinite(file.size) ? `${Math.round(file.size / 1024)} KB` : "Not recorded"}
                                 </p>
                               </div>
 
@@ -4894,7 +5685,7 @@ export default function DocumentAnalyzerTab() {
                                   </span>
                                 ) : file.analysisStatus === "analyzing" ? (
                                   <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1 animate-pulse">
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing (3-5s)...
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing…
                                   </span>
                                 ) : file.analysisStatus === "failed" ? (
                                   <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1">
@@ -4911,8 +5702,7 @@ export default function DocumentAnalyzerTab() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setSelectedFileId(file.id);
-                                    setSelectedReport(file.analysisReport || null);
+                                    selectFileAndAlignMode(file.id, file.analysisReport);
                                     // Capture original document text for redaction
                                     if (file.content && typeof file.content === 'string') {
                                       try {
@@ -5309,6 +6099,9 @@ export default function DocumentAnalyzerTab() {
           </div>
         </div>
       )}
+
+      {/* Accessible Text-to-Speech Narration Player Bar (renders when active) */}
+      <NarrationBar />
 
     </div>
   );

@@ -126,7 +126,8 @@ export function isBlockedIpLiteral(ip: string): boolean {
   // IPv6
   if (trimmed === "::1") return true; // loopback
   if (trimmed === "::" ) return true; // unspecified
-  if (trimmed.startsWith("fe80:") || trimmed.startsWith("fe80::")) return true; // link-local fe80::/10
+  // link-local fe80::/10 spans fe80 to febf (the former check matched only the fe80 prefix)
+  if (/^fe[89ab][0-9a-f]:/.test(trimmed)) return true;
   // fc00::/7 unique local addresses (private IPv6)
   if (/^f[cd][0-9a-f]{2}:/.test(trimmed)) return true;
   // IPv4-mapped IPv6 (::ffff:a.b.c.d) — check the embedded IPv4

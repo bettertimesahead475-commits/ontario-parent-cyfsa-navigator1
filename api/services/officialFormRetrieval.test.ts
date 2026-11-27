@@ -590,3 +590,10 @@ describe("public serialization", () => {
     expect(pub.sha256Hex).toBe(result.sha256Hex);
   });
 });
+
+describe("isBlockedIpLiteral: the whole IPv6 link-local range fe80::/10 (SonarCloud S1313 review)", () => {
+  it("blocks fe80 through febf, and not neighbouring public prefixes", () => {
+    for (const ip of ["fe80::1", "fe90::1", "fea0::1", "febf::1", "FEB0::abcd"]) expect(isBlockedIpLiteral(ip)).toBe(true);
+    for (const ip of ["fec0::1", "fe7f::1", "2001:db8::1"]) expect(isBlockedIpLiteral(ip)).toBe(false);
+  });
+});

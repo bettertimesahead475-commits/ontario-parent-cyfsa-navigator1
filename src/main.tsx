@@ -19,17 +19,39 @@ import './index.css';
 // --------------------------------------------
 
 // --- Service Worker Register for Courtroom Offline Access ---
+// Staging domains (*.pages.dev) must NEVER register a service worker to prevent
+// stale-chunk caching and white screens across rapid staging deployments.
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/sw.js")
-      .then((reg) => {
-        console.log("[OPA SW] Standard Service Worker registered scope:", reg.scope);
-      })
-      .catch((err) => {
-        console.warn("[OPA SW] Registration omitted or blocked:", err);
+  const isStaging = typeof window !== "undefined" && 
+    (window.location.hostname.includes("pages.dev") || window.location.hostname === "localhost");
+  if (isStaging) {
+    // Proactively clear existing service workers and caches on staging
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const reg of registrations) {
+        reg.unregister().then(() => {
+          console.log("[OPA SW] Staging: Unregistered existing service worker scope:", reg.scope);
+        });
+      }
+    });
+    if ("caches" in window) {
+      caches.keys().then((keys) => {
+        for (const key of keys) {
+          caches.delete(key);
+        }
       });
-  });
+    }
+  } else {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => {
+          console.log("[OPA SW] Standard Service Worker registered scope:", reg.scope);
+        })
+        .catch((err) => {
+          console.warn("[OPA SW] Registration omitted or blocked:", err);
+        });
+    });
+  }
 }
 
 createRoot(document.getElementById('root')!).render(

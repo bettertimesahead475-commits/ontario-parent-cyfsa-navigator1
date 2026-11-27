@@ -42,6 +42,7 @@ export const REPORT_SECTIONS = [
 
 import { effectiveCitationStatus } from "./citationVerification";
 import { effectiveQuoteStatus, type DisplayQuoteStatus } from "./quoteVerification";
+import type { ComplianceMatrixReport } from "./complianceMatrixEngine";
 
 export type ReportSectionId = (typeof REPORT_SECTIONS)[number]["id"];
 
@@ -136,6 +137,7 @@ export interface ReportContract {
   warnings: string[];
   /** Run-level notes kept for professional review. No cost, token, or model data. */
   runNotes: string[];
+  complianceMatrix?: ComplianceMatrixReport;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +245,15 @@ function makeFinding(init: Partial<ReportFinding> & Pick<ReportFinding, "section
 
 export interface AdaptOptions {
   documentId?: string;
+}
+
+/** A second review is complete only when it says so and gave a result for every finding it was sent (saved reports included). */
+export function isSecondReviewComplete(verification: unknown): boolean {
+  if (!verification || typeof verification !== "object") return false;
+  const v = verification as { status?: unknown; checkedFindings?: unknown; totalFindings?: unknown };
+  if (v.status !== "completed") return false;
+  const total = Number(v.totalFindings);
+  return !(v.totalFindings != null && Number.isFinite(total) && Number(v.checkedFindings) < total);
 }
 
 /**
@@ -470,7 +481,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
   if (verification) {
     // Only the outcome is kept. The verifying model's identifier is deliberately not copied.
     runNotes.push(
-      `Independent second review: ${text(verification.status) || "unknown"}; ${Number(verification.checkedFindings) || 0} findings checked.`
+      `Independent second review: ${isSecondReviewComplete(verification) ? "completed" : text(verification.status) === "completed" ? "incomplete" : text(verification.status) || "unknown"}; ${Number(verification.checkedFindings) || 0} findings checked.`
     );
     if (text(verification.overallAssessment)) runNotes.push(text(verification.overallAssessment));
     if (text(verification.reason)) runNotes.push(text(verification.reason));
@@ -527,6 +538,7 @@ export function adaptLegacyReport(legacy: unknown, options: AdaptOptions = {}): 
     findings,
     warnings,
     runNotes,
+    complianceMatrix: (legacy as Loose)?.complianceMatrix,
   };
 }
 

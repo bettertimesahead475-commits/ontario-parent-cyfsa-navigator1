@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { neutralizeDocumentTags, toStrList } from "./analyzerSections.js";
 import { INTERNAL_CYFSA_SECTION_KEYS } from "../../shared/citationVerification";
 import { BUNDLED_STATUTE_ENTRIES } from "../../src/utils/statuteReference";
 import {
@@ -15,7 +16,7 @@ import {
   type GenerateFn,
 } from "./analyzerSections.js";
 import { AnalyzerError, redactDiagnostic } from "./analyzerErrors.js";
-import { COMPLETE_ANALYSIS, VERIFICATION_RESULT, isVerificationRequest, requestedSection } from "../analyzerTestFixtures.js";
+import { COMPLETE_ANALYSIS, VERIFICATION_RESULT, completeVerification, isVerificationRequest, requestedSection } from "../analyzerTestFixtures.js";
 
 const DOC = "The worker states that a neighbour told me the child was left alone on March 3, 2026.";
 
@@ -158,7 +159,7 @@ describe("runSectionedAnalysis", () => {
       thresholds: [],
       overallAssessment: "Calibrate severity.",
     };
-    const generate = responder(report, verification);
+    const generate: GenerateFn = vi.fn(async (params: any) => ok(isVerificationRequest(params) ? completeVerification(verification, params) : report));
     const { report: out, usageByModel } = await runSectionedAnalysis(
       base(generate, { mode: "full", verificationModel: "claude-opus-5" })
     );
@@ -227,15 +228,16 @@ describe("deterministic guards", () => {
     expect([...INTERNAL_CYFSA_SECTION_KEYS].sort()).toEqual(Object.keys(BUNDLED_STATUTE_ENTRIES).sort());
   });
 
-  it("marks citations outside the internal reference as unverified", () => {
+  it("marks citations outside the internal reference or with contradicted propositions as unverified", () => {
     expect(guardCitation("CYFSA 2017, Section 74").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 74(2)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(guardCitation("CYFSA s. 74(2)(a)").status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA, S.O. 2017, c. 14, s. 94(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
     const s81 = guardCitation("CYFSA s. 81(7)");
     expect(s81.status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA s. 94(5)").status).toBe("UNVERIFIED");
-    expect(guardCitation("CYFSA s. 125(1)").status).toBe("UNVERIFIED");
-    expect(guardCitation("CYFSA ss. 74(2) and 125(1)").status).toBe("UNVERIFIED");
+    expect(guardCitation("CYFSA s. 125(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(guardCitation("CYFSA ss. 74(2) and 125(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA s. 74(2), 94(5)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA ss. 74(2) and 94(1)").status).toBe("INTERNAL_REFERENCE_MATCH");
     expect(guardCitation("CYFSA ss. 94(1) and (5)").status).toBe("UNVERIFIED");
@@ -247,6 +249,32 @@ describe("deterministic guards", () => {
     expect(guardCitation("CYFSA s. 74(2)-(4)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA s. 74(2) and subs. 94(5)").status).toBe("UNVERIFIED");
     expect(guardCitation("CYFSA subsection 94(5)").status).toBe("UNVERIFIED");
+    expect(
+      guardCitation("CYFSA s. 94(6)(c)", {
+        proposition: "CAS has a universal duty to fund and pay for all private therapy and services.",
+      }).status
+    ).toBe("UNVERIFIED");
+    expect(
+      guardCitation("CYFSA, S.O. 2017, c. 14, Sched. 1, s. 81(1) & s. 81(7)", {
+        proposition:
+          "Under s. 81(1), the society applies to court for a protection hearing, while s. 81(7) governs warrantless apprehension where delay would result in an immediate substantial risk.",
+      }).status
+    ).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(
+      guardCitation("CYFSA, S.O. 2017, c. 14, Sched. 1, s. 81(1) & s. 81(7)", {
+        proposition: "Both s. 81(1) and s. 81(7) authorize warrantless apprehension of a child.",
+      }).status
+    ).toBe("UNVERIFIED");
+    expect(
+      guardCitation("CYFSA s. 102(1)", {
+        proposition: "The court may grant a custody order under s. 102(1) instead of a supervision order under s. 101(1), para. 1.",
+      }).status
+    ).toBe("INTERNAL_REFERENCE_MATCH");
+    expect(
+      guardCitation("CYFSA s. 102(1)", {
+        proposition: "Instead of s. 101(1), CYFSA s. 102(1) authorizes a supervision order.",
+      }).status
+    ).toBe("UNVERIFIED");
     expect(s81.text).not.toContain(UNVERIFIED_CITATION_NOTE);
     expect(guardCitation("CLRA s. 8(1)").status).toBe("UNVERIFIED");
     expect(guardCitation(UNVERIFIED_CITATION_NOTE).text).toBe(UNVERIFIED_CITATION_NOTE); // not doubled
@@ -291,5 +319,54 @@ describe("diagnostic redaction", () => {
   ])("removes a %s from log text", (_label, secret) => {
     const out = redactDiagnostic(`upstream said ${secret} here`);
     expect(out).not.toMatch(/sk_live_51|AKIAIOSFODNN7|ghp_abc|xoxb-|eyJhbGci|abc def|hunter2|mySecretValue|dXNlcjpwYXNz/);
+  });
+});
+
+// SonarCloud S8786 rewrites in analyzerSections.ts: each new form is compared with the pattern it replaced, then timed
+// on input crafted against the old pattern (old timings, measured once in a scratch run, were seconds).
+describe("S8786: linear document-tag, list-split and fence patterns", () => {
+  const OLD_TAG = /<\s*\/?\s*document\s*>/gi;
+  const oldNeutralize = (text: string) =>
+    text.replace(OLD_TAG, (m) => String.fromCharCode(0x2039) + m.slice(1, -1) + String.fromCharCode(0x203a));
+
+  it("neutralizeDocumentTags rewrites the same tags as before", () => {
+    const samples = ["<document>", "</document>", "< / DOCUMENT >", "<\n/\tdocument\n>", "</ document>", "<//document>", "</docs>", "a</document>b<document >c", "< document/>"];
+    for (const s of samples) expect(neutralizeDocumentTags(s), JSON.stringify(s)).toBe(oldNeutralize(s));
+    const alphabet = ["<", ">", "/", " ", "\n", "document", "DOCUMENT", "doc", "x"];
+    let seed = 7;
+    for (let i = 0; i < 5000; i++) {
+      let s = "";
+      for (let j = 0; j < 8; j++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; s += alphabet[seed % alphabet.length]; }
+      expect(neutralizeDocumentTags(s), JSON.stringify(s)).toBe(oldNeutralize(s));
+    }
+  });
+
+  it("neutralizeDocumentTags is linear on '<' followed by 50,000 spaces", () => {
+    const attack = "<" + " ".repeat(50_000) + "x";
+    const t0 = performance.now();
+    expect(neutralizeDocumentTags(attack)).toBe(attack);
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+
+  it("toStrList splits exactly as the former list-separator pattern did", () => {
+    const oldSplit = (v: string) => v.split(/\r?\n|[•\-]\s+|\d+\.\s+/).map((s) => s.trim()).filter(Boolean);
+    const samples = ["1. First 2. Second", "a\nb\r\nc", "• one • two", "- x - y", "10. ten 11.eleven", "v1.2 is 3. three", "123", "4.5. 6.  x"];
+    for (const s of samples) expect(toStrList(s, 50), s).toEqual(oldSplit(s).length ? oldSplit(s) : [s.trim()]);
+  });
+
+  it("toStrList is linear on a 50,000-digit run", () => {
+    const attack = "1".repeat(50_000) + " x";
+    const t0 = performance.now();
+    expect(toStrList(attack, 5)).toEqual([attack]);
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+
+  it("parseJsonObject still reads fenced and unfenced JSON, and ignores an unclosed fence quickly", () => {
+    expect(parseJsonObject('Result:\n```JSON\n{"a": 1}\n```')).toEqual({ a: 1 });
+    expect(parseJsonObject('{"b": 2}')).toEqual({ b: 2 });
+    const attack = "```" + " ".repeat(50_000) + "x";
+    const t0 = performance.now();
+    expect(parseJsonObject(attack)).toBeNull();
+    expect(performance.now() - t0).toBeLessThan(100);
   });
 });

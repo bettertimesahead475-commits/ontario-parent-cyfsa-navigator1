@@ -208,12 +208,23 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
     onBusy(true);
     onError("");
     try {
-      const res = await apiFetch("/api/activate-code", {
+      const send = (referenceNumber?: string) => apiFetch("/api/activate-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailToUse, code: codeToRedeem.trim() }),
+        body: JSON.stringify({ email: emailToUse, code: codeToRedeem.trim(), ...(referenceNumber ? { referenceNumber } : {}) }),
       });
-      const data = await res.json();
+      let res = await send();
+      let data = await res.json();
+      // A code bought with a different email than the signed-in account needs the purchase's payment
+      // reference (shown when access was requested and used in the e-transfer memo).
+      if (res.status === 403 && data?.code === "PURCHASE_REFERENCE_REQUIRED") {
+        const reference = window.prompt(
+          "This code was purchased with a different email than the one you are signed in with.\n\nEnter the payment reference number from your access request (it was in your e-transfer message) to confirm the purchase is yours:"
+        );
+        if (!reference || !reference.trim()) throw new Error("The payment reference is needed to activate a code purchased with a different email.");
+        res = await send(reference.trim());
+        data = await res.json();
+      }
       if (!res.ok) throw new Error(data.error || "Invalid email or code.");
       localStorage.setItem(getUserKey("ps_session_token") || "ps_session_token", data.token);
       localStorage.setItem(getUserKey("ps_session_email") || "ps_session_email", data.email);
@@ -858,6 +869,18 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
                 <td className="py-3 px-3 text-center text-slate-300">—</td>
                 <td className="py-3 px-3 text-center text-slate-300">—</td>
                 <td className="py-3 px-3 text-center text-emerald-600 font-bold">✓ Full Platform</td>
+              </tr>
+              <tr>
+                <th scope="row" className="py-3 px-4 text-left font-semibold text-slate-900">
+                  Final Case Assessment
+                  <span className="block text-[11px] font-normal text-slate-600">
+                    Case timeline, conflicting accounts, evidence gaps, and questions for counsel
+                  </span>
+                </th>
+                <td className="py-3 px-3 text-center text-slate-500">—</td>
+                <td className="py-3 px-3 text-center text-slate-500">—</td>
+                <td className="py-3 px-3 text-center text-slate-500">—</td>
+                <td className="py-3 px-3 text-center font-semibold text-indigo-800">Planned</td>
               </tr>
               <tr>
                 <td className="py-3 px-4 font-semibold text-slate-900">Ontario Court Template Builders</td>

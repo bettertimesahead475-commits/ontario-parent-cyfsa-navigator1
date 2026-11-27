@@ -4,8 +4,11 @@
  */
 
 import { useAppReset } from "../hooks/useAppReset";
+import { finishPrintWindow } from "../utils/printWindow";
 import React, { useState, useEffect } from "react";
 import { EMPTY_AFFIDAVIT } from "../data";
+import OfficialCourtFormsGuide from "./OfficialCourtFormsGuide";
+import OfficialCourtFormsGuideBatch2 from "./OfficialCourtFormsGuideBatch2";
 import { AffidavitDraft, CaseTimelineItem, EvidenceLogItem, IssueSummarySheet, ParentPrepWorksheet, Form33BAnswer, PlanOfCare } from "../types";
 import { Plus, Trash, Printer, ShieldAlert, CheckCircle, Scale, FileText, LayoutGrid, Calendar, BookOpen, Clock, Layers, Info, Mic, Square, Sparkles, Loader2, RefreshCw, AlertTriangle, Save, ArrowRight, Check, Lock, Heart, CloudUpload } from "lucide-react";
 import { apiFetch, safeReadJson } from "../utils/api";
@@ -1018,7 +1021,7 @@ export default function TemplatesTab() {
           ${sharedStyle}
         </head>
         <body>
-          <button class="no-print-btn" onclick="window.print()">Print / Save as PDF</button>
+          <button class="no-print-btn" data-print-button>Print / Save as PDF</button>
           
           ${bodyContent}
 
@@ -1028,18 +1031,13 @@ export default function TemplatesTab() {
           <div style="text-align:center; font-size:9.5px; color:#cbd5e1; margin-top:10px;">
             Generated via CYFSA Navigator PDF Export Suite. Primary statutes refreshed 2026.
           </div>
-
-          <script>
-            setTimeout(() => {
-              window.print();
-            }, 600);
-          </script>
         </body>
       </html>
     `;
 
     printWindow.document.write(htmlContent);
     printWindow.document.close();
+    finishPrintWindow(printWindow);
   };
 
   const handlePrint = () => {
@@ -1047,7 +1045,9 @@ export default function TemplatesTab() {
   };
 
   return (
-    <div className="space-y-8" id="templates-tab">
+    <div className="space-y-5" id="templates-tab">
+      <OfficialCourtFormsGuide />
+      <OfficialCourtFormsGuideBatch2 />
       {/* Handover Alert Banner */}
       {handoverDocName && (
         <div className="bg-emerald-50 border border-emerald-200 p-4.5 rounded-xl flex items-center justify-between gap-4 animate-fade-in text-left no-print shadow-3xs">

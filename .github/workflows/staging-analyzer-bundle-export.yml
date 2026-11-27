@@ -1,0 +1,51 @@
+name: Export verified staging analyzer Worker bundles
+on:
+  push:
+    branches:
+      - integration/navigator-release-20261108
+    paths:
+      - 'workers/analyzer-queue-consumer.ts'
+      - 'workers/staging-job-service.ts'
+      - 'workers/staging-job-service-entrypoint.js'
+      - 'functions/api/_durable-analysis-jobs.ts'
+      - 'functions/api/_supabase-paid-session.ts'
+      - 'functions/api/_staging-credit-rpc.ts'
+      - 'functions/api/_analyzer-model-adapter.ts'
+      - 'api/services/analyzerSections.ts'
+      - '.github/workflows/staging-analyzer-bundle-export.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Type-check and focused forensic tests
+        run: |
+          npm run lint
+          npx --no-install vitest run api/cloudflare-deep-scan.test.ts api/cloudflare-analyzer-queue-producer.test.ts api/cloudflare-analyzer-queue-worker.test.ts api/cloudflare-staging-service-reuse.test.ts api/cloudflare-analyzer-model-adapter.test.ts
+      - name: Build staging-only Cloudflare Worker modules
+        run: |
+          mkdir -p deploy/generated
+          npx --no-install esbuild workers/staging-job-service-entrypoint.js --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/staging-analyzer-executor.mjs
+          npx --no-install esbuild workers/staging-queue-relay.ts --bundle --format=esm --target=es2022 --platform=browser --external:cloudflare:workers --outfile=deploy/generated/staging-analyzer-relay.mjs
+          test -s deploy/generated/staging-analyzer-executor.mjs
+          test -s deploy/generated/staging-analyzer-relay.mjs
+      - name: Publish reproducible bundles on isolated build branch
+        run: |
+          git config user.name 'cyfsa-staging-build[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          SHORT_SHA="${GITHUB_SHA:0:12}"
+          BRANCH="build/staging-analyzer-${SHORT_SHA}"
+          git checkout -b "$BRANCH"
+          git add -f deploy/generated/staging-analyzer-executor.mjs deploy/generated/staging-analyzer-relay.mjs
+          git commit -m "build: isolated staging analyzer bundles from ${SHORT_SHA}"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          echo "Staging bundles published to ${BRANCH}"

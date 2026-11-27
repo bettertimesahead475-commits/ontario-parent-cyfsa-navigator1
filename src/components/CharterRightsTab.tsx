@@ -33,19 +33,17 @@ export default function CharterRightsTab() {
   }, []);
 
   return (
-    <div className="space-y-8" id="charter-rights-tab">
+    <div className="space-y-4" id="charter-rights-tab">
       <div className="max-w-3xl">
         <h2 className="font-display text-2xl font-bold text-gray-900">Your Charter Rights During a CAS Interaction</h2>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">
-          These are constitutional rights under the Canadian Charter of Rights and Freedoms — they apply
-          regardless of what any specific CYFSA section says. This is educational, not legal advice; use it
-          to prepare questions for a lawyer or Legal Aid Ontario, not as a substitute for one.
+          The Canadian Charter of Rights and Freedoms can constrain government action in child protection matters, but whether a particular CAS act engages a Charter right and whether a limit is lawful depend on the facts and applicable law. This is educational, not legal advice; use it to prepare questions for a lawyer or Legal Aid Ontario.
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         {CHARTER_RIGHTS.map(right => (
-          <article key={right.section} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <article key={right.section} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-2">
               <Scale className="h-4 w-4 text-brand-600" />
               <span className="text-xs font-bold uppercase tracking-wide text-brand-600">{right.section}</span>
@@ -63,7 +61,7 @@ export default function CharterRightsTab() {
         ))}
       </div>
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-relaxed text-amber-950">
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-950">
         <ShieldCheck className="mb-2 h-5 w-5 text-amber-700" />
         <strong>These are starting points for a conversation with a lawyer, not scripts guaranteed to work in every situation.</strong> Every case is fact-specific — confirm with counsel or Legal Aid Ontario how these apply to your circumstances.
       </div>

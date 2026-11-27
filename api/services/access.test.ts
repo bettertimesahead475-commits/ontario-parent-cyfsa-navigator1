@@ -190,7 +190,7 @@ describe("approvePayment - parent email delivery", () => {
     process.env.SMTP_USER = "user";
     process.env.SMTP_PASS = "pass";
 
-    const db = createFakeDb({ reference_number: "PS-MAIL1", amount: 49, plan: "Premium", status: "pending", notes: "email:parent@example.com" });
+    const db = createFakeDb({ reference_number: "PS-MAIL1", amount: 49, plan: "Premium", status: "pending", notes: "email:parent@example.com;uid:firebase-123;key:checkout-123" });
     useFakeDb(db);
 
     const result = await approvePayment("PS-MAIL1", 49);

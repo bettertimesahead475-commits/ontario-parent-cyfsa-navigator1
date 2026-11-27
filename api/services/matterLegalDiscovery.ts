@@ -55,6 +55,7 @@ import {
   type MatterResearchRunResult,
   type TriggerType
 } from './matterResearchRuns.js';
+import { byCodeUnit } from "../../shared/codeUnitOrder.js";
 
 const invalid = (message: string) => new LifecycleError(400, 'INVALID_DISCOVERY_INPUT', message);
 
@@ -200,7 +201,7 @@ export function tokenize(text: string): string[] {
     out.push(w);
   }
   // Stable, deterministic ordering independent of input order.
-  out.sort();
+  out.sort(byCodeUnit);
   return out;
 }
 
@@ -364,7 +365,7 @@ export function rankDiscoveredAuthority(context: MatterContext, provisions: Cano
     const contextMatches: ContextMatch[] = [];
 
     for (const { item, tokens } of contextTokenSets) {
-      const overlap = [...tokens].filter((t) => provisionTokens.has(t)).sort();
+      const overlap = [...tokens].filter((t) => provisionTokens.has(t)).sort(byCodeUnit);
       if (overlap.length === 0) continue;
       overlap.forEach((t) => matchedTermSet.add(t));
       contextMatches.push({ sourceType: item.sourceType, id: item.id, matchedTerms: overlap });
@@ -372,7 +373,7 @@ export function rankDiscoveredAuthority(context: MatterContext, provisions: Cano
 
     if (matchedTermSet.size === 0) continue;
 
-    const matchedTerms = [...matchedTermSet].sort();
+    const matchedTerms = [...matchedTermSet].sort(byCodeUnit);
     const score = Math.min(1, matchedTerms.length / provisionTokens.size);
 
     const limitations: string[] = [];

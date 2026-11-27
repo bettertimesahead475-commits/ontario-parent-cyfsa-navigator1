@@ -95,12 +95,13 @@ export function isValidAnalysisJobId(id: unknown): id is string {
   return isAnalysisJobId(id);
 }
 
+/** Server-generated analysis id. Job ids are Storage keys, so they come from the cryptographic generator (fails closed). */
 export function generateAnalysisJobId(): string {
-  return `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  return newAnalysisJobId();
 }
 
 import { getSupabase } from "./access.js";
-import { isAnalysisJobId } from "../../shared/analyzerRetryPolicy.js";
+import { isAnalysisJobId, newAnalysisJobId } from "../../shared/analyzerRetryPolicy.js";
 
 const jobStore = new Map<string, AnalysisJob>();
 const JOB_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours

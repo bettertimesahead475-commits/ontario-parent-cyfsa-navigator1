@@ -1,0 +1,366 @@
+import { ANALYSIS_JOBS_BUCKET } from './_analysis-jobs';
+import { normalizeSupabaseKey, supabaseKeyHygiene } from './_supabase-key';
+import type { AnalyzerQueueMessage } from './_analyzer-queue-contract';
+
+export interface DurableJobEnv {
+  STAGING_SUPABASE_URL?: string;
+  STAGING_SUPABASE_SERVICE_ROLE_KEY?: string;
+}
+
+export interface AnalyzerQueueBinding {
+  send(message: AnalyzerQueueMessage): Promise<unknown>;
+}
+
+export interface DurableJobRecord {
+  job_id: string;
+  owner_uid: string;
+  mode: 'fast' | 'full';
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  input_key: string;
+  session_id: string | null;
+  reservation_id: string | null;
+  owner_bypass: boolean;
+  worker_token?: string;
+  attempt_count?: number;
+  lease_expires_at?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+  retryable?: boolean;
+  progress?: number;
+  stage?: string | null;
+}
+
+export class DurableJobStorageError extends Error {
+  constructor(message: string, readonly retryable: boolean, readonly status?: number) {
+    super(message);
+    this.name = 'DurableJobStorageError';
+  }
+}
+
+function serviceConfig(env: DurableJobEnv): { base: string; key: string } {
+  const key = normalizeSupabaseKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY);
+  if (!env.STAGING_SUPABASE_URL || !key) {
+    throw new DurableJobStorageError('Durable job database is not configured.', false);
+  }
+  const base = env.STAGING_SUPABASE_URL.replace(/\/$/, '');
+  return { base, key };
+}
+
+async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unknown>, fetcher: typeof fetch = fetch): Promise<T> {
+  const { base, key } = serviceConfig(env);
+  let response: Response;
+  const start = Date.now();
+  try {
+    response = await fetcher(`${base}/rest/v1/rpc/${name}`, {
+      method: 'POST',
+      headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(args),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (error) {
+    // Structured diagnostics reveal the transport cause without recording
+    // document contents, customer identifiers, provider keys, or request URLs.
+    const diagnostic = error && typeof error === 'object'
+      ? error as { name?: string; cause?: { name?: string; code?: string } }
+      : {};
+    console.error('[DURABLE_RPC_TRANSPORT_FAILURE]', JSON.stringify({
+      rpcName: name,
+      elapsedMs: Date.now() - start,
+      exceptionClass: diagnostic.name || 'unknown',
+      causeClass: diagnostic.cause?.name || null,
+      causeCode: typeof diagnostic.cause?.code === 'string' ? diagnostic.cause.code.slice(0, 50) : null,
+    }));
+    throw new DurableJobStorageError('Durable job database request failed.', true);
+  }
+  if (!response.ok) {
+    // Log only the SQLSTATE/PostgREST code, never response message, request
+    // arguments, document text, user identity, or authentication headers.
+    let pgCode: string | null = null;
+    let errorClass: string = 'UNKNOWN';
+    try {
+      const error: unknown = await response.json();
+      if (error && typeof error === 'object') {
+        const data = error as { code?: unknown; message?: unknown; error?: unknown };
+        if (typeof data.code === 'string' && /^[A-Za-z0-9]{1,20}$/.test(data.code)) pgCode = data.code;
+        // Classify known gateway errors without logging arbitrary upstream
+        // text, URLs, tokens, request arguments, or user data.
+        const message = [data.message, data.error].filter(x => typeof x === 'string').join(' ');
+        if (/invalid api key/i.test(message)) errorClass = 'INVALID_API_KEY';
+        else if (/jwt|bearer token/i.test(message)) errorClass = 'JWT_INVALID';
+        else if (/unauthorized|permission denied/i.test(message)) errorClass = 'AUTHORIZATION';
+        else if (pgCode) errorClass = 'POSTGRES_ERROR';
+        else errorClass = 'GATEWAY_ERROR';
+      }
+    } catch {
+      errorClass = 'NON_JSON_RESPONSE';
+    }
+    // Inspect only non-secret JWT claims. Report boolean comparisons, never
+    // the JWT, project reference, role string, or request URL. This distinguishes
+    // an old Worker secret from a broken database without rotating anything.
+    let serviceRoleClaim: boolean | null = null;
+    let projectClaimMatches: boolean | null = null;
+    let tokenExpired: boolean | null = null;
+    try {
+      const segment = key.split('.')[1];
+      const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/'))) as {
+        role?: unknown; ref?: unknown; exp?: unknown;
+      };
+      if (typeof payload.role === 'string') serviceRoleClaim = payload.role === 'service_role';
+      if (typeof payload.ref === 'string') {
+        projectClaimMatches = payload.ref === new URL(base).hostname.split('.')[0];
+      }
+      if (typeof payload.exp === 'number') tokenExpired = payload.exp <= Date.now() / 1000;
+    } catch { /* A modern opaque key or malformed token has no JWT claims. */ }
+    let responseHostMatches: boolean | null = null;
+    try {
+      if (response.url) responseHostMatches = new URL(response.url).hostname === new URL(base).hostname;
+    } catch { /* No response URL available. */ }
+    console.error('[DURABLE_RPC_HTTP_REJECTED]', JSON.stringify({
+      rpcName: name,
+      httpStatus: response.status,
+      pgCode,
+      errorClass,
+      contentType: (response.headers.get('content-type') || '').split(';')[0].slice(0, 48),
+      credentialFormat: key.startsWith('eyJ') ? 'legacy_jwt' : key.startsWith('sb_secret_') ? 'secret_api_key' : 'other',
+      responseType: response.type,
+      statusText: response.statusText.slice(0, 48),
+      headerNames: ['server', 'cf-ray', 'content-length', 'x-kong-response-latency', 'sb-gateway-version']
+        .filter(header => response.headers.has(header)),
+      hasResponseUrl: Boolean(response.url),
+      responseHostMatches,
+      serviceRoleClaim,
+      projectClaimMatches,
+      tokenExpired,
+      // Booleans only: whether the configured secret carried removable padding, and whether
+      // invalid header bytes remain after trimming (which trimming cannot fix).
+      configuredKey: supabaseKeyHygiene(env.STAGING_SUPABASE_SERVICE_ROLE_KEY),
+    }));
+    throw new DurableJobStorageError('Durable job database rejected the request.', response.status >= 500 || response.status === 429, response.status);
+  }
+  return await response.json() as T;
+}
+
+/**
+ * Supabase Storage answers every error with HTTP 400 and puts the real status in the JSON body
+ * (statusCode "404" for a missing object, "403" for access denied, "409" for an existing object).
+ * Treating the transport status alone as authoritative turned "no saved report yet" into a permanent
+ * failure that killed every new queued job at its first step. Body text is never logged or returned.
+ */
+export async function storageEffectiveStatus(response: Response): Promise<number> {
+  if (response.ok || response.status !== 400) return response.status;
+  try {
+    const body = await response.clone().json() as { statusCode?: unknown; code?: unknown };
+    const inner = Number(body?.statusCode);
+    if (Number.isInteger(inner) && inner >= 400 && inner <= 599) return inner;
+    if (body?.code === 'NoSuchKey') return 404;
+  } catch { /* Not JSON: keep the transport status. */ }
+  return response.status;
+}
+
+function storageRetryable(status: number): boolean {
+  return status >= 500 || status === 429 || status === 408;
+}
+
+function storageUrl(env: DurableJobEnv, key: string, read = false): string {
+  const { base } = serviceConfig(env);
+  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+  return `${base}/storage/v1/object/${read ? 'authenticated/' : ''}${ANALYSIS_JOBS_BUCKET}/${encodedKey}`;
+}
+
+function storageHeaders(env: DurableJobEnv, contentType = 'application/json'): HeadersInit {
+  const { key } = serviceConfig(env);
+  return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': contentType };
+}
+
+export async function createDurableJob(env: DurableJobEnv, job: Omit<DurableJobRecord, 'status'>, fetcher: typeof fetch = fetch): Promise<DurableJobRecord> {
+  return rpc<DurableJobRecord>(env, 'analyzer_create_job', {
+    p_job_id: job.job_id,
+    p_owner_uid: job.owner_uid,
+    p_mode: job.mode,
+    p_input_key: job.input_key,
+    p_session_id: job.session_id,
+    p_reservation_id: job.reservation_id,
+    p_owner_bypass: job.owner_bypass,
+  }, fetcher);
+}
+
+export async function saveDurableInput(env: DurableJobEnv, key: string, input: unknown, fetcher: typeof fetch = fetch): Promise<void> {
+  serviceConfig(env);
+  let response: Response;
+  try {
+    response = await fetcher(storageUrl(env, key), {
+      method: 'POST',
+      headers: { ...storageHeaders(env), 'x-upsert': 'false' },
+      body: JSON.stringify(input),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    throw new DurableJobStorageError('Document input could not be saved securely.', true);
+  }
+  if (!response.ok) { const status = await storageEffectiveStatus(response); throw new DurableJobStorageError('Document input could not be saved securely.', storageRetryable(status), status); }
+}
+
+export async function loadDurableInput(env: DurableJobEnv, key: string, fetcher: typeof fetch = fetch): Promise<{ documentText: string; fileName?: string }> {
+  let response: Response;
+  try {
+    response = await fetcher(storageUrl(env, key, true), {
+      headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    throw new DurableJobStorageError('Stored document input could not be loaded.', true);
+  }
+  if (!response.ok) { const status = await storageEffectiveStatus(response); throw new DurableJobStorageError('Stored document input could not be loaded.', storageRetryable(status), status); }
+  const value = await response.json() as { documentText?: unknown; fileName?: unknown };
+  if (typeof value.documentText !== 'string' || !value.documentText.trim()) throw new DurableJobStorageError('Stored document input is invalid.', false, 422);
+  return { documentText: value.documentText, ...(typeof value.fileName === 'string' ? { fileName: value.fileName } : {}) };
+}
+
+export async function readDurableJob(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch): Promise<DurableJobRecord | null> {
+  return await rpc<DurableJobRecord | null>(env, 'analyzer_get_job', { p_job_id: jobId }, fetcher);
+}
+
+export async function claimDurableJob(env: DurableJobEnv, jobId: string, workerToken: string, leaseSeconds = 240, fetcher: typeof fetch = fetch): Promise<DurableJobRecord | null> {
+  return await rpc<DurableJobRecord | null>(env, 'analyzer_claim_job', {
+    p_job_id: jobId, p_worker_token: workerToken, p_lease_seconds: leaseSeconds,
+  }, fetcher);
+}
+
+export async function updateDurableJob(
+  env: DurableJobEnv,
+  input: { jobId: string; workerToken?: string | null; status: 'queued' | 'running' | 'completed' | 'failed'; errorCode?: string | null; errorMessage?: string | null; retryable?: boolean; progress?: number; stage?: string },
+  fetcher: typeof fetch = fetch,
+): Promise<boolean> {
+  return rpc<boolean>(env, 'analyzer_update_job', {
+    p_job_id: input.jobId,
+    p_worker_token: input.workerToken ?? null,
+    p_status: input.status,
+    p_error_code: input.errorCode ?? null,
+    p_error_message: input.errorMessage ?? null,
+    p_retryable: input.retryable ?? null,
+    p_progress: input.progress ?? null,
+    p_stage: input.stage ?? null,
+  }, fetcher);
+}
+
+export async function failDeadLetterJob(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch): Promise<DurableJobRecord | null> {
+  return await rpc<DurableJobRecord | null>(env, 'analyzer_fail_dead_letter', {
+    p_job_id: jobId,
+    p_error_code: 'ANALYZER_RETRIES_EXHAUSTED',
+    p_error_message: 'The analysis could not be completed after multiple attempts. Your document remains available; you can retry it.',
+  }, fetcher);
+}
+
+export async function completeRecoveredJob(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+  return await rpc<boolean>(env, 'analyzer_complete_recovered_job', { p_job_id: jobId }, fetcher);
+}
+
+export async function requeueFromDeadLetter(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+  return await rpc<boolean>(env, 'analyzer_requeue_from_dlq', { p_job_id: jobId }, fetcher);
+}
+
+/**
+ * True when an analysis id is already used by another user's job-ledger row or saved Storage object. Checked before the direct path writes `<id>.json` with upsert, so one
+ * user can never overwrite another user's report. If ownership cannot be confirmed (Storage error or timeout)
+ * the id is refused: client-supplied ids are not secret, and a transient error can clear
+ * before the overwriting write.
+ */
+export type JobOwnership = 'clear' | 'conflict' | 'unavailable';
+
+export async function jobOwnership(env: DurableJobEnv, jobId: string, uid: string, fetcher: typeof fetch = fetch): Promise<JobOwnership> {
+  // Both sources must positively establish the id is free or the caller's. Any read that fails is 'unavailable'
+  // (retryable). A record that exists but whose owner cannot be established (no owner, not JSON) is 'conflict':
+  // that is permanent, and every object at "<id>.json" and every ledger row is written with its owner.
+  try {
+    const job = await readDurableJob(env, jobId, fetcher);
+    if (job) {
+      if (typeof job.owner_uid !== 'string' || !job.owner_uid) return 'conflict';
+      if (job.owner_uid !== uid) return 'conflict';
+    }
+  } catch {
+    // A queued job has a ledger row long before its "<id>.json" exists, so a ledger outage cannot be covered by
+    // the Storage check below.
+    console.warn('[JOB_OWNER_CHECK_UNAVAILABLE]', JSON.stringify({ source: 'ledger' }));
+    return 'unavailable';
+  }
+  try {
+    const response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(5000) });
+    const status = await storageEffectiveStatus(response);
+    if (status === 404) return 'clear';
+    if (!response.ok) { console.warn('[JOB_OWNER_CHECK_UNAVAILABLE]', JSON.stringify({ source: 'storage', status })); return 'unavailable'; }
+    // A body that cannot be read (timeout/reset) is an outage, not an empty record: the outer catch refuses it.
+    const text = await response.text();
+    let stored: { uid?: unknown } | null = null;
+    try { stored = JSON.parse(text) as { uid?: unknown } | null; } catch {
+      console.warn('[JOB_OWNER_CHECK_UNREADABLE_RECORD]', JSON.stringify({ source: 'storage' }));
+      return 'conflict';
+    }
+    if (typeof stored?.uid !== 'string' || !stored.uid) return 'conflict';
+    return stored.uid === uid ? 'clear' : 'conflict';
+  } catch { console.warn('[JOB_OWNER_CHECK_UNAVAILABLE]', JSON.stringify({ source: 'storage' })); return 'unavailable'; }
+}
+
+/** True unless the id is confirmed free or owned by `uid` (fails closed). */
+export async function jobOwnerConflict(env: DurableJobEnv, jobId: string, uid: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+  return (await jobOwnership(env, jobId, uid, fetcher)) !== 'clear';
+}
+
+/**
+ * The id a new attempt should use. The browser reuses one analysis id for every Retry of a document (so an uncertain
+ * outcome is never charged twice), but a queued job that ended 'failed' keeps its ledger row and can never run again
+ * under that id. Such a Retry continues under `<id>-r<n>`: the first attempt id with no row, or one that is still
+ * live (which the duplicate-insert path then follows). Read errors and rows of other users keep the original id, so
+ * the existing duplicate handling decides. Max 5 further attempts per document.
+ */
+export async function nextAttemptId(env: DurableJobEnv, jobId: string, uid: string, fetcher: typeof fetch = fetch): Promise<string> {
+  try {
+    const base = await readDurableJob(env, jobId, fetcher);
+    if (!base || base.status !== 'failed' || base.owner_uid !== uid) return jobId;
+    const stem = jobId.slice(0, 124);
+    for (let n = 1; n <= 5; n++) {
+      const candidate = `${stem}-r${n}`;
+      const row = await readDurableJob(env, candidate, fetcher);
+      if (!row) return candidate;
+      if (row.owner_uid !== uid) continue;
+      if (row.status !== 'failed') return candidate;
+    }
+  } catch { /* keep the original id */ }
+  return jobId;
+}
+
+/**
+ * For a status read of an id whose job failed: the caller's newest later attempt (<id>-r1..r5, see nextAttemptId), so a
+ * browser that still polls the original id (lost 202 reply, page reload) follows the Retry it started. Returns null
+ * when there is no later attempt of this owner.
+ */
+export async function latestOwnAttempt(env: DurableJobEnv, jobId: string, ownerUid: string, fetcher: typeof fetch = fetch): Promise<DurableJobRecord | null> {
+  const stem = jobId.slice(0, 124);
+  let latest: DurableJobRecord | null = null;
+  for (let n = 1; n <= 5; n++) {
+    const row = await readDurableJob(env, `${stem}-r${n}`, fetcher);
+    if (!row) break;
+    if (row.owner_uid === ownerUid) latest = row;
+  }
+  return latest;
+}
+
+export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fetcher: typeof fetch = fetch, expectedOwnerUid?: string): Promise<Record<string, unknown> | null> {
+  let response: Response;
+  try {
+    response = await fetcher(storageUrl(env, `${jobId}.json`, true), { headers: storageHeaders(env), redirect: 'manual', signal: AbortSignal.timeout(8000) });
+  } catch { throw new DurableJobStorageError('Saved analysis report could not be loaded.', true); }
+  // A new job has no report yet. Supabase Storage reports that as HTTP 400 with statusCode "404".
+  const status = await storageEffectiveStatus(response);
+  if (status === 404) return null;
+  if (!response.ok) throw new DurableJobStorageError('Saved analysis report could not be loaded.', storageRetryable(status), status);
+  const stored = await response.json() as { status?: string; report?: unknown; uid?: unknown };
+  // A report saved by anyone other than the job owner is never shown to the owner or used to finalize credit.
+  if (expectedOwnerUid !== undefined && stored.uid !== expectedOwnerUid) {
+    console.warn('[PERSISTED_REPORT_OWNER_MISMATCH]', JSON.stringify({ hasUid: typeof stored.uid === 'string' }));
+    return null;
+  }
+  return stored.status === 'completed' && stored.report && typeof stored.report === 'object'
+    ? stored.report as Record<string, unknown>
+    : null;
+}
