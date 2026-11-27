@@ -508,7 +508,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
         ` : ""}
         ${verification ? `
           <div class="review-badge">
-            <strong>${secondReviewDone ? "✓ " : ""}Second Review:</strong> ${escapeHtml(secondReviewDone ? `Completed. ${verification.checkedFindings ?? 0} findings checked against the uploaded document by a second model.` : secondReviewPartial ? `Partly completed. ${reviewChecked}${reviewTotal ? ` of ${reviewTotal}` : ""} findings checked against the uploaded document by a second model; the others were not second-reviewed.` : "Not completed. The findings were not second-reviewed.")}
+            <strong>Second Review:</strong> ${escapeHtml(secondReviewDone ? `Completed. ${verification.checkedFindings ?? 0} findings checked against the uploaded document by a second model.` : secondReviewPartial ? `Partly completed. ${reviewChecked}${reviewTotal ? ` of ${reviewTotal}` : ""} findings checked against the uploaded document by a second model; the others were not second-reviewed.` : "Not completed. The findings were not second-reviewed.")}
             ${verification.overallAssessment ? `<br/><span style="margin-top:2px; display:inline-block;">${escapeHtml(verification.overallAssessment)}</span>` : ""}
           </div>
         ` : ""}
@@ -870,7 +870,7 @@ export function renderForensicReportHtml(report: Record<string, any>, options: P
       ` : ""}
 
       <!-- 12. METHODOLOGY & AUDIT TRAIL -->
-      <footer style="margin-top:30px; padding-top:14px; border-top:1px solid #cbd5e1; font-size:8.5px; color:#64748b; line-height:1.4;">
+      <footer style="break-before:avoid; page-break-before:avoid; break-inside:avoid; page-break-inside:avoid; margin-top:30px; padding-top:14px; border-top:1px solid #cbd5e1; font-size:8.5px; color:#64748b; line-height:1.4;">
         <p><strong>Method:</strong> Automated AI review of the uploaded document. ${secondReviewDone ? "A second model checked the findings against the uploaded text." : secondReviewPartial ? "A second model checked some of the findings against the uploaded text; the others were not second-reviewed." : "The second review was not completed for this report."} Check every quotation and page reference against the original document, and confirm statute text on Ontario e-Laws before relying on it.</p>
         <p>CYFSA Navigator • Ontario Child Welfare File Organizer & Case Assistant • Confidential Legal Preparation Document</p>
       </footer>

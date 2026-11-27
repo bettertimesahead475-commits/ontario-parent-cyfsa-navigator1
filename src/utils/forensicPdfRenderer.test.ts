@@ -134,6 +134,15 @@ describe("Forensic PDF fidelity to the saved analysis", () => {
     expect(out).toContain("Location: Not stated in the document");
   });
 
+  it("has no emoji or check-mark glyphs, which print as empty boxes", () => {
+    const completed = renderForensicReportHtml({ ...saved, forensicVerification: { status: "completed", checkedFindings: 1 }, redFlags: saved.redFlags.map((f) => ({ ...f, secondReviewVerdict: "SUPPORTED" })) });
+    for (const html of [out, completed]) expect(html).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
+  });
+
+  it("keeps the closing method footer whole and with the content before it", () => {
+    expect(out).toMatch(/<footer style="break-before:avoid; page-break-before:avoid; break-inside:avoid; page-break-inside:avoid;/);
+  });
+
   it("includes the saved items to verify as a numbered section", () => {
     expect(out).toContain("Items to Verify");
     expect(out).toContain("Synthetic item to verify");

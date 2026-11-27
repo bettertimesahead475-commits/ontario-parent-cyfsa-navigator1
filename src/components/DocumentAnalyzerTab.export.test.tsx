@@ -444,3 +444,38 @@ describe("saving the brief while redaction is on", () => {
     expect(writesAfter).toBe(writesBefore);
   });
 });
+
+describe("quick review PDF layout", () => {
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+  function quickHtml(report: Record<string, unknown> = REPORT) {
+    seed({ redact: false, report });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    return printedHtml[printedHtml.length - 1];
+  }
+
+  it("has no emoji in section headings", () => {
+    const titles = [...quickHtml().matchAll(/<h3 class="section-title">([^<]*)</g)].map((m) => m[1]);
+    expect(titles.length).toBeGreaterThan(0);
+    for (const title of titles) expect(title).not.toMatch(EMOJI);
+  });
+
+  it("shows readable evidence labels in the chronology instead of raw categories", () => {
+    const html = quickHtml({ ...REPORT, chronology: [
+      { date: "2026-02-03", event: "Referral", locationInDocument: "Page 1", evidenceClassification: "HEARSAY" },
+      { date: "2026-02-06", event: "Home visit", locationInDocument: "Page 2", evidenceClassification: "DIRECT_OBSERVATION" },
+    ] });
+    expect(html).toContain("<td>Second-hand (hearsay)</td>");
+    expect(html).toContain("<td>Direct observation</td>");
+    expect(html).not.toContain("DIRECT_OBSERVATION");
+  });
+
+  it("keeps the disclaimer, citation warning and footer together with the last section", () => {
+    const html = quickHtml();
+    expect(html).toMatch(/\.end-matter \{ break-before: avoid;[^}]*break-inside: avoid;/);
+    const endMatter = html.slice(html.indexOf('<div class="end-matter">'));
+    expect(endMatter).toContain("MANDATORY LEGAL EDUCATIONAL STATEMENT");
+    expect(endMatter).toContain("Statute entries in this report were not checked against the official text.");
+    expect(html).toContain('counter(page) " of " counter(pages)');
+  });
+});

@@ -81,6 +81,7 @@ import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
 import { isScored, renderForensicReportHtml } from "../utils/forensicPdfRenderer";
+import { evidenceLabel } from "../utils/parentReportView";
 import { formatLawyerCaseBriefText, renderLawyerCaseBriefHtml } from "../utils/caseBriefExport";
 import {
   ParagraphListenButton,
@@ -2467,6 +2468,9 @@ export default function DocumentAnalyzerTab() {
           .data-table tr { break-inside: auto !important; }
           .finding { break-inside: avoid; margin: 5px 0; overflow-wrap: anywhere; }
           .section-title { break-after: avoid; margin-bottom: 8px !important; }
+          .end-matter .legal-notice { margin-top: 14px; padding: 8px 10px; font-size: 9px; }
+          .end-matter { break-before: avoid; page-break-before: avoid; break-inside: avoid; page-break-inside: avoid; }
+          .end-matter .footer-signature { margin-top: 8px; padding-top: 6px; font-size: 8.5px; }
         }
         .header-container {
           border-bottom: 3px double #4f46e5;
@@ -2695,7 +2699,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">🔍 Consultation Session Log</h3>
+          <h3 class="section-title">Consultation Session Log</h3>
           <div style="margin-top: 15px;">
             ${redactionEnabled ? "<p>The consultation transcript is not included in a redacted copy.</p>" : ragChatMessages.map(msg => {
               const author = msg.sender === "user" ? "Client (Parent)" : "CYFSA AI Statutory Assistant";
@@ -2721,7 +2725,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">🔗 Statute Links (check against e-Laws)</h3>
+          <h3 class="section-title">Statute Links (check against e-Laws)</h3>
           <p style="font-size:12px; color:#475569; margin-bottom:12px;">Only provisions whose text this app has checked against the bundled CYFSA text are listed. Check the current text on e-Laws before relying on it:</p>
           <ul class="bullet-list" style="font-size:12.5px;">
             ${Object.values(BUNDLED_STATUTE_ENTRIES).map((entry) => `<li><strong>${entry.citation} (${entry.heading}):</strong> <a href="${STATUTE_ROOT_URL}" target="_blank" style="color:#4f46e5; text-decoration:underline;">${STATUTE_ROOT_URL}</a></li>`).join("\n            ")}
@@ -2791,7 +2795,7 @@ export default function DocumentAnalyzerTab() {
         ` : ""}
 
         <div class="section-card">
-          <h3 class="section-title">📊 Educational Evidence Strength Summary</h3>
+          <h3 class="section-title">Educational Evidence Strength Summary</h3>
 
           <div style="display:flex; gap:40px; align-items:center; margin-top:10px; flex-wrap:wrap;">
             <div>
@@ -2874,7 +2878,7 @@ export default function DocumentAnalyzerTab() {
 
         ${reportForExport.redFlags && reportForExport.redFlags.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">⚠️ Hearsay & Subjective Opinion Red Flags</h3>
+            <h3 class="section-title">Hearsay & Subjective Opinion Red Flags</h3>
             <p style="font-size: 12.5px; color: #64748b; margin-bottom: 15px;">
               The following assertions or opinions extracted from this file carry an inherent risk of being unsworn out-of-court narratives. Direct parental counters are compiled inline to assist your counsel.
             </p>
@@ -2931,7 +2935,7 @@ export default function DocumentAnalyzerTab() {
             <table class="data-table">
               <thead><tr><th style="width:18%">Date</th><th>Event</th><th style="width:14%">Evidence</th><th style="width:18%">Source</th></tr></thead>
               <tbody>
-                ${reportForExport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(e.evidenceClassification || "")}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
+                ${reportForExport.chronology.map(e => `<tr><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.event)}</td><td>${escapeHtml(evidenceLabel(e.evidenceClassification))}</td><td>${escapeHtml(e.locationInDocument || "")}</td></tr>`).join("")}
               </tbody>
             </table>
           </div>
@@ -2946,7 +2950,7 @@ export default function DocumentAnalyzerTab() {
 
         ${reportForExport.thresholdAnalysis && reportForExport.thresholdAnalysis.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">⚖️ Statutory Protection Threshold Appraisals</h3>
+            <h3 class="section-title">Statutory Protection Threshold Appraisals</h3>
             <table class="data-table">
               <thead>
                 <tr>
@@ -2976,7 +2980,7 @@ export default function DocumentAnalyzerTab() {
 
         ${reportForExport.proceduralTimelineViolations && reportForExport.proceduralTimelineViolations.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">⏳ Statutory Timelines & Procedural Violations</h3>
+            <h3 class="section-title">Statutory Timelines & Procedural Violations</h3>
             <table class="data-table">
               <thead>
                 <tr>
@@ -3005,7 +3009,7 @@ export default function DocumentAnalyzerTab() {
 
         ${reportForExport.charterAndHumanRightsIssues && reportForExport.charterAndHumanRightsIssues.length > 0 ? `
           <div class="section-card">
-            <h3 class="section-title">✊ Human & Charter Rights Observations</h3>
+            <h3 class="section-title">Human & Charter Rights Observations</h3>
             <ul class="bullet-list">
               ${reportForExport.charterAndHumanRightsIssues.map(issue => `<li>${escapeHtml(issue)}</li>`).join("")}
             </ul>
@@ -3013,7 +3017,7 @@ export default function DocumentAnalyzerTab() {
         ` : ""}
 
         <div class="section-card">
-          <h3 class="section-title">📋 Practical Verification & Next Steps Guide</h3>
+          <h3 class="section-title">Practical Verification & Next Steps Guide</h3>
           ${![reportForExport.whatToVerify, reportForExport.whatToAskALawyer, reportForExport.whatIsMissing].some(list => Array.isArray(list) && list.length > 0) ? `
             <p style="color:#64748b;">Not stated in the document.</p>
           ` : ""}
@@ -3059,7 +3063,7 @@ export default function DocumentAnalyzerTab() {
         </div>
 
         <div class="section-card">
-          <h3 class="section-title">📂 Document Repository Index</h3>
+          <h3 class="section-title">Document Repository Index</h3>
           <p style="font-size:12.5px; color:#475569; margin-bottom:15px;">The following catalog groups and archives parent-retained documents and affidavits in a structured, litigation-safe sequence.</p>
           
           <table class="data-table">
@@ -3107,12 +3111,14 @@ export default function DocumentAnalyzerTab() {
           ${redactionNotice}
           ${bodyContent}
 
-          <div class="legal-notice">
-            <strong>MANDATORY LEGAL EDUCATIONAL STATEMENT:</strong> This document is generated for informational/educational objectives only under secondary statutory guidelines of the Child, Youth and Family Services Act (CYFSA) S.O. 2017, Chapter 14. This does not represent formal counsel or legal aid representations. Please immediately secure local, verified counsel from the Law Society of Ontario or Legal Aid Ontario to represent your case before the Court.
-          </div>
+          <div class="end-matter">
+            <div class="legal-notice">
+              <strong>MANDATORY LEGAL EDUCATIONAL STATEMENT:</strong> This document is generated for informational/educational objectives only under secondary statutory guidelines of the Child, Youth and Family Services Act (CYFSA) S.O. 2017, Chapter 14. This does not represent formal counsel or legal aid representations. Please immediately secure local, verified counsel from the Law Society of Ontario or Legal Aid Ontario to represent your case before the Court.
+            </div>
 
-          <div class="footer-signature">
-            Statute entries in this report were not checked against the official text. Confirm them on e-Laws or with counsel. • Saved dynamically via OPA PDF Legal Desk.
+            <div class="footer-signature">
+              Statute entries in this report were not checked against the official text. Confirm them on e-Laws or with counsel. • Saved dynamically via OPA PDF Legal Desk.
+            </div>
           </div>
         </body>
       </html>

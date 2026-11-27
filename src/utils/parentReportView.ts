@@ -114,7 +114,7 @@ const EVIDENCE_LABELS: Record<string, string> = {
 };
 
 /** Plain-language evidence label. An analyzer enum is never shown raw to a parent. */
-function evidenceLabel(classification: unknown): string {
+export function evidenceLabel(classification: unknown): string {
   const key = text(classification).toUpperCase();
   if (!key) return "";
   if (EVIDENCE_LABELS[key]) return EVIDENCE_LABELS[key];
