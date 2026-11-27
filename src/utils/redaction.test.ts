@@ -9,4 +9,8 @@ describe("redactPiiText court file numbers", () => {
   it("leaves statute citations and phone numbers to their own handling", () => {
     expect(redactPiiText("s. 74(2)(l) applies; call 416-555-0199")).toBe("s. 74(2)(l) applies; call [PHONE]");
   });
+
+  it("keeps a word that follows a file number after a hyphen", () => {
+    expect(redactPiiText("FC-19-1234-Denied without prejudice")).toBe("[FILE]-Denied without prejudice");
+  });
 });

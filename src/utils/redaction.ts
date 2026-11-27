@@ -31,7 +31,7 @@ export function redactPiiText(text: string, knownNames: string[] = []): string {
   if (!text) return text;
   let redacted = text;
   // Court file numbers first, so the phone and ISO-date patterns cannot consume their digits.
-  redacted = redacted.replace(/\b(?:FC|FO|FS|FD|CV|CFO|DFO)-?\d{2}-\d{2,8}(?:-[A-Z0-9]{1,6}){0,2}\b/gi, "[FILE]");
+  redacted = redacted.replace(/\b(?:FC|FO|FS|FD|CV|CFO|DFO)-?\d{2}-\d{2,8}(?:-\d{1,6}){0,2}\b/gi, "[FILE]");
   redacted = redacted.replace(/\b[A-Z]{1,2}\d{2,6}\/\d{2}\b/g, "[FILE]");
   redacted = redacted.replace(/(?:\(\d{3}\)\s?|\b\d{3}[-.\s]?)\d{3}[-.\s]?\d{4}\b/g, "[PHONE]");
   redacted = redacted.replace(new RegExp(`\\b${MONTH}\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}\\b`, "gi"), "[DATE]");
