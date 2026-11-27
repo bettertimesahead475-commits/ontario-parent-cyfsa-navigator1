@@ -80,7 +80,13 @@ Devin-side evidence: disposable-PG suites for P (7/7), D, E, F and the harness (
 
 1. App: `POST /accounts/6dea4d69…/pages/projects/cyfsa-navigator-git-staging/deployments/0cc59589-2be1-43d9-b41f-ff0c0c048792/rollback`. Takes effect in seconds; no DB change needed (item 2).
 2. Database, only if a migration itself is faulty: run the rollbacks in reverse order, F, C, D, P, G, each with its own script and guards. Never run `free_scan_reservation_functions.down.sql`.
-3. Data loss: restore from the step-1 dump, with downtime while restoring.
+3. Data loss, last resort: the site keeps taking orders, sign-ups and analyses after the dump, so a full restore would discard them.
+   - Prefer the per-migration rollback, or a targeted repair of the damaged table from the dump.
+   - If a full restore is unavoidable:
+     1. Roll back the app to `0cc59589` and record the time.
+     2. Export every row with a created/updated time after the dump's start from `payments`, `access_codes`, `navigator_paid_sessions`, the credit ledger and analyzer job tables (to owner storage).
+     3. Restore, then re-insert those rows. A later write wins over the dump.
+     4. Check `payments` and active-session counts against the export.
 4. Record the rollback in `SESSION_HANDOFF.md`.
 
 ## 7. Expected downtime

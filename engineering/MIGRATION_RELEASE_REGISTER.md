@@ -62,7 +62,7 @@ Single owner approval covers the whole sequence; each step still stops on a fail
 | Step | Action | Gate (must be true to continue) | Rollback |
 |---|---|---|---|
 | 0 | Owner ratifies A/B as applied (owner 14:26: preserve; no rollback) | Claude's A/B integrity and authorization note | none planned |
-| 1 | Logical backup: `supabase db dump` (schema, then `--data-only`) stored off-site. The org is on the **Free plan**, which has no daily backups or PITR | Dump files exist, are non-empty and were taken after the last write | Restore from the dump (downtime while restoring) |
+| 1 | Logical backup: `supabase db dump` (schema, then `--data-only`) stored off-site. The org is on the **Free plan**, which has no daily backups or PITR | Dump files exist, are non-empty and were taken after the last write | Last resort only: restore from the dump and replay rows written after it (checklist item 6), with downtime while restoring |
 | 2 | Apply G (`payments_service_role_review_update.sql`, [#188](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/188)) | G preflight `ok`; `has_column_privilege('service_role','public.payments','status','UPDATE')` is true | G `.rollback.sql` |
 | 3 | P preflight (`preserve_monthly_renewal_P.preflight.sql`), then apply P (`supabase/migrations/20261110004740_preserve_monthly_renewal.sql`) | Preflight blocking rows `ok`; `preserve_monthly_renewal_P.postcheck.sql` all `ok` | `preserve_monthly_renewal_P.rollback.sql`; if P is re-applied later, run `preserve_monthly_renewal_P.reapply_backfill.sql` straight after it |
 | 4 | D preflight, then apply D | D preflight blocking rows `ok`; D brief postchecks | D `.rollback.sql`, then P's if needed |
