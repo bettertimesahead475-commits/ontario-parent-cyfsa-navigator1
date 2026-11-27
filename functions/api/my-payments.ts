@@ -16,7 +16,7 @@ const HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosnif
 export const RENEWAL_REMINDER_DAYS = 7;
 
 interface Env extends AdminStoreEnv { FIREBASE_PROJECT_ID?: string; PAYMENT_EMAIL?: string }
-type SessionRow = { tier: string; issued_at: string | null; expires_at: string | null };
+type SessionRow = { id?: string; tier: string; issued_at: string | null; expires_at: string | null };
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: Env }): Promise<Response> => {
   const identity = await verifyFirebaseRequest(request, env);
@@ -34,10 +34,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
     const payments = await paymentsOf(env, identity.uid);
     const [codes, sessions] = await Promise.all([
       codesOf(env, payments.map((p) => p.reference_number)),
-      rest<SessionRow[]>(env, `navigator_paid_sessions?select=tier,issued_at,expires_at&firebase_uid=eq.${encodeURIComponent(identity.uid)}&revoked_at=is.null&expires_at=gt.${encodeURIComponent(new Date(now).toISOString())}&order=expires_at.desc&limit=20`),
+      rest<SessionRow[]>(env, `navigator_paid_sessions?select=id,tier,issued_at,expires_at&firebase_uid=eq.${encodeURIComponent(identity.uid)}&revoked_at=is.null&expires_at=gt.${encodeURIComponent(new Date(now).toISOString())}&order=expires_at.desc&limit=20`),
     ]);
     // A refund is recorded in the audit trail. If it cannot be read, approved orders show "unknown" rather than a guess.
     const refunded = payments.some((p) => p.status !== 'pending') ? await refundedReferences(env).catch(() => null) : new Set<string>();
+    const activeSessionIds = new Set(sessions.map((s) => s.id).filter(Boolean));
     return Response.json({
       payTo,
       orders: payments.map((p) => {
@@ -46,8 +47,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
         // Orders recorded before prices were unified may hold an amount that differs from the advertised price;
         // they get no payment instructions, so nobody is told to send a different amount than checkout showed.
         const priceOutdated = state === 'awaiting_verification' && !(Math.abs(amount - (TIER_PRICES[p.plan] ?? Number.NaN)) < 0.005);
+        // Whether this order's own entitlement is still active (so it can be restored on another browser).
+        const accessActive = state === 'activated' && codes.some((c) => c.reference_number === p.reference_number && c.redeemed_session_id && activeSessionIds.has(c.redeemed_session_id));
         return {
           referenceNumber: p.reference_number, plan: p.plan, amount, currency: 'CAD', state,
+          ...(accessActive ? { accessActive: true } : {}),
           submittedAt: p.submitted_at ?? null, approvedAt: p.approved_at ?? null,
           ...(priceOutdated ? { priceOutdated: true } : {}),
           ...(state === 'awaiting_verification' && !priceOutdated ? { instructions: getInstructions(p.reference_number, amount, payTo) } : {}),

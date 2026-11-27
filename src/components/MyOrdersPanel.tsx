@@ -4,7 +4,7 @@ import { getUserKey } from "../utils/storage";
 import type { AccessTier } from "../types";
 
 type OrderState = "awaiting_verification" | "ready_to_activate" | "activated" | "refunded" | "cancelled" | "unknown";
-type Order = { referenceNumber: string; plan: string; amount: number; state: OrderState; submittedAt: string | null; instructions?: string; priceOutdated?: boolean };
+type Order = { referenceNumber: string; plan: string; amount: number; state: OrderState; submittedAt: string | null; instructions?: string; priceOutdated?: boolean; accessActive?: boolean };
 type Entitlement = { tier: string; expiresAt: string | null; daysLeft: number | null; renewalDue: boolean };
 
 const STATE_LABEL: Record<OrderState, string> = {
@@ -38,7 +38,11 @@ export default function MyOrdersPanel({ signedIn, onActivated, onRenewalDue }: {
       setOrders(Array.isArray(data.orders) ? data.orders : []);
       const active: Entitlement[] = Array.isArray(data.entitlements) ? data.entitlements : [];
       setEntitlements(active);
-      onRenewalDue?.(active.filter((e) => e.renewalDue && EXTENDS_ON_RENEWAL.has(e.tier)).map((e) => e.tier));
+      // Plans whose pricing card should allow checkout again: a monthly plan due for renewal, or a plan with no active access
+      // (this browser may still remember a plan that has ended).
+      const renewable = active.filter((e) => e.renewalDue && EXTENDS_ON_RENEWAL.has(e.tier)).map((e) => e.tier);
+      const ended = ["Premium", "Pro"].filter((t) => !active.some((e) => e.tier === t));
+      onRenewalDue?.([...renewable, ...ended]);
     } catch (err: any) {
       setError(err?.message || "Your orders could not be loaded.");
     }
@@ -101,7 +105,7 @@ export default function MyOrdersPanel({ signedIn, onActivated, onRenewalDue }: {
             <p className="font-bold text-slate-700">{STATE_LABEL[o.state] ?? STATE_LABEL.unknown}</p>
             {o.state === "awaiting_verification" && o.instructions && <p className="text-slate-600 leading-relaxed">{o.instructions}</p>}
             {o.priceOutdated && <p className="text-amber-800 leading-relaxed">This order was recorded at an outdated price. Do not send a payment for it; choose the plan above for a new reference. If you already paid, contact support with this reference.</p>}
-            {o.state === "activated" && entitlements.some((e) => e.tier === o.plan) && (
+            {o.state === "activated" && o.accessActive && (
               <button type="button" disabled={busyRef !== null} onClick={() => void activate(o.referenceNumber)}
                 className="text-indigo-700 font-bold hover:underline disabled:opacity-60">
                 {busyRef === o.referenceNumber ? "Restoring…" : "Use on this browser"}

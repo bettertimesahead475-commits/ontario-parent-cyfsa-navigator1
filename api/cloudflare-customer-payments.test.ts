@@ -193,9 +193,9 @@ describe('GET /api/my-payments', () => {
       order({ reference_number: 'PS-REFD2345' }),
       order({ reference_number: 'PS-THEIRS23', firebase_uid: 'uid-other' }),
     ];
-    db.codes = [{ reference_number: 'PS-USED2345', used_at: '2026-11-21T01:00:00Z', expires_at: null }];
+    db.codes = [{ reference_number: 'PS-USED2345', used_at: '2026-11-21T01:00:00Z', expires_at: null, redeemed_session_id: '55555555-5555-4555-8555-555555555555' }];
     db.audit = [refundRecord('PS-REFD2345')];
-    db.sessions = [{ firebase_uid: 'uid-owner', tier: 'Premium', issued_at: '2026-11-01T00:00:00Z', expires_at: new Date(Date.now() + 3 * 86400000).toISOString() }];
+    db.sessions = [{ id: '55555555-5555-4555-8555-555555555555', firebase_uid: 'uid-owner', tier: 'Premium', issued_at: '2026-11-01T00:00:00Z', expires_at: new Date(Date.now() + 3 * 86400000).toISOString() }];
     const res = await statusReq();
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -205,6 +205,9 @@ describe('GET /api/my-payments', () => {
     expect(json.orders[0].instructions).toContain('$49.99 CAD');
     expect(json.orders[0].instructions).toContain('PS-PEND2345');
     expect(json.orders[1].instructions).toBeUndefined();
+    expect(json.orders.find((o: any) => o.referenceNumber === 'PS-USED2345').accessActive).toBe(true);
+    expect(json.orders.find((o: any) => o.referenceNumber === 'PS-PEND2345').accessActive).toBeUndefined();
+    expect(JSON.stringify(json)).not.toContain('55555555');
     expect(json.entitlements[0]).toMatchObject({ tier: 'Premium', daysLeft: 3, renewalDue: true });
     expect(JSON.stringify(json)).not.toContain('uid-');
     expect(db.writes).toEqual([]);

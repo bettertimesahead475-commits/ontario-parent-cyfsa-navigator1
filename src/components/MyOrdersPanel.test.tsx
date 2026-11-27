@@ -63,7 +63,7 @@ describe("MyOrdersPanel", () => {
     }));
     const { rerender, container } = render(<MyOrdersPanel signedIn onActivated={() => {}} onRenewalDue={onRenewalDue} />);
     expect(await screen.findByText("PS-PEND2345")).toBeTruthy();
-    expect(onRenewalDue).toHaveBeenLastCalledWith(["Pro"]);
+    expect(onRenewalDue).toHaveBeenLastCalledWith(["Pro", "Premium"]);
     rerender(<MyOrdersPanel signedIn={false} onActivated={() => {}} onRenewalDue={onRenewalDue} />);
     expect(container.innerHTML).toBe("");
     expect(onRenewalDue).toHaveBeenLastCalledWith([]);
@@ -79,7 +79,7 @@ describe("MyOrdersPanel", () => {
     const onActivated = vi.fn();
     vi.spyOn(api, "apiFetch").mockImplementation(async (url: any) => url === "/api/claim-purchase"
       ? ok({ success: true, restored: true, tier: "Pro", token: "tok-restored", email: "parent@example.com" })
-      : ok({ orders: [{ referenceNumber: "PS-USED2345", plan: "Pro", amount: 149, state: "activated", submittedAt: null }],
+      : ok({ orders: [{ referenceNumber: "PS-USED2345", plan: "Pro", amount: 149, state: "activated", submittedAt: null, accessActive: true }],
         entitlements: [{ tier: "Pro", expiresAt: "2026-12-20T00:00:00Z", daysLeft: 20, renewalDue: false }] }));
     render(<MyOrdersPanel signedIn onActivated={onActivated} />);
     fireEvent.click(await screen.findByRole("button", { name: "Use on this browser" }));
@@ -88,11 +88,14 @@ describe("MyOrdersPanel", () => {
     expect((await screen.findByRole("status")).textContent).toContain("on this browser");
   });
 
-  it("offers no restore once the plan's access has ended", async () => {
-    vi.spyOn(api, "apiFetch").mockResolvedValue(ok({ orders: [{ referenceNumber: "PS-USED2345", plan: "Pro", amount: 149, state: "activated", submittedAt: null }], entitlements: [] }));
+  it("offers restore only on the order whose own access is still active", async () => {
+    vi.spyOn(api, "apiFetch").mockResolvedValue(ok({ orders: [
+      { referenceNumber: "PS-USED2345", plan: "Pro", amount: 149, state: "activated", submittedAt: null },
+      { referenceNumber: "PS-NEWR2345", plan: "Pro", amount: 149, state: "activated", submittedAt: null, accessActive: true },
+    ], entitlements: [{ tier: "Pro", expiresAt: "2026-12-20T00:00:00Z", daysLeft: 20, renewalDue: false }] }));
     render(<MyOrdersPanel signedIn onActivated={() => {}} />);
     await screen.findByText("PS-USED2345");
-    expect(screen.queryByRole("button", { name: "Use on this browser" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Use on this browser" })).toHaveLength(1);
   });
 
   it("does not offer early renewal of a Premium pack, which would start a new pack", async () => {
@@ -100,6 +103,14 @@ describe("MyOrdersPanel", () => {
     vi.spyOn(api, "apiFetch").mockResolvedValue(ok({ orders: [], entitlements: [{ tier: "Premium", expiresAt: "2026-12-01T00:00:00Z", daysLeft: 3, renewalDue: true }] }));
     render(<MyOrdersPanel signedIn onActivated={() => {}} onRenewalDue={onRenewalDue} />);
     expect(await screen.findByText(/buy a new pack once it ends/)).toBeTruthy();
-    expect(onRenewalDue).toHaveBeenLastCalledWith([]);
+    expect(onRenewalDue).toHaveBeenLastCalledWith(["Pro"]);
+  });
+
+  it("re-opens checkout for a plan whose access has ended", async () => {
+    const onRenewalDue = vi.fn();
+    vi.spyOn(api, "apiFetch").mockResolvedValue(ok({ orders: [{ referenceNumber: "PS-USED2345", plan: "Premium", amount: 49.99, state: "activated", submittedAt: null }], entitlements: [] }));
+    render(<MyOrdersPanel signedIn onActivated={() => {}} onRenewalDue={onRenewalDue} />);
+    await screen.findByText("PS-USED2345");
+    expect(onRenewalDue).toHaveBeenLastCalledWith(["Premium", "Pro"]);
   });
 });
