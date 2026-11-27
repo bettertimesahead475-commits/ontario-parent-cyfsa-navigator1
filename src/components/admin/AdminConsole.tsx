@@ -142,7 +142,7 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
     const amountReceived = Number(raw);
     if (!Number.isFinite(amountReceived) || amountReceived <= 0) { setMessage({ kind: "error", text: "Enter the amount received." }); return; }
     void act(`Approve ${p.referenceNumber} and issue an access code to ${p.customerEmail}?`, "payments/approve", { referenceNumber: p.referenceNumber, amountReceived }, {
-      after: (r) => r.alreadyActivated ? String(r.note) : r.emailsQueued?.accessCode
+      after: (r) => r.alreadyActivated || r.activationUnknown ? String(r.note) : r.emailsQueued?.accessCode
         ? `Access code for ${r.customerEmail}: ${r.accessCode} (expires ${when(r.expiresAt)}). It was queued for email to the customer: do not send it yourself unless the email outbox shows it was not sent. It is shown only once.`
         : `Access code for ${r.customerEmail}: ${r.accessCode} (expires ${when(r.expiresAt)}). Send it now: it is shown only once.`,
     });
