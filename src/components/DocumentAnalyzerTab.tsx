@@ -1746,7 +1746,7 @@ export default function DocumentAnalyzerTab() {
     setBulkProgress(`Concurrently processing ${filesArray.length} files for speedy results...`);
 
     const refusedUploads: string[] = [];
-    const loadedFiles: OrganizedFile[] = (await Promise.all(filesArray.map(async (f): Promise<OrganizedFile | null> => {
+    const loadedFiles: OrganizedFile[] = (await Promise.all(filesArray.map(async (f) => {
       let parsedContent = "";
       let finalName = f.name;
       const nameL = f.name.toLowerCase();
@@ -1853,7 +1853,7 @@ export default function DocumentAnalyzerTab() {
         mimeType: finalMimeType,
         analysisStatus: "pending"
       };
-    }))).filter((file): file is OrganizedFile => file !== null);
+    }))).filter((file) => file !== null) as OrganizedFile[];
     if (refusedUploads.length) showUploadError(refusedUploads.join(" "));
 
     const chunkedFiles = chunkFilesForAnalysis(loadedFiles);

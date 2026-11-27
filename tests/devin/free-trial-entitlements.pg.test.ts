@@ -159,9 +159,10 @@ describe.skipIf(!isLocal)("free-trial entitlements on a real PostgreSQL server",
   });
 
   it("refusals spend no run, and a retry of a request still running joins it without spending one", async () => {
-    await pool.query("insert into free_usage (uid, analyses_used) values ($1, 200)", [platformDailyKey("paid", new Date())]);
-    for (let i = 0; i < 4; i++) expect((await attempt("quick", "uid-p", "p@example.com", { requestId: `req_paused_${i}_padding` })).status).toBe("paused");
-    await pool.query("delete from free_usage where uid = $1", [platformDailyKey("paid", new Date())]);
+    await pool.query("insert into public.free_usage (uid, analyses_used) values ($1, 5) on conflict (uid) do update set analyses_used = 5", [platformDailyKey("paid", new Date())]);
+    const paused = env({ FREE_TRIAL_PAUSE_AT_PAID_DAILY: "5" });
+    for (let i = 0; i < 4; i++) expect((await attempt("quick", "uid-p", "p@example.com", { env: paused, requestId: `req_paused_${i}_padding` })).status).toBe("paused");
+    expect(await used(`fat:${await freeTrialKey("quick", "p@example.com")}`)).toBe(0);
     const first = await attempt("quick", "uid-p", "p@example.com", { requestId: "req_running_padding" });
     expect(first.status).toBe("reserved");
     expect((await attempt("quick", "uid-p", "p@example.com", { requestId: "req_running_padding" })).status).toBe("joined");
