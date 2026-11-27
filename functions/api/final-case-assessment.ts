@@ -119,8 +119,10 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
       const checksum = await digest(JSON.stringify([input.filename, input.text]));
       const source: AssessmentSource = { id: checksum, document: input.filename, version: checksum, page: 1, text: input.text };
       const saved = await fetcher(jobObjectUrl(env.STAGING_SUPABASE_URL!, sourcePrefix + '/' + checksum, 'write'), { method: 'POST', headers: { ...headers, 'x-upsert': 'false' }, body: JSON.stringify({ uid, matterId, source }), redirect: 'error', signal: AbortSignal.timeout(10000) });
-      if (!saved.ok && saved.status !== 409) throw new AssessmentError(503, 'SOURCE_SAVE_UNAVAILABLE');
-      return reply({ saved: true, reused: saved.status === 409 });
+      // Supabase Storage reports "already exists" as 409, or as 400 with statusCode "409" in the body.
+      const reused = !saved.ok && (saved.status === 409 || String((await saved.json().catch(() => null) as { statusCode?: unknown } | null)?.statusCode) === '409');
+      if (!saved.ok && !reused) throw new AssessmentError(503, 'SOURCE_SAVE_UNAVAILABLE');
+      return reply({ saved: true, reused });
     }
     const latestId = 'assessment_' + ownerPrefix + '_' + matterId;
     async function read(id: string): Promise<any | null> {
