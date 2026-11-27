@@ -92,6 +92,24 @@ describe("useAccountStorage", () => {
   });
 });
 
+describe("useAccountStorage across tabs", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    authState.currentUser = null;
+    authState.listeners.clear();
+  });
+
+  it("picks up another tab's change to this account's key, so a later save does not overwrite it", () => {
+    authState.currentUser = { uid: "user-a" };
+    const { result } = renderHook(() => useAccountStorage<string[]>(KEY, () => []));
+    localStorage.setItem(`${KEY}_user-a`, JSON.stringify(["imported elsewhere"]));
+    act(() => { window.dispatchEvent(new StorageEvent("storage", { key: `${KEY}_user-a` })); });
+    expect(result.current[0]).toEqual(["imported elsewhere"]);
+    act(() => result.current[1]((prev) => [...prev, "mine"]));
+    expect(JSON.parse(localStorage.getItem(`${KEY}_user-a`)!)).toEqual(["imported elsewhere", "mine"]);
+  });
+});
+
 describe("useAccountStorage guest edits", () => {
   beforeEach(() => {
     localStorage.clear();

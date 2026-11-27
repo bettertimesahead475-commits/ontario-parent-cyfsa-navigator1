@@ -53,8 +53,16 @@ export function useAccountStorage<T>(baseKey: string, fallback: () => T): [T, Di
 
   useEffect(() => {
     const reload = () => setState({ owner: uid, value: read(baseKey, uid, fallback), dirty: false });
+    // Another tab (or the legacy import) changed this account's data: show it instead of overwriting it later.
+    const fromOtherTab = (event: StorageEvent) => {
+      if (uid && event.key === `${baseKey}_${uid}`) reload();
+    };
     window.addEventListener(ACCOUNT_STORAGE_CHANGED, reload);
-    return () => window.removeEventListener(ACCOUNT_STORAGE_CHANGED, reload);
+    window.addEventListener("storage", fromOtherTab);
+    return () => {
+      window.removeEventListener(ACCOUNT_STORAGE_CHANGED, reload);
+      window.removeEventListener("storage", fromOtherTab);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, baseKey]);
 
