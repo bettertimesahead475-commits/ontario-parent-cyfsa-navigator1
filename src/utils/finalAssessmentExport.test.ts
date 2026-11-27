@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assertFinalAssessmentRedacted, FINAL_ASSESSMENT_REDACTED_NOTICE, renderFinalAssessmentHtml } from "./finalAssessmentExport";
+import { assertFinalAssessmentRedacted, describeRedactedFinalAssessment, EXCERPT_WITHHELD, FINAL_ASSESSMENT_REDACTED_NOTICE, FINDING_WITHHELD, renderFinalAssessmentHtml } from "./finalAssessmentExport";
+import { escapeHtml } from "./reportSectionsHtml";
 import { REDACTED_TEXT } from "../../shared/exportRedaction";
 
 const report = {
@@ -78,7 +79,9 @@ describe("Final Case Assessment PDF", () => {
       for (const value of ["Jane Smith", "Liam", "416-555-0199", "416 555 0199", "03/02/2026", "2019-04-03", "FC-26-00001234-0000", "Worker phoned", "Call "]) {
         expect(named).not.toContain(value);
       }
-      expect(named).toContain(REDACTED_TEXT);
+      expect(named).not.toContain(REDACTED_TEXT);
+      expect(named).toContain(escapeHtml(FINDING_WITHHELD));
+      expect(named).toContain(escapeHtml(EXCERPT_WITHHELD));
       expect(named).toContain("[S1: Source document 1, p. 2]");
     });
 
@@ -101,3 +104,14 @@ describe("Final Case Assessment PDF", () => {
     });
   });
 });
+
+describe("redacted FCA export preview", () => {
+  it("counts what is withheld and keeps page references", () => {
+    const report = { title: "Smith matter", createdAt: "2026-11-20T15:00:00Z", sources: [{ id: "S1", document: "smith.txt", page: 1, text: "Jane Smith said" }, { id: "S2", document: "b.txt", page: 2, text: "" }], sections: { overview: [{ text: "a", sources: ["S1"] }], chronology: [{ text: "b", sources: ["S2"] }, { text: "c", sources: [] }], conflicts: [], gaps: [], questions: [] } } as never;
+    const p = describeRedactedFinalAssessment(report);
+    expect(p.withheld).toEqual(["The matter title", "2 source file names", "The wording of 3 findings", "1 source excerpt"]);
+    expect(p.included[0]).toContain("Case Overview: 1, Chronology: 2");
+    expect(JSON.stringify(p)).not.toMatch(/Smith|smith\.txt/);
+  });
+});
+
