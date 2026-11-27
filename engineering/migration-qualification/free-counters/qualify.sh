@@ -50,12 +50,17 @@ extract "$applied" free_scan_reservation_functions A
 extract "$applied" reconcile_skip_live_analyzer_jobs B
 extract "$candidate" free_scan_reservation_functions candidate-A
 sha256sum "$scratch/"{A,B,candidate-A}.sql
+printf '%s  %s\n' \
+  89d5e381e00800e1b654130ec32a55b22de1df691f8c40b0d9fd955e619f6e9b "$scratch/A.sql" \
+  9c12c84701f22b169329ea6fa2eb3ad21c81f283108de5a8e3e2bf24c504c763 "$scratch/B.sql" \
+  | sha256sum --check --status
+apply_a() { run -v a_file="$scratch/A.sql" -f "$here/apply-a-if-absent.sql" >/dev/null; }
 run -f "$here/fixture.sql"
 run -f "$repo/supabase/migrations/20261104230000_durable_analyzer_queue.sql"
 run -f "$repo/$pending/paid_credit_reservation_functions.sql"
 run -c "CREATE INDEX CONCURRENTLY analyzer_jobs_live_reservation_idx
          ON public.analyzer_jobs (reservation_id) WHERE status IN ('queued','running');"
-run -f "$scratch/A.sql"
+apply_a
 run -f "$scratch/B.sql"
 run -f "$here/inspect.sql" >"$scratch/preflight.log"
 run -f "$here/verify.sql"
@@ -116,11 +121,17 @@ snapshot() {
   scalar "SELECT md5(string_agg(to_jsonb(f)::text, ',' ORDER BY uid)) FROM public.free_usage f;"
 }
 before=$(snapshot)
-run -f "$scratch/A.sql"
+fingerprint_query="SELECT md5(prosrc) FROM pg_proc WHERE oid =
+  'public.free_reconcile(text,text,timestamptz,interval)'::regprocedure;"
+b_fingerprint=$(scalar "$fingerprint_query")
+apply_a
+check "$b_fingerprint" "$fingerprint_query"
+run -f "$here/queue-guard.sql"
+echo 'PASS: guarded A retry alone preserves B and its live-job guard'
 run -f "$scratch/B.sql"
 check "$before" "SELECT md5(string_agg(to_jsonb(f)::text, ',' ORDER BY uid)) FROM public.free_usage f;"
 run -f "$here/queue-guard.sql"
-echo 'PASS: ordered A+B reapplication leaves all ledger rows unchanged'
+echo 'PASS: guarded A+B reapplication leaves all ledger rows unchanged'
 
 "$pgbin/pg_dump" -h "$scratch" -p "$port" -U postgres -d postgres -Fc -f "$scratch/backup.dump"
 check reserved "SET ROLE service_role; $(reserve ff:after-backup new-doc)"
@@ -137,7 +148,7 @@ if run -f "$here/queue-guard.sql" >"$scratch/guard-failure.log" 2>&1; then
   exit 1
 fi
 grep -F 'another request reclaimed a queued job entitlement: reserved' "$scratch/guard-failure.log"
-echo 'FAIL: candidate A alone regresses the live-job guard (reproduced)'
+echo 'UNSAFE (historical control): raw A alone regresses the live-job guard'
 run -f "$scratch/B.sql"
 run -f "$here/queue-guard.sql"
 [[ $(snapshot) == "$before" ]]
