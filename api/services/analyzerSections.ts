@@ -911,6 +911,9 @@ export interface SectionRunResult {
 }
 
 const SECTION_TIMEOUT_MS = { fast: 75_000, full: 110_000 };
+// redFlags is the longest Forensic section (92.5 s in production): 110 s failed it at 1.2x its production time and its
+// retry could not fit. 145 s still leaves verification its 30 s minimum start budget when redFlags starts at t = 0.
+const FORENSIC_SECTION_TIMEOUT_MS: Partial<Record<SectionKey, number>> = { redFlags: 145_000 };
 const MIN_RETRY_BUDGET_MS = 25_000;
 
 function addUsage(acc: SectionRunResult["usageByModel"], model: string, usage?: GenerateResult["usage"]) {
@@ -935,7 +938,8 @@ export async function runOneSection(
     const remaining = opts.deadlineAt - now();
     if (attempt > 1 && remaining < MIN_RETRY_BUDGET_MS) break;
     if (remaining < 5_000) break;
-    const timeoutMs = Math.min(SECTION_TIMEOUT_MS[opts.mode], remaining - 3_000);
+    const sectionLimit = (opts.mode === "full" && FORENSIC_SECTION_TIMEOUT_MS[key]) || SECTION_TIMEOUT_MS[opts.mode];
+    const timeoutMs = Math.min(sectionLimit, remaining - 3_000);
     let result: GenerateResult;
     try {
       result = await opts.generate(
