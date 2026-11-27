@@ -522,15 +522,17 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   // Enqueue only: each call is a no-op unless transactional email is enabled, and a failure never undoes the approval.
   const data = { plan: String(payment.plan), amount: received, approvedAt: now.toISOString(), expiresAt: issued.expiresAt };
   const base = { reference, email };
-  const confirmationQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'payment_confirmation', dedupeKey: reference, data }, fetcher);
-  const receiptQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'purchase_receipt', dedupeKey: reference, data }, fetcher);
   if (activated !== false) {
+    const receiptQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'purchase_receipt', dedupeKey: reference, data }, fetcher);
     return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: null, ...(activated ? { alreadyActivated: true } : { activationUnknown: true }), auditRecorded: audited,
-      emailsQueued: { confirmation: confirmationQueued, receipt: receiptQueued, accessCode: false },
+      emailsQueued: { confirmation: false, receipt: receiptQueued, accessCode: false },
       note: activated
         ? 'Approved. The customer already activated this order from their account, so no code needs to be sent.'
         : 'Approved, but the activation check failed, so this code was withheld to avoid giving access twice. Use "Reissue code" to send the customer a code.' });
   }
+  // The confirmation says "activate now", so it is only sent with a code.
+  const confirmationQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'payment_confirmation', dedupeKey: reference, data }, fetcher);
+  const receiptQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'purchase_receipt', dedupeKey: reference, data }, fetcher);
   const codeEmailQueued = await enqueueTransactionalEmail(env, { ...base, kind: 'access_code', dedupeKey: reference, data, accessCode: issued.code }, fetcher);
   return ok({ success: true, referenceNumber: reference, customerEmail: email, tier: payment.plan, accessCode: issued.code, expiresAt: issued.expiresAt, auditRecorded: audited,
     emailsQueued: { confirmation: confirmationQueued, receipt: receiptQueued, accessCode: codeEmailQueued },
