@@ -270,6 +270,50 @@ describe("analyzer print export (printAnalyzer)", () => {
   });
 });
 
+describe("analyzer print export with missing report data", () => {
+  it("labels missing scores, type and date instead of inventing them", async () => {
+    const { completenessScore, evidenceStrengthIndex, documentType, ...rest } = REPORT;
+    void completenessScore; void evidenceStrengthIndex; void documentType;
+    seed({ redact: false, report: rest });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("Not stated in the document");
+    expect(html).toContain("Not recorded");
+    expect(html).toContain("Not scored");
+    expect(html).not.toContain("Casework Correspondence");
+    expect(html).not.toMatch(/>\s*0\s*<span[^>]*>\/ 100/);
+  });
+});
+
+describe("quick review PDF fidelity to the saved analysis", () => {
+  it("includes the saved document summary", async () => {
+    seed({ redact: false });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("Document Summary");
+    expect(html).toContain("ZQFREE summary of the affidavit.");
+  });
+
+  it("says the verification guide is not stated instead of leaving an empty heading", async () => {
+    seed({ redact: false, report: { ...REPORT, whatToVerify: [], whatToAskALawyer: [], whatIsMissing: [] } });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toMatch(/Practical Verification & Next Steps Guide<\/h3>\s*<p[^>]*>Not stated in the document\.<\/p>/);
+  });
+
+  it("omits the not-stated line when the guide has items", async () => {
+    seed({ redact: false, report: { ...REPORT, whatToVerify: ["ZQVERIFY item"] } });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Export Quick Review PDF/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("ZQVERIFY item");
+    expect(html.split("Practical Verification")[1]).not.toContain("Not stated in the document.");
+  });
+});
+
 describe("redaction on the remaining export sinks and the on-screen toggle", () => {
   it("removes the file name and document text from the certified transcript print", async () => {
     seed({ redact: true, fileName: "ZQNAME-transcript.txt" });
@@ -316,6 +360,27 @@ describe("redaction on the remaining export sinks and the on-screen toggle", () 
     render(<DocumentAnalyzerTab />);
     fireEvent.click(screen.getByRole("button", { name: /Copy Brief Text/i }));
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("ZQFREE brief point"));
+  });
+
+  it("does not open the PDF brief while redaction is on", async () => {
+    seed({ redact: true, report: { ...REPORT, lawyerCaseBrief: ["ZQFREE brief point"] } });
+    render(<DocumentAnalyzerTab />);
+    const before = printedHtml.length;
+    fireEvent.click(screen.getByRole("button", { name: /Download PDF Brief/i }));
+    expect(printedHtml.length).toBe(before);
+  });
+
+  it("prints the brief as a formatted document with each component in its own subsection", async () => {
+    seed({
+      redact: false,
+      report: { ...REPORT, lawyerCaseBrief: ["ISSUE — ZQFREE delay — DOCUMENT EVIDENCE — p. 2 — SIGNIFICANCE — s. 94(1) — VERIFY/NEXT QUESTION — endorsement"] },
+    });
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(screen.getByRole("button", { name: /Download PDF Brief/i }));
+    const html = printedHtml[printedHtml.length - 1];
+    expect(html).toContain("1. Issue: ZQFREE delay");
+    expect(html).toContain('<span class="part-label">Verify / Next Question</span><span class="part-value">endorsement</span>');
+    expect(html).not.toMatch(/<script/i);
   });
 
   it("keeps the true second-review status in a redacted print and drops its free text", async () => {

@@ -304,7 +304,7 @@ describe("Milestone 2 Audit Remediation: AgencyComplianceMatrixView & PDF", () =
     };
 
     const html = renderForensicReportHtml(mockReport, { audienceMode: "full" });
-    expect(html).toContain("11. Agency Compliance & Evidence Matrix");
+    expect(html).toMatch(/<h2 class="section-heading">\d+\. Agency Compliance & Evidence Matrix/);
     expect(html).toContain("CUSTOM AUDIT DISCLAIMER: Verified against official Ontario authorities.");
     expect(html).toContain("Standard 7 — 30-Day Service Plan Requirement");
     expect(html).toContain("POTENTIAL NONCOMPLIANCE");
@@ -343,5 +343,18 @@ describe("Milestone 2 Audit Remediation: AgencyComplianceMatrixView & PDF", () =
       mock.parentAssistanceAnalyses[0].questions.q1_concernIdentifiedByCas
     );
     expect(parsed.neutralityAndMethodologyDisclaimer).toBe(mock.neutralityAndMethodologyDisclaimer);
+  });
+  it("11. Expands an engine-built matrix item in both presentation modes without crashing", () => {
+    const matrix = buildComplianceMatrixFromReport(
+      { documentTitle: "Synthetic affidavit", contradictions: [{ claim: "Visit dated October 3" }] } as any,
+      "SYNTHETIC TEST ONLY. Worker affidavit. The visit occurred on October 3."
+    );
+    render(<AgencyComplianceMatrixView matrix={matrix} />);
+    fireEvent.click(screen.getAllByText(/View Evidence & Analysis/i)[0]);
+    expect(screen.getByText(/Plain-Language Educational Guidance/i)).toBeDefined();
+    fireEvent.click(screen.getByText(/Courtroom Mode/i));
+    expect(screen.getByText(/Courtroom-Style Evidentiary Framing/i)).toBeDefined();
+    const item = matrix.items[0];
+    expect(screen.getAllByText(item.presentation.courtroomMode.evidentialGapOrInconsistency).length).toBeGreaterThan(0);
   });
 });

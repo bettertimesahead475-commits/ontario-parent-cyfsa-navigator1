@@ -1,0 +1,16 @@
+SYNTHETIC DOCUMENT - FICTIONAL CASE - NOT A REAL RECORD
+
+Lakeshore Valley Children's Aid Society (SYN) - Service Plan Excerpt - File SYN-2026-0417
+
+[Page 1]
+Plan start date: 2026-02-14. Plan review due: 2026-03-16.
+Goal 1: Parent A will attend a food-security intake at the community centre by 2026-02-28.
+Goal 2: Parent B will attend one meeting with the worker by 2026-03-06.
+Goal 3: The worker will complete a home visit every 14 days.
+
+[Page 2]
+Review note dated 2026-03-02: Parent A attended the food-security intake on 2026-02-26. Parent B attended a meeting on
+2026-03-04, which was after the 2026-03-06 deadline was already met. The worker recorded that the service plan was reviewed
+within the required period.
+Note: the worker wrote "the thirty-day service plan deadline runs from the removal date alone" in the draft review.
+This sentence is included to test the deadline check. It is a fictional drafting error in this demonstration.

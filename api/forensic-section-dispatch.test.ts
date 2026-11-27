@@ -36,7 +36,8 @@ describe("forensic section dispatch", () => {
     const order: string[] = [];
     const generate = vi.fn(async (options: GenParams) => { order.push(options.stage!); return ok(options.stage!); });
     await runSectionedAnalysis({ mode: "full", documentText: DOC, primaryModel: "m", verificationModel: "v", requestId: "order-test", deadlineAt: Date.now() + 60_000, generate });
-    expect(order.slice(0, 3)).toEqual(["section:redFlags", "section:guidance", "section:thresholds"]);
+    // Chronology moved up behind the verification inputs (2026-11-26 hotfix): it previously started last.
+    expect(order.slice(0, 3)).toEqual(["section:redFlags", "section:thresholds", "section:chronology"]);
   });
 
   it("honours an explicit concurrency cap", async () => {

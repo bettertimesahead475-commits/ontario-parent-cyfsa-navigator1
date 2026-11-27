@@ -1193,7 +1193,7 @@ export function buildComplianceMatrixFromReport(
     const firstContradiction = (report.contradictions || [])[0];
     const span = firstContradiction
       ? {
-          excerpt: `${firstContradiction.claim || ""} vs. ${firstContradiction.counterEvidence || ""}`.trim(),
+          excerpt: [firstContradiction.claim, firstContradiction.counterEvidence].filter((part) => typeof part === "string" && part.trim()).join(" vs. "),
           page: firstContradiction.sourcePage || 1,
           paragraphOrSpan: firstContradiction.paragraphReference || "Contradiction Span",
         }

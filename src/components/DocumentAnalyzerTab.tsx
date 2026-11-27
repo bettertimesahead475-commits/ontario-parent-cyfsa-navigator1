@@ -80,7 +80,8 @@ import { EducationalQa } from "./EducationalQa";
 import { CourtPrepWorkspace } from "./CourtPrepWorkspace";
 import { renderReportSectionsHtml } from "../utils/reportSectionsHtml";
 import { REDACTED_COPY_NOTICE, redactForExport } from "../../shared/exportRedaction";
-import { renderForensicReportHtml } from "../utils/forensicPdfRenderer";
+import { isScored, renderForensicReportHtml } from "../utils/forensicPdfRenderer";
+import { formatLawyerCaseBriefText, renderLawyerCaseBriefHtml } from "../utils/caseBriefExport";
 import {
   ParagraphListenButton,
   SectionListenButton,
@@ -1846,11 +1847,13 @@ export default function DocumentAnalyzerTab() {
     setSelectedReport(null);
     // Single-file uploads use full streaming and stage callbacks; batches use parallel engine
     if (chunkedFiles.length === 1) {
+      // The single-file path shows its own progress, so the upload message is cleared once the file is read.
+      setBulkProgress("");
       await triggerSingleAnalysis(chunkedFiles[0]);
     } else if (chunkedFiles.length > 1) {
       await runParallelBulkAnalysis(chunkedFiles);
     } else {
-      setBulkProgress(null);
+      setBulkProgress("");
     }
   };
 
@@ -2453,7 +2456,7 @@ export default function DocumentAnalyzerTab() {
           cursor: pointer;
           margin-bottom: 25px;
         }
-        @page { size: A4; margin: 13mm 12mm; }
+        @page { size: A4; margin: 13mm 12mm 16mm; @bottom-center { content: "CYFSA Navigator — Page " counter(page) " of " counter(pages); font-family: sans-serif; font-size: 8px; color: #64748b; } }
         @media print {
           .no-print-btn { display: none !important; }
           body { margin: 0; line-height: 1.35; font-size: 10px; }
@@ -2737,18 +2740,20 @@ export default function DocumentAnalyzerTab() {
     } else if (activeTab === "organizer" && reportForExport) {
       title = `Admissibility Audit - ${escapeHtml(reportForExport.documentTitle || displayFileName || "Report")}`;
       const evidenceIndex = reportForExport.evidenceStrengthIndex || {
-        score: 0,
+        score: null,
         components: {},
         limitations: "Evidence Strength Index data was not present in this report. Re-run the analysis with the current analyzer."
       };
 
-      const evidenceScore = Number(evidenceIndex.score) || 0;
+      const evidenceScored = isScored(evidenceIndex.score);
+      const evidenceScore = evidenceScored ? Number(evidenceIndex.score) : 0;
       const evidenceScoreColor =
         evidenceScore >= 80 ? "#16a34a" :
         evidenceScore >= 50 ? "#d97706" :
         "#dc2626";
 
-      const completenessScore = Number(reportForExport.completenessScore) || 0;
+      const completenessScored = isScored(reportForExport.completenessScore);
+      const completenessScore = completenessScored ? Number(reportForExport.completenessScore) : 0;
       const components = evidenceIndex.components || {};
 
       const evidenceComponents = [
@@ -2769,13 +2774,20 @@ export default function DocumentAnalyzerTab() {
 
           <div class="meta-bar">
             Document Checked:
-            <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "N/A")}</strong>
+            <strong>${escapeHtml(reportForExport.documentTitle || displayFileName || "Not stated in the document")}</strong>
             • Type:
-            <strong>${escapeHtml(reportForExport.documentType || "Casework Correspondence")}</strong>
+            <strong>${escapeHtml(reportForExport.documentType || "Not stated in the document")}</strong>
             • Date of Audit:
-            <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Current")}</strong>
+            <strong>${escapeHtml(redactionEnabled ? "[removed]" : reportForExport.analysisDate || "Not recorded")}</strong>
           </div>
         </div>
+
+        ${reportForExport.fileSummary ? `
+          <div class="section-card">
+            <h3 class="section-title">Document Summary</h3>
+            <p style="margin:6px 0 0; white-space:pre-wrap;">${escapeHtml(String(reportForExport.fileSummary))}</p>
+          </div>
+        ` : ""}
 
         <div class="section-card">
           <h3 class="section-title">📊 Educational Evidence Strength Summary</h3>
@@ -2787,8 +2799,8 @@ export default function DocumentAnalyzerTab() {
               </span>
 
               <div style="font-size:32px; font-weight:800; color:${evidenceScoreColor}; margin-top:5px;">
-                ${evidenceScore}
-                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>
+                ${evidenceScored ? `${evidenceScore}
+                <span style="font-size:16px; color:#94a3b8; font-weight:normal;">/ 100</span>` : `<span style="font-size:18px; color:#64748b;">Not scored</span>`}
               </div>
             </div>
 
@@ -2816,14 +2828,14 @@ export default function DocumentAnalyzerTab() {
             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px;">
               ${evidenceComponents.map(([key, label, max]) => {
                 const component = components[key] || {};
-                const value = Number(component.score) || 0;
+                const value = isScored(component.score) ? `${Number(component.score)}/${max}` : "Not scored";
 
                 return `
                   <div style="border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc;">
                     <div style="display:flex; justify-content:space-between; gap:10px;">
                       <strong style="font-size:12px; color:#334155;">${label}</strong>
                       <span style="font-size:12px; font-weight:800; color:#475569;">
-                        ${value}/${max}
+                        ${value}
                       </span>
                     </div>
 
@@ -2842,7 +2854,7 @@ export default function DocumentAnalyzerTab() {
             </strong>
 
             <span style="font-size:12px; color:#475569;">
-              ${completenessScore}/100
+              ${completenessScored ? `${completenessScore}/100` : "Not scored"}
             </span>
 
             <div style="font-size:11px; color:#64748b; margin-top:4px;">
@@ -3001,6 +3013,9 @@ export default function DocumentAnalyzerTab() {
 
         <div class="section-card">
           <h3 class="section-title">📋 Practical Verification & Next Steps Guide</h3>
+          ${![reportForExport.whatToVerify, reportForExport.whatToAskALawyer, reportForExport.whatIsMissing].some(list => Array.isArray(list) && list.length > 0) ? `
+            <p style="color:#64748b;">Not stated in the document.</p>
+          ` : ""}
           ${reportForExport.whatToVerify && reportForExport.whatToVerify.length > 0 ? `
             <div style="margin-bottom: 15px;">
               <strong style="font-size: 13px; color: #0f172a;">Information to Verify & Double-Check:</strong>
@@ -3150,6 +3165,11 @@ export default function DocumentAnalyzerTab() {
     ? currentDeepReport
     : (currentQuickReport || currentDeepReport || selectedReport);
 
+  const briefExportOptions = {
+    fileName: activeSelectedFile?.name,
+    analyzerLabel: activeReportMode === "deep" && currentDeepReport ? "Forensic Deep Scan" : "Quick Document Review",
+  };
+
   const reportSegments = useMemo<NarrationSegment[]>(() => {
     return displayedReport ? extractReportSegments(displayedReport) : [];
   }, [displayedReport]);
@@ -3170,7 +3190,7 @@ export default function DocumentAnalyzerTab() {
   return (
     <div className="space-y-3 w-full max-w-full overflow-x-hidden break-words font-sans analyzer-reading-workspace" id="document-analyzer-tab">
       
-      <FinalCaseAssessment />
+      <FinalCaseAssessment redactionEnabled={redactionEnabled} />
       {/* Platform Sub-Header Banner */}
       {/* Title and introduction on their own full-width row, controls below. Side by side, the controls (four groups)
           took their full width and squeezed the introduction into a ~120 px column at every desktop width. */}
@@ -4534,21 +4554,38 @@ export default function DocumentAnalyzerTab() {
 
                                 <button
                                   onClick={() => {
-                                    const textToCopy = redactionEnabled ? undefined : displayedReport.lawyerCaseBrief?.map((b: string) => b.replace(/\*\*/g, "")).join("\n\n");
-                                    if (textToCopy) {
-                                      const blob = new Blob([textToCopy], { type: "text/plain" });
-                                      const url = URL.createObjectURL(blob);
-                                      const a = document.createElement("a");
-                                      a.href = url;
-                                      a.download = `Lawyer_Case_Brief_${(displayedReport.documentTitle || "document").replace(/\s+/g, "_")}.txt`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      document.body.removeChild(a);
-                                      URL.revokeObjectURL(url);
+                                    if (redactionEnabled) return;
+                                    const printWindow = window.open("", "_blank");
+                                    if (!printWindow) {
+                                      alert("Please allow pop-ups to save the brief as a PDF.");
+                                      return;
                                     }
+                                    printWindow.document.write(renderLawyerCaseBriefHtml(displayedReport, briefExportOptions));
+                                    printWindow.document.close();
+                                    finishPrintWindow(printWindow);
+                                  }}
+                                  className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-brand-500 cursor-pointer"
+                                  title="Open the formatted brief and save it as a PDF"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>Download PDF Brief</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    if (redactionEnabled) return;
+                                    const blob = new Blob([formatLawyerCaseBriefText(displayedReport, briefExportOptions)], { type: "text/plain;charset=utf-8" });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement("a");
+                                    a.href = url;
+                                    a.download = `Lawyer_Case_Brief_${(displayedReport.documentTitle || "document").replace(/\s+/g, "_")}.txt`;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
                                   }}
                                   className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-[10.5px] font-medium flex items-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
-                                  title="Download brief as .txt"
+                                  title="Download an editable plain-text copy of the brief"
                                 >
                                   <Download className="w-3.5 h-3.5 text-brand-400" />
                                   <span>Download .txt Brief</span>
@@ -5629,7 +5666,7 @@ export default function DocumentAnalyzerTab() {
                                   <span>{file.name}</span>
                                 </h4>
                                 <p className="text-[10px] font-sans text-slate-500 mt-0.5">
-                                  Uploaded: {file.uploadedAt} • Size: {Math.round(file.size / 1024)} KB
+                                  Uploaded: {file.uploadedAt || "Not recorded"} • Size: {Number.isFinite(file.size) ? `${Math.round(file.size / 1024)} KB` : "Not recorded"}
                                 </p>
                               </div>
 
@@ -5641,7 +5678,7 @@ export default function DocumentAnalyzerTab() {
                                   </span>
                                 ) : file.analysisStatus === "analyzing" ? (
                                   <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1 animate-pulse">
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing (3-5s)...
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analyzing…
                                   </span>
                                 ) : file.analysisStatus === "failed" ? (
                                   <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-md text-xs font-sans font-bold flex items-center gap-1">

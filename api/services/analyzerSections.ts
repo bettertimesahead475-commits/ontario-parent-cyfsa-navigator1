@@ -271,6 +271,20 @@ export function validateRedFlags(raw: any, mode: "fast" | "full"): Validation {
     // A flag without its quote or explanation breaks Core Rule 1, so it is not shown.
     .filter((f: any) => f.phraseDetected && f.explanation)
     .slice(0, max);
+  // The second review's verdicts are matched to findings by id: a repeated id would let a verdict on one finding
+  // remove or recalibrate another. Each finding keeps its own id; a repeated or missing one gets the next rfN that no
+  // finding uses, so a later finding never loses the id its report id is derived from.
+  const taken = new Set<string>(flags.map((f: { id: string }) => f.id));
+  const used = new Set<string>();
+  let next = 1;
+  for (const f of flags) {
+    if (used.has(f.id)) {
+      while (taken.has(`rf${next}`)) next++;
+      taken.add(`rf${next}`);
+      f.id = `rf${next}`;
+    }
+    used.add(f.id);
+  }
   if (raw.redFlags.length > 0 && flags.length === 0) {
     return { ok: false, problems: ["every red flag was missing its exact quote (phraseDetected) or explanation"] };
   }
@@ -518,7 +532,9 @@ const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
     stage: "building_chronology",
     fields: [],
     extraSchema: CHRONOLOGY_SCHEMA,
-    maxTokens: { fast: 3500, full: 5000 },
+    // Forensic chronology was cut off at 5,000 output tokens in production (Devin telemetry, 2026-11-26). 8,000 leaves
+    // room for 25 one-sentence entries plus contradictions; a cut-off response is still never accepted (see runOneSection).
+    maxTokens: { fast: 3500, full: 8000 },
     limits: (mode) =>
       `chronology: at most ${mode === "fast" ? 15 : 25} entries in date order, each one sentence. contradictions: at most 8; return [] if there are none.`,
     validate: (raw, mode) => validateChronology(raw, mode),
@@ -895,6 +911,9 @@ export interface SectionRunResult {
 }
 
 const SECTION_TIMEOUT_MS = { fast: 75_000, full: 110_000 };
+// redFlags is the longest Forensic section (92.5 s in production): 110 s failed it at 1.2x its production time and its
+// retry could not fit. 145 s still leaves verification its 30 s minimum start budget when redFlags starts at t = 0.
+const FORENSIC_SECTION_TIMEOUT_MS: Partial<Record<SectionKey, number>> = { redFlags: 145_000 };
 const MIN_RETRY_BUDGET_MS = 25_000;
 
 function addUsage(acc: SectionRunResult["usageByModel"], model: string, usage?: GenerateResult["usage"]) {
@@ -919,7 +938,8 @@ export async function runOneSection(
     const remaining = opts.deadlineAt - now();
     if (attempt > 1 && remaining < MIN_RETRY_BUDGET_MS) break;
     if (remaining < 5_000) break;
-    const timeoutMs = Math.min(SECTION_TIMEOUT_MS[opts.mode], remaining - 3_000);
+    const sectionLimit = (opts.mode === "full" && FORENSIC_SECTION_TIMEOUT_MS[key]) || SECTION_TIMEOUT_MS[opts.mode];
+    const timeoutMs = Math.min(sectionLimit, remaining - 3_000);
     let result: GenerateResult;
     try {
       result = await opts.generate(
@@ -1003,7 +1023,9 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
   // and dispatches the longest sections first (verification inputs redFlags and thresholds lead).
   const defaultConcurrency = opts.mode === "full" ? 3 : keys.length;
   const concurrency = Math.min(Math.max(1, opts.maxConcurrency ?? defaultConcurrency), keys.length, 6);
-  const FORENSIC_DISPATCH_ORDER: SectionKey[] = ["redFlags", "guidance", "thresholds", "timeline", "overview", "chronology"];
+  // redFlags and thresholds stay in the first wave: verification reads both and starts as soon as both finish. Chronology
+  // now starts before guidance and overview (it previously started last, when the execution budget was nearly spent).
+  const FORENSIC_DISPATCH_ORDER: SectionKey[] = ["redFlags", "thresholds", "chronology", "guidance", "timeline", "overview"];
   const queue = opts.mode === "full"
     ? [...keys].sort((a, b) => (FORENSIC_DISPATCH_ORDER.indexOf(a) + 1 || 99) - (FORENSIC_DISPATCH_ORDER.indexOf(b) + 1 || 99))
     : [...keys];
@@ -1135,6 +1157,10 @@ export function mergeVerification(report: Record<string, any>, parsed: any, mode
   for (const v of Array.isArray(parsed?.findings) ? parsed.findings : []) {
     if (v && typeof v === "object" && str(v.id)) byId.set(str(v.id), v);
   }
+  // A verdict for an id shared by several findings cannot be attributed to one of them: none of them receives it.
+  const idCounts = new Map<string, number>();
+  for (const flag of report.redFlags || []) idCounts.set(flag?.id, (idCounts.get(flag?.id) || 0) + 1);
+  for (const [id, n] of idCounts) if (n > 1) byId.delete(id);
 
   const activeFlags: any[] = [];
   const unsupportedFindings: any[] = [];

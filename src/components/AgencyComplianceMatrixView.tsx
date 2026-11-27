@@ -573,15 +573,29 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
                         Plain-Language Educational Guidance
                       </div>
                       <p className="leading-relaxed">{item.presentation.educationalMode.whatRuleRequires}</p>
-                      <div className="pt-1.5 border-t border-amber-200/60">
-                        <strong className="text-slate-900 font-semibold">What this means for parents: </strong>
-                        <span>{item.presentation.educationalMode.whatThisMeansForParent}</span>
-                      </div>
-                      {item.presentation.educationalMode.actionableStepsForParent.length > 0 && (
+                      {item.presentation.educationalMode.whyItAppliesOrMayNotApply && (
+                        <div className="pt-1.5 border-t border-amber-200/60">
+                          <strong className="text-slate-900 font-semibold">Why it may or may not apply: </strong>
+                          <span>{item.presentation.educationalMode.whyItAppliesOrMayNotApply}</span>
+                        </div>
+                      )}
+                      {item.presentation.educationalMode.whatDocumentShows && (
+                        <div>
+                          <strong className="text-slate-900 font-semibold">What the document shows: </strong>
+                          <span>{item.presentation.educationalMode.whatDocumentShows}</span>
+                        </div>
+                      )}
+                      {item.presentation.educationalMode.whatIsMissing && (
+                        <div>
+                          <strong className="text-slate-900 font-semibold">What is missing: </strong>
+                          <span>{item.presentation.educationalMode.whatIsMissing}</span>
+                        </div>
+                      )}
+                      {(item.presentation.educationalMode.questionsToAskNext?.length ?? 0) > 0 && (
                         <div className="pt-1.5 space-y-1">
-                          <strong className="text-slate-900 font-semibold">Action Steps:</strong>
+                          <strong className="text-slate-900 font-semibold">Questions to ask next:</strong>
                           <ul className="list-disc pl-5 space-y-0.5">
-                            {item.presentation.educationalMode.actionableStepsForParent.map((step, sIdx) => (
+                            {item.presentation.educationalMode.questionsToAskNext.map((step, sIdx) => (
                               <li key={sIdx}>{step}</li>
                             ))}
                           </ul>
@@ -595,24 +609,30 @@ export const AgencyComplianceMatrixView: React.FC<AgencyComplianceMatrixViewProp
                         Courtroom-Style Evidentiary Framing
                       </div>
                       <p className="leading-relaxed text-slate-200 font-serif">
-                        {item.presentation.courtroomMode.evidentiaryFraming}
+                        {item.presentation.courtroomMode.evidentialGapOrInconsistency}
                       </p>
-                      {item.presentation.courtroomMode.crossExaminationAvenues.length > 0 && (
+                      {item.presentation.courtroomMode.documentedFactAndAttribution && (
+                        <p className="text-[11px] text-slate-300 leading-relaxed">
+                          <strong className="text-slate-200">Documented fact: </strong>
+                          {item.presentation.courtroomMode.documentedFactAndAttribution}
+                        </p>
+                      )}
+                      {(item.presentation.courtroomMode.targetedDisclosureOrClarificationRequest?.length ?? 0) > 0 && (
                         <div className="pt-2 border-t border-slate-800 space-y-1 text-slate-300">
                           <strong className="text-amber-300 font-semibold text-[11px]">
-                            Potential Inquiries / Cross-Examination Avenues:
+                            Targeted Disclosure / Clarification Requests:
                           </strong>
                           <ul className="list-disc pl-5 space-y-1">
-                            {item.presentation.courtroomMode.crossExaminationAvenues.map((ave, aIdx) => (
+                            {item.presentation.courtroomMode.targetedDisclosureOrClarificationRequest.map((ave, aIdx) => (
                               <li key={aIdx}>{ave}</li>
                             ))}
                           </ul>
                         </div>
                       )}
-                      {item.presentation.courtroomMode.admissibilityAndRule14_18Note && (
+                      {item.presentation.courtroomMode.relevantRuleAndAuthority && (
                         <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400 leading-relaxed">
-                          <strong className="text-slate-200">Admissibility / Rule 14(18) Note: </strong>
-                          {item.presentation.courtroomMode.admissibilityAndRule14_18Note}
+                          <strong className="text-slate-200">Rule and authority: </strong>
+                          {item.presentation.courtroomMode.relevantRuleAndAuthority}
                         </div>
                       )}
                     </div>
