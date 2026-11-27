@@ -5,7 +5,7 @@
  * Returns verified tier prices, product descriptions, and feature entitlements.
  */
 
-import { FREE_SCAN_LIMIT } from './_free-credit-reservation';
+import { FREE_TRIAL_LIMITS, FREE_TRIAL_MAX_BYTES, FREE_TRIAL_MAX_PAGES } from './_free-trial';
 
 const DEFAULT_HEADERS = {
   'Cache-Control': 'public, max-age=3600',
@@ -139,7 +139,9 @@ export const onRequestGet = async (): Promise<Response> => {
           ],
           restrictions: [
             'No premium report download/export/print unless included in paid access',
-            `${FREE_SCAN_LIMIT} Free Quick Document Reviews`,
+            `${FREE_TRIAL_LIMITS.quick} Free Quick Document Review and ${FREE_TRIAL_LIMITS.forensic} Free Forensic Deep Scan, once per verified email (no monthly renewal)`,
+            `Free documents: up to ${FREE_TRIAL_MAX_PAGES} pages and ${FREE_TRIAL_MAX_BYTES / (1024 * 1024)} MB`,
+            'Audio transcription and Final Case Assessment require a paid plan',
           ],
         },
       },

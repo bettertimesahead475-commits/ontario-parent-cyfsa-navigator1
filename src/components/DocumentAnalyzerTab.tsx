@@ -1745,7 +1745,8 @@ export default function DocumentAnalyzerTab() {
     setCustomUploadError("");
     setBulkProgress(`Concurrently processing ${filesArray.length} files for speedy results...`);
 
-    const loadedFiles: OrganizedFile[] = await Promise.all(filesArray.map(async (f) => {
+    const refusedUploads: string[] = [];
+    const loadedFiles: OrganizedFile[] = (await Promise.all(filesArray.map(async (f) => {
       let parsedContent = "";
       let finalName = f.name;
       const nameL = f.name.toLowerCase();
@@ -1800,6 +1801,11 @@ export default function DocumentAnalyzerTab() {
           finalName = responseData.fileName;
           finalMimeType = "application/pdf"; // Stored in PDF format
         } catch (error: any) {
+          // A refusal (e.g. transcription needs a paid plan) is not a transcript: leave the recording out of the batch.
+          if (error instanceof ApiResponseError) {
+            refusedUploads.push(`${f.name}: ${error.message}`);
+            return null;
+          }
           console.error("Automated audio transcription failed:", error);
           parsedContent = `IN THE ONTARIO FAMILY COURT OF JUSTICE\n\nRECORDING STATEMENT FOR: ${f.name}\n\n[SYSTEM TRANSCRIBING PIPE WARNING]: The automated transcription queue failed to reach the model. Falling back to parent raw audio metadata representation.\nReason: ${error.message || error}\nPencil notes: Please contact your legal advisor.`;
           finalName = `Transcript - ${f.name.replace(/\.[^/.]+$/, "")}.pdf`;
@@ -1847,7 +1853,8 @@ export default function DocumentAnalyzerTab() {
         mimeType: finalMimeType,
         analysisStatus: "pending"
       };
-    }));
+    }))).filter((file) => file !== null) as OrganizedFile[];
+    if (refusedUploads.length) showUploadError(refusedUploads.join(" "));
 
     const chunkedFiles = chunkFilesForAnalysis(loadedFiles);
     setOrganizedFiles(prev => [...prev, ...chunkedFiles]);
@@ -1951,8 +1958,9 @@ export default function DocumentAnalyzerTab() {
                       },
                       body: JSON.stringify({ ...payload, mode: analysisMode, model: claudeModel })
                     });
-                    // A non-2xx response throws an ApiResponseError that the shared policy classifies.
-                    return safeReadJson(response);
+                    // A non-2xx response throws an ApiResponseError that the shared policy classifies; a queued
+                    // (HTTP 202) Forensic scan is followed to its finished report.
+                    return readAnalysisResponse(response, undefined, { fetcher: apiFetch });
                   },
                   recover: () => recoverAnalysisReport(fileAnalysisId),
                   onWait: (wait) => {
@@ -4127,10 +4135,10 @@ export default function DocumentAnalyzerTab() {
                           <div role="alert" className="bg-amber-950/70 border border-amber-400/40 rounded-xl p-4 text-xs text-amber-100 space-y-2" id="deep-scan-limit-reached-banner">
                             <div className="flex items-center gap-2 font-bold text-amber-300 text-sm">
                               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                              <span>Forensic In-Depth Scan Requires a Paid Plan</span>
+                              <span>Free Forensic Deep Scan Already Used</span>
                             </div>
                             <p className="leading-relaxed">
-                              Forensic In-Depth analysis provides comprehensive 6-section statutory assessment and independent verification. Upgrade your plan to continue.
+                              Each verified account includes one free Forensic Deep Scan. Yours has been used; purchase a plan for further Forensic analyses. Your completed reports stay available to view and export at no charge.
                             </p>
                             <div className="pt-1">
                               <button

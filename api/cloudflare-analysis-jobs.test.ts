@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { SPEND_CAPS_OFF, freeIdentity, withFreeUsage } from './helpers/freeTrialTestEnv';
 import { handleAnalyzeRequest, type AnalyzerEnv } from "../functions/api/analyze";
 import { AnalyzerError } from "./services/analyzerErrors";
 import { effectiveJob, RUNNING_JOB_STALE_MS, saveJobState } from "../functions/api/_analysis-jobs";
@@ -29,6 +30,7 @@ const ENV = {
   ANALYZER_ENABLED: "true",
   FIREBASE_PROJECT_ID: "p",
   ANTHROPIC_API_KEY: "sk-ant-test",
+  ...SPEND_CAPS_OFF,
   STAGING_SUPABASE_URL: "https://staging.example.supabase.co",
   STAGING_SUPABASE_SERVICE_ROLE_KEY: "svc-key",
 } as unknown as AnalyzerEnv;
@@ -56,13 +58,13 @@ const request = (requestId: string) =>
 
 describe("analysis job records", () => {
   it("writes running when the analysis starts, then a failed record with the reason when the provider fails", async () => {
-    mockAuthVerification.mockResolvedValueOnce({ status: "verified", uid: "user_free_1" });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity("user_free_1"));
     const h = harness();
     const generate = vi.fn(async () => {
       throw new AnalyzerError("AI_PROVIDER_TEMPORARILY_UNAVAILABLE", 503, "The AI analysis engine is temporarily unavailable. Please try again shortly. Nothing was charged.", true);
     }) as unknown as GenerateFn;
 
-    const res = await handleAnalyzeRequest(request("req_job_failure_01"), ENV, { rpc: h.rpc, generate, fetcher: h.storage as any });
+    const res = await handleAnalyzeRequest(request("req_job_failure_01"), ENV, { rpc: h.rpc, generate, fetcher: withFreeUsage((h.storage as any) as typeof fetch) });
 
     expect(res.status).toBe(503);
     expect(h.jobWrites.map((w) => w.status)).toEqual(["running", "failed"]);
@@ -77,12 +79,12 @@ describe("analysis job records", () => {
   });
 
   it("never writes provider text into the stored record", async () => {
-    mockAuthVerification.mockResolvedValueOnce({ status: "verified", uid: "user_free_2" });
+    mockAuthVerification.mockResolvedValueOnce(freeIdentity("user_free_2"));
     const h = harness();
     const generate = vi.fn(async () => {
       throw new Error("provider said: sk-ant-leaked-key and document text");
     }) as unknown as GenerateFn;
-    await handleAnalyzeRequest(request("req_job_failure_02"), ENV, { rpc: h.rpc, generate, fetcher: h.storage as any });
+    await handleAnalyzeRequest(request("req_job_failure_02"), ENV, { rpc: h.rpc, generate, fetcher: withFreeUsage((h.storage as any) as typeof fetch) });
     const stored = JSON.stringify(h.jobWrites);
     expect(stored).not.toMatch(/sk-ant-leaked-key|document text/);
   });

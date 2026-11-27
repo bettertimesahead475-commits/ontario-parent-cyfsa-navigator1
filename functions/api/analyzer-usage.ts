@@ -3,7 +3,7 @@
  *
  * Reports the caller's allowance from the same counters and limits the reservation code uses, so the number a
  * customer sees is the number that will be enforced:
- * - Signed-in free account: free_usage row keyed by the Firebase uid, limit FREE_SCAN_LIMIT (free_reserve_scan).
+ * - Signed-in free account: the free-trial counters of ./_free-trial.ts (one Quick and one Forensic, lifetime).
  * - Paid session, one-time tiers: free_usage row paid_session_<id>_total, shared by Quick and Forensic.
  * - Paid session, monthly tiers: Quick Reviews are not counted; Forensic uses paid_session_<id>_period_<start>.
  * When a counter cannot be read, the counts are reported as null (unknown) rather than as a full allowance.
@@ -11,7 +11,7 @@
 
 import { verifyFirebaseRequest } from './_auth-check';
 import { normalizeApiKey } from './_supabase-key';
-import { FREE_SCAN_LIMIT } from './_free-credit-reservation';
+import { FREE_TRIAL_LIMITS, readCounter, readFreeTrialBalance } from './_free-trial';
 import { monthlyCreditScope } from './_monthly-credit-scope';
 import { LIMITS } from './_paid-credit-reservation';
 import { readVerifiedPaidSession } from './_supabase-paid-session';
@@ -29,27 +29,9 @@ const DEFAULT_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
 };
 
-/** analyses_used for one counter row, 0 when the row does not exist yet, null when it cannot be read. */
-export async function readCounter(env: UsageEnv, key: string, fetcher: typeof fetch = fetch): Promise<number | null> {
-  if (!env.STAGING_SUPABASE_URL || !env.STAGING_SUPABASE_SERVICE_ROLE_KEY) return null;
-  try {
-    const url = new URL('/rest/v1/free_usage', env.STAGING_SUPABASE_URL);
-    url.searchParams.set('uid', `eq.${key}`);
-    url.searchParams.set('select', 'analyses_used');
-    const res = await fetcher(url.toString(), {
-      headers: { apikey: (normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? ''), Authorization: `Bearer ${(normalizeApiKey(env.STAGING_SUPABASE_SERVICE_ROLE_KEY) ?? '')}`, Accept: 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null;
-    const rows = (await res.json()) as Array<{ analyses_used?: number }>;
-    if (!Array.isArray(rows)) return null;
-    const used = rows[0]?.analyses_used ?? 0;
-    return typeof used === 'number' && Number.isFinite(used) ? used : null;
-  } catch {
-    return null;
-  }
-}
+export { readCounter };
 
+const TRIAL_TOTAL = FREE_TRIAL_LIMITS.quick + FREE_TRIAL_LIMITS.forensic;
 const left = (limit: number, used: number | null) => (used === null ? null : Math.max(0, limit - used));
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: UsageEnv }): Promise<Response> => {
@@ -59,10 +41,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: Us
     // Not signed in: analysis needs sign-in, so this only describes the free allowance.
     return Response.json(
       {
-        type: 'free', tier: 'Free', signedIn: false,
-        limit: FREE_SCAN_LIMIT, remaining: FREE_SCAN_LIMIT, creditsLimit: FREE_SCAN_LIMIT, creditsRemaining: FREE_SCAN_LIMIT,
-        quickReviewsUsed: 0, quickReviewsLimit: FREE_SCAN_LIMIT, quickReviewsRemaining: FREE_SCAN_LIMIT,
-        forensicAnalysesUsed: 0, forensicAnalysesLimit: 0, forensicAnalysesRemaining: 0,
+        type: 'free', tier: 'Free', signedIn: false, freeTrial: true, allowsForensic: true,
+        limit: TRIAL_TOTAL, remaining: TRIAL_TOTAL, creditsLimit: TRIAL_TOTAL, creditsRemaining: TRIAL_TOTAL,
+        quickReviewsUsed: 0, quickReviewsLimit: FREE_TRIAL_LIMITS.quick, quickReviewsRemaining: FREE_TRIAL_LIMITS.quick,
+        forensicAnalysesUsed: 0, forensicAnalysesLimit: FREE_TRIAL_LIMITS.forensic, forensicAnalysesRemaining: FREE_TRIAL_LIMITS.forensic,
       },
       { status: 200, headers: DEFAULT_HEADERS }
     );
@@ -114,14 +96,24 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: Us
     }
   }
 
-  const used = await readCounter(env, identity.uid);
-  const remaining = left(FREE_SCAN_LIMIT, used);
+  // Free trial: the same counters reserveFreeTrial enforces (one Quick and one Forensic per verified email; an account
+  // that started under the earlier 3-Quick offer keeps that allowance).
+  const balance = await readFreeTrialBalance(env, identity.uid, identity.email ?? null, identity.emailVerified);
+  const quickUsed = balance.quickUsed;
+  const forensicUsed = balance.forensicUsed;
+  const quickLeft = left(balance.quickLimit, quickUsed);
+  const forensicLeft = left(FREE_TRIAL_LIMITS.forensic, forensicUsed);
+  const totalLimit = balance.quickLimit + FREE_TRIAL_LIMITS.forensic;
+  const used = quickUsed === null || forensicUsed === null ? null : quickUsed + forensicUsed;
+  const remaining = quickLeft === null || forensicLeft === null ? null : quickLeft + forensicLeft;
+  const email = balance.emailVerified;
   return Response.json(
     {
-      type: 'free', tier: 'Free', signedIn: true, countsAvailable: used !== null,
-      limit: FREE_SCAN_LIMIT, remaining, creditsLimit: FREE_SCAN_LIMIT, creditsRemaining: remaining, creditsUsed: used,
-      quickReviewsUsed: used, quickReviewsLimit: FREE_SCAN_LIMIT, quickReviewsRemaining: remaining,
-      forensicAnalysesUsed: 0, forensicAnalysesLimit: 0, forensicAnalysesRemaining: 0,
+      type: 'free', tier: 'Free', signedIn: true, freeTrial: true, emailVerificationRequired: !email, countsAvailable: used !== null,
+      allowsForensic: forensicLeft === null || forensicLeft > 0,
+      limit: totalLimit, remaining, creditsLimit: totalLimit, creditsRemaining: remaining, creditsUsed: used,
+      quickReviewsUsed: quickUsed, quickReviewsLimit: balance.quickLimit, quickReviewsRemaining: quickLeft,
+      forensicAnalysesUsed: forensicUsed, forensicAnalysesLimit: FREE_TRIAL_LIMITS.forensic, forensicAnalysesRemaining: forensicLeft,
     },
     { status: 200, headers: DEFAULT_HEADERS }
   );

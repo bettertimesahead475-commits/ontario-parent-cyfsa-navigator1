@@ -13,7 +13,7 @@ import {
 } from '../functions/api/_durable-analysis-jobs';
 import { createAnalyzerQueueMessage, parseAnalyzerQueueMessage } from '../functions/api/_analyzer-queue-contract';
 import { createStagingCreditRpc } from '../functions/api/_staging-credit-rpc';
-import { finalizeFreeScan, releaseFreeScan } from '../functions/api/_free-credit-lifecycle';
+import { finalizeFreeReservation, freeAttemptKey, releaseFreeReservation, spendLimit, takeCapUnit } from '../functions/api/_free-trial';
 import { finalizePaidReservation, releasePaidReservation } from '../functions/api/_paid-credit-lifecycle';
 
 interface QueueMessageLike {
@@ -64,7 +64,7 @@ async function releaseReservation(env: ConsumerEnv, job: DurableJobRecord): Prom
   const rpc = createStagingCreditRpc(env);
   const released = job.session_id
     ? await releasePaidReservation(job.session_id, job.job_id, job.reservation_id, rpc)
-    : await releaseFreeScan(job.owner_uid, job.job_id, job.reservation_id, rpc);
+    : await releaseFreeReservation(job.owner_uid, job.job_id, job.reservation_id, rpc);
   if (released.status === 'unavailable' || released.status === 'denied') {
     throw Object.assign(new Error('Credit release is not yet confirmed.'), { retryable: true, code: 'CREDIT_RELEASE_UNAVAILABLE' });
   }
@@ -82,7 +82,7 @@ async function finalizeReservation(env: ConsumerEnv, job: DurableJobRecord): Pro
   const rpc = createStagingCreditRpc(env);
   const result = job.session_id
     ? await finalizePaidReservation(job.session_id, job.job_id, rpc)
-    : await finalizeFreeScan(job.owner_uid, job.job_id, rpc);
+    : await finalizeFreeReservation(job.owner_uid, job.job_id, job.reservation_id, rpc);
   if (result.status === 'consumed') return true;
   if (result.status === 'released' || result.status === 'missing') {
     console.warn('[ANALYZER_DELIVERED_UNCHARGED]', JSON.stringify({ jobId: job.job_id, paid: Boolean(job.session_id), reservation: result.status }));
@@ -154,6 +154,17 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
       return;
     }
 
+    // A redelivered free job is another provider run: it spends from the entitlement's lifetime run budget, so a
+    // job that keeps failing transiently stops and returns the entitlement. An unreachable ledger defers to the
+    // queue's own max_retries rather than failing a run that may still complete.
+    if (!job.session_id && !job.owner_bypass && message.attempts > 1) {
+      const runs = await takeCapUnit(freeAttemptKey(job.reservation_id, job.owner_uid), `${job.job_id.slice(0, 100)}_delivery_${message.attempts}`, spendLimit(env, 'FREE_TRIAL_MAX_ATTEMPTS'), createStagingCreditRpc(env));
+      if (runs === 'limit') {
+        await markPermanentFailure(env, job, token, 'FREE_TRIAL_ATTEMPTS_EXHAUSTED', 'Your free analysis could not be completed after several attempts and has been returned to your account. Nothing was charged.');
+        message.ack();
+        return;
+      }
+    }
     const input = await loadDurableInput(env, job.input_key);
     const request = new Request('https://analyzer-queue.internal/api/analyze', {
       method: 'POST',

@@ -65,10 +65,10 @@ describe('PricingTab Branding & Payment Instructions', () => {
 
     // Free / Self-Represented
     expect(screen.getAllByText(/Free \/ Self-Represented/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/3 Free Quick Document Reviews/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/1 Free Quick Document Review/i)).toBeNull();
-    expect(screen.getByText('3 Quick Reviews', { selector: 'td.text-slate-800' })).toBeDefined();
-    expect(screen.getByText(/Free Forever • No card needed/i)).toBeDefined();
+    expect(screen.getAllByText(/1 Free Quick Document Review \+ 1 Free Forensic Deep Scan/i).length).toBe(2);
+    expect(screen.queryByText(/3 Free Quick/i)).toBeNull();
+    expect(screen.getByText('1 Quick + 1 Forensic (once)', { selector: 'td.text-slate-800' })).toBeDefined();
+    expect(screen.getByText(/No card needed • One-time free analyses/i)).toBeDefined();
 
     // Analyzer Basic
     expect(screen.getAllByText(/Analyzer Basic/i).length).toBeGreaterThan(0);

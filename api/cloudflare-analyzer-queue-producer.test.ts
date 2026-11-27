@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { SPEND_CAPS_OFF, freeIdentity, withFreeUsage } from './helpers/freeTrialTestEnv';
 import { handleAnalyzeRequest, type AnalyzerEnv } from '../functions/api/analyze';
 import { handleDeepScanRequest } from '../functions/api/deep-scan';
 import { readVerifiedPaidSession } from '../functions/api/_supabase-paid-session';
@@ -12,6 +13,7 @@ const ENV = {
   // Queue-specific legacy Quick Review tests intentionally opt in. The live default is direct.
   QUEUE_QUICK_ANALYSIS: 'true',
   ANALYZER_ENABLED: 'true', FIREBASE_PROJECT_ID: 'firebase-test', ANTHROPIC_API_KEY: 'test-key',
+  ...SPEND_CAPS_OFF,
   STAGING_SUPABASE_URL: 'https://project.supabase.co', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'service-key',
 } as unknown as AnalyzerEnv;
 const documentText = 'Private affidavit evidence';
@@ -37,7 +39,7 @@ function fetcher(options: { storageStatus?: number } = {}) {
 
 describe('durable analyzer queue producer', () => {
   beforeEach(() => {
-    verify.mockReset().mockResolvedValue({ status: 'verified', uid: 'owner_1234', emailVerified: false, email: null });
+    verify.mockReset().mockResolvedValue(freeIdentity('owner_1234'));
   });
 
   it('fails a Queue-required Deep Scan before reserving or charging if Pages has no binding', async () => {
@@ -51,7 +53,7 @@ describe('durable analyzer queue producer', () => {
     });
     const response = await handleDeepScanRequest(req, {
       ...ENV, FORENSIC_REQUIRE_QUEUE: 'true',
-    }, { rpc, fetcher: fetchImpl as unknown as typeof fetch, generate });
+    }, { rpc, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch), generate });
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({
       code: 'FORENSIC_QUEUE_UNAVAILABLE', retryable: true,
@@ -65,7 +67,7 @@ describe('durable analyzer queue producer', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'reservation_1' }));
     const fetchImpl = fetcher() as unknown as ReturnType<typeof vi.fn>;
-    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
     const body = await response.json();
     expect(response.status).toBe(202);
     expect(body).toMatchObject({ jobId: 'job_producer_1234', status: 'queued', statusUrl: '/api/analyze/job/job_producer_1234' });
@@ -84,7 +86,7 @@ describe('durable analyzer queue producer', () => {
   });
 
   it('enqueues an entitled Premium Deep Scan as full mode without calling Opus on Pages', async () => {
-    verify.mockResolvedValueOnce({ status: 'verified', uid: 'premium_user_1', emailVerified: false, email: null });
+    verify.mockResolvedValueOnce(freeIdentity('premium_user_1'));
     vi.mocked(readVerifiedPaidSession).mockResolvedValueOnce({
       status: 'verified',
       session: {
@@ -109,7 +111,7 @@ describe('durable analyzer queue producer', () => {
     });
     const res = await handleDeepScanRequest(req,
       { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv,
-      { rpc, fetcher: fetchImpl as unknown as typeof fetch, generate: mockGenerate });
+      { rpc, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch), generate: mockGenerate });
     expect(res.status).toBe(202);
     expect(await res.json()).toMatchObject({
       jobId: id, status: 'queued', statusUrl: '/api/analyze/job/' + id, stream: 'poll',
@@ -138,7 +140,7 @@ describe('durable analyzer queue producer', () => {
       body: JSON.stringify({ documentText, mode: 'full', stream: false }),
     });
     const res = await handleDeepScanRequest(req, { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv,
-      { rpc, fetcher: fetcher() });
+      { rpc, fetcher: withFreeUsage((fetcher()) as typeof fetch) });
     expect(res.status).toBe(202);
     expect(send).toHaveBeenCalledWith({ version: 1, jobId: id });
     expect(rpc).not.toHaveBeenCalled();
@@ -147,7 +149,7 @@ describe('durable analyzer queue producer', () => {
   it('releases the reservation and records failure if enqueue fails', async () => {
     const send = vi.fn().mockRejectedValue(new Error('Queue unavailable'));
     const rpc = vi.fn(async (name: string) => name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'reservation_1' } : { status: 'released' });
-    const response = await handleAnalyzeRequest(request('job_enqueue_fail_123'), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetcher() });
+    const response = await handleAnalyzeRequest(request('job_enqueue_fail_123'), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: withFreeUsage((fetcher()) as typeof fetch) });
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ code: 'ANALYSIS_ENQUEUE_FAILED' });
     expect(rpc.mock.calls.map(([name]) => name)).toContain('free_release_scan');
@@ -183,7 +185,7 @@ describe('durable analyzer queue producer', () => {
       const send = vi.fn();
       const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'owner_1234', status: 'queued', mode: 'full' });
       const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv,
-        { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
+        { rpc: vi.fn(), fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
       expect(res.status).toBe(409);
       expect(await res.json()).toMatchObject({ code: 'ANALYSIS_IN_PROGRESS', jobId: id, statusUrl: '/api/analyze/job/' + id });
       expect(fetchImpl.mock.calls.some(([url]) => String(url).includes('/rpc/analyzer_update_job'))).toBe(false);
@@ -194,7 +196,7 @@ describe('durable analyzer queue producer', () => {
       const id = 'job_owner_done_1234';
       const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'owner_1234', status: 'completed', mode: 'full' });
       const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
-        { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
+        { rpc: vi.fn(), fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
       expect(res.status).toBe(409);
       expect(await res.json()).toMatchObject({ code: 'ANALYSIS_ALREADY_COMPLETED', jobId: id });
     });
@@ -203,7 +205,7 @@ describe('durable analyzer queue producer', () => {
       const id = 'job_foreign_dupe_12';
       const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'someone_else', status: 'queued', mode: 'full' });
       const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
-        { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
+        { rpc: vi.fn(), fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
       // Refused up front (security review): the id belongs to another user, so no credit is reserved,
       // no job is created, and the other user's job is never modified.
       expect(res.status).toBe(409);
@@ -225,7 +227,7 @@ describe('durable analyzer queue producer', () => {
         return Response.json({ status: 'released' });
       }) as unknown as ReturnType<typeof vi.fn>;
       const res = await handleDeepScanRequest(ownerForensic(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv,
-        { rpc: vi.fn(), fetcher: fetchImpl as unknown as typeof fetch });
+        { rpc: vi.fn(), fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
       expect(res.status).toBe(503);
       expect(await res.json()).toMatchObject({ code: 'ANALYSIS_ENQUEUE_FAILED' });
       const update = fetchImpl.mock.calls.find(([url]) => String(url).includes('/rpc/analyzer_update_job'));
@@ -247,7 +249,7 @@ describe('durable analyzer queue producer', () => {
         body: JSON.stringify({ documentText, mode: 'full', stream: false, sessionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
       });
       const res = await handleDeepScanRequest(req, { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
-        { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+        { rpc, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
       expect(res.status).toBe(409);
       expect(rpc).toHaveBeenCalledWith('paid_release_credit', expect.objectContaining({ p_reservation_id: 'fresh_res' }));
     });
@@ -257,7 +259,7 @@ describe('durable analyzer queue producer', () => {
       const rpc = vi.fn(async (name: string) => name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'reservation_2' } : { status: 'released' });
       const fetchImpl = duplicateFetcher({ job_id: id, owner_uid: 'owner_1234', status: 'failed', mode: 'fast' });
       const res = await handleAnalyzeRequest(request(id), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv,
-        { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+        { rpc, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
       expect(res.status).toBe(503);
       expect(rpc.mock.calls.map(([name]) => name)).toContain('free_release_scan');
     });
@@ -266,7 +268,7 @@ describe('durable analyzer queue producer', () => {
   it('fails closed when private Storage rejects the input write and never enqueues', async () => {
     const send = vi.fn();
     const rpc = vi.fn(async (name: string) => name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'reservation_1' } : { status: 'released' });
-    const response = await handleAnalyzeRequest(request('job_storage_fail_1'), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetcher({ storageStatus: 503 }) });
+    const response = await handleAnalyzeRequest(request('job_storage_fail_1'), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: withFreeUsage((fetcher({ storageStatus: 503 })) as typeof fetch) });
     expect(response.status).toBe(503);
     expect(send).not.toHaveBeenCalled();
     expect(rpc.mock.calls.map(([name]) => name)).toContain('free_release_scan');
@@ -276,7 +278,7 @@ describe('durable analyzer queue producer', () => {
 // Concurrency review 2026-11-25, finding 3: a Retry of a document whose queued job failed.
 describe('Retry after a failed queued job', () => {
   beforeEach(() => {
-    verify.mockReset().mockResolvedValue({ status: 'verified', uid: 'owner_1234', emailVerified: false, email: null });
+    verify.mockReset().mockResolvedValue(freeIdentity('owner_1234'));
   });
   function ledger(rows: Record<string, { owner_uid: string; status: string } | null>) {
     return vi.fn(async (url: string, init?: RequestInit) => {
@@ -292,7 +294,7 @@ describe('Retry after a failed queued job', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const rpc = vi.fn(async (_n: string, _a: Record<string, unknown>) => ({ status: 'reserved', reservation_id: 'reservation_r1' }));
     const fetchImpl = ledger({ job_producer_1234: { owner_uid: 'owner_1234', status: 'failed' } });
-    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
     const body = await response.json();
     expect(response.status).toBe(202);
     expect(body).toMatchObject({ jobId: 'job_producer_1234-r1', statusUrl: '/api/analyze/job/job_producer_1234-r1' });
@@ -308,7 +310,7 @@ describe('Retry after a failed queued job', () => {
       'job_producer_1234-r1': { owner_uid: 'someone_else', status: 'queued' },
       'job_producer_1234-r2': { owner_uid: 'owner_1234', status: 'running' },
     });
-    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
     expect((rpc.mock.calls as unknown as Array<[string, Record<string, unknown>]>)[0]?.[1]).toMatchObject({ p_request: 'job_producer_1234-r2' });
     expect(response.status).not.toBe(202); // the live attempt is followed, not started again
   });
@@ -317,14 +319,14 @@ describe('Retry after a failed queued job', () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'reservation_1' }));
     const fetchImpl = ledger({});
-    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: fetchImpl as unknown as typeof fetch });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send } } as AnalyzerEnv, { rpc, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
     expect((await response.json()).jobId).toBe('job_producer_1234');
   });
 });
 
 describe('Retry after a failed queued job (re-review)', () => {
   beforeEach(() => {
-    verify.mockReset().mockResolvedValue({ status: 'verified', uid: 'owner_1234', emailVerified: false, email: null });
+    verify.mockReset().mockResolvedValue(freeIdentity('owner_1234'));
   });
   function world(rows: Record<string, { owner_uid: string; status: string; reservation_id?: string } | null>, storageOwners: Record<string, string> = {}) {
     return vi.fn(async (url: string, init?: RequestInit) => {
@@ -343,7 +345,7 @@ describe('Retry after a failed queued job (re-review)', () => {
   it('releases a reservation re-claimed by a Retry that finds the job already completed', async () => {
     const rpc = vi.fn(async (name: string) => (name === 'free_reserve_scan' ? { status: 'reserved', reservation_id: 'same_marker' } : { status: 'released' }));
     const fetchImpl = world({ job_producer_1234: { owner_uid: 'owner_1234', status: 'completed', reservation_id: 'same_marker' } });
-    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv, { rpc: rpc as any, fetcher: fetchImpl as unknown as typeof fetch });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv, { rpc: rpc as any, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
     expect((await response.json()).code).toBe('ANALYSIS_ALREADY_COMPLETED');
     expect(rpc.mock.calls.map(([n]) => n)).toContain('free_release_scan');
   });
@@ -351,7 +353,7 @@ describe('Retry after a failed queued job (re-review)', () => {
   it('refuses an attempt id whose stored object belongs to another user', async () => {
     const rpc = vi.fn(async () => ({ status: 'reserved', reservation_id: 'r' }));
     const fetchImpl = world({ job_producer_1234: { owner_uid: 'owner_1234', status: 'failed' } }, { 'job_producer_1234-r1': 'someone_else' });
-    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv, { rpc: rpc as any, fetcher: fetchImpl as unknown as typeof fetch });
+    const response = await handleAnalyzeRequest(request(), { ...ENV, ANALYZER_JOBS_QUEUE: { send: vi.fn() } } as AnalyzerEnv, { rpc: rpc as any, fetcher: withFreeUsage((fetchImpl as unknown as typeof fetch) as typeof fetch) });
     expect(response.status).toBe(409);
     expect((await response.json()).code).toBe('ANALYSIS_ID_CONFLICT');
     expect(rpc).not.toHaveBeenCalled();

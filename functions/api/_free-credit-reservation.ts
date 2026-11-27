@@ -1,8 +1,8 @@
 import type { CreditRpc } from './_paid-credit-reservation';
 import { StagingRpcError } from './_staging-credit-rpc';
 
-/** Free Quick Reviews per signed-in account. Reservation and the usage display both read this. */
-export const FREE_SCAN_LIMIT = 3;
+/** Lifetime free Quick Reviews per verified account (see ./_free-trial.ts for the full free-trial policy). */
+export const FREE_SCAN_LIMIT = 1;
 
 export interface FreeReservationResult {
   status: 'reserved' | 'joined' | 'consumed' | 'limit' | 'denied' | 'unavailable' | string;
@@ -17,7 +17,7 @@ export interface FreeReservationResult {
 }
 
 export async function reserveFreeScan(
-  verifiedFirebaseUid: string, requestId: string, rpc: CreditRpc,
+  verifiedFirebaseUid: string, requestId: string, rpc: CreditRpc, limit: number = FREE_SCAN_LIMIT,
 ): Promise<FreeReservationResult> {
   // Allow standard Firebase UIDs (alphanumeric, underscore, hyphen, colon, dot, pipe, at) up to 128 chars
   if (!verifiedFirebaseUid || !/^[A-Za-z0-9_.:|@-]{1,128}$/.test(verifiedFirebaseUid) ||
@@ -35,7 +35,7 @@ export async function reserveFreeScan(
     const result = await rpc('free_reserve_scan', {
       p_uid: verifiedFirebaseUid,
       p_request: requestId,
-      p_limit: FREE_SCAN_LIMIT,
+      p_limit: limit,
       p_now: new Date().toISOString(),
       p_ttl: '15 minutes',
     });

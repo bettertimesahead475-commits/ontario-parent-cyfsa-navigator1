@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { SPEND_CAPS_OFF, freeIdentity, withFreeUsage } from './helpers/freeTrialTestEnv';
 import { handleDeepScanRequest } from '../functions/api/deep-scan';
 import { extractSessionId } from '../functions/api/analyze';
 import type { AnalyzerEnv } from '../functions/api/analyze';
@@ -136,6 +137,7 @@ function makeMockGenerateFn(): GenerateFn {
 const mockEnv: AnalyzerEnv = {
   ANALYZER_ENABLED: 'true',
   FIREBASE_PROJECT_ID: 'test-firebase-proj',
+  ...SPEND_CAPS_OFF,
   STAGING_SUPABASE_URL: 'https://test-supabase.supabase.co',
   STAGING_SUPABASE_READ_KEY: 'test-read-key',
   STAGING_SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
@@ -220,7 +222,7 @@ describe('Forensic Deep Scan Root Cause & Repair Verification', () => {
       const response = await handleDeepScanRequest(request, mockEnv, {
         generate,
         rpc: mockCreditRpc,
-        fetcher: vi.fn(async () => new Response('{}', { status: 200 })) as any,
+        fetcher: withFreeUsage(vi.fn(async () => new Response('{}', { status: 200 })) as typeof fetch),
       });
 
       expect(response.status).toBe(200);
