@@ -89,6 +89,25 @@ describe("Statute Desk guest bookmarks", () => {
     expect(unloadIsBlocked()).toBe(false);
   });
 
+  it("keeps guest bookmarks and the unload warning when the move cannot be written", () => {
+    render(<StatutoryBookmarkSidebar />);
+    openAndBookmarkFirst();
+    switchTo("user-a");
+    const realSet = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === `${KEY}_user-a`) throw new DOMException("quota", "QuotaExceededError");
+      return realSet.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move these 1 bookmark to your account" }));
+    expect(screen.getByRole("alert").textContent).toContain("were not moved");
+    expect(screen.getByRole("button", { name: "Move these 1 bookmark to your account" })).toBeTruthy();
+    expect(unloadIsBlocked()).toBe(true);
+    spy.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "Move these 1 bookmark to your account" }));
+    expect(JSON.parse(localStorage.getItem(`${KEY}_user-a`)!)).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("Discard drops guest bookmarks without saving them", () => {
     render(<StatutoryBookmarkSidebar />);
     openAndBookmarkFirst();

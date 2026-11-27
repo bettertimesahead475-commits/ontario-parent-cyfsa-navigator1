@@ -216,10 +216,8 @@ export default function StatutoryBookmarkSidebar() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [hasUnsavedGuestWork]);
 
-  const moveGuestBookmarks = () => {
-    setBookmarks(prev => mergeBookmarks(prev, guestBookmarks));
-    guest.clearPending();
-  };
+  const [moveFailed, setMoveFailed] = useState(false);
+  const moveGuestBookmarks = () => setMoveFailed(!guest.movePending(mergeBookmarks));
 
   // Custom reference creator states
   const [customTitle, setCustomTitle] = useState("");
@@ -445,6 +443,11 @@ export default function StatutoryBookmarkSidebar() {
                 <p className="leading-normal">
                   You added {guestBookmarks.length} bookmark{guestBookmarks.length === 1 ? "" : "s"} while signed out. They are not saved to this account yet.
                 </p>
+                {moveFailed && (
+                  <p role="alert" className="leading-normal font-bold">
+                    This browser's storage is full, so the bookmarks were not moved. They are still here; free some space, then try again.
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <button type="button" onClick={moveGuestBookmarks} className="px-2 py-1 bg-brand-900 text-white font-bold text-[10px] rounded uppercase cursor-pointer">
                     Move these {guestBookmarks.length} bookmark{guestBookmarks.length === 1 ? "" : "s"} to your account

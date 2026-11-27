@@ -20,6 +20,8 @@ export interface GuestEdits<T> {
   /** Edits made while signed out, offered to the account that signed in next. Memory only. */
   pending: T | null;
   clearPending: () => void;
+  /** Writes `combine(accountValue, pending)` to the account. Pending is cleared only if the write succeeded. */
+  movePending: (combine: (account: T, guest: T) => T) => boolean;
 }
 
 /**
@@ -95,9 +97,21 @@ export function useAccountStorage<T>(baseKey: string, fallback: () => T): [T, Di
 
   const current = state.owner === uid;
   const offered = uid && pending?.owner === uid ? pending.value : null;
+  const movePending = (combine: (account: T, guest: T) => T) => {
+    if (!uid || offered === null) return false;
+    const merged = combine(current ? state.value : read(baseKey, uid, fallback), offered);
+    try {
+      localStorage.setItem(`${baseKey}_${uid}`, JSON.stringify(merged));
+    } catch {
+      return false;
+    }
+    setState({ owner: uid, value: merged, dirty: false });
+    setPending(null);
+    return true;
+  };
   return [
     current ? state.value : read(baseKey, uid, fallback),
     setValue,
-    { isGuest: !uid, unsaved: (!uid && current && state.dirty) || offered !== null, pending: offered, clearPending },
+    { isGuest: !uid, unsaved: (!uid && current && state.dirty) || offered !== null, pending: offered, clearPending, movePending },
   ];
 }
