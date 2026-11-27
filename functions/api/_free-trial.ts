@@ -292,8 +292,9 @@ export async function authorizeFreeOcr(env: FreeTrialEnv, uid: string, email: st
   if (b.quickUsed === null || b.forensicUsed === null) return 'unavailable';
   if (b.quickUsed >= b.quickLimit && b.forensicUsed >= FREE_TRIAL_LIMITS.forensic) return 'no_entitlement';
   const requestId = crypto.randomUUID();
-  const lifetime = await takeCapUnit(await freeOcrKey(normalized), requestId, FREE_OCR_LIFETIME_LIMIT, rpc);
-  if (lifetime !== 'ok') return lifetime === 'limit' ? 'ocr_limit' : 'unavailable';
+  // Daily capacity first, so a refusal while it is full does not spend one of the account's lifetime reads.
   const platform = await takeCapUnit(platformDailyKey('ocr', now), requestId, spendLimit(env, 'FREE_OCR_PLATFORM_DAILY_LIMIT'), rpc);
-  return platform === 'ok' ? 'ok' : platform === 'limit' ? 'paused' : 'unavailable';
+  if (platform !== 'ok') return platform === 'limit' ? 'paused' : 'unavailable';
+  const lifetime = await takeCapUnit(await freeOcrKey(normalized), requestId, FREE_OCR_LIFETIME_LIMIT, rpc);
+  return lifetime === 'ok' ? 'ok' : lifetime === 'limit' ? 'ocr_limit' : 'unavailable';
 }
