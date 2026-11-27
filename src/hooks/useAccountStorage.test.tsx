@@ -8,7 +8,6 @@ const authState = vi.hoisted(() => ({
 }));
 
 vi.mock("../utils/firebase", () => ({
-  SHARED_LEGACY_ACCOUNT_KEYS: ["OPA_COACH_CHAT_MESSAGES", "OPA_STATUTE_BOOKMARKS"],
   auth: {
     get currentUser() {
       return authState.currentUser;
@@ -90,5 +89,62 @@ describe("useAccountStorage", () => {
     act(() => result.current[1](["anonymous"]));
     expect(result.current[0]).toEqual(["anonymous"]);
     expect(Object.keys(localStorage)).toEqual([]);
+  });
+});
+
+describe("useAccountStorage across tabs", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    authState.currentUser = null;
+    authState.listeners.clear();
+  });
+
+  it("picks up another tab's change to this account's key, so a later save does not overwrite it", () => {
+    authState.currentUser = { uid: "user-a" };
+    const { result } = renderHook(() => useAccountStorage<string[]>(KEY, () => []));
+    localStorage.setItem(`${KEY}_user-a`, JSON.stringify(["imported elsewhere"]));
+    act(() => { window.dispatchEvent(new StorageEvent("storage", { key: `${KEY}_user-a` })); });
+    expect(result.current[0]).toEqual(["imported elsewhere"]);
+    act(() => result.current[1]((prev) => [...prev, "mine"]));
+    expect(JSON.parse(localStorage.getItem(`${KEY}_user-a`)!)).toEqual(["imported elsewhere", "mine"]);
+  });
+});
+
+describe("useAccountStorage guest edits", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    authState.currentUser = null;
+    authState.listeners.clear();
+  });
+
+  it("carries guest edits through sign-in as pending, without writing them to the account", () => {
+    const { result } = renderHook(() => useAccountStorage<string[]>(KEY, () => []));
+    act(() => result.current[1](["guest"]));
+    expect(result.current[2]).toMatchObject({ isGuest: true, unsaved: true, pending: null });
+    switchTo("user-a");
+    expect(result.current[0]).toEqual([]);
+    expect(result.current[2]).toMatchObject({ isGuest: false, unsaved: true, pending: ["guest"] });
+    expect(localStorage.getItem(`${KEY}_user-a`)).toBe("[]");
+    act(() => result.current[2].clearPending());
+    expect(result.current[2]).toMatchObject({ unsaved: false, pending: null });
+  });
+
+  it("gives undecided guest edits back to the guest on sign-out, and never to the next account", () => {
+    const { result } = renderHook(() => useAccountStorage<string[]>(KEY, () => []));
+    act(() => result.current[1](["guest"]));
+    switchTo("user-a");
+    switchTo(null);
+    expect(result.current[0]).toEqual(["guest"]);
+    expect(result.current[2].unsaved).toBe(true);
+    switchTo("user-b");
+    expect(result.current[2].pending).toEqual(["guest"]);
+    switchTo("user-c");
+    expect(result.current[2].pending).toBeNull();
+  });
+
+  it("does not offer anything when the guest made no edits", () => {
+    const { result } = renderHook(() => useAccountStorage<string[]>(KEY, () => []));
+    switchTo("user-a");
+    expect(result.current[2]).toMatchObject({ unsaved: false, pending: null });
   });
 });

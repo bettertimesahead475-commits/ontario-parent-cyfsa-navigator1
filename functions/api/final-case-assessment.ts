@@ -11,6 +11,7 @@ import { DIRECT_BRIEF_SYSTEM, buildDirectBriefPrompt } from '../../api/services/
 import { extractSessionId, type AnalyzerEnv } from './analyze';
 import type { GenerateFn } from '../../api/services/analyzerSections';
 import { stripJsonCodeFence } from '../../shared/linearText';
+import { ASSESSMENT_FILENAME_MAX_CHARS, ASSESSMENT_MAX_SOURCES, ASSESSMENT_REQUEST_MAX_BYTES, ASSESSMENT_SOURCE_MAX_CHARS, ASSESSMENT_SOURCE_SET_MAX_CHARS } from '../../shared/assessmentLimits';
 
 export interface AssessmentSource { id: string; document: string; version: string; page: number; text: string }
 export interface AssessmentPoint { text: string; sources: string[] }
@@ -29,7 +30,7 @@ async function boundedJson(request: Request): Promise<any> {
   const reader = request.body?.getReader();
   if (!reader) throw new AssessmentError(400, 'INVALID_INPUT');
   const chunks: Uint8Array[] = []; let size = 0;
-  while (true) { const part = await reader.read(); if (part.done) break; size += part.value.byteLength; if (size > 150000) { await reader.cancel(); throw new AssessmentError(413, 'INPUT_TOO_LARGE'); } chunks.push(part.value); }
+  while (true) { const part = await reader.read(); if (part.done) break; size += part.value.byteLength; if (size > ASSESSMENT_REQUEST_MAX_BYTES) { await reader.cancel(); throw new AssessmentError(413, 'INPUT_TOO_LARGE'); } chunks.push(part.value); }
   const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
   try { return JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new AssessmentError(400, 'INVALID_INPUT'); }
 }
@@ -114,7 +115,7 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
     const sourcePrefix = 'assessment_sources/' + ownerPrefix + '/' + matterId;
     if (request.method === 'POST' && url.searchParams.get('action') === 'source') {
       const input = await boundedJson(request);
-      if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 75000 || typeof input.filename !== 'string' || !input.filename.toLowerCase().endsWith('.txt') || input.filename.length > 255) throw new AssessmentError(400, 'INVALID_SOURCE');
+      if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > ASSESSMENT_SOURCE_MAX_CHARS || typeof input.filename !== 'string' || !input.filename.toLowerCase().endsWith('.txt') || input.filename.length > ASSESSMENT_FILENAME_MAX_CHARS) throw new AssessmentError(400, 'INVALID_SOURCE');
       const checksum = await digest(JSON.stringify([input.filename, input.text]));
       const source: AssessmentSource = { id: checksum, document: input.filename, version: checksum, page: 1, text: input.text };
       const saved = await fetcher(jobObjectUrl(env.STAGING_SUPABASE_URL!, sourcePrefix + '/' + checksum, 'write'), { method: 'POST', headers: { ...headers, 'x-upsert': 'false' }, body: JSON.stringify({ uid, matterId, source }), redirect: 'error', signal: AbortSignal.timeout(10000) });
@@ -144,7 +145,7 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
     const docs = await listed.json() as { name: string }[];
     if (!Array.isArray(docs)) throw new AssessmentError(503, 'SOURCE_UNAVAILABLE');
     if (!docs.length) throw new AssessmentError(422, 'MISSING_SOURCE_DOCUMENTS');
-    if (docs.length > 20) throw new AssessmentError(422, 'SOURCE_SET_TOO_LARGE');
+    if (docs.length > ASSESSMENT_MAX_SOURCES) throw new AssessmentError(422, 'SOURCE_SET_TOO_LARGE');
     const sources: AssessmentSource[] = [];
     for (const doc of docs) {
       if (!/^[0-9a-f]{64}\.json$/.test(doc.name)) throw new AssessmentError(422, 'SOURCE_NOT_READY');
@@ -154,7 +155,7 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
       sources.push(source);
     }
     const sourceText = sources.map(s => '[' + s.id + '] ' + s.document + ' page ' + s.page + '\n' + s.text).join('\n\n');
-    if (sourceText.length > 75000) throw new AssessmentError(422, 'SOURCE_SET_TOO_LARGE');
+    if (sourceText.length > ASSESSMENT_SOURCE_SET_MAX_CHARS) throw new AssessmentError(422, 'SOURCE_SET_TOO_LARGE');
     const requestId = 'assessment_' + await digest(JSON.stringify({ uid: auth.uid, sessionId, matterId, sources }));
     let stored = await read(requestId);
     if (stored?.status === 'completed') { await save(latestId, stored); return reply({ report: stored.report, reused: true, allowance }); }

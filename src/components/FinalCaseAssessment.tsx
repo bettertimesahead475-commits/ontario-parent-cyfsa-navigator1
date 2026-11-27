@@ -4,6 +4,7 @@ import { finishPrintWindow } from '../utils/printWindow';
 import { describeRedactedFinalAssessment, renderFinalAssessmentHtml } from '../utils/finalAssessmentExport';
 import { useRedaction } from '../utils/redaction';
 import type { AssessmentReport } from '../../functions/api/final-case-assessment';
+import { INPUT_TOO_LARGE_MESSAGE, SOURCE_SET_LIMIT_MESSAGE, SOURCE_SET_NOTICE, sourceRequestBody, sourceUploadProblem } from '../../shared/assessmentLimits';
 
 const ERROR_MESSAGES: Record<string, string> = {
   INDIVIDUAL_CASE_ACCESS_REQUIRED: 'The Final Case Assessment requires active Individual Case Access',
@@ -11,8 +12,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   MATTER_NOT_FOUND: 'This matter could not be found for your account',
   MISSING_SOURCE_DOCUMENTS: 'Add at least one text document to this matter before generating the assessment',
   SOURCE_NOT_READY: 'A source document is still being saved. Wait a moment, then retry',
-  SOURCE_SET_TOO_LARGE: 'This matter has too much source text for one assessment (up to 20 documents, about 75,000 characters)',
-  INPUT_TOO_LARGE: 'This document is too large. Use a text file under 150 KB',
+  SOURCE_SET_TOO_LARGE: SOURCE_SET_LIMIT_MESSAGE,
+  INPUT_TOO_LARGE: INPUT_TOO_LARGE_MESSAGE,
   ASSESSMENT_IN_PROGRESS: 'An assessment for this matter is already running. Reopen the saved report in a few minutes',
   ACCOUNTING_PENDING: 'The assessment finished but its credit is still being recorded. Retry; you will not be charged twice',
 };
@@ -62,10 +63,13 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
     finally { setBusy(false); }
   }
   async function upload(file: File) {
-    if (!matterId || file.size > 150000) { setError('Choose a matter and a text file under 150 KB'); return; }
-    setBusy(true); setError('');
+    if (!matterId) { setError('Choose a matter first'); return; }
+    setBusy(true); setError(''); setNotice('');
     try {
-      const res = await apiFetch('/api/final-case-assessment?matterId=' + encodeURIComponent(matterId) + '&action=source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, text: await file.text() }) });
+      const text = await file.text();
+      const problem = sourceUploadProblem(file.name, text);
+      if (problem) throw new Error(problem);
+      const res = await apiFetch('/api/final-case-assessment?matterId=' + encodeURIComponent(matterId) + '&action=source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: sourceRequestBody(file.name, text) });
       const body = await res.json(); if (!res.ok) throw new Error(errorMessage(body, 'Source could not be saved'));
       setReport(null); setNotice(body.reused ? 'This source document is already saved.' : 'Source document saved. Add another document or generate the assessment.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Source could not be saved'); }
@@ -94,7 +98,7 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
       {!busy && !matters.length && !error && <p>Create a matter above to start your assessment.</p>}
       {notice && <p role="status">{notice}</p>}
       <label className="block text-sm">Add a text document to this matter <input type="file" accept=".txt,text/plain" disabled={busy || !matterId} onChange={e => { const file = e.target.files?.[0]; if (file) void upload(file); e.target.value = ''; }} /></label>
-      <p className="text-sm">Add every document you want assessed. Text documents are shown as one source page. The saved report lists exactly which sources were reviewed.</p>
+      <p className="text-sm">Add every document you want assessed. Text documents are shown as one source page. The saved report lists exactly which sources were reviewed. {SOURCE_SET_NOTICE}</p>
       <div className="flex gap-3"><button type="button" disabled={busy || !matterId} onClick={() => void load(matterId, true)} className="rounded bg-indigo-900 text-white px-4 py-2 disabled:opacity-50">{busy ? 'Loading assessment…' : 'Generate assessment / retry'}</button>
       <button type="button" disabled={busy || !matterId} onClick={() => void load(matterId)} className="border rounded px-4 py-2">Reopen saved report</button></div>
       {error && <p role="alert">{error.replace(/\.$/, '')}. Your saved documents remain available.</p>}
