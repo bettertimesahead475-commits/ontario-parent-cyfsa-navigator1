@@ -9,5 +9,12 @@ export default defineConfig({
     teardownTimeout: 45000,
     maxWorkers: 2,
     setupFiles: ['tests/setup/reset-rate-limits.ts', 'tests/setup/no-external-network.ts'],
+    // Measure every application source file, including ones no test loads, so untested code counts as 0% instead of disappearing.
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}', 'shared/**/*.ts', 'functions/**/*.ts', 'api/**/*.ts', 'workers/**/*.ts'],
+      exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts', 'src/main.tsx'],
+      reporter: ['text-summary', 'lcov', 'json-summary'],
+    },
   },
 });

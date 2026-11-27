@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     # A disposable PostgreSQL for the *.pg.test.ts suites (359 tests that otherwise skip). It lives only for this
     # job, holds only synthetic data, and the suites refuse any host other than 127.0.0.1/localhost.
     services:
@@ -26,6 +28,8 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -45,7 +49,22 @@ jobs:
         env:
           NAVIGATOR_PG_TEST_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
           CREDIT_PG_URL: postgres://postgres:postgres@127.0.0.1:5432/credit_test
-        run: npm test
+        run: npx vitest run --coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+          retention-days: 14
+
+      # CI-based SonarCloud analysis is the only way to import coverage (automatic analysis cannot).
+      # Runs once SONAR_TOKEN is set and automatic analysis is switched off in SonarCloud.
+      - name: SonarCloud scan (with coverage)
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: Build
         run: npm run build
