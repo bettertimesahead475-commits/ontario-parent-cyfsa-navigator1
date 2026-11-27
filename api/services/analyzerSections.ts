@@ -796,7 +796,11 @@ export function guardCitation(
  * severity can be lowered, and only when the quotation is not located exactly. A point whose quoted passage is not
  * found is kept, marked as an unverified allegation, and cannot be shown as corroborated.
  */
-export function applyReportGuards(report: Record<string, any>, sourceText: string): Record<string, any> {
+export function applyReportGuards(
+  report: Record<string, any>,
+  sourceText: string,
+  options?: { skipComplianceMatrix?: boolean }
+): Record<string, any> {
   const locate = createQuoteLocator(sourceText);
   for (const flag of Array.isArray(report.redFlags) ? report.redFlags : []) {
     if (!flag || typeof flag !== "object") continue;
@@ -835,7 +839,7 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
     seenCritical = true;
   }
   applyCitationGuards(report);
-  if (!report.complianceMatrix) {
+  if (!options?.skipComplianceMatrix && !report.complianceMatrix) {
     try {
       report.complianceMatrix = buildComplianceMatrixFromReport(report, sourceText);
     } catch (err) {
@@ -849,14 +853,19 @@ export function applyReportGuards(report: Record<string, any>, sourceText: strin
  * Citation checks for the threshold and timeline sections. Used by the sectioned pipeline and by Deep Scan, so both
  * report the same citation terms. Mutates and returns the report.
  */
-export function applyCitationGuards(report: Record<string, any>): Record<string, any> {
-  for (const t of Array.isArray(report.thresholdAnalysis) ? report.thresholdAnalysis : []) {
-    if (!t || typeof t !== "object") continue;
-    const g = guardCitation(t.primarySourceLaw, { proposition: `${t.thresholdChecked || ""} ${t.reasoning || ""}` });
-    t.primarySourceLaw = g.text;
-    t.citationStatus = g.status;
-    t.citationReason = g.reason;
-    if (g.authorityId) t.authorityId = g.authorityId;
+export function applyCitationGuards(
+  report: Record<string, any>,
+  options?: { skipThresholds?: boolean }
+): Record<string, any> {
+  if (!options?.skipThresholds) {
+    for (const t of Array.isArray(report.thresholdAnalysis) ? report.thresholdAnalysis : []) {
+      if (!t || typeof t !== "object") continue;
+      const g = guardCitation(t.primarySourceLaw, { proposition: `${t.thresholdChecked || ""} ${t.reasoning || ""}` });
+      t.primarySourceLaw = g.text;
+      t.citationStatus = g.status;
+      t.citationReason = g.reason;
+      if (g.authorityId) t.authorityId = g.authorityId;
+    }
   }
   for (const item of Array.isArray(report.proceduralTimelineViolations) ? report.proceduralTimelineViolations : []) {
     if (!item || typeof item !== "object") continue;
@@ -901,6 +910,8 @@ export interface SectionRunOptions {
   initialSections?: Record<string, any>;
   /** Upper bound on concurrent section calls (default: all sections, at most 6). */
   maxConcurrency?: number;
+  /** Skip building complianceMatrix inside runSectionedAnalysis when the caller builds it afterward. */
+  skipComplianceMatrix?: boolean;
 }
 
 export interface SectionRunResult {
@@ -1042,8 +1053,7 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
     const have = (k: string) => k in sectionTimingsMs || (k === "redFlags" ? report.redFlags !== undefined && "redFlags" in (opts.initialSections || {}) : report.thresholdAnalysis !== undefined && "thresholdAnalysis" in (opts.initialSections || {}));
     if (![...verificationInputs].every(have)) return;
     const subset: Record<string, any> = structuredClone({ redFlags: report.redFlags, thresholdAnalysis: report.thresholdAnalysis });
-    applyReportGuards(subset, opts.documentText);
-    delete subset.complianceMatrix;
+    applyReportGuards(subset, opts.documentText, { skipComplianceMatrix: true });
     opts.onVerificationStart?.();
     console.info('[FORENSIC_VERIFICATION_STARTED]', JSON.stringify({ elapsedMs: now() - started }));
     verificationTask = runForensicVerification(subset, opts, usageByModel).then((result) => ({ result, subset }));
@@ -1079,26 +1089,36 @@ export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<Sec
     throw failure;
   }
 
-  applyReportGuards(report, opts.documentText);
-
   if (wantsVerification) {
     maybeStartVerification(); // Covers inputs supplied through initialSections.
     if (verificationTask === null) {
-      // This run did not include both verification inputs (targeted re-runs): verify the guarded full
-      // report, as before early verification existed.
+      // This run did not include both verification inputs (targeted re-runs): guard and verify the full report.
+      applyReportGuards(report, opts.documentText, { skipComplianceMatrix: Boolean(opts.skipComplianceMatrix) });
       opts.onVerificationStart?.();
       report.forensicVerification = await runForensicVerification(report, opts, usageByModel);
       return { report, usageByModel, sectionTimingsMs, attempts };
     }
     const { result, subset } = await (verificationTask as Promise<{ result: Record<string, any>; subset: Record<string, any> }>);
-    // Same raw sections + deterministic guards => identical guarded values, now with verification marks.
+    // subset.redFlags and subset.thresholdAnalysis were already guarded before verification, and
+    // mergeVerification only attaches verdicts, removes UNSUPPORTED items, or lowers severity.
     report.redFlags = subset.redFlags;
     report.thresholdAnalysis = subset.thresholdAnalysis;
     if (subset.auditTrail) report.auditTrail = { ...(report.auditTrail || {}), ...subset.auditTrail };
     report.forensicVerification = result;
+    // Guard remaining timeline citations and build complianceMatrix once (if requested).
+    applyCitationGuards(report, { skipThresholds: true });
+    if (!opts.skipComplianceMatrix && !report.complianceMatrix) {
+      try {
+        report.complianceMatrix = buildComplianceMatrixFromReport(report, opts.documentText);
+      } catch (err) {
+        logAnalyzerDiagnostic("compliance matrix generation", err);
+      }
+    }
     console.info('[FORENSIC_VERIFICATION_COMPLETED]', JSON.stringify({ elapsedMs: now() - started, status: result?.status }));
+    return { report, usageByModel, sectionTimingsMs, attempts };
   }
 
+  applyReportGuards(report, opts.documentText, { skipComplianceMatrix: Boolean(opts.skipComplianceMatrix) });
   return { report, usageByModel, sectionTimingsMs, attempts };
 }
 
