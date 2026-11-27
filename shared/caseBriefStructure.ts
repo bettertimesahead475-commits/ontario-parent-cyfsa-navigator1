@@ -44,12 +44,20 @@ function clean(value: string): string {
     .trim();
 }
 
+/** True when index i falls inside a quotation, so a label there is quoted text rather than a section boundary. */
+function insideQuote(raw: string, i: number): boolean {
+  const before = raw.slice(0, i);
+  const curly = (before.match(/\u201C/g) || []).length - (before.match(/\u201D/g) || []).length;
+  return curly > 0 || (before.match(/"/g) || []).length % 2 === 1;
+}
+
 export function parseCaseBriefPoint(point: string): StructuredCaseBriefPoint {
   const raw = typeof point === "string" ? point : "";
   const text = raw.replace(/\*\*/g, "").trim();
   const matches: { part: CaseBriefPart; start: number; end: number }[] = [];
   const seen = new Set<CaseBriefPart>();
   for (const m of raw.matchAll(LABEL_PATTERN)) {
+    if (insideQuote(raw, m.index ?? 0)) continue;
     const part = partFor(m[1]);
     if (seen.has(part)) continue;
     seen.add(part);

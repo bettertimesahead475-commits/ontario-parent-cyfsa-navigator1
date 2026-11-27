@@ -54,6 +54,12 @@ describe("parseCaseBriefPoint", () => {
     expect(p.parts.significance).toBe("s. 94(1)");
   });
 
+  it("does not split on a label inside a quotation", () => {
+    const p = parseCaseBriefPoint("ISSUE: access — EVIDENCE: \u201CSIGNIFICANCE: none noted\u201D (p. 3) — SIGNIFICANCE: s. 74");
+    expect(p.parts.documentEvidence).toBe("\u201CSIGNIFICANCE: none noted\u201D (p. 3)");
+    expect(p.parts.significance).toBe("s. 74");
+  });
+
   it("handles non-string input", () => {
     expect(parseCaseBriefPoint(undefined as unknown as string)).toEqual({ structured: false, parts: {}, text: "" });
   });
