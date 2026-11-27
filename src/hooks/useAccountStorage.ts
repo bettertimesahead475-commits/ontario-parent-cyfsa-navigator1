@@ -12,25 +12,47 @@ function read<T>(baseKey: string, uid: string | null, fallback: () => T): T {
   }
 }
 
+export interface GuestEdits<T> {
+  /** No account is signed in: changes are held in memory for this page only. */
+  isGuest: boolean;
+  /** Something would be lost if the page closed now (guest edits, or guest edits not yet moved). */
+  unsaved: boolean;
+  /** Edits made while signed out, offered to the account that signed in next. Memory only. */
+  pending: T | null;
+  clearPending: () => void;
+}
+
 /**
  * State persisted under `${baseKey}_${uid}` (the getUserKey format) for the signed-in account.
- * Signed out, the state lives in memory only. When the account changes, the state is reloaded from
- * the new account's key, so one account's data is never shown to or saved under another.
+ * Signed out, the state lives in memory only and is never written to browser storage. Guest edits
+ * survive sign-in as `pending`, so the component can offer to move them; nothing is merged silently.
  */
-export function useAccountStorage<T>(baseKey: string, fallback: () => T): [T, Dispatch<SetStateAction<T>>] {
+export function useAccountStorage<T>(baseKey: string, fallback: () => T): [T, Dispatch<SetStateAction<T>>, GuestEdits<T>] {
   const [uid, setUid] = useState<string | null>(auth.currentUser?.uid ?? null);
-  const [state, setState] = useState(() => ({ owner: uid, value: read(baseKey, uid, fallback) }));
+  const [state, setState] = useState(() => ({ owner: uid, value: read(baseKey, uid, fallback), dirty: false }));
+  const [pending, setPending] = useState<{ owner: string; value: T } | null>(null);
 
   useEffect(() => auth.onAuthStateChanged?.((user) => setUid(user?.uid ?? null)), []);
 
   useEffect(() => {
-    if (state.owner !== uid) setState({ owner: uid, value: read(baseKey, uid, fallback) });
+    if (state.owner === uid) return;
+    if (state.owner === null && state.dirty && uid) {
+      setPending({ owner: uid, value: state.value });
+    } else if (state.owner !== null && uid === null && pending?.owner === state.owner) {
+      // Signed out before deciding: the guest edits are still the guest's, in memory.
+      setPending(null);
+      setState({ owner: null, value: pending.value, dirty: true });
+      return;
+    } else if (pending && pending.owner !== uid) {
+      setPending(null);
+    }
+    setState({ owner: uid, value: read(baseKey, uid, fallback), dirty: false });
     // fallback is a factory for the initial value; only the account matters here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, baseKey, state.owner]);
 
   useEffect(() => {
-    const reload = () => setState({ owner: uid, value: read(baseKey, uid, fallback) });
+    const reload = () => setState({ owner: uid, value: read(baseKey, uid, fallback), dirty: false });
     window.addEventListener(ACCOUNT_STORAGE_CHANGED, reload);
     return () => window.removeEventListener(ACCOUNT_STORAGE_CHANGED, reload);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -54,15 +76,20 @@ export function useAccountStorage<T>(baseKey: string, fallback: () => T): [T, Di
           ? prev
           : {
               owner: prev.owner,
-              value:
-                typeof action === "function"
-                  ? (action as (p: T) => T)(prev.value)
-                  : action,
+              value: typeof action === "function" ? (action as (p: T) => T)(prev.value) : action,
+              dirty: prev.owner === null,
             }
       );
     },
     [uid]
   );
+  const clearPending = useCallback(() => setPending(null), []);
 
-  return [state.owner === uid ? state.value : read(baseKey, uid, fallback), setValue];
+  const current = state.owner === uid;
+  const offered = uid && pending?.owner === uid ? pending.value : null;
+  return [
+    current ? state.value : read(baseKey, uid, fallback),
+    setValue,
+    { isGuest: !uid, unsaved: (!uid && current && state.dirty) || offered !== null, pending: offered, clearPending },
+  ];
 }

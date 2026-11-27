@@ -35,6 +35,17 @@ interface BookmarkItem extends LegalItem {
   dateBookmarked: string;
 }
 
+/** Adds guest bookmarks to the account's. A bookmark in both keeps the account copy, with any different guest notes appended. */
+export function mergeBookmarks(account: BookmarkItem[], moved: BookmarkItem[]): BookmarkItem[] {
+  const merged = account.map(item => {
+    const twin = moved.find(m => m.id === item.id);
+    if (!twin) return item;
+    const notes = twin.userNotes && twin.userNotes !== item.userNotes ? [item.userNotes, twin.userNotes].filter(Boolean).join("\n\n") : item.userNotes;
+    return { ...item, userNotes: notes, courtDate: item.courtDate || twin.courtDate };
+  });
+  return [...merged, ...moved.filter(m => !account.some(a => a.id === m.id))];
+}
+
 // Preloaded data
 export const PRELOADED_ITEMS: LegalItem[] = [
   // Statutory Sections
@@ -187,7 +198,28 @@ export default function StatutoryBookmarkSidebar() {
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   
   // Bookmarks state (loads from localStorage)
-  const [bookmarks, setBookmarks] = useAccountStorage<BookmarkItem[]>("OPA_STATUTE_BOOKMARKS", () => []);
+  const [bookmarks, setBookmarks, guest] = useAccountStorage<BookmarkItem[]>("OPA_STATUTE_BOOKMARKS", () => []);
+  const guestBookmarks = guest.pending ?? [];
+  const hasUnsavedGuestWork = guest.isGuest ? guest.unsaved && bookmarks.length > 0 : guestBookmarks.length > 0;
+
+  useEffect(() => {
+    if (guest.pending && guest.pending.length === 0) guest.clearPending();
+  }, [guest]);
+
+  useEffect(() => {
+    if (!hasUnsavedGuestWork) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedGuestWork]);
+
+  const moveGuestBookmarks = () => {
+    setBookmarks(prev => mergeBookmarks(prev, guestBookmarks));
+    guest.clearPending();
+  };
 
   // Custom reference creator states
   const [customTitle, setCustomTitle] = useState("");
@@ -399,6 +431,30 @@ export default function StatutoryBookmarkSidebar() {
                 <strong>Court Room Tip:</strong> Keep this sidebar open as a quick reference while completing your brief templates or testifying before a judge to cite specific sections.
               </p>
             </div>
+
+            {guest.isGuest && (
+              <div role="note" className="bg-amber-50/50 border-b border-amber-100 p-3 flex gap-2 items-start text-[11px] text-amber-900">
+                <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <p className="leading-normal">
+                  <strong>Not signed in:</strong> bookmarks and notes you add here are kept only while this page is open, and are lost when you refresh or close it. Sign in to save them to your account.
+                </p>
+              </div>
+            )}
+            {guestBookmarks.length > 0 && (
+              <div role="status" className="bg-amber-50/50 border-b border-amber-100 p-3 text-[11px] text-amber-900 space-y-2">
+                <p className="leading-normal">
+                  You added {guestBookmarks.length} bookmark{guestBookmarks.length === 1 ? "" : "s"} while signed out. They are not saved to this account yet.
+                </p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={moveGuestBookmarks} className="px-2 py-1 bg-brand-900 text-white font-bold text-[10px] rounded uppercase cursor-pointer">
+                    Move these {guestBookmarks.length} bookmark{guestBookmarks.length === 1 ? "" : "s"} to your account
+                  </button>
+                  <button type="button" onClick={guest.clearPending} className="px-2 py-1 border border-amber-300 text-amber-900 font-bold text-[10px] rounded uppercase cursor-pointer">
+                    Discard
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Tab Swapping Header */}
             <div className="border-b border-slate-100 p-3 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
@@ -715,7 +771,7 @@ export default function StatutoryBookmarkSidebar() {
                                       onClick={() => handleSaveNotes(bookmark.id)}
                                       className="px-2 py-0.5 bg-brand-900 text-white font-bold text-[9px] rounded uppercase cursor-pointer"
                                     >
-                                      Save Notes
+                                      {guest.isGuest ? "Keep Notes (this page only)" : "Save Notes"}
                                     </button>
                                   </div>
                                 </div>
