@@ -120,3 +120,30 @@ which need `ADMIN_SECRET` (not set in preview). Fix = B-4: set real test-scoped 
   merged): `npx tsc --noEmit -p .` clean; full Vitest **314 files passed, 15 skipped (329); 4,699 tests passed,
   512 skipped (5,211)**; the new file passes 3/3.
 - No Cloudflare, Supabase, secret, binding or deployment change; Cloudflare access was GET-only.
+
+## Follow-up 2026-11-26: redFlags section limit raised to 145 s (total Forensic budget unchanged)
+
+Change (`api/services/analyzerSections.ts`): `FORENSIC_SECTION_TIMEOUT_MS = { redFlags: 145_000 }`; every other
+section keeps `SECTION_TIMEOUT_MS` (fast 75 s, full 110 s). Each attempt is still clamped to `remaining − 3 s`, the
+178 s AI deadline, dispatch order and concurrency 3 are unchanged. 145 s is the most that still leaves verification its
+30 s minimum start budget when redFlags starts at t = 0 (178 − 145 = 33 s). Giving the retry the remaining budget
+instead would not help: after a 110 s timeout only ~64 s remain, less than redFlags' 92.5 s production duration.
+
+Replay (`api/forensic-budget-overview-last.test.ts`, production timings, mocked inference):
+
+| Slowdown | Before (110 s) | After (145 s) |
+| --- | --- | --- |
+| redFlags alone | completes to 1.15x; fails from 1.20x | completes, verified, to 1.55x; fails at 1.60x |
+| Uniform (every call) | completes to 1.15x; redFlags fails first | completes, verified, to 1.35x |
+| Each other section alone, 1.0–1.5x | unchanged | unchanged: thresholds, guidance, timeline, overview, verification complete; chronology completes to 1.35x |
+
+Limits not changed by this fix (lead engineer's call):
+- Chronology (81.3 s production) has the same 110 s limit, so on its own it fails from 1.40x, before and after.
+- Uniform ≥ 1.40x cannot complete in 178 s with this dispatch: chronology + timeline alone take 126.6 s × 1.4 > 175 s.
+  redFlags completes in all those runs.
+- When redFlags exceeds 145 s, its retry gets ~28 s and fails (the run fails inside the budget, as it did at 110 s).
+
+Verification: fix commit `06bfe41` on `devin/1795745654-analyzer-redflags-timeout` (base `f7f0e01`, includes #151).
+`npx tsc --noEmit -p .` clean; full Vitest **314 files passed, 15 skipped (329); 4,718 tests passed, 512 skipped
+(5,230)**. Without the code change, 2 of the 6 tests in `api/forensic-budget-overview-last.test.ts` fail (redFlags alone
+at 1.20x; uniform at 1.20x). No Cloudflare, Supabase, binding or deployment change; no paid inference.
