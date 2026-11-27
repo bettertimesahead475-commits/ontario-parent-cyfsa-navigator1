@@ -14,6 +14,7 @@ import { onRequestGet as myPaymentsHandler } from '../../functions/api/my-paymen
 import { onRequestPost as activateHandler } from '../../functions/api/activate-code';
 import { handleAdminRequest } from '../../functions/api/admin/[[path]]';
 import { Harness, findPostgrest, localJwt, type Hop } from './helpers/postgrest-harness';
+import { parseAuditObjectName } from '../../functions/api/_admin-store';
 
 const url = process.env.CREDIT_PG_URL;
 const bin = findPostgrest();
@@ -325,8 +326,8 @@ describe.skipIf(!enabled).each(variants)('post-$name: one activation per approve
     expect(r.status).toBe(200);
     g.release();
     const a = await approving;
-    expect(a.status).not.toBe(500);
-    if (a.body?.accessCode) expect((await t.activate(a.body.accessCode)).status).not.toBe(200);
+    expect([a.status, a.body.code]).toEqual([409, 'PAYMENT_REFUNDED']);
+    expect([...h.audit.keys()].map(parseAuditObjectName).filter((x) => x?.action === 'approve' && x.target === ref)).toHaveLength(1);
     expect(await t.redeemableCodes(ref)).toBe(0);
     expect((await t.claim(ref)).body.code).toBe('ORDER_CLOSED');
     expect(await t.live()).toHaveLength(0);

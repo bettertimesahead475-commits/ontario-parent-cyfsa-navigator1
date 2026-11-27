@@ -514,6 +514,7 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   const settled = await settlementOf(env, reference, fetcher).catch(() => null);
   if (settled === 'refunded' || settled === null) {
     await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
+    await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeCancelled: settled ?? 'refund-history-unreadable' }, fetcher);
     return settled === 'refunded'
       ? adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded while it was being approved. The code was cancelled.')
       : adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund history could not be read, so the code was cancelled. Use "Reissue code" once it is readable.');
