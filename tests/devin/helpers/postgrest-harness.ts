@@ -132,7 +132,7 @@ export class Harness {
     const p = decodeURIComponent(u.pathname);
     if (method === 'POST' && p === '/storage/v1/object/list/analysis_jobs') {
       const b = body as { prefix?: string; limit?: number; offset?: number };
-      const names = [...this.audit.keys()].sort().reverse();
+      const names = [...this.audit.keys()].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0)); // code-unit order, newest first
       return Response.json(names.slice(b.offset ?? 0, (b.offset ?? 0) + (b.limit ?? 100)).map((name) => ({ name })));
     }
     const lock = /^\/storage\/v1\/object\/analysis_jobs\/admin-locks\/(.+)$/.exec(p);
