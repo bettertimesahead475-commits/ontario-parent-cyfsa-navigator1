@@ -18,7 +18,7 @@ import { monthlyCreditScope } from '../_monthly-credit-scope';
 import { statusResponse, type StatusEnv } from '../_status';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitedResponse } from '../_rate-limit';
 import { trimCharacters } from '../../../shared/linearText';
-import { canQueueEmail, checkoutEmailItem, CHECKOUT_EMAIL_INTENT, enqueueTransactionalEmail, enqueueRenewalReminders, OUTBOX_TABLE, outboxSummary, processOutbox, type EnqueueItem } from '../_email-outbox';
+import { canQueueEmail, checkoutEmailItem, CHECKOUT_EMAIL_INTENT, enqueueTransactionalEmail, enqueueRenewalReminders, OUTBOX_TABLE, outboxSummary, paymentAlreadyActivated, processOutbox, type EnqueueItem } from '../_email-outbox';
 import { gmailMailer, transactionalEmailEnabled, type TransactionalEmailEnv, type TransactionalMailer } from '../_mailer';
 
 export type AdminEnv = AdminAuthEnv & AdminStoreEnv & StatusEnv & TransactionalEmailEnv;
@@ -756,7 +756,10 @@ async function reconcilePaymentEmails(env: AdminEnv, fetcher: typeof fetch, now:
     const missing = candidates.filter((item) => wanted.has(item.dedupeKey) && !seen.has(`${item.kind}:${item.dedupeKey}`) &&
       (item.kind !== 'payment_confirmation' || queuedCodes.has(item.dedupeKey)));
     for (let j = 0; j < missing.length; j += 10) {
-      await Promise.all(missing.slice(j, j + 10).map((item) => enqueueTransactionalEmail(env, item, fetcher)));
+      await Promise.all(missing.slice(j, j + 10).map(async (item) => {
+        if (item.kind === 'payment_confirmation' && (await paymentAlreadyActivated(env, item.dedupeKey, fetcher))) return;
+        await enqueueTransactionalEmail(env, item, fetcher);
+      }));
     }
   }
 }

@@ -225,6 +225,7 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     await h.q(`insert into payments (plan, amount, reference_number, status, notes) values
       ('Basic', 19.99, 'PS-APPROVE1', 'pending', $1),
       ('Basic', 19.99, 'PS-APPROVE2', 'pending', $1),
+      ('Basic', 19.99, 'PS-APPROVE3', 'pending', $1),
       ('Basic', 19.99, 'PS-REFUND01', 'approved', $1),
       ('Basic', 19.99, 'PS-UNMARKED', 'pending', $1),
       ('Basic', 19.99, 'PS-DUPL0001', 'pending', $2),
@@ -247,7 +248,9 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     h.hooks.push((hop, phase) => {
       if (phase === 'before' && hop.target === OUTBOX_TABLE && hop.method === 'POST') {
         const body = hop.body as { dedupe_key: string; kind: string };
-        if (body.dedupe_key !== 'PS-APPROVE2' || body.kind === 'payment_confirmation') throw new TypeError('outbox connection lost');
+        if (body.dedupe_key === 'PS-APPROVE2' && body.kind !== 'payment_confirmation') return;
+        if (body.dedupe_key === 'PS-APPROVE3' && body.kind === 'access_code') return;
+        throw new TypeError('outbox connection lost');
       }
     });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -264,15 +267,22 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     const partial = await call('payments/approve', { referenceNumber: 'PS-APPROVE2', amountReceived: 20 });
     expect(partial.status).toBe(200);
     expect(await partial.json()).toMatchObject({ emailsQueued: { receipt: true, confirmation: false, accessCode: true } });
+    const activated = await call('payments/approve', { referenceNumber: 'PS-APPROVE3', amountReceived: 20 });
+    expect(activated.status).toBe(200);
+    expect(await activated.json()).toMatchObject({ emailsQueued: { receipt: false, confirmation: false, accessCode: true } });
+    await h.q("update access_codes set used_at = now() where reference_number = 'PS-APPROVE3'");
+    await h.q(`update ${OUTBOX_TABLE} set status = 'sent', secret_payload = null, sent_at = now(), attempts = 1
+      where kind = 'access_code' and dedupe_key = 'PS-APPROVE3'`);
     const refund = await call('payments/refund', { referenceNumber: 'PS-REFUND01', reason: 'Synthetic return', revokeAccess: false });
     expect(refund.status).toBe(200);
     expect(await refund.json()).toMatchObject({ auditRecorded: true, refundEmailQueued: false });
-    const refs = [referenceNumber, 'PS-APPROVE1', 'PS-APPROVE2', 'PS-REFUND01', 'PS-UNMARKED', 'PS-DUPL0001'];
+    const refs = [referenceNumber, 'PS-APPROVE1', 'PS-APPROVE2', 'PS-APPROVE3', 'PS-REFUND01', 'PS-UNMARKED', 'PS-DUPL0001'];
     const rows = () => h.q(`select kind, dedupe_key, template_data->>'amount' as amount, attempts from ${OUTBOX_TABLE}
       where dedupe_key = any($1) order by dedupe_key, kind`, [refs]);
     expect(await rows()).toEqual([
       { kind: 'access_code', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 0 },
       { kind: 'purchase_receipt', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 0 },
+      { kind: 'access_code', dedupe_key: 'PS-APPROVE3', amount: '20', attempts: 1 },
     ]);
 
     let release!: () => void;
@@ -293,9 +303,14 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
       { kind: 'access_code', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 1 },
       { kind: 'payment_confirmation', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 1 },
       { kind: 'purchase_receipt', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 1 },
+      { kind: 'purchase_receipt', dedupe_key: 'PS-APPROVE3', amount: '20', attempts: 1 },
       { kind: 'refund_confirmation', dedupe_key: 'PS-REFUND01', amount: '19.99', attempts: 1 },
     ]));
-    expect(await rows()).toHaveLength(6);
+    expect(await rows()).toHaveLength(8);
+    expect(await h.q(`select kind, status from ${OUTBOX_TABLE} where dedupe_key = 'PS-APPROVE3' order by kind`)).toEqual([
+      { kind: 'access_code', status: 'sent' },
+      { kind: 'purchase_receipt', status: 'sent' },
+    ]);
     for (const ref of ['PS-APPROVE1', 'PS-APPROVE2']) {
       expect(await h.q('select id from access_codes where reference_number = $1', [ref])).toHaveLength(1);
     }

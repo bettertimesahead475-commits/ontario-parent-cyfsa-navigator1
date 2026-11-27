@@ -100,6 +100,11 @@ async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+export async function paymentAlreadyActivated(env: OutboxEnv, reference: string, fetcher: typeof fetch): Promise<boolean> {
+  const used = await rest<unknown[]>(env, `access_codes?select=id&reference_number=eq.${enc(reference)}&used_at=not.is.null&limit=1`, {}, fetcher);
+  return used.length > 0;
+}
+
 /**
  * Re-checks, just before sending, that the email still describes the customer's current state: an order that was
  * rejected, refunded or already activated, a code that was replaced or redeemed, or an entitlement that was renewed
@@ -122,6 +127,8 @@ async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | un
   switch (row.kind) {
     case 'payment_instructions': return paymentStatusIs('pending');
     case 'payment_confirmation':
+      return !!row.payment_reference && (await paymentStatusIs('approved')) && !(await refunded()) &&
+        !(await paymentAlreadyActivated(env, row.payment_reference, fetcher));
     case 'purchase_receipt': return (await paymentStatusIs('approved')) && !(await refunded());
     case 'access_code': {
       if (!code) return false;
