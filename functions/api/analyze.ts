@@ -278,7 +278,12 @@ export async function handleAnalyzeRequest(
     if (freshDirectClaim) {
       const body = await response.clone().json().catch(() => null) as { error?: unknown } | null;
       const message = typeof body?.error === 'string' ? body.error : 'The analysis could not be started.';
-      await saveJobState(env, { jobId: requestId, uid, status: 'failed', error: { code, message, retryable: false } }, deps.fetcher || fetch);
+      const failed = { jobId: requestId, uid, status: 'failed' as const, error: { code, message, retryable: false } };
+      // One retry; if both writes fail, the record stays "running" until the status endpoint reports it timed out
+      // (effectiveJob, RUNNING_JOB_STALE_MS). No credit is held either way: every refusal here precedes a reservation.
+      if (!await saveJobState(env, failed, deps.fetcher || fetch) && !await saveJobState(env, failed, deps.fetcher || fetch)) {
+        console.error(JSON.stringify({ tag: '[ANALYSIS_REFUSAL_STATE_UNSAVED]', jobId: requestId, code }));
+      }
     }
     return response;
   };
