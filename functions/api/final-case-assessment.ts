@@ -23,7 +23,23 @@ export interface AssessmentReport {
 }
 const sections = ['overview', 'chronology', 'conflicts', 'gaps', 'questions'] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SOURCE_READ_CONCURRENCY = 6;
 const allowance = 'One shared Deep Scan credit per new matter source set; five per paid month. Reopening and retries do not add a charge.';
+async function mapWithConcurrency<T, R>(items: readonly T[], concurrency: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  let failed = false;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (!failed) {
+      const index = next++;
+      if (index >= items.length) return;
+      try { results[index] = await fn(items[index], index); }
+      catch (err) { failed = true; throw err; }
+    }
+  }));
+  return results;
+}
 class AssessmentError extends Error { constructor(readonly status: number, readonly code: string) { super(code); } }
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 async function boundedJson(request: Request): Promise<any> {
@@ -100,17 +116,26 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
       return reply({ matters: await rows('navigator_matters', { select: 'id,title', account_id: 'eq.' + accounts[0].id, order: 'created_at.desc', limit: '100' }), allowance });
     }
     if (!matterId || !uuid.test(matterId)) throw new AssessmentError(400, 'INVALID_MATTER');
-    const matters = await rows('navigator_matters', { select: 'id,title,client_id', id: 'eq.' + matterId, account_id: 'eq.' + accounts[0].id, limit: '2' });
-    if (matters.length !== 1) throw new AssessmentError(404, 'MATTER_NOT_FOUND');
-    async function requireOwnedMatter() {
-      const active = await rows('accounts', { select: 'id,status', firebase_uid: 'eq.' + uid, limit: '2' });
-      const owned = await rows('navigator_matters', { select: 'id,client_id', id: 'eq.' + matterId, account_id: 'eq.' + accounts[0].id, limit: '2' });
-      const members = await rows('navigator_matter_members', { select: 'role', matter_id: 'eq.' + matterId, account_id: 'eq.' + accounts[0].id, role: 'eq.OWNER', limit: '2' });
+    const [matters, initialMembers] = await Promise.all([
+      rows('navigator_matters', { select: 'id,title,client_id', id: 'eq.' + matterId, account_id: 'eq.' + accounts[0].id, limit: '2' }),
+      rows('navigator_matter_members', { select: 'role', matter_id: 'eq.' + matterId, account_id: 'eq.' + accounts[0].id, role: 'eq.OWNER', limit: '2' }),
+    ]);
+    if (matters.length !== 1 || initialMembers.length !== 1 || initialMembers[0].role !== 'OWNER') throw new AssessmentError(404, 'MATTER_NOT_FOUND');
+    const initialClients = await rows('clients', { select: 'id', id: 'eq.' + matters[0].client_id, account_id: 'eq.' + accounts[0].id, limit: '2' });
+    if (initialClients.length !== 1) throw new AssessmentError(404, 'MATTER_NOT_FOUND');
+    async function reverifyOwnedMatter() {
+      const [active, owned, members, clientsForExpected] = await Promise.all([
+        rows('accounts', { select: 'id,status', firebase_uid: 'eq.' + uid, limit: '2' }),
+        rows('navigator_matters', { select: 'id,client_id', id: 'eq.' + matterId, account_id: 'eq.' + accounts[0].id, limit: '2' }),
+        rows('navigator_matter_members', { select: 'role', matter_id: 'eq.' + matterId, account_id: 'eq.' + accounts[0].id, role: 'eq.OWNER', limit: '2' }),
+        rows('clients', { select: 'id', id: 'eq.' + matters[0].client_id, account_id: 'eq.' + accounts[0].id, limit: '2' }),
+      ]);
       if (active.length !== 1 || active[0].status !== 'active' || active[0].id !== accounts[0].id || owned.length !== 1 || members.length !== 1 || members[0].role !== 'OWNER') throw new AssessmentError(404, 'MATTER_NOT_FOUND');
-      const clients = await rows('clients', { select: 'id', id: 'eq.' + owned[0].client_id, account_id: 'eq.' + accounts[0].id, limit: '2' });
+      const clients = owned[0].client_id === matters[0].client_id
+        ? clientsForExpected
+        : await rows('clients', { select: 'id', id: 'eq.' + owned[0].client_id, account_id: 'eq.' + accounts[0].id, limit: '2' });
       if (clients.length !== 1) throw new AssessmentError(404, 'MATTER_NOT_FOUND');
     }
-    await requireOwnedMatter();
     const ownerPrefix = await digest(uid);
     const sourcePrefix = 'assessment_sources/' + ownerPrefix + '/' + matterId;
     if (request.method === 'POST' && url.searchParams.get('action') === 'source') {
@@ -146,14 +171,15 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
     if (!Array.isArray(docs)) throw new AssessmentError(503, 'SOURCE_UNAVAILABLE');
     if (!docs.length) throw new AssessmentError(422, 'MISSING_SOURCE_DOCUMENTS');
     if (docs.length > ASSESSMENT_MAX_SOURCES) throw new AssessmentError(422, 'SOURCE_SET_TOO_LARGE');
-    const sources: AssessmentSource[] = [];
     for (const doc of docs) {
       if (!/^[0-9a-f]{64}\.json$/.test(doc.name)) throw new AssessmentError(422, 'SOURCE_NOT_READY');
+    }
+    const sources = await mapWithConcurrency(docs, SOURCE_READ_CONCURRENCY, async (doc): Promise<AssessmentSource> => {
       const saved = await read(sourcePrefix + '/' + doc.name.slice(0, -5));
       const source = saved?.source as AssessmentSource | undefined;
       if (!source || source.id + '.json' !== doc.name || source.version !== source.id || source.page !== 1 || typeof source.document !== 'string' || typeof source.text !== 'string' || !source.text.trim() || await digest(JSON.stringify([source.document, source.text])) !== source.id) throw new AssessmentError(422, 'SOURCE_NOT_READY');
-      sources.push(source);
-    }
+      return source;
+    });
     const sourceText = sources.map(s => '[' + s.id + '] ' + s.document + ' page ' + s.page + '\n' + s.text).join('\n\n');
     if (sourceText.length > ASSESSMENT_SOURCE_SET_MAX_CHARS) throw new AssessmentError(422, 'SOURCE_SET_TOO_LARGE');
     const requestId = 'assessment_' + await digest(JSON.stringify({ uid: auth.uid, sessionId, matterId, sources }));
@@ -176,11 +202,13 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
       await save(requestId, stored);
     }
     generatedSaved = true;
-    const stillPaid = await readVerifiedPaidSession(env, auth.uid, sessionId, fetcher);
-    try { await requireOwnedMatter(); } catch (error) {
+    const paidCheck = readVerifiedPaidSession(env, auth.uid, sessionId, fetcher);
+    try { await reverifyOwnedMatter(); } catch (error) {
+      await paidCheck;
       if (reservation && error instanceof AssessmentError && error.status === 404) await releasePaidReservation(reservation.session, reservation.requestId, reservation.id, rpc);
       throw error;
     }
+    const stillPaid = await paidCheck;
     if (stillPaid.status !== 'verified' || stillPaid.session.tier !== 'Pro') {
       if (reservation) await releasePaidReservation(reservation.session, reservation.requestId, reservation.id, rpc);
       throw new AssessmentError(403, 'ACCESS_CHANGED');
@@ -190,8 +218,7 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
     const finalized = await finalizePaidReservation(sessionId, requestId, rpc);
     if (finalized.status !== 'consumed') throw new AssessmentError(503, 'ACCOUNTING_PENDING');
     stored.status = 'completed';
-    await save(requestId, stored);
-    await save(latestId, stored);
+    await Promise.all([save(requestId, stored), save(latestId, stored)]);
     return reply({ report: stored.report, reused: !reservation, allowance });
   } catch (error) {
     if (reservation && !generatedSaved) await releasePaidReservation(reservation.session, reservation.requestId, reservation.id, rpc);
