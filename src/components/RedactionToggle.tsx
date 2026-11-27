@@ -19,6 +19,7 @@ export default function RedactionToggle({ enabled, onToggle }: RedactionTogglePr
         onClick={onToggle}
         role="switch"
         aria-checked={enabled}
+        aria-label="Hide names & case numbers"
         className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${
           enabled ? "bg-slate-900" : "bg-slate-300"
         }`}
