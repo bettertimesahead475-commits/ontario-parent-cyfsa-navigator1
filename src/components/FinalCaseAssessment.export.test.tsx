@@ -56,6 +56,10 @@ describe("Final Case Assessment PDF download", () => {
     expect(written[0]).not.toContain("affidavit.txt");
     expect(written[0]).toContain("[S1: Source document 1, p. 1]");
     expect(written[0]).toContain("Redacted copy");
+    const preview = screen.getByLabelText("Redacted PDF contents");
+    expect(preview.textContent).toContain("It withholds:");
+    expect(preview.textContent).toContain("The matter title");
+    expect(preview.textContent).not.toContain("Synthetic matter");
   });
 
   it("uses the saved redaction setting when no setting is passed in", async () => {

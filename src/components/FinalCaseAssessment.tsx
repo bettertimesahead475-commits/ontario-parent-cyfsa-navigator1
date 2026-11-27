@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { apiFetch } from '../utils/api';
 import { finishPrintWindow } from '../utils/printWindow';
-import { renderFinalAssessmentHtml } from '../utils/finalAssessmentExport';
+import { describeRedactedFinalAssessment, renderFinalAssessmentHtml } from '../utils/finalAssessmentExport';
 import { useRedaction } from '../utils/redaction';
 import type { AssessmentReport } from '../../functions/api/final-case-assessment';
 
@@ -100,6 +100,7 @@ export default function FinalCaseAssessment({ redactionEnabled }: { redactionEna
       {error && <p role="alert">{error.replace(/\.$/, '')}. Your saved documents remain available.</p>}
       {report && <article className="space-y-4"><h2 className="font-bold text-xl">Final Case Assessment — {report.title}</h2><p className="text-sm">Saved {savedAtLabel(report.createdAt)}</p>
         <button type="button" onClick={downloadPdf} className="border rounded px-4 py-2">{redact ? 'Download redacted PDF' : 'Download PDF'}</button>
+        {redact && (() => { const preview = describeRedactedFinalAssessment(report); return <div className="text-sm border rounded p-3" aria-label="Redacted PDF contents"><p className="font-bold">The redacted PDF includes:</p><ul className="list-disc pl-5">{preview.included.map(t => <li key={t}>{t}</li>)}</ul><p className="font-bold mt-2">It withholds:</p><ul className="list-disc pl-5">{preview.withheld.map(t => <li key={t}>{t}</li>)}</ul><p className="mt-2">Names can't be reliably detected in free text, so wording is withheld rather than partly masked. Turn redaction off to export the full report.</p></div>; })()}
         {Object.entries(labels).map(([key, label]) => <section key={key}><h3 className="font-bold">{label}</h3><ul className="list-disc pl-5">{report.sections[key as keyof typeof labels].map((p, i) => <li key={i}>{p.text} <span className="text-sm">{p.sources.map(id => { const source = report.sources.find(s => s.id === id); return <a className="underline mr-2" key={id} href={'#assessment-source-' + id}>{source ? `${source.document}, p. ${source.page}` : `Source ${id} (not in the saved source list)`}</a>; })}</span></li>)}</ul></section>)}
         <section><h3 className="font-bold">Source pages reviewed</h3>{report.sources.map(s => <details key={s.id} id={'assessment-source-' + s.id}><summary>{s.document}, page {s.page}</summary><p className="whitespace-pre-wrap">{s.text}</p></details>)}</section>
       </article>}

@@ -13,7 +13,8 @@ const REPORT = {
 vi.mock("../utils/api", () => ({
   apiFetch: async (url: string) => ({ ok: true, json: async () => (url.includes("matterId=") ? { report: REPORT } : { matters: [{ id: REPORT.matterId, title: REPORT.title }] }) }),
 }));
-vi.mock("../utils/finalAssessmentExport", () => ({
+vi.mock("../utils/finalAssessmentExport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../utils/finalAssessmentExport")>()),
   renderFinalAssessmentHtml: () => { throw new Error("REDACTION_INCOMPLETE"); },
 }));
 const { default: FinalCaseAssessment } = await import("./FinalCaseAssessment");
