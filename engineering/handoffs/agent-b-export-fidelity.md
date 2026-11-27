@@ -33,4 +33,8 @@ Branch: `devin/1795745710-exports-account-scoped-storage`.
 - Case Cabinet: "Analyzing (3-5s)..." → "Analyzing…" (a Forensic run takes minutes). A missing upload date or size shows "Not recorded".
 - Browser check (two mocked users, legacy shared data seeded): A sees only A's chat and bookmark, before and after refresh. Sign-out deletes the legacy keys and hides A's data. B sees nothing of A's or the legacy data, and A's keys are unchanged. FCA no-report notice and `MISSING_SOURCE_DOCUMENTS` alert checked in the browser with mocked `/api`.
 
+- Review fix (`9edceae`): the setter is bound to the account that rendered it, so a coach reply that arrives after sign-out or an account switch is dropped instead of being added to the next account's history.
+- Verified at `9edceae`: tsc 0 errors; vitest 317 files passed, 15 skipped; 4725 tests passed, 512 skipped, 0 failed.
+- Escalated (pre-existing, needs a lead decision): the coach "clear chat" button calls `useAppReset.resetAll()`, which wipes localStorage/IndexedDB for every account on the browser, even when nobody is signed in. Recommendation: make it clear only the current account's chat.
+
 Still open: Quick Review chronology prints raw enum labels; emoji headings in Quick/Forensic PDFs; Forensic's last page can hold only the closing footer line.
