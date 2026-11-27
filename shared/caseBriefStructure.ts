@@ -47,8 +47,9 @@ function clean(value: string): string {
 /** True when index i falls inside a quotation, so a label there is quoted text rather than a section boundary. */
 function insideQuote(raw: string, i: number): boolean {
   const before = raw.slice(0, i);
-  const curly = (before.match(/\u201C/g) || []).length - (before.match(/\u201D/g) || []).length;
-  return curly > 0 || (before.match(/"/g) || []).length % 2 === 1;
+  // With curly quotes present, a straight " is an inch mark or a typo, not a quotation delimiter.
+  if (/[\u201C\u201D]/.test(raw)) return (before.match(/\u201C/g) || []).length > (before.match(/\u201D/g) || []).length;
+  return (before.match(/"/g) || []).length % 2 === 1;
 }
 
 export function parseCaseBriefPoint(point: string): StructuredCaseBriefPoint {

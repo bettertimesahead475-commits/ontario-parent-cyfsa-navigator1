@@ -60,6 +60,12 @@ describe("parseCaseBriefPoint", () => {
     expect(p.parts.significance).toBe("s. 74");
   });
 
+  it("treats a straight inch mark inside curly-quoted evidence as text", () => {
+    const p = parseCaseBriefPoint("ISSUE: home — EVIDENCE: \u201Ca 6\" gap in the gate\u201D (p. 2) — SIGNIFICANCE: s. 74(2)");
+    expect(p.parts.documentEvidence).toBe("\u201Ca 6\" gap in the gate\u201D (p. 2)");
+    expect(p.parts.significance).toBe("s. 74(2)");
+  });
+
   it("handles non-string input", () => {
     expect(parseCaseBriefPoint(undefined as unknown as string)).toEqual({ structured: false, parts: {}, text: "" });
   });
