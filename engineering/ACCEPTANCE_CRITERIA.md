@@ -33,7 +33,7 @@ Evidence must be reproducible (test name, command, deployment id, or harness out
 | INF-1 | Infrastructure | Health endpoint, admin monitoring (DB latency, stuck jobs, failures) | Verified complete | `/api/health` 200; `/api/admin/monitoring/status` 200 live |
 | INF-2 | Infrastructure | Release safeguards: automatic production promotion disabled; documented rollback | Verified complete | `production_deployments_enabled=false`; `MASTER_PLAN.md` rollback list |
 | INF-3 | Infrastructure | Alerting on failures | Externally blocked | detection live (admin monitoring); delivery channel needs owner choice (B-9, S-AL) |
-| PERF-1 | Performance | OCR extraction < 5 s for ordinary documents | In progress | measure from harness timings |
+| PERF-1 | Performance | OCR extraction < 5 s for ordinary documents | Verified complete (single samples) | harness `extract-only.mjs` 2026-11-24 (`results/extraction-1795531891022.json`): scanned PDF 3.42 s, PNG 2.56 s (gemini-2.5-flash, 1 page); native PDF/DOCX/TXT text reached the analyzer within ~1 s of upload on 82dfe65 (2026-11-27). Multi-page OCR not sampled |
 | COM-1 | Commercial | Live purchase → approve → redeem → consume → refund with a non-owner account | Externally blocked | B-2 |
 | FE-1 | Frontend | Visual regression baselines; no unintended visual change | In progress (Antigravity) | |
 | A11Y-1 | Accessibility | WCAG 2.1 AA automated checks on key pages | In progress (Antigravity) | |
