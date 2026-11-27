@@ -42,6 +42,13 @@ describe("forensic PDF renderer with missing data", () => {
     expect(incomplete).not.toContain("Verification in progress");
     const done = renderForensicReportHtml({ forensicVerification: { status: "completed", checkedFindings: 4 } });
     expect(done).toContain("Completed. 4 findings checked");
+    const partial = renderForensicReportHtml({ forensicVerification: { status: "incomplete", checkedFindings: 2, totalFindings: 5 } });
+    expect(partial).toContain("Partly completed. 2 of 5 findings checked");
+    expect(partial).toContain("A second model checked some of the findings");
+    expect(partial).not.toContain("Not completed. The findings were not second-reviewed.");
+    const savedPartial = renderForensicReportHtml({ forensicVerification: { status: "completed", checkedFindings: 2, totalFindings: 5 } });
+    expect(savedPartial).toContain("Partly completed. 2 of 5 findings checked");
+    expect(savedPartial).not.toContain("with Second Review");
   });
 
   it("keeps real scores, including zero", () => {
