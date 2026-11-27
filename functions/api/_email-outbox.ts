@@ -74,6 +74,41 @@ export async function enqueueRenewalReminders(env: OutboxEnv, fetcher: typeof fe
 const patch = (env: OutboxEnv, filter: string, body: Record<string, unknown>, fetcher: typeof fetch) =>
   rest<OutboxRow[]>(env, `${OUTBOX_TABLE}?${filter}`, { method: 'PATCH', body, prefer: 'return=representation' }, fetcher);
 
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Re-checks, just before sending, that the email still describes the customer's current state: an order that was
+ * rejected, refunded or already activated, a code that was replaced or redeemed, or an entitlement that was renewed
+ * or revoked since the row was queued gets no email.
+ */
+async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | undefined, fetcher: typeof fetch, now: Date): Promise<boolean> {
+  const ref = row.payment_reference ? enc(row.payment_reference) : '';
+  const paymentStatusIs = async (status: string) => {
+    const rows = await rest<Array<{ status?: string }>>(env, `payments?select=status&reference_number=eq.${ref}&limit=2`, {}, fetcher);
+    return rows.length === 1 && rows[0].status === status;
+  };
+  switch (row.kind) {
+    case 'payment_instructions': return paymentStatusIs('pending');
+    case 'payment_confirmation':
+    case 'purchase_receipt': return paymentStatusIs('approved');
+    case 'access_code': {
+      if (!code) return false;
+      const live = await rest<unknown[]>(env, `access_codes?select=id&reference_number=eq.${ref}&code_hash=eq.${await sha256Hex(code)}&used_at=is.null&expires_at=gt.${enc(now.toISOString())}&limit=1`, {}, fetcher);
+      return live.length === 1;
+    }
+    case 'renewal_reminder': {
+      const sessionId = row.dedupe_key.split(':')[0];
+      const sessions = await rest<Array<{ expires_at?: string; revoked_at?: string | null }>>(env, `navigator_paid_sessions?select=expires_at,revoked_at&id=eq.${enc(sessionId)}&limit=1`, {}, fetcher);
+      const s = sessions[0];
+      return !!s && !s.revoked_at && !!s.expires_at && Date.parse(s.expires_at) === Date.parse(row.template_data?.expiresAt ?? '');
+    }
+    case 'refund_confirmation': return true;
+  }
+}
+
 const errorText = (error: unknown) => (error instanceof MailerError ? error.code : error instanceof Error ? error.name : 'unknown').slice(0, 200);
 
 export type ProcessResult = { sent: number; retrying: number; failed: number; skipped: number; unknown: number };
@@ -101,10 +136,28 @@ export async function processOutbox(env: OutboxEnv, mailer: TransactionalMailer,
       result.skipped++;
       continue;
     }
+    const code = row.kind === 'access_code' && row.secret_payload ? (await openPayload(env, row.secret_payload, `${row.kind}:${row.dedupe_key}`)) ?? undefined : undefined;
+    let applicable: boolean;
+    try {
+      applicable = await stillApplicable(env, row, code, fetcher, now);
+    } catch {
+      if (attempts < MAX_ATTEMPTS) {
+        await patch(env, id, { status: 'pending', locked_at: null, last_error: 'STATE_CHECK_FAILED', next_attempt_at: new Date(now.getTime() + retryDelayMs(attempts)).toISOString() }, fetcher);
+        result.retrying++;
+      } else {
+        await patch(env, id, { status: 'failed', secret_payload: null, locked_at: null, last_error: 'STATE_CHECK_FAILED' }, fetcher);
+        result.failed++;
+      }
+      continue;
+    }
+    if (!applicable) {
+      await patch(env, id, { status: 'skipped', secret_payload: null, locked_at: null, last_error: 'NO_LONGER_APPLICABLE' }, fetcher);
+      result.skipped++;
+      continue;
+    }
     let message: { subject: string; text: string };
     try {
-      const code = row.kind === 'access_code' && row.secret_payload ? await openPayload(env, row.secret_payload, `${row.kind}:${row.dedupe_key}`) : undefined;
-      message = renderTransactionalEmail(row.kind, row.template_data || {}, code ?? undefined);
+      message = renderTransactionalEmail(row.kind, row.template_data || {}, code);
     } catch {
       await patch(env, id, { status: 'failed', secret_payload: null, locked_at: null, last_error: 'RENDER_FAILED' }, fetcher);
       result.failed++;

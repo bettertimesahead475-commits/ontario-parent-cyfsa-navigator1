@@ -13,7 +13,10 @@ const NOW = new Date('2026-11-25T12:00:00Z');
 
 /** In-memory PostgREST for the outbox and paid sessions: eq/lt/lte/gt/is.null filters, upsert ignore-duplicates. */
 function fakeDb(seed: Record<string, Row[]> = {}) {
-  const tables: Record<string, Row[]> = { transactional_email_outbox: [], navigator_paid_sessions: [], ...JSON.parse(JSON.stringify(seed)) };
+  const tables: Record<string, Row[]> = {
+    transactional_email_outbox: [], navigator_paid_sessions: [], access_codes: [],
+    payments: [{ reference_number: 'PS-1', status: 'approved' }], ...JSON.parse(JSON.stringify(seed)),
+  };
   const test = (row: Row, col: string, expr: string) => {
     const [op, ...rest] = expr.split('.'); const v = rest.join('.');
     if (op === 'eq') return String(row[col]) === v;
@@ -44,6 +47,9 @@ function fakeDb(seed: Record<string, Row[]> = {}) {
   });
   return { tables, fetcher: fetcher as unknown as typeof fetch, mock: fetcher };
 }
+
+const hex = async (text: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
+const liveCode = async (code: string, extra: Row = {}) => ({ id: 'c1', reference_number: 'PS-1', code_hash: await hex(code), used_at: null, expires_at: '2026-12-09T00:00:00.000Z', ...extra });
 
 const fakeMailer = (impl?: (m: any) => Promise<{ id: string }>) => {
   const sent: any[] = [];
@@ -171,7 +177,7 @@ describe('outbox processing', () => {
     enqueueTransactionalEmail(ON, { kind: 'purchase_receipt', dedupeKey: 'PS-1', reference: 'PS-1', email: 'p@example.test', data: { plan: 'Basic', amount: 19.99 }, ...extra } as any, db.fetcher);
 
   it('sends a due row once and records the provider id; the access code is decrypted only to send and then removed', async () => {
-    const db = fakeDb();
+    const db = fakeDb({ access_codes: [await liveCode('ABCD-EFGH-JKMN')] });
     await queue(db);
     await queue(db, { kind: 'access_code', accessCode: 'ABCD-EFGH-JKMN' });
     const { mailer, sent } = fakeMailer();
@@ -236,6 +242,38 @@ describe('outbox processing', () => {
     expect(await processOutbox({ ...ON, TRANSACTIONAL_EMAIL_ALLOWLIST: '@synthetic.test' }, mailer, db.fetcher, NOW)).toMatchObject({ skipped: 1 });
     expect(sent).toHaveLength(0);
     expect(db.tables.transactional_email_outbox[0]).toMatchObject({ status: 'skipped', last_error: 'RECIPIENT_NOT_ALLOWLISTED' });
+  });
+
+  it('skips emails that no longer match the customer\'s state at send time', async () => {
+    const db = fakeDb({
+      payments: [{ reference_number: 'PS-1', status: 'rejected' }],
+      access_codes: [await liveCode('OLD1-OLD1-OLD1', { expires_at: '2026-11-25T11:00:00.000Z' }), await liveCode('USED-USED-USED', { id: 'c2', used_at: '2026-11-25T10:00:00Z' })],
+      navigator_paid_sessions: [{ id: 's1', email: 'a@example.test', tier: 'Pro', expires_at: '2026-12-30T00:00:00.000Z', revoked_at: null }],
+    });
+    const item = (kind: string, dedupeKey = 'PS-1', extra: Row = {}) => enqueueTransactionalEmail(ON, { kind, dedupeKey, reference: 'PS-1', email: 'p@example.test', data: {}, ...extra } as any, db.fetcher);
+    await item('payment_instructions');                       // order rejected since checkout
+    await item('purchase_receipt');                           // not approved
+    await item('access_code', 'PS-1', { accessCode: 'OLD1-OLD1-OLD1' }); // replaced/expired code
+    await enqueueTransactionalEmail(ON, { kind: 'access_code', dedupeKey: 'PS-2', reference: 'PS-1', email: 'p@example.test', data: {}, accessCode: 'USED-USED-USED' }, db.fetcher); // already redeemed
+    await enqueueTransactionalEmail(ON, { kind: 'renewal_reminder', dedupeKey: 's1:2026-11-30', email: 'a@example.test', data: { plan: 'Pro', expiresAt: '2026-11-30T00:00:00.000Z' } }, db.fetcher); // renewed since
+    await item('refund_confirmation');
+    const { mailer, sent } = fakeMailer();
+    expect(await processOutbox(ON, mailer, db.fetcher, NOW)).toMatchObject({ sent: 1, skipped: 5 });
+    expect(sent.map((m) => m.subject)).toEqual(['Refund recorded for order PS-1']);
+    expect(db.tables.transactional_email_outbox.filter((r) => r.status === 'skipped').every((r) => r.last_error === 'NO_LONGER_APPLICABLE' && r.secret_payload === null)).toBe(true);
+  });
+
+  it('a failed state check is retried later, not sent', async () => {
+    const db = fakeDb();
+    await queue(db);
+    const original = db.mock.getMockImplementation()!;
+    db.mock.mockImplementation(async (input: any, init: any = {}) => (String(input).includes('/payments?') ? new Response('', { status: 503 }) : original(input, init)));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { mailer, sent } = fakeMailer();
+    expect(await processOutbox(ON, mailer, db.fetcher, NOW)).toMatchObject({ retrying: 1, sent: 0 });
+    expect(db.tables.transactional_email_outbox[0]).toMatchObject({ status: 'pending', last_error: 'STATE_CHECK_FAILED' });
+    expect(sent).toHaveLength(0);
+    warn.mockRestore();
   });
 
   it('the administrator summary masks recipient addresses', async () => {
