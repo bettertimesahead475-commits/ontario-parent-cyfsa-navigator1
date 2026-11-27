@@ -636,7 +636,7 @@ export default function PricingTab({ currentTier, onChangeTier, userEmail = "", 
             </div>
 
             <div className="pt-6 mt-auto">
-              {currentTier === "Premium" && !renewalTiers.includes("Premium") ? (
+              {currentTier === "Premium" ? (
                 <button
                   type="button"
                   disabled

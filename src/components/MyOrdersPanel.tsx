@@ -16,6 +16,9 @@ const STATE_LABEL: Record<OrderState, string> = {
   unknown: "Status temporarily unavailable",
 };
 
+// Plans whose new code extends the active entitlement; other plans start a new pack.
+const EXTENDS_ON_RENEWAL = new Set(["Pro", "Community5", "Community10", "Community25"]);
+
 const formatCad = (n: number) => n.toLocaleString("en-CA", { style: "currency", currency: "CAD" });
 
 /** The signed-in customer's own e-Transfer orders, their status, and one-click activation once an administrator has verified the funds. */
@@ -35,7 +38,7 @@ export default function MyOrdersPanel({ signedIn, onActivated, onRenewalDue }: {
       setOrders(Array.isArray(data.orders) ? data.orders : []);
       const active: Entitlement[] = Array.isArray(data.entitlements) ? data.entitlements : [];
       setEntitlements(active);
-      onRenewalDue?.(active.filter((e) => e.renewalDue).map((e) => e.tier));
+      onRenewalDue?.(active.filter((e) => e.renewalDue && EXTENDS_ON_RENEWAL.has(e.tier)).map((e) => e.tier));
     } catch (err: any) {
       setError(err?.message || "Your orders could not be loaded.");
     }
@@ -63,7 +66,7 @@ export default function MyOrdersPanel({ signedIn, onActivated, onRenewalDue }: {
       localStorage.setItem(getUserKey("ps_session_token") || "ps_session_token", data.token);
       localStorage.setItem(getUserKey("ps_session_email") || "ps_session_email", data.email);
       localStorage.setItem(getUserKey("ps_session_tier") || "ps_session_tier", data.tier);
-      setMessage(`Your ${data.tier} plan is now active.`);
+      setMessage(data.restored ? `Your ${data.tier} plan is now active on this browser.` : `Your ${data.tier} plan is now active.`);
       onActivated(data.tier);
       await load();
     } catch (err: any) {
@@ -84,7 +87,7 @@ export default function MyOrdersPanel({ signedIn, onActivated, onRenewalDue }: {
       {entitlements.map((e) => (
         <p key={`${e.tier}-${e.expiresAt}`} className={`text-xs rounded-lg p-2.5 border ${e.renewalDue ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-emerald-50 border-emerald-200 text-emerald-900"}`}>
           <strong>{e.tier}</strong> access is active{e.expiresAt ? ` until ${new Date(e.expiresAt).toLocaleDateString("en-CA")}` : ""}.
-          {e.renewalDue ? ` It ends in ${e.daysLeft} day${e.daysLeft === 1 ? "" : "s"}; choose a plan above to renew.` : ""}
+          {e.renewalDue ? ` It ends in ${e.daysLeft} day${e.daysLeft === 1 ? "" : "s"}; ${EXTENDS_ON_RENEWAL.has(e.tier) ? "choose the plan above to renew." : "you can buy a new pack once it ends."}` : ""}
         </p>
       ))}
       {orders === null && !error && <p className="text-xs text-slate-500">Loading your orders…</p>}
@@ -98,6 +101,12 @@ export default function MyOrdersPanel({ signedIn, onActivated, onRenewalDue }: {
             <p className="font-bold text-slate-700">{STATE_LABEL[o.state] ?? STATE_LABEL.unknown}</p>
             {o.state === "awaiting_verification" && o.instructions && <p className="text-slate-600 leading-relaxed">{o.instructions}</p>}
             {o.priceOutdated && <p className="text-amber-800 leading-relaxed">This order was recorded at an outdated price. Do not send a payment for it; choose the plan above for a new reference. If you already paid, contact support with this reference.</p>}
+            {o.state === "activated" && entitlements.some((e) => e.tier === o.plan) && (
+              <button type="button" disabled={busyRef !== null} onClick={() => void activate(o.referenceNumber)}
+                className="text-indigo-700 font-bold hover:underline disabled:opacity-60">
+                {busyRef === o.referenceNumber ? "Restoring…" : "Use on this browser"}
+              </button>
+            )}
             {o.state === "ready_to_activate" && (
               <button type="button" disabled={busyRef !== null} onClick={() => void activate(o.referenceNumber)}
                 className="bg-indigo-700 hover:bg-indigo-800 disabled:opacity-60 text-white font-bold px-3 py-1.5 rounded-lg">

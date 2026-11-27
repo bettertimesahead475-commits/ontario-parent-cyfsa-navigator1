@@ -40,3 +40,10 @@ the reissued code can survive and later be redeemed as a renewal. That needs an 
 2. **App-only, small:** make the claim lock permanent per reference (`claim__<ref>`, no minute). A claim that fails after taking
    the lock can then only be recovered by the administrator's Reissue code (customer gets "contact support"), and the
    reissue/claim window in (1) remains.
+
+## Resolution (lead, PR #171)
+
+Code-only fix: `claim-purchase` takes the minute-scoped reissue lock, then a permanent `claim__<reference>` lock, so a
+second claim of one order can never issue another code. A claim that fails after the permanent lock is recovered by an
+administrator code reissue. The DB-level constraint (one used code per reference) remains a proposed migration
+requiring owner approval. `tests/security/etransfer-claim-race.test.ts` now passes.

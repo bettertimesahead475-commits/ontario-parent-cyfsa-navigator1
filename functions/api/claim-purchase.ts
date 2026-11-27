@@ -77,8 +77,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     // boundary); an activation that fails after this point is recovered by an administrator code reissue. It also takes
     // the reissue lock, so a reissue in the same minute cannot issue a second code.
     const inProgress = () => fail(409, 'ACTIVATION_IN_PROGRESS', 'Activation for this order has already started. Refresh in a minute; if access is not active, contact support with your reference number.');
-    if (!(await acquireOnce(env, `claim__${reference}`))) return inProgress();
+    // Reissue lock first: it expires with the minute, so losing it must not leave the permanent claim lock taken.
     if (!(await acquireOnce(env, `reissue__${reference}__${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}`))) return inProgress();
+    if (!(await acquireOnce(env, `claim__${reference}`))) return inProgress();
 
     const now = new Date();
     const expireUnused = () => rest(env, `access_codes?reference_number=eq.${encodeURIComponent(reference)}&used_at=is.null`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' });

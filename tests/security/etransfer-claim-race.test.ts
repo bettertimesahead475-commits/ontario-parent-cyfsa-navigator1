@@ -88,7 +88,8 @@ describe('S-34: claim-purchase double activation across a minute boundary', () =
     const first = await claimReq('10.9.0.1');
     const results = [first, await second!];
     const ok = results.filter((r) => r.status === 200).length;
-    expect(locks.size).toBe(2);
+    // Precondition: both isolates got a minute-scoped lock, so only the once-per-order claim lock can stop the race.
+    expect([...locks].filter((l) => l.includes('reissue')).length).toBe(2);
     expect(redemptions.length, `codes redeemed for one payment: ${redemptions.length}`).toBeLessThanOrEqual(1);
     expect(ok).toBeLessThanOrEqual(1);
     const days = Math.round((Date.parse(sessions[0]?.expires_at ?? iso()) - Date.now()) / DAY);

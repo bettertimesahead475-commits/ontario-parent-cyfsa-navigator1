@@ -74,4 +74,32 @@ describe("MyOrdersPanel", () => {
     render(<MyOrdersPanel signedIn onActivated={() => {}} />);
     expect(await screen.findByText(/outdated price/)).toBeTruthy();
   });
+
+  it("restores an activated plan on this browser while its access is active", async () => {
+    const onActivated = vi.fn();
+    vi.spyOn(api, "apiFetch").mockImplementation(async (url: any) => url === "/api/claim-purchase"
+      ? ok({ success: true, restored: true, tier: "Pro", token: "tok-restored", email: "parent@example.com" })
+      : ok({ orders: [{ referenceNumber: "PS-USED2345", plan: "Pro", amount: 149, state: "activated", submittedAt: null }],
+        entitlements: [{ tier: "Pro", expiresAt: "2026-12-20T00:00:00Z", daysLeft: 20, renewalDue: false }] }));
+    render(<MyOrdersPanel signedIn onActivated={onActivated} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Use on this browser" }));
+    await waitFor(() => expect(onActivated).toHaveBeenCalledWith("Pro"));
+    expect(Object.values({ ...localStorage })).toContain("tok-restored");
+    expect((await screen.findByRole("status")).textContent).toContain("on this browser");
+  });
+
+  it("offers no restore once the plan's access has ended", async () => {
+    vi.spyOn(api, "apiFetch").mockResolvedValue(ok({ orders: [{ referenceNumber: "PS-USED2345", plan: "Pro", amount: 149, state: "activated", submittedAt: null }], entitlements: [] }));
+    render(<MyOrdersPanel signedIn onActivated={() => {}} />);
+    await screen.findByText("PS-USED2345");
+    expect(screen.queryByRole("button", { name: "Use on this browser" })).toBeNull();
+  });
+
+  it("does not offer early renewal of a Premium pack, which would start a new pack", async () => {
+    const onRenewalDue = vi.fn();
+    vi.spyOn(api, "apiFetch").mockResolvedValue(ok({ orders: [], entitlements: [{ tier: "Premium", expiresAt: "2026-12-01T00:00:00Z", daysLeft: 3, renewalDue: true }] }));
+    render(<MyOrdersPanel signedIn onActivated={() => {}} onRenewalDue={onRenewalDue} />);
+    expect(await screen.findByText(/buy a new pack once it ends/)).toBeTruthy();
+    expect(onRenewalDue).toHaveBeenLastCalledWith([]);
+  });
 });

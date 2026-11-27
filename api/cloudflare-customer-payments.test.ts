@@ -7,7 +7,7 @@ import { auditObjectName } from '../functions/api/_admin-store';
 const env = { FIREBASE_PROJECT_ID: 'p', SESSION_SECRET: 'secret', PAYMENT_EMAIL: 'pay@cyfsanavigator.com', STAGING_SUPABASE_URL: 'https://db.test', STAGING_SUPABASE_SERVICE_ROLE_KEY: 'k' };
 const OWNER = { status: 'verified', uid: 'uid-owner', email: 'parent@example.com', emailVerified: true } as const;
 
-type Db = { payments: any[]; codes: any[]; sessions: any[]; audit: string[]; auditUnreadable?: boolean; rpc: any[]; writes: string[]; locks: string[]; onCodeInsert?: () => void };
+type Db = { payments: any[]; codes: any[]; sessions: any[]; audit: string[]; auditUnreadable?: boolean; rpc: any[]; writes: string[]; locks: string[]; onCodeInsert?: () => void; heldReissue?: boolean };
 let db: Db;
 const order = (over: Partial<any> = {}) => ({ id: '11111111-1111-4111-8111-111111111111', reference_number: 'PS-ABCD2345', plan: 'Premium', amount: 49.99, status: 'approved',
   submitted_at: '2026-11-20T00:00:00Z', approved_at: '2026-11-21T00:00:00Z', notes: 'email:parent@example.com;uid:uid-owner', firebase_uid: 'uid-owner', ...over });
@@ -20,7 +20,7 @@ function install() {
     if (url.pathname === '/storage/v1/object/list/analysis_jobs') return db.auditUnreadable ? new Response('x', { status: 500 }) : Response.json(db.audit.map((name) => ({ name })));
     if (url.pathname.startsWith('/storage/v1/object/')) {
       const lock = decodeURIComponent(url.pathname);
-      if (db.locks.includes(lock)) return Response.json({ statusCode: '409' }, { status: 409 });
+      if (db.locks.includes(lock) || (db.heldReissue && lock.includes('reissue'))) return Response.json({ statusCode: '409' }, { status: 409 });
       db.locks.push(lock); return Response.json({});
     }
     if (url.pathname === '/rest/v1/payments') {
@@ -142,6 +142,17 @@ describe('POST /api/claim-purchase', () => {
     const second = await claimReq();
     expect(second.status).toBe(409);
     expect((await second.json()).code).toBe('ACTIVATION_IN_PROGRESS');
+    expect(db.rpc).toHaveLength(1);
+  });
+
+  it('an administrator reissue in the same minute defers the claim without blocking a later retry', async () => {
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue(OWNER);
+    db.heldReissue = true;
+    const deferred = await claimReq();
+    expect(deferred.status).toBe(409);
+    expect(db.locks.some((l) => l.includes('claim'))).toBe(false);
+    db.heldReissue = false;
+    expect((await claimReq()).status).toBe(200);
     expect(db.rpc).toHaveLength(1);
   });
 
