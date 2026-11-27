@@ -8,6 +8,7 @@ import { Link, Route, Switch, useLocation, Redirect } from "wouter";
 import ParentJourney from "./components/ParentJourney";
 import { useGlobalResetListener } from "./hooks/useAppReset";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import SeoMetadata from "./components/SeoMetadata";
 
 // Keep the home journey in the initial bundle; load feature-only views on demand.
 const CloudflareAuthDiagnostic = lazy(() => import("./components/CloudflareAuthDiagnostic"));
@@ -52,25 +53,8 @@ export default function App() {
   const [location, setLocation] = useLocation();
 
   useEffect(() => {
-    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
-      ?? document.head.appendChild(document.createElement("link"));
-    canonical.rel = "canonical";
-    const publicPath = location || "/";
-    canonical.href = `https://cyfsanavigator.com${publicPath === "/" ? "/" : publicPath.replace(/\/+$/, "")}`;
-
     if (typeof window !== "undefined") {
       window.scrollTo(0, 0);
-    }
-
-    const privatePaths = ["/document-analyzer", "/templates", "/signup", "/review", "/professional-workspace", "/case-workspace", "/accept-invitation", "/admin"];
-    const isPrivatePath = privatePaths.some((path) => publicPath === path || publicPath.startsWith(`${path}/`));
-    let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
-    if (isPrivatePath) {
-      robots ??= document.head.appendChild(document.createElement("meta"));
-      robots.name = "robots";
-      robots.content = "noindex,nofollow";
-    } else if (robots) {
-      robots.remove();
     }
   }, [location]);
 
@@ -187,6 +171,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between font-sans selection:bg-brand-100 selection:text-brand-900" id="root-viewport">
+      <SeoMetadata />
       
       {/* Top Professional Header Bar */}
       <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-50 no-print shadow-xs" id="app-header">
