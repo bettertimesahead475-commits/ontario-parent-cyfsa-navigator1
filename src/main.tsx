@@ -62,7 +62,8 @@ const app = (
     <App />
   </StrictMode>
 );
-const currentPath = (window.location.pathname.replace(/\/+$/, '') || '/').toLowerCase();
+let currentPath = window.location.pathname.toLowerCase();
+while (currentPath.length > 1 && currentPath.endsWith('/')) currentPath = currentPath.slice(0, -1);
 if (rootElement.dataset.prerendered && rootElement.dataset.prerendered === currentPath) {
   hydrateRoot(rootElement, app);
 } else {

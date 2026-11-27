@@ -4,7 +4,7 @@
 //   dist/404.html                       any other path; Cloudflare Pages answers it with HTTP 404
 //   dist/sitemap.xml                    adds <lastmod> from git when the checkout has full history
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -35,9 +35,13 @@ export const ROUTE_SOURCES = {
 /** A route's HTML file: "/" -> index.html, "/rights" -> rights.html (Pages serves it at /rights). */
 export const htmlFileFor = (route) => (route === "/" ? "index.html" : `${route.slice(1)}.html`);
 
+// Absolute path, not a PATH lookup; without git the sitemap simply has no <lastmod>.
+const GIT = ["/usr/bin/git", "/usr/local/bin/git", "/opt/homebrew/bin/git"].find((bin) => existsSync(bin));
+
 function git(args) {
+  if (!GIT) return "";
   try {
-    return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return execFileSync(GIT, args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
     return "";
   }

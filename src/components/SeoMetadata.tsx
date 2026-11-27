@@ -144,21 +144,27 @@ export function headHtml(meta: ResolvedMeta): string {
 
 const STRUCTURED_DATA_ID = "seo-structured-data";
 
-const ROUTE_HEAD_TAGS = [
-  /\s*<title>[\s\S]*?<\/title>/,
-  /\s*<meta name="(description|robots|twitter:[a-z:]+)"[^>]*>/g,
-  /\s*<meta property="og:(?!site_name)[a-z:_]+"[^>]*>/g,
-  /\s*<link rel="canonical"[^>]*>/g,
-  /\s*<script type="application\/ld\+json"[\s\S]*?<\/script>/g,
+/** Tags in the built index.html that each route replaces (one tag per line, as written in index.html). */
+const ROUTE_HEAD_TAG_PREFIXES = [
+  "<title>",
+  '<meta name="description"',
+  '<meta name="robots"',
+  '<meta name="twitter:',
+  '<meta property="og:',
+  '<link rel="canonical"',
+  '<script type="application/ld+json"',
 ];
+const isRouteHeadTag = (line: string) => {
+  const tag = line.trim();
+  return !tag.startsWith('<meta property="og:site_name"') && ROUTE_HEAD_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix));
+};
 
 /**
  * The built index.html with this route's head tags and, for public routes, its pre-rendered body.
  * `data-prerendered` tells main.tsx which path the markup belongs to, so it hydrates only a matching page.
  */
 export function renderDocument(template: string, meta: ResolvedMeta, body = "", prerenderedPath = ""): string {
-  let html = template;
-  for (const pattern of ROUTE_HEAD_TAGS) html = html.replace(pattern, "");
+  let html = template.split("\n").filter((line) => !isRouteHeadTag(line)).join("\n");
   html = html.replace("</head>", `    ${headHtml(meta)}\n  </head>`);
   const root = prerenderedPath ? `<div id="root" data-prerendered="${prerenderedPath}">${body}</div>` : `<div id="root"></div>`;
   return html.replace('<div id="root"></div>', root);
