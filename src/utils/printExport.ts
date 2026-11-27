@@ -1,4 +1,5 @@
 import { finishPrintWindow } from "./printWindow";
+import { escapeHtml } from "./reportSectionsHtml";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -30,7 +31,25 @@ const LETTERHEAD_STYLES = `
   .watch-title { font-weight: 700; font-size: 13.5px; color: #92400e; display: block; margin-bottom: 4px; }
   .watch-desc { font-size: 12.5px; color: #78350f; line-height: 1.5; }
   .legal-disclaimer { background-color: #fafaf9; border: 1px solid #e7e5e4; padding: 16px; border-radius: 8px; font-size: 11px; color: #57534e; margin-top: 40px; line-height: 1.5; text-align: justify; page-break-inside: avoid; }
+  /* After the base rules so it wins: long cards may break across pages instead of leaving a title-only page. */
+  @media print {
+    .section-card { break-inside: auto; page-break-inside: auto; }
+    .section-title { break-after: avoid; page-break-after: avoid; }
+    .legal-disclaimer { break-before: avoid; page-break-before: avoid; }
+  }
 `;
+
+/**
+ * Guide copy (src/data.ts) marks emphasis with **bold** and sometimes starts a line with an emoji. Escapes the text,
+ * turns the markup into <strong> and drops the emoji, so a printed guide shows neither literal asterisks nor glyphs
+ * that PDF text extraction and screen readers cannot read.
+ */
+export function guideTextHtml(text: string): string {
+  return escapeHtml(text)
+    .replace(/[\p{Extended_Pictographic}\u2713\u2714\u2717\u2718]\uFE0F?\s*/gu, "")
+    .replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*\*/g, "");
+}
 
 export function printBrandedDocument(title: string, bodyHtml: string) {
   const printWindow = window.open("", "_blank");

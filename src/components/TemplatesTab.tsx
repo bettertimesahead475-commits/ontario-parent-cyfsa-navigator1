@@ -605,6 +605,8 @@ export default function TemplatesTab() {
           border-top: 1px solid #e2e8f0;
           padding-top: 12px;
           page-break-inside: avoid;
+          break-before: avoid;
+          page-break-before: avoid;
         }
       </style>
     `;
@@ -663,7 +665,7 @@ export default function TemplatesTab() {
                 <td><strong>${escapeHtml(ev.date || "N/A")}</strong>${ev.time ? `<br/>${escapeHtml(ev.time)}` : ""}</td>
                 <td>
                   ${escapeHtml(ev.eventDescription || "No details entered.")}
-                  ${ev.unsupportedOrHearsayWarn ? `<br/><span style="color: #b45309; font-size: 10px; font-weight: bold;">⚠️ EDUCATIONAL ADVISORY: Contains possible hearsay statements or unverified claims. Consult lawyer to formulate.</span>` : ""}
+                  ${ev.unsupportedOrHearsayWarn ? `<br/><span style="color: #b45309; font-size: 10px; font-weight: bold;">EDUCATIONAL ADVISORY: Contains possible hearsay statements or unverified claims. Consult lawyer to formulate.</span>` : ""}
                 </td>
                 <td>${escapeHtml(ev.witnessesOrEvidence || "None itemized.")}</td>
               </tr>
@@ -908,7 +910,7 @@ export default function TemplatesTab() {
         <div class="court-header">
           <div class="court-title">Ontario Court of Justice (Family Branch)</div>
           <div class="jurisdiction">Province of Ontario, Canada • Family Law Rules</div>
-          <div class="draft-notice">⚠️ EDUCATIONAL PREPARATION DRAFT — NOT AN OFFICIAL FORM</div>
+          <div class="draft-notice">EDUCATIONAL PREPARATION DRAFT — NOT AN OFFICIAL FORM</div>
           <div style="margin-top: 8px; padding: 10px; background-color: #fef08a; border: 1px solid #eab308; border-radius: 6px; font-size: 11px; line-height: 1.4; color: #713f12; font-weight: normal;">
             <strong>CRITICAL:</strong> This educational draft must be filed as official <strong>FORM 33B.1: Answer and Plan of Care (Parties Other Than CAS)</strong>, not Form 33B. Form 33B is only for Children's Aid Society. Parents and respondents must file Form 33B.1. Confirm with your lawyer before filing.
           </div>
@@ -1028,7 +1030,7 @@ export default function TemplatesTab() {
           <div class="legal-notice">
             <strong>CRITICAL EDUCATIONAL FOOTNOTE NOTICE:</strong> This court-ready document represents a self-prepared draft workbook created strictly for child-protection education and parent legal counsel consultations. S.O. 2017, c. 14 compliant workspace. Do not execute or serve without professional screening by a licensed member of the Law Society of Ontario.
           </div>
-          <div style="text-align:center; font-size:9.5px; color:#cbd5e1; margin-top:10px;">
+          <div style="text-align:center; font-size:9.5px; color:#cbd5e1; margin-top:10px; break-before:avoid; page-break-before:avoid;">
             Generated via CYFSA Navigator PDF Export Suite. Primary statutes refreshed 2026.
           </div>
         </body>
