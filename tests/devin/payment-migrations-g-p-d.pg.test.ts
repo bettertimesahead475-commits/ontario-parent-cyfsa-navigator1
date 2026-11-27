@@ -208,6 +208,28 @@ describe.skipIf(!url)('Migrations G, P, D on the live payment schema: apply, rea
     expect(JSON.parse(await catalog())).toEqual(JSON.parse(linked));
     await q("delete from public.access_codes where reference_number like 'PS-RENW%'"); await q("delete from public.navigator_paid_sessions where firebase_uid = 'uid-renew'");
     expect(JSON.parse(await catalog())).toEqual(JSON.parse(afterP));
+    // A renewal still uncommitted when the rollback starts: the rollback waits for it, then sees its link and refuses.
+    await mkCode('RENW-0003-AAAA', 'renew@example.test', 'PS-RENW0003', 'Pro');
+    expect(await q('select 1 from public.access_codes where redeemed_session_id is not null')).toHaveLength(0);
+    const tx = await pool.connect();
+    try {
+      await tx.query('begin');
+      await redeem(tx, 'uid-renew', 'RENW-0003-AAAA', 'renew@example.test');
+      expect((await tx.query('select count(*)::int as n from public.access_codes where redeemed_session_id is not null')).rows[0].n).toBe(1);
+      let settled = false;
+      const rolling = q(P_DOWN.replace("'5s'", "'20s'")).then(() => 'applied', (e: Error) => e.message).finally(() => { settled = true; });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(settled).toBe(false);
+      await tx.query('commit');
+      expect(await rolling).toMatch(/forward-repair instead\. Nothing was changed/);
+    } finally { tx.release(); }
+    await q('rollback').catch(() => undefined);
+    expect(await hasCol()).toBe(true);
+    expect(await fp()).toBe(FP.p);
+    await q("delete from public.access_codes where reference_number like 'PS-RENW%'"); await q("delete from public.navigator_paid_sessions where firebase_uid = 'uid-renew'");
+    expect(JSON.parse(await catalog())).toEqual(JSON.parse(afterP));
+    await q("delete from public.access_codes where reference_number like 'PS-RENW%'"); await q("delete from public.navigator_paid_sessions where firebase_uid = 'uid-renew'");
+    expect(JSON.parse(await catalog())).toEqual(JSON.parse(afterP));
   });
 
   it('full rollback D -> P -> G returns the live catalog and data exactly (apart from the in-flight test customer); P and G reapply', async () => {

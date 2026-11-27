@@ -32,7 +32,8 @@ orders are expected.
 - D: `access_codes_one_redemption_per_reference.rollback.sql`, restores P's function exactly; no data loss.
 - P: new `preserve_monthly_renewal_P.rollback.sql` restores the captured live function (self-verifies md5 ca9f13a8)
   and drops the column. It refuses while D is installed or once any renewal links a code (`redeemed_session_id` set):
-  after customers renew, use forward repair, never this rollback. New read-only `preserve_monthly_renewal_P.preflight.sql`.
+  after customers renew, use forward repair, never this rollback. It locks `access_codes` before checking, so an
+  in-flight renewal is counted (tested). New read-only `preserve_monthly_renewal_P.preflight.sql`.
 - P takes an ACCESS EXCLUSIVE lock on `access_codes`; run it with `set lock_timeout` and retry, not during traffic peaks.
 
 ## Order

@@ -9,6 +9,8 @@
 -- version, the transaction aborts. Tested by tests/devin/payment-migrations-g-p-d.pg.test.ts.
 begin;
 set local lock_timeout = '5s';
+-- Taken before the checks so a renewal still in flight commits (and is counted) or waits until this has finished.
+lock table public.access_codes in access exclusive mode;
 
 do $$
 declare v_fp text; v_linked bigint;
