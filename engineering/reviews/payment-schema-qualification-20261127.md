@@ -31,13 +31,14 @@ simply never issued. Pending package (not applied):
 `supabase/migrations_pending_approval/payments_service_role_review_update.sql` grants `UPDATE (status, approved_at)`
 only, with `.rollback.sql` and a read-only `.preflight.sql`. Independent of P; must precede any live e-Transfer sale.
 
-## Results (31 of 31 pass locally, 2026-11-27)
+## Results (32 of 32 pass locally, 2026-11-27)
 
 ### Pre-P (live baseline)
 
 | Scenario | Today (base `1773183`) | After this branch |
 |---|---|---|
 | Admin approve on live grants | 502 `ADMIN_STORE_REJECTED`, nothing issued | same (needs G) ; with G: 200 and one code |
+| G least privilege (ported from #190) | n/a | service_role may UPDATE only `status`, `approved_at`; no DELETE; anon/authenticated have no SELECT/INSERT/UPDATE/DELETE; PostgREST refuses PATCH of `amount`/`plan`/`firebase_uid` and anon/authenticated PATCH/DELETE; a customer claim leaves a pending order pending. Fails if G is widened (table-wide, `authenticated`, extra column, DELETE) |
 | `claim-purchase` (D-1) | **503 `ACTIVATION_UNAVAILABLE`** "Activation is temporarily unavailable. Please try again." No code, no session | unchanged (already fail-closed, never 500) |
 | My Orders (`my-payments`) | **503 `PAYMENT_STATUS_UNAVAILABLE`**: no orders listed | 200, all orders listed, `accessActive` omitted |
 | Refund of an activated order | **501 `ADMIN_SCHEMA_UNAVAILABLE`**: entitlement not revoked | 200, one entitlement revoked, later claim 409 |

@@ -122,6 +122,39 @@ describe.skipIf(!enabled)('pre-P: the live nxfh payment schema today (no redeeme
     expect(again.body.accessCode).toMatch(/^[A-Z0-9]{4}-/);
   });
 
+  it('G is least privilege: service_role may update only status and approved_at; anon, authenticated and DELETE stay refused', async () => {
+    const cols = await h.q<{ column_name: string; upd: boolean }>(
+      "select column_name, has_column_privilege('service_role', 'public.payments', column_name, 'UPDATE') as upd from information_schema.columns where table_schema = 'public' and table_name = 'payments'");
+    expect(cols.filter((c) => c.upd).map((c) => c.column_name).sort()).toEqual(['approved_at', 'status']);
+    for (const role of ['anon', 'authenticated']) {
+      const r = await h.q<{ any_update: boolean; del: boolean; sel: boolean; ins: boolean }>(
+        `select bool_or(has_column_privilege($1, 'public.payments', column_name, 'UPDATE')) as any_update, has_table_privilege($1, 'public.payments', 'DELETE') as del,
+                has_table_privilege($1, 'public.payments', 'SELECT') as sel, has_table_privilege($1, 'public.payments', 'INSERT') as ins
+           from information_schema.columns where table_schema = 'public' and table_name = 'payments'`, [role]);
+      expect(r[0]).toEqual({ any_update: false, del: false, sel: false, ins: false });
+    }
+    expect((await h.q<{ t: boolean }>("select has_table_privilege('service_role', 'public.payments', 'DELETE') as t"))[0].t).toBe(false);
+    const ref = await t.order();
+    const rest = (role: string, method: string, query: string, body?: Json) => h.fetch(`https://db.test/rest/v1/payments?reference_number=eq.${ref}${query}`, {
+      method, headers: { Authorization: `Bearer ${localJwt(role)}`, 'content-type': 'application/json', Prefer: 'return=representation' },
+      body: body ? JSON.stringify(body) : undefined });
+    for (const role of ['anon', 'authenticated']) {
+      expect((await rest(role, 'PATCH', '', { status: 'approved' })).status).toBeGreaterThanOrEqual(400);
+      expect((await rest(role, 'DELETE', '')).status).toBeGreaterThanOrEqual(400);
+    }
+    expect((await rest('service_role', 'PATCH', '', { amount: 0.01 })).status).toBeGreaterThanOrEqual(400);
+    expect((await rest('service_role', 'PATCH', '', { plan: 'Pro' })).status).toBeGreaterThanOrEqual(400);
+    expect((await rest('service_role', 'PATCH', '', { firebase_uid: 'someone-else' })).status).toBeGreaterThanOrEqual(400);
+    expect((await rest('service_role', 'DELETE', '')).status).toBeGreaterThanOrEqual(400);
+    const row = (await h.q<{ status: string; amount: string; plan: string; firebase_uid: string }>(
+      'select status, amount::text, plan, firebase_uid from public.payments where reference_number = $1', [ref]))[0];
+    expect(row).toEqual({ status: 'pending', amount: '49.99', plan: 'Premium', firebase_uid: t.who().uid });
+    // A customer's own routes cannot approve: claim refuses a pending order and leaves it pending.
+    expect((await t.claim(ref)).status).not.toBe(200);
+    expect((await h.q<{ status: string }>('select status from public.payments where reference_number = $1', [ref]))[0].status).toBe('pending');
+    expect(await t.codes(ref)).toHaveLength(0);
+  });
+
   it('claim-purchase fails closed (503, activation temporarily unavailable), never 500, and writes nothing', async () => {
     const ref = await t.order('Premium', 'approved');
     const res = await t.claim(ref);
