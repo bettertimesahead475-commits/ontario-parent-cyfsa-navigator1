@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 
 export const SITE_URL = "https://cyfsanavigator.com";
-const DEFAULT_IMAGE = `${SITE_URL}/logo.png`;
+export const SOCIAL_IMAGE = { url: `${SITE_URL}/og-image.png`, width: 1200, height: 630, alt: "CYFSA Navigator: Ontario CAS process guide for parents" };
 
 export type PageMeta = { title: string; description: string };
 
@@ -73,6 +73,103 @@ export function resolveRouteMeta(location: string): ResolvedMeta {
   return { ...PUBLIC_ROUTE_META["/"], canonicalUrl: `${SITE_URL}/`, index: false };
 }
 
+/** Served as /404.html by Cloudflare Pages for paths with no page (HTTP 404). */
+export const NOT_FOUND_META: ResolvedMeta = {
+  title: "Page Not Found | CYFSA Navigator",
+  description: "This page does not exist. Start from the CYFSA Navigator home page.",
+  canonicalUrl: "",
+  index: false,
+};
+
+/** [attribute, key, content] for every route-dependent meta tag. */
+export function metaTags(meta: ResolvedMeta): Array<["name" | "property", string, string]> {
+  const tags: Array<["name" | "property", string, string]> = [
+    ["name", "description", meta.description],
+    ["name", "robots", meta.index ? "index,follow" : "noindex,nofollow"],
+    ["property", "og:title", meta.title],
+    ["property", "og:description", meta.description],
+    ["property", "og:type", "website"],
+    ["property", "og:image", SOCIAL_IMAGE.url],
+    ["property", "og:image:width", String(SOCIAL_IMAGE.width)],
+    ["property", "og:image:height", String(SOCIAL_IMAGE.height)],
+    ["property", "og:image:alt", SOCIAL_IMAGE.alt],
+    ["name", "twitter:card", "summary_large_image"],
+    ["name", "twitter:title", meta.title],
+    ["name", "twitter:description", meta.description],
+  ];
+  if (meta.canonicalUrl) tags.push(["property", "og:url", meta.canonicalUrl]);
+  return tags;
+}
+
+const ORGANIZATION_ID = `${SITE_URL}/#organization`;
+
+/**
+ * schema.org data for indexable routes: Organization and WebSite on the home page, BreadcrumbList elsewhere.
+ * Only facts the site itself states; no ratings, reviews, credentials or legal qualifications.
+ */
+export function structuredData(meta: ResolvedMeta): object[] {
+  if (!meta.index) return [];
+  if (meta.canonicalUrl === `${SITE_URL}/`) {
+    return [
+      { "@context": "https://schema.org", "@type": "Organization", "@id": ORGANIZATION_ID, name: "CYFSA Navigator", url: `${SITE_URL}/`, logo: `${SITE_URL}/logo.png` },
+      { "@context": "https://schema.org", "@type": "WebSite", "@id": `${SITE_URL}/#website`, name: "CYFSA Navigator", url: `${SITE_URL}/`, inLanguage: "en-CA", publisher: { "@id": ORGANIZATION_ID } },
+    ];
+  }
+  return [{
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: `${SITE_URL}/` },
+      { "@type": "ListItem", position: 2, name: meta.title.replace(/ \| CYFSA Navigator$/, ""), item: meta.canonicalUrl },
+    ],
+  }];
+}
+
+/** JSON for a <script type="application/ld+json"> body; "<" is escaped so the text cannot close the element. */
+export function structuredDataJson(meta: ResolvedMeta): string {
+  return JSON.stringify(structuredData(meta)).replace(/</g, "\\u003c");
+}
+
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** The same head tags SeoMetadata writes at runtime, as HTML for build-time pre-rendering. */
+export function headHtml(meta: ResolvedMeta): string {
+  const lines = [`<title>${escapeHtml(meta.title)}</title>`];
+  for (const [attribute, key, content] of metaTags(meta)) lines.push(`<meta ${attribute}="${key}" content="${escapeHtml(content)}" />`);
+  if (meta.canonicalUrl) lines.push(`<link rel="canonical" href="${escapeHtml(meta.canonicalUrl)}" />`);
+  if (structuredData(meta).length) lines.push(`<script type="application/ld+json" id="${STRUCTURED_DATA_ID}">${structuredDataJson(meta)}</script>`);
+  return lines.join("\n    ");
+}
+
+const STRUCTURED_DATA_ID = "seo-structured-data";
+
+/** Tags in the built index.html that each route replaces (one tag per line, as written in index.html). */
+const ROUTE_HEAD_TAG_PREFIXES = [
+  "<title>",
+  '<meta name="description"',
+  '<meta name="robots"',
+  '<meta name="twitter:',
+  '<meta property="og:',
+  '<link rel="canonical"',
+  '<script type="application/ld+json"',
+];
+const isRouteHeadTag = (line: string) => {
+  const tag = line.trim();
+  return !tag.startsWith('<meta property="og:site_name"') && ROUTE_HEAD_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix));
+};
+
+/**
+ * The built index.html with this route's head tags and, for public routes, its pre-rendered body.
+ * `data-prerendered` tells main.tsx which path the markup belongs to, so it hydrates only a matching page.
+ */
+export function renderDocument(template: string, meta: ResolvedMeta, body = "", prerenderedPath = ""): string {
+  let html = template.split("\n").filter((line) => !isRouteHeadTag(line)).join("\n");
+  html = html.replace("</head>", `    ${headHtml(meta)}\n  </head>`);
+  const root = prerenderedPath ? `<div id="root" data-prerendered="${prerenderedPath}">${body}</div>` : `<div id="root"></div>`;
+  return html.replace('<div id="root"></div>', root);
+}
+
 function setMeta(attribute: "name" | "property", key: string, content: string) {
   let element = document.head.querySelector<HTMLMetaElement>(`meta[${attribute}="${key}"]`);
   if (!element) {
@@ -89,16 +186,7 @@ export default function SeoMetadata() {
   useEffect(() => {
     const meta = resolveRouteMeta(location);
     document.title = meta.title;
-    setMeta("name", "description", meta.description);
-    setMeta("name", "robots", meta.index ? "index,follow" : "noindex,nofollow");
-    setMeta("property", "og:title", meta.title);
-    setMeta("property", "og:description", meta.description);
-    setMeta("property", "og:url", meta.canonicalUrl);
-    setMeta("property", "og:type", "website");
-    setMeta("property", "og:image", DEFAULT_IMAGE);
-    setMeta("name", "twitter:card", "summary");
-    setMeta("name", "twitter:title", meta.title);
-    setMeta("name", "twitter:description", meta.description);
+    for (const [attribute, key, content] of metaTags(meta)) setMeta(attribute, key, content);
 
     let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!canonical) {
@@ -107,6 +195,20 @@ export default function SeoMetadata() {
       document.head.appendChild(canonical);
     }
     canonical.href = meta.canonicalUrl;
+
+    // A data block, not an executable script, so the CSP does not apply to it.
+    let jsonLd = document.getElementById(STRUCTURED_DATA_ID);
+    if (structuredData(meta).length) {
+      if (!jsonLd) {
+        jsonLd = document.createElement("script");
+        jsonLd.id = STRUCTURED_DATA_ID;
+        jsonLd.setAttribute("type", "application/ld+json");
+        document.head.appendChild(jsonLd);
+      }
+      jsonLd.textContent = structuredDataJson(meta);
+    } else {
+      jsonLd?.remove();
+    }
   }, [location]);
 
   return null;
