@@ -21,6 +21,7 @@ afterEach(() => cleanup());
 async function openMatter() {
   render(<FinalCaseAssessment />);
   fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+  await screen.findByRole("option", { name: MATTER.title });
   fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: MATTER.id } });
 }
 

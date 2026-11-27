@@ -26,6 +26,7 @@ describe("Final Case Assessment PDF download", () => {
     vi.spyOn(window, "open").mockReturnValue(fakeWindow as unknown as Window);
     render(<FinalCaseAssessment />);
     fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+    await screen.findByRole("option", { name: REPORT.title });
     fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: REPORT.matterId } });
     const button = await screen.findByRole("button", { name: "Download PDF" });
     const callsBefore = apiFetch.mock.calls.length;
@@ -39,6 +40,7 @@ describe("Final Case Assessment PDF download", () => {
     vi.spyOn(window, "open").mockReturnValue(null);
     render(<FinalCaseAssessment />);
     fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+    await screen.findByRole("option", { name: REPORT.title });
     fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: REPORT.matterId } });
     fireEvent.click(await screen.findByRole("button", { name: "Download PDF" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Allow pop-ups");
@@ -50,6 +52,7 @@ describe("Final Case Assessment PDF download", () => {
     vi.spyOn(window, "open").mockReturnValue(fakeWindow as unknown as Window);
     render(<FinalCaseAssessment redactionEnabled />);
     fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+    await screen.findByRole("option", { name: REPORT.title });
     fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: REPORT.matterId } });
     fireEvent.click(await screen.findByRole("button", { name: "Download redacted PDF" }));
     expect(written[0]).not.toContain("Synthetic matter");
@@ -70,6 +73,7 @@ describe("Final Case Assessment PDF download", () => {
       vi.spyOn(window, "open").mockReturnValue(fakeWindow as unknown as Window);
       render(<FinalCaseAssessment />);
       fireEvent.click(screen.getByRole("button", { name: "Final Case Assessment" }));
+      await screen.findByRole("option", { name: REPORT.title });
       fireEvent.change(await screen.findByLabelText("Assessment matter"), { target: { value: REPORT.matterId } });
       fireEvent.click(await screen.findByRole("button", { name: "Download redacted PDF" }));
       expect(written[0]).not.toContain("affidavit.txt");
