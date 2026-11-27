@@ -27,12 +27,11 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      # The PR head itself (not GitHub's merge commit), so the tests, the coverage and the SonarCloud analysis all
-      # belong to the one commit SonarCloud reports.
+      # On pull requests this is GitHub's merge commit (github.sha), so the checks cover the merged result; the tests,
+      # the coverage and the SonarCloud analysis all belong to that one commit.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -87,7 +86,7 @@ jobs:
         if: env.SONAR_TOKEN != ''
         run: |
           test -s coverage/lcov.info || { echo "::error::coverage/lcov.info is missing or empty"; exit 1; }
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}" || { echo "::error::checked-out commit differs from the analyzed commit"; exit 1; }
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}" || { echo "::error::checked-out commit differs from the analyzed commit"; exit 1; }
           echo "Coverage for $(git rev-parse HEAD): $(grep -c '^SF:' coverage/lcov.info) files" >> "$GITHUB_STEP_SUMMARY"
 
       - name: SonarCloud scan (with coverage)
@@ -97,4 +96,4 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.scm.revision=${{ github.event.pull_request.head.sha || github.sha }}
+            -Dsonar.scm.revision=${{ github.sha }}
