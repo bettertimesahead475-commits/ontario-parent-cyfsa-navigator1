@@ -18,6 +18,7 @@ npx tsc --noEmit -p .                                         # type check
 | 2026-11-25 | c82e971 (review fixes, network guard) | 4,265 passed / 0 failed / 478 skipped | tsc clean; no test reaches an external host |
 | 2026-11-25 | fc8b31c (admin) | 4,252 passed / 2 failed / 478 skipped; both failures pass in isolation with and without the change | flaky under full-suite load (T-15) |
 | 2026-11-27 | 82dfe65 (release round 2: PRs #147-#160) | 4,870 passed / 0 failed / 512 skipped | tsc clean; `npm run build` OK; CI whole-app coverage 74.4% lines; critical analyzer/credit files ≥96% (PR #160) |
+| 2026-11-27 | 82dfe65 live (deployment 0cc59589) | Signed-in extraction smoke: 3/3 passed | Owner harness, analyzer blocked ($0). PDF 3,070 / DOCX 3,071 / TXT 3,067 chars extracted, each submitted within ~1 s of upload |
 
 ## Known flaky tests (T-15)
 
