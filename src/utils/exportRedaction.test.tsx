@@ -72,10 +72,10 @@ describe("redactForExport", () => {
     expect(JSON.stringify(report)).toBe(before);
   });
 
-  it("keeps legal references but not analyzer severity text", () => {
+  it("keeps legal references and an allowlisted severity, but not free text (NAV-005)", () => {
     const out: any = redactForExport({ legalReference: "CYFSA s. 88", severity: "CRITICAL", explanation: "Name" });
     expect(out.legalReference).toBe("CYFSA s. 88");
-    expect(out.severity).not.toBe("CRITICAL");
+    expect(out.severity).toBe("CRITICAL");
     expect(out.explanation).not.toBe("Name");
   });
 });
