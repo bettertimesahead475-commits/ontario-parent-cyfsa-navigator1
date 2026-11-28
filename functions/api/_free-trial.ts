@@ -325,6 +325,11 @@ export async function ocrRequestIdFor(uid: string, documentBase64: string): Prom
   return `ocr-${await hex(`${uid}\n${documentBase64}`, 40)}`;
 }
 
+/** Provider reads one free document may use in total (first read plus retries). Bounds a free account at 2 x 3 reads. */
+export const FREE_OCR_READS_PER_DOCUMENT = 3;
+/** Counter of provider reads for one account's document, keyed by the ocrRequestIdFor id (already a hash). */
+export const freeOcrDocumentKey = (documentRequestId: string) => `fod:${documentRequestId.replace(/^ocr-/, '').slice(0, 64)}`;
+
 /**
  * OCR for an account without a paid session is allowed only while it has a free analysis left, at most
  * FREE_OCR_LIFETIME_LIMIT distinct documents per verified email, and within the platform's daily free OCR cap.
@@ -337,9 +342,16 @@ export async function authorizeFreeOcr(env: FreeTrialEnv, uid: string, email: st
   const b = await readFreeTrialBalance(env, uid, email, emailVerified, fetcher);
   if (b.quickUsed === null || b.forensicUsed === null) return 'unavailable';
   if (b.quickUsed >= b.quickLimit && b.forensicUsed >= FREE_TRIAL_LIMITS.forensic) return 'no_entitlement';
-  // Daily capacity first, so a refusal while it is full does not spend one of the account's lifetime reads.
-  const platform = await takeCapUnit(platformDailyKey('ocr', now), requestId, spendLimit(env, 'FREE_OCR_PLATFORM_DAILY_LIMIT'), rpc);
-  if (platform !== 'ok') return platform === 'limit' ? 'paused' : 'unavailable';
+  // 1. Distinct documents (idempotent per document): a new document takes a lifetime unit, a repeat does not.
+  //    A refusal here spends nothing, so refused requests cannot drain the shared daily capacity below.
   const lifetime = await takeCapUnit(await freeOcrKey(normalized), requestId, FREE_OCR_LIFETIME_LIMIT, rpc);
-  return lifetime === 'ok' ? 'ok' : lifetime === 'limit' ? 'ocr_limit' : 'unavailable';
+  if (lifetime !== 'ok') return lifetime === 'limit' ? 'ocr_limit' : 'unavailable';
+  // 2. From here every provider call counts (a fresh id per call). Without this, the document-derived id above made
+  //    every repeat of an already-read document free and uncapped (independent review finding, 2026-11-28).
+  const callId = `ocrcall-${crypto.randomUUID()}`;
+  const perDocument = await takeCapUnit(freeOcrDocumentKey(requestId), callId, FREE_OCR_READS_PER_DOCUMENT, rpc);
+  if (perDocument !== 'ok') return perDocument === 'limit' ? 'ocr_limit' : 'unavailable';
+  // 3. Platform daily capacity, counted per provider call.
+  const platform = await takeCapUnit(platformDailyKey('ocr', now), callId, spendLimit(env, 'FREE_OCR_PLATFORM_DAILY_LIMIT'), rpc);
+  return platform === 'ok' ? 'ok' : platform === 'limit' ? 'paused' : 'unavailable';
 }

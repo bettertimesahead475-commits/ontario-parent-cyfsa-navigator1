@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { authorizeFreeOcr, freeTrialKey, ocrRequestIdFor, FREE_OCR_LIFETIME_LIMIT } from '../functions/api/_free-trial';
+import { authorizeFreeOcr, freeOcrDocumentKey, freeTrialKey, ocrRequestIdFor, FREE_OCR_LIFETIME_LIMIT, FREE_OCR_READS_PER_DOCUMENT } from '../functions/api/_free-trial';
 
 // OCR for a free account must be (a) tied to one document, so retries of that document are free, (b) bounded by the
 // number of distinct documents the account's free analyses allow, and (c) unavailable once both free analyses are used.
@@ -51,12 +51,37 @@ describe('OCR is tied to a specific document, not to each call', () => {
     const fetcher = usageFetch({});
     const docs = ['DOC-ONE', 'DOC-TWO'];
     for (const doc of docs) expect(await authorizeFreeOcr(env as any, uid, email, true, rpc as any, await ocrRequestIdFor(uid, doc), fetcher as any, now)).toBe('ok');
-    // The budget (two documents) is now spent. A timeout-retry of the first document must still succeed.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // The budget (two documents) is now spent. Timeout-retries of the first document still succeed, up to
+    // FREE_OCR_READS_PER_DOCUMENT provider reads of that document in total.
+    for (let attempt = 1; attempt < FREE_OCR_READS_PER_DOCUMENT; attempt++) {
       expect(await authorizeFreeOcr(env as any, uid, email, true, rpc as any, await ocrRequestIdFor(uid, docs[0]), fetcher as any, now)).toBe('ok');
     }
     // A third, new document is refused.
     expect(await authorizeFreeOcr(env as any, uid, email, true, rpc as any, await ocrRequestIdFor(uid, 'DOC-THREE'), fetcher as any, now)).toBe('ocr_limit');
+  });
+
+  it('2026-11-28 review: repeating one document is capped, and every provider read counts against the daily cap', async () => {
+    // Previously each repeat of an already-read document returned 'ok' without counting anywhere (unbounded OCR spend).
+    const { rpc, markers } = reserveFake();
+    const fetcher = usageFetch({});
+    const id = await ocrRequestIdFor(uid, 'DOC-ONE');
+    const outcomes: string[] = [];
+    for (let i = 0; i < 10; i++) outcomes.push(await authorizeFreeOcr(env as any, uid, email, true, rpc as any, id, fetcher as any, now));
+    expect(outcomes.filter((o) => o === 'ok')).toHaveLength(FREE_OCR_READS_PER_DOCUMENT);
+    expect(outcomes.slice(FREE_OCR_READS_PER_DOCUMENT).every((o) => o === 'ocr_limit')).toBe(true);
+    expect(markers.get(freeOcrDocumentKey(id))?.size).toBe(FREE_OCR_READS_PER_DOCUMENT);
+    const daily = [...markers.entries()].find(([k]) => k.startsWith('plat:ocr:'));
+    expect(daily?.[1].size).toBe(FREE_OCR_READS_PER_DOCUMENT); // refusals spent no daily unit
+  });
+
+  it('an account can never exceed FREE_OCR_LIFETIME_LIMIT x FREE_OCR_READS_PER_DOCUMENT provider reads', async () => {
+    const { rpc } = reserveFake();
+    const fetcher = usageFetch({});
+    let ok = 0;
+    for (const doc of ['A1', 'A2', 'A3', 'A4']) for (let i = 0; i < 5; i++) {
+      if ((await authorizeFreeOcr(env as any, uid, email, true, rpc as any, await ocrRequestIdFor(uid, doc), fetcher as any, now)) === 'ok') ok++;
+    }
+    expect(ok).toBe(FREE_OCR_LIFETIME_LIMIT * FREE_OCR_READS_PER_DOCUMENT);
   });
 
   it('a modified copy of a document takes a new unit, so it cannot be used to read unlimited pages', async () => {
