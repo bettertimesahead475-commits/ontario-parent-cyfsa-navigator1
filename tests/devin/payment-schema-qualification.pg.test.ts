@@ -16,6 +16,7 @@ import { handleAdminRequest } from '../../functions/api/admin/[[path]]';
 import { Harness, findPostgrest, localJwt, type Hop } from './helpers/postgrest-harness';
 
 const url = process.env.CREDIT_PG_URL;
+const isLocal = url && ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname);
 const bin = findPostgrest();
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(path.resolve(here, p), 'utf8');
@@ -23,6 +24,8 @@ const LIVE = read('fixtures/live-nxfh-payment-schema.sql');
 const P = read('../../supabase/migrations/20261110004740_preserve_monthly_renewal.sql');
 const D_PATH = path.resolve(here, '../../supabase/migrations_pending_approval/access_codes_one_redemption_per_reference.sql');
 const G = read('../../supabase/migrations_pending_approval/payments_service_role_review_update.sql');
+const E = read('../../supabase/migrations_pending_approval/paid_sessions_early_renewal_keeps_credits.sql');
+const CREDITS = read('../../supabase/migrations_pending_approval/paid_credit_reservation_functions.sql');
 const LIVE_FINGERPRINT = 'ca9f13a85933345f0dfede3b1ab2975e';
 const DAY = 86400000;
 const PRICES: Record<string, number> = { Basic: 19.99, Premium: 49.99, Pro: 149 };
@@ -56,6 +59,7 @@ function setup(h: () => Harness) {
   const approve = (ref: string, plan = 'Premium') => admin('payments/approve', { referenceNumber: ref, amountReceived: PRICES[plan] });
   const reissue = (ref: string) => admin('payments/reissue-code', { referenceNumber: ref, reason: 'customer lost the code' });
   const refund = (ref: string) => admin('payments/refund', { referenceNumber: ref, reason: 'customer requested a refund' });
+  const restore = (sessionId: string) => admin('credits/restore', { sessionId, credits: 1, reason: 'restore a used credit' });
   const sessions = () => h().q<{ id: string; tier: string; expires_at: Date; revoked_at: Date | null }>(
     'select id, tier, expires_at, revoked_at from public.navigator_paid_sessions where firebase_uid = $1 order by issued_at', [uid]);
   const live = async () => (await sessions()).filter((s) => !s.revoked_at && s.expires_at.getTime() > Date.now());
@@ -91,10 +95,10 @@ function setup(h: () => Harness) {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
   afterEach(() => { h().hooks = []; h().storageDown = 0; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-  return { order, claim, myPayments, activate, approve, reissue, refund, sessions, live, codes, usedCodes, redeemableCodes, days, noOverlap, gate, cut, customer, who: () => ({ uid, email }) };
+  return { order, claim, myPayments, activate, approve, reissue, refund, restore, sessions, live, codes, usedCodes, redeemableCodes, days, noOverlap, gate, cut, customer, who: () => ({ uid, email }) };
 }
 
-const enabled = !!url && !!bin;
+const enabled = !!isLocal && !!bin;
 const tag = `${process.pid}_${Date.now()}`;
 
 describe.skipIf(!enabled)('pre-P: the live nxfh payment schema today (no redeemed_session_id, live redeem function)', () => {
@@ -338,4 +342,84 @@ describe.skipIf(!enabled).each(variants)('post-$name: one activation per approve
   afterEach(async () => { if (!overlapExpected) await t.noOverlap(); overlapExpected = false; });
 
   function gateFor(match: (hop: Hop) => boolean) { return t.gate(match); }
+});
+
+describe.skipIf(!enabled)('Migration E through PostgREST and the payment handlers', () => {
+  const h = new Harness(url!, `payq_e_${tag}`, bin!);
+  beforeAll(async () => {
+    await h.start([LIVE, G, P, readFileSync(D_PATH, 'utf8'), `
+      create table public.free_usage (
+        uid text primary key, email text, analyses_used integer not null default 0,
+        first_analysis_at timestamptz, last_analysis_at timestamptz
+      );
+      alter table public.free_usage enable row level security;
+      grant select, insert, update on public.free_usage to service_role;
+    `, CREDITS, E]);
+  });
+  afterAll(async () => { await h.stop(); });
+  const t = setup(() => h);
+  it('accounts for a paid renewal and its refund once with real service-role grants', async () => {
+    const a = await t.order(); const b = await t.order();
+    const first = await t.approve(a);
+    expect(first.status).toBe(200);
+    expect((await t.activate(first.body.accessCode)).status).toBe(200);
+    const renewal = await t.approve(b);
+    expect(renewal.status).toBe(200);
+    expect((await t.activate(renewal.body.accessCode)).status).toBe(200);
+    const [session] = await t.live();
+    expect(t.days(session.expires_at)).toBe(60);
+    expect(await h.q('select granted_credits from public.navigator_paid_sessions where id = $1', [session.id]))
+      .toEqual([{ granted_credits: 10 }]);
+    const result = await t.refund(b);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ sessionsShortened: 1, sessionsRevoked: 0, shorteningsForReview: 0 });
+    expect((await t.refund(b)).body.code).toBe('ALREADY_REFUNDED');
+    expect(t.days((await t.live())[0].expires_at)).toBe(30);
+    expect(await h.q('select granted_before, granted_after from public.navigator_paid_session_refunds where session_id = $1', [session.id]))
+      .toEqual([{ granted_before: 10, granted_after: 5 }]);
+    await t.noOverlap();
+  });
+
+  it('reproduces the approval/refund race: approval can issue a live code after refund has finished', async () => {
+    const ref = await t.order();
+    const gate = t.gate((hop) => hop.method === 'POST' && hop.target === 'access_codes');
+    const approving = t.approve(ref);
+    await gate.reached;
+    try {
+      const refund = await t.refund(ref);
+      expect(refund.status).toBe(200);
+      expect(refund.body).toMatchObject({ codesExpired: 0, sessionsRevoked: 0 });
+    } finally {
+      gate.release();
+    }
+    const approval = await approving;
+    expect(approval.status).toBe(200);
+    expect(await t.redeemableCodes(ref)).toBe(1);
+    expect((await t.claim(ref)).body.code).toBe('ORDER_CLOSED');
+    expect((await t.activate(approval.body.accessCode)).status).toBe(200);
+    expect(await t.live()).toHaveLength(1);
+  });
+
+  it('reproduces a manual restore racing a new reserve: a finalized analysis can be left uncharged', async () => {
+    const ref = await t.order();
+    expect((await t.activate((await t.approve(ref)).body.accessCode)).status).toBe(200);
+    const [session] = await t.live();
+    const gate = t.gate((hop) => hop.method === 'GET' && hop.target === 'free_usage' && hop.search.get('email')?.startsWith('like.') === true, 'after');
+    const restoring = t.restore(session.id);
+    await gate.reached;
+    try {
+      const [reservation] = await h.q<{ status: string }>(
+        "select public.paid_reserve_credit($1,'new-request','total',5,now(),'15 minutes','60 seconds')->>'status' as status", [session.id]);
+      expect(reservation.status).toBe('reserved');
+    } finally {
+      gate.release();
+    }
+    const result = await restoring;
+    expect(result.status).toBe(200);
+    expect(result.body.creditsRestored).toBe(1);
+    expect(await h.q("select public.paid_finalize_credit($1,'new-request',now())->>'status' as status", [session.id]))
+      .toEqual([{ status: 'consumed' }]);
+    expect(await h.q('select analyses_used from public.free_usage where uid = $1', [`paid_session_${session.id}_total`]))
+      .toEqual([{ analyses_used: 0 }]);
+  });
 });
