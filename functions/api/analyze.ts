@@ -109,6 +109,8 @@ export interface AnalyzeDependencies {
   trustedJob?: Pick<DurableJobRecord, 'owner_uid' | 'session_id' | 'reservation_id' | 'owner_bypass'> & {
     workerToken: string;
     onProgress?: (stage: string, percent: number, message: string) => Promise<void> | void;
+    /** Throws unless this Worker still holds the job lease. Called before a completed report overwrites the saved one. */
+    assertLeaseHeld?: () => Promise<void>;
   };
 }
 
@@ -635,6 +637,9 @@ export async function handleAnalyzeRequest(
   // A completed report must be recoverable before the credit is consumed.
   // Never advertise success when Supabase Storage rejects or times out on the write.
   const persistBeforeFinalization = async (report: Record<string, any>): Promise<void> => {
+    // A Worker whose lease was taken over must not replace the report the new owner saves (the job record is
+    // written with upsert). The check fails closed: a lost or unreadable lease saves nothing.
+    if (deps.trustedJob?.assertLeaseHeld) await deps.trustedJob.assertLeaseHeld();
     const saved = await saveCompletedJob(env, { jobId: requestId, uid, report }, deps.fetcher || fetch);
     if (!saved) {
       throw new AnalyzerError(

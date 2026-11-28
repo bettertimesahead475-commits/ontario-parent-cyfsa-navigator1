@@ -127,3 +127,36 @@ describe('queued Forensic progress ordering (independent review finding 2)', () 
     expect(seen.slice(firstVerify).some((s) => s.stage === 'reviewing_evidence')).toBe(false);
   });
 });
+
+describe('queued analysis persists only under a held lease (lease takeover guard)', () => {
+  const persistedCompletions = (fetcher: ReturnType<typeof vi.fn>) =>
+    fetcher.mock.calls.filter(([url, init]: any[]) => String(url).includes('/storage/') && String(init?.body ?? '').includes('"status":"completed"'));
+  const request = (id: string) => new Request('https://analyzer-queue.internal/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Analysis-Id': id },
+    body: JSON.stringify({ documentText: DOC, mode: 'full', stream: false }),
+  });
+
+  it('a Worker whose lease check fails never writes the completed report', async () => {
+    const fetcher = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as ReturnType<typeof vi.fn>;
+    const assertLeaseHeld = vi.fn(async () => { throw Object.assign(new Error('lease lost'), { retryable: true, code: 'JOB_LEASE_LOST' }); });
+    const response = await handleAnalyzeRequest(request('req_1791000000000_leaseguard1'), env, {
+      generate, fetcher: fetcher as unknown as typeof fetch, rpc: vi.fn(),
+      trustedJob: { owner_uid: 'synthetic-owner', session_id: null, reservation_id: 'res_synthetic', owner_bypass: false, workerToken: 'tok', assertLeaseHeld },
+    });
+    expect(assertLeaseHeld).toHaveBeenCalled();
+    expect(response.status).not.toBe(200);
+    expect(persistedCompletions(fetcher)).toHaveLength(0);
+  });
+
+  it('a Worker that still holds the lease persists the completed report (positive control)', async () => {
+    const fetcher = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as ReturnType<typeof vi.fn>;
+    const assertLeaseHeld = vi.fn(async () => undefined);
+    const response = await handleAnalyzeRequest(request('req_1791000000000_leaseguard2'), env, {
+      generate, fetcher: fetcher as unknown as typeof fetch, rpc: vi.fn(),
+      trustedJob: { owner_uid: 'synthetic-owner', session_id: null, reservation_id: 'res_synthetic', owner_bypass: false, workerToken: 'tok', assertLeaseHeld },
+    });
+    expect(response.status).toBe(200);
+    expect(persistedCompletions(fetcher).length).toBeGreaterThanOrEqual(1);
+  });
+});

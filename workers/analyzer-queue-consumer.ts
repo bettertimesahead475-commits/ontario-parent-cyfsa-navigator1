@@ -214,6 +214,15 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
             }
             if (!owned) throw Object.assign(new Error('The analyzer job lease is no longer held by this Worker.'), { retryable: true, code: 'JOB_LEASE_LOST' });
           },
+          // Reads the job row and requires this Worker's token and a running state. A read failure is not treated as
+          // ownership: it throws, and the analysis is retried rather than saved.
+          assertLeaseHeld: async (): Promise<void> => {
+            const current = await readDurableJob(env, jobId);
+            if (!current || current.status !== 'running' || current.worker_token !== token) {
+              console.warn('[ANALYZER_LEASE_LOST]', JSON.stringify({ stage: 'persist', deliveryAttempt: message.attempts }));
+              throw Object.assign(new Error('The analyzer job lease is no longer held by this Worker.'), { retryable: true, code: 'JOB_LEASE_LOST' });
+            }
+          },
         },
       });
     } finally {
