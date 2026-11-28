@@ -192,8 +192,12 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
     // A redelivered free job is another provider run: it spends from the entitlement's lifetime run budget, so a
     // job that keeps failing transiently stops and returns the entitlement. An unreachable ledger defers to the
     // queue's own max_retries rather than failing a run that may still complete.
-    if (!job.session_id && !job.owner_bypass && message.attempts > 1) {
-      const runs = await takeCapUnit(freeAttemptKey(job.reservation_id, job.owner_uid), `${job.job_id.slice(0, 100)}_delivery_${message.attempts}`, spendLimit(env, 'FREE_TRIAL_MAX_ATTEMPTS'), createStagingCreditRpc(env));
+    // Counted by successful claims (attempt_count, incremented once per claim by analyzer_claim_job), not by Queue
+    // deliveries: a claim failure or lease contention redelivers without a run, and a dead-letter requeue restarts
+    // message.attempts at 1 while attempt_count keeps counting (independent review finding, 2026-11-28).
+    const runNumber = typeof job.attempt_count === 'number' && job.attempt_count > 0 ? job.attempt_count : message.attempts;
+    if (!job.session_id && !job.owner_bypass && runNumber > 1) {
+      const runs = await takeCapUnit(freeAttemptKey(job.reservation_id, job.owner_uid), `${job.job_id.slice(0, 100)}_run_${runNumber}`, spendLimit(env, 'FREE_TRIAL_MAX_ATTEMPTS'), createStagingCreditRpc(env));
       if (runs === 'limit') {
         await markPermanentFailure(env, job, token, 'FREE_TRIAL_ATTEMPTS_EXHAUSTED', 'Your free analysis could not be completed after several attempts and has been returned to your account. Nothing was charged.');
         message.ack();

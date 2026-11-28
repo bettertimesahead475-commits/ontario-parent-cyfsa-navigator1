@@ -222,6 +222,27 @@ describe('durable analyzer queue consumer', () => {
     expect(msg.ack).toHaveBeenCalledOnce();
   });
 
+  it('redeliveries without a run (claim failure, lease contention) do not spend the free run budget: the guard counts claims', async () => {
+    const rpc = vi.fn(async () => ({ status: 'limit', reservation_id: null }));
+    mocks.createRpc.mockReturnValue(rpc);
+    mocks.claim.mockResolvedValue({ ...job(), attempt_count: 1 }); // first successful claim, on Queue delivery 4
+    const msg = message(undefined, 4);
+    await processJob(msg, {} as any);
+    expect(rpc).not.toHaveBeenCalledWith('free_reserve_scan', expect.objectContaining({ p_uid: 'fat:user_1' }));
+    expect(mocks.handle).toHaveBeenCalledOnce();
+  });
+
+  it('a dead-letter requeue (Queue attempts back at 1) still counts as a further run of the free entitlement', async () => {
+    const rpc = vi.fn(async (name: string) => (name === 'free_reserve_scan' ? { status: 'limit', reservation_id: null } : { status: 'consumed' }));
+    mocks.createRpc.mockReturnValue(rpc);
+    mocks.claim.mockResolvedValue({ ...job(), attempt_count: 4 });
+    const msg = message(undefined, 1);
+    await processJob(msg, {} as any);
+    expect(rpc).toHaveBeenCalledWith('free_reserve_scan', expect.objectContaining({ p_uid: 'fat:user_1', p_request: 'job_abcdefgh1234_run_4' }));
+    expect(mocks.handle).not.toHaveBeenCalled();
+    expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ status: 'failed', errorCode: 'FREE_TRIAL_ATTEMPTS_EXHAUSTED' }));
+  });
+
   it('marks exhausted jobs failed and releases their reserved credit from the dead-letter consumer', async () => {
     mocks.failDlq.mockResolvedValue({ ...job(), status: 'failed' });
     const msg = message();
