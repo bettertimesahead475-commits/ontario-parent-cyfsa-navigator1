@@ -38,6 +38,12 @@ const RETRY_BASE_SECONDS = 20;
 const RETRY_MAX_SECONDS = 900;
 const retryDelay = (attempts: number): number => Math.min(RETRY_MAX_SECONDS, RETRY_BASE_SECONDS * 2 ** Math.min(10, Math.max(0, attempts - 1)));
 
+// The claim lease is 240 s and each running write extends it to 4 minutes (analyzer_update_job). Progress is written only
+// at stage boundaries, so one long section (or a retried section) can run longer than that without any write. A timer
+// renews the lease while the analysis runs. Without it the lease expires mid-run, another delivery claims the job and a
+// second analysis starts while the first is still running (duplicate provider work).
+export const LEASE_HEARTBEAT_MS = 60_000;
+
 export async function errorResponse(response: Response): Promise<{ code: string; error: string; retryable: boolean }> {
   const fallback = {
     code: 'ANALYSIS_FAILED',
@@ -160,24 +166,59 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
       headers: { 'Content-Type': 'application/json', 'X-Analysis-Id': job.job_id, Accept: 'application/json' },
       body: JSON.stringify({ documentText: input.documentText, documentName: input.fileName, mode: job.mode, stream: false, analysisId: job.job_id }),
     });
-    const response = await handleAnalyzeRequest(request, env, {
-      trustedJob: {
-        ...job,
-        workerToken: token,
-        // A progress write is a heartbeat. A transient ledger failure must not abandon a healthy run (the
-        // completed write still requires this token); a write that matched no row means the lease is lost.
-        onProgress: async (stage, progress) => {
-          let owned: boolean;
-          try {
-            owned = await updateDurableJob(env, { jobId: job!.job_id, workerToken: token, status: 'running', stage, progress });
-          } catch (error) {
-            console.warn('[ANALYZER_PROGRESS_WRITE_FAILED]', JSON.stringify({ stage, errorClass: error instanceof Error ? error.name : 'unknown', deliveryAttempt: message.attempts }));
-            return;
-          }
-          if (!owned) throw Object.assign(new Error('The analyzer job lease is no longer held by this Worker.'), { retryable: true, code: 'JOB_LEASE_LOST' });
+    const jobId = job.job_id;
+    let lastStage = 'reviewing_evidence';
+    let lastProgress = 35;
+    let renewing = false;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    const stopHeartbeat = (): void => {
+      if (heartbeat !== null) clearInterval(heartbeat);
+      heartbeat = null;
+    };
+    // Renews the lease with the last reported stage and progress. A write that matches no row means another Worker
+    // holds the job now: stop renewing; the next progress write then fails with JOB_LEASE_LOST and stops this run.
+    const renewLease = async (): Promise<void> => {
+      if (renewing || heartbeat === null) return;
+      renewing = true;
+      try {
+        const owned = await updateDurableJob(env, { jobId, workerToken: token, status: 'running', stage: lastStage, progress: lastProgress });
+        if (!owned) {
+          stopHeartbeat();
+          console.warn('[ANALYZER_LEASE_LOST]', JSON.stringify({ stage: lastStage, deliveryAttempt: message.attempts }));
+        }
+      } catch (error) {
+        // A transient ledger failure is retried by the next tick (the lease has about three minutes of margin).
+        console.warn('[ANALYZER_HEARTBEAT_FAILED]', JSON.stringify({ stage: lastStage, errorClass: error instanceof Error ? error.name : 'unknown', deliveryAttempt: message.attempts }));
+      } finally {
+        renewing = false;
+      }
+    };
+    heartbeat = setInterval(() => { void renewLease(); }, LEASE_HEARTBEAT_MS);
+    let response: Response;
+    try {
+      response = await handleAnalyzeRequest(request, env, {
+        trustedJob: {
+          ...job,
+          workerToken: token,
+          // A progress write is a heartbeat. A transient ledger failure must not abandon a healthy run (the
+          // completed write still requires this token); a write that matched no row means the lease is lost.
+          onProgress: async (stage, progress) => {
+            lastStage = stage;
+            lastProgress = progress;
+            let owned: boolean;
+            try {
+              owned = await updateDurableJob(env, { jobId, workerToken: token, status: 'running', stage, progress });
+            } catch (error) {
+              console.warn('[ANALYZER_PROGRESS_WRITE_FAILED]', JSON.stringify({ stage, errorClass: error instanceof Error ? error.name : 'unknown', deliveryAttempt: message.attempts }));
+              return;
+            }
+            if (!owned) throw Object.assign(new Error('The analyzer job lease is no longer held by this Worker.'), { retryable: true, code: 'JOB_LEASE_LOST' });
+          },
         },
-      },
-    });
+      });
+    } finally {
+      stopHeartbeat();
+    }
     if (!response.ok) {
       const failure = await errorResponse(response);
       if (failure.retryable) {
