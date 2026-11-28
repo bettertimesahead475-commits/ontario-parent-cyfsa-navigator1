@@ -7,7 +7,7 @@
  * the fallback when the shared store cannot be reached. Subjects are SHA-256 hashed before they leave the
  * isolate; no uid, email or IP is sent to or stored in the database, and none is logged.
  */
-import { RATE_LIMITS, rateLimitRetryAfter } from './_rate-limit';
+import { RATE_LIMITS, rateLimitRetryAfter, rateLimitedResponse } from './_rate-limit';
 import { normalizeSupabaseKey } from './_supabase-key';
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;
@@ -69,8 +69,47 @@ async function sharedRetryAfter(env: PersistentRateLimitEnv, bucket: RateLimitBu
   return Number.isFinite(retry) && retry >= 1 ? Math.ceil(retry) : 1;
 }
 
+export type PersistentRateLimitDecision =
+  | { allowed: true }
+  | { allowed: false; reason: 'rate_limited' | 'store_unavailable'; retryAfterSeconds: number };
+
 /**
- * Same contract as rateLimitRetryAfter: 0 when allowed (the hit is recorded), otherwise seconds until a slot opens.
+ * Allowed (the hit is recorded), refused because the subject used up its limit, or refused because a fail-closed
+ * bucket could not reach the shared store. The last two need different responses: see persistentRateLimitResponse.
+ */
+export async function persistentRateLimitDecision(
+  env: PersistentRateLimitEnv,
+  bucket: RateLimitBucket,
+  subject: string,
+  options: { fetcher?: typeof fetch; now?: number } = {},
+): Promise<PersistentRateLimitDecision> {
+  const local = rateLimitRetryAfter(bucket, subject, RATE_LIMITS[bucket], options.now);
+  if (local) return { allowed: false, reason: 'rate_limited', retryAfterSeconds: local };
+  if (env.PERSISTENT_RATE_LIMITS !== 'true') return { allowed: true };
+  try {
+    const retry = await sharedRetryAfter(env, bucket, subject, options.fetcher ?? fetch);
+    return retry ? { allowed: false, reason: 'rate_limited', retryAfterSeconds: retry } : { allowed: true };
+  } catch (err: any) {
+    const mode = RATE_LIMIT_STORE_FAILURE_MODE[bucket];
+    console.warn(JSON.stringify({ tag: '[RATE_LIMIT_STORE_UNAVAILABLE]', bucket, mode, errorName: err?.name || 'Error' }));
+    return mode === 'closed'
+      ? { allowed: false, reason: 'store_unavailable', retryAfterSeconds: RATE_LIMIT_FAIL_CLOSED_RETRY_SECONDS }
+      : { allowed: true };
+  }
+}
+
+/** 429 RATE_LIMITED when the limit is used up; 503 RATE_LIMIT_STORE_UNAVAILABLE when the store could not be reached. */
+export function persistentRateLimitResponse(decision: Exclude<PersistentRateLimitDecision, { allowed: true }>): Response {
+  if (decision.reason === 'rate_limited') return rateLimitedResponse(decision.retryAfterSeconds);
+  return Response.json(
+    { error: 'This service is temporarily unavailable. Please try again shortly. Nothing was charged.', code: 'RATE_LIMIT_STORE_UNAVAILABLE', retryable: true },
+    { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': String(decision.retryAfterSeconds) } },
+  );
+}
+
+/**
+ * Same contract as rateLimitRetryAfter: 0 when allowed (the hit is recorded), otherwise seconds until a retry.
+ * Does not say why a request was refused; routes should use persistentRateLimitDecision + persistentRateLimitResponse.
  */
 export async function persistentRateLimitRetryAfter(
   env: PersistentRateLimitEnv,
@@ -78,14 +117,6 @@ export async function persistentRateLimitRetryAfter(
   subject: string,
   options: { fetcher?: typeof fetch; now?: number } = {},
 ): Promise<number> {
-  const local = rateLimitRetryAfter(bucket, subject, RATE_LIMITS[bucket], options.now);
-  if (local) return local;
-  if (env.PERSISTENT_RATE_LIMITS !== 'true') return 0;
-  try {
-    return await sharedRetryAfter(env, bucket, subject, options.fetcher ?? fetch);
-  } catch (err: any) {
-    const mode = RATE_LIMIT_STORE_FAILURE_MODE[bucket];
-    console.warn(JSON.stringify({ tag: '[RATE_LIMIT_STORE_UNAVAILABLE]', bucket, mode, errorName: err?.name || 'Error' }));
-    return mode === 'closed' ? RATE_LIMIT_FAIL_CLOSED_RETRY_SECONDS : 0;
-  }
+  const decision = await persistentRateLimitDecision(env, bucket, subject, options);
+  return 'retryAfterSeconds' in decision ? decision.retryAfterSeconds : 0;
 }

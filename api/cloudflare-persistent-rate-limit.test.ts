@@ -5,6 +5,8 @@ import { RATE_LIMITS, resetRateLimitsForTests } from '../functions/api/_rate-lim
 import {
   RATE_LIMIT_FAIL_CLOSED_RETRY_SECONDS,
   RATE_LIMIT_STORE_FAILURE_MODE,
+  persistentRateLimitDecision,
+  persistentRateLimitResponse,
   persistentRateLimitRetryAfter,
 } from '../functions/api/_persistent-rate-limit';
 
@@ -122,5 +124,36 @@ describe('persistent rate limiting (T-05, pending approval)', () => {
   it('treats a refusal without a usable retry value as 1 second', async () => {
     const fetcher = vi.fn(async () => Response.json([{ allowed: false, retry_after_seconds: null }])) as any;
     expect(await persistentRateLimitRetryAfter(ENV, 'analyze', 'uid:u', { fetcher })).toBe(1);
+  });
+  it('separates limit exhaustion (429 RATE_LIMITED) from an unreachable store (503 RATE_LIMIT_STORE_UNAVAILABLE)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const down = vi.fn(async () => { throw new TypeError('fetch failed'); }) as any;
+    const unavailable = await persistentRateLimitDecision(ENV, 'activateCode', 'uid:u', { fetcher: down });
+    expect(unavailable).toEqual({ allowed: false, reason: 'store_unavailable', retryAfterSeconds: RATE_LIMIT_FAIL_CLOSED_RETRY_SECONDS });
+    const r503 = persistentRateLimitResponse(unavailable as any);
+    expect(r503.status).toBe(503);
+    expect(r503.headers.get('Retry-After')).toBe(String(RATE_LIMIT_FAIL_CLOSED_RETRY_SECONDS));
+    expect(await r503.json()).toMatchObject({ code: 'RATE_LIMIT_STORE_UNAVAILABLE', retryable: true });
+
+    resetRateLimitsForTests();
+    const limited = await persistentRateLimitDecision(ENV, 'activateCode', 'uid:u', { fetcher: vi.fn(async () => Response.json([{ allowed: false, retry_after_seconds: 42 }])) as any });
+    expect(limited).toEqual({ allowed: false, reason: 'rate_limited', retryAfterSeconds: 42 });
+    const r429 = persistentRateLimitResponse(limited as any);
+    expect(r429.status).toBe(429);
+    expect(r429.headers.get('Retry-After')).toBe('42');
+    expect(await r429.json()).toMatchObject({ code: 'RATE_LIMITED' });
+
+    resetRateLimitsForTests();
+    const { limit } = RATE_LIMITS.activateCode;
+    for (let i = 0; i < limit; i++) await persistentRateLimitDecision(ENV, 'activateCode', 'uid:v', { fetcher: down, now: 1_000 });
+    // Once the per-isolate limit is used up, the refusal is a real limit even while the store is down.
+    expect(await persistentRateLimitDecision(ENV, 'activateCode', 'uid:v', { fetcher: down, now: 1_000 })).toMatchObject({ allowed: false, reason: 'rate_limited' });
+    expect(await persistentRateLimitDecision({ ...ENV, PERSISTENT_RATE_LIMITS: undefined }, 'analyze', 'uid:w', { fetcher: down })).toEqual({ allowed: true });
+  });
+
+  it('an open bucket reports allowed, not unavailable, while the store is down', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const down = vi.fn(async () => new Response('down', { status: 503 })) as any;
+    expect(await persistentRateLimitDecision(ENV, 'analyze', 'uid:u', { fetcher: down })).toEqual({ allowed: true });
   });
 });
