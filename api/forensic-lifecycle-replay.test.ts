@@ -29,10 +29,13 @@ const vary = (ms: number) => ms * (1 + H.jitter * (2 * rand() - 1));
 vi.mock('../functions/api/_durable-analysis-jobs', async (orig) => {
   const actual: any = await orig();
   const io = async <T>(v: T) => { await sleep(vary(H.rpcMs)); return v; };
+  // A ledger row that this Worker holds: the lease token from the claim. The Worker re-reads it before saving the report.
+  const row = { job_id: 'job_lifecycle01', owner_uid: 'synthetic-owner', mode: 'full', input_key: 'inputs/x.json', session_id: null, reservation_id: 'res_1', owner_bypass: false, attempt_count: 1 };
+  let heldToken = '';
   return {
     ...actual,
-    claimDurableJob: vi.fn(() => io({ job_id: 'job_lifecycle01', owner_uid: 'synthetic-owner', mode: 'full', status: 'running', input_key: 'inputs/x.json', session_id: null, reservation_id: 'res_1', owner_bypass: false, attempt_count: 1 })),
-    readDurableJob: vi.fn(() => io(null)),
+    claimDurableJob: vi.fn((_env: unknown, _id: string, token: string) => { heldToken = token; return io({ ...row, status: 'running', worker_token: token }); }),
+    readDurableJob: vi.fn(() => io({ ...row, status: 'running', worker_token: heldToken })),
     loadDurableInput: vi.fn(() => io({ documentText: DOC, fileName: 'synthetic.txt' })),
     loadPersistedReport: vi.fn(() => io(H.saved)),
     updateDurableJob: vi.fn(async (_env: unknown, input: any) => { await sleep(vary(H.rpcMs)); H.writes.push({ t: Date.now(), status: input.status, stage: input.stage }); return true; }),
@@ -147,7 +150,9 @@ describe('Forensic full-lifecycle replay (queue Worker -> handler -> sections ->
     expect(r.aiStart).toBe(2_600); // startup 1 s, claim, persisted-report check, input load, job-state write, first progress write
     expect(r.first('overview').start).toBe(95_350);
     expect(r.first('overview').timeoutMs).toBe(81_400);
-    expect(r.endedAt).toBe(133_900);
+    // 134,150 ms, not 133,900: the lease check before the report save is one extra ledger read (TYPICAL rpcMs 250),
+    // the cost of refusing a save by a Worker that lost its lease (queue-lease-safety, analyzer persist guard).
+    expect(r.endedAt).toBe(134_150);
     const slow = await lifecycle(PRODUCTION_MS, SLOW);
     completesVerified(slow);
     expect(slow.first('overview').timeoutMs).toBe(74_500);
