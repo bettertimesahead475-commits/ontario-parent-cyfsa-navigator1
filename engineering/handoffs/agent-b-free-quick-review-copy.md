@@ -1,5 +1,10 @@
 # Agent B handoff: free Quick Review wording (owner decision 2026-11-27)
 
+> **SUPERSEDED (2026-11-27, owner final policy).** The "three free Quick Reviews" direction below is no longer in force.
+> The adopted policy is one lifetime free Quick Review and one lifetime free Forensic Deep Scan per verified account,
+> with OCR only in support of an authorised analysis. The wording must match `FREE_TRIAL_LIMITS` in
+> `functions/api/_free-trial.ts`. Do not implement from the table below.
+
 Owner direction: "Retain three free Quick Reviews per eligible account and reconcile all public wording with actual server enforcement."
 
 Server enforcement (unchanged): `FREE_SCAN_LIMIT = 3` in `functions/api/_free-credit-reservation.ts`, reserved per signed-in account by `functions/api/analyze.ts`. Forensic is paid-only. Cloudflare Pages has no `/api/extract-evidence` function, so there is no free evidence extraction.

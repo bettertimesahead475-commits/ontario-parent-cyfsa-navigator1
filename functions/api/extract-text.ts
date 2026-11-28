@@ -16,7 +16,7 @@ import { GEMINI_ERROR_RESPONSE, GeminiError, type GeminiEnv } from './_gemini';
 import { readVerifiedPaidSession } from './_supabase-paid-session';
 import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { extractSessionId } from './analyze';
-import { FREE_TRIAL_MAX_BYTES, FREE_TRIAL_MAX_PAGES, PAID_USAGE_REFUSAL, authorizeFreeOcr, takePaidUsageUnit, type FreeOcrOutcome, type FreeTrialEnv } from './_free-trial';
+import { FREE_TRIAL_MAX_BYTES, FREE_TRIAL_MAX_PAGES, PAID_USAGE_REFUSAL, authorizeFreeOcr, ocrRequestIdFor, takePaidUsageUnit, type FreeOcrOutcome, type FreeTrialEnv } from './_free-trial';
 import type { CreditRpc } from './_paid-credit-reservation';
 
 export interface ExtractEnv extends GeminiEnv, FreeTrialEnv {
@@ -60,6 +60,8 @@ export async function handleExtractRequest(
   const fetcher = deps.fetcher ?? fetch;
   const isOwner = identity.emailVerified && identity.email?.trim().toLowerCase() === 'mr.pelkie@gmail.com';
   let paid = isOwner;
+  // Idempotency key of this document for a free account's OCR budget; set once the body is read, before extraction.
+  let freeOcrRequestId: string | null = null;
   const sessionId = extractSessionId(request.headers.get('x-ps-session'));
   if (!paid && sessionId) {
     const read = await readVerifiedPaidSession(env, identity.uid, sessionId, fetcher);
@@ -83,7 +85,8 @@ export async function handleExtractRequest(
     authorizeOcr: async () => {
       if (!env.GEMINI_API_KEY) return; // OCR then fails as unconfigured, without spending a free OCR unit
       const rpc = deps.rpc ?? createStagingCreditRpc(env, fetcher);
-      const outcome = await authorizeFreeOcr(env, identity.uid, identity.email ?? null, identity.emailVerified, rpc, fetcher);
+      if (!freeOcrRequestId) throw new ExtractionError(400, 'INVALID_REQUEST', 'fileData.base64 is required.', false);
+      const outcome = await authorizeFreeOcr(env, identity.uid, identity.email ?? null, identity.emailVerified, rpc, freeOcrRequestId, fetcher);
       if (outcome !== 'ok') {
         const [status, code, message] = FREE_OCR_REFUSAL[outcome];
         throw new ExtractionError(status, code, message, outcome === 'unavailable' ? undefined : false);
@@ -109,6 +112,7 @@ export async function handleExtractRequest(
   if (fileData.base64.length > MAX_BASE64_CHARS) {
     return Response.json({ error: 'File is too large. The limit is 20 MB.', code: 'FILE_TOO_LARGE' }, { status: 413, headers: DEFAULT_HEADERS });
   }
+  if (!isOwner && !paid) freeOcrRequestId = await ocrRequestIdFor(identity.uid, fileData.base64);
 
   const started = Date.now();
   try {
