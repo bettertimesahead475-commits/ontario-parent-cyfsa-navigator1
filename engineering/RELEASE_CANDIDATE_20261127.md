@@ -17,7 +17,7 @@ Never run `free_scan_reservation_functions.down.sql` on the operational database
 | #171 (+ #179, #183) | e-Transfer: advertised price recorded; customer order status; post-approval self-activation; idempotent interrupted-activation recovery (one deterministic code per order); 8-package price check | Devin Review clean after fixes; disposable-PG recovery tests; **Claude: pending** |
 | #175 | Migration D files (one redemption per payment reference) — **files only, not applied** | disposable-PG tests; **Claude: pending** |
 | #182 | Transactional email (Gmail API, outbox, dedupe, retry, encrypted codes), **off by default**; admin access-code message fix (live bug) | Devin Review clean; outbox migration F tested on disposable PG; **Claude: pending** |
-| #178 | Public wording: 3 free Quick Reviews per signed-in account (matches `FREE_SCAN_LIMIT`) | CI green; **Claude: pending** |
+| #178 | ~~Public wording: 3 free Quick Reviews~~ **SUPERSEDED 2026-11-27**: one lifetime free Quick Review and one lifetime free Forensic Deep Scan per verified account (`FREE_TRIAL_LIMITS`, PR #194). Wording must not say "3 free". | CI green on the superseded wording; **Claude: pending re-check after PR #194** |
 | #176 | Pre-rendered public pages, JSON-LD, 1200×630 social image, sitemap `<lastmod>`, HTTP 404 for unknown paths | verified locally with `wrangler pages dev` (below); **Claude: pending** |
 | #177 | Search Console steps and five article drafts (drafts are not linked or published) | docs only |
 | register | `engineering/MIGRATION_RELEASE_REGISTER.md` (P, A–F) | read-only live checks by the T-05 session |
@@ -30,7 +30,7 @@ Not yet included: #181 (Migration E, early pack renewal keeps unused credits) un
   Root cause: the tests picked the matter before the matter list loaded. Fixed in tests only (#186, `bdbcc06`); full suite 5,213 passed, 0 failed.
 - `npm run build` + `wrangler pages dev dist`: `/`, `/five-day-rule`, `/pricing` → 200 with own title, `index,follow`,
   JSON-LD; `/no-such-page` → **404** noindex; `/admin` → 200 noindex shell; sitemap has 17 URLs with `<lastmod>`;
-  `og-image.png` is 1200×630; `/api/access-pricing` reports "3 Free Quick Document Reviews" and Premium "5 analyses included".
+  `og-image.png` is 1200×630; `/api/access-pricing` reported "3 Free Quick Document Reviews" on this branch. **Superseded 2026-11-27:** the free offer is one lifetime Quick Review and one lifetime Forensic Deep Scan (see PR #194). Re-verify `/api/access-pricing` after #194 lands.
 
 ## Owner-approval checklist (one decision per line)
 

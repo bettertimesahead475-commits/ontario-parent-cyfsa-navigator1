@@ -32,8 +32,11 @@ export const FREE_TRIAL_MAX_BYTES = 10 * 1024 * 1024;
 export const FREE_TRIAL_MAX_PAGES = 30;
 /** Text accepted by a free analysis: 30 pages at ~3,500 characters a page; Quick keeps its 75,000 ceiling. */
 export const FREE_TRIAL_MAX_CHARS: Record<FreeTrialKind, number> = { quick: 75_000, forensic: 105_000 };
-/** OCR extraction requests per account without a paid session, lifetime (two trials plus one re-read). */
-export const FREE_OCR_LIFETIME_LIMIT = 2;
+/**
+ * OCR reads per account without a paid session, lifetime: one read for each free analysis, and none beyond them.
+ * OCR is only in support of an authorised analysis (owner decision 2026-11-27), so there is no standalone allowance.
+ */
+export const FREE_OCR_LIFETIME_LIMIT = FREE_TRIAL_LIMITS.quick + FREE_TRIAL_LIMITS.forensic;
 /**
  * Provider runs one free entitlement may start in its lifetime. A failed run returns the entitlement, so without this
  * a document that always fails could be retried at our expense forever. A request still running is joined and spends nothing.
