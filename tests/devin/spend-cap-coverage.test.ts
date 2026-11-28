@@ -115,7 +115,7 @@ const geminiRetry = has(gemini, 'opts.maxAttempts ?? 2', 'Math.min(3,');
 const ocrExecution = a(geminiRetry && has(ocr, 'OCR_PAGE_TIMEOUT_MS = 60_000', 'EXTRACTION_TIMEOUT_MS = 120_000', 'await ocr('));
 const ocrOutput = a(has(ocr, 'maxOutputTokens: 8192'));
 row('ocr-free', ocrAuth, trial
-  ? a(has(extraction, 'await authorizeFreeOcr(') && has(freeTrial, 'FREE_OCR_LIFETIME_LIMIT = 2', 'await readFreeTrialBalance(', 'await takeCapUnit(await freeOcrKey('))
+  ? a(has(extraction, 'await authorizeFreeOcr(') && has(freeTrial, 'FREE_OCR_LIFETIME_LIMIT = FREE_TRIAL_LIMITS.quick + FREE_TRIAL_LIMITS.forensic', 'await readFreeTrialBalance(', 'await takeCapUnit(await freeOcrKey('))
   : u(lacks(extraction + ocr, credit)),
 ocrLocal, ocrShared, trial ? a(has(freeTrial, "takeCapUnit(platformDailyKey('ocr', now)", 'FREE_OCR_PLATFORM_DAILY_LIMIT: 30') && has(ocr, 'await authorizeOcr()'))
   : u(lacks(extraction + ocr, extraCap)),
