@@ -226,6 +226,10 @@ async function restAll<T>(env: AdminEnv, path: string, fetcher: typeof fetch, ma
 }
 
 /** Latest settlement state of one payment, from the audit trail. */
+/** Returned by a settlement read that failed. Distinct from `undefined` (no refund record) so a read failure never looks like "not refunded". */
+const SETTLEMENT_UNREADABLE = 'unreadable' as const;
+type SettlementRead = string | undefined | typeof SETTLEMENT_UNREADABLE;
+
 async function settlementOf(env: AdminEnv, reference: string, fetcher: typeof fetch): Promise<string | undefined> {
   // Guards refunds, reissues and settlement changes: an incomplete history refuses the action (503), never "not refunded".
   return settlementByReference(await listAllAuditNames(env, SETTLEMENT_READ_LIMIT, fetcher)).get(safeSegment(reference))?.status;
@@ -511,10 +515,10 @@ async function approvePayment(env: AdminEnv, admin: AdminIdentity, body: Record<
   }
   // A refund recorded while this code was being issued retired the unused codes before it existed. The refund writes
   // its record first, so checking after the insert closes the race; unreadable history fails closed (Reissue recovers it).
-  const settled = await settlementOf(env, reference, fetcher).catch(() => null);
-  if (settled === 'refunded' || settled === null) {
+  const settled: SettlementRead = await settlementOf(env, reference, fetcher).catch(() => SETTLEMENT_UNREADABLE);
+  if (settled === 'refunded' || settled === SETTLEMENT_UNREADABLE) {
     await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
-    await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeCancelled: settled ?? 'refund-history-unreadable' }, fetcher);
+    await audit(env, admin, 'approve', reference, null, { plan: payment.plan, amountExpected: expected, amountReceived: received, codeCancelled: settled === 'refunded' ? 'refunded' : 'refund-history-unreadable' }, fetcher);
     return settled === 'refunded'
       ? adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded while it was being approved. The code was cancelled.')
       : adminError('ADMIN_AUDIT_UNAVAILABLE', 503, 'The refund history could not be read, so the code was cancelled. Use "Reissue code" once it is readable.');
@@ -567,8 +571,8 @@ async function reissueCode(env: AdminEnv, admin: AdminIdentity, body: Record<str
   const issued = await issueCode(env, payment, email, amountOf(payment.amount), fetcher, now);
   // A refund recorded while this code was being issued may have retired the unused codes before it was inserted. The
   // refund writes its record first, so checking after the insert closes the race; unreadable history fails closed.
-  const settled = await settlementOf(env, reference, fetcher).catch(() => null);
-  if (settled === 'refunded' || settled === null) {
+  const settled: SettlementRead = await settlementOf(env, reference, fetcher).catch(() => SETTLEMENT_UNREADABLE);
+  if (settled === 'refunded' || settled === SETTLEMENT_UNREADABLE) {
     await rest(env, `access_codes?reference_number=eq.${enc(reference)}&used_at=is.null&code_hash=eq.${await sha256Hex(issued.code)}`, { method: 'PATCH', body: { expires_at: new Date().toISOString() }, prefer: 'return=minimal' }, fetcher);
     return settled === 'refunded'
       ? adminError('PAYMENT_REFUNDED', 409, 'This payment was refunded while the code was being issued. The new code was cancelled.')

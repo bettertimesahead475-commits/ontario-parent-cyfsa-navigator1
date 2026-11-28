@@ -799,3 +799,87 @@ describe('shared references detected across the whole payments table (re-review 
     expect(c.body.reporting.warnings.join(' ')).toMatch(/also used by another payment/);
   });
 });
+
+/**
+ * Post-insert settlement guard (approve and reissue). The guard runs after the access code is inserted, so each state
+ * is planted right after that insert: the refund or read failure lands in the window the guard exists to close.
+ * States: no refund record (proceed), refund record (cancel, 409), unreadable history (cancel, 503). The unreadable
+ * state must never be confused with "no record".
+ */
+describe('settlement sentinel: post-insert guard (PR #191 correction)', () => {
+  // A code is retired when its expiry was moved to "now" by the guard; an issued code expires weeks later.
+  const retired = (code: any) => Boolean(code.expires_at) && Date.parse(code.expires_at) <= Date.now() + 1000;
+  const afterCodeInsert = (db: ReturnType<typeof fakeSupabase>, onInsert: () => void) => {
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) => {
+      const response = await original(input, init);
+      if (init.method === 'POST' && String(input).endsWith('/rest/v1/access_codes') && response.ok) onInsert();
+      return response;
+    });
+  };
+  const refundRecord = (reference: string) =>
+    auditObjectName({ at: new Date().toISOString(), action: 'refund', target: reference }, 'rfnd0001');
+
+  it('no refund record after the insert: the approval proceeds and the code is delivered', async () => {
+    const db = fakeSupabase(seed());
+    afterCodeInsert(db, () => {});
+    const r = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
+    expect(r.status).toBe(200);
+    expect(r.body.accessCode).toMatch(/^[A-HJKMNP-Z2-9]{4}-/);
+    expect(retired(db.tables.access_codes.at(-1))).toBe(false);
+  });
+
+  it('refund recorded after the insert: the code is cancelled and the approval is refused with 409', async () => {
+    const db = fakeSupabase(seed());
+    afterCodeInsert(db, () => db.storage.set('admin-audit/' + refundRecord('PS-AAAAA'), '{}'));
+    const r = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe('PAYMENT_REFUNDED');
+    expect(r.body.accessCode).toBeUndefined();
+    expect(retired(db.tables.access_codes.at(-1))).toBe(true);
+  });
+
+  it('refund record for another reference after the insert: the approval proceeds', async () => {
+    const db = fakeSupabase(seed());
+    afterCodeInsert(db, () => db.storage.set('admin-audit/' + refundRecord('PS-BBBBB'), '{}'));
+    const r = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
+    expect(r.status).toBe(200);
+    expect(retired(db.tables.access_codes.at(-1))).toBe(false);
+  });
+
+  it('history unreadable after the insert: the code is cancelled and the approval fails closed with 503', async () => {
+    const db = fakeSupabase(seed());
+    let listFails = false;
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      listFails && String(input).includes('/storage/v1/object/list/') ? new Response('{}', { status: 503 }) : original(input, init));
+    afterCodeInsert(db, () => { listFails = true; });
+    const r = await call(db, 'payments/approve', { method: 'POST', body: { referenceNumber: 'PS-AAAAA', amountReceived: 129 } });
+    expect(r.status).toBe(503);
+    expect(r.body.code).toBe('ADMIN_AUDIT_UNAVAILABLE');
+    expect(r.body.accessCode).toBeUndefined();
+    expect(retired(db.tables.access_codes.at(-1))).toBe(true);
+  });
+
+  it('reissue: a refund recorded after the new code is inserted cancels that code', async () => {
+    const db = fakeSupabase(seed());
+    afterCodeInsert(db, () => db.storage.set('admin-audit/' + refundRecord('PS-BBBBB'), '{}'));
+    const r = await call(db, 'payments/reissue-code', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer lost code' } });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe('PAYMENT_REFUNDED');
+    expect(retired(db.tables.access_codes.at(-1))).toBe(true);
+  });
+
+  it('reissue: unreadable history after the new code is inserted cancels it and fails closed', async () => {
+    const db = fakeSupabase(seed());
+    let listFails = false;
+    const original = db.fetcher.getMockImplementation()!;
+    db.fetcher.mockImplementation(async (input: any, init: any = {}) =>
+      listFails && String(input).includes('/storage/v1/object/list/') ? new Response('{}', { status: 503 }) : original(input, init));
+    afterCodeInsert(db, () => { listFails = true; });
+    const r = await call(db, 'payments/reissue-code', { method: 'POST', body: { referenceNumber: 'PS-BBBBB', reason: 'Customer lost code' } });
+    expect(r.status).toBe(503);
+    expect(r.body.code).toBe('ADMIN_AUDIT_UNAVAILABLE');
+    expect(retired(db.tables.access_codes.at(-1))).toBe(true);
+  });
+});
