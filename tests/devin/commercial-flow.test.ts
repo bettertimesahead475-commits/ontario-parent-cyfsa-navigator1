@@ -169,10 +169,10 @@ describe.each(Object.keys(TIER_PRICES))('%s commercial flow', (tier) => {
   let flow: Awaited<ReturnType<typeof checkout>>;
   beforeEach(async () => { flow = await checkout(tier); });
 
-  it.fails('records the advertised price and approves a payment for that amount', async () => {
+  it('records the advertised price and approves a payment for that amount', async () => {
     const { referenceNumber, advertised, amountDue, codes } = flow;
     const response = await approve(referenceNumber, advertised);
-    // COM-1
+    // COM-1: was a known defect (it.fails) on engineering/integration; fixed by the e-Transfer payments train (#171).
     expect({ amountDue, status: response.status, codesIssued: codes.length }).toEqual({
       amountDue: advertised, status: 200, codesIssued: 1,
     });

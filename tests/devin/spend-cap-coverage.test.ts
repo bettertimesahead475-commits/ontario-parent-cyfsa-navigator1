@@ -99,7 +99,8 @@ row('deep-paid', a(deepDispatch && quickAuth[1]), paidCredit, analyzeLocal, anal
 row('owner-analyze', quickAuth, u(before(analysis, 'else if (isOwner)', 'else if (sessionId)')), analyzeLocal, analyzeShared,
   u(before(analysis, 'else if (isOwner)', 'else if (sessionId)')), paidDeepInput, analyzerExecution, analyzerOutput);
 
-row('assessment', a(has(assessment, 'deps.authenticate || verifyFirebaseRequest', 'await readVerifiedPaidSession', "session.tier !== 'Pro'", 'await requireOwnedMatter()')),
+// Matter ownership is checked inline (parallel reads, PR #208) and re-verified before the credit is consumed.
+row('assessment', a(has(assessment, 'deps.authenticate || verifyFirebaseRequest', 'await readVerifiedPaidSession', "session.tier !== 'Pro'", "role: 'eq.OWNER'", 'await reverifyOwnedMatter()')),
   a(before(assessment, "reserveVerifiedPaidCredit(paid.session, 'forensic'", 'const result = await generate(') && has(assessment, 'await releasePaidReservation(', 'await finalizePaidReservation(')),
   u(lacks(assessment, localLimit)), u(lacks(assessment, sharedLimit)), u(lacks(assessment, extraCap)),
   a(has(assessment, 'size > ASSESSMENT_REQUEST_MAX_BYTES', 'docs.length > ASSESSMENT_MAX_SOURCES', 'sourceText.length > ASSESSMENT_SOURCE_SET_MAX_CHARS')
@@ -114,15 +115,16 @@ const geminiRetry = has(gemini, 'opts.maxAttempts ?? 2', 'Math.min(3,');
 const ocrExecution = a(geminiRetry && has(ocr, 'OCR_PAGE_TIMEOUT_MS = 60_000', 'EXTRACTION_TIMEOUT_MS = 120_000', 'await ocr('));
 const ocrOutput = a(has(ocr, 'maxOutputTokens: 8192'));
 row('ocr-free', ocrAuth, trial
-  ? a(has(extraction, 'await authorizeFreeOcr(') && has(freeTrial, 'FREE_OCR_LIFETIME_LIMIT = 3', 'await readFreeTrialBalance(', 'await takeCapUnit(await freeOcrKey('))
+  ? a(has(extraction, 'await authorizeFreeOcr(') && has(freeTrial, 'FREE_OCR_LIFETIME_LIMIT = 2', 'await readFreeTrialBalance(', 'await takeCapUnit(await freeOcrKey('))
   : u(lacks(extraction + ocr, credit)),
 ocrLocal, ocrShared, trial ? a(has(freeTrial, "takeCapUnit(platformDailyKey('ocr', now)", 'FREE_OCR_PLATFORM_DAILY_LIMIT: 30') && has(ocr, 'await authorizeOcr()'))
   : u(lacks(extraction + ocr, extraCap)),
 trial ? a(ocrInput[1] && has(extraction, 'maxBytes: FREE_TRIAL_MAX_BYTES', 'maxPages: FREE_TRIAL_MAX_PAGES') && has(freeTrial, 'FREE_TRIAL_MAX_BYTES = 10 * 1024 * 1024', 'FREE_TRIAL_MAX_PAGES = 30')) : ocrInput,
 ocrExecution, ocrOutput);
 row('ocr-paid-owner', a(ocrAuth[1] && (trial ? has(extraction, "paid = read.status === 'verified'", 'identity.emailVerified') : lacks(extraction, /readVerifiedPaidSession\(/))),
-  u(trial ? has(extraction, 'const extractionDeps = paid ? {}') : lacks(extraction + ocr, credit)),
-  ocrLocal, ocrShared, u(trial ? has(extraction, 'const extractionDeps = paid ? {}') : lacks(extraction + ocr, extraCap)),
+  // The owner's OCR is unmetered; paid accounts are now metered per use (takePaidUsageUnit).
+  u(trial ? has(extraction, 'const extractionDeps = isOwner ? {} : paid ?') : lacks(extraction + ocr, credit)),
+  ocrLocal, ocrShared, u(trial ? has(extraction, 'const extractionDeps = isOwner ? {} : paid ?') : lacks(extraction + ocr, extraCap)),
   ocrInput, ocrExecution, ocrOutput);
 
 row('audio', a(has(pages('transcribe-audio'), 'export const onRequestPost = transcribePost') && before(audio, 'await verifyFirebaseRequest', 'await generateGemini')
@@ -138,7 +140,9 @@ a(has(worker, 'loadPersistedReport(', 'await finalizePaidReservation(', 'await r
   trial ? 'await finalizeFreeReservation(' : 'await finalizeFreeScan(', trial ? 'await releaseFreeReservation(' : 'await releaseFreeScan(')
   && has(analysis, 'reservationId = deps.trustedJob.reservation_id')),
 u(lacks(worker, localLimit) && has(analysis, 'if (!deps.trustedJob) {')), u(lacks(worker + relay, sharedLimit)),
-u(lacks(worker + relay, extraCap) && before(analysis, 'if (deps.trustedJob) {', 'else if (sessionId)')), paidDeepInput,
+// Free-trial: a redelivered free job spends from the entitlement's lifetime run budget (takeCapUnit in the worker).
+trial ? a(has(worker, 'takeCapUnit(freeAttemptKey(') && before(analysis, 'if (deps.trustedJob) {', 'else if (sessionId)'))
+  : u(lacks(worker + relay, extraCap) && before(analysis, 'if (deps.trustedJob) {', 'else if (sessionId)')), paidDeepInput,
 a(analyzerExecution[1] && has(worker, 'attempt_count < 6', 'retryDelay(message.attempts)') && has(source('wrangler.production-analyzer-queue-consumer.jsonc'), '"max_retries": 5')), analyzerOutput);
 
 row('staging-probe', a(has(diag, 'STAGING_PROVIDER_CHECKS_ENABLED', 'await verifyFirebaseRequest(', 'STAGING_PROVIDER_CHECK_UIDS', 'ANALYZER_PROVIDER_EXECUTOR.checkProvider(')

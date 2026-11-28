@@ -112,6 +112,8 @@ describe('free scans are a separate entitlement from paid', () => {
   });
 
   it('the free limit is the same constant the usage display reads', () => {
-    expect(FREE_SCAN_LIMIT).toBe(3);
+    // Business rule (owner, 2026-11-28): one lifetime free Basic Quick Review per eligible account (was 3 on
+    // engineering/integration before the free-trial policy, PR #194).
+    expect(FREE_SCAN_LIMIT).toBe(1);
   });
 });
