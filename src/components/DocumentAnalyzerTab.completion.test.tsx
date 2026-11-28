@@ -7,11 +7,14 @@
 // component, state handling and safeReadJson/ApiResponseError are exercised.
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-const { mockApiFetch } = vi.hoisted(() => ({ mockApiFetch: vi.fn() }));
+const { mockApiFetch, mockAuth } = vi.hoisted(() => ({
+  mockApiFetch: vi.fn(),
+  mockAuth: { currentUser: null as { uid: string } | null },
+}));
 
-vi.mock("../utils/firebase", () => ({ auth: { currentUser: null }, db: {}, googleProvider: {} }));
+vi.mock("../utils/firebase", () => ({ auth: mockAuth, db: {}, googleProvider: {} }));
 vi.mock("../utils/api", async () => {
   const actual = await vi.importActual<typeof import("../utils/api")>("../utils/api");
   return { ...actual, apiFetch: mockApiFetch };
@@ -66,9 +69,103 @@ async function uploadTextFile(container: HTMLElement, name = "affidavit.txt") {
 
 beforeEach(() => {
   localStorage.clear();
+  mockAuth.currentUser = null;
   mockApiFetch.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
+});
+
+describe("Document Analyzer Deep Scan recovery", () => {
+  const fileId = "synthetic-file";
+  const file = {
+    id: fileId, name: "synthetic.txt", uploadedAt: "Today", mimeType: "text/plain",
+    category: "Court Filings", content: "Synthetic evidence", analysisStatus: "completed", analysisReport: REPORT,
+  };
+  const deepReport = { ...REPORT, documentTitle: "Recovered Forensic Report", modelMetadata: { mode: "full" } };
+  const deepScanPosts = () => mockApiFetch.mock.calls.filter(([url]) => url === "/api/deep-scan");
+  const button = (name: string) => screen.getAllByRole("button", { name })[0] as HTMLButtonElement;
+  const jobKey = `OPA_DEEP_SCAN_JOB_test-account:${fileId}`;
+
+  beforeEach(() => {
+    mockAuth.currentUser = { uid: "test-account" };
+    localStorage.setItem("OPA_DOC_ANALYZER_PROGRESS_test-account", JSON.stringify({
+      organizedFiles: [file], selectedFileId: fileId, selectedReport: REPORT,
+    }));
+  });
+
+  it("submits once and recovers the same ID after a page remount before the accepted scan was shown", async () => {
+    let jobId = "";
+    let abortFirstPoll!: (reason: Error) => void;
+    const interruptedPoll = new Promise<ReturnType<typeof jsonResponse>>((_, reject) => { abortFirstPoll = reject; });
+    const pollCalls = () => mockApiFetch.mock.calls.filter(([url]) => url === `/api/analyze/job/${jobId}`);
+    mockApiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/deep-scan") {
+        jobId = JSON.parse(init?.body as string).analysisId;
+        expect(localStorage.getItem(jobKey)).toBe(jobId);
+        return jsonResponse(202, { jobId });
+      }
+      if (url === `/api/analyze/job/${jobId}`) {
+        return pollCalls().length === 1 ? interruptedPoll : jsonResponse(200, { status: "completed", report: deepReport });
+      }
+      if (url === "/api/analyzer-usage") return jsonResponse(504, {});
+      return jsonResponse(200, {});
+    });
+
+    const first = render(<DocumentAnalyzerTab />);
+    const submit = button("Run Deep Scan");
+    act(() => {
+      submit.click();
+      submit.click();
+    });
+    expect(deepScanPosts()).toHaveLength(1);
+    await waitFor(() => expect(pollCalls()).toHaveLength(1));
+    first.unmount();
+    await act(async () => abortFirstPoll(new DOMException("Page unloaded", "AbortError")));
+
+    const second = render(<DocumentAnalyzerTab />);
+    fireEvent.click(button("Check existing scan"));
+    expect(await screen.findAllByText(deepReport.documentTitle)).not.toHaveLength(0);
+    expect(screen.queryByText("Scanning File...")).toBeNull();
+    expect(screen.queryAllByRole("button", { name: "Run Deep Scan" })).toHaveLength(0);
+    expect(localStorage.getItem(jobKey)).toBeNull();
+    expect(deepScanPosts()).toHaveLength(1);
+    expect(pollCalls()).toHaveLength(2);
+    expect(pollCalls().every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+
+    second.unmount();
+    render(<DocumentAnalyzerTab />);
+    fireEvent.click(button("🔬 Forensic Deep Scan"));
+    expect(screen.getAllByText(deepReport.documentTitle)).not.toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: "Run Deep Scan" })).toHaveLength(0);
+    expect(deepScanPosts()).toHaveLength(1);
+  });
+
+  it("keeps the saved scan when a status read is inconclusive and allows retry only after a failed snapshot", async () => {
+    const existingId = "req_1791000000000_abcdef";
+    localStorage.setItem(jobKey, existingId);
+    let statusReadable = false;
+    mockApiFetch.mockImplementation(async (url: string) => {
+      if (url === `/api/analyze/job/${existingId}`) {
+        return statusReadable
+          ? jsonResponse(200, { status: "failed", error: { message: "The existing scan failed." } })
+          : jsonResponse(401, { code: "SIGN_IN_REQUIRED" });
+      }
+      return jsonResponse(200, {});
+    });
+    render(<DocumentAnalyzerTab />);
+
+    fireEvent.click(button("Check existing scan"));
+    await screen.findByText(/couldn't confirm whether the Deep Scan finished/i);
+    expect(localStorage.getItem(jobKey)).toBe(existingId);
+    expect(deepScanPosts()).toHaveLength(0);
+
+    statusReadable = true;
+    fireEvent.click(button("Check existing scan"));
+    await screen.findByText("The existing scan failed.");
+    expect(localStorage.getItem(jobKey)).toBeNull();
+    expect(button("Run Deep Scan").disabled).toBe(false);
+    expect(deepScanPosts()).toHaveLength(0);
+  });
 });
 afterEach(() => {
   cleanup();

@@ -579,6 +579,12 @@ export default function DocumentAnalyzerTab() {
 
   // Deep Scan states
   const [isDeepScanning, setIsDeepScanning] = useState<boolean>(false);
+  const deepScanInFlightRef = useRef(false);
+  const deepScanMountedRef = useRef(false);
+  useEffect(() => {
+    deepScanMountedRef.current = true;
+    return () => { deepScanMountedRef.current = false; };
+  }, []);
   const [deepScanFileId, setDeepScanFileId] = useState<string | null>(null);
   const [deepScanError, setDeepScanError] = useState<string | null>(null);
   const [deepScanProgress, setDeepScanProgress] = useState<{ stage: string; percent: number; message: string }>({
@@ -630,114 +636,134 @@ export default function DocumentAnalyzerTab() {
     }
   }, [deepScanReports, quickReviewSnapshots, setSelectedReport]);
 
-  const triggerDeepScan = async (file: OrganizedFile) => {
-    if (!file.content || !file.content.trim()) {
-      setDeepScanError("This file has no extracted text to scan yet.");
-      return;
+  const deepScanJobKey = (fileId: string) => {
+    const key = getUserKey("OPA_DEEP_SCAN_JOB");
+    return key ? `${key}:${fileId}` : null;
+  };
+  const hasSavedDeepScanJob = (fileId: string) => {
+    try {
+      const key = deepScanJobKey(fileId);
+      return Boolean(key && localStorage.getItem(key));
+    } catch {
+      return false;
     }
+  };
 
-    if (file.analysisReport && !deepScanReports[file.id] && !quickReviewSnapshots[file.id]) {
-      const snapshots = { ...quickReviewSnapshots, [file.id]: file.analysisReport };
-      setQuickReviewSnapshots(snapshots);
-      try { localStorage.setItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS", JSON.stringify(snapshots)); }
-      catch (error) { console.warn("Unable to persist Quick Review snapshot", error); }
-    }
+  const triggerDeepScan = async (file: OrganizedFile) => {
+    if (deepScanInFlightRef.current || deepScanReports[file.id] || isReportForensic(file.analysisReport)) return;
+    deepScanInFlightRef.current = true;
     setIsDeepScanning(true);
     setDeepScanFileId(file.id);
     setDeepScanError(null);
 
-    let documentTextToScan = file.content;
-    const isRawBase64 = file.mimeType !== "text/plain" &&
-      (documentTextToScan.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(documentTextToScan.slice(0, 100)));
+    try {
+      const jobKey = deepScanJobKey(file.id);
+      if (!jobKey) throw new Error("Sign in to run or check a Deep Scan.");
+      const isCancelled = () => !deepScanMountedRef.current || deepScanJobKey(file.id) !== jobKey;
+      let scanId = localStorage.getItem(jobKey);
+      let documentTextToScan = file.content;
+      const onStage = (stage: string, percent: number, message: string) => setDeepScanProgress({ stage, percent, message });
+      const forgetFailedScan = () => {
+        if (localStorage.getItem(jobKey) === scanId) localStorage.removeItem(jobKey);
+      };
+      const followScan = async (jobId: string) => {
+        const outcome = await pollAnalysisJob(jobId, {
+          fetcher: apiFetch,
+          isCancelled,
+          onProgress: job => {
+            if (!isCancelled()) onStage(job.currentStage || job.status, job.percent ?? 35, job.message || "Checking existing Deep Scan...");
+          },
+        });
+        if (isCancelled()) return;
+        if (outcome.status === "completed") return outcome.report;
+        forgetFailedScan();
+        throw new Error(outcome.error.message);
+      };
 
-    if (isRawBase64) {
-      setDeepScanProgress({
-        stage: "extracting",
-        percent: 20,
-        message: "Extracting document text & verifying structure...",
-      });
-      try {
-        const extractResponse = await apiFetch("/api/extract-text", {
+      if (!scanId) {
+        if (!documentTextToScan?.trim()) throw new Error("This file has no extracted text to scan yet.");
+        const isRawBase64 = file.mimeType !== "text/plain" &&
+          (documentTextToScan.startsWith("JVBER") || /^[A-Za-z0-9+/=]{100,}/.test(documentTextToScan.slice(0, 100)));
+        if (isRawBase64) {
+          onStage("extracting", 20, "Extracting document text & verifying structure...");
+          const extractResponse = await apiFetch("/api/extract-text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fileData: { base64: file.content, mimeType: file.mimeType, fileName: file.name } }),
+          });
+          const extractResult = await safeReadJson(extractResponse);
+          if (isCancelled()) return;
+          if (!extractResponse.ok) {
+            throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
+          }
+          requireCompleteExtraction(extractResult);
+          if (!extractResult.extractedText) throw new Error("No readable text could be extracted from this document.");
+          documentTextToScan = extractResult.extractedText;
+          setOrganizedFiles(prev => prev.map(f => f.id === file.id
+            ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
+        }
+        scanId = localStorage.getItem(jobKey);
+      }
+
+      if (file.analysisReport && !quickReviewSnapshots[file.id]) {
+        const snapshots = { ...quickReviewSnapshots, [file.id]: file.analysisReport };
+        setQuickReviewSnapshots(snapshots);
+        try {
+          localStorage.setItem(getUserKey("OPA_QUICK_REVIEW_SNAPSHOTS") || "OPA_QUICK_REVIEW_SNAPSHOTS", JSON.stringify(snapshots));
+        } catch (error) { console.warn("Unable to persist Quick Review snapshot", error); }
+      }
+
+      let data: any;
+      if (scanId) {
+        onStage("started", 35, "Checking existing Deep Scan...");
+        data = await followScan(scanId);
+      } else {
+        onStage("started", 35, "Starting Forensic In-Depth statutory scan...");
+        const storedSessionToken = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token") || undefined;
+        scanId = newAnalysisJobId();
+        localStorage.setItem(jobKey, scanId);
+        const response = await apiFetch("/api/deep-scan", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream, application/json",
+            "X-Analysis-Id": scanId,
+          },
           body: JSON.stringify({
-            fileData: {
-              base64: file.content,
-              mimeType: file.mimeType,
-              fileName: file.name,
-            },
+            documentText: documentTextToScan,
+            documentName: file.name,
+            category: file.category,
+            model: claudeModel,
+            mode: "full",
+            stream: true,
+            analysisId: scanId,
+            sessionId: storedSessionToken,
+            // Gives the deep scan the first-pass report already run for this file, so it can
+            // dig into what that pass missed instead of re-finding the same red flags.
+            priorAnalysis: file.analysisReport || null,
           }),
         });
-        const extractResult = await safeReadJson(extractResponse);
-        if (!extractResponse.ok) {
-          throw new Error(extractResult.error || `Text extraction failed (${extractResponse.status})`);
-        }
-        requireCompleteExtraction(extractResult);
-        if (!extractResult.extractedText) {
-          throw new Error("No readable text could be extracted from this document.");
-        }
-        documentTextToScan = extractResult.extractedText;
-        setOrganizedFiles(prev => prev.map(f => f.id === file.id
-          ? { ...f, sourcePages: extractResult.pages, originalContent: f.originalContent ?? f.content, content: extractResult.extractedText } : f));
-      } catch (err: any) {
-        setIsDeepScanning(false);
-        setDeepScanFileId(null);
-        setDeepScanError(err.message || "Failed to extract text from document.");
-        return;
-      }
-    }
-
-    setDeepScanProgress({
-      stage: "started",
-      percent: 35,
-      message: "Starting Forensic In-Depth statutory scan...",
-    });
-
-    try {
-      // One id per Deep Scan click, reused by every retry, so the server answers a retry with the saved report or the
-      // running job rather than running (and charging for) the scan again.
-      const scanId = newAnalysisJobId();
-      const storedSessionToken = localStorage.getItem(getUserKey("ps_session_token") || "ps_session_token") || undefined;
-      const data = await runAnalysisWithRetry({
-        attempt: async () => {
-          const response = await apiFetch("/api/deep-scan", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "text/event-stream, application/json",
-              "X-Analysis-Id": scanId,
-            },
-            body: JSON.stringify({
-              documentText: documentTextToScan,
-              documentName: file.name,
-              category: file.category,
-              model: claudeModel,
-              mode: "full",
-              stream: true,
-              analysisId: scanId,
-              sessionId: storedSessionToken,
-              // Gives the deep scan the first-pass report already run for this file, so it can
-              // dig into what that pass missed instead of re-finding the same red flags.
-              priorAnalysis: file.analysisReport || null
-            })
-          });
-          if (response.status === 202) {
-            return readAnalysisResponse(response, {
-              onStage: (stage, percent, message) => setDeepScanProgress({ stage, percent, message }),
-            });
+        if (isCancelled()) return;
+        if (response.status === 202) {
+          data = await followScan(scanId);
+        } else {
+          try {
+            data = await readAnalysisResponse(response, { onStage }, { isCancelled, fetcher: apiFetch });
+          } catch (error) {
+            if (error instanceof ApiResponseError && (error.code === "ANALYSIS_IN_PROGRESS" || error.code === "ANALYSIS_ALREADY_COMPLETED")) {
+              data = await followScan(scanId);
+            } else {
+              if (error instanceof ApiResponseError && error.status >= 400 && error.status < 500 &&
+                  ["INVALID_REQUEST", "INVALID_ANALYSIS_MODE", "DOCUMENT_UNEXTRACTED", "UPGRADE_REQUIRED", "CREDIT_LIMIT_REACHED", "SESSION_INVALID"].includes(error.code ?? "")) {
+                forgetFailedScan();
+              }
+              throw error;
+            }
           }
-          const isStream = (response.headers.get("content-type") || "").includes("text/event-stream");
-          if (!isStream) return safeReadJson(response);
-          return readAnalysisEventStream(response, {
-            onStage: (stage, percent, message) => {
-              setDeepScanProgress({ stage, percent, message });
-            },
-            onHeartbeat: () => {},
-            onError: () => {},
-          });
-        },
-        recover: () => recoverAnalysisReport(scanId),
-      });
+        }
+      }
+      if (isCancelled()) return;
+      if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("The Deep Scan response didn't include a report.");
       const report = { ...data, timestamp: new Date().toLocaleDateString() };
       if (!report.complianceMatrix) {
         try {
@@ -768,7 +794,10 @@ export default function DocumentAnalyzerTab() {
       const updated = { ...deepScanReports, [file.id]: report };
       setDeepScanReports(updated);
       try {
-        localStorage.setItem(getUserKey("OPA_DEEPSCAN_REPORTS") || "OPA_DEEPSCAN_REPORTS", JSON.stringify(updated));
+        const reportKey = getUserKey("OPA_DEEPSCAN_REPORTS")!;
+        const savedReports = JSON.parse(localStorage.getItem(reportKey) || "{}");
+        localStorage.setItem(reportKey, JSON.stringify({ ...savedReports, [file.id]: report }));
+        if (localStorage.getItem(jobKey) === scanId) localStorage.removeItem(jobKey);
       } catch (err) {
         console.warn("Unable to persist Deep Scan report", err);
       }
@@ -783,12 +812,18 @@ export default function DocumentAnalyzerTab() {
         return f;
       }));
     } catch (err: any) {
+      if (!deepScanMountedRef.current) return;
       console.error("[deep scan] request failed:", err);
-      setDeepScanError(err.message || "Failed to run the deep scan. Please try again.");
+      setDeepScanError(hasSavedDeepScanJob(file.id)
+        ? "We couldn't confirm whether the Deep Scan finished. Check the existing scan; don't start another."
+        : err.message || "Failed to run the Deep Scan.");
     } finally {
-      setIsDeepScanning(false);
-      setDeepScanFileId(null);
-      fetchCreditBalance();
+      deepScanInFlightRef.current = false;
+      if (deepScanMountedRef.current) {
+        setIsDeepScanning(false);
+        setDeepScanFileId(null);
+        fetchCreditBalance();
+      }
     }
   };
 
@@ -3181,6 +3216,7 @@ export default function DocumentAnalyzerTab() {
   const currentDeepReport = activeSelectedFile
     ? (deepScanReports[activeSelectedFile.id] || (isReportForensic(activeSelectedFile.analysisReport) ? activeSelectedFile.analysisReport : null))
     : null;
+  const deepScanActionLabel = activeSelectedFile && hasSavedDeepScanJob(activeSelectedFile.id) ? "Check existing scan" : "Run Deep Scan";
 
   const displayedReport = (activeReportMode === "deep" && currentDeepReport)
     ? currentDeepReport
@@ -4087,7 +4123,7 @@ export default function DocumentAnalyzerTab() {
                           </p>
                         </div>
 
-                        {!deepScanReports[activeSelectedFile.id] && (
+                        {!currentDeepReport && (
                           <div className="shrink-0">
                             <button
                               type="button"
@@ -4103,7 +4139,7 @@ export default function DocumentAnalyzerTab() {
                               ) : (
                                 <>
                                   <Sparkles className="w-3.5 h-3.5 text-brand-200 animate-pulse" />
-                                  <span>Run Deep Scan</span>
+                                  <span>{deepScanActionLabel}</span>
                                 </>
       
                               )}
@@ -4313,7 +4349,7 @@ export default function DocumentAnalyzerTab() {
                               ) : (
                                 <>
                                   <Sparkles className="w-3.5 h-3.5 text-purple-200 animate-pulse" />
-                                  <span>Run Deep Scan</span>
+                                  <span>{deepScanActionLabel}</span>
                                 </>
                               )}
                             </button>
@@ -5339,7 +5375,7 @@ export default function DocumentAnalyzerTab() {
                                 disabled={isDeepScanning}
                                 className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer transition-all"
                               >
-                                {isDeepScanning ? "Scanning..." : "Run Deep Scan"}
+                                {isDeepScanning ? "Scanning..." : deepScanActionLabel}
                               </button>
                             </div>
                           )}
