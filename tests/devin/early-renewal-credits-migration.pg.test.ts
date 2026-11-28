@@ -217,15 +217,19 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
   });
 
   it("the reserve wrapper never lowers an allowance and leaves non-total scopes alone", async () => {
-    const email = "wrap@example.test";
-    const s = await redeem(db, "uid-wrap", await issue(ref(), email), email);
-    await db.query("update public.navigator_paid_sessions set granted_credits = 2 where id = $1", [s.session_id]);
-    expect(await analyseUntilLimit(s.session_id!, "Premium")).toBe(5);
-    await db.query("update public.navigator_paid_sessions set granted_credits = 50 where id = $1", [s.session_id]);
-    const period = (await one("select public.paid_reserve_credit($1,'p-1','period:2026-11-01',1,now(),'15 minutes','60 seconds') as r", [s.session_id])).r;
-    const period2 = (await one("select public.paid_reserve_credit($1,'p-2','period:2026-11-01',1,now(),'15 minutes','60 seconds') as r", [s.session_id])).r;
-    expect([period.status, period2.status]).toEqual(["reserved", "limit"]);
-    await db.query("update public.navigator_paid_sessions set granted_credits = null where id = $1", [s.session_id]);
+    await db.query("begin");
+    try {
+      const email = "wrap@example.test";
+      const s = await redeem(db, "uid-wrap", await issue(ref(), email), email);
+      await db.query("update public.navigator_paid_sessions set granted_credits = 2 where id = $1", [s.session_id]);
+      expect(await analyseUntilLimit(s.session_id!, "Premium")).toBe(5);
+      await db.query("update public.navigator_paid_sessions set granted_credits = 50 where id = $1", [s.session_id]);
+      const period = (await one("select public.paid_reserve_credit($1,'p-1','period:2026-11-01',1,now(),'15 minutes','60 seconds') as r", [s.session_id])).r;
+      const period2 = (await one("select public.paid_reserve_credit($1,'p-2','period:2026-11-01',1,now(),'15 minutes','60 seconds') as r", [s.session_id])).r;
+      expect([period.status, period2.status]).toEqual(["reserved", "limit"]);
+    } finally {
+      await db.query("rollback");
+    }
   });
 
   it("rollback counts suspended top-ups and waits for an in-flight top-up before checking", async () => {
@@ -291,7 +295,7 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
   // The admin refund (functions/api/admin/[[path]].ts) against this database through a minimal PostgREST
   // (select / eq / is.null / not.is.null / or=(a.eq.x,...) / limit, PATCH returning rows); payments and storage in memory.
   // holdSessionPatches = n: the first n session PATCHes wait until all n have been sent, so n refunds race on one row.
-  const adminHarness = (payments: Record<string, { plan: string; email: string; uid: string }>, holdSessionPatches = 0) => {
+  const adminHarness = (payments: Record<string, { plan: string; email: string; uid: string }>, holdSessionPatches = 0, restoreClient = db) => {
     const storage = new Map<string, string>();
     let held: Array<() => void> = [];
     const where = (u: URL) => {
@@ -300,6 +304,9 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
         if (!/^[a-z_]+$/.test(col)) throw new Error(`bad column ${col}`);
         if (expr === "is.null") return `${col} is null`;
         if (expr === "not.is.null") return `${col} is not null`;
+        if (expr.startsWith("like.")) {
+          params.push(expr.slice(5).replaceAll("*", "%")); return `${col} like $${params.length}`;
+        }
         if (!expr.startsWith("eq.")) throw new Error(`bad filter ${expr}`);
         params.push(expr.slice(3)); return `${col} = $${params.length}`;
       };
@@ -326,11 +333,14 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
       if (table === "rpc/paid_refund_one_off_pack" && method === "POST") {
         return Response.json((await db.query("select public.paid_refund_one_off_pack(p_session => $1, p_refund_key => $2, p_days => $3) as r", [body.p_session, body.p_refund_key, body.p_days])).rows[0].r);
       }
+      if (table === "rpc/paid_restore_credits" && method === "POST") {
+        return Response.json((await restoreClient.query("select public.paid_restore_credits(p_session => $1, p_scope => $2, p_credits => $3, p_expected_used => $4) as r", [body.p_session, body.p_scope, body.p_credits, body.p_expected_used])).rows[0].r);
+      }
       if (table === "payments") {
         const r = u.searchParams.get("reference_number")?.slice(3) ?? ""; const p = payments[r];
         return Response.json(p ? [{ id: randomUUID(), reference_number: r, plan: p.plan, amount: 49.99, status: "approved", notes: `email:${p.email};uid:${p.uid}` }] : []);
       }
-      if (table !== "access_codes" && table !== "navigator_paid_sessions") return new Response("unexpected", { status: 500 });
+      if (table !== "access_codes" && table !== "navigator_paid_sessions" && table !== "free_usage") return new Response("unexpected", { status: 500 });
       const w = where(u);
       // row_to_json: timestamps come back as PostgREST sends them (ISO 8601, microseconds), so eq filters on them round-trip.
       if (method === "GET") return Response.json((await db.query(`select row_to_json(t) as r from (select * from public.${table}${w.sql}${w.limit ? ` limit ${Number(w.limit)}` : ""}) t`, w.params)).rows.map((x) => x.r));
@@ -345,9 +355,13 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
       return new Response("unexpected", { status: 500 });
     };
     const env = { FIREBASE_PROJECT_ID: "p", STAGING_SUPABASE_URL: "https://db.test", STAGING_SUPABASE_SERVICE_ROLE_KEY: "k" };
-    return Object.assign(async (referenceNumber: string) => (await handleAdminRequest(new Request("https://cyfsanavigator.com/api/admin/payments/refund", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ referenceNumber, reason: "Customer request" }) }),
-      env as never, { requireAdmin: (async () => ({ admin: { uid: "admin-uid", email: "ops@example.test" } })) as never, fetcher: fetcher as never })).json() as Promise<Record<string, unknown>>, { storage });
+    const request = async (route: string, body: Record<string, unknown>) => handleAdminRequest(new Request(`https://cyfsanavigator.com/api/admin/${route}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+      env as never, { requireAdmin: (async () => ({ admin: { uid: "admin-uid", email: "ops@example.test" } })) as never, fetcher: fetcher as never });
+    return Object.assign(async (referenceNumber: string) => (await request("payments/refund", { referenceNumber, reason: "Customer request" })).json() as Promise<Record<string, unknown>>, {
+      storage,
+      restore: (sessionId: string, credits: number, expectedUsed: number) => request("credits/restore", { sessionId, credits, expectedUsed, reason: "Restore an analysis" }),
+    });
   };
   const refundPack = async (c: pg.Client, session: string, key: string) =>
     (await c.query("select public.paid_refund_one_off_pack($1, $2, 30) as r", [session, key])).rows[0].r as Record<string, unknown>;
@@ -584,6 +598,27 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
     expect(await one("select email from public.free_usage where uid = $1", [held.reservation_id])).toEqual({ email: "reservation:released" });
   });
 
+  it("blocks a real admin restore behind an in-flight reservation and leaves the finalized analysis charged", async () => {
+    const email = "restore-race@example.test";
+    const { session_id: session } = await redeem(db, "uid-restore-race", await issue(ref(), email), email);
+    const [reserving, restoring] = await Promise.all([connect(), connect()]);
+    const [reservingPid, restoringPid] = await Promise.all([pid(reserving), pid(restoring)]);
+    await Promise.all([reserving.query("set role service_role"), restoring.query("set role service_role")]);
+    const admin = adminHarness({}, 0, restoring);
+    await reserving.query("begin");
+    expect(await reserve(reserving, session!, "restore-race")).toMatchObject({ status: "reserved", counter_used: 1 });
+    const pending = admin.restore(session!, 1, 0);
+    try { await blockedBy(restoringPid, reservingPid); } finally { await reserving.query("commit"); }
+    const response = await pending;
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "RESERVATION_PENDING" });
+    expect((await reserving.query("select public.paid_finalize_credit($1,'restore-race',now()) as r", [session])).rows[0].r.status).toBe("consumed");
+    expect(await used(session!)).toEqual({ analyses_used: 1 });
+    const restored = await admin.restore(session!, 25, 1);
+    expect(await restored.json()).toMatchObject({ success: true, creditsRestored: 1, creditsRemaining: 5 });
+    expect(await used(session!)).toEqual({ analyses_used: 0 });
+  });
+
   it("rolls back a killed reservation and an interrupted refund without orphan markers or receipts", async () => {
     const email = "interrupt-e@example.test";
     const { session_id: session } = await redeem(db, "uid-interrupt-e", await issue(ref(), email), email);
@@ -625,7 +660,10 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
         "select public.paid_reserve_credit('session','request','total',5,now(),'15 minutes','60 seconds')",
         "select public.paid_release_credit('session','request','marker',now())",
         "select public.paid_finalize_credit('session','request',now())",
+        "select public.paid_restore_credits(null, 'total', 1, 1)",
       ]) await expect(c.query(statement)).rejects.toMatchObject({ code: "42501" });
+      await c.query("set navigator.e_pack_refund = 'on'");
+      await expect(c.query("update public.navigator_paid_sessions set expires_at = now()")).rejects.toMatchObject({ code: "42501" });
     }
     expect(await one("select relrowsecurity from pg_class where oid = 'public.navigator_paid_session_refunds'::regclass"))
       .toEqual({ relrowsecurity: true });
@@ -640,22 +678,53 @@ describe.skipIf(!isLocal)("Migration E: an early one-off re-purchase keeps unuse
       .rejects.toMatchObject({ code: "23503" });
   });
 
-  it("reapplying E preserves post-migration accounting; its supplied down script can silently erase receipts", async () => {
+  it("requires the refund RPC to reduce a stacked grant or expiry and confines its bypass to the function", async () => {
+    const email = "guard-e@example.test";
+    const uid = "uid-guard-e";
+    const { session_id } = await redeem(db, uid, await issue(ref(), email), email);
+    for (let i = 0; i < 2; i++) await redeem(db, uid, await issue(ref(), email), email);
+    const c = await connect();
+    await c.query("set role service_role");
+    const reduce = (change: string) => c.query(`update public.navigator_paid_sessions set ${change} where id = $1`, [session_id]);
+    for (const change of ["expires_at = expires_at - interval '1 day'", "granted_credits = granted_credits - 5", "granted_credits = null"]) {
+      await expect(reduce(change)).rejects.toMatchObject({ code: "23514" });
+    }
+    expect((await one("select granted_credits from public.navigator_paid_sessions where id = $1", [session_id])).granted_credits).toBe(15);
+    await c.query("begin");
+    try {
+      expect(await refundPack(c, session_id!, "guard-e-refund")).toMatchObject({ status: "applied", granted_after: 10 });
+      await expect(reduce("granted_credits = null")).rejects.toMatchObject({ code: "23514" });
+    } finally {
+      await c.query("rollback");
+    }
+    expect(await refundPack(c, session_id!, "guard-e-refund")).toMatchObject({ status: "applied", granted_after: 10 });
+  });
+
+  it("refuses rollback with receipts even with the override; E forward repair preserves post-migration accounting", async () => {
+    await db.query(`begin;
+      alter table public.navigator_paid_sessions disable trigger guard_stacked_paid_session_reduction;
+      update public.navigator_paid_sessions set expires_at = now() - interval '1 day' where granted_credits is not null;
+      alter table public.navigator_paid_sessions enable trigger guard_stacked_paid_session_reduction;
+      commit;`);
     const receipts = (await db.query("select * from public.navigator_paid_session_refunds order by refund_key")).rows;
     const codes = (await db.query("select * from public.access_codes order by id")).rows;
     const usage = (await db.query("select * from public.free_usage order by uid")).rows;
     const sessions = (await db.query("select * from public.navigator_paid_sessions order by id")).rows;
     expect(receipts.length).toBeGreaterThan(0);
+    for (const override of ["on", "off"]) {
+      await db.query(`set navigator.allow_credit_reduction = '${override}'`);
+      await expect(db.query(DOWN)).rejects.toThrow(/refund receipt/);
+      await db.query("rollback");
+    }
+    await db.query("reset navigator.allow_credit_reduction");
+    await db.query("drop function public.paid_restore_credits(uuid,text,integer,integer)");
     await db.query(UP);
+    expect(await fp("paid_restore_credits")).toBeDefined();
+    expect(await count("select count(*) as n from pg_trigger where tgname = 'guard_stacked_paid_session_reduction'")).toBe(1);
     expect((await db.query("select * from public.navigator_paid_session_refunds order by refund_key")).rows).toEqual(receipts);
     expect((await db.query("select * from public.navigator_paid_sessions order by id")).rows).toEqual(sessions);
     expect((await db.query("select * from public.access_codes order by id")).rows).toEqual(codes);
     expect((await db.query("select * from public.free_usage order by uid")).rows).toEqual(usage);
-    // Simulate a time when all top-ups have expired but post-E refund transactions must still be retained.
-    await db.query("update public.navigator_paid_sessions set expires_at = now() - interval '1 day' where granted_credits is not null");
-    await db.query(DOWN);
-    expect(await one("select to_regclass('public.navigator_paid_session_refunds') as ledger")).toEqual({ ledger: null });
-    await db.query(UP);
-    expect(await count("select count(*) as n from public.navigator_paid_session_refunds")).toBe(0);
+    expect(await refundPack(db, receipts[0].session_id, receipts[0].refund_key)).toMatchObject({ status: "already_applied" });
   });
 });

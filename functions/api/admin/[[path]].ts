@@ -4,7 +4,7 @@
  *
  * Replaces the Express admin endpoints in api/_server.ts and their shared ADMIN_SECRET header. Every request must carry
  * a Firebase ID token of an allow-listed administrator (see ../_admin-auth.ts). Every state change is conditional
- * (compare-and-set in the database, so concurrent administrators cannot double-apply it) and is recorded in the
+ * (compare-and-set or a serialized database operation) and is recorded in the
  * append-only administrator audit trail (../_admin-store.ts). No endpoint moves money: refunds are recorded here and
  * returned to the customer by Interac e-Transfer outside the application.
  */
@@ -126,10 +126,10 @@ function settlementWarnings(s: Settlements): string[] {
 }
 
 /** The credit counter that paid_reserve_credit charges for this session today (null: unlimited / not counted). */
-export function creditCounter(session: Pick<Session, 'id' | 'tier' | 'issued_at'>, now: Date): { uid: string; granted: number; scope: string } | null {
+export function creditCounter(session: Pick<Session, 'id' | 'tier' | 'issued_at' | 'granted_credits'>, now: Date): { uid: string; granted: number; scope: string } | null {
   const tier = LIMITS[String(session.tier)];
   if (!tier) return null;
-  if (!tier.monthly) return { uid: `paid_session_${session.id}_total`, granted: tier.limit, scope: 'total' };
+  if (!tier.monthly) return { uid: `paid_session_${session.id}_total`, granted: session.granted_credits ?? tier.limit, scope: 'total' };
   try {
     const scope = monthlyCreditScope(String(session.issued_at || ''), now);
     return { uid: `paid_session_${session.id}_period_${scope.slice(7)}`, granted: tier.limit, scope };
@@ -775,25 +775,38 @@ async function restoreCredits(env: AdminEnv, admin: AdminIdentity, body: Record<
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
   const credits = typeof body.credits === 'number' ? body.credits : Number.NaN;
   if (!UUID.test(sessionId) || !Number.isInteger(credits) || credits < 1 || credits > 25) return adminError('INVALID_REQUEST', 400, 'sessionId and a whole number of credits (1-25) are required.');
+  const expectedUsed = body.expectedUsed;
+  if (typeof expectedUsed !== 'number' || !Number.isInteger(expectedUsed) || expectedUsed < 0 || expectedUsed > 2147483647) {
+    return adminError('INVALID_REQUEST', 400, 'The displayed credits used are required. Refresh the balance and try again.');
+  }
   const reason = reasonOf(body, true);
   if (reason instanceof Response) return reason;
   const session = await sessionById(env, sessionId, fetcher);
   if (!session) return adminError('SESSION_NOT_FOUND', 404, 'No entitlement has that id.');
   const counter = creditCounter(session, now);
   if (!counter) return adminError('CREDITS_NOT_COUNTED', 409, 'This package has no counted credits to restore in the current period.');
-  // An unreleased reservation is returned to the counter automatically (on failure, or by reconciliation within
-  // 15 minutes of the next analysis). Restoring now would return that credit twice.
-  const live = await rest<Counter[]>(env, `free_usage?select=uid&uid=like.${enc(`paid_res_${session.id}_*`)}&email=like.${enc('reservation:reserved*')}&limit=1`, {}, fetcher);
-  if (live.length) return adminError('RESERVATION_PENDING', 409, 'An analysis on this entitlement still holds a credit reservation, which is returned automatically if it fails. Try again later.');
-  const rows = await rest<Counter[]>(env, `free_usage?select=uid,analyses_used&uid=eq.${enc(counter.uid)}&limit=1`, {}, fetcher);
-  const used = Math.max(0, Number(rows[0]?.analyses_used ?? 0));
-  if (!rows.length || used === 0) return adminError('NOTHING_TO_RESTORE', 409, 'No credits have been used in the current period.');
-  const next = Math.max(0, used - credits);
-  // Compare-and-set on the observed value: a concurrent analysis or administrator changes it and this is refused.
-  const updated = await rest<Counter[]>(env, `free_usage?uid=eq.${enc(counter.uid)}&analyses_used=eq.${used}`, { method: 'PATCH', body: { analyses_used: next }, prefer: 'return=representation' }, fetcher);
-  if (!updated.length) return adminError('CONCURRENT_UPDATE', 409, 'Credits changed while this request ran. Reload and try again.');
+  let result: { status?: string; used_before?: number; used_after?: number };
+  try {
+    result = await rest<typeof result>(env, 'rpc/paid_restore_credits', {
+      method: 'POST', body: { p_session: session.id, p_scope: counter.scope, p_credits: credits, p_expected_used: expectedUsed },
+    }, fetcher);
+  } catch (error) {
+    if (error instanceof AdminStoreError && (error.pgCode === 'PGRST202' || error.pgCode === '42883')) {
+      return adminError('CREDIT_RESTORE_UNAVAILABLE', 503, 'Credit restoration is not available in the current database schema.');
+    }
+    throw error;
+  }
+  if (!result) return adminError('CREDIT_RESTORE_UNAVAILABLE', 503, 'Credit restoration could not be verified.');
+  if (result.status === 'reservation_pending') return adminError('RESERVATION_PENDING', 409, 'An analysis on this entitlement still holds a credit reservation, which is returned automatically if it fails. Try again later.');
+  if (result.status === 'concurrent_update') return adminError('CONCURRENT_UPDATE', 409, 'Credits used have changed. Refresh the balance before restoring credits.');
+  if (result.status === 'nothing_to_restore') return adminError('NOTHING_TO_RESTORE', 409, 'No credits have been used in the current period.');
+  if (result.status === 'not_found') return adminError('SESSION_NOT_FOUND', 404, 'No entitlement has that id.');
+  const { used_before: used, used_after: next } = result;
+  if (result.status !== 'restored' || typeof used !== 'number' || typeof next !== 'number') {
+    return adminError('CREDIT_RESTORE_UNAVAILABLE', 503, 'Credit restoration could not be verified.');
+  }
   const audited = await audit(env, admin, 'restore-credits', sessionId, reason, { scope: counter.scope, creditsRestored: used - next, usedBefore: used, usedAfter: next, granted: counter.granted }, fetcher);
-  return ok({ success: true, sessionId, scope: counter.scope, creditsRestored: used - next, creditsRemaining: counter.granted - next, auditRecorded: audited });
+  return ok({ success: true, sessionId, scope: counter.scope, creditsRestored: used - next, creditsRemaining: Math.max(0, counter.granted - next), auditRecorded: audited });
 }
 
 // ---------------------------------------------------------------- router

@@ -74,6 +74,28 @@ describe('staging paid session read adapter', () => {
     expect((await readVerifiedPaidSession(env, 'u1', sid, mock as typeof fetch)).status).toBe('verified');
     expect(mock).toHaveBeenCalledTimes(1);
   });
+  it('reads stacked allowances on E and retries with the old projection only for missing columns', async () => {
+    const options = { includeGrantedCredits: true };
+    const upgraded = vi.fn(async (url: string) => {
+      expect(new URL(url).searchParams.get('select')).toContain('granted_credits');
+      return Response.json([{ ...row, granted_credits: 6 }]);
+    });
+    expect(await readVerifiedPaidSession(env, 'u1', sid, upgraded, options)).toMatchObject({ status: 'verified', session: { grantedCredits: 6 } });
+    const preE = vi.fn(async (url: string) => {
+      const search = new URL(url).searchParams;
+      expect(search.get('id')).toBe('eq.' + sid);
+      expect(search.get('firebase_uid')).toBe('eq.u1');
+      return search.get('select')?.includes('granted_credits')
+        ? Response.json({ code: '42703' }, { status: 400 }) : Response.json([row]);
+    });
+    const result = await readVerifiedPaidSession(env, 'u1', sid, preE, options);
+    expect(result.status).toBe('verified');
+    expect(result.status === 'verified' && result.session).not.toHaveProperty('grantedCredits');
+    expect(preE).toHaveBeenCalledTimes(2);
+    const denied = vi.fn(async () => Response.json({ code: '42501' }, { status: 403 }));
+    expect(await readVerifiedPaidSession(env, 'u1', sid, denied, options)).toEqual({ status: 'unavailable' });
+    expect(denied).toHaveBeenCalledTimes(1);
+  });
   it('denies revoked, expired, future-issued and unauthorized paid sessions', async () => {
     const fetcher = (value: unknown) => vi.fn(async () => Response.json([value]));
     const invalid = [

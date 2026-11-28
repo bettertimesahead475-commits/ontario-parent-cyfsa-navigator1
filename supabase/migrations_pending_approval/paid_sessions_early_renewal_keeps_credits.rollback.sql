@@ -1,6 +1,7 @@
 -- ROLLBACK for paid_sessions_early_renewal_keeps_credits.sql (Migration E). PENDING APPROVAL: run only with written
 -- owner approval. Restores D's redeem_access_code_atomic and the original paid_reserve_credit, and drops
--- navigator_paid_sessions.granted_credits.
+-- navigator_paid_sessions.granted_credits, only before any refund receipt exists. After refunds, preserve E's
+-- data and use the forward-repair procedure in engineering/handoffs/devin-migration-e-qualification.md.
 -- Refuses while an unexpired session (active, or suspended and so restorable) holds credits added by an early
 -- re-purchase, because those customers would silently fall back to the tier default. To accept that reduction
 -- knowingly, run it with `set navigator.allow_credit_reduction = 'on';` in the same session, after the owner has
@@ -10,11 +11,15 @@ begin;
 -- Waits for in-flight redemptions to finish and holds off new ones (and reads) until commit, so the check below sees
 -- every credit the drop removes. Taken up front in the mode the column drop needs: a weaker lock here would deadlock
 -- with a redemption that holds a row lock and still has to update that row.
-lock table public.navigator_paid_sessions in access exclusive mode;
+-- The refund RPC reads the ledger before locking the session, so acquire the locks in that order.
+lock table public.navigator_paid_session_refunds, public.navigator_paid_sessions in access exclusive mode;
 
 do $$
 declare v_active integer;
 begin
+  if exists (select 1 from public.navigator_paid_session_refunds) then
+    raise exception 'Migration E rollback: refund receipts exist. Preserve them and use forward repair. Nothing was changed.';
+  end if;
   select count(*) into v_active from public.navigator_paid_sessions
     where granted_credits is not null and expires_at > now();
   if v_active > 0 and coalesce(current_setting('navigator.allow_credit_reduction', true), '') <> 'on' then
@@ -156,6 +161,9 @@ revoke all on function public.redeem_access_code_atomic(text, text, text) from a
 grant execute on function public.redeem_access_code_atomic(text, text, text) to service_role;
 
 drop function if exists public.paid_refund_one_off_pack(uuid, text, integer);
+drop function if exists public.paid_restore_credits(uuid, text, integer, integer);
+drop trigger if exists guard_stacked_paid_session_reduction on public.navigator_paid_sessions;
+drop function if exists public.guard_stacked_paid_session_reduction();
 drop table if exists public.navigator_paid_session_refunds;
 alter table public.navigator_paid_sessions drop column if exists granted_credits;
 commit;

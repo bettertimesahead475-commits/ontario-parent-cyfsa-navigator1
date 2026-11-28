@@ -155,7 +155,7 @@ export default function AdminConsole({ initialSection = "overview" }: { initialS
     {s.accessStatus === "suspended_or_revoked" && <ActionButton label="Restore" onClick={() => act(`Restore entitlement ${s.sessionId}?`, "payments/restore", { sessionId: s.sessionId })} />}
     {(s.creditsConsumed ?? 0) > 0 && <ActionButton label="Restore credit" onClick={() => {
       const n = Number(window.prompt(`Credits to restore (1-${s.creditsConsumed}):`, "1"));
-      if (Number.isInteger(n) && n > 0) void act(`Restore ${n} credit(s) to ${s.sessionId}?`, "credits/restore", { sessionId: s.sessionId, credits: n }, { reason: true, after: (r) => `Restored ${r.creditsRestored}; ${r.creditsRemaining} remaining.` });
+      if (Number.isInteger(n) && n > 0) void act(`Restore ${n} credit(s) to ${s.sessionId}?`, "credits/restore", { sessionId: s.sessionId, credits: n, expectedUsed: s.creditsConsumed }, { reason: true, after: (r) => `Restored ${r.creditsRestored}; ${r.creditsRemaining} remaining.` });
     }} />}
   </>;
 

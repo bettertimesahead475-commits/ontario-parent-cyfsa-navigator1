@@ -60,20 +60,21 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: Us
   const sessionId = extractSessionId(rawSession);
 
   if (sessionId) {
-    const sessionRead = await readVerifiedPaidSession(env, identity.uid, sessionId);
+    const sessionRead = await readVerifiedPaidSession(env, identity.uid, sessionId, fetch, { includeGrantedCredits: true });
     if (sessionRead.status === 'verified') {
       const s = sessionRead.session;
       const tier = LIMITS[s.tier];
       if (tier) {
         if (!tier.monthly) {
+          const limit = s.grantedCredits ?? tier.limit;
           const used = await readCounter(env, `paid_session_${s.sessionId}_total`);
-          const remaining = left(tier.limit, used);
+          const remaining = left(limit, used);
           return Response.json(
             {
               type: 'paid', tier: s.tier, sessionId: s.sessionId, isMonthly: false, allowsForensic: tier.forensic, countsAvailable: used !== null,
-              limit: tier.limit, remaining, creditsLimit: tier.limit, creditsRemaining: remaining, creditsUsed: used,
-              quickReviewsLimit: tier.limit, quickReviewsRemaining: remaining, quickReviewsUsed: used,
-              forensicAnalysesLimit: tier.forensic ? tier.limit : 0, forensicAnalysesRemaining: tier.forensic ? remaining : 0, forensicAnalysesUsed: tier.forensic ? used : 0,
+              limit, remaining, creditsLimit: limit, creditsRemaining: remaining, creditsUsed: used,
+              quickReviewsLimit: limit, quickReviewsRemaining: remaining, quickReviewsUsed: used,
+              forensicAnalysesLimit: tier.forensic ? limit : 0, forensicAnalysesRemaining: tier.forensic ? remaining : 0, forensicAnalysesUsed: tier.forensic ? used : 0,
             },
             { status: 200, headers: DEFAULT_HEADERS }
           );
