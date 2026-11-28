@@ -232,7 +232,8 @@ create table if not exists public.navigator_paid_session_refunds (
   granted_before integer not null,
   granted_after integer not null,
   used_at_refund integer not null,
-  reserved_at_refund integer not null
+  reserved_at_refund integer not null,
+  used_beyond_remaining integer not null default 0
 );
 alter table public.navigator_paid_session_refunds enable row level security;
 revoke all on table public.navigator_paid_session_refunds from public, anon, authenticated;
@@ -250,6 +251,8 @@ declare
   v_after integer;
   v_used integer;
   v_reserved integer;
+  v_reported integer;
+  v_over integer;
   v_prefix text := 'paid_res_' || p_session::text || '_';
 begin
   if p_session is null or coalesce(p_refund_key, '') = '' or p_days is null or p_days < 0 then
@@ -261,7 +264,7 @@ begin
     return jsonb_build_object('status', 'already_applied', 'session_id', v_prior.session_id,
       'granted_before', v_prior.granted_before, 'granted_after', v_prior.granted_after,
       'used', v_prior.used_at_refund, 'reserved', v_prior.reserved_at_refund,
-      'used_beyond_remaining', greatest(v_prior.used_at_refund - v_prior.granted_after, 0) - greatest(v_prior.used_at_refund - v_prior.granted_before, 0));
+      'used_beyond_remaining', v_prior.used_beyond_remaining);
   end if;
   select * into v_s from public.navigator_paid_sessions where id = p_session for update;
   if not found then return jsonb_build_object('status', 'not_found'); end if;
@@ -279,14 +282,18 @@ begin
   select coalesce(max(analyses_used), 0) into v_used from public.free_usage where uid = 'paid_session_' || p_session::text || '_total';
   select count(*) into v_reserved from public.free_usage
     where left(uid, length(v_prefix)) = v_prefix and email = 'reservation:reserved' and analyses_used > 0;
+  -- Overage already reported by earlier refunds of this session is not reported again (a replacement pack bought
+  -- after a refund raises the allowance without new usage).
+  select coalesce(sum(used_beyond_remaining), 0) into v_reported from public.navigator_paid_session_refunds where session_id = p_session;
+  v_over := greatest(greatest(v_used - v_after, 0) - greatest(greatest(v_used - v_before, 0), v_reported), 0);
   update public.navigator_paid_sessions
     set granted_credits = case when v_after > v_pack then v_after else null end,
         expires_at = expires_at - make_interval(days => p_days)
     where id = p_session;
-  insert into public.navigator_paid_session_refunds (refund_key, session_id, granted_before, granted_after, used_at_refund, reserved_at_refund)
-    values (p_refund_key, p_session, v_before, v_after, v_used, v_reserved);
+  insert into public.navigator_paid_session_refunds (refund_key, session_id, granted_before, granted_after, used_at_refund, reserved_at_refund, used_beyond_remaining)
+    values (p_refund_key, p_session, v_before, v_after, v_used, v_reserved, v_over);
   return jsonb_build_object('status', 'applied', 'session_id', p_session, 'granted_before', v_before, 'granted_after', v_after,
-    'used', v_used, 'reserved', v_reserved, 'used_beyond_remaining', greatest(v_used - v_after, 0) - greatest(v_used - v_before, 0),
+    'used', v_used, 'reserved', v_reserved, 'used_beyond_remaining', v_over,
     'expires_at', v_s.expires_at - make_interval(days => p_days));
 end
 $$;

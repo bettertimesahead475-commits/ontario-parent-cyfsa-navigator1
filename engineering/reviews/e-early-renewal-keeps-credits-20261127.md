@@ -82,6 +82,8 @@ Evidence (disposable PostgreSQL 16, P + D + E, real refund handler where marked 
   holds the lock waits (seen in `pg_stat_activity`) and then gets `limit`.
 - both packs of a two-pack session refunded on separate connections: both `applied`, -60 days, access ended.
 - 12 of 15 used, three refunds: overage reported 2, 5, 5 (each at most one pack).
+- A refunded pack replaced and the replacement refunded (7 of 10 used): overage 2, then 0; after 3 more used on a
+  third pack, its refund reports 3. Overage already reported by earlier refunds is stored per refund and never reported again.
 - unit E8: a top-up landing while a one-pack refund shortens the expiry hands the refund to the function.
 - unit (`api/cloudflare-admin-api.test.ts` E1, E3–E7): RPC body and key, no session PATCH, resumed refund counted
   once, unexpected answers go to `shorteningsForReview`, never counted as applied.
