@@ -10,6 +10,21 @@
 - Never expose credentials or customer data; synthetic documents only; no paid resources or inference beyond the
   budget in `engineering/TEST_REGISTER.md`; never modify real customer balances; preserve the site's visual design.
 
+## Autonomous engineering loop
+
+- Work from `engineering/TASK_REGISTER.md`: pick the highest-priority `todo` row you own. Record every defect with its
+  evidence before changing code.
+- Loop: identify defect → establish root cause from evidence → implement → run tests and `tsc` → independent review →
+  resolve findings → regression check → commit verified change → next row.
+- Completion gate: `.claude/settings.json` runs `scripts/stop-gate.mjs` on Stop. It blocks while a P0 row is open (not
+  `done` or `blocked` with evidence) or while tracked production-code files have uncommitted changes. Do not work around it.
+- A row blocked by something only the owner or an external system can provide is set to `blocked` with the evidence and the
+  exact input needed. Continue other work; do not stop the session for it.
+- Never change the register by `git checkout` or stash: edit the row, or ask. Use a branch per recovery track.
+- Not authorized without separate owner approval: production deployment, live database migrations, destructive
+  operations, paid provider calls, pricing or entitlement changes, and feature expansion.
+- Basic Quick Review stays protected: no change to its path, limit or reservation without an explicit task.
+
 ## Permanent infrastructure directive (2026-11-26)
 
 - Cloudflare is the designated production and staging infrastructure. Production domain: https://cyfsanavigator.com.
