@@ -899,6 +899,11 @@ export interface SectionRunOptions {
   now?: () => number;
   targetSections?: SectionKey[];
   initialSections?: Record<string, any>;
+  /**
+   * Experimental only. "adaptive" asks the adapter for adaptive thinking on section calls. Default "off" leaves every
+   * request exactly as before: the generate parameters are not changed at all.
+   */
+  reasoning?: "off" | "adaptive";
   /** Upper bound on concurrent section calls (default: all sections, at most 6). */
   maxConcurrency?: number;
 }
@@ -950,6 +955,7 @@ export async function runOneSection(
           timeoutMs,
           retries: opts.mode === "full" ? 0 : 1, // Forensic retries are owned by the section loop.
           allowTruncated: true, // A max_tokens stop is retried below with a shorter-answer instruction.
+          ...(opts.reasoning === "adaptive" ? { enableThinking: true } : {}),
           requestId: opts.requestId,
           stage: `section:${key}`,
           mode: opts.mode,

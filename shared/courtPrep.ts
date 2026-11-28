@@ -9,6 +9,7 @@
  */
 import type { ReportContract, ReportFinding, SourceReference } from "./reportContract";
 import { buildSectionedReport } from "./reportSections";
+import { parseChronologyDate } from "./chronologyGrounding";
 
 export type EventType =
   | "ALLEGED_EVENT"
@@ -50,9 +51,12 @@ const DATE_RE = new RegExp(`\\b(${MONTHS})\\s+\\d{1,2},\\s+\\d{4}\\b`);
 export function parseWrittenDate(text: string): string | null {
   const match = text.match(DATE_RE);
   if (!match) return null;
-  const t = Date.parse(match[0]);
-  return Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
+  // Strict: Date.parse rolls impossible days forward ("February 30, 2026" became 2 March). Only a real calendar day is sorted.
+  const parsed = parseChronologyDate(match[0]);
+  if (parsed.invalid || parsed.iso === null) return null;
+  return parsed.iso;
 }
+
 
 function eventTypeFor(f: ReportFinding): EventType {
   switch (f.kind) {

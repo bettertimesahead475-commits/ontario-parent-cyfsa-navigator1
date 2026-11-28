@@ -129,3 +129,15 @@ describe('parent Final Case Assessment Cloudflare route', () => {
     expect(await (await create()).json()).toEqual({ matter: { id: matter, title: 'Synthetic new matter' } }); expect(f.rpc).not.toHaveBeenCalled();
   });
 });
+
+describe('Final Case Assessment output limit', () => {
+  it('a response cut off at the output limit is refused, not parsed or saved, and no credit is charged', async () => {
+    const f = fixture();
+    f.generate.mockResolvedValueOnce({ text: '{"overview":[{"text":"cut', durationMs: 1, usage: null, model: 'synthetic', stopReason: 'max_tokens' } as any);
+    const response = await f.call();
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ code: 'ASSESSMENT_OUTPUT_LIMIT' });
+    expect(f.charged).toBe(0);
+    expect([...f.store.keys()].some((k) => k.includes('assessment'))).toBe(false);
+  });
+});

@@ -79,6 +79,8 @@ export function extractSessionId(raw: unknown): string | null {
 
 export interface AnalyzerEnv {
   ANALYZER_ENABLED?: string; // 'true' enables execution; otherwise fails closed with 503
+  /** Experimental Forensic reasoning. Only 'adaptive' changes behaviour; unset or any other value keeps the default. */
+  ANALYZER_FORENSIC_REASONING?: string;
   FIREBASE_PROJECT_ID?: string;
   STAGING_SUPABASE_URL?: string;
   STAGING_SUPABASE_READ_KEY?: string;
@@ -515,6 +517,8 @@ export async function handleAnalyzeRequest(
       await onProgress?.('reviewing_evidence', 35, 'Analyzing document across evidence sections...');
       run = await runSectionedAnalysis({
         mode,
+        // Experimental, off unless ANALYZER_FORENSIC_REASONING=adaptive is set on the deployment. Basic never uses it.
+        reasoning: isForensic && env.ANALYZER_FORENSIC_REASONING === 'adaptive' ? 'adaptive' : 'off',
         documentText,
         primaryModel,
         verificationModel,

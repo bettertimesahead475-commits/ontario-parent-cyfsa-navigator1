@@ -74,6 +74,14 @@ describe("chronology", () => {
     expect(parseWrittenDate("sometime in spring")).toBeNull();
   });
 
+  it("never sorts an impossible calendar day (regression: Date.parse rolled 30 February to 2 March)", () => {
+    expect(parseWrittenDate("February 30, 2026")).toBeNull();
+    expect(parseWrittenDate("February 29, 2026")).toBeNull(); // 2026 is not a leap year
+    expect(parseWrittenDate("April 31, 2026")).toBeNull();
+    expect(parseWrittenDate("February 29, 2024")).toBe("2024-02-29");
+    expect(parseWrittenDate("December 31, 2026")).toBe("2026-12-31");
+  });
+
   it("gives a stated hearing date its own type, never a completed-hearing type", () => {
     const rows = buildChronology(
       buildSectionedReport({ ...DATED, metadata: { hearingDate: "June 1, 2026" } })
