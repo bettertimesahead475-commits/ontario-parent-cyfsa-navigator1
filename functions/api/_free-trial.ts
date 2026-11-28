@@ -317,16 +317,26 @@ export async function readCounter(env: { STAGING_SUPABASE_URL?: string; STAGING_
 export type FreeOcrOutcome = 'ok' | 'email_unverified' | 'no_entitlement' | 'ocr_limit' | 'paused' | 'unavailable';
 
 /**
- * OCR for an account without a paid session is allowed only while it has a free analysis left, at most
- * FREE_OCR_LIFETIME_LIMIT times per verified email, and within the platform's daily free OCR cap.
+ * Idempotency key of one OCR document for one account. It is derived from the document bytes, so a retry of the same
+ * document reuses the same key and is not counted again, while every different document (including an edited copy)
+ * takes a new unit of the lifetime budget. The budget therefore bounds distinct documents, not calls.
  */
-export async function authorizeFreeOcr(env: FreeTrialEnv, uid: string, email: string | null, emailVerified: boolean, rpc: CreditRpc, fetcher: typeof fetch = fetch, now = new Date()): Promise<FreeOcrOutcome> {
+export async function ocrRequestIdFor(uid: string, documentBase64: string): Promise<string> {
+  return `ocr-${await hex(`${uid}\n${documentBase64}`, 40)}`;
+}
+
+/**
+ * OCR for an account without a paid session is allowed only while it has a free analysis left, at most
+ * FREE_OCR_LIFETIME_LIMIT distinct documents per verified email, and within the platform's daily free OCR cap.
+ * `requestId` must come from `ocrRequestIdFor` so that retries of one document are idempotent.
+ */
+export async function authorizeFreeOcr(env: FreeTrialEnv, uid: string, email: string | null, emailVerified: boolean, rpc: CreditRpc, requestId: string, fetcher: typeof fetch = fetch, now = new Date()): Promise<FreeOcrOutcome> {
   const normalized = emailVerified ? normalizeEmail(email) : null;
   if (!normalized) return 'email_unverified';
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(requestId)) return 'unavailable';
   const b = await readFreeTrialBalance(env, uid, email, emailVerified, fetcher);
   if (b.quickUsed === null || b.forensicUsed === null) return 'unavailable';
   if (b.quickUsed >= b.quickLimit && b.forensicUsed >= FREE_TRIAL_LIMITS.forensic) return 'no_entitlement';
-  const requestId = crypto.randomUUID();
   // Daily capacity first, so a refusal while it is full does not spend one of the account's lifetime reads.
   const platform = await takeCapUnit(platformDailyKey('ocr', now), requestId, spendLimit(env, 'FREE_OCR_PLATFORM_DAILY_LIMIT'), rpc);
   if (platform !== 'ok') return platform === 'limit' ? 'paused' : 'unavailable';
