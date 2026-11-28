@@ -80,9 +80,9 @@ describe("pollAnalysisJob", () => {
     expect(onlyReads(fetchMock)).toBe(true);
   });
 
-  it("a connection that never recovers ends as NETWORK_ERROR, retryable, with reads only", async () => {
+  it("a connection that never recovers ends as NETWORK_ERROR, retryable, with reads only (after the outage tolerance)", async () => {
     fetchMock.mockRejectedValue(new TypeError("network"));
-    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1 }).catch((e) => e);
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1, outageToleranceMs: 50 }).catch((e) => e);
     expect(err).toBeInstanceOf(ApiResponseError);
     expect(err.code).toBe("NETWORK_ERROR");
     expect(err.retryable).toBe(true);
@@ -155,15 +155,32 @@ describe("job status polling stop and backoff rules", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("retries transient failures a bounded number of times with growing delays, then ends retryable", async () => {
+  it("retries transient failures with growing delays until the outage tolerance passes, then ends retryable", async () => {
     const times: number[] = [];
     const fetcher = vi.fn(async () => { times.push(Date.now()); return json(503, { code: "JOB_STATUS_UNAVAILABLE", retryable: true }); });
-    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 10, maxWaitMs: 60_000, fetcher }).catch((e) => e);
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 10, maxWaitMs: 60_000, outageToleranceMs: 400, fetcher }).catch((e) => e);
     expect(err.code).toBe("JOB_STATUS_UNAVAILABLE");
     expect(err.retryable).toBe(true);
-    expect(fetcher).toHaveBeenCalledTimes(6);
+    expect(times[times.length - 1] - times[0]).toBeGreaterThanOrEqual(300);
     const gaps = times.slice(1).map((t, i) => t - times[i]);
     expect(gaps[gaps.length - 1]).toBeGreaterThan(gaps[0]);
+  });
+
+  it("2026-11-28 incident: a burst of transient status failures does not stop the wait; the saved report is delivered", async () => {
+    // The previous rule gave up after 6 consecutive 503/504 reads while the server was still finishing the report.
+    const fetcher = vi.fn();
+    for (let i = 0; i < 8; i++) fetcher.mockResolvedValueOnce(json(504, { code: "JOB_STATUS_UNAVAILABLE", retryable: true }));
+    fetcher.mockResolvedValueOnce(json(200, { jobId: "req_1_abc", status: "completed", report: { documentTitle: "Finished" } }));
+    const outcome = await pollAnalysisJob("req_1_abc", { intervalMs: 1, maxWaitMs: 60_000, fetcher });
+    expect(outcome).toEqual({ status: "completed", report: { documentTitle: "Finished" } });
+    expect(fetcher).toHaveBeenCalledTimes(9);
+  });
+
+  it("retryable:false still stops at once", async () => {
+    const fetcher = vi.fn(async () => json(503, { code: "JOB_STATUS_NOT_CONFIGURED", retryable: false }));
+    const err = await pollAnalysisJob("req_1_abc", { intervalMs: 1, fetcher }).catch((e) => e);
+    expect(err.code).toBe("JOB_STATUS_NOT_CONFIGURED");
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("recovers after a transient failure and returns the real outcome", async () => {

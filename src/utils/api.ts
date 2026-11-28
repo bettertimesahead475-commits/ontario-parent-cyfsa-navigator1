@@ -317,6 +317,8 @@ export async function pollAnalysisJob(
     isCancelled?: () => boolean;
     intervalMs?: number;
     maxWaitMs?: number;
+    /** How long status reads may keep failing transiently before polling gives up (default 5 minutes). */
+    outageToleranceMs?: number;
     /** Request function; defaults to apiFetch (which attaches the caller's identity headers). */
     fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
   } = {}
@@ -332,6 +334,13 @@ export async function pollAnalysisJob(
   let networkFailures = 0;
   let transientFailures = 0;
   let quietPolls = 0;
+  // The server finishes an accepted analysis whether or not the browser is watching (2026-11-28 incident: the report
+  // was saved 36 s after this page stopped polling). Transient status or network failures therefore never end the wait
+  // on a count: polling continues (backing off) until 5 minutes have passed without one successful status read.
+  // Answers marked retryable:false, sign-in and ownership errors still stop at once.
+  const OUTAGE_TOLERANCE_MS = options.outageToleranceMs ?? 5 * 60 * 1000;
+  let lastSuccessfulRead = Date.now();
+  const outageExceeded = () => Date.now() - lastSuccessfulRead > OUTAGE_TOLERANCE_MS;
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   // Exponential backoff with jitter, capped, and never past the overall wait limit.
   const backoff = (attempt: number, capMs: number) => {
@@ -355,7 +364,8 @@ export async function pollAnalysisJob(
       res = await readJobStatus(fetcher, jobId, Math.max(1, Math.min(20_000, maxWaitMs - (Date.now() - started))));
       networkFailures = 0;
     } catch {
-      if (++networkFailures >= 10) {
+      ++networkFailures;
+      if (outageExceeded()) {
         throw new ApiResponseError(
           "We lost the connection while checking your analysis. Your document is safe - please check your connection and reopen this page.",
           0,
@@ -376,6 +386,7 @@ export async function pollAnalysisJob(
       // The record may not be written yet right after the request starts; then it truly does not exist.
       notFoundCount++;
       transientFailures = 0;
+      lastSuccessfulRead = Date.now(); // the service answered; the record is just not written yet
       // A 404/pending result is normal while Cloudflare has not yet saved
       // the completed job. Never infer failure or start a new analysis here.
       await sleep(backoff(++quietPolls, 15_000));
@@ -395,7 +406,8 @@ export async function pollAnalysisJob(
           false
         );
       }
-      if (++transientFailures >= 6) {
+      ++transientFailures;
+      if (outageExceeded()) {
         throw new ApiResponseError(
           "We couldn't confirm whether this analysis finished because the status service is unavailable. Your document is safe. Reconnect to this analysis shortly.",
           res.status,
@@ -407,6 +419,7 @@ export async function pollAnalysisJob(
       continue;
     }
     transientFailures = 0;
+    lastSuccessfulRead = Date.now();
     const job = res.body as AnalysisJobSnapshot | null;
     if (job?.status === "completed" && job.report) return { status: "completed", report: job.report };
     if (job?.status === "failed" || job?.status === "timed_out") {
