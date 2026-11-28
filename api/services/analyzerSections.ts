@@ -71,7 +71,7 @@ export type GenerateFn = (
 
 export type Validation = { ok: true; value: Record<string, any> } | { ok: false; problems: string[] };
 
-interface SectionSpec {
+export interface SectionSpec {
   key: SectionKey;
   title: string;
   stage: AnalysisStage;
@@ -494,7 +494,7 @@ export const CHRONOLOGY_SCHEMA = `"chronology": [
   }
 ]`;
 
-const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
+export const SECTION_SPECS: Record<SectionKey, SectionSpec> = {
   overview: {
     key: "overview",
     title: "Document summary and Evidence Strength Index",
@@ -1233,7 +1233,7 @@ export function mergeVerification(report: Record<string, any>, parsed: any, mode
 // Customer-facing label for the second review. Provider model identifiers are never sent to customers.
 const VERIFIER_LABEL = "Independent second review";
 
-async function runForensicVerification(
+export async function runForensicVerification(
   report: Record<string, any>,
   opts: SectionRunOptions,
   usage: SectionRunResult["usageByModel"]

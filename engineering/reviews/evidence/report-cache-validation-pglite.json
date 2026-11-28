@@ -1,0 +1,86 @@
+{
+  "total": 16,
+  "failed": 0,
+  "results": [
+    {
+      "name": "migration applies",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "valid row accepted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "duplicate (owner, key) rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "other owner, same key accepted (account isolation)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bad cache_key rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "expiry beyond 30 days rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "expiry before completion rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bad job_id rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bad mode rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "row level security enabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "anon and authenticated have no table privileges",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "forget removes only that owner rows",
+      "ok": true,
+      "detail": "removed 1"
+    },
+    {
+      "name": "other owner row survives forget",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "purge removes only expired rows",
+      "ok": true,
+      "detail": "removed 1"
+    },
+    {
+      "name": "rollback drops the table",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "re-apply after rollback succeeds",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

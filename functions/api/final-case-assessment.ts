@@ -7,6 +7,7 @@ import { createStagingCreditRpc } from './_staging-credit-rpc';
 import { jobObjectUrl } from './_analysis-jobs';
 import { createCloudflareGenerateFn } from './_analyzer-model-adapter';
 import { DEFAULT_FORENSIC_MODEL } from '../../api/services/analyzerModels';
+import { assembleAssessmentInput, type VerifiedAnalysisDigest } from '../../shared/assessmentConsolidation';
 import { DIRECT_BRIEF_SYSTEM, buildDirectBriefPrompt } from '../../api/services/directCaseBrief';
 import { extractSessionId, type AnalyzerEnv } from './analyze';
 import type { GenerateFn } from '../../api/services/analyzerSections';
@@ -54,7 +55,14 @@ export function validateAssessment(value: unknown, sources: AssessmentSource[]):
   }
   return result;
 }
-export interface AssessmentDependencies { fetcher?: typeof fetch; generate?: GenerateFn; rpc?: CreditRpc; authenticate?: typeof verifyFirebaseRequest }
+export interface AssessmentDependencies {
+  fetcher?: typeof fetch;
+  generate?: GenerateFn;
+  rpc?: CreditRpc;
+  authenticate?: typeof verifyFirebaseRequest;
+  /** Returns verified analysis digests for these source ids, owned by the same account. Not configured in production. */
+  priorAnalyses?: (sourceIds: string[]) => Promise<Map<string, VerifiedAnalysisDigest>>;
+}
 export async function handleAssessment(request: Request, env: AnalyzerEnv, deps: AssessmentDependencies = {}): Promise<Response> {
   const fetcher = deps.fetcher || fetch;
   let reservation: { session: string; requestId: string; id: string } | undefined;
@@ -154,7 +162,15 @@ export async function handleAssessment(request: Request, env: AnalyzerEnv, deps:
       if (!source || source.id + '.json' !== doc.name || source.version !== source.id || source.page !== 1 || typeof source.document !== 'string' || typeof source.text !== 'string' || !source.text.trim() || await digest(JSON.stringify([source.document, source.text])) !== source.id) throw new AssessmentError(422, 'SOURCE_NOT_READY');
       sources.push(source);
     }
-    const sourceText = sources.map(s => '[' + s.id + '] ' + s.document + ' page ' + s.page + '\n' + s.text).join('\n\n');
+    let sourceText = sources.map(s => '[' + s.id + '] ' + s.document + ' page ' + s.page + '\n' + s.text).join('\n\n');
+    // Experimental (FCA_CONSOLIDATED=true with a configured lookup): verified analyses replace the original text where they
+    // exist and are current; the original is kept for any source whose findings need checking. Never silently truncated.
+    if (env.FCA_CONSOLIDATED === 'true' && deps.priorAnalyses) {
+      const digests = await deps.priorAnalyses(sources.map(s => s.id));
+      const assembled = assembleAssessmentInput(sources, digests, ASSESSMENT_SOURCE_SET_MAX_CHARS);
+      if (assembled.overBudget) throw new AssessmentError(422, 'SOURCE_SET_TOO_LARGE');
+      sourceText = assembled.text;
+    }
     if (sourceText.length > ASSESSMENT_SOURCE_SET_MAX_CHARS) throw new AssessmentError(422, 'SOURCE_SET_TOO_LARGE');
     const requestId = 'assessment_' + await digest(JSON.stringify({ uid: auth.uid, sessionId, matterId, sources }));
     let stored = await read(requestId);

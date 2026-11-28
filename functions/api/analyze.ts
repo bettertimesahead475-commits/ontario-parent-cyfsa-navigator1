@@ -49,11 +49,15 @@ import {
   type SectionKey,
   type SectionRunResult,
   type GenerateFn,
+  FORENSIC_SECTIONS,
 } from '../../api/services/analyzerSections';
 import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyzerErrors';
 import { buildComplianceMatrixFromReport } from '../../shared/complianceMatrixEngine';
 import { groundChronology } from '../../shared/chronologyGrounding';
 import { buildDeterministicChronology } from '../../shared/chronologyIntelligence';
+import { runConsolidatedForensic } from '../../api/services/consolidatedForensic';
+import { analysisVersionsFor, planAnalysisReuse, type ReuseCandidate } from './_analysis-reuse';
+import { documentFingerprint, reportCacheKey, type ReportCacheVersions } from './_report-cache';
 
 /**
  * Extracts a valid 36-char UUID session ID from either a raw UUID string,
@@ -82,6 +86,12 @@ export interface AnalyzerEnv {
   ANALYZER_ENABLED?: string; // 'true' enables execution; otherwise fails closed with 503
   /** Experimental Forensic reasoning. Only 'adaptive' changes behaviour; unset or any other value keeps the default. */
   ANALYZER_FORENSIC_REASONING?: string;
+  /** Experimental Forensic pipeline. Only 'consolidated' changes behaviour; unset keeps the sectioned pipeline. */
+  ANALYZER_FORENSIC_PIPELINE?: string;
+  /** Secret for document fingerprints and cache keys. Reuse planning is skipped when unset. */
+  REPORT_CACHE_SECRET?: string;
+  /** Experimental Final Case Assessment consolidation. Only 'true' changes behaviour. */
+  FCA_CONSOLIDATED?: string;
   FIREBASE_PROJECT_ID?: string;
   STAGING_SUPABASE_URL?: string;
   STAGING_SUPABASE_READ_KEY?: string;
@@ -105,8 +115,17 @@ const DEFAULT_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
 };
 
+/** Finds a completed analysis of the same document for the same account, with the sections it completed. */
+export type ReuseLookup = (
+  ownerUid: string,
+  documentFingerprint: string,
+  versions: ReportCacheVersions
+) => Promise<{ candidate: ReuseCandidate; sections: Record<string, any> } | null>;
+
 export interface AnalyzeDependencies {
   rpc?: CreditRpc;
+  /** Optional lookup of a completed analysis. Not configured in production: the cache store is not applied yet. */
+  reuseLookup?: ReuseLookup;
   generate?: GenerateFn;
   fetcher?: typeof fetch;
   /** Set only by the private queue consumer after loading the job from the server-side job ledger. */
@@ -136,6 +155,44 @@ export function withHardDeadline<T>(work: Promise<T>, ms: number, makeError: () 
     timer = setTimeout(() => reject(makeError()), ms);
   });
   return Promise.race([work, expired]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Decides which Forensic sections can be reused from a completed analysis of the same document and account.
+ * Returns nothing to reuse unless a lookup is configured and a cache secret is present. Pure apart from the lookup.
+ */
+export async function planForensicReuse(args: {
+  env: Pick<AnalyzerEnv, 'REPORT_CACHE_SECRET'>;
+  reuseLookup?: ReuseLookup;
+  ownerUid: string;
+  documentText: string;
+  versions: ReportCacheVersions;
+  now?: number;
+}): Promise<{ initialSections: Record<string, any>; targetSections?: SectionKey[]; reasons: string[] }> {
+  const none = { initialSections: {}, targetSections: undefined, reasons: [] as string[] };
+  const secret = args.env.REPORT_CACHE_SECRET;
+  if (!args.reuseLookup || !secret) return none;
+  let fingerprint: string;
+  let cacheKey: string;
+  try {
+    fingerprint = await documentFingerprint(secret, args.ownerUid, args.documentText);
+    cacheKey = await reportCacheKey(secret, args.ownerUid, fingerprint, args.versions);
+  } catch {
+    return { ...none, reasons: ['REUSE_KEY_UNAVAILABLE'] };
+  }
+  const found = await args.reuseLookup(args.ownerUid, fingerprint, args.versions);
+  const plan = planAnalysisReuse(found?.candidate ?? null, {
+    ownerUid: args.ownerUid,
+    cacheKey,
+    documentFingerprint: fingerprint,
+    versions: args.versions,
+    requiredSections: [...FORENSIC_SECTIONS],
+    now: args.now ?? Date.now(),
+  });
+  const initialSections: Record<string, any> = {};
+  if (found) for (const key of plan.sectionsReused) if (key in found.sections) initialSections[key] = found.sections[key];
+  const targetSections = plan.sectionsToRun as SectionKey[];
+  return { initialSections, targetSections: targetSections.length > 0 ? targetSections : undefined, reasons: plan.reasons };
 }
 
 export async function handleAnalyzeRequest(
@@ -516,7 +573,18 @@ export async function handleAnalyzeRequest(
       // Verification can start while sections are still running; progress must never go backwards.
       let verificationStarted = false;
       await onProgress?.('reviewing_evidence', 35, 'Analyzing document across evidence sections...');
-      run = await runSectionedAnalysis({
+      // Experimental consolidated pipeline (ANALYZER_FORENSIC_PIPELINE=consolidated). Off by default; the sectioned
+      // pipeline is unchanged. Reuse of a completed analysis applies only on this path.
+      const useConsolidated = env.ANALYZER_FORENSIC_PIPELINE === 'consolidated';
+      const forensicVersions = analysisVersionsFor('full', useConsolidated ? 'consolidated' : 'sectioned', {
+        primaryModel,
+        verificationModel,
+      });
+      const reuse = useConsolidated
+        ? await planForensicReuse({ env, reuseLookup: deps.reuseLookup, ownerUid: identity.uid, documentText, versions: forensicVersions })
+        : { initialSections: {}, targetSections: undefined, reasons: [] as string[] };
+      const forensicRunner = useConsolidated ? runConsolidatedForensic : runSectionedAnalysis;
+      run = await forensicRunner({
         mode,
         // Experimental, off unless ANALYZER_FORENSIC_REASONING=adaptive is set on the deployment. Basic never uses it.
         reasoning: isForensic && env.ANALYZER_FORENSIC_REASONING === 'adaptive' ? 'adaptive' : 'off',
@@ -526,6 +594,7 @@ export async function handleAnalyzeRequest(
         generate,
         deadlineAt: aiDeadlineAt,
         requestId,
+        ...(useConsolidated ? { initialSections: reuse.initialSections, targetSections: reuse.targetSections } : {}),
         onSectionComplete: async (key, value, completed, total) => {
           const span = 50;
           const sectionPercent = 35 + Math.round((completed / total) * span);

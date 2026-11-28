@@ -69,3 +69,34 @@ export function planAnalysisReuse(candidate: ReuseCandidate | null, request: Reu
   const sectionsToRun = allSections.filter((s) => !available.has(s));
   return { reuse: true, reasons: [], reusedFrom: candidate.entry.jobId, sectionsReused, sectionsToRun };
 }
+
+/**
+ * Version labels that decide reuse. A section is reusable only when its prompt version matches exactly. The mode is
+ * part of the prompt version because Basic and Deep Scan send different limits for the same section, so a Basic section
+ * is never offered to a Deep Scan (or the reverse) by accident. Bump a label whenever the prompt, schema, validator or
+ * pipeline that produced the section changes.
+ */
+export const SECTIONED_ANALYZER_VERSION = 'sectioned-v1';
+export const CONSOLIDATED_ANALYZER_VERSION = 'consolidated-v1';
+/**
+ * Placeholder until the owner supplies the real legal reference version. Changing the reference content must change this
+ * value, so cached sections built on an older reference are never reused.
+ */
+export const LEGAL_REFERENCE_VERSION = 'unversioned-2026-11-28';
+
+export function analysisVersionsFor(
+  mode: 'fast' | 'full',
+  pipeline: 'sectioned' | 'consolidated',
+  models: { primaryModel: string; verificationModel: string | null }
+): import('./_report-cache').ReportCacheVersions {
+  const analyzer = pipeline === 'consolidated' ? CONSOLIDATED_ANALYZER_VERSION : SECTIONED_ANALYZER_VERSION;
+  return {
+    mode,
+    analyzerVersion: analyzer,
+    promptVersion: `${analyzer}-${mode}`,
+    primaryModel: models.primaryModel,
+    verificationModel: models.verificationModel,
+    legalReferenceVersion: LEGAL_REFERENCE_VERSION,
+    legalEffectiveDate: '1970-01-01',
+  };
+}

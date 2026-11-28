@@ -244,6 +244,24 @@ export function evaluateSourceIndependence(
 
 
 // A deterministic helper for tests/rules
+const NEGATION_PATTERN = /\b(not|never)\b|n't\b/;
+const FILLER_PATTERN = /\b(not|did|was|were|has|have|never|occurred|occur|happened|happen|the|a|an)\b|n't\b/g;
+
+/** True when the wording contains a negation. Used only to compare two statements about the same event. */
+export function isNegated(proposition: string): boolean {
+  return NEGATION_PATTERN.test(proposition.toLowerCase());
+}
+
+/** The statement with negation, tense and articles removed, so "the visit occurred" and "the visit did not occur" match. */
+export function coreProposition(proposition: string): string {
+  return proposition
+    .toLowerCase()
+    .replace(/[.!?;:,]/g, ' ')
+    .replace(FILLER_PATTERN, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function evaluateDeterministicRelationship(
   claimA: Pick<M2CClaim, 'proposition' | 'classification' | 'dateContext'>,
   claimB: Pick<M2CClaim, 'proposition' | 'classification' | 'dateContext'>,
@@ -280,19 +298,21 @@ export function evaluateDeterministicRelationship(
     evolutionContext = knownEvolutionType;
   }
   
-  const propA = claimA.proposition.trim().toLowerCase();
-  const propB = claimB.proposition.trim().toLowerCase();
-
-  if (propA.includes('did not occur') || propB.includes('did not occur')) {
-    if (propA.replace('did not occur', 'occurred') === propB || propB.replace('did not occur', 'occurred') === propA) {
-       dims.push('AFFIRMATION_DENIAL');
-       if (!type) type = 'DIRECT_CONTRADICTION';
-    }
+  // Affirmation vs denial: the same event is asserted in one claim and denied in the other. Compared on the wording
+  // with negation removed, so only a real negation of the same statement counts.
+  const coreA = coreProposition(claimA.proposition);
+  const coreB = coreProposition(claimB.proposition);
+  if (coreA && coreA === coreB && isNegated(claimA.proposition) !== isNegated(claimB.proposition)) {
+    dims.push('AFFIRMATION_DENIAL');
+    type = 'DIRECT_CONTRADICTION';
   }
 
-  if (propA.includes('monday') && propB.includes('tuesday')) {
-     dims.push('DATE');
-     if (!type) type = 'DATE_INCONSISTENCY';
+  // Date inconsistency: the same event is given two different calendar days. Only the day part is compared.
+  const dateA = claimA.dateContext?.lowerBound?.slice(0, 10);
+  const dateB = claimB.dateContext?.lowerBound?.slice(0, 10);
+  if (dateA && dateB && dateA !== dateB) {
+    dims.push('DATE');
+    if (!type) type = 'DATE_INCONSISTENCY';
   }
 
   // Location inconsistency
@@ -317,7 +337,7 @@ export function evaluateDeterministicRelationship(
       return { type: type || 'POTENTIAL_CONTRADICTION', dims, evolutionContext };
   }
 
-  if (propA === propB) {
+  if (claimA.proposition.trim().toLowerCase() === claimB.proposition.trim().toLowerCase()) {
      return { type: 'CONSISTENT_WITH', dims: [], evolutionContext };
   }
 
