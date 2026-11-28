@@ -52,6 +52,7 @@ import {
 } from '../../api/services/analyzerSections';
 import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyzerErrors';
 import { buildComplianceMatrixFromReport } from '../../shared/complianceMatrixEngine';
+import { groundChronology } from '../../shared/chronologyGrounding';
 
 /**
  * Extracts a valid 36-char UUID session ID from either a raw UUID string,
@@ -594,6 +595,9 @@ export async function handleAnalyzeRequest(
     }
 
     applyReportGuards(report, documentText);
+    // Forensic only: a deterministic check that each chronology date appears in the document. It adds a field and
+    // changes no AI output, so the Basic report is unchanged.
+    if (isForensic && Array.isArray(report.chronology)) report.chronology = groundChronology(report.chronology, documentText);
     return report;
   };
 

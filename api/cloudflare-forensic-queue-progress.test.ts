@@ -160,3 +160,18 @@ describe('queued analysis persists only under a held lease (lease takeover guard
     expect(persistedCompletions(fetcher).length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('Forensic chronology carries a deterministic date-grounding note', () => {
+  it('adds dateGrounding to each chronology row in a Forensic report', async () => {
+    const request = new Request('https://analyzer-queue.internal/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Analysis-Id': 'req_1791000000000_grounding1' },
+      body: JSON.stringify({ documentText: DOC, mode: 'full', stream: false }),
+    });
+    const fetcher = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
+    const response = await handleAnalyzeRequest(request, env, { generate, fetcher, rpc: vi.fn(), trustedJob: { owner_uid: 'o', session_id: null, reservation_id: null, owner_bypass: true, workerToken: 't' } });
+    const report = await response.json() as Record<string, any>;
+    expect(report.chronology.length).toBeGreaterThan(0);
+    expect(report.chronology[0].dateGrounding).toMatchObject({ status: 'GROUNDED', isoDate: '2026-10-12' });
+  });
+});
