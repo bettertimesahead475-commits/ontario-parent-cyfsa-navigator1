@@ -16,6 +16,7 @@ const env = {
   STAGING_SUPABASE_SERVICE_ROLE_KEY: localJwt('service_role'),
   TRANSACTIONAL_EMAIL_ENABLED: 'true',
   TRANSACTIONAL_EMAIL_ALLOWLIST: '@example.test',
+  TRANSACTIONAL_EMAIL_PAYLOAD_KEY: Buffer.alloc(32, 42).toString('base64'),
   PAYMENT_EMAIL: 'pay@example.test',
 };
 const recipient = 'parent@example.test';
@@ -40,7 +41,7 @@ async function applyOutbox() {
   throw new Error('PostgREST schema cache is not ready for outbox mutations');
 }
 
-async function waitForLocks(command: 'INSERT' | 'UPDATE', count: number) {
+async function waitForLocks(command: 'INSERT' | 'UPDATE' | 'LOCK', count: number) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const [{ total }] = await h.q<{ total: number }>(
       "select count(*)::int as total from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query ilike $1",
@@ -196,7 +197,7 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it('documents the committed-payment / missing-email gap: keyed retry returns the original payment without backfilling', async () => {
+  it('repairs a committed checkout on keyed retry without replaying the payment', async () => {
     vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'synthetic-enqueue-cut', email: recipient, emailVerified: true } as never);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.stubGlobal('fetch', h.fetch);
@@ -209,15 +210,198 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     const first = await checkout();
     expect(first.status).toBe(200);
     const { referenceNumber } = await first.json() as { referenceNumber: string };
-    h.hooks = [];
-    const second = await checkout();
-    expect(second.status).toBe(200);
-    expect(await second.json()).toMatchObject({ referenceNumber, reused: true });
-    expect(await h.q('select status from payments where reference_number = $1', [referenceNumber])).toEqual([{ status: 'pending' }]);
     expect(await h.q(`select id from ${OUTBOX_TABLE} where dedupe_key = $1`, [referenceNumber])).toEqual([]);
+    h.hooks = [];
+    for (const retry of await Promise.all([checkout(), checkout()])) {
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toMatchObject({ referenceNumber, reused: true });
+    }
+    expect(await h.q('select status from payments where reference_number = $1', [referenceNumber])).toEqual([{ status: 'pending' }]);
+    expect(await h.q(`select kind from ${OUTBOX_TABLE} where dedupe_key = $1`, [referenceNumber])).toEqual([{ kind: 'payment_instructions' }]);
   });
 
-  it('preserves rows during reapply and demonstrates that down SQL destroys delivery evidence', async () => {
+  it('recovers interrupted checkout, approval receipt and completed refund under two concurrent drains', async () => {
+    await h.q('grant update (status, approved_at) on public.payments to service_role');
+    await h.q(`insert into payments (plan, amount, reference_number, status, notes) values
+      ('Basic', 19.99, 'PS-APPROVE1', 'pending', $1),
+      ('Basic', 19.99, 'PS-APPROVE2', 'pending', $1),
+      ('Basic', 19.99, 'PS-APPROVE3', 'pending', $1),
+      ('Basic', 19.99, 'PS-REFUND01', 'approved', $1),
+      ('Basic', 19.99, 'PS-UNMARKED', 'pending', $1),
+      ('Basic', 19.99, 'PS-DUPL0001', 'pending', $2),
+      ('Basic', 19.99, 'PS-DUPL0001', 'rejected', $1)`,
+      [`email:${recipient};uid:synthetic`, `email:${recipient};uid:synthetic;email-outbox:instructions-v1`]);
+    await h.q("update payments set payment_email='pay@example.test' where reference_number = 'PS-DUPL0001'");
+    const now = due();
+    let admin = 0;
+    const send = vi.fn().mockResolvedValue({ id: 'synthetic-sent' });
+    const call = (route: string, body: Record<string, unknown>) => {
+      const start = new Date(Date.now() - 1_000);
+      let clockReads = 0;
+      return handleAdminRequest(new Request(`https://app.test/api/admin/${route}`, {
+        method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+      }), env, {
+        fetcher: h.fetch, now: () => route !== 'email-outbox/process' ? now : clockReads++ === 0 ? start : due(), mailer: { send },
+        requireAdmin: async () => ({ admin: { uid: `synthetic-admin-${++admin}`, email: 'operator@example.test' } }),
+      });
+    };
+    h.hooks.push((hop, phase) => {
+      if (phase === 'before' && hop.target === OUTBOX_TABLE && hop.method === 'POST') {
+        const body = hop.body as { dedupe_key: string; kind: string };
+        if (body.dedupe_key === 'PS-APPROVE2' && body.kind !== 'payment_confirmation') return;
+        if (body.dedupe_key === 'PS-APPROVE3' && body.kind === 'access_code') return;
+        throw new TypeError('outbox connection lost');
+      }
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'synthetic-no-retry', email: recipient, emailVerified: true } as never);
+    vi.stubGlobal('fetch', h.fetch);
+    const order = await requestAccess({ request: new Request('https://app.test/api/request-access', {
+      method: 'POST', body: JSON.stringify({ tier: 'Basic', requestKey: 'synthetic-no-retry' }),
+    }), env });
+    expect(order.status).toBe(200);
+    const { referenceNumber } = await order.json() as { referenceNumber: string };
+    const approval = await call('payments/approve', { referenceNumber: 'PS-APPROVE1', amountReceived: 20 });
+    expect(approval.status).toBe(200);
+    expect(await approval.json()).toMatchObject({ auditRecorded: true, emailsQueued: { receipt: false, confirmation: false, accessCode: false } });
+    const partial = await call('payments/approve', { referenceNumber: 'PS-APPROVE2', amountReceived: 20 });
+    expect(partial.status).toBe(200);
+    expect(await partial.json()).toMatchObject({ emailsQueued: { receipt: true, confirmation: false, accessCode: true } });
+    const activated = await call('payments/approve', { referenceNumber: 'PS-APPROVE3', amountReceived: 20 });
+    expect(activated.status).toBe(200);
+    expect(await activated.json()).toMatchObject({ emailsQueued: { receipt: false, confirmation: false, accessCode: true } });
+    await h.q("update access_codes set used_at = now() where reference_number = 'PS-APPROVE3'");
+    await h.q(`update ${OUTBOX_TABLE} set status = 'sent', secret_payload = null, sent_at = now(), attempts = 1
+      where kind = 'access_code' and dedupe_key = 'PS-APPROVE3'`);
+    const refund = await call('payments/refund', { referenceNumber: 'PS-REFUND01', reason: 'Synthetic return', revokeAccess: false });
+    expect(refund.status).toBe(200);
+    expect(await refund.json()).toMatchObject({ auditRecorded: true, refundEmailQueued: false });
+    const refs = [referenceNumber, 'PS-APPROVE1', 'PS-APPROVE2', 'PS-APPROVE3', 'PS-REFUND01', 'PS-UNMARKED', 'PS-DUPL0001'];
+    const rows = () => h.q(`select kind, dedupe_key, template_data->>'amount' as amount, attempts from ${OUTBOX_TABLE}
+      where dedupe_key = any($1) order by dedupe_key, kind`, [refs]);
+    expect(await rows()).toEqual([
+      { kind: 'access_code', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 0 },
+      { kind: 'purchase_receipt', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 0 },
+      { kind: 'access_code', dedupe_key: 'PS-APPROVE3', amount: '20', attempts: 1 },
+    ]);
+
+    let release!: () => void;
+    const bothRead = new Promise<void>((resolve) => { release = resolve; });
+    let readers = 0;
+    h.hooks = [async (hop, phase) => {
+      if (phase === 'after' && hop.target === OUTBOX_TABLE && hop.search.get('dedupe_key')?.startsWith('in.')) {
+        if (++readers === 2) release();
+        await bothRead;
+      }
+    }];
+    const drains = await Promise.all([call('email-outbox/process', {}), call('email-outbox/process', {})]);
+    expect(drains.map((r) => r.status)).toEqual([200, 200]);
+    expect(readers).toBeGreaterThanOrEqual(2);
+    expect(await rows()).toEqual(expect.arrayContaining([
+      { kind: 'payment_instructions', dedupe_key: referenceNumber, amount: '19.99', attempts: 1 },
+      { kind: 'purchase_receipt', dedupe_key: 'PS-APPROVE1', amount: '20', attempts: 1 },
+      { kind: 'access_code', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 1 },
+      { kind: 'payment_confirmation', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 1 },
+      { kind: 'purchase_receipt', dedupe_key: 'PS-APPROVE2', amount: '20', attempts: 1 },
+      { kind: 'purchase_receipt', dedupe_key: 'PS-APPROVE3', amount: '20', attempts: 1 },
+      { kind: 'refund_confirmation', dedupe_key: 'PS-REFUND01', amount: '19.99', attempts: 1 },
+    ]));
+    expect(await rows()).toHaveLength(8);
+    expect(await h.q(`select kind, status from ${OUTBOX_TABLE} where dedupe_key = 'PS-APPROVE3' order by kind`)).toEqual([
+      { kind: 'access_code', status: 'sent' },
+      { kind: 'purchase_receipt', status: 'sent' },
+    ]);
+    for (const ref of ['PS-APPROVE1', 'PS-APPROVE2']) {
+      expect(await h.q('select id from access_codes where reference_number = $1', [ref])).toHaveLength(1);
+    }
+  });
+
+  it('delivers checkout, approval and refund emails once with only transactional fields', async () => {
+    await h.q('grant update (status, approved_at) on public.payments to service_role');
+    const confidential = 'SYNTHETIC-PRIVATE-CASE-DOCUMENT';
+    vi.spyOn(authCheck, 'verifyFirebaseRequest').mockResolvedValue({ status: 'verified', uid: 'synthetic-acceptance', email: recipient, emailVerified: true } as never);
+    vi.stubGlobal('fetch', h.fetch);
+    const checkout = () => requestAccess({ request: new Request('https://app.test/api/request-access', {
+      method: 'POST', headers: { 'user-agent': confidential },
+      body: JSON.stringify({ tier: 'Basic', requestKey: 'synthetic-acceptance', document: confidential }),
+    }), env });
+
+    const messages: Array<{ subject: string; text: string }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      if (String(input) === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'synthetic-token' });
+      if (String(input) === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+        expect(init?.method).toBe('POST');
+        const payload = JSON.parse(String(init?.body)) as { raw: string };
+        expect(Object.keys(payload)).toEqual(['raw']);
+        const [headers, body] = Buffer.from(payload.raw, 'base64url').toString('utf8').split('\r\n\r\n');
+        expect(headers).toContain(`To: ${recipient}`);
+        expect(headers.match(/^Content-Type: .+$/gm)).toEqual(['Content-Type: text/plain; charset=UTF-8']);
+        expect(headers).not.toMatch(/multipart|Content-Disposition|attachment/i);
+        const subject = /^Subject: =\?UTF-8\?B\?([^?]+)\?=$/m.exec(headers)?.[1] ?? '';
+        messages.push({ subject: Buffer.from(subject, 'base64').toString('utf8'), text: Buffer.from(body, 'base64').toString('utf8') });
+        return Response.json({ id: `synthetic-message-${messages.length}` });
+      }
+      return h.fetch(input, init);
+    };
+    let admin = 0;
+    const call = (route: string, body: Record<string, unknown> = {}) => handleAdminRequest(new Request(`https://app.test/api/admin/${route}`, {
+      method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' },
+    }), {
+      ...env, GMAIL_SENDER_ADDRESS: 'sender@example.test', GMAIL_OAUTH_CLIENT_ID: 'synthetic-client',
+      GMAIL_OAUTH_CLIENT_SECRET: 'synthetic-secret', GMAIL_OAUTH_REFRESH_TOKEN: 'synthetic-refresh',
+    }, {
+      fetcher, now: due, requireAdmin: async () => ({ admin: { uid: `acceptance-admin-${++admin}`, email: 'operator@example.test' } }),
+    });
+    const drain = async (sent: number) => {
+      const results = await Promise.all([call('email-outbox/process'), call('email-outbox/process')]);
+      expect(results.map((r) => r.status)).toEqual([200, 200]);
+      const counts = await Promise.all(results.map((r) => r.json() as Promise<{ sent: number }>));
+      expect(counts.reduce((sum, count) => sum + count.sent, 0)).toBe(sent);
+    };
+
+    const order = await checkout();
+    expect(order.status).toBe(200);
+    const { referenceNumber, amount } = await order.json() as { referenceNumber: string; amount: number };
+    expect(await (await checkout()).json()).toMatchObject({ referenceNumber, reused: true });
+    const amountText = `$${amount.toFixed(2)} CAD`;
+    await drain(1);
+    expect(messages[0]).toEqual({ subject: `Payment instructions for order ${referenceNumber}`, text: expect.stringContaining(`Amount: ${amountText}\nSend by Interac e-Transfer to: pay@example.test\nReference: ${referenceNumber}`) });
+
+    const approval = { referenceNumber, amountReceived: amount, document: confidential };
+    const approved = await call('payments/approve', approval);
+    expect(approved.status).toBe(200);
+    const { accessCode } = await approved.json() as { accessCode: string };
+    expect(accessCode).toBeTruthy();
+    expect((await call('payments/approve', approval)).status).toBe(409);
+    await drain(3);
+    expect(messages).toEqual(expect.arrayContaining([
+      { subject: `Payment received for order ${referenceNumber}`, text: expect.stringContaining('Activate now') },
+      { subject: `Your access code for order ${referenceNumber}`, text: expect.stringContaining(accessCode) },
+      { subject: `Receipt for order ${referenceNumber}`, text: expect.stringContaining(`Amount paid: ${amountText}`) },
+    ]));
+
+    const refund = { referenceNumber, reason: confidential, revokeAccess: false };
+    expect((await call('payments/refund', refund)).status).toBe(200);
+    expect((await call('payments/refund', refund)).status).toBe(409);
+    await drain(1);
+    await drain(0);
+    expect(messages[4]).toEqual({ subject: `Refund recorded for order ${referenceNumber}`, text: expect.stringContaining(`A refund of ${amountText} for Basic (reference ${referenceNumber}) has been recorded.`) });
+    expect(messages).toHaveLength(5);
+    expect(JSON.stringify(messages)).not.toContain(confidential);
+    const rows = await h.q(`select kind, status, attempts, template_data, secret_payload from ${OUTBOX_TABLE} where dedupe_key = $1 order by kind`, [referenceNumber]);
+    const base = { plan: 'Basic', amount, reference: referenceNumber };
+    const approvedData = { ...base, approvedAt: expect.any(String), expiresAt: expect.any(String) };
+    const sent = { status: 'sent', attempts: 1, secret_payload: null };
+    expect(rows).toEqual([
+      { ...sent, kind: 'access_code', template_data: approvedData },
+      { ...sent, kind: 'payment_confirmation', template_data: approvedData },
+      { ...sent, kind: 'payment_instructions', template_data: { ...base, payTo: 'pay@example.test' } },
+      { ...sent, kind: 'purchase_receipt', template_data: approvedData },
+      { ...sent, kind: 'refund_confirmation', template_data: base },
+    ]);
+  });
+
+  it('preserves rows during reapply and only rolls back an empty outbox', async () => {
     const snapshot = await h.q(contents);
     expect(snapshot.length).toBeGreaterThan(0);
     const payments = await h.q('select * from payments order by id');
@@ -226,11 +410,41 @@ describe.skipIf(!url || !bin)('F transactional email outbox with PostgreSQL and 
     await applyOutbox();
     expect(await h.q("select to_regclass('public.transactional_email_outbox_due') is not null as present")).toEqual([{ present: true }]);
     expect(await h.q(contents)).toEqual(snapshot);
+    const rollback = await h.pool.connect();
+    try {
+      await expect(rollback.query(sql('.down'))).rejects.toThrow('Transactional email outbox is not empty');
+      await rollback.query('rollback');
+    } finally {
+      rollback.release();
+    }
+    expect(await h.q(contents)).toEqual(snapshot);
+    await h.q(`truncate table ${OUTBOX_TABLE}`);
     await h.pool.query(sql('.down'));
     expect(await h.q("select to_regclass('public.transactional_email_outbox') is null as absent")).toEqual([{ absent: true }]);
     await applyOutbox();
     expect(await h.q(contents)).toEqual([]);
     expect(await h.q('select * from payments order by id')).toEqual(payments);
     expect(await h.q('select * from navigator_paid_sessions order by id')).toEqual(entitlements);
+  });
+
+  it('waits on an in-flight insert before testing emptiness and protects the committed row', async () => {
+    const writer = await h.pool.connect();
+    const rollback = await h.pool.connect();
+    let result: Promise<unknown> | undefined;
+    try {
+      await writer.query('begin');
+      await writer.query(`insert into ${OUTBOX_TABLE} (kind, dedupe_key, recipient_email) values ($1, 'rollback-race', $2)`, [item.kind, recipient]);
+      result = rollback.query(sql('.down')).catch((error: unknown) => error);
+      await waitForLocks('LOCK', 1);
+      await writer.query('commit');
+      expect(await result).toMatchObject({ message: expect.stringContaining('Transactional email outbox is not empty') });
+    } finally {
+      await writer.query('rollback');
+      writer.release();
+      await result;
+      await rollback.query('rollback');
+      rollback.release();
+    }
+    expect(await h.q(`select dedupe_key from ${OUTBOX_TABLE}`)).toEqual([{ dedupe_key: 'rollback-race' }]);
   });
 });

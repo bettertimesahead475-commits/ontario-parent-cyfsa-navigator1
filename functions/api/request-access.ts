@@ -7,7 +7,7 @@
 import { verifyFirebaseRequest } from './_auth-check';
 import { normalizeApiKey } from './_supabase-key';
 import { RATE_LIMITS, rateLimitRetryAfter, rateLimitSubject, rateLimitedResponse } from './_rate-limit';
-import { enqueueTransactionalEmail } from './_email-outbox';
+import { canQueueEmail, checkoutEmailItem, CHECKOUT_EMAIL_INTENT, enqueueTransactionalEmail } from './_email-outbox';
 import type { TransactionalEmailEnv } from './_mailer';
 import { TIER_PRICES } from './access-pricing';
 
@@ -134,6 +134,11 @@ export const onRequestPost = async ({
 
   const uid = identity.uid;
   const keyed = Boolean(requestKey);
+  const checkoutColumns = 'reference_number,amount,plan,status,notes,payment_email';
+  const recoverInstructions = async (row: Parameters<typeof checkoutEmailItem>[0]) => {
+    const intent = checkoutEmailItem(row, normalizedEmail);
+    if (intent) await enqueueTransactionalEmail(env, intent);
+  };
 
   // Check for existing keyed request (idempotency)
   if (keyed) {
@@ -141,7 +146,7 @@ export const onRequestPost = async ({
       const checkUrl = new URL('/rest/v1/payments', env.STAGING_SUPABASE_URL);
       checkUrl.searchParams.set('firebase_uid', `eq.${uid}`);
       checkUrl.searchParams.set('request_key', `eq.${requestKey}`);
-      checkUrl.searchParams.set('select', 'reference_number,amount,plan');
+      checkUrl.searchParams.set('select', checkoutColumns);
       checkUrl.searchParams.set('limit', '1');
 
       const existingRes = await fetch(checkUrl.toString(), {
@@ -158,6 +163,7 @@ export const onRequestPost = async ({
         if (Array.isArray(rows) && rows.length > 0) {
           const row = rows[0];
           const existingAmount = typeof row.amount === 'number' ? row.amount : Number.parseFloat(row.amount);
+          await recoverInstructions(row);
           return Response.json(
             {
               referenceNumber: row.reference_number,
@@ -183,7 +189,7 @@ export const onRequestPost = async ({
     openUrl.searchParams.set('plan', `eq.${tier}`);
     openUrl.searchParams.set('status', 'eq.pending');
     openUrl.searchParams.set('submitted_at', `gte.${new Date(Date.now() - OPEN_ORDER_DAYS * 86400000).toISOString()}`);
-    openUrl.searchParams.set('select', 'reference_number,amount,plan');
+    openUrl.searchParams.set('select', checkoutColumns);
     openUrl.searchParams.set('order', 'submitted_at.desc');
     openUrl.searchParams.set('limit', '1');
     const openRes = await fetch(openUrl.toString(), {
@@ -199,6 +205,7 @@ export const onRequestPost = async ({
       const row = Array.isArray(rows) ? rows[0] : null;
       const openAmount = row ? (typeof row.amount === 'number' ? row.amount : Number.parseFloat(row.amount)) : Number.NaN;
       if (row?.reference_number && Math.abs(openAmount - amount) < 0.005) {
+        await recoverInstructions(row);
         return Response.json(
           {
             referenceNumber: row.reference_number,
@@ -221,6 +228,7 @@ export const onRequestPost = async ({
   const userAgent = request.headers.get('user-agent') || null;
 
   let notes = `email:${normalizedEmail};uid:${uid}`;
+  if (canQueueEmail(env, normalizedEmail)) notes += `;${CHECKOUT_EMAIL_INTENT}`;
   if (requestKey) notes += `;key:${requestKey}`;
   if (clientIp) notes += `;ip:${clientIp}`;
   if (userAgent) notes += `;ua:${encodeURIComponent(userAgent.slice(0, 100))}`;
@@ -260,7 +268,7 @@ export const onRequestPost = async ({
         const checkUrl = new URL('/rest/v1/payments', env.STAGING_SUPABASE_URL);
         checkUrl.searchParams.set('firebase_uid', `eq.${uid}`);
         checkUrl.searchParams.set('request_key', `eq.${requestKey}`);
-        checkUrl.searchParams.set('select', 'reference_number,amount,plan');
+        checkUrl.searchParams.set('select', checkoutColumns);
         checkUrl.searchParams.set('limit', '1');
 
         const raceRes = await fetch(checkUrl.toString(), {
@@ -276,6 +284,7 @@ export const onRequestPost = async ({
           if (Array.isArray(rows) && rows.length > 0) {
             const row = rows[0];
             const existingAmount = typeof row.amount === 'number' ? row.amount : Number.parseFloat(row.amount);
+            await recoverInstructions(row);
             return Response.json(
               {
                 referenceNumber: row.reference_number,

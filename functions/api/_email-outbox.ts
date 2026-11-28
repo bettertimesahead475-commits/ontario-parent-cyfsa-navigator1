@@ -26,6 +26,26 @@ export type OutboxRow = {
 
 export type EnqueueItem = { kind: TransactionalKind; dedupeKey: string; reference?: string | null; email: string; data: TemplateData; accessCode?: string };
 
+export const CHECKOUT_EMAIL_INTENT = 'email-outbox:instructions-v1';
+
+export function canQueueEmail(env: OutboxEnv, email: string): boolean {
+  return transactionalEmailEnabled(env) && isValidRecipient(email) && recipientAllowed(env, email);
+}
+
+export function checkoutEmailItem(row: {
+  notes?: string | null; status?: string; reference_number?: string; plan?: string;
+  amount?: string | number; payment_email?: string | null;
+}, verifiedEmail?: string): EnqueueItem | null {
+  const [emailField, uidField, intent] = (row.notes || '').split(';', 3);
+  const email = emailField?.startsWith('email:') ? emailField.slice(6) : '';
+  const ref = row.reference_number;
+  const amount = Number(row.amount);
+  if (row.status !== 'pending' || intent !== CHECKOUT_EMAIL_INTENT || !uidField?.startsWith('uid:') ||
+      !email || (verifiedEmail !== undefined && email !== verifiedEmail) || !ref || !/^PS-[A-Z0-9]{4,12}$/.test(ref) ||
+      !row.plan || !Number.isFinite(amount) || amount <= 0 || !row.payment_email) return null;
+  return { kind: 'payment_instructions', dedupeKey: ref, reference: ref, email, data: { plan: row.plan, amount, payTo: row.payment_email } };
+}
+
 /** Backoff after the n-th failed attempt: 5, 10, 20, 40 minutes, capped at 24 hours. */
 export const retryDelayMs = (attempts: number) => Math.min(5 * 60 * 1000 * 2 ** Math.max(0, attempts - 1), 24 * 3600 * 1000);
 
@@ -37,7 +57,7 @@ export async function enqueueTransactionalEmail(env: OutboxEnv, item: EnqueueIte
   try {
     const email = item.email.trim().toLowerCase();
     // A recipient outside a testing allowlist is not queued, so callers report "not queued" and the admin delivers by hand.
-    if (!isValidRecipient(email) || !recipientAllowed(env, email)) return false;
+    if (!canQueueEmail(env, email)) return false;
     let secret: string | null = null;
     if (item.kind === 'access_code') {
       if (!item.accessCode) return false;
@@ -80,6 +100,11 @@ async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+export async function paymentAlreadyActivated(env: OutboxEnv, reference: string, fetcher: typeof fetch): Promise<boolean> {
+  const used = await rest<unknown[]>(env, `access_codes?select=id&reference_number=eq.${enc(reference)}&used_at=not.is.null&limit=1`, {}, fetcher);
+  return used.length > 0;
+}
+
 /**
  * Re-checks, just before sending, that the email still describes the customer's current state: an order that was
  * rejected, refunded or already activated, a code that was replaced or redeemed, or an entitlement that was renewed
@@ -102,6 +127,8 @@ async function stillApplicable(env: OutboxEnv, row: OutboxRow, code: string | un
   switch (row.kind) {
     case 'payment_instructions': return paymentStatusIs('pending');
     case 'payment_confirmation':
+      return !!row.payment_reference && (await paymentStatusIs('approved')) && !(await refunded()) &&
+        !(await paymentAlreadyActivated(env, row.payment_reference, fetcher));
     case 'purchase_receipt': return (await paymentStatusIs('approved')) && !(await refunded());
     case 'access_code': {
       if (!code) return false;

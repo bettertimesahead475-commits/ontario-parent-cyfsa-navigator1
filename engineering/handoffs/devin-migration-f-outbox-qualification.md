@@ -1,33 +1,33 @@
 # Migration F — transactional email outbox qualification
 
-**Verdict: BLOCKED for live enablement.** The additive DDL passed on disposable PostgreSQL; the application does not guarantee that a committed payment action has a corresponding outbox row. The checked-in down migration is destructive once any email is recorded. Keep transactional email off until the backend owner resolves the enqueue gap or the owner explicitly accepts best-effort delivery with a reconciliation plan. This does not block unrelated migrations.
+**Verdict: PASS on disposable PostgreSQL for checkout recovery and the guarded rollback; BLOCKED for live enablement.** Checkout now records email intent with the payment, allowing retry or manual reconciliation after a failed enqueue. Recovery covers approved-payment receipts, confirmations with a recoverable queued code, and completed-refund notifications when intent was durably audited. A lost access code cannot be reconstructed. Keep transactional email off pending backend review, access-code recovery policy, live preflight and explicit written authorization.
 
 ## Scope and target
 
 - Release baseline: `dd02ef34b862b89b0a755cf568ca9e18f2efa674` (`release/rc-20261127`). F was introduced by `87f1d43f146b26a43fd632ec46f4152765864016` ([#182](https://github.com/bettertimesahead475-commits/ontario-parent-cyfsa-navigator1/pull/182)). F resides in `supabase/migrations_pending_approval/` with **no assigned live migration version**. Record the actual deployment version and this checksum in the register if execution is authorized.
 - The release register identifies Cloudflare Pages project `cyfsa-navigator-git-staging`, deployment `0cc59589` (commit `82dfe65`), bound through `STAGING_SUPABASE_URL` to `nxfhvebzzobegubefcda`. The outbox REST client `functions/api/_admin-store.ts` uses that binding; it does not select a project by name. This is recorded deployment evidence, not a fresh control-plane or live database check. The lead must confirm the **active Pages deployment's** binding and destination in a fresh read-only check; do not target `qboidsfpjuxeqtfotryj` on the basis of its name or intended purpose.
 - F creates only a table, constraints, index and grants. No migration A–E, G or P dependency; current request, admin and processing paths rely on the pre-existing payments, access codes and paid sessions schemas. The register places F after C; keep that sequence unless the lead explicitly reorders.
-- Processing in this RC is manual, through authenticated `POST /api/admin/email-outbox/process`. The route also queues renewal reminders. No Cloudflare cron or Worker drain was found. The flag `TRANSACTIONAL_EMAIL_ENABLED` must equal `true`; do not turn it on just to test production schema readiness.
+- Processing in this RC is manual, through authenticated `POST /api/admin/email-outbox/process`. The route reconciles payment-email intents and queues renewal reminders before draining. No Cloudflare cron or Worker drain was found. The flag `TRANSACTIONAL_EMAIL_ENABLED` must equal `true`; do not turn it on just to test production schema readiness.
 
 | File (`create_transactional_email_outbox…`) | SHA-256 |
 | --- | --- |
 | `.sql` | `8dda8b08d429741fd2f94bf9b3a330ace009fad346fcafc8d5e08c9fa91e3d8c` |
 | `.preflight.sql` | `ff78d5317256ce0bca5255b3d150b27acc0dd6cb25feae976c317e0ae00fb340` |
-| `.down.sql` (disposable only) | `56c1ec2034b8129ac4c49117542653cc21f2df9c79e66cad388888ea25b6e9f9` |
+| `.down.sql` (empty-only) | `fe4ceae6aaf4dcd47b2d1c292e00f5bc3f57f603677714932c63d481ad3100e4` |
 
 ## Disposable evidence
 
-PostgreSQL 17.12 and PostgREST 12.2.3; loopback only. `tests/devin/fixtures/live-nxfh-payment-schema.sql` supplied the recorded pre-P schema, service role with `BYPASSRLS` and browser roles. The added Vitest suite uses synthetic records and the real Pages outbox functions, REST requests, commits and role checks. Gmail is a stub; Firebase verification is stubbed only for synthetic checkout requests. Audit Storage is an in-memory double. No live connection, data access, Gmail send, restoration or deployment was made.
+PostgreSQL 16.16 and PostgREST 12.2.3 for the follow-up; loopback only. `tests/devin/fixtures/live-nxfh-payment-schema.sql` supplied the recorded pre-P schema, service role with `BYPASSRLS` and browser roles. The approval/refund scenario grants the two payment UPDATE columns from G in the disposable fixture so the handlers can reach the outbox paths; F's forward SQL is unchanged. The Vitest suite uses synthetic records and the real Pages outbox functions, REST requests, commits and role checks. Gmail, Firebase authentication for synthetic accounts and Audit Storage are stubbed. No live connection, data access, Gmail send, restoration or deployment was made.
 
 | Check | Result |
 | --- | --- |
-| Checked-in SQL runner | `PASS: preflight (read-only) before apply`; `PASS: migration + assertions`; `PASS: migration is re-runnable`; `PASS: rollback drops only the outbox`; `PASS: re-apply after rollback`. The rollback result describes *scope*, not safety. |
-| New PG suite + existing transactional email/admin suites | `Test Files  3 passed (3)`; `Tests  98 passed (98)` (8 new). A duplicate INSERT blocked behind the original uncommitted key; two simultaneous worker UPDATEs were observed waiting in `pg_stat_activity` before lock release. Only one worker invoked the sender, with one recorded attempt. |
+| Checked-in SQL runner | `PASS: preflight (read-only) before apply`; `PASS: migration + assertions`; `PASS: migration is re-runnable`; `PASS: rollback refuses a populated outbox`; `PASS: rollback drops only the empty outbox`; `PASS: re-apply after rollback`. |
+| PG suite + checkout, transactional email and admin suites | `Test Files  4 passed (4)`; `Tests  121 passed (121)`. A duplicate INSERT blocked behind the original uncommitted key; two worker UPDATEs were observed waiting in `pg_stat_activity` and only one invoked the sender. Two concurrent checkout retries returned the original payment and produced one instructions row. Two drains saw the same missing rows and each recovered notification was claimed at most once. |
 | Permissions and data | Unique kind/key, allowed kinds/statuses, terminal payload clearing, due index and RLS asserted. Direct browser-role PostgREST reads exposed no rows; writes were not permitted. Admin summary denied a tokenless request; its masking is covered by the existing unit suite. Current checkout with flag off preserved the pre-F contract and the seeded payment and paid entitlement survived apply. |
 | Fault and retry | Disconnected uncommitted claim rolled back; a confirmed pre-send failure retried with backoff and reached `failed` on attempt 5. A failed final database write after simulated provider acceptance left a committed claim in `sending`; later drain moved it to `unknown` without another send. A stale sealed access payload was cleared. This is not proof of exactly-once external delivery. |
 | Old build | An isolated worktree at production commit `82dfe65` ran the real old `request-access` handler against PostgREST with F applied: new and keyed-reused checkout returned 200, one payment and no unexpected outbox row. `Test Files  1 passed (1)`; `Tests  1 passed (1)`. This is checkout coverage, not full old-build regression. |
-| Reapply, down and backup | Reapplying F repaired an intentionally removed due index without changing any rows. Down then empty reapply erased all delivery evidence, while payments and entitlements survived. `pg_dump -Fc` before F and `pg_restore --exit-on-error` into a separate database gave `1|0|t` (entitlements, new payments, outbox absent). A fresh post-F dump restored separately gave `1|1|pending,sent,unknown`, matching the untouched source. |
-| Typecheck and focused security checks | `npx tsc --noEmit -p .`: exit 0. `vitest run tests/security api/services/quotationAdversarial.test.ts`: `Test Files  6 passed (6)`; `Tests  250 passed (250)`. `npm audit`: `found 0 vulnerabilities`. No changes to auth, grants, CSP, live settings or UI. |
+| Reapply, down and backup | Reapplying F repaired an intentionally removed due index without changing any rows. The guarded down script refused a populated table; it waited for an in-flight INSERT, saw the committed row, and refused again. Empty rollback/reapply preserved payments and entitlements. The prior qualification's `pg_dump -Fc` / `pg_restore --exit-on-error` in separate databases gave `1|0|t` before F (entitlements, new payments, outbox absent) and `1|1|pending,sent,unknown` after F, matching the untouched source. |
+| Typecheck and focused security checks | `npx tsc --noEmit -p .`: exit 0. `vitest run tests/security api/services/quotationAdversarial.test.ts`: `Test Files  6 passed (6)`; `Tests  250 passed (250)`. No changes to auth, grants, CSP, live settings or UI. |
 
 Re-run the main evidence using a dedicated disposable PostgreSQL cluster and pinned real PostgREST binary:
 
@@ -35,15 +35,34 @@ Re-run the main evidence using a dedicated disposable PostgreSQL cluster and pin
 CREDIT_PG_URL=postgresql://postgres@127.0.0.1:<port>/postgres \
 POSTGREST_BIN=/path/to/local/postgrest NODE_OPTIONS=--no-experimental-webstorage \
 npx vitest run tests/devin/transactional-email-outbox.pg.test.ts \
-  api/cloudflare-transactional-email.test.ts api/cloudflare-admin-api.test.ts
+  api/cloudflare-transactional-email.test.ts api/cloudflare-admin-api.test.ts api/cloudflare-request-access.test.ts
 ```
 
 Use the harness against a throwaway cluster only; it creates and drops its own database and the captured fixture creates cluster-wide roles.
 
-## Confirmed release gaps
+## Recovery behavior and limits
 
-1. **Committed payment, permanently missing notification after ordinary retry.** The test cut only the outbox POST, after the real checkout payment wrote and committed through PostgREST. The handler returned HTTP 200. With the fault removed, the same request key returned the original reference with `reused: true`; the pending payment still had no outbox row. The keyed reuse return is before `enqueueTransactionalEmail` in `functions/api/request-access.ts`. Approve/refund hooks also enqueue separately from the payment action; their equivalent interruptions were not reproduced here. This is the documented best-effort design, not a missing DB constraint. Claude (owner of the Pages handlers and migrations) should review a transactional write or durable, idempotent reconciliation with tested interruption recovery; do not try to fix it by retrying the payment itself.
-2. **Down is not a live recovery procedure.** It drops every pending row and every sent/unknown dedupe record. A pre-F snapshot does not include subsequent payments or outbox history. Restoring it over the active database would lose later writes; re-enqueueing from it can lose or repeat messages. Preserve the table after any enabled use. The checked-in scripts were not edited because their paths are backend-owned.
+1. **Checkout:** the existing payment insert records a versioned intent in its private notes when email is enabled and the verified recipient is allowed. Reused pending orders retry the enqueue using the original payment details and verified address. A manual drain can recover without customer retry. It does not create new payment records or backfill unmarked orders placed before this release or while email was off.
+2. **Approval and refund:** reconciliation uses the existing audit trail's marked approval and completed-refund records. It uses the audited amount received for a receipt, skips shared payment references, and preserves all existing outbox statuses and their dedupe records. A confirmation is only recovered when a corresponding access-code email is already queued or recorded sent and the order has not been activated. The sender checks activation again before delivery. The original code is not recoverable if its encrypted payload never reached the outbox; keep the operator's existing manual reissue/delivery path. An interruption before the action's audit intent commits is not recoverable by the email drain. No payment action is replayed, and customer self-activation is not changed.
+3. **Bounded manual reconciliation:** seven days, up to 100 recent marked pending payments and 100 recent eligible admin references found in the newest 1,000 audit names per drain. The due cutoff is taken after reconciliation, so recovered rows are eligible in that run, subject to the normal drain batch limit. Overflow, audit-read failures, and older exceptions require operator review. The same kind/key as the original hook prevents duplicates under concurrent drains; terminal rows are neither recreated nor retried.
+4. **Down is not a live recovery procedure.** It is empty-only, locks the table before checking, and refuses to remove any queued or historical row. Preserve the table after any enabled use. Never restore a pre-F snapshot over later customer writes or replay email from it.
+
+## Owner acceptance — disposable qualification
+
+The PostgreSQL suite invokes the checkout and administrator handlers, then uses the real Gmail adapter with stubbed OAuth and send endpoints. The local test decoded the outgoing MIME; no email was delivered to a real mailbox.
+
+| Requirement | Result and evidence |
+| --- | --- |
+| Payment instructions | **PASS:** a new synthetic order yielded one message with the checkout amount, Interac destination and matching order reference. |
+| Approval and access | **PASS:** approval yielded a confirmation with activation instructions, a receipt and the same one-time code issued by the handler. An already-used code suppresses the activation confirmation but not the receipt. |
+| Refund notification | **PASS for the recorded refund:** the message matched the reference and full order amount recorded by the refund handler. The application does not transfer funds or independently verify the bank amount; it does not model partial refunds or overpayment adjustments. |
+| Safe retries | **PASS:** a definite failure backed off until terminal attempt 5; a simulated accepted send without a recorded result became `unknown` and was not resent. |
+| Duplicate events | **PASS:** keyed checkout reuse plus repeated approval/refund and paired concurrent drains produced exactly five messages for the five applicable kind/key pairs, with one attempt each and none on a subsequent drain. Genuine PostgreSQL lock contention separately covered enqueue and claim races. |
+| Delivery history | **PASS:** guarded rollback refused populated and in-flight-insert cases; browser roles could not write or read protected rows. The application has no outbox DELETE path, and normal status changes preserve the dedupe record. |
+| Confidential documents | **PASS:** the test supplied a synthetic document marker in request fields, the user-agent and refund reason. The marker appeared in neither message subject nor body; exact persisted template-field assertions excluded notes, document data and the refund reason. The Gmail request contained only `raw` and decoded to a single plain-text MIME part with no attachment. The templates consume payment/access fields, not documents or analyzer output. |
+| Authorized email infrastructure | **PASS for repository integration:** the existing configured Gmail sender, OAuth endpoint and `users.messages.send` REST endpoint were exercised through stubs. Release-base comparison showed no Gmail adapter, package manifest/lockfile, Wrangler or environment-file changes; no new provider, subscription or spending was introduced. Live sender authorization was not revalidated. |
+
+Independent Claude and Chief of Staff qualification is separate from these synthetic checks. Integrate #193 before #211 only once qualified; keep live email delivery disabled until explicit final release authorization.
 
 ## Owner-authorized runbook
 
