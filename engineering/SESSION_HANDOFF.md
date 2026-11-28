@@ -4,6 +4,15 @@ Last updated: 2026-11-26 by Claude (backend); see `engineering/handoffs/claude-2
 
 ## State
 
+- 2026-11-28 (Claude): single release candidate `release/rc-20261128` (worktree
+  `C:\Users\pelki\Projects\cyfsa-worktrees\rc-20261128`), pushed. It integrates the perf recovery branch, the
+  payments/free-trial train, the analyzer, test and DB-qualification PRs, the #194 corrections, the settlement sentinel, the
+  Migration E/F fixes, polling outage tolerance, FORENSIC_SECTION_CONCURRENCY, and fixes from an independent review
+  (free OCR repeat spend; queue run budget counted by claims). Not merged into it, on purpose: approve-refund-race and
+  payments-g-p-d (superseded by the sentinel fix and the migration-P package) and refund-settlement-ledger (a new
+  feature that needs an unapplied table). PostgreSQL suites run only in CI (`postgres:16`), and their results for this
+  RC haven't been checked yet because gh isn't authenticated. Nothing is deployed and no migrations are applied.
+
 - 2026-11-26: review branch `engineering/claude-review` (c38d59a, 3781275) holds the 847c4e0 corrections and the
   pending quote-hit SQL fix. Not merged, not pushed. Commit isolation: `FILE_OWNERSHIP.md` ("Worktree and commit rules").
   Skipped-test register: `engineering/SKIPPED_TESTS.md`.
