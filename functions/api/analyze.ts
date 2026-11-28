@@ -44,7 +44,6 @@ import {
 import {
   runSectionedAnalysis,
   sectionTitle,
-  applyReportGuards,
   type SectionKey,
   type SectionRunResult,
   type GenerateFn,
@@ -691,6 +690,7 @@ export async function handleAnalyzeRequest(
         ...(Object.keys(basicDone).length > 0
           ? { initialSections: mergeCheckpointValues(basicDone), targetSections: QUICK_SECTIONS.filter((k) => !(k in basicDone)) }
           : {}),
+        skipComplianceMatrix: true,
         onSectionComplete: async (key, value, completed, total) => {
           await saveSection(key, value, basicVersion);
           const percent = 35 + Math.round((completed / total) * 60);
@@ -742,6 +742,7 @@ export async function handleAnalyzeRequest(
         deadlineAt: aiDeadlineAt,
         requestId,
         ...forensicResume,
+        skipComplianceMatrix: true,
         onSectionComplete: async (key, value, completed, total) => {
           await saveSection(key, value, forensicVersion);
           const span = 50;
@@ -831,7 +832,7 @@ export async function handleAnalyzeRequest(
       console.warn('[compliance_matrix] Non-fatal evaluation error:', matrixErr);
     }
 
-    applyReportGuards(report, documentText);
+    // runSectionedAnalysis and runConsolidatedForensic already ran applyReportGuards on the report with documentText.
     // Forensic only: a deterministic check that each chronology date appears in the document. It adds a field and
     // changes no AI output, so the Basic report is unchanged.
     if (isForensic && Array.isArray(report.chronology)) {
