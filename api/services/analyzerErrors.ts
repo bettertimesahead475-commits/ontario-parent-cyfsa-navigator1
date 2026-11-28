@@ -13,6 +13,8 @@ export type AnalyzerErrorCode =
   | "AI_RATE_LIMITED"
   | "AI_RESPONSE_INVALID"
   | "ANALYSIS_PERSISTENCE_FAILED"
+  | "ANALYSIS_BUDGET_EXHAUSTED"
+  | "ANALYSIS_LEASE_LOST"
   | "INTERNAL_ANALYSIS_ERROR";
 
 export class AnalyzerError extends Error {

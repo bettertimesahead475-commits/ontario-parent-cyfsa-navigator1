@@ -15,6 +15,10 @@ import { createAnalyzerQueueMessage, parseAnalyzerQueueMessage } from '../functi
 import { createStagingCreditRpc } from '../functions/api/_staging-credit-rpc';
 import { finalizeFreeScan, releaseFreeScan } from '../functions/api/_free-credit-lifecycle';
 import { finalizePaidReservation, releasePaidReservation } from '../functions/api/_paid-credit-lifecycle';
+import { createRpcLedgerStore, mutateLedger, JOB_LIMITS, type LedgerStore } from '../functions/api/_job-usage-ledger';
+import type { JobBudgetContext } from '../functions/api/_job-budget-generate';
+import { createDurableCheckpointStore, loadCheckpoints, checkpointDigest, type CheckpointStore } from '../functions/api/_job-checkpoints';
+import { classifyFailure, emptyLedger, mayRedeliver, recordCheckpoint, startDelivery } from '../shared/analysisBudget';
 
 interface QueueMessageLike {
   body: unknown;
@@ -32,6 +36,31 @@ export interface ConsumerEnv extends AnalyzerEnv {
   ANALYZER_JOBS_QUEUE_NAME?: string;
   ANALYZER_JOBS_DLQ_NAME?: string;
   ANALYZER_JOBS_REQUEUE?: AnalyzerQueueBinding;
+  /** 'on' enables the per-job usage ledger, stage checkpoints and failure-class redelivery. Unset: the previous behaviour. */
+  ANALYZER_JOB_LEDGER?: string;
+  /** Injected stores (tests). Production uses the RPC ledger and the durable checkpoint bucket. */
+  ledgerStore?: LedgerStore;
+  checkpointStore?: CheckpointStore;
+}
+
+function ledgerEnabled(env: ConsumerEnv): boolean {
+  return env.ANALYZER_JOB_LEDGER === 'on';
+}
+
+/**
+ * Whether a failed delivery may be redelivered. Without the ledger, the old rule applies (retryable means redeliver).
+ * With it, the failure class and the job's cumulative state decide. If the ledger cannot be read, redeliver: that is
+ * the infrastructure outcome, and the ledger still bounds the next attempt.
+ */
+async function shouldRedeliver(env: ConsumerEnv, job: DurableJobRecord, code: string, retryable: boolean): Promise<boolean> {
+  if (!ledgerEnabled(env)) return retryable;
+  try {
+    const store = env.ledgerStore ?? createRpcLedgerStore(env);
+    const state = (await store.read(job.job_id)) ?? emptyLedger(job.job_id);
+    return mayRedeliver(classifyFailure(code, retryable), state, JOB_LIMITS[job.mode]);
+  } catch {
+    return true;
+  }
 }
 
 const RETRY_BASE_SECONDS = 20;
@@ -160,6 +189,31 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
       return;
     }
 
+    // Usage ledger: this delivery counts against the job's cumulative limits. A refused delivery starts no provider work.
+    let jobBudget: JobBudgetContext | undefined;
+    let checkpointBundle: { load: (stages: readonly string[], version: string) => Promise<Record<string, Record<string, unknown>>>; save: (stage: string, value: Record<string, unknown>, version: string) => Promise<void> } | undefined;
+    if (ledgerEnabled(env)) {
+      const ledger = env.ledgerStore ?? createRpcLedgerStore(env);
+      const limits = JOB_LIMITS[job.mode];
+      const started = await mutateLedger(ledger, job.job_id, token, (state) => startDelivery(state, Date.now(), limits));
+      if (started.ok === false) {
+        const lost = started.error === 'LEASE_LOST' || started.error === 'CONFLICT_EXHAUSTED';
+        throw Object.assign(new Error('Job usage limit reached.'), {
+          retryable: lost,
+          code: lost ? 'JOB_LEASE_LOST' : started.error,
+        });
+      }
+      jobBudget = { store: ledger, jobId: job.job_id, workerToken: token, limits };
+      const checkpointStore = env.checkpointStore ?? createDurableCheckpointStore(env);
+      checkpointBundle = {
+        load: async (stages, version) => loadCheckpoints(checkpointStore, job.job_id, stages, version),
+        save: async (stage, value, version) => {
+          await checkpointStore.save(job.job_id, stage, { version, value });
+          await mutateLedger(ledger, job.job_id, token, (state) => ({ ok: true as const, state: recordCheckpoint(state, stage, checkpointDigest(value)) }));
+        },
+      };
+    }
+
     const input = await loadDurableInput(env, job.input_key);
     const request = new Request('https://analyzer-queue.internal/api/analyze', {
       method: 'POST',
@@ -200,6 +254,8 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
         trustedJob: {
           ...job,
           workerToken: token,
+          ...(jobBudget ? { ledger: jobBudget } : {}),
+          ...(checkpointBundle ? { checkpoints: checkpointBundle as never } : {}),
           // A progress write is a heartbeat. A transient ledger failure must not abandon a healthy run (the
           // completed write still requires this token); a write that matched no row means the lease is lost.
           onProgress: async (stage, progress) => {
@@ -230,7 +286,7 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
     }
     if (!response.ok) {
       const failure = await errorResponse(response);
-      if (failure.retryable) {
+      if (await shouldRedeliver(env, job, failure.code, failure.retryable)) {
         const delaySeconds = retryDelay(message.attempts);
         console.warn('[ANALYZER_JOB_RETRY_SCHEDULED]', JSON.stringify({ code: failure.code, httpStatus: response.status, mode: job.mode, jobAttempt: job.attempt_count ?? null, deliveryAttempt: message.attempts, delaySeconds }));
         await persistJobUpdate(env, { jobId: job.job_id, workerToken: token, status: 'queued', errorCode: failure.code, errorMessage: failure.error, retryable: true });
@@ -259,11 +315,12 @@ async function processJob(message: QueueMessageLike, env: ConsumerEnv): Promise<
       retryable,
       deliveryAttempt: message.attempts,
     }));
-    const safeMessage = retryable
+    const redeliver = retryable && await shouldRedeliver(env, job, code, retryable);
+    const safeMessage = redeliver
       ? 'The analysis could not be completed. The worker will retry it when possible.'
       : 'The analysis could not be completed. Your document is safe and no credit was used. Please start it again.';
     try {
-      if (retryable) {
+      if (redeliver) {
         await persistJobUpdate(env, { jobId: job.job_id, workerToken: token, status: 'queued', errorCode: code, errorMessage: safeMessage, retryable: true });
         message.retry({ delaySeconds: retryDelay(message.attempts) });
       } else {

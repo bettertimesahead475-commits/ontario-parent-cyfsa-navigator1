@@ -115,9 +115,8 @@ export async function runConsolidatedAnalysis(opts: SectionRunOptions): Promise<
   const report: Record<string, any> = { ...(opts.initialSections || {}) };
   const usage: ConsolidatedUsage = { calls: 0, outputTokens: 0, refusedByBudget: 0 };
 
-  const requested = (opts.targetSections && opts.targetSections.length > 0
-    ? opts.targetSections
-    : opts.mode === "full" ? FORENSIC_SECTIONS : QUICK_SECTIONS) as SectionKey[];
+  // An explicit empty list means nothing to run; it must not fall back to all sections.
+  const requested = (opts.targetSections ?? (opts.mode === "full" ? FORENSIC_SECTIONS : QUICK_SECTIONS)) as SectionKey[];
   const keys = requested.filter((k) => !(k in report));
   const reusedCount = requested.length - keys.length;
 

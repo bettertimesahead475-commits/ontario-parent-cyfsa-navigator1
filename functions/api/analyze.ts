@@ -50,12 +50,14 @@ import {
   type SectionRunResult,
   type GenerateFn,
   FORENSIC_SECTIONS,
+  QUICK_SECTIONS,
 } from '../../api/services/analyzerSections';
 import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyzerErrors';
 import { buildComplianceMatrixFromReport } from '../../shared/complianceMatrixEngine';
 import { groundChronology } from '../../shared/chronologyGrounding';
 import { buildDeterministicChronology } from '../../shared/chronologyIntelligence';
 import { runConsolidatedForensic, runConsolidatedBasic } from '../../api/services/consolidatedForensic';
+import { withJobBudget, type JobBudgetContext } from './_job-budget-generate';
 import {
   extractFoundation,
   foundationPromptBlock,
@@ -150,6 +152,13 @@ export interface AnalyzeDependencies {
   /** Set only by the private queue consumer after loading the job from the server-side job ledger. */
   trustedJob?: Pick<DurableJobRecord, 'owner_uid' | 'session_id' | 'reservation_id' | 'owner_bypass'> & {
     workerToken: string;
+    /** Per-job usage ledger: every provider call is reserved and settled through it. Absent when the ledger is off. */
+    ledger?: JobBudgetContext;
+    /** Stage checkpoints of completed sections, keyed by section, reused only under the same version. */
+    checkpoints?: {
+      load(stages: readonly SectionKey[], version: string): Promise<Record<string, Record<string, any>>>;
+      save(stage: SectionKey, value: Record<string, any>, version: string): Promise<void>;
+    };
     onProgress?: (stage: string, percent: number, message: string) => Promise<void> | void;
     /** Throws unless this Worker still holds the job lease. Called before a completed report overwrites the saved one. */
     assertLeaseHeld?: () => Promise<void>;
@@ -579,6 +588,24 @@ export async function handleAnalyzeRequest(
     ? verificationModel
     : (env.ANTHROPIC_QUICK_MODEL || DEFAULT_QUICK_MODEL);
   const generate = deps.generate || createCloudflareGenerateFn(env, authFetcher);
+  // Queued jobs: every provider call is reserved against the job's cumulative usage ledger before it is sent.
+  const budgetedGenerate = deps.trustedJob?.ledger ? withJobBudget(generate, deps.trustedJob.ledger) : generate;
+  // Stage checkpoints (queued jobs only). Versions bind a checkpoint to the analyzer, prompt, models and legal reference.
+  const sectionVersion = (m: 'fast' | 'full', pipeline: 'sectioned' | 'consolidated'): string =>
+    JSON.stringify(analysisVersionsFor(m, pipeline, { primaryModel, verificationModel }));
+  const checkpoints = deps.trustedJob?.checkpoints;
+  const resumeFrom = async (stages: readonly SectionKey[], version: string): Promise<Record<string, Record<string, any>>> =>
+    checkpoints ? await checkpoints.load(stages, version) : {};
+  const mergeCheckpointValues = (done: Record<string, Record<string, any>>): Record<string, any> =>
+    Object.assign({}, ...Object.values(done));
+  const saveSection = async (key: SectionKey, value: Record<string, any>, version: string): Promise<void> => {
+    if (!checkpoints) return;
+    try {
+      await checkpoints.save(key, value, version);
+    } catch (error) {
+      console.warn('[ANALYSIS_CHECKPOINT_NOT_SAVED]', JSON.stringify({ section: key, errorClass: error instanceof Error ? error.name : 'unknown' }));
+    }
+  };
 
   // Product latency budgets. Leave a small margin for report guards,
   // credit finalization and persistence; a deadline is not a completion guarantee.
@@ -620,14 +647,20 @@ export async function handleAnalyzeRequest(
       // Basic Review. Default: the sectioned pipeline, unchanged. ANALYZER_BASIC_PIPELINE=consolidated selects the
       // experimental single-call version, which is separate and off by default.
       const basicRunner = env.ANALYZER_BASIC_PIPELINE === 'consolidated' ? runConsolidatedBasic : runSectionedAnalysis;
+      const basicVersion = sectionVersion('fast', env.ANALYZER_BASIC_PIPELINE === 'consolidated' ? 'consolidated' : 'sectioned');
+      const basicDone = await resumeFrom(QUICK_SECTIONS, basicVersion);
       run = await basicRunner({
         mode: 'fast',
         documentText,
         primaryModel,
-        generate,
+        generate: budgetedGenerate,
         deadlineAt: aiDeadlineAt,
         requestId,
+        ...(Object.keys(basicDone).length > 0
+          ? { initialSections: mergeCheckpointValues(basicDone), targetSections: QUICK_SECTIONS.filter((k) => !(k in basicDone)) }
+          : {}),
         onSectionComplete: async (key, value, completed, total) => {
+          await saveSection(key, value, basicVersion);
           const percent = 35 + Math.round((completed / total) * 60);
           await onSection?.(key, value);
           await onProgress?.(completed === total ? 'preparing_report' : 'reviewing_evidence', percent,
@@ -655,6 +688,17 @@ export async function handleAnalyzeRequest(
         ? await loadFoundationBlock({ env, store: deps.foundationStore, ownerUid: identity.uid, documentText })
         : undefined;
       const forensicRunner = useConsolidated ? runConsolidatedForensic : runSectionedAnalysis;
+      const forensicVersion = sectionVersion('full', useConsolidated ? 'consolidated' : 'sectioned');
+      const forensicDone = await resumeFrom(FORENSIC_SECTIONS, forensicVersion);
+      const forensicResume = useConsolidated
+        ? {
+            initialSections: { ...reuse.initialSections, ...mergeCheckpointValues(forensicDone) },
+            targetSections: (reuse.targetSections ?? FORENSIC_SECTIONS).filter((k) => !(k in forensicDone)),
+            foundationBlock,
+          }
+        : Object.keys(forensicDone).length > 0
+          ? { initialSections: mergeCheckpointValues(forensicDone), targetSections: FORENSIC_SECTIONS.filter((k) => !(k in forensicDone)) }
+          : {};
       run = await forensicRunner({
         mode,
         // Experimental, off unless ANALYZER_FORENSIC_REASONING=adaptive is set on the deployment. Basic never uses it.
@@ -662,13 +706,12 @@ export async function handleAnalyzeRequest(
         documentText,
         primaryModel,
         verificationModel,
-        generate,
+        generate: budgetedGenerate,
         deadlineAt: aiDeadlineAt,
         requestId,
-        ...(useConsolidated
-          ? { initialSections: reuse.initialSections, targetSections: reuse.targetSections, foundationBlock }
-          : {}),
+        ...forensicResume,
         onSectionComplete: async (key, value, completed, total) => {
+          await saveSection(key, value, forensicVersion);
           const span = 50;
           const sectionPercent = 35 + Math.round((completed / total) * span);
           const message = `Completed ${completed} of ${total} report sections: ${sectionTitle(key)}.`;

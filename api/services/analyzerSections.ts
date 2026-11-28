@@ -1020,7 +1020,8 @@ export async function runOneSection(
 
 export async function runSectionedAnalysis(opts: SectionRunOptions): Promise<SectionRunResult> {
   const defaultKeys = opts.mode === "full" ? FORENSIC_SECTIONS : QUICK_SECTIONS;
-  const keys = opts.targetSections && opts.targetSections.length > 0 ? opts.targetSections : defaultKeys;
+  // An explicit empty list means "nothing to run" (every section was checkpointed); it must not fall back to all sections.
+  const keys = opts.targetSections ?? defaultKeys;
   const usageByModel: SectionRunResult["usageByModel"] = {};
   const sectionTimingsMs: Record<string, number> = {};
   const attempts: Record<string, number> = {};

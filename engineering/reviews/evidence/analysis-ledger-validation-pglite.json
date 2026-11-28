@@ -1,0 +1,101 @@
+{
+  "total": 19,
+  "failed": 0,
+  "results": [
+    {
+      "name": "ledger migration applies on top of the job table",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "first write from the lease holder is accepted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "version advances to 1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stale expected version is a conflict, not a lost update",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "a conflict leaves the stored state untouched",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "current expected version is accepted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "two racing writers at the same version: exactly one wins",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "a worker with another token (lease lost) is refused",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "a missing token is refused",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "an expired lease is refused even with the right token",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "a queued job (no lease) is refused",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "read returns the state with its version",
+      "ok": true,
+      "detail": "{\"jobId\":\"job_ledger_01\",\"version\":3,\"deliveries\":3,\"checkpoints\":{},\"reservations\":{}}"
+    },
+    {
+      "name": "stored state does not carry the version twice",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reading a missing ledger returns null",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "deleting the job removes its ledger row",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "row level security enabled on the ledger",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "anon and authenticated have no table privileges",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rollback removes the table",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "re-apply after rollback succeeds",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

@@ -46,7 +46,7 @@ function serviceConfig(env: DurableJobEnv): { base: string; key: string } {
   return { base, key };
 }
 
-async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unknown>, fetcher: typeof fetch = fetch): Promise<T> {
+export async function rpc<T>(env: DurableJobEnv, name: string, args: Record<string, unknown>, fetcher: typeof fetch = fetch): Promise<T> {
   const { base, key } = serviceConfig(env);
   let response: Response;
   const start = Date.now();
@@ -363,4 +363,41 @@ export async function loadPersistedReport(env: DurableJobEnv, jobId: string, fet
   return stored.status === 'completed' && stored.report && typeof stored.report === 'object'
     ? stored.report as Record<string, unknown>
     : null;
+}
+
+/** Writes a JSON object only if the key is free. Returns "exists" when a value is already stored; the first value is kept. */
+export async function putDurableObjectOnce(env: DurableJobEnv, key: string, value: unknown, fetcher: typeof fetch = fetch): Promise<"created" | "exists"> {
+  serviceConfig(env);
+  let response: Response;
+  try {
+    response = await fetcher(storageUrl(env, key), {
+      method: "POST",
+      headers: { ...storageHeaders(env), "x-upsert": "false" },
+      body: JSON.stringify(value),
+      redirect: "manual",
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    throw new DurableJobStorageError("Job object could not be saved.", true);
+  }
+  if (response.ok) return "created";
+  const status = await storageEffectiveStatus(response);
+  if (status === 409) return "exists";
+  throw new DurableJobStorageError("Job object could not be saved.", storageRetryable(status), status);
+}
+
+/** Reads a stored JSON object. Returns null when the key does not exist. */
+export async function getDurableObject(env: DurableJobEnv, key: string, fetcher: typeof fetch = fetch): Promise<unknown | null> {
+  let response: Response;
+  try {
+    response = await fetcher(storageUrl(env, key, true), { headers: storageHeaders(env), redirect: "manual", signal: AbortSignal.timeout(10000) });
+  } catch {
+    throw new DurableJobStorageError("Job object could not be loaded.", true);
+  }
+  if (!response.ok) {
+    const status = await storageEffectiveStatus(response);
+    if (status === 404) return null;
+    throw new DurableJobStorageError("Job object could not be loaded.", storageRetryable(status), status);
+  }
+  return await response.json();
 }
