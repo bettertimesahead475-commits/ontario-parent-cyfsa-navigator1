@@ -55,7 +55,13 @@ import { AnalyzerError, logAnalyzerDiagnostic } from '../../api/services/analyze
 import { buildComplianceMatrixFromReport } from '../../shared/complianceMatrixEngine';
 import { groundChronology } from '../../shared/chronologyGrounding';
 import { buildDeterministicChronology } from '../../shared/chronologyIntelligence';
-import { runConsolidatedForensic } from '../../api/services/consolidatedForensic';
+import { runConsolidatedForensic, runConsolidatedBasic } from '../../api/services/consolidatedForensic';
+import {
+  extractFoundation,
+  foundationPromptBlock,
+  FOUNDATION_SCHEMA_VERSION,
+  type AnalyticalFoundation,
+} from '../../shared/analyticalFoundation';
 import { analysisVersionsFor, planAnalysisReuse, type ReuseCandidate } from './_analysis-reuse';
 import { documentFingerprint, reportCacheKey, type ReportCacheVersions } from './_report-cache';
 
@@ -88,6 +94,8 @@ export interface AnalyzerEnv {
   ANALYZER_FORENSIC_REASONING?: string;
   /** Experimental Forensic pipeline. Only 'consolidated' changes behaviour; unset keeps the sectioned pipeline. */
   ANALYZER_FORENSIC_PIPELINE?: string;
+  /** Experimental single-call Basic. Only 'consolidated' changes behaviour; unset keeps the sectioned Basic pipeline. */
+  ANALYZER_BASIC_PIPELINE?: string;
   /** Secret for document fingerprints and cache keys. Reuse planning is skipped when unset. */
   REPORT_CACHE_SECRET?: string;
   /** Experimental Final Case Assessment consolidation. Only 'true' changes behaviour. */
@@ -122,10 +130,21 @@ export type ReuseLookup = (
   versions: ReportCacheVersions
 ) => Promise<{ candidate: ReuseCandidate; sections: Record<string, any> } | null>;
 
+/**
+ * Account-isolated store for the source-grounded analytical foundation of a document. Not configured in production:
+ * the storage migration is not applied yet. Reads and writes are keyed by owner and keyed document fingerprint.
+ */
+export interface FoundationStore {
+  read(ownerUid: string, documentFingerprint: string): Promise<AnalyticalFoundation | null>;
+  write(ownerUid: string, foundation: AnalyticalFoundation): Promise<void>;
+}
+
 export interface AnalyzeDependencies {
   rpc?: CreditRpc;
   /** Optional lookup of a completed analysis. Not configured in production: the cache store is not applied yet. */
   reuseLookup?: ReuseLookup;
+  /** Optional store of verified facts from completed analyses. Not configured in production. */
+  foundationStore?: FoundationStore;
   generate?: GenerateFn;
   fetcher?: typeof fetch;
   /** Set only by the private queue consumer after loading the job from the server-side job ledger. */
@@ -193,6 +212,52 @@ export async function planForensicReuse(args: {
   if (found) for (const key of plan.sectionsReused) if (key in found.sections) initialSections[key] = found.sections[key];
   const targetSections = plan.sectionsToRun as SectionKey[];
   return { initialSections, targetSections: targetSections.length > 0 ? targetSections : undefined, reasons: plan.reasons };
+}
+
+/**
+ * Reads the stored foundation for this document and account and renders it as prompt text for a consolidated Forensic
+ * run. Returns nothing (never throws) when no store or secret is configured, nothing is stored, or the read fails.
+ */
+export async function loadFoundationBlock(args: {
+  env: Pick<AnalyzerEnv, 'REPORT_CACHE_SECRET'>;
+  store?: FoundationStore;
+  ownerUid: string;
+  documentText: string;
+}): Promise<string | undefined> {
+  const secret = args.env.REPORT_CACHE_SECRET;
+  if (!args.store || !secret) return undefined;
+  try {
+    const fingerprint = await documentFingerprint(secret, args.ownerUid, args.documentText);
+    const found = await args.store.read(args.ownerUid, fingerprint);
+    if (!found || found.schemaVersion !== FOUNDATION_SCHEMA_VERSION || found.documentFingerprint !== fingerprint) return undefined;
+    if (found.quotes.length + found.dates.length + found.parties.length === 0) return undefined;
+    return foundationPromptBlock(found);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Stores the verified facts of a completed run. Callers treat failure as non-fatal. */
+export async function persistFoundation(args: {
+  env: Pick<AnalyzerEnv, 'REPORT_CACHE_SECRET'>;
+  store?: FoundationStore;
+  ownerUid: string;
+  documentText: string;
+  report: Record<string, any>;
+  sourceJobId: string;
+  sourceMode: 'fast' | 'full';
+}): Promise<void> {
+  const secret = args.env.REPORT_CACHE_SECRET;
+  if (!args.store || !secret) return;
+  const fingerprint = await documentFingerprint(secret, args.ownerUid, args.documentText);
+  const foundation = extractFoundation({
+    report: args.report,
+    documentText: args.documentText,
+    documentFingerprint: fingerprint,
+    sourceJobId: args.sourceJobId,
+    sourceMode: args.sourceMode,
+  });
+  await args.store.write(args.ownerUid, foundation);
 }
 
 export async function handleAnalyzeRequest(
@@ -552,7 +617,10 @@ export async function handleAnalyzeRequest(
       }
       const sectionedStartedAt = Date.now();
       await onProgress?.('reviewing_evidence', 35, 'Analyzing four independent evidence sections...');
-      run = await runSectionedAnalysis({
+      // Basic Review. Default: the sectioned pipeline, unchanged. ANALYZER_BASIC_PIPELINE=consolidated selects the
+      // experimental single-call version, which is separate and off by default.
+      const basicRunner = env.ANALYZER_BASIC_PIPELINE === 'consolidated' ? runConsolidatedBasic : runSectionedAnalysis;
+      run = await basicRunner({
         mode: 'fast',
         documentText,
         primaryModel,
@@ -583,6 +651,9 @@ export async function handleAnalyzeRequest(
       const reuse = useConsolidated
         ? await planForensicReuse({ env, reuseLookup: deps.reuseLookup, ownerUid: identity.uid, documentText, versions: forensicVersions })
         : { initialSections: {}, targetSections: undefined, reasons: [] as string[] };
+      const foundationBlock = useConsolidated
+        ? await loadFoundationBlock({ env, store: deps.foundationStore, ownerUid: identity.uid, documentText })
+        : undefined;
       const forensicRunner = useConsolidated ? runConsolidatedForensic : runSectionedAnalysis;
       run = await forensicRunner({
         mode,
@@ -594,7 +665,9 @@ export async function handleAnalyzeRequest(
         generate,
         deadlineAt: aiDeadlineAt,
         requestId,
-        ...(useConsolidated ? { initialSections: reuse.initialSections, targetSections: reuse.targetSections } : {}),
+        ...(useConsolidated
+          ? { initialSections: reuse.initialSections, targetSections: reuse.targetSections, foundationBlock }
+          : {}),
         onSectionComplete: async (key, value, completed, total) => {
           const span = 50;
           const sectionPercent = 35 + Math.round((completed / total) * span);
@@ -638,6 +711,21 @@ export async function handleAnalyzeRequest(
         analyzedAt: new Date().toISOString(),
       },
     };
+
+    // Verified facts are stored for later runs of the same document. Non-fatal: the completed report is unaffected.
+    try {
+      await persistFoundation({
+        env,
+        store: deps.foundationStore,
+        ownerUid: identity.uid,
+        documentText,
+        report: run.report,
+        sourceJobId: requestId,
+        sourceMode: isForensic ? 'full' : 'fast',
+      });
+    } catch (error: unknown) {
+      console.warn('[FOUNDATION_PERSIST_FAILED]', error instanceof Error ? error.name : 'unknown');
+    }
 
     try {
       report.complianceMatrix = buildComplianceMatrixFromReport(

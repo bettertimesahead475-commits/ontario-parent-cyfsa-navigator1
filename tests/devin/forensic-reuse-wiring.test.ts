@@ -7,7 +7,7 @@ const SECRET = 'x'.repeat(40);
 const DOC = 'Worker note dated March 3, 2026. Child left alone.';
 const models = { primaryModel: 'claude-opus-5', verificationModel: 'claude-opus-5' };
 
-async function candidateFor(owner: string, versions: ReturnType<typeof analysisVersionsFor>, sections: string[]) {
+async function candidateFor(owner: string, versions: Awaited<ReturnType<typeof analysisVersionsFor>>, sections: string[]) {
   const fp = await documentFingerprint(SECRET, owner, DOC);
   const key = await reportCacheKey(SECRET, owner, fp, versions);
   return {
@@ -33,7 +33,7 @@ async function candidateFor(owner: string, versions: ReturnType<typeof analysisV
 
 describe('Forensic reuse wiring (experimental consolidated path)', () => {
   it('reuses nothing without a lookup or a secret', async () => {
-    const versions = analysisVersionsFor('full', 'consolidated', models);
+    const versions = await analysisVersionsFor('full', 'consolidated', models);
     const none = await planForensicReuse({ env: { REPORT_CACHE_SECRET: SECRET }, ownerUid: 'a', documentText: DOC, versions });
     expect(none.initialSections).toEqual({});
     expect(none.targetSections).toBeUndefined();
@@ -42,7 +42,7 @@ describe('Forensic reuse wiring (experimental consolidated path)', () => {
   });
 
   it('reuses compatible completed sections and asks only for the rest', async () => {
-    const versions = analysisVersionsFor('full', 'consolidated', models);
+    const versions = await analysisVersionsFor('full', 'consolidated', models);
     const prior = await candidateFor('owner-1', versions, ['overview', 'redFlags']);
     const lookup = vi.fn(async () => ({ candidate: prior.candidate, sections: prior.sections }));
     const plan = await planForensicReuse({ env: { REPORT_CACHE_SECRET: SECRET }, reuseLookup: lookup, ownerUid: 'owner-1', documentText: DOC, versions });
@@ -51,7 +51,7 @@ describe('Forensic reuse wiring (experimental consolidated path)', () => {
   });
 
   it('never reuses another account\'s sections', async () => {
-    const versions = analysisVersionsFor('full', 'consolidated', models);
+    const versions = await analysisVersionsFor('full', 'consolidated', models);
     const prior = await candidateFor('owner-2', versions, ['overview']);
     // The lookup returns a candidate for another owner. The key is bound to owner-2, so owner-1 cannot match it.
     const lookup = vi.fn(async () => ({ candidate: prior.candidate, sections: prior.sections }));
@@ -60,8 +60,8 @@ describe('Forensic reuse wiring (experimental consolidated path)', () => {
   });
 
   it('does not reuse Basic sections for a Deep Scan (different prompt version)', async () => {
-    const basic = analysisVersionsFor('fast', 'sectioned', { primaryModel: 'claude-sonnet-5', verificationModel: null });
-    const deep = analysisVersionsFor('full', 'sectioned', models);
+    const basic = await analysisVersionsFor('fast', 'sectioned', { primaryModel: 'claude-sonnet-5', verificationModel: null });
+    const deep = await analysisVersionsFor('full', 'sectioned', models);
     const prior = await candidateFor('owner-1', basic, ['overview', 'redFlags', 'chronology', 'guidance']);
     const lookup = vi.fn(async () => ({ candidate: prior.candidate, sections: prior.sections }));
     const plan = await planForensicReuse({ env: { REPORT_CACHE_SECRET: SECRET }, reuseLookup: lookup, ownerUid: 'owner-1', documentText: DOC, versions: deep });
@@ -70,7 +70,7 @@ describe('Forensic reuse wiring (experimental consolidated path)', () => {
   });
 
   it('a changed document reuses nothing', async () => {
-    const versions = analysisVersionsFor('full', 'consolidated', models);
+    const versions = await analysisVersionsFor('full', 'consolidated', models);
     const prior = await candidateFor('owner-1', versions, ['overview']);
     const lookup = vi.fn(async () => ({ candidate: { ...prior.candidate, documentFingerprint: 'f'.repeat(64) }, sections: prior.sections }));
     const plan = await planForensicReuse({ env: { REPORT_CACHE_SECRET: SECRET }, reuseLookup: lookup, ownerUid: 'owner-1', documentText: DOC, versions });

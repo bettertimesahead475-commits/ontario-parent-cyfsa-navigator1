@@ -28,6 +28,38 @@ import type { GenerateFn, GenerateResult } from '../../api/services/analyzerSect
 export interface ModelAdapterEnv {
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_API_URL?: string;
+  /** Experimental. 'on' enables prompt-cache breakpoints for requests that name a cachedPrefix. Unset: request bodies are unchanged. */
+  ANALYZER_PROMPT_CACHE?: string;
+}
+
+type RequestMessage = { role: string; content: string | Array<Record<string, unknown>> };
+
+/**
+ * Builds the Messages API message list. Default: each message is flattened to one text string, exactly as before.
+ * With a cachedPrefix that is the start of a single user message, the prefix becomes its own text block marked with an
+ * ephemeral cache breakpoint and the rest follows it unmarked. The text is identical either way; only the breakpoint differs.
+ */
+export function buildRequestMessages(
+  messages: Array<{ role: string; content: Array<string | { text: string }> }>,
+  cachedPrefix?: string
+): RequestMessage[] {
+  const flat = messages.map((m) => ({
+    role: m.role,
+    text: m.content.map((c) => (typeof c === 'string' ? c : c.text)).join('\n'),
+  }));
+  const single = flat.length === 1 && flat[0].role === 'user' ? flat[0] : null;
+  if (!cachedPrefix || !single || !single.text.startsWith(cachedPrefix) || single.text.length <= cachedPrefix.length) {
+    return flat.map((m) => ({ role: m.role, content: m.text }));
+  }
+  return [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: cachedPrefix, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: single.text.slice(cachedPrefix.length) },
+      ],
+    },
+  ];
 }
 
 export function createCloudflareGenerateFn(
@@ -88,10 +120,10 @@ export function createCloudflareGenerateFn(
           max_tokens: effectiveMaxTokens(wireModel, options.max_tokens, thinkingRequested),
           stream: true,
           system: options.system,
-          messages: options.messages.map((m) => ({
-            role: m.role,
-            content: m.content.map((c) => (typeof c === 'string' ? c : c.text)).join('\n'),
-          })),
+          messages: buildRequestMessages(
+            options.messages,
+            env.ANALYZER_PROMPT_CACHE === 'on' ? (options as { cachedPrefix?: string }).cachedPrefix : undefined
+          ),
           ...thinkingFields,
         };
 

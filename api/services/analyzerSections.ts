@@ -65,6 +65,11 @@ export type GenerateFn = (
     thinkingBudget?: number;
     /** Return a complete response that stopped at max_tokens (stopReason "max_tokens") instead of throwing. */
     allowTruncated?: boolean;
+    /**
+     * Leading text of the single user message that is identical across the requests of one run (the instructions and
+     * the document). Sent as a prompt-cache breakpoint only when the adapter has ANALYZER_PROMPT_CACHE=on; otherwise ignored.
+     */
+    cachedPrefix?: string;
   },
   model: string
 ) => Promise<GenerateResult>;
@@ -904,6 +909,11 @@ export interface SectionRunOptions {
    * request exactly as before: the generate parameters are not changed at all.
    */
   reasoning?: "off" | "adaptive";
+  /**
+   * Verified source foundation (facts from an earlier analysis of this document), as prompt text. Consolidated runs only.
+   * The model may challenge any item; interpretations are not carried forward.
+   */
+  foundationBlock?: string;
   /** Upper bound on concurrent section calls (default: all sections, at most 6). */
   maxConcurrency?: number;
 }

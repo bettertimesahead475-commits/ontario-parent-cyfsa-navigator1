@@ -1,0 +1,101 @@
+{
+  "total": 19,
+  "failed": 0,
+  "results": [
+    {
+      "name": "migration applies",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "valid row accepted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "duplicate (owner, fingerprint, schema) rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "same document, next schema version accepted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "other owner, same fingerprint accepted (account isolation)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bad fingerprint rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "expiry beyond 30 days rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "expiry before completion rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "non-object foundation rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "oversized foundation rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bad source_mode rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bad job id rejected",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "row level security enabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "anon and authenticated have no table privileges",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "forget by fingerprint removes only that document for that owner",
+      "ok": true,
+      "detail": "removed 2"
+    },
+    {
+      "name": "other owner row survives forget",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "purge removes expired rows",
+      "ok": true,
+      "detail": "removed 1"
+    },
+    {
+      "name": "rollback drops the table",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "re-apply after rollback succeeds",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

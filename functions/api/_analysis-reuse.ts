@@ -6,6 +6,7 @@
  * A section is reusable only when every input that shaped it is identical: the document, the account, the analyzer
  * and prompt versions, the model, and the legal reference version. Any difference means the section is re-run.
  */
+import { ALL_PARENT_ASSISTANCE_RULES } from '../../shared/parentAssistanceLibrary';
 import { evaluateCacheEntry, type ReportCacheEntry, type ReportCacheVersions } from './_report-cache';
 
 export interface ReuseCandidate {
@@ -79,10 +80,35 @@ export function planAnalysisReuse(candidate: ReuseCandidate | null, request: Reu
 export const SECTIONED_ANALYZER_VERSION = 'sectioned-v1';
 export const CONSOLIDATED_ANALYZER_VERSION = 'consolidated-v1';
 /**
- * Placeholder until the owner supplies the real legal reference version. Changing the reference content must change this
- * value, so cached sections built on an older reference are never reused.
+ * Non-cryptographic content label (two independent 32-bit hashes). It identifies the rule content for versioning only;
+ * it is not a security control. Synchronous on purpose: an awaited crypto call is real I/O and must not sit on the
+ * analysis path, where it can disturb deadline timing.
  */
-export const LEGAL_REFERENCE_VERSION = 'unversioned-2026-11-28';
+function contentLabel(text: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9747b28c;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = (Math.imul(h2 ^ c, 0x85ebca6b) ^ (h2 >>> 13)) >>> 0;
+  }
+  return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
+}
+
+/**
+ * Legal reference metadata, derived from the parent-assistance rule tables the deterministic compliance checks use.
+ * The version is a label of the canonical rule content, so it changes whenever any rule changes. The effective date
+ * is the latest effectiveDate in those tables. Nothing here is typed by hand, so the values cannot drift from the data.
+ */
+export function legalReferenceMetadata(): { legalReferenceVersion: string; legalEffectiveDate: string } {
+  const rules = ALL_PARENT_ASSISTANCE_RULES;
+  const dates = rules.map((r) => r.effectiveDate).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  if (dates.length !== rules.length) throw new Error('Legal reference rules have a missing or malformed effectiveDate.');
+  return {
+    legalReferenceVersion: `parent-assistance-${contentLabel(JSON.stringify(rules))}`,
+    legalEffectiveDate: dates[dates.length - 1],
+  };
+}
 
 export function analysisVersionsFor(
   mode: 'fast' | 'full',
@@ -90,13 +116,14 @@ export function analysisVersionsFor(
   models: { primaryModel: string; verificationModel: string | null }
 ): import('./_report-cache').ReportCacheVersions {
   const analyzer = pipeline === 'consolidated' ? CONSOLIDATED_ANALYZER_VERSION : SECTIONED_ANALYZER_VERSION;
+  const legal = legalReferenceMetadata();
   return {
     mode,
     analyzerVersion: analyzer,
     promptVersion: `${analyzer}-${mode}`,
     primaryModel: models.primaryModel,
     verificationModel: models.verificationModel,
-    legalReferenceVersion: LEGAL_REFERENCE_VERSION,
-    legalEffectiveDate: '1970-01-01',
+    legalReferenceVersion: legal.legalReferenceVersion,
+    legalEffectiveDate: legal.legalEffectiveDate,
   };
 }
