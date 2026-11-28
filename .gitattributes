@@ -1,0 +1,4 @@
+# Migration SQL and shell scripts are checked out with LF on every platform, so sha256sum of the working file
+# matches the checksums recorded in the migration register (a CRLF checkout on Windows would not).
+supabase/**/*.sql text eol=lf
+*.sh text eol=lf
